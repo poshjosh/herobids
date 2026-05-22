@@ -1,0 +1,54 @@
+# Custom
+
+.ignore
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Config (contains credentials)
+config.yaml
+config.json
+!config.example.yaml
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Testing
+coverage/
+
+# Redis & Postgres local data
+.data/
+docker-volumes/
+
+# Drizzle
+drizzle/meta/.snapshot.json
+
+# Misc
+*.pid
+*.seed
+*.tgz
