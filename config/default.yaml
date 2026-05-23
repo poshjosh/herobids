@@ -1,0 +1,31 @@
+# Operator configuration — self-documenting reference.
+# Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+
+app:
+  port: 3000
+  logLevel: info             # debug | info | warn | error
+
+database:
+  url: postgres://herobids:herobids@localhost:5432/herobids   # override: DATABASE_URL
+  poolMin: 2
+  poolMax: 10
+
+redis:
+  url: redis://localhost:6379   # override: REDIS_URL
+
+venues:
+  hyperliquid:
+    baseUrl: https://api.hyperliquid.xyz
+    wsUrl: wss://api.hyperliquid.xyz/ws
+    rateLimitPerSec: 10
+    timeoutMs: 30000
+
+execution:
+  defaultSlippageBps: 50
+  orderTimeoutMs: 30000
+  maxRetries: 3
+
+risk:
+  globalMaxDrawdownPct: 20
+  maxOpenPositions: 10
+  maxPositionSizePct: 25

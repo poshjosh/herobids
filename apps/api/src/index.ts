@@ -1,0 +1,40 @@
+import Fastify from 'fastify';
+import { Queue } from 'bullmq';
+import { createDatabase } from '@herobids/db';
+import { instanceRoutes } from './routes/instances.js';
+import { venueAccountRoutes, portfolioRoutes } from './routes/accounts.js';
+import { credentialRoutes } from './routes/credentials.js';
+import { journalRoutes, positionRoutes, portfolioPositionRoutes } from './routes/views.js';
+import type { LifecycleJob } from './types.js';
+
+const app = Fastify({ logger: true });
+
+const redisConnection = {
+  host: process.env['REDIS_HOST'] ?? 'localhost',
+  port: parseInt(process.env['REDIS_PORT'] ?? '6379', 10),
+};
+
+const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
+const db = createDatabase(databaseUrl);
+
+const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
+  connection: redisConnection,
+});
+
+// Health endpoint
+app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// Register route modules
+await instanceRoutes(app, lifecycleQueue, db);
+await venueAccountRoutes(app, db);
+await portfolioRoutes(app, db);
+await credentialRoutes(app, db);
+await journalRoutes(app, db);
+await positionRoutes(app, db);
+await portfolioPositionRoutes(app, db);
+
+const port = parseInt(process.env['PORT'] ?? '3000', 10);
+
+app.listen({ port, host: '0.0.0.0' }).then(() => {
+  app.log.info(`API server listening on port ${port}`);
+});

@@ -1,0 +1,180 @@
+import type { Decision } from '@herobids/domain';
+import type { OrderSide, OrderType } from '@herobids/domain';
+import type { Price, Quantity } from '@herobids/domain';
+import type { Position } from '@herobids/domain';
+import { Decimal } from '@herobids/domain';
+
+/**
+ * An execution plan bridges a Decision to concrete order commands.
+ * The planner determines *what* to do; the executor determines *how* (paper vs live).
+ */
+export interface ExecutionPlan {
+  id: string;
+  decisionId: string;
+  tradingInstanceId: string;
+  venue: string;
+  symbol: string;
+  action: PlanAction;
+  orders: PlannedOrder[];
+  status: 'pending' | 'executing' | 'completed' | 'failed';
+  createdAt: string;
+  completedAt?: string;
+}
+
+export type PlanAction = 'open_long' | 'open_short' | 'close' | 'increase' | 'reduce' | 'reverse';
+
+export interface PlannedOrder {
+  side: OrderSide;
+  type: OrderType;
+  quantity: Quantity;
+  price?: Price;
+}
+
+export interface PlannerDeps {
+  /** Current position for the instrument (null if flat) */
+  currentPosition: Position | null;
+  /** Venue + symbol context */
+  venue: string;
+  symbol: string;
+}
+
+/**
+ * Plan a Decision into an ExecutionPlan.
+ * Pure function — no side effects, no I/O.
+ */
+export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPlan {
+  const { currentPosition, venue, symbol } = deps;
+  const currentSize = currentPosition ? currentPosition.size : new Decimal(0);
+  const currentSide = currentPosition?.side ?? 'flat';
+  const targetSize = decision.targetSize;
+
+  const orders: PlannedOrder[] = [];
+  let action: PlanAction;
+
+  switch (decision.intent) {
+    case 'go_flat': {
+      action = 'close';
+      if (currentSide !== 'flat' && currentSize.gt(0)) {
+        orders.push({
+          side: currentSide === 'long' ? 'sell' : 'buy',
+          type: decision.limitPrice ? 'limit' : 'market',
+          quantity: currentSize,
+          price: decision.limitPrice,
+        });
+      }
+      break;
+    }
+
+    case 'go_long': {
+      if (currentSide === 'short') {
+        // Close short first, then open long
+        action = 'reverse';
+        orders.push({
+          side: 'buy',
+          type: decision.limitPrice ? 'limit' : 'market',
+          quantity: currentSize, // close short
+          price: decision.limitPrice,
+        });
+        if (targetSize.gt(0)) {
+          orders.push({
+            side: 'buy',
+            type: decision.limitPrice ? 'limit' : 'market',
+            quantity: targetSize,
+            price: decision.limitPrice,
+          });
+        }
+      } else {
+        // Already flat or long
+        action = currentSide === 'flat' ? 'open_long' : 'increase';
+        const deficit = targetSize.minus(currentSize);
+        if (deficit.gt(0)) {
+          orders.push({
+            side: 'buy',
+            type: decision.limitPrice ? 'limit' : 'market',
+            quantity: deficit,
+            price: decision.limitPrice,
+          });
+        }
+      }
+      break;
+    }
+
+    case 'go_short': {
+      if (currentSide === 'long') {
+        // Close long first, then open short
+        action = 'reverse';
+        orders.push({
+          side: 'sell',
+          type: decision.limitPrice ? 'limit' : 'market',
+          quantity: currentSize,
+          price: decision.limitPrice,
+        });
+        if (targetSize.gt(0)) {
+          orders.push({
+            side: 'sell',
+            type: decision.limitPrice ? 'limit' : 'market',
+            quantity: targetSize,
+            price: decision.limitPrice,
+          });
+        }
+      } else {
+        action = currentSide === 'flat' ? 'open_short' : 'increase';
+        const deficit = targetSize.minus(currentSize);
+        if (deficit.gt(0)) {
+          orders.push({
+            side: 'sell',
+            type: decision.limitPrice ? 'limit' : 'market',
+            quantity: deficit,
+            price: decision.limitPrice,
+          });
+        }
+      }
+      break;
+    }
+
+    case 'increase': {
+      action = 'increase';
+      const deficit = targetSize.minus(currentSize);
+      if (deficit.gt(0)) {
+        const side: OrderSide = currentSide === 'short' ? 'sell' : 'buy';
+        orders.push({
+          side,
+          type: decision.limitPrice ? 'limit' : 'market',
+          quantity: deficit,
+          price: decision.limitPrice,
+        });
+      }
+      break;
+    }
+
+    case 'decrease': {
+      action = 'reduce';
+      const excess = currentSize.minus(targetSize);
+      if (excess.gt(0)) {
+        const side: OrderSide = currentSide === 'short' ? 'buy' : 'sell';
+        orders.push({
+          side,
+          type: decision.limitPrice ? 'limit' : 'market',
+          quantity: excess,
+          price: decision.limitPrice,
+        });
+      }
+      break;
+    }
+
+    default:
+      action = 'close';
+  }
+
+  return {
+    id: '', // caller assigns ID
+    decisionId: decision.id,
+    tradingInstanceId: decision.tradingInstanceId,
+    venue,
+    symbol,
+    action,
+    orders,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+}

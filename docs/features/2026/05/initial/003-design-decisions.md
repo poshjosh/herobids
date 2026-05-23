@@ -646,6 +646,18 @@ See [docs/best-practices/configuration.md](../../../best-practices/configuration
 | Risk vs. AI | Hard limits always enforced; AI gets advisory guidance only |
 | Day-1 scope | Engine + one venue + paper + journal; not a full product |
 | First venue | Matches first live strategy; Hyperliquid recommended for perps |
+
+---
+
+## Backlog (Future Phases)
+
+Risk & execution enhancements for Phase 2+:
+
+- [ ] `riskPerTradePct` — position sizing as function of risk budget (Kelly-lite). Requires stop distance from strategy.
+- [ ] `maxPriceDeviationMultiple` — data sanity guard at venue adapter layer; reject absurd price feeds before they reach the engine.
+- [ ] Per-position SL/TP enforcement in `TradingActor` scan loop — strategy emits close decisions when SL/TP conditions hit.
+- [ ] Trailing stop / ratcheting exit mechanics — advanced exit logic owned by the strategy layer.
+- [ ] Dynamic stop placement (ATR-based, swing-based) — strategy provides stop distance, risk gate uses it for sizing.
 | Actors | Bot (phase 1, in-process), Agent (phase 2, container-isolated), Manual user (phase 3, stateless API) |
 | Error handling | Result type at package boundaries; dot-namespaced codes (`<package>.<error_name>`) |
 | Configuration | Two layers: operator YAML (deploy-time) + user JSONB in Postgres (runtime); never mixed |

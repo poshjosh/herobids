@@ -1,0 +1,17 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: false,
+    environment: 'node',
+    exclude: ['**/node_modules/**', '**/dist/**', '.ignore/**'],
+  },
+  resolve: {
+    alias: {
+      '@herobids/domain': new URL('./packages/domain/src/index.ts', import.meta.url).pathname,
+      '@herobids/engine': new URL('./packages/engine/src/index.ts', import.meta.url).pathname,
+      '@herobids/venues': new URL('./packages/venues/src/index.ts', import.meta.url).pathname,
+      '@herobids/strategy': new URL('./packages/strategy/src/index.ts', import.meta.url).pathname,
+    },
+  },
+});
