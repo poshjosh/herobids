@@ -20,7 +20,9 @@ export type JournalEventType =
   | 'risk.rejected'
   | 'instance.started'
   | 'instance.stopped'
-  | 'instance.crashed';
+  | 'instance.crashed'
+  | 'reconciliation.match'
+  | 'reconciliation.drift_detected';
 
 export interface JournalEntry {
   id: string;

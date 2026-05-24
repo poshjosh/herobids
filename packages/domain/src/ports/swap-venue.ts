@@ -50,6 +50,24 @@ export interface SwapBalanceSnapshot {
   timestamp: string;
 }
 
+/** Balance for a single token on a swap venue */
+export interface TokenBalance {
+  asset: string;
+  amount: Quantity;
+  timestamp: string;
+}
+
+/** A transaction as reported by the swap venue (used for reconciliation) */
+export interface SwapTransaction {
+  /** Venue-specific reference (tx hash, deal ticket ID) */
+  executionRef: string;
+  inputAsset: string;
+  outputAsset: string;
+  inputAmount: Quantity;
+  outputAmount: Quantity;
+  timestamp: string;
+}
+
 /**
  * Port interface for swap/RFQ venues.
  * Crypto: DEX aggregators (Jupiter, 1inch).
@@ -60,4 +78,12 @@ export interface SwapVenuePort {
   quote(params: SwapQuoteParams): Promise<Result<SwapQuote, SwapVenueError>>;
   executeSwap(quote: SwapQuote): Promise<Result<SwapReceipt, SwapVenueError>>;
   fetchBalances(): Promise<Result<SwapBalanceSnapshot, SwapVenueError>>;
+
+  // --- Reconciliation methods (Phase 2a) ---
+
+  /** Fetch balance for a specific token (on-chain balance check for reconciliation) */
+  fetchBalance(token: string): Promise<Result<TokenBalance, SwapVenueError>>;
+
+  /** Fetch recent transactions since a given timestamp (detect unrecorded swaps) */
+  fetchRecentTransactions(since?: Date): Promise<Result<SwapTransaction[], SwapVenueError>>;
 }

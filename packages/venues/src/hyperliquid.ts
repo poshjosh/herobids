@@ -8,6 +8,11 @@ import type {
   Position,
   Ticker,
   VenueError,
+  VenueOrder,
+  VenueFill,
+  Subscription,
+  PrivateStreamHandlers,
+  PublicStreamHandlers,
 } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -163,6 +168,53 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
     });
   }
 
+  async fetchOpenOrders(): Promise<Result<VenueOrder[], VenueError>> {
+    return this.withRateLimit(async () => {
+      const openOrders = await this.exchange.fetchOpenOrders();
+      const mapped: VenueOrder[] = openOrders.map((o) => ({
+        venueRefId: o.id ?? '',
+        clientOrderId: o.clientOrderId ?? undefined,
+        symbol: o.symbol ?? '',
+        side: (o.side === 'buy' ? 'buy' : 'sell') as VenueOrder['side'],
+        type: mapCcxtOrderType(o.type),
+        status: mapCcxtOrderStatus(o.status),
+        quantity: quantity((o.amount ?? 0).toString()),
+        filledQuantity: quantity((o.filled ?? 0).toString()),
+        price: o.price != null ? price(o.price.toString()) : undefined,
+        avgFillPrice: o.average != null ? price(o.average.toString()) : undefined,
+        createdAt: o.datetime ?? new Date().toISOString(),
+      }));
+      return ok(mapped);
+    });
+  }
+
+  async fetchRecentFills(since?: Date): Promise<Result<VenueFill[], VenueError>> {
+    return this.withRateLimit(async () => {
+      const sinceMs = since ? since.getTime() : undefined;
+      const trades = await this.exchange.fetchMyTrades(undefined, sinceMs);
+      const mapped: VenueFill[] = trades.map((t) => ({
+        venueRefId: t.id ?? '',
+        orderId: t.order ?? undefined,
+        symbol: t.symbol ?? '',
+        side: (t.side === 'buy' ? 'buy' : 'sell') as VenueFill['side'],
+        quantity: quantity((t.amount ?? 0).toString()),
+        price: price((t.price ?? 0).toString()),
+        fee: quantity((t.fee?.cost ?? 0).toString()),
+        feeCurrency: t.fee?.currency ?? 'USD',
+        filledAt: t.datetime ?? new Date().toISOString(),
+      }));
+      return ok(mapped);
+    });
+  }
+
+  async subscribePrivate(_handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>> {
+    return err({ code: 'venue.not_implemented', message: 'Private stream subscription not yet implemented (Phase 2b)' });
+  }
+
+  async subscribePublic(_symbols: string[], _handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>> {
+    return err({ code: 'venue.not_implemented', message: 'Public stream subscription not yet implemented (Phase 2c)' });
+  }
+
   /**
    * Wraps an exchange call with rate limiting and error mapping.
    * Never throws — always returns Result.
@@ -180,6 +232,27 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
 }
 
 function mapOrderStatus(status: string | undefined): OrderReceipt['status'] {
+  switch (status) {
+    case 'open': return 'open';
+    case 'closed': return 'filled';
+    case 'canceled': return 'cancelled';
+    case 'expired': return 'cancelled';
+    case 'rejected': return 'rejected';
+    default: return 'pending';
+  }
+}
+
+function mapCcxtOrderType(type: string | undefined): VenueOrder['type'] {
+  switch (type) {
+    case 'market': return 'market';
+    case 'limit': return 'limit';
+    case 'stop': return 'stop_market';
+    case 'stop_limit': return 'stop_limit';
+    default: return 'market';
+  }
+}
+
+function mapCcxtOrderStatus(status: string | undefined): VenueOrder['status'] {
   switch (status) {
     case 'open': return 'open';
     case 'closed': return 'filled';

@@ -47,8 +47,16 @@ export const JournalQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+export const ReconciliationEventQuerySchema = z.object({
+  since: z.string().datetime().optional(),
+  result: z.enum(['match', 'drift_detected', 'repaired']).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;
 export type UpdateInstanceConfigInput = z.infer<typeof UpdateInstanceConfigSchema>;
 export type CreateVenueAccountInput = z.infer<typeof CreateVenueAccountSchema>;
 export type CreatePortfolioInput = z.infer<typeof CreatePortfolioSchema>;
 export type JournalQueryInput = z.infer<typeof JournalQuerySchema>;
+export type ReconciliationEventQueryInput = z.infer<typeof ReconciliationEventQuerySchema>;

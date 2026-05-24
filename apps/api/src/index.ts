@@ -5,6 +5,7 @@ import { instanceRoutes } from './routes/instances.js';
 import { venueAccountRoutes, portfolioRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes, portfolioPositionRoutes } from './routes/views.js';
+import { reconciliationRoutes } from './routes/reconciliation.js';
 import type { LifecycleJob } from './types.js';
 
 const app = Fastify({ logger: true });
@@ -32,6 +33,7 @@ await credentialRoutes(app, db);
 await journalRoutes(app, db);
 await positionRoutes(app, db);
 await portfolioPositionRoutes(app, db);
+await reconciliationRoutes(app, db);
 
 const port = parseInt(process.env['PORT'] ?? '3000', 10);
 

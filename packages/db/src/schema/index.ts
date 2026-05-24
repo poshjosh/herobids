@@ -10,3 +10,4 @@ export { fills } from './fills.js';
 export { positions } from './positions.js';
 export { balanceSnapshots } from './balance-snapshots.js';
 export { journalEvents } from './journal-events.js';
+export { reconciliationEvents } from './reconciliation-events.js';

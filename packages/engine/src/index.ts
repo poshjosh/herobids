@@ -22,3 +22,19 @@ export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent } from './jo
 export type { Journal, JournalEntry, JournalEventType } from './journal.js';
 
 export { InMemoryJournal } from './journal-memory.js';
+
+export { reconcile, Reconciler } from './reconciliation/index.js';
+export type {
+  LocalState,
+  VenueState,
+  LocalPosition,
+  LocalBalance,
+  LocalFill,
+  LocalOrder,
+  ReconciliationResult,
+  ReconciliationStatus,
+  Diff,
+  DiffType,
+  ReconcilerConfig,
+  ReconcilerDeps,
+} from './reconciliation/index.js';

@@ -14,6 +14,8 @@ export const venueAccounts = pgTable('venue_accounts', {
   venueAccountRef: text('venue_account_ref'),
   /** Reference to credentials row */
   credentialId: text('credential_id'),
+  /** Timestamp of last successful reconciliation pass (cursor) */
+  lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

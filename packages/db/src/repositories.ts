@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
-import { eq, and, isNull, inArray, desc, or } from 'drizzle-orm';
+import { eq, and, isNull, inArray, desc, or, gte, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, tradingInstances, executionPlans } from './schema/index.js';
+import { fills, positions, tradingInstances, executionPlans, orders, balanceSnapshots } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -51,6 +51,19 @@ export class FillRepository {
       filledAt: fill.filledAt,
     });
     return id;
+  }
+
+  /** Get recent fills for a trading instance, optionally since a timestamp */
+  async getRecentByInstance(tradingInstanceId: string, since?: Date) {
+    const conditions = [eq(fills.tradingInstanceId, tradingInstanceId)];
+    if (since) {
+      conditions.push(gte(fills.filledAt, since));
+    }
+    return this.db
+      .select()
+      .from(fills)
+      .where(and(...conditions))
+      .orderBy(desc(fills.filledAt));
   }
 }
 
@@ -252,5 +265,47 @@ export class ExecutionPlanRepository {
         ),
       )
       .orderBy(desc(executionPlans.createdAt));
+  }
+}
+
+/** Terminal order statuses — orders that can no longer change */
+const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'rejected'];
+
+/**
+ * Repository for order queries (read-only for reconciliation).
+ */
+export class OrderRepository {
+  constructor(private readonly db: Database) {}
+
+  /** Get open (non-terminal) orders for a trading instance */
+  async getOpenByInstance(tradingInstanceId: string) {
+    return this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tradingInstanceId, tradingInstanceId),
+          notInArray(orders.status, TERMINAL_ORDER_STATUSES),
+        ),
+      )
+      .orderBy(desc(orders.createdAt));
+  }
+}
+
+/**
+ * Repository for balance snapshot queries.
+ */
+export class BalanceSnapshotRepository {
+  constructor(private readonly db: Database) {}
+
+  /** Get the latest balance snapshot for a venue account */
+  async getLatestByVenueAccount(venueAccountId: string) {
+    const [row] = await this.db
+      .select()
+      .from(balanceSnapshots)
+      .where(eq(balanceSnapshots.venueAccountId, venueAccountId))
+      .orderBy(desc(balanceSnapshots.snapshotAt))
+      .limit(1);
+    return row ?? null;
   }
 }

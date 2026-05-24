@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { Strategy, MarketSnapshot } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, OrderbookVenuePort } from '@herobids/domain';
 import type { TradingInstanceId } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import {
@@ -13,6 +13,7 @@ import {
   orderEvent,
   fillEvent,
   riskEvent,
+  Reconciler,
 } from '@herobids/engine';
 import type {
   Journal,
@@ -20,8 +21,17 @@ import type {
   RiskLimits,
   IdGenerator,
   PlannerDeps,
+  ReconcilerConfig,
+  LocalState,
 } from '@herobids/engine';
-import type { FillRepository, PositionRepository, ExecutionPlanRepository } from '@herobids/db';
+import type {
+  FillRepository,
+  PositionRepository,
+  ExecutionPlanRepository,
+  OrderRepository,
+  BalanceSnapshotRepository,
+  ReconciliationEventRepository,
+} from '@herobids/db';
 import { price, Decimal } from '@herobids/domain';
 
 export interface TradingActorDeps {
@@ -30,10 +40,17 @@ export interface TradingActorDeps {
   fillRepo: FillRepository;
   positionRepo: PositionRepository;
   planRepo: ExecutionPlanRepository;
+  orderRepo: OrderRepository;
+  balanceSnapshotRepo: BalanceSnapshotRepository;
+  reconciliationRepo: ReconciliationEventRepository;
   riskLimits: RiskLimits;
   idGen: IdGenerator & { planId(): string; decisionId(): string };
   /** Function to get current market price for the instrument */
   fetchPrice: () => Promise<MarketSnapshot | null>;
+  /** Venue port for reconciliation (fetching venue state) */
+  venuePort?: OrderbookVenuePort;
+  /** Reconciliation config */
+  reconciliationConfig?: ReconcilerConfig;
   venue: string;
   symbol: string;
   venueAccountId: string;
@@ -49,6 +66,7 @@ export class TradingActor implements InstanceActor {
   private timer?: ReturnType<typeof setInterval>;
   private position: PositionState;
   private readonly executor: PaperExecutor;
+  private reconciler?: Reconciler;
   private running = false;
 
   constructor(
@@ -70,6 +88,9 @@ export class TradingActor implements InstanceActor {
     // Rehydrate position from DB before scanning
     await this.rehydratePosition();
 
+    // Run initial reconciliation pass and start periodic loop (awaits first pass)
+    await this.startReconciler();
+
     this.logger.info({ position: this.position.side }, 'Actor started');
     // First tick immediately, then on interval
     void this.tick();
@@ -82,6 +103,10 @@ export class TradingActor implements InstanceActor {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
+    }
+    if (this.reconciler) {
+      this.reconciler.stop();
+      this.reconciler = undefined;
     }
     this.logger.info('Actor stopped');
   }
@@ -140,6 +165,104 @@ export class TradingActor implements InstanceActor {
       await this.deps.planRepo.markFailed(plan.id);
       this.logger.info({ planId: plan.id, status: plan.status }, 'Marked incomplete plan as failed');
     }
+  }
+
+  /**
+   * Start the periodic reconciler if a venue port is provided.
+   * Awaits the first reconciliation pass to ensure no trading occurs
+   * until local == venue state is confirmed (or drift is logged).
+   */
+  private async startReconciler(): Promise<void> {
+    const { venuePort, reconciliationConfig } = this.deps;
+    if (!venuePort || !reconciliationConfig) return;
+
+    this.reconciler = new Reconciler(reconciliationConfig, {
+      venue: venuePort,
+      loadLocalState: () => this.loadLocalState(),
+      persistResult: async (result, localState, venueState) => {
+        // Serialize state snapshots for structured persistence
+        const serializedLocal = {
+          positions: localState.positions.map((p) => ({ symbol: p.symbol, side: p.side, size: p.size.toString(), entryPrice: p.entryPrice.toString() })),
+          balances: localState.balances.map((b) => ({ asset: b.asset, total: b.total.toString() })),
+          recentFills: localState.recentFills.map((f) => ({ venueRefId: f.venueRefId, symbol: f.symbol, side: f.side, quantity: f.quantity.toString(), price: f.price.toString(), filledAt: f.filledAt })),
+          openOrders: localState.openOrders.map((o) => ({ venueRefId: o.venueRefId, symbol: o.symbol, side: o.side, type: o.type, status: o.status, quantity: o.quantity.toString(), price: o.price?.toString() })),
+        };
+        const serializedVenue = {
+          positions: venueState.positions.map((p) => ({ symbol: p.symbol, side: p.side, size: p.size.toString(), entryPrice: p.entryPrice.toString() })),
+          balances: venueState.balances.balances.map((b) => ({ asset: b.asset, free: b.free.toString(), locked: b.locked.toString(), total: b.total.toString() })),
+          recentFills: venueState.recentFills.map((f) => ({ venueRefId: f.venueRefId, symbol: f.symbol, side: f.side, quantity: f.quantity.toString(), price: f.price.toString(), filledAt: f.filledAt })),
+          openOrders: venueState.openOrders.map((o) => ({ venueRefId: o.venueRefId, symbol: o.symbol, side: o.side, type: o.type, status: o.status, quantity: o.quantity.toString(), price: o.price?.toString() })),
+        };
+
+        await this.deps.reconciliationRepo.insert({
+          tradingInstanceId: this.tradingInstanceId,
+          venueAccountId: this.deps.venueAccountId,
+          result: result.status,
+          localState: serializedLocal,
+          venueState: serializedVenue,
+          diff: result.diffs as unknown as Array<Record<string, unknown>>,
+        });
+      },
+      journal: this.deps.journal,
+      tradingInstanceId: this.tradingInstanceId,
+      venueAccountId: this.deps.venueAccountId,
+      logger: this.logger,
+    });
+
+    // Run the first pass synchronously before starting ticks — no trading until reconciled
+    this.reconciler.start();
+    // Await the first pass explicitly to block startup
+    await this.reconciler.runPass();
+  }
+
+  /**
+   * Load local state from DB for reconciliation comparison.
+   * Reads positions, balances, recent fills, and open orders.
+   */
+  private async loadLocalState(): Promise<LocalState> {
+    // Read cursor for "since" filter on fills
+    const lastReconciledAt = await this.deps.reconciliationRepo.getLastReconciledAt(this.deps.venueAccountId);
+
+    const [openPositions, recentFills, openOrders, balanceSnapshot] = await Promise.all([
+      this.deps.positionRepo.getOpenByInstance(this.tradingInstanceId),
+      this.deps.fillRepo.getRecentByInstance(this.tradingInstanceId, lastReconciledAt ?? undefined),
+      this.deps.orderRepo.getOpenByInstance(this.tradingInstanceId),
+      this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId),
+    ]);
+
+    return {
+      positions: openPositions
+        .filter((p) => p.side !== 'flat')
+        .map((p) => ({
+          symbol: p.symbol,
+          side: p.side as 'long' | 'short',
+          size: new Decimal(p.size ?? '0'),
+          entryPrice: new Decimal(p.entryPrice ?? '0'),
+        })),
+      balances: balanceSnapshot
+        ? (balanceSnapshot.balances as Array<{ asset: string; total: string }>).map((b) => ({
+            asset: b.asset,
+            total: new Decimal(b.total),
+          }))
+        : [],
+      recentFills: recentFills.map((f) => ({
+        venueRefId: f.venueRefId ?? undefined,
+        symbol: f.symbol,
+        side: f.side as 'buy' | 'sell',
+        quantity: new Decimal(f.quantity ?? '0'),
+        price: new Decimal(f.price ?? '0'),
+        filledAt: f.filledAt?.toISOString() ?? new Date().toISOString(),
+      })),
+      openOrders: openOrders.map((o) => ({
+        venueRefId: o.venueRefId ?? undefined,
+        symbol: o.symbol,
+        side: o.side as 'buy' | 'sell',
+        type: o.type,
+        status: o.status,
+        quantity: new Decimal(o.quantity ?? '0'),
+        price: o.price ? new Decimal(o.price) : undefined,
+      })),
+    };
   }
 
   private async tick(): Promise<void> {

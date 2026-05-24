@@ -9,6 +9,11 @@ export const VenueConfigSchema = z.object({
   timeoutMs: z.number().min(1000).default(30_000),
 });
 
+export const ReconciliationConfigSchema = z.object({
+  intervalMs: z.number().min(5000).default(30_000),
+  driftAlertOnly: z.boolean().default(true),
+});
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -33,6 +38,7 @@ export const AppConfigSchema = z.object({
     maxOpenPositions: z.number().min(1).default(10),
     maxPositionSizePct: z.number().min(0).max(100).default(25),
   }),
+  reconciliation: ReconciliationConfigSchema.default({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;

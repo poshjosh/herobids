@@ -6,11 +6,11 @@ import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy } from '@herobids/strategy';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, tradingInstances } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, tradingInstances } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
-import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
+import { quantity, price, TradingInstanceConfigSchema, ReconciliationConfigSchema } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId } from '@herobids/domain';
 import crypto from 'node:crypto';
 
@@ -32,6 +32,15 @@ const journal = new PgJournal(db);
 const fillRepo = new FillRepository(db);
 const positionRepo = new PositionRepository(db);
 const planRepo = new ExecutionPlanRepository(db);
+const orderRepo = new OrderRepository(db);
+const balanceSnapshotRepo = new BalanceSnapshotRepository(db);
+const reconciliationRepo = new ReconciliationEventRepository(db);
+
+// Parse reconciliation config from environment/config file
+const reconciliationConfig = ReconciliationConfigSchema.parse({
+  intervalMs: parseInt(process.env['RECONCILIATION_INTERVAL_MS'] ?? '30000', 10),
+  driftAlertOnly: (process.env['RECONCILIATION_DRIFT_ALERT_ONLY'] ?? 'true') === 'true',
+});
 
 // ID generator using UUIDv7 (crypto.randomUUID as fallback)
 const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
@@ -81,6 +90,9 @@ const runtime = new WorkerRuntime(
       fillRepo,
       positionRepo,
       planRepo,
+      orderRepo,
+      balanceSnapshotRepo,
+      reconciliationRepo,
       riskLimits: {
         maxPositionSize: quantity(String(config.risk.maxPositionSize ?? '100')),
         maxOpenPositions: config.risk.maxOpenPositions ?? 5,
@@ -91,6 +103,8 @@ const runtime = new WorkerRuntime(
       },
       idGen,
       fetchPrice,
+      venuePort: venueAdapter,
+      reconciliationConfig,
       venue: config.venue,
       symbol: config.symbol,
       venueAccountId: (rawConfig['venueAccountId'] as string) ?? 'default',

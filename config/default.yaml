@@ -29,3 +29,7 @@ risk:
   globalMaxDrawdownPct: 20
   maxOpenPositions: 10
   maxPositionSizePct: 25
+
+reconciliation:
+  intervalMs: 30000          # reconciliation loop interval
+  driftAlertOnly: true       # true = log+alert only; false = auto-correct (future)

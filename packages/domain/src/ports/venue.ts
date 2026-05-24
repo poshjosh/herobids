@@ -2,6 +2,7 @@ import type { Result, DomainError } from '../result.js';
 import type { OrderId } from '../values/ids.js';
 import type { Price, Quantity } from '../values/money.js';
 import type { OrderSide, OrderType, OrderStatus } from '../enums.js';
+import type { Subscription, PrivateStreamHandlers, PublicStreamHandlers } from './subscription.js';
 
 /** Venue-specific error */
 export interface VenueError extends DomainError {
@@ -79,6 +80,34 @@ export interface Ticker {
   timestamp: string;
 }
 
+/** An order as reported by the venue (used for reconciliation) */
+export interface VenueOrder {
+  venueRefId: string;
+  clientOrderId?: string;
+  symbol: string;
+  side: OrderSide;
+  type: OrderType;
+  status: OrderStatus;
+  quantity: Quantity;
+  filledQuantity: Quantity;
+  price?: Price;
+  avgFillPrice?: Price;
+  createdAt: string;
+}
+
+/** A fill/trade as reported by the venue (used for reconciliation) */
+export interface VenueFill {
+  venueRefId: string;
+  orderId?: string;
+  symbol: string;
+  side: OrderSide;
+  quantity: Quantity;
+  price: Price;
+  fee: Quantity;
+  feeCurrency: string;
+  filledAt: string;
+}
+
 /**
  * Port interface for orderbook venues (CEX perps, spot exchanges).
  * Stateful order lifecycle: submit → amend → cancel.
@@ -90,4 +119,20 @@ export interface OrderbookVenuePort {
   fetchPositions(): Promise<Result<Position[], VenueError>>;
   fetchBalances(): Promise<Result<BalanceSnapshot, VenueError>>;
   fetchTicker(symbol: string): Promise<Result<Ticker, VenueError>>;
+
+  // --- Reconciliation methods (Phase 2a) ---
+
+  /** Fetch all open (non-terminal) orders on the venue */
+  fetchOpenOrders(): Promise<Result<VenueOrder[], VenueError>>;
+
+  /** Fetch recent fills/trades since a given timestamp */
+  fetchRecentFills(since?: Date): Promise<Result<VenueFill[], VenueError>>;
+
+  // --- Streaming methods (stubs in Phase 2a; real in 2b/2c) ---
+
+  /** Subscribe to private (authenticated) fill/order/position stream */
+  subscribePrivate(handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>>;
+
+  /** Subscribe to public market data stream for given symbols */
+  subscribePublic(symbols: string[], handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>>;
 }
