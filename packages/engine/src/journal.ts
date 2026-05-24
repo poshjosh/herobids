@@ -17,12 +17,16 @@ export type JournalEventType =
   | 'order.cancelled'
   | 'order.rejected'
   | 'fill.recorded'
+  | 'fill.private_stream'
+  | 'order.private_stream'
   | 'risk.rejected'
   | 'instance.started'
   | 'instance.stopped'
   | 'instance.crashed'
   | 'reconciliation.match'
-  | 'reconciliation.drift_detected';
+  | 'reconciliation.drift_detected'
+  | 'reconciliation.drift_within_threshold'
+  | 'reconciliation.correction';
 
 export interface JournalEntry {
   id: string;

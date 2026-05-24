@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Decimal } from '@herobids/domain';
-import { reconcile } from './reconcile.js';
+import { reconcile, reconcileWithThresholds } from './reconcile.js';
 import type { LocalState, VenueState } from './reconcile.js';
 import type { Position, BalanceSnapshot, VenueFill, VenueOrder } from '@herobids/domain';
 
@@ -253,5 +253,71 @@ describe('reconcile', () => {
     expect(types).toContain('position_mismatch');
     expect(types).toContain('balance_mismatch');
     expect(types).toContain('unknown_fill');
+  });
+});
+
+describe('reconcileWithThresholds', () => {
+
+  it('classifies position drift within threshold as acceptable', () => {
+    const local = makeLocalState({
+      positions: [{ symbol: 'BTC/USD:USD', side: 'long', size: new Decimal('1.0'), entryPrice: new Decimal('50000') }],
+    });
+    const venue = makeVenueState({
+      positions: [{ symbol: 'BTC/USD:USD', side: 'long', size: new Decimal('1.001'), entryPrice: new Decimal('50000') }] as Position[],
+    });
+    const result = reconcileWithThresholds(local, venue, {
+      positionSize: new Decimal('0.01'),
+    });
+    expect(result.status).toBe('drift_within_threshold');
+    expect(result.diffs[0].severity).toBe('acceptable');
+  });
+
+  it('classifies position drift exceeding threshold as critical', () => {
+    const local = makeLocalState({
+      positions: [{ symbol: 'BTC/USD:USD', side: 'long', size: new Decimal('1.0'), entryPrice: new Decimal('50000') }],
+    });
+    const venue = makeVenueState({
+      positions: [{ symbol: 'BTC/USD:USD', side: 'long', size: new Decimal('2.0'), entryPrice: new Decimal('50000') }] as Position[],
+    });
+    const result = reconcileWithThresholds(local, venue, {
+      positionSize: new Decimal('0.01'),
+    });
+    expect(result.status).toBe('drift_detected');
+    expect(result.diffs[0].severity).toBe('critical');
+  });
+
+  it('classifies balance drift within threshold as acceptable', () => {
+    const local = makeLocalState({
+      balances: [{ asset: 'USD', total: new Decimal('10000') }],
+    });
+    const venue = makeVenueState({
+      balances: { balances: [{ asset: 'USD', free: new Decimal('9999'), locked: new Decimal('0'), total: new Decimal('9999') }], timestamp: new Date().toISOString() } as BalanceSnapshot,
+    });
+    const result = reconcileWithThresholds(local, venue, {
+      balance: new Decimal('5'),
+    });
+    expect(result.status).toBe('drift_within_threshold');
+    expect(result.diffs[0].severity).toBe('acceptable');
+  });
+
+  it('returns match when no diffs exist (threshold irrelevant)', () => {
+    const result = reconcileWithThresholds(makeLocalState(), makeVenueState(), {
+      positionSize: new Decimal('1'),
+    });
+    expect(result.status).toBe('match');
+  });
+
+  it('classifies side mismatch as critical regardless of threshold', () => {
+    const local = makeLocalState({
+      positions: [{ symbol: 'BTC/USD:USD', side: 'long', size: new Decimal('1.0'), entryPrice: new Decimal('50000') }],
+    });
+    const venue = makeVenueState({
+      positions: [{ symbol: 'BTC/USD:USD', side: 'short', size: new Decimal('1.0'), entryPrice: new Decimal('50000') }] as Position[],
+    });
+    const result = reconcileWithThresholds(local, venue, {
+      positionSize: new Decimal('100'),
+    });
+    expect(result.status).toBe('drift_detected');
+    expect(result.diffs[0].severity).toBe('critical');
   });
 });

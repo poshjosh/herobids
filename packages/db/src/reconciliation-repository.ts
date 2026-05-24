@@ -7,7 +7,7 @@ import { venueAccounts } from './schema/index.js';
 export interface InsertReconciliationEvent {
   tradingInstanceId: string;
   venueAccountId: string;
-  result: 'match' | 'drift_detected' | 'repaired';
+  result: 'match' | 'drift_detected' | 'drift_within_threshold' | 'repaired';
   localState: Record<string, unknown>;
   venueState: Record<string, unknown>;
   diff: Array<Record<string, unknown>>;

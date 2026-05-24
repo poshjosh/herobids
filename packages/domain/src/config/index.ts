@@ -2,6 +2,7 @@ export {
   AppConfigSchema,
   VenueConfigSchema,
   ReconciliationConfigSchema,
+  StreamConfigSchema,
   TradingInstanceConfigSchema,
   RiskConfigSchema,
   StrategyConfigSchema,

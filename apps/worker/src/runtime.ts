@@ -39,7 +39,7 @@ export interface InstanceActor {
   stop(): Promise<void>;
 }
 
-export type ActorFactory = (tradingInstanceId: string, config: Record<string, unknown>) => InstanceActor;
+export type ActorFactory = (tradingInstanceId: string, config: Record<string, unknown>) => InstanceActor | Promise<InstanceActor>;
 
 /** Function that loads all instances marked 'running' from the DB */
 export type InstanceLoader = () => Promise<PersistedInstance[]>;
@@ -124,6 +124,19 @@ export class WorkerRuntime {
   }
 
   /**
+   * Remove a crashed actor from the runtime's internal state and release its lease.
+   * Called by the actor's onCrashed callback after persisting crashed status to DB.
+   * Does NOT call actor.stop() (the actor already stopped itself).
+   */
+  async handleActorCrash(id: string): Promise<void> {
+    this.actors.delete(id);
+    if (this.lease) {
+      await this.lease.release(id);
+    }
+    this.logger.warn({ tradingInstanceId: id }, 'Actor crash handled — removed from runtime');
+  }
+
+  /**
    * Reclaim sweep — load all instances marked 'running' in the DB
    * and attempt to acquire a lease on any that are not currently owned by this worker.
    * This handles both initial rehydration and ongoing peer-death recovery.
@@ -181,7 +194,7 @@ export class WorkerRuntime {
       }
     }
 
-    const actor = this.actorFactory(id, config);
+    const actor = await this.actorFactory(id, config);
     this.actors.set(id, actor);
     await actor.start();
     this.logger.info({ tradingInstanceId: id }, 'Instance started');

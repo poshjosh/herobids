@@ -36,6 +36,8 @@ export interface PlannerDeps {
   /** Venue + symbol context */
   venue: string;
   symbol: string;
+  /** Venue type — determines order type emitted. Default: 'orderbook' */
+  venueType?: 'orderbook' | 'swap';
 }
 
 /**
@@ -43,11 +45,18 @@ export interface PlannerDeps {
  * Pure function — no side effects, no I/O.
  */
 export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPlan {
-  const { currentPosition, venue, symbol } = deps;
+  const { currentPosition, venue, symbol, venueType } = deps;
   const currentSize = currentPosition ? currentPosition.size : new Decimal(0);
   const currentSide = currentPosition?.side ?? 'flat';
   const targetSize = decision.targetSize;
 
+  /** Determine order type based on venue type and decision hints */
+  const resolveOrderType = (): OrderType => {
+    if (venueType === 'swap') return 'swap';
+    return decision.limitPrice ? 'limit' : 'market';
+  };
+
+  const orderType = resolveOrderType();
   const orders: PlannedOrder[] = [];
   let action: PlanAction;
 
@@ -57,7 +66,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
       if (currentSide !== 'flat' && currentSize.gt(0)) {
         orders.push({
           side: currentSide === 'long' ? 'sell' : 'buy',
-          type: decision.limitPrice ? 'limit' : 'market',
+          type: orderType,
           quantity: currentSize,
           price: decision.limitPrice,
         });
@@ -71,14 +80,14 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         action = 'reverse';
         orders.push({
           side: 'buy',
-          type: decision.limitPrice ? 'limit' : 'market',
+          type: orderType,
           quantity: currentSize, // close short
           price: decision.limitPrice,
         });
         if (targetSize.gt(0)) {
           orders.push({
             side: 'buy',
-            type: decision.limitPrice ? 'limit' : 'market',
+            type: orderType,
             quantity: targetSize,
             price: decision.limitPrice,
           });
@@ -90,7 +99,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         if (deficit.gt(0)) {
           orders.push({
             side: 'buy',
-            type: decision.limitPrice ? 'limit' : 'market',
+            type: orderType,
             quantity: deficit,
             price: decision.limitPrice,
           });
@@ -105,14 +114,14 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         action = 'reverse';
         orders.push({
           side: 'sell',
-          type: decision.limitPrice ? 'limit' : 'market',
+          type: orderType,
           quantity: currentSize,
           price: decision.limitPrice,
         });
         if (targetSize.gt(0)) {
           orders.push({
             side: 'sell',
-            type: decision.limitPrice ? 'limit' : 'market',
+            type: orderType,
             quantity: targetSize,
             price: decision.limitPrice,
           });
@@ -123,7 +132,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         if (deficit.gt(0)) {
           orders.push({
             side: 'sell',
-            type: decision.limitPrice ? 'limit' : 'market',
+            type: orderType,
             quantity: deficit,
             price: decision.limitPrice,
           });
@@ -139,7 +148,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         const side: OrderSide = currentSide === 'short' ? 'sell' : 'buy';
         orders.push({
           side,
-          type: decision.limitPrice ? 'limit' : 'market',
+          type: orderType,
           quantity: deficit,
           price: decision.limitPrice,
         });
@@ -154,7 +163,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         const side: OrderSide = currentSide === 'short' ? 'buy' : 'sell';
         orders.push({
           side,
-          type: decision.limitPrice ? 'limit' : 'market',
+          type: orderType,
           quantity: excess,
           price: decision.limitPrice,
         });

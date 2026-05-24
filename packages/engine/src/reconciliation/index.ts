@@ -1,4 +1,4 @@
-export { reconcile } from './reconcile.js';
+export { reconcile, reconcileWithThresholds } from './reconcile.js';
 export type {
   LocalState,
   VenueState,
@@ -10,6 +10,8 @@ export type {
   ReconciliationStatus,
   Diff,
   DiffType,
+  DiffSeverity,
+  DriftThresholds,
 } from './reconcile.js';
 
 export { Reconciler } from './reconciler.js';

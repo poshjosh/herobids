@@ -19,6 +19,8 @@ import { ok, err } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
 import { TokenBucketRateLimiter } from './rate-limiter.js';
+import { HyperliquidPrivateStream } from './hyperliquid-private-stream.js';
+import type { PrivateStreamConfig } from './hyperliquid-private-stream.js';
 import ccxt, { type Position as CcxtPosition } from 'ccxt';
 
 export interface HyperliquidCredentials {
@@ -32,6 +34,14 @@ export interface HyperliquidAdapterConfig {
   credentials: HyperliquidCredentials;
   /** Rate limiter config. Default: 10 requests/second with burst of 20 */
   rateLimit?: { capacity: number; refillRate: number };
+  /** WebSocket URL for private streams. Default: wss://api.hyperliquid.xyz/ws */
+  wsUrl?: string;
+  /** Private stream reconnection config */
+  streamConfig?: {
+    reconnectBaseMs?: number;
+    reconnectMaxMs?: number;
+    maxReconnectAttempts?: number;
+  };
 }
 
 /**
@@ -41,8 +51,10 @@ export interface HyperliquidAdapterConfig {
 export class HyperliquidAdapter implements OrderbookVenuePort {
   private readonly exchange: InstanceType<typeof ccxt.hyperliquid>;
   private readonly rateLimiter: TokenBucketRateLimiter;
+  private readonly adapterConfig: HyperliquidAdapterConfig;
 
   constructor(config: HyperliquidAdapterConfig) {
+    this.adapterConfig = config;
     this.exchange = new ccxt.hyperliquid({
       apiKey: config.credentials.apiKey,
       secret: config.credentials.secret,
@@ -207,8 +219,25 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
     });
   }
 
-  async subscribePrivate(_handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>> {
-    return err({ code: 'venue.not_implemented', message: 'Private stream subscription not yet implemented (Phase 2b)' });
+  async subscribePrivate(handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>> {
+    const { credentials, wsUrl, streamConfig } = this.adapterConfig;
+    const effectiveWsUrl = wsUrl ?? (credentials.testnet ? 'wss://api.hyperliquid-testnet.xyz/ws' : 'wss://api.hyperliquid.xyz/ws');
+
+    const streamCfg: PrivateStreamConfig = {
+      wsUrl: effectiveWsUrl,
+      apiKey: credentials.apiKey,
+      secret: credentials.secret,
+      reconnectBaseMs: streamConfig?.reconnectBaseMs ?? 1_000,
+      reconnectMaxMs: streamConfig?.reconnectMaxMs ?? 30_000,
+      maxReconnectAttempts: streamConfig?.maxReconnectAttempts ?? 10,
+    };
+
+    const stream = new HyperliquidPrivateStream(streamCfg, handlers);
+    const connectResult = await stream.connect();
+    if (!connectResult.ok) {
+      return err(connectResult.error);
+    }
+    return ok(stream);
   }
 
   async subscribePublic(_symbols: string[], _handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>> {

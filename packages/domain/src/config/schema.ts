@@ -12,6 +12,20 @@ export const VenueConfigSchema = z.object({
 export const ReconciliationConfigSchema = z.object({
   intervalMs: z.number().min(5000).default(30_000),
   driftAlertOnly: z.boolean().default(true),
+  /** Position size drift threshold (absolute). Diffs within this are 'acceptable'. Default: 0 (exact match required) */
+  positionDriftThreshold: z.string().default('0'),
+  /** Balance drift threshold (absolute). Diffs within this are 'acceptable'. Default: 0 */
+  balanceDriftThreshold: z.string().default('0'),
+  /** If true, attempt to auto-correct acceptable drift by syncing local state to venue. Default: false */
+  autoCorrect: z.boolean().default(false),
+});
+
+export const StreamConfigSchema = z.object({
+  private: z.object({
+    reconnectBaseMs: z.number().min(100).default(1_000),
+    reconnectMaxMs: z.number().min(1000).default(30_000),
+    maxReconnectAttempts: z.number().min(1).default(10),
+  }).default({}),
 });
 
 export const AppConfigSchema = z.object({
@@ -39,6 +53,7 @@ export const AppConfigSchema = z.object({
     maxPositionSizePct: z.number().min(0).max(100).default(25),
   }),
   reconciliation: ReconciliationConfigSchema.default({}),
+  streams: StreamConfigSchema.default({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -71,6 +86,8 @@ export const TradingInstanceConfigSchema = z.object({
   execution: ExecutionConfigSchema.default({}),
   venue: z.string(),
   symbol: z.string(),
+  venueType: z.enum(['orderbook', 'swap']).default('orderbook'),
+  shadowPollIntervalMs: z.number().min(100).default(2000),
 });
 
 export type TradingInstanceConfig = z.infer<typeof TradingInstanceConfigSchema>;

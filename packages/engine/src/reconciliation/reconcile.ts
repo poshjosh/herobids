@@ -53,7 +53,7 @@ export interface LocalOrder {
 
 // --- Output types ---
 
-export type ReconciliationStatus = 'match' | 'drift_detected';
+export type ReconciliationStatus = 'match' | 'drift_detected' | 'drift_within_threshold';
 
 export interface ReconciliationResult {
   status: ReconciliationStatus;
@@ -63,6 +63,8 @@ export interface ReconciliationResult {
 
 export type DiffType = 'position_mismatch' | 'balance_mismatch' | 'unknown_fill' | 'orphaned_order';
 
+export type DiffSeverity = 'critical' | 'acceptable';
+
 export interface Diff {
   type: DiffType;
   symbol?: string;
@@ -70,6 +72,8 @@ export interface Diff {
   description: string;
   local: unknown;
   venue: unknown;
+  /** Severity classification. 'acceptable' means within configured threshold. */
+  severity?: DiffSeverity;
 }
 
 // --- Tolerance for floating point comparison ---
@@ -99,6 +103,69 @@ export function reconcile(local: LocalState, venue: VenueState): ReconciliationR
     diffs,
     reconciledAt: new Date().toISOString(),
   };
+}
+
+export interface DriftThresholds {
+  /** Position size drift threshold (absolute). Default: 0 (exact match). */
+  positionSize?: Decimal;
+  /** Balance drift threshold (absolute). Default: 0. */
+  balance?: Decimal;
+}
+
+/**
+ * Reconcile with threshold classification.
+ * Diffs within threshold are marked 'acceptable'; diffs exceeding threshold are 'critical'.
+ * Returns 'drift_within_threshold' when all diffs are acceptable.
+ */
+export function reconcileWithThresholds(
+  local: LocalState,
+  venue: VenueState,
+  thresholds: DriftThresholds,
+): ReconciliationResult {
+  const baseResult = reconcile(local, venue);
+  if (baseResult.status === 'match') return baseResult;
+
+  const posThreshold = thresholds.positionSize ?? new Decimal(0);
+  const balThreshold = thresholds.balance ?? new Decimal(0);
+
+  const classifiedDiffs: Diff[] = baseResult.diffs.map((diff) => {
+    const severity = classifyDiffSeverity(diff, posThreshold, balThreshold);
+    return { ...diff, severity };
+  });
+
+  const hasCritical = classifiedDiffs.some((d) => d.severity === 'critical');
+
+  return {
+    status: hasCritical ? 'drift_detected' : 'drift_within_threshold',
+    diffs: classifiedDiffs,
+    reconciledAt: baseResult.reconciledAt,
+  };
+}
+
+function classifyDiffSeverity(diff: Diff, posThreshold: Decimal, balThreshold: Decimal): DiffSeverity {
+  if (diff.type === 'position_mismatch' && posThreshold.gt(0)) {
+    // If both local and venue have a size, check if the magnitude of difference is within threshold
+    const localObj = diff.local as { side?: string; size?: string } | null;
+    const venueObj = diff.venue as { side?: string; size?: string } | null;
+
+    if (localObj?.size && venueObj?.size && localObj.side === venueObj.side) {
+      const sizeDiff = new Decimal(localObj.size).minus(new Decimal(venueObj.size)).abs();
+      if (sizeDiff.lte(posThreshold)) return 'acceptable';
+    }
+    // Side mismatch or missing position entirely = critical
+    return 'critical';
+  }
+
+  if (diff.type === 'balance_mismatch' && balThreshold.gt(0)) {
+    const localVal = new Decimal(String(diff.local ?? '0'));
+    const venueVal = new Decimal(String(diff.venue ?? '0'));
+    const balDiff = localVal.minus(venueVal).abs();
+    if (balDiff.lte(balThreshold)) return 'acceptable';
+    return 'critical';
+  }
+
+  // unknown_fill and orphaned_order are always critical — they indicate state not tracked
+  return 'critical';
 }
 
 function reconcilePositions(local: LocalPosition[], venue: Position[]): Diff[] {
@@ -170,14 +237,14 @@ function reconcileBalances(local: LocalBalance[], venue: BalanceSnapshot): Diff[
 
   const venueMap = new Map<string, Decimal>();
   for (const vb of venue.balances) {
-    const total = vb.total instanceof Decimal ? vb.total : new Decimal(vb.total.toString());
+    const total = new Decimal(vb.total.toString());
     if (total.gt(0)) {
       venueMap.set(vb.asset, total);
     }
   }
 
   for (const lb of local) {
-    const localTotal = lb.total instanceof Decimal ? lb.total : new Decimal(lb.total.toString());
+    const localTotal = new Decimal(lb.total.toString());
     const venueTotal = venueMap.get(lb.asset);
 
     if (!venueTotal) {

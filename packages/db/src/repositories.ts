@@ -204,6 +204,23 @@ export interface InsertExecutionPlan {
   plannedOrders: unknown[];
 }
 
+export interface UpsertOrder {
+  id?: string;
+  tradingInstanceId: string;
+  executionPlanId?: string;
+  venueRefId: string;
+  clientOrderId?: string;
+  venue: string;
+  symbol: string;
+  side: string;
+  type: string;
+  quantity: string;
+  price?: string;
+  status: string;
+  filledQuantity?: string;
+  avgFillPrice?: string;
+}
+
 /**
  * Repository for execution plan write-ahead persistence.
  * Plans are persisted BEFORE execution begins (write-ahead) and marked
@@ -289,6 +306,55 @@ export class OrderRepository {
         ),
       )
       .orderBy(desc(orders.createdAt));
+  }
+
+  /** Get all orders belonging to a specific execution plan */
+  async getByExecutionPlanId(executionPlanId: string) {
+    return this.db
+      .select()
+      .from(orders)
+      .where(eq(orders.executionPlanId, executionPlanId))
+      .orderBy(desc(orders.createdAt));
+  }
+
+  /** Upsert an order by venueRefId (for private stream updates) — atomic via transaction */
+  async upsertByVenueRefId(order: UpsertOrder): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(orders)
+        .where(eq(orders.venueRefId, order.venueRefId))
+        .limit(1);
+
+      if (existing.length > 0) {
+        await tx
+          .update(orders)
+          .set({
+            status: order.status,
+            filledQuantity: order.filledQuantity,
+            avgFillPrice: order.avgFillPrice,
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.venueRefId, order.venueRefId));
+      } else {
+        await tx.insert(orders).values({
+          id: order.id ?? crypto.randomUUID(),
+          tradingInstanceId: order.tradingInstanceId,
+          executionPlanId: order.executionPlanId,
+          venueRefId: order.venueRefId,
+          clientOrderId: order.clientOrderId,
+          venue: order.venue,
+          symbol: order.symbol,
+          side: order.side,
+          type: order.type,
+          quantity: order.quantity,
+          price: order.price,
+          status: order.status,
+          filledQuantity: order.filledQuantity ?? '0',
+          avgFillPrice: order.avgFillPrice,
+        });
+      }
+    });
   }
 }
 

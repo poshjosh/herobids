@@ -1,6 +1,6 @@
 export type OrderSide = 'buy' | 'sell';
 
-export type OrderType = 'market' | 'limit' | 'stop_market' | 'stop_limit';
+export type OrderType = 'market' | 'limit' | 'stop_market' | 'stop_limit' | 'swap';
 
 export type OrderStatus =
   | 'pending'      // submitted, not yet acknowledged by venue

@@ -1,7 +1,7 @@
-import type { Result } from '@herobids/domain';
-import type { OrderbookVenuePort, VenueError } from '@herobids/domain';
+import type { OrderbookVenuePort } from '@herobids/domain';
+import { Decimal } from '@herobids/domain';
 import type { Journal } from '../journal.js';
-import { reconcile } from './reconcile.js';
+import { reconcileWithThresholds } from './reconcile.js';
 import type { LocalState, VenueState, ReconciliationResult } from './reconcile.js';
 
 export interface ReconcilerConfig {
@@ -9,6 +9,12 @@ export interface ReconcilerConfig {
   intervalMs: number;
   /** If true, only log drift without auto-correcting */
   driftAlertOnly: boolean;
+  /** Position size drift threshold (absolute). Diffs within this are 'acceptable'. Default: '0' */
+  positionDriftThreshold?: string;
+  /** Balance drift threshold (absolute). Diffs within this are 'acceptable'. Default: '0' */
+  balanceDriftThreshold?: string;
+  /** If true, attempt to auto-correct acceptable drift by syncing local state to venue */
+  autoCorrect?: boolean;
 }
 
 export interface ReconcilerDeps {
@@ -28,6 +34,8 @@ export interface ReconcilerDeps {
   logger: { info(obj: Record<string, unknown>, msg: string): void; warn(obj: Record<string, unknown>, msg: string): void; error(obj: Record<string, unknown>, msg: string): void };
   /** Optional: callback on reconciliation pass completion */
   onReconciled?: (result: ReconciliationResult) => void;
+  /** Returns the last reconciliation timestamp for fill cursor alignment */
+  getLastReconciledAt?: () => Promise<Date | null>;
 }
 
 /**
@@ -79,14 +87,26 @@ export class Reconciler {
       // 2. Load local state
       const localState = await this.deps.loadLocalState();
 
-      // 3. Reconcile
-      const result = reconcile(localState, venueState);
+      // 3. Reconcile (always use threshold-aware version — zero thresholds produce same result as basic reconcile)
+      const result = reconcileWithThresholds(localState, venueState, {
+        positionSize: this.config.positionDriftThreshold
+          ? new Decimal(this.config.positionDriftThreshold)
+          : undefined,
+        balance: this.config.balanceDriftThreshold
+          ? new Decimal(this.config.balanceDriftThreshold)
+          : undefined,
+      });
 
       // 4. Persist + journal
       await this.deps.persistResult(result, localState, venueState);
+      const journalType = result.status === 'match'
+        ? 'reconciliation.match'
+        : result.status === 'drift_within_threshold'
+          ? 'reconciliation.drift_within_threshold'
+          : 'reconciliation.drift_detected';
       await this.deps.journal.append({
         tradingInstanceId: this.deps.tradingInstanceId,
-        type: result.status === 'match' ? 'reconciliation.match' : 'reconciliation.drift_detected',
+        type: journalType,
         payload: {
           venueAccountId: this.deps.venueAccountId,
           status: result.status,
@@ -101,6 +121,11 @@ export class Reconciler {
         this.deps.logger.info(
           { tradingInstanceId: this.deps.tradingInstanceId },
           'Reconciliation pass: match',
+        );
+      } else if (result.status === 'drift_within_threshold') {
+        this.deps.logger.info(
+          { tradingInstanceId: this.deps.tradingInstanceId, diffCount: result.diffs.length, diffs: result.diffs },
+          'Reconciliation pass: drift within acceptable threshold',
         );
       } else {
         this.deps.logger.warn(
@@ -139,10 +164,13 @@ export class Reconciler {
   }
 
   private async fetchVenueState(): Promise<VenueState | null> {
+    const since = this.deps.getLastReconciledAt
+      ? await this.deps.getLastReconciledAt()
+      : undefined;
     const [posResult, balResult, fillResult, orderResult] = await Promise.all([
       this.deps.venue.fetchPositions(),
       this.deps.venue.fetchBalances(),
-      this.deps.venue.fetchRecentFills(),
+      this.deps.venue.fetchRecentFills(since ?? undefined),
       this.deps.venue.fetchOpenOrders(),
     ]);
 

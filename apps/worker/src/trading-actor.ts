@@ -1,10 +1,12 @@
 import pino from 'pino';
-import type { Strategy, MarketSnapshot, OrderbookVenuePort } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort } from '@herobids/domain';
 import type { TradingInstanceId } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import {
   planDecision,
   PaperExecutor,
+  ShadowExecutor,
+  PollingMarketDataFeed,
   flatPosition,
   applyFill,
   checkRisk,
@@ -16,6 +18,7 @@ import {
   Reconciler,
 } from '@herobids/engine';
 import type {
+  Executor,
   Journal,
   PositionState,
   RiskLimits,
@@ -23,6 +26,9 @@ import type {
   PlannerDeps,
   ReconcilerConfig,
   LocalState,
+  MarketDataFeed,
+  TickerSnapshot,
+  Diff,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -32,7 +38,13 @@ import type {
   BalanceSnapshotRepository,
   ReconciliationEventRepository,
 } from '@herobids/db';
-import { price, Decimal } from '@herobids/domain';
+import { price, quantity, Decimal } from '@herobids/domain';
+
+export interface StreamConfig {
+  reconnectBaseMs: number;
+  reconnectMaxMs: number;
+  maxReconnectAttempts: number;
+}
 
 export interface TradingActorDeps {
   strategy: Strategy;
@@ -47,27 +59,47 @@ export interface TradingActorDeps {
   idGen: IdGenerator & { planId(): string; decisionId(): string };
   /** Function to get current market price for the instrument */
   fetchPrice: () => Promise<MarketSnapshot | null>;
-  /** Venue port for reconciliation (fetching venue state) */
+  /** Venue port for reconciliation and private streams */
   venuePort?: OrderbookVenuePort;
   /** Reconciliation config */
   reconciliationConfig?: ReconcilerConfig;
+  /** Execution mode: paper (default), shadow, live */
+  executionMode?: 'paper' | 'shadow' | 'live';
+  /** Private stream config (reconnection parameters) */
+  streamConfig?: StreamConfig;
+  /** Polling interval for shadow market data feed (ms). Defaults to 2000. */
+  shadowPollIntervalMs?: number;
   venue: string;
   symbol: string;
   venueAccountId: string;
+  /** Venue type for planner order-type resolution */
+  venueType?: 'orderbook' | 'swap';
+  /** Optional swap venue port for shadow quote simulation */
+  swapVenue?: SwapVenuePort;
+  /** Callback invoked when the actor crashes (e.g. max reconnect reached). Used to persist crashed status. */
+  onCrashed?: (tradingInstanceId: string) => Promise<void>;
 }
 
 /**
  * TradingActor — one per running trading instance.
- * Owns the scan loop timer, position state, and executes in paper mode.
+ * Owns the scan loop timer, position state, and selects executor based on config.
+ *
+ * Lifecycle: start → rehydrate → venue-state reconciliation → open private stream → begin scan loop
  */
 export class TradingActor implements InstanceActor {
   readonly tradingInstanceId: string;
   private readonly logger;
   private timer?: ReturnType<typeof setInterval>;
   private position: PositionState;
-  private readonly executor: PaperExecutor;
+  private readonly executor: Executor;
+  private readonly marketDataFeed?: MarketDataFeed;
   private reconciler?: Reconciler;
+  private privateStream?: Subscription;
   private running = false;
+  private paused = false;
+  private stopping = false;
+  /** Serializes async position mutations to prevent stale-read overwrites from concurrent fills */
+  private positionMutex: Promise<void> = Promise.resolve();
 
   constructor(
     tradingInstanceId: string,
@@ -78,7 +110,33 @@ export class TradingActor implements InstanceActor {
     this.tradingInstanceId = tradingInstanceId;
     this.logger = pino({ name: `actor-${tradingInstanceId}` });
     this.position = flatPosition(deps.venue, deps.symbol);
-    this.executor = new PaperExecutor(deps.idGen);
+
+    // Executor selection based on execution mode
+    const mode = deps.executionMode ?? 'paper';
+    if (mode === 'live') {
+      throw new Error('Live execution mode is not yet implemented. Use paper or shadow mode.');
+    } else if (mode === 'shadow' && deps.venuePort) {
+      // Create polling market data feed for shadow executor
+      const feed = new PollingMarketDataFeed(
+        [deps.symbol],
+        async (symbol: string): Promise<TickerSnapshot | null> => {
+          const result = await deps.venuePort!.fetchTicker(symbol);
+          if (!result.ok) return null;
+          return {
+            symbol,
+            last: result.data.last,
+            bid: result.data.bid,
+            ask: result.data.ask,
+            timestamp: result.data.timestamp,
+          };
+        },
+        deps.shadowPollIntervalMs ?? 2000,
+      );
+      this.marketDataFeed = feed;
+      this.executor = new ShadowExecutor(deps.idGen, feed, deps.swapVenue);
+    } else {
+      this.executor = new PaperExecutor(deps.idGen);
+    }
   }
 
   async start(): Promise<void> {
@@ -91,7 +149,13 @@ export class TradingActor implements InstanceActor {
     // Run initial reconciliation pass and start periodic loop (awaits first pass)
     await this.startReconciler();
 
-    this.logger.info({ position: this.position.side }, 'Actor started');
+    // Open private stream for real-time fill/order updates (shadow/live mode)
+    await this.openPrivateStream();
+
+    // Start market data feed if shadow mode
+    this.marketDataFeed?.start();
+
+    this.logger.info({ position: this.position.side, mode: this.deps.executionMode ?? 'paper' }, 'Actor started');
     // First tick immediately, then on interval
     void this.tick();
     this.timer = setInterval(() => void this.tick(), this.scanIntervalMs);
@@ -100,6 +164,7 @@ export class TradingActor implements InstanceActor {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    this.stopping = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
@@ -108,7 +173,30 @@ export class TradingActor implements InstanceActor {
       this.reconciler.stop();
       this.reconciler = undefined;
     }
+    // Close private stream gracefully
+    if (this.privateStream) {
+      await this.privateStream.unsubscribe();
+      this.privateStream = undefined;
+    }
+    // Stop market data feed
+    this.marketDataFeed?.stop();
+    // Dispose shadow executor resources
+    if (this.executor instanceof ShadowExecutor) {
+      this.executor.dispose();
+    }
     this.logger.info('Actor stopped');
+  }
+
+  /**
+   * Crash the actor — stop trading and persist crashed status.
+   * Called when unrecoverable errors occur (e.g. max reconnect attempts exhausted).
+   */
+  async crash(): Promise<void> {
+    this.logger.error('Actor crashing — persisting crashed status');
+    await this.stop();
+    if (this.deps.onCrashed) {
+      await this.deps.onCrashed(this.tradingInstanceId);
+    }
   }
 
   /**
@@ -148,7 +236,7 @@ export class TradingActor implements InstanceActor {
   /**
    * Detect execution plans that were in-flight when the previous worker died.
    * In paper mode: mark them as failed (paper fills are ephemeral — no venue to reconcile against).
-   * In live mode (future): would query venue for actual order/fill status and reconcile.
+   * In shadow/live mode: query venue for actual order/fill status and reconcile.
    */
   private async reconcileIncompletePlans(): Promise<void> {
     const incomplete = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
@@ -159,18 +247,86 @@ export class TradingActor implements InstanceActor {
       'Found incomplete execution plans from previous run — reconciling',
     );
 
+    const mode = this.deps.executionMode ?? 'paper';
+    const venuePort = this.deps.venuePort;
+
+    // Fetch venue state once before the loop — bail early if unreachable
+    let openOrdersData: Awaited<ReturnType<OrderbookVenuePort['fetchOpenOrders']>> | null = null;
+    let recentFillsData: Awaited<ReturnType<OrderbookVenuePort['fetchRecentFills']>> | null = null;
+
+    if (mode !== 'paper' && venuePort) {
+      const [oor, rfr] = await Promise.all([
+        venuePort.fetchOpenOrders(),
+        venuePort.fetchRecentFills(),
+      ]);
+      openOrdersData = oor.ok ? oor : null;
+      recentFillsData = rfr.ok ? rfr : null;
+
+      if (!openOrdersData || !recentFillsData) {
+        this.logger.warn('Could not fetch venue state for plan reconciliation — marking all incomplete plans failed');
+        for (const plan of incomplete) {
+          await this.deps.planRepo.markFailed(plan.id);
+        }
+        return;
+      }
+    }
+
     for (const plan of incomplete) {
-      // Paper mode: no venue state to check — mark as failed (unresolvable without real venue)
-      // In live mode, this would query the venue for order status and replay fills
-      await this.deps.planRepo.markFailed(plan.id);
-      this.logger.info({ planId: plan.id, status: plan.status }, 'Marked incomplete plan as failed');
+      if (mode === 'paper' || !venuePort) {
+        // Paper mode: no venue state to check — mark as failed
+        await this.deps.planRepo.markFailed(plan.id);
+        this.logger.info({ planId: plan.id, status: plan.status }, 'Marked incomplete plan as failed (paper mode)');
+      } else {
+        // Shadow/live mode: use pre-fetched venue state
+        try {
+          // Look up persisted orders for this plan (they carry venueRefId when submitted to venue)
+          const planOrders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
+
+          if (planOrders.length === 0) {
+            // Plan was persisted write-ahead but orders never submitted — mark failed
+            await this.deps.planRepo.markFailed(plan.id);
+            this.logger.info({ planId: plan.id }, 'No orders were submitted for incomplete plan — marked failed');
+            continue;
+          }
+
+          // Check if any of this plan's orders are still open on venue
+          const openVenueOrderIds = new Set(openOrdersData!.data.map((o) => o.venueRefId));
+          const hasOpenOrders = planOrders.some((o) => o.venueRefId && openVenueOrderIds.has(o.venueRefId));
+
+          if (hasOpenOrders) {
+            // Orders still open — keep as executing (will be resolved by normal reconciliation)
+            this.logger.info({ planId: plan.id }, 'Plan has orders still open on venue — will be resolved by reconciliation');
+          } else {
+            // No open orders — check if fills exist for the plan's orders.
+            // Match by fill.orderId (parent order ref on venue) against order.venueRefId,
+            // since fill.venueRefId is the trade ID, not the order ID.
+            const matchedFills = recentFillsData!.data.filter((f) =>
+              planOrders.some((o) => o.venueRefId && (f.orderId === o.venueRefId || f.venueRefId === o.venueRefId)),
+            );
+
+            if (matchedFills.length > 0) {
+              // Fills exist — mark completed
+              await this.deps.planRepo.markCompleted(plan.id);
+              this.logger.info({ planId: plan.id, fillCount: matchedFills.length }, 'Incomplete plan had fills on venue — marked completed');
+            } else {
+              // No open orders and no fills — mark failed
+              await this.deps.planRepo.markFailed(plan.id);
+              this.logger.info({ planId: plan.id }, 'No open orders or fills found on venue for incomplete plan — marked failed');
+            }
+          }
+        } catch (err) {
+          await this.deps.planRepo.markFailed(plan.id);
+          this.logger.error({ err, planId: plan.id }, 'Error reconciling incomplete plan against venue');
+        }
+      }
     }
   }
 
   /**
    * Start the periodic reconciler if a venue port is provided.
    * Awaits the first reconciliation pass to ensure no trading occurs
-   * until local == venue state is confirmed (or drift is logged).
+   * until local == venue state is confirmed (or drift is within threshold).
+   * Throws if drift is detected and driftAlertOnly is false.
    */
   private async startReconciler(): Promise<void> {
     const { venuePort, reconciliationConfig } = this.deps;
@@ -207,12 +363,109 @@ export class TradingActor implements InstanceActor {
       tradingInstanceId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
       logger: this.logger,
+      getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAt(this.deps.venueAccountId),
     });
 
     // Run the first pass synchronously before starting ticks — no trading until reconciled
     this.reconciler.start();
     // Await the first pass explicitly to block startup
-    await this.reconciler.runPass();
+    const result = await this.reconciler.runPass();
+
+    // If the first pass returned null, venue state could not be confirmed — block trading
+    if (result === null) {
+      this.logger.error(
+        'Reconciliation first pass inconclusive (venue fetch failed) — blocking trading',
+      );
+      throw new Error('Reconciliation first pass failed: venue state could not be confirmed. Trading blocked.');
+    }
+
+    // If drift is within acceptable threshold, apply correction if configured, then proceed
+    if (result.status === 'drift_within_threshold') {
+      if (reconciliationConfig.autoCorrect) {
+        await this.applyDriftCorrection(result.diffs);
+        this.logger.info(
+          { diffCount: result.diffs.length },
+          'Drift within threshold — auto-corrected local state to match venue',
+        );
+      } else {
+        this.logger.info(
+          { diffCount: result.diffs.length },
+          'Drift within threshold — proceeding without correction',
+        );
+      }
+      // Trading is allowed — drift is acceptable
+      return;
+    }
+
+    // If drift is detected (exceeds threshold) and we are NOT in alert-only mode, block trading
+    if (result.status === 'drift_detected' && !reconciliationConfig.driftAlertOnly) {
+      this.logger.error(
+        { diffCount: result.diffs.length, diffs: result.diffs },
+        'Reconciliation drift detected on startup — blocking trading',
+      );
+      throw new Error(`Reconciliation drift detected: ${result.diffs.length} diff(s). Trading blocked.`);
+    }
+  }
+
+  /**
+   * Open a private WebSocket stream for real-time fill/order updates.
+   * Only opens in shadow/live mode when a venue port is available.
+   * If connection fails, throws to block startup (no trading until stream ready).
+   * On disconnect: pauses scan loop, attempts reconnect, resumes on success.
+   * On max reconnect failures: crashes the actor.
+   */
+  private async openPrivateStream(): Promise<void> {
+    const mode = this.deps.executionMode ?? 'paper';
+    if (mode === 'paper' || !this.deps.venuePort) return;
+
+    const result = await this.deps.venuePort.subscribePrivate({
+      onFill: (fill) => {
+        this.logger.info({ venueRefId: fill.venueRefId, symbol: fill.symbol, side: fill.side }, 'Private stream fill received');
+        // Persist fill from private stream
+        void this.persistPrivateStreamFill(fill);
+      },
+      onOrderUpdate: (order) => {
+        this.logger.info({ venueRefId: order.venueRefId, status: order.status }, 'Private stream order update');
+        // Persist order update from private stream
+        void this.persistPrivateStreamOrder(order);
+      },
+      onPositionUpdate: (pos) => {
+        this.logger.info({ symbol: pos.symbol, side: pos.side, size: pos.size }, 'Private stream position update');
+        // Update in-memory position from private stream
+        void this.persistPrivateStreamPosition(pos);
+      },
+      onError: (error) => {
+        this.logger.error({ err: error.message }, 'Private stream error');
+      },
+    });
+
+    if (!result.ok) {
+      // Both shadow and live modes require the private stream for the no-trading-until-ready invariant
+      throw new Error(`Private stream connection failed: ${result.error.message}. Trading blocked (${mode} mode).`);
+    }
+
+    this.privateStream = result.data;
+
+    // Monitor connection state for pause/resume behavior
+    this.privateStream.onStateChange((state: SubscriptionState) => {
+      if (state === 'disconnected' || state === 'reconnecting') {
+        if (!this.paused) {
+          this.paused = true;
+          this.logger.warn('Private stream disconnected — pausing scan loop');
+        }
+      } else if (state === 'connected') {
+        if (this.paused) {
+          this.paused = false;
+          this.logger.info('Private stream reconnected — resuming scan loop');
+        }
+      } else if (state === 'closed') {
+        // Only crash if this wasn't a graceful shutdown
+        if (!this.stopping) {
+          this.logger.error('Private stream closed (max reconnect attempts) — crashing actor');
+          void this.crash();
+        }
+      }
+    });
   }
 
   /**
@@ -265,9 +518,131 @@ export class TradingActor implements InstanceActor {
     };
   }
 
+  /**
+   * Apply drift correction for acceptable diffs.
+   * Syncs local state to match venue state for position/balance drifts within threshold.
+   * This avoids the need for manual intervention when small rounding diffs accumulate.
+   */
+  private async applyDriftCorrection(diffs: Diff[]): Promise<void> {
+    for (const diff of diffs) {
+      if (diff.severity !== 'acceptable') continue;
+
+      if (diff.type === 'position_mismatch' && diff.venue) {
+        const venuePos = diff.venue as Record<string, unknown>;
+        const side = typeof venuePos['side'] === 'string' ? venuePos['side'] : undefined;
+        const size = typeof venuePos['size'] === 'string' ? venuePos['size'] : undefined;
+        if (!side || !size) {
+          this.logger.warn({ diff }, 'Cannot apply position drift correction — venue data missing side/size');
+          continue;
+        }
+        // Update local position to match venue
+        this.position = {
+          venue: this.deps.venue,
+          symbol: diff.symbol ?? this.deps.symbol,
+          side: side as 'long' | 'short',
+          size: new Decimal(size),
+          entryPrice: this.position.entryPrice, // preserve — venue doesn't report this consistently
+          realizedPnl: this.position.realizedPnl,
+        };
+        await this.deps.positionRepo.upsert({
+          tradingInstanceId: this.tradingInstanceId,
+          venueAccountId: this.deps.venueAccountId,
+          venue: this.deps.venue,
+          symbol: diff.symbol ?? this.deps.symbol,
+          side,
+          size,
+          entryPrice: this.position.entryPrice.toString(),
+          realizedPnl: this.position.realizedPnl.toString(),
+        });
+        const localPos = diff.local as Record<string, unknown> | null;
+        this.logger.info({ symbol: diff.symbol, oldSize: localPos?.['size'], newSize: size }, 'Auto-corrected position size to venue value');
+      }
+
+      if (diff.type === 'balance_mismatch') {
+        // Balance corrections are recorded via journal only — no local balance store to update
+        // (balance_snapshots are read from venue; local tracking is informational)
+        await this.deps.journal.append({
+          tradingInstanceId: this.tradingInstanceId,
+          type: 'reconciliation.correction',
+          payload: {
+            correctionType: 'balance',
+            asset: diff.asset,
+            localValue: diff.local,
+            venueValue: diff.venue,
+          },
+        });
+        this.logger.info({ asset: diff.asset, local: diff.local, venue: diff.venue }, 'Logged balance drift correction');
+      }
+    }
+  }
+
   private async tick(): Promise<void> {
     if (!this.running) return;
+    if (this.paused) return; // Private stream disconnected — skip tick
     try {
+      // Resolve any pending shadow limit orders that were triggered by trade stream
+      if (this.executor instanceof ShadowExecutor) {
+        const resolvedFills = this.executor.resolvePendingLimits();
+        for (const fill of resolvedFills) {
+          this.position = applyFill(this.position, fill);
+          await this.deps.journal.append(fillEvent(fill));
+          await this.deps.fillRepo.insertFill({
+            orderId: fill.orderId,
+            tradingInstanceId: this.tradingInstanceId,
+            venue: this.deps.venue,
+            symbol: this.deps.symbol,
+            side: fill.side,
+            quantity: fill.quantity.toString(),
+            price: fill.price.toString(),
+            fee: fill.fee?.toString(),
+            feeCurrency: fill.feeCurrency,
+            filledAt: new Date(fill.filledAt),
+          });
+        }
+        if (resolvedFills.length > 0) {
+          // Mark the corresponding orders as filled and plans as completed
+          for (const fill of resolvedFills) {
+            await this.deps.orderRepo.upsertByVenueRefId({
+              id: fill.orderId as unknown as string,
+              tradingInstanceId: this.tradingInstanceId,
+              venueRefId: `shadow-${fill.orderId}`,
+              venue: this.deps.venue,
+              symbol: this.deps.symbol,
+              side: fill.side,
+              type: 'limit',
+              quantity: fill.quantity.toString(),
+              price: fill.price.toString(),
+              status: 'filled',
+              filledQuantity: fill.quantity.toString(),
+              avgFillPrice: fill.price.toString(),
+            });
+          }
+          // In shadow mode each order belongs to exactly one plan; mark all executing plans
+          // that have no remaining pending limits as completed
+          const executingPlans = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+          for (const plan of executingPlans) {
+            if (plan.status !== 'executing') continue;
+            const planOrders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
+            const allFilled = planOrders.length > 0 && planOrders.every((o) => o.status === 'filled');
+            if (allFilled) {
+              await this.deps.planRepo.markCompleted(plan.id);
+            }
+          }
+
+          await this.deps.positionRepo.upsert({
+            tradingInstanceId: this.tradingInstanceId,
+            venueAccountId: this.deps.venueAccountId,
+            venue: this.deps.venue,
+            symbol: this.deps.symbol,
+            side: this.position.side,
+            size: this.position.size.toString(),
+            entryPrice: this.position.entryPrice.toString(),
+            realizedPnl: this.position.realizedPnl.toString(),
+          });
+          this.logger.info({ count: resolvedFills.length }, 'Resolved pending shadow limit fills');
+        }
+      }
+
       const snapshot = await this.deps.fetchPrice();
       if (!snapshot) return;
 
@@ -294,6 +669,7 @@ export class TradingActor implements InstanceActor {
       const plannerDeps: PlannerDeps = {
         venue: this.deps.venue,
         symbol: this.deps.symbol,
+        venueType: this.deps.venueType,
         currentPosition: this.position.side === 'flat' ? null : {
           symbol: this.position.symbol,
           side: this.position.side,
@@ -381,13 +757,33 @@ export class TradingActor implements InstanceActor {
         realizedPnl: this.position.realizedPnl.toString(),
       });
 
-      // Mark plan completed in DB
-      await this.deps.planRepo.markCompleted(plan.id);
+      // Mark plan status based on executor result
+      if (execResult.data.plan.status === 'completed') {
+        await this.deps.planRepo.markCompleted(plan.id);
+        await this.deps.journal.append(planEvent(execResult.data.plan, 'plan.completed'));
+      }
+      // If still 'executing' (e.g. shadow limit orders pending), leave as executing
 
       for (const order of execResult.data.orders) {
         await this.deps.journal.append(orderEvent(order));
+        // Persist order with executionPlanId linkage for crash recovery
+        await this.deps.orderRepo.upsertByVenueRefId({
+          id: order.id,
+          tradingInstanceId: this.tradingInstanceId,
+          executionPlanId: order.executionPlanId,
+          venueRefId: order.venueRefId ?? `local-${order.id}`,
+          clientOrderId: order.clientOrderId,
+          venue: order.venue,
+          symbol: order.symbol,
+          side: order.side,
+          type: order.type,
+          quantity: order.quantity.toString(),
+          price: order.price?.toString(),
+          status: order.status,
+          filledQuantity: order.filledQuantity?.toString(),
+          avgFillPrice: order.avgFillPrice?.toString(),
+        });
       }
-      await this.deps.journal.append(planEvent(execResult.data.plan, 'plan.completed'));
 
       this.logger.info(
         { intent: stampedDecision.intent, fills: execResult.data.fills.length, position: this.position.side },
@@ -401,5 +797,152 @@ export class TradingActor implements InstanceActor {
   /** Expose current position for read queries */
   get currentPosition(): PositionState {
     return this.position;
+  }
+
+  /**
+   * Persist a fill received from the private stream.
+   * Updates fill repo, position state, and journals the event.
+   */
+  private async persistPrivateStreamFill(fill: PrivateStreamFill): Promise<void> {
+    // Only process fills for this actor's symbol — the private stream is account-scoped
+    if (fill.symbol !== this.deps.symbol) {
+      this.logger.debug({ fillSymbol: fill.symbol, actorSymbol: this.deps.symbol }, 'Ignoring fill for different symbol');
+      return;
+    }
+
+    // Serialize position mutations to prevent stale-read overwrites from concurrent fills
+    this.positionMutex = this.positionMutex.then(() => this.applyPrivateStreamFill(fill)).catch((err) => {
+      this.logger.error({ err, venueRefId: fill.venueRefId }, 'Failed to persist private stream fill — crashing actor');
+      void this.crash();
+    });
+    await this.positionMutex;
+  }
+
+  private async applyPrivateStreamFill(fill: PrivateStreamFill): Promise<void> {
+    await this.deps.fillRepo.insertFill({
+      orderId: fill.orderId,
+      tradingInstanceId: this.tradingInstanceId,
+      venueRefId: fill.venueRefId,
+      venue: this.deps.venue,
+      symbol: fill.symbol,
+      side: fill.side,
+      quantity: fill.quantity,
+      price: fill.price,
+      fee: fill.fee,
+      feeCurrency: fill.feeCurrency,
+      filledAt: new Date(fill.filledAt),
+    });
+
+    // Update in-memory position
+    this.position = applyFill(this.position, {
+      id: this.deps.idGen.fillId(),
+      orderId: fill.orderId as unknown as import('@herobids/domain').OrderId,
+      tradingInstanceId: this.tradingInstanceId as TradingInstanceId,
+      venueRefId: fill.venueRefId,
+      venue: this.deps.venue,
+      symbol: fill.symbol,
+      side: fill.side,
+      quantity: quantity(fill.quantity),
+      price: price(fill.price),
+      fee: quantity(fill.fee || '0'),
+      feeCurrency: fill.feeCurrency,
+      filledAt: fill.filledAt,
+    });
+
+    // Persist updated position
+    await this.deps.positionRepo.upsert({
+      tradingInstanceId: this.tradingInstanceId,
+      venueAccountId: this.deps.venueAccountId,
+      venue: this.deps.venue,
+      symbol: this.deps.symbol,
+      side: this.position.side,
+      size: this.position.size.toString(),
+      entryPrice: this.position.entryPrice.toString(),
+      realizedPnl: this.position.realizedPnl.toString(),
+    });
+
+    await this.deps.journal.append({
+      tradingInstanceId: this.tradingInstanceId,
+      type: 'fill.private_stream',
+      payload: fill as unknown as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * Persist an order update received from the private stream.
+   * Updates order status in DB and journals the event.
+   */
+  private async persistPrivateStreamOrder(order: PrivateStreamOrder): Promise<void> {
+    // Only process orders for this actor's symbol — the private stream is account-scoped
+    if (order.symbol !== this.deps.symbol) {
+      this.logger.debug({ orderSymbol: order.symbol, actorSymbol: this.deps.symbol }, 'Ignoring order update for different symbol');
+      return;
+    }
+
+    try {
+      await this.deps.orderRepo.upsertByVenueRefId({
+        tradingInstanceId: this.tradingInstanceId,
+        venueRefId: order.venueRefId,
+        clientOrderId: order.clientOrderId,
+        venue: this.deps.venue,
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: order.quantity,
+        price: order.price,
+        status: order.status,
+        filledQuantity: order.filledQuantity,
+        avgFillPrice: order.avgFillPrice,
+      });
+
+      await this.deps.journal.append({
+        tradingInstanceId: this.tradingInstanceId,
+        type: 'order.private_stream',
+        payload: order as unknown as Record<string, unknown>,
+      });
+    } catch (err) {
+      this.logger.error({ err, venueRefId: order.venueRefId }, 'Failed to persist private stream order');
+    }
+  }
+
+  /**
+   * Update in-memory position from a private stream position update.
+   * Also persists to DB for crash recovery.
+   */
+  private async persistPrivateStreamPosition(pos: PrivateStreamPosition): Promise<void> {
+    // Only process positions for this actor's symbol
+    if (pos.symbol !== this.deps.symbol) return;
+
+    // Route through mutex to prevent races with concurrent fill application
+    this.positionMutex = this.positionMutex.then(() => this.applyPrivateStreamPosition(pos)).catch((err) => {
+      this.logger.error({ err, symbol: pos.symbol }, 'Failed to persist private stream position');
+    });
+    await this.positionMutex;
+  }
+
+  private async applyPrivateStreamPosition(pos: PrivateStreamPosition): Promise<void> {
+    if (pos.side === 'flat') {
+      this.position = flatPosition(this.deps.venue, this.deps.symbol);
+    } else {
+      this.position = {
+        venue: this.deps.venue,
+        symbol: pos.symbol,
+        side: pos.side,
+        size: new Decimal(pos.size),
+        entryPrice: new Decimal(pos.entryPrice),
+        realizedPnl: this.position.realizedPnl, // Preserve — stream doesn't always provide this
+      };
+    }
+
+    await this.deps.positionRepo.upsert({
+      tradingInstanceId: this.tradingInstanceId,
+      venueAccountId: this.deps.venueAccountId,
+      venue: this.deps.venue,
+      symbol: this.deps.symbol,
+      side: this.position.side,
+      size: this.position.size.toString(),
+      entryPrice: this.position.entryPrice.toString(),
+      realizedPnl: this.position.realizedPnl.toString(),
+    });
   }
 }

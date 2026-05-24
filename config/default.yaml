@@ -32,4 +32,13 @@ risk:
 
 reconciliation:
   intervalMs: 30000          # reconciliation loop interval
-  driftAlertOnly: true       # true = log+alert only; false = auto-correct (future)
+  driftAlertOnly: true       # true = log+alert only (safe default); false = block trading on drift
+  positionDriftThreshold: "0"  # position size diff threshold (absolute). "0" = exact match required
+  balanceDriftThreshold: "0"   # balance diff threshold (absolute). "0" = exact match required
+  autoCorrect: false           # auto-correct local state for diffs within threshold
+
+streams:
+  private:
+    reconnectBaseMs: 1000          # initial backoff for reconnection
+    reconnectMaxMs: 30000          # max backoff cap
+    maxReconnectAttempts: 10       # give up after N failures
