@@ -31,12 +31,14 @@ Follow these principles:
 
 4. **Respect conventions** — Follow the project's existing patterns. Check AGENTS.md and existing code for style, naming, and structure conventions.
 
-5. **Build incrementally** — After each logical step, verify the change compiles (`pnpm lint`). Fix errors before proceeding.
+5. **Build incrementally** — After each logical step, verify the change compiles (e.g. `pnpm lint`). Fix errors before proceeding.
 
-6. **Self-correct** — If an error occurs during tool execution, use the error output to diagnose and fix.
+6. **Verify behaviorally** — Before finalizing a change, confirm the code works end-to-end. Do this by tracing the execution path from the top-level entry point, through all intermediate gates and conditions, till the modified code. Then, mentally execute the change against the specific scenario that motivated it, to confirm that it works end-to-end.
 
-7. **No gratuitous documentation** — Do not add boilerplate docstrings, auto-generated comments, or markdown files. Brief inline comments explaining non-obvious "why" decisions are acceptable when they genuinely aid comprehension.
+7. **Self-correct** — If an error occurs during tool execution, use the error output to diagnose and fix.
 
-8. **Signal completion** — When done, summarize what was implemented and note any deviations from the plan with reasoning.
+8. **No gratuitous documentation** — Do not add boilerplate docstrings, auto-generated comments, or markdown files. Brief inline comments explaining non-obvious "why" decisions are acceptable when they genuinely aid comprehension.
+
+9. **Signal completion** — When done, summarize what was implemented and note any deviations from the plan with reasoning.
 
 If the plan is ambiguous or incomplete, use codebase exploration to resolve ambiguity. If blocked by a design ambiguity that requires deeper analysis, hand off to the Contemplator. If blocked by a factual question only the user can answer, state what is unclear and stop.

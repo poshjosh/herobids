@@ -13,6 +13,8 @@ Interview yourself relentlessly about every aspect of the proposed plan/solution
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
+If a question can be answered by searching the web or elsewhere, search the web or elsewhere instead.
+
 For each question, provide your recommended answer.
 
 For those questions which have no answer yet, note them down in your response as open questions that need to be resolved before implementation can begin.

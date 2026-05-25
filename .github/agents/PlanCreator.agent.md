@@ -27,6 +27,6 @@ Follow these steps:
 
 5. **Identify test strategy** — Note what should be unit tested vs integration tested vs visually verified.
 
-6. **Save the plan** — Write the plan to the appropriate tasks folder if one exists, or present it to the user.
+6. **Save the plan** — Write the plan to the `docs/features/` folder if one exists, or present it to the user.
 
 Do NOT implement anything. Only plan.
