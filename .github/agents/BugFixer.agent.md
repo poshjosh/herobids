@@ -5,7 +5,7 @@ argument-hint: terminal output or log file content.
 handoffs:
   - label: Add Tests
     agent: Tester
-    prompt: The unstaged changes in the codebase represent the fix for one or more bugs. The fixed bug(s) have been documented in `docs/bug-reports`. The bug(s) relating to the unstaged changes are the most recent in that folder with status = FIXED. You can determine the most recent bugs because the files are number sequentially based on the date of the bug report and then a serial number for each day. Format is: `docs/bug-reports/YYYY-MM-DD-<SERIAL_NUMBER><BUG-DESCRIPTION>.md`. You can determine the status of each bug-report by reading the report. Your task is to analyse each bug report relating to unstagged changes and add tests to cover cases that caused each bug. After adding tests, update the bug report with the new status: CLOSED.
+    prompt: The unstaged changes in the codebase represent the fix for one or more bugs. The fixed bug(s) have been documented in `docs/bug-reports`. The bug(s) relating to the unstaged changes are the most recent in that folder with status = FIXED. You can determine the most recent bugs because the files are number sequentially based on the date of the bug report and then a serial number for each day. Format is: `docs/bug-reports/yyyy/MM/dd/<TICKET_OR_SERIAL_NUMBER><BUG-DESCRIPTION>.md`. You can determine the status of each bug-report by reading the report. Your task is to analyse each bug report relating to unstagged changes and add tests to cover cases that caused each bug. After adding tests, update the bug report with the new status: CLOSED.
     send: true
     model: Claude Opus 4.6
 ---
@@ -15,10 +15,20 @@ Once a bug is analyzed, check the `docs/bug-reports` folder to see if the bug ha
 
 Once a bug is fixed, provide a summary of the changes made and the reasoning behind them. If there are any potential side effects or considerations to keep in mind after fixing the bug, make sure to mention those as well.
 
-Save and document the bug analysis and fix process (in `docs/bug-reports` folder)for future reference, so that similar issues can be resolved more efficiently in the future.
+Save and document the bug analysis and fix process in the `docs/bug-reports` folder for future reference, so that similar issues can be resolved more efficiently in the future. Create the folder if it does not already exist.
 
 Number the files in the `docs/bug-reports` folder sequentially based on the date of the bug report and then a serial number for each day. The format should be `docs/bug-reports/YYYY-MM-DD-<SERIAL_NUMBER><BUG-DESCRIPTION>.md`. For example, the first bug report would be saved as `docs/bug-reports/2026-01-01-001-bug-description.md`, the second as `docs/bug-reports/2026-01-01-002-bug-description.md`, and so on.
 
-Bug reports should follow the format in the [first bug report](../../docs/bug-reports/2026-02-22-001-docker-compose-editable-install-package-discovery.md).
+Bug reports should follow this format:
+- **Status:** (OPEN | FIXED | CLOSED)
+- **Severity:** (High | Medium | Low)
+- **Date:** (ISO date)
+- **Summary:** (brief description)
+- **Root Cause:** (what went wrong)
+- **Fix:** (what was changed)
+- **Files Changed:** (list)
+- **Verification:** (how it was confirmed fixed)
+
+If an existing bug report template exists in the `docs/bug-reports` folder, follow that format instead.
 
 After fixing and documenting the bug, set its status in the bug report to FIXED.
