@@ -12,6 +12,6 @@ export function createDatabase(connectionString: string) {
 export * from './schema/index.js';
 export { PgJournal } from './journal-pg.js';
 export { FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository } from './repositories.js';
-export type { InsertFill, UpsertPosition, InsertExecutionPlan, UpsertOrder } from './repositories.js';
+export type { InsertFill, UpsertPosition, InsertExecutionPlan, UpsertOrder, InsertBalanceSnapshot } from './repositories.js';
 export { ReconciliationEventRepository } from './reconciliation-repository.js';
 export type { InsertReconciliationEvent, ReconciliationEventQuery } from './reconciliation-repository.js';

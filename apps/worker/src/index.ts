@@ -8,12 +8,14 @@ import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy } from '@herobids/strategy';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { HyperliquidAdapter, JupiterSwapAdapter } from '@herobids/venues';
+import { HyperliquidAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
-import { quantity, price, TradingInstanceConfigSchema, ReconciliationConfigSchema } from '@herobids/domain';
+import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
+import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
+import { loadConfig } from './config.js';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -24,18 +26,26 @@ class CredentialResolutionError extends Error {
 
 const logger = pino({ name: 'herobids-worker' });
 
+// Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides
+const appConfig = loadConfig();
+
+// Parse Redis connection from operator config URL — preserving auth, TLS, and DB index
+const parsedRedisUrl = new URL(appConfig.redis.url);
 const redisConnection = {
-  host: process.env['REDIS_HOST'] ?? 'localhost',
-  port: parseInt(process.env['REDIS_PORT'] ?? '6379', 10),
+  host: parsedRedisUrl.hostname || 'localhost',
+  port: parseInt(parsedRedisUrl.port || '6379', 10),
+  ...(parsedRedisUrl.password && { password: decodeURIComponent(parsedRedisUrl.password) }),
+  ...(parsedRedisUrl.username && { username: decodeURIComponent(parsedRedisUrl.username) }),
+  ...(parsedRedisUrl.pathname && parsedRedisUrl.pathname !== '/' && { db: parseInt(parsedRedisUrl.pathname.slice(1), 10) }),
+  ...(parsedRedisUrl.protocol === 'rediss:' && { tls: {} }),
 };
 
 // Redis client for lease management (separate from BullMQ's internal connection)
-const redisClient = new Redis(redisConnection.port, redisConnection.host);
+const redisClient = new Redis(redisConnection);
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 const lease = new InstanceLease(redisClient, workerId, 30);
 
-const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
-const db = createDatabase(databaseUrl);
+const db = createDatabase(appConfig.database.url);
 const journal = new PgJournal(db);
 const fillRepo = new FillRepository(db);
 const positionRepo = new PositionRepository(db);
@@ -44,14 +54,8 @@ const orderRepo = new OrderRepository(db);
 const balanceSnapshotRepo = new BalanceSnapshotRepository(db);
 const reconciliationRepo = new ReconciliationEventRepository(db);
 
-// Parse reconciliation config from environment/config file
-const reconciliationConfig = ReconciliationConfigSchema.parse({
-  intervalMs: parseInt(process.env['RECONCILIATION_INTERVAL_MS'] ?? '30000', 10),
-  driftAlertOnly: (process.env['RECONCILIATION_DRIFT_ALERT_ONLY'] ?? 'true') === 'true',
-  positionDriftThreshold: process.env['RECONCILIATION_POSITION_THRESHOLD'] ?? '0',
-  balanceDriftThreshold: process.env['RECONCILIATION_BALANCE_THRESHOLD'] ?? '0',
-  autoCorrect: (process.env['RECONCILIATION_AUTO_CORRECT'] ?? 'false') === 'true',
-});
+// Reconciliation config sourced from operator config
+const reconciliationConfig = appConfig.reconciliation;
 
 // ID generator using UUIDv7 (crypto.randomUUID as fallback)
 const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
@@ -61,28 +65,49 @@ const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
   decisionId: () => crypto.randomUUID(),
 };
 
+// Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
+// Only initialised when the Hyperliquid venue is configured; swap-only deployments skip this.
+const publicStreamConfig = appConfig.streams.public;
+const hyperliquidVenueConfig = appConfig.venues['hyperliquid'];
+
+const publicStreamPool = hyperliquidVenueConfig?.wsUrl
+  ? new PublicStreamPool(
+      publicStreamConfig,
+      new Map([
+        ['hyperliquid', () => new HyperliquidPublicStream({
+          wsUrl: hyperliquidVenueConfig.wsUrl!,
+        })],
+      ]),
+    )
+  : undefined;
+
+// Worker-scoped oracle mark source (stateless, safe to share)
+const oracleMarkSource = new OracleMarkSource({
+  baseUrl: appConfig.marking.oracleBaseUrl ?? 'https://api.coingecko.com/api/v3',
+  instrumentToCoinId: appConfig.marking.instrumentToCoinId ?? {},
+});
+
 const runtime = new WorkerRuntime(
-  { redis: redisConnection, scanIntervalMs: 5000, concurrency: 10 },
+  {
+    redis: redisConnection,
+    scanIntervalMs: 5000,
+    concurrency: 10,
+    onStartFailed: async (tradingInstanceId, error) => {
+      logger.error({ tradingInstanceId, err: error.message }, 'Instance start failed — marking crashed');
+      await db.update(tradingInstances)
+        .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
+        .where(eq(tradingInstances.id, tradingInstanceId));
+    },
+  },
   async (tradingInstanceId, rawConfig) => {
-    // Validate instance config
+    // Validate instance config — fail fast on invalid config
     const parseResult = TradingInstanceConfigSchema.safeParse(rawConfig);
-    const config = parseResult.success ? parseResult.data : {
-      strategy: { type: 'momentum' as const, params: {} },
-      risk: {
-        maxPositionSize: undefined as string | undefined,
-        maxOpenPositions: undefined as number | undefined,
-        maxDrawdown: undefined as string | undefined,
-        maxPositionSizePct: undefined as number | undefined,
-        dailyMaxLossPct: undefined as number | undefined,
-        stopLossCooldownMs: undefined as number | undefined,
-        maxOrderNotional: undefined as string | undefined,
-      },
-      execution: { mode: 'paper' as const },
-      venue: (rawConfig['venue'] as string) ?? 'hyperliquid',
-      symbol: (rawConfig['symbol'] as string) ?? 'BTC/USD:USD',
-      venueType: 'orderbook' as const,
-      shadowPollIntervalMs: 2000,
-    };
+    if (!parseResult.success) {
+      throw new Error(
+        `Invalid config for instance ${tradingInstanceId}: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+      );
+    }
+    const config = parseResult.data;
 
     const strategy = new MomentumStrategy(() => idGen.decisionId());
 
@@ -92,7 +117,9 @@ const runtime = new WorkerRuntime(
     let secret = process.env['HYPERLIQUID_SECRET'] ?? '';
     let testnet = true;
 
-    if (venueAccountId !== 'default') {
+    // Credential resolution is only needed for orderbook venues (exchange API keys).
+    // Swap venues are wallet-only — they resolve their address from venueAccountRef later.
+    if (venueAccountId !== 'default' && config.venueType !== 'swap') {
       try {
         const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
         if (account?.credentialId) {
@@ -120,11 +147,7 @@ const runtime = new WorkerRuntime(
     }
 
     // Stream config (shared between adapter construction and actor deps)
-    const streamConfig = {
-      reconnectBaseMs: parseInt(process.env['STREAM_RECONNECT_BASE_MS'] ?? '1000', 10),
-      reconnectMaxMs: parseInt(process.env['STREAM_RECONNECT_MAX_MS'] ?? '30000', 10),
-      maxReconnectAttempts: parseInt(process.env['STREAM_MAX_RECONNECT_ATTEMPTS'] ?? '10', 10),
-    };
+    const streamConfig = appConfig.streams.private;
 
     // Construct venue adapters based on venueType
     const venueAdapter = config.venueType !== 'swap'
@@ -136,11 +159,44 @@ const runtime = new WorkerRuntime(
 
     // Construct swap venue adapter when venueType is 'swap'
     const swapVenue = config.venueType === 'swap'
-      ? new JupiterSwapAdapter({
-          walletAddress: process.env['SWAP_WALLET_ADDRESS'] ?? apiKey,
-          apiUrl: process.env['JUPITER_API_URL'] ?? 'https://quote-api.jup.ag/v6',
-          rpcUrl: process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com',
-        })
+      ? await (async () => {
+          // swapAssets is required for swap venues — fail fast if missing
+          if (!config.swapAssets) {
+            throw new CredentialResolutionError(
+              `swapAssets config required for swap venue instance ${tradingInstanceId} — cannot route swaps without explicit asset identifiers and decimals`,
+            );
+          }
+          // Resolve wallet from venue account record; fall back to env var only for the 'default' account
+          let walletAddress: string | undefined;
+          if (venueAccountId !== 'default') {
+            const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
+            if (!account?.venueAccountRef) {
+              throw new CredentialResolutionError(
+                `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue instance ${tradingInstanceId}`,
+              );
+            }
+            walletAddress = account.venueAccountRef;
+          } else {
+            walletAddress = process.env['SWAP_WALLET_ADDRESS'];
+          }
+          if (!walletAddress) {
+            throw new CredentialResolutionError(
+              `Wallet address required for swap venue instance ${tradingInstanceId}. Set venueAccountRef on the venue account or SWAP_WALLET_ADDRESS env var.`,
+            );
+          }
+          // Build token decimals map from configured swap assets
+          const tokenDecimals: Record<string, number> = {
+            [config.swapAssets.baseAsset]: config.swapAssets.baseDecimals,
+            [config.swapAssets.quoteAsset]: config.swapAssets.quoteDecimals,
+          };
+          return new JupiterSwapAdapter({
+            walletAddress,
+            apiUrl: appConfig.venues['jupiter']?.baseUrl ?? 'https://quote-api.jup.ag/v6',
+            rpcUrl: process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com',
+            tokenDecimals,
+            timeoutMs: appConfig.venues['jupiter']?.timeoutMs,
+          });
+        })()
       : undefined;
 
     const fetchPrice = async (): Promise<MarketSnapshot | null> => {
@@ -170,6 +226,7 @@ const runtime = new WorkerRuntime(
         maxPositionSizePct: config.risk.maxPositionSizePct,
         dailyMaxLossPct: config.risk.dailyMaxLossPct,
         stopLossCooldownMs: config.risk.stopLossCooldownMs,
+        maxOrderNotional: config.risk.maxOrderNotional ? price(config.risk.maxOrderNotional) : undefined,
       },
       idGen,
       fetchPrice,
@@ -181,7 +238,14 @@ const runtime = new WorkerRuntime(
       symbol: config.symbol,
       venueAccountId,
       venueType: config.venueType,
+      swapAssets: config.swapAssets,
       swapVenue,
+      streamPool: config.venueType !== 'swap' ? publicStreamPool : undefined,
+      markSource: new MarkSelector(
+        { stalenessThresholdMs: appConfig.marking.stalenessThresholdMs },
+        new LastFillMarkSource(fillRepo, tradingInstanceId),
+        oracleMarkSource,
+      ),
       shadowPollIntervalMs: config.shadowPollIntervalMs,
       onCrashed: async (instanceId: string) => {
         await db.update(tradingInstances)
@@ -209,6 +273,7 @@ const runtime = new WorkerRuntime(
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
   await runtime.shutdown();
+  await publicStreamPool?.shutdown();
   await redisClient.quit();
   process.exit(0);
 });
@@ -216,6 +281,7 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
   await runtime.shutdown();
+  await publicStreamPool?.shutdown();
   await redisClient.quit();
   process.exit(0);
 });

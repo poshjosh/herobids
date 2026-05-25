@@ -10,7 +10,7 @@ handoffs:
     model: Claude Opus 4.6
   - label: Rework
     agent: Implementer
-    prompt: "Code review found issues. Address the feedback in the review above."
+    prompt: "Code review feedback just completed. Address any of the review feedback you think is valid and needs addressing."
     send: true
     model: Claude Opus 4.6
 ---

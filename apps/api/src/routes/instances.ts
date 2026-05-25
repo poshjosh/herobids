@@ -61,7 +61,7 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
     await queue.add('start-instance', {
       command: 'start',
       tradingInstanceId: id,
-      config: instance.config,
+      config: { ...instance.config, venueAccountId: instance.venueAccountId },
     });
     return reply.send({ status: 'starting', tradingInstanceId: id });
   });
@@ -94,6 +94,12 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    // Validate the config shape (same as create path)
+    const configResult = TradingInstanceConfigSchema.safeParse(parsed.data.config);
+    if (!configResult.success) {
+      return reply.status(400).send({ error: 'invalid_config', details: configResult.error.issues });
+    }
+
     const newVersion = existing.configVersion + 1;
     await db.update(tradingInstances)
       .set({
@@ -108,7 +114,7 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       await queue.add('restart-instance', {
         command: 'restart',
         tradingInstanceId: id,
-        config: parsed.data.config,
+        config: { ...parsed.data.config, venueAccountId: existing.venueAccountId },
       });
     }
 

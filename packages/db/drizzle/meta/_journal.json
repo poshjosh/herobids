@@ -15,6 +15,13 @@
       "when": 1779573243474,
       "tag": "0001_dark_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779694708317,
+      "tag": "0002_slow_salo",
+      "breakpoints": true
     }
   ]
 }

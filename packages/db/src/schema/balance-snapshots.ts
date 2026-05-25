@@ -10,6 +10,8 @@ export const balanceSnapshots = pgTable('balance_snapshots', {
   venue: text('venue').notNull(),
   /** Full balance snapshot as JSON */
   balances: jsonb('balances').notNull().$type<Array<{ asset: string; free: string; locked: string; total: string }>>(),
+  /** Source of the canonical mark price used for P&L/risk: last_fill | oracle | ticker */
+  markSource: text('mark_source'),
   snapshotAt: timestamp('snapshot_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

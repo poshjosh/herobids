@@ -85,8 +85,11 @@ export class ShadowExecutor implements Executor {
       } else if (planned.type === 'swap') {
         // Swap orders: fetch real quote from swap venue if available, else fall back to ticker
         let fillPrice: Price;
+        let filledQuantity = planned.quantity;
         if (this.swapVenue) {
-          const [inputAsset, outputAsset] = this.resolveSwapAssets(plan.symbol, planned.side);
+          const [inputAsset, outputAsset] = planned.swapParams
+            ? [planned.swapParams.inputAsset, planned.swapParams.outputAsset]
+            : this.resolveSwapAssets(plan.symbol, planned.side);
           // For buys, planned.quantity is in base-asset units but the swap API expects
           // the input amount (quote-asset). Estimate using the current ticker price.
           let quoteAmount = planned.quantity;
@@ -114,6 +117,15 @@ export class ShadowExecutor implements Executor {
               ? inAmt.div(outAmt)
               : outAmt.div(inAmt);
             fillPrice = effectivePrice as unknown as Price;
+            // Position/P&L must use the actually executed base amount from the quote,
+            // not the requested target size — but cap at planned.quantity so the
+            // tracked position never exceeds what was risk-approved.
+            const rawFilled = planned.side === 'buy'
+              ? quoteResult.data.expectedOutputAmount
+              : quoteResult.data.inputAmount;
+            filledQuantity = new Decimal(rawFilled.toString()).gt(new Decimal(planned.quantity.toString()))
+              ? planned.quantity
+              : rawFilled;
           } else {
             // Quote failed — fall back to ticker price
             const ticker = this.feed.getTicker(plan.symbol);
@@ -139,7 +151,7 @@ export class ShadowExecutor implements Executor {
           quantity: planned.quantity,
           price: planned.price,
           status: 'filled',
-          filledQuantity: planned.quantity,
+          filledQuantity,
           avgFillPrice: fillPrice,
           createdAt: now,
           updatedAt: now,
@@ -154,7 +166,7 @@ export class ShadowExecutor implements Executor {
           venue: plan.venue,
           symbol: plan.symbol,
           side: planned.side,
-          quantity: planned.quantity,
+          quantity: filledQuantity,
           price: fillPrice,
           fee: quantity('0'),
           feeCurrency: 'USD',

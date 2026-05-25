@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource } from '@herobids/domain';
 import type { TradingInstanceId } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import {
@@ -7,6 +7,7 @@ import {
   PaperExecutor,
   ShadowExecutor,
   PollingMarketDataFeed,
+  StreamMarketDataFeed,
   flatPosition,
   applyFill,
   checkRisk,
@@ -16,6 +17,8 @@ import {
   fillEvent,
   riskEvent,
   Reconciler,
+  createOrderbookVenueStateLoader,
+  createSwapVenueStateLoader,
 } from '@herobids/engine';
 import type {
   Executor,
@@ -28,6 +31,7 @@ import type {
   LocalState,
   MarketDataFeed,
   TickerSnapshot,
+  StreamPoolHandle,
   Diff,
 } from '@herobids/engine';
 import type {
@@ -74,8 +78,14 @@ export interface TradingActorDeps {
   venueAccountId: string;
   /** Venue type for planner order-type resolution */
   venueType?: 'orderbook' | 'swap';
+  /** Explicit swap asset identifiers for routing (avoids fragile symbol parsing) */
+  swapAssets?: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number };
   /** Optional swap venue port for shadow quote simulation */
   swapVenue?: SwapVenuePort;
+  /** Worker-scoped public stream pool for real-time market data (Phase 2c) */
+  streamPool?: StreamPoolHandle;
+  /** Canonical mark source for P&L/risk valuation (Phase 2c §8.4) */
+  markSource?: MarkSource;
   /** Callback invoked when the actor crashes (e.g. max reconnect reached). Used to persist crashed status. */
   onCrashed?: (tradingInstanceId: string) => Promise<void>;
 }
@@ -100,6 +110,8 @@ export class TradingActor implements InstanceActor {
   private stopping = false;
   /** Serializes async position mutations to prevent stale-read overwrites from concurrent fills */
   private positionMutex: Promise<void> = Promise.resolve();
+  /** Cached mark result to avoid redundant oracle calls during fill bursts */
+  private cachedMark: { result: Awaited<ReturnType<MarkSource['fetchMark']>>; fetchedAt: number } | undefined;
 
   constructor(
     tradingInstanceId: string,
@@ -115,12 +127,47 @@ export class TradingActor implements InstanceActor {
     const mode = deps.executionMode ?? 'paper';
     if (mode === 'live') {
       throw new Error('Live execution mode is not yet implemented. Use paper or shadow mode.');
-    } else if (mode === 'shadow' && deps.venuePort) {
-      // Create polling market data feed for shadow executor
-      const feed = new PollingMarketDataFeed(
-        [deps.symbol],
-        async (symbol: string): Promise<TickerSnapshot | null> => {
-          const result = await deps.venuePort!.fetchTicker(symbol);
+    } else if (mode === 'shadow' && (deps.venuePort || deps.swapVenue)) {
+      // Prefer stream pool (Phase 2c) over polling (Phase 2b) for market data.
+      // Only use stream pool for orderbook venues — swap venues have no registered
+      // stream connector and their price discovery is via quotes, not WS streams.
+      let feed: MarketDataFeed;
+      if (deps.streamPool && deps.venueType !== 'swap') {
+        feed = new StreamMarketDataFeed([deps.symbol], deps.venue, deps.streamPool, {
+          onConnectError: (err) => {
+            this.logger.warn({ err }, 'Stream pool subscribe failed — falling back to polling feed');
+          },
+          fallbackFetcher: async (symbol: string) => {
+            if (!deps.venuePort) return null;
+            const result = await deps.venuePort.fetchTicker(symbol);
+            if (!result.ok) return null;
+            return {
+              symbol,
+              last: result.data.last,
+              bid: result.data.bid,
+              ask: result.data.ask,
+              timestamp: result.data.timestamp,
+            };
+          },
+          fallbackIntervalMs: deps.shadowPollIntervalMs ?? 2000,
+        });
+      } else {
+        feed = this.createPollingFeed();
+      }
+      this.marketDataFeed = feed;
+      this.executor = new ShadowExecutor(deps.idGen, feed, deps.swapVenue);
+    } else {
+      this.executor = new PaperExecutor(deps.idGen);
+    }
+  }
+
+  private createPollingFeed(): PollingMarketDataFeed {
+    return new PollingMarketDataFeed(
+      [this.deps.symbol],
+      async (symbol: string): Promise<TickerSnapshot | null> => {
+        // Orderbook venues: use ticker endpoint
+        if (this.deps.venuePort) {
+          const result = await this.deps.venuePort.fetchTicker(symbol);
           if (!result.ok) return null;
           return {
             symbol,
@@ -129,14 +176,43 @@ export class TradingActor implements InstanceActor {
             ask: result.data.ask,
             timestamp: result.data.timestamp,
           };
-        },
-        deps.shadowPollIntervalMs ?? 2000,
-      );
-      this.marketDataFeed = feed;
-      this.executor = new ShadowExecutor(deps.idGen, feed, deps.swapVenue);
-    } else {
-      this.executor = new PaperExecutor(deps.idGen);
+        }
+        // Swap venues: derive price from a 1-unit quote
+        if (this.deps.swapVenue && this.deps.swapAssets) {
+          const { baseAsset, quoteAsset } = this.deps.swapAssets;
+          const quoteResult = await this.deps.swapVenue.quote({
+            inputAsset: quoteAsset,
+            outputAsset: baseAsset,
+            amount: quantity('1'),
+            slippageBps: 50,
+          });
+          if (quoteResult.ok) {
+            const inAmt = new Decimal(quoteResult.data.inputAmount.toString());
+            const outAmt = new Decimal(quoteResult.data.expectedOutputAmount.toString());
+            const effectivePrice = inAmt.div(outAmt);
+            return {
+              symbol,
+              last: effectivePrice,
+              timestamp: new Date().toISOString(),
+            };
+          }
+        }
+        return null;
+      },
+      this.deps.shadowPollIntervalMs ?? 2000,
+    );
+  }
+
+  /** Fetch mark with short-lived cache (5s) to avoid redundant oracle calls during fill bursts */
+  private async fetchCachedMark() {
+    if (!this.deps.markSource) return undefined;
+    const now = Date.now();
+    if (this.cachedMark && now - this.cachedMark.fetchedAt < 5_000) {
+      return this.cachedMark.result;
     }
+    const result = await this.deps.markSource.fetchMark(this.deps.symbol);
+    this.cachedMark = { result, fetchedAt: now };
+    return result;
   }
 
   async start(): Promise<void> {
@@ -154,6 +230,12 @@ export class TradingActor implements InstanceActor {
 
     // Start market data feed if shadow mode
     this.marketDataFeed?.start();
+
+    // Guard: if stop() was called during the async startup steps above, bail without arming the scan loop.
+    if (!this.running) {
+      this.marketDataFeed?.stop();
+      return;
+    }
 
     this.logger.info({ position: this.position.side, mode: this.deps.executionMode ?? 'paper' }, 'Actor started');
     // First tick immediately, then on interval
@@ -329,11 +411,17 @@ export class TradingActor implements InstanceActor {
    * Throws if drift is detected and driftAlertOnly is false.
    */
   private async startReconciler(): Promise<void> {
-    const { venuePort, reconciliationConfig } = this.deps;
-    if (!venuePort || !reconciliationConfig) return;
+    if (!this.running) return;
+    const { venuePort, reconciliationConfig, swapVenue } = this.deps;
+    if ((!venuePort && !swapVenue) || !reconciliationConfig) return;
+
+    // Build venue state loader based on venue type
+    const fetchVenueState = venuePort
+      ? createOrderbookVenueStateLoader(venuePort, this.logger)
+      : createSwapVenueStateLoader(swapVenue!, this.logger);
 
     this.reconciler = new Reconciler(reconciliationConfig, {
-      venue: venuePort,
+      fetchVenueState,
       loadLocalState: () => this.loadLocalState(),
       persistResult: async (result, localState, venueState) => {
         // Serialize state snapshots for structured persistence
@@ -358,15 +446,50 @@ export class TradingActor implements InstanceActor {
           venueState: serializedVenue,
           diff: result.diffs as unknown as Array<Record<string, unknown>>,
         });
+
+        // Only promote venue balances to local baseline when reconciliation confirms
+        // a match or when auto-correction was applied. Unconditionally overwriting
+        // would hide external transfers after a single drift alert.
+        if (result.status === 'match' || (result.status === 'drift_within_threshold' && reconciliationConfig.autoCorrect)) {
+          const mark = await this.fetchCachedMark();
+          await this.deps.balanceSnapshotRepo.insertSnapshot({
+            venueAccountId: this.deps.venueAccountId,
+            venue: this.deps.venue,
+            balances: serializedVenue.balances,
+            markSource: mark?.ok ? mark.data.source : undefined,
+            snapshotAt: new Date(venueState.balances.timestamp),
+          });
+        }
       },
       journal: this.deps.journal,
       tradingInstanceId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
       logger: this.logger,
-      getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAt(this.deps.venueAccountId),
+      getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.tradingInstanceId),
     });
 
     // Run the first pass synchronously before starting ticks — no trading until reconciled
+    // Seed initial balance snapshot on first boot to prevent false drift from empty local state
+    const existingSnapshot = await this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId, this.deps.venue);
+    if (!existingSnapshot) {
+      const initialVenueState = await fetchVenueState(null);
+      if (initialVenueState) {
+        const mark = await this.fetchCachedMark();
+        await this.deps.balanceSnapshotRepo.insertSnapshot({
+          venueAccountId: this.deps.venueAccountId,
+          venue: this.deps.venue,
+          balances: initialVenueState.balances.balances.map((b) => ({
+            asset: b.asset,
+            free: b.free.toString(),
+            locked: b.locked.toString(),
+            total: b.total.toString(),
+          })),
+          markSource: mark?.ok ? mark.data.source : undefined,
+          snapshotAt: new Date(initialVenueState.balances.timestamp),
+        });
+      }
+    }
+
     this.reconciler.start();
     // Await the first pass explicitly to block startup
     const result = await this.reconciler.runPass();
@@ -415,6 +538,7 @@ export class TradingActor implements InstanceActor {
    * On max reconnect failures: crashes the actor.
    */
   private async openPrivateStream(): Promise<void> {
+    if (!this.running) return;
     const mode = this.deps.executionMode ?? 'paper';
     if (mode === 'paper' || !this.deps.venuePort) return;
 
@@ -473,18 +597,23 @@ export class TradingActor implements InstanceActor {
    * Reads positions, balances, recent fills, and open orders.
    */
   private async loadLocalState(): Promise<LocalState> {
-    // Read cursor for "since" filter on fills
-    const lastReconciledAt = await this.deps.reconciliationRepo.getLastReconciledAt(this.deps.venueAccountId);
+    // Read per-instance cursor so sibling instances sharing a venue account don't skip each other's fills
+    const lastReconciledAt = await this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.tradingInstanceId);
 
     const [openPositions, recentFills, openOrders, balanceSnapshot] = await Promise.all([
       this.deps.positionRepo.getOpenByInstance(this.tradingInstanceId),
-      this.deps.fillRepo.getRecentByInstance(this.tradingInstanceId, lastReconciledAt ?? undefined),
+      // Fetch fills across ALL instances sharing this venue account so that venue fills
+      // from sibling/predecessor instances are matched and not flagged as unknown_fill drift.
+      this.deps.fillRepo.getRecentByVenueAccount(this.deps.venueAccountId, lastReconciledAt ?? undefined),
       this.deps.orderRepo.getOpenByInstance(this.tradingInstanceId),
-      this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId),
+      this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId, this.deps.venue),
     ]);
 
     return {
-      positions: openPositions
+      // Swap venues don't have directional positions on-venue. Including local
+      // strategy positions here would cause permanent false drift because the
+      // swap venue loader always returns an empty position set.
+      positions: this.deps.venueType === 'swap' ? [] : openPositions
         .filter((p) => p.side !== 'flat')
         .map((p) => ({
           symbol: p.symbol,
@@ -643,7 +772,14 @@ export class TradingActor implements InstanceActor {
         }
       }
 
-      const snapshot = await this.deps.fetchPrice();
+      let snapshot = await this.deps.fetchPrice();
+      // Swap venues have no orderbook ticker — derive snapshot from market data feed
+      if (!snapshot && this.marketDataFeed) {
+        const ticker = this.marketDataFeed.getTicker(this.deps.symbol);
+        if (ticker) {
+          snapshot = { symbol: this.deps.symbol, price: ticker.last, timestamp: ticker.timestamp };
+        }
+      }
       if (!snapshot) return;
 
       // 1. Evaluate strategy
@@ -670,6 +806,7 @@ export class TradingActor implements InstanceActor {
         venue: this.deps.venue,
         symbol: this.deps.symbol,
         venueType: this.deps.venueType,
+        swapAssets: this.deps.swapAssets,
         currentPosition: this.position.side === 'flat' ? null : {
           symbol: this.position.symbol,
           side: this.position.side,
@@ -702,14 +839,25 @@ export class TradingActor implements InstanceActor {
 
       await this.deps.journal.append(planEvent(plan, 'plan.created'));
 
-      // 4. Risk check
+      // 4. Risk check — use stable mark source for notional calculations (falls back to snapshot price).
+      // If the mark is stale (e.g. old fill when oracle is down), prefer the live ticker snapshot
+      // to avoid underpricing risk checks with hours-old data.
+      const markResult = this.deps.markSource
+        ? await this.deps.markSource.fetchMark(this.deps.symbol)
+        : undefined;
+      const referenceMark = (markResult?.ok && !markResult.data.stale)
+        ? markResult.data.price
+        : snapshot.price;
+
       const riskResult = checkRisk(plan, this.deps.riskLimits, {
         currentPosition: this.position.side === 'flat' ? null : this.position,
         openPositionCount: this.position.side === 'flat' ? 0 : 1,
         currentDrawdown: price('0'), // TODO: compute from equity curve
+        referenceMark,
       });
 
       if (!riskResult.ok) {
+        await this.deps.planRepo.markFailed(plan.id);
         await this.deps.journal.append(riskEvent(this.tradingInstanceId, riskResult.error));
         this.logger.warn({ code: riskResult.error.code }, 'Risk gate rejected');
         return;
@@ -745,7 +893,7 @@ export class TradingActor implements InstanceActor {
         });
       }
 
-      // Persist position state to DB
+      // Persist position state to DB (reuses markResult from risk check above)
       await this.deps.positionRepo.upsert({
         tradingInstanceId: this.tradingInstanceId,
         venueAccountId: this.deps.venueAccountId,
@@ -755,6 +903,7 @@ export class TradingActor implements InstanceActor {
         size: this.position.size.toString(),
         entryPrice: this.position.entryPrice.toString(),
         realizedPnl: this.position.realizedPnl.toString(),
+        markSource: markResult?.ok ? markResult.data.source : undefined,
       });
 
       // Mark plan status based on executor result
@@ -850,6 +999,7 @@ export class TradingActor implements InstanceActor {
     });
 
     // Persist updated position
+    const markResult = await this.fetchCachedMark();
     await this.deps.positionRepo.upsert({
       tradingInstanceId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
@@ -859,6 +1009,7 @@ export class TradingActor implements InstanceActor {
       size: this.position.size.toString(),
       entryPrice: this.position.entryPrice.toString(),
       realizedPnl: this.position.realizedPnl.toString(),
+      markSource: markResult?.ok ? markResult.data.source : undefined,
     });
 
     await this.deps.journal.append({
@@ -934,6 +1085,7 @@ export class TradingActor implements InstanceActor {
       };
     }
 
+    const markResult = await this.fetchCachedMark();
     await this.deps.positionRepo.upsert({
       tradingInstanceId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
@@ -943,6 +1095,7 @@ export class TradingActor implements InstanceActor {
       size: this.position.size.toString(),
       entryPrice: this.position.entryPrice.toString(),
       realizedPnl: this.position.realizedPnl.toString(),
+      markSource: markResult?.ok ? markResult.data.source : undefined,
     });
   }
 }

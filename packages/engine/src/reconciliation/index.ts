@@ -15,4 +15,6 @@ export type {
 } from './reconcile.js';
 
 export { Reconciler } from './reconciler.js';
-export type { ReconcilerConfig, ReconcilerDeps } from './reconciler.js';
+export type { ReconcilerConfig, ReconcilerDeps, VenueStateLoader } from './reconciler.js';
+
+export { createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './venue-state-loaders.js';

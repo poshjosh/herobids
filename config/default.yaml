@@ -19,6 +19,9 @@ venues:
     wsUrl: wss://api.hyperliquid.xyz/ws
     rateLimitPerSec: 10
     timeoutMs: 30000
+  jupiter:
+    baseUrl: https://quote-api.jup.ag/v6
+    timeoutMs: 15000
 
 execution:
   defaultSlippageBps: 50
@@ -42,3 +45,16 @@ streams:
     reconnectBaseMs: 1000          # initial backoff for reconnection
     reconnectMaxMs: 30000          # max backoff cap
     maxReconnectAttempts: 10       # give up after N failures
+  public:
+    reconnectBaseMs: 1000          # initial backoff for public stream reconnection
+    reconnectMaxMs: 30000          # max backoff cap
+    maxReconnectAttempts: 20       # more attempts — public streams are shared
+    depthLevels: 5                 # orderbook depth levels to track
+
+marking:
+  stalenessThresholdMs: 300000     # 5 min — use oracle if last fill older than this
+  oracleBaseUrl: https://api.coingecko.com/api/v3
+  instrumentToCoinId:
+    BTC/USD:USD: bitcoin
+    ETH/USD:USD: ethereum
+    SOL/USD:USD: solana

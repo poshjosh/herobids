@@ -43,6 +43,8 @@ export interface RiskSnapshot {
   lastStopLossExitMs?: number;
   /** Current timestamp (ms) — used for cooldown comparison */
   nowMs?: number;
+  /** Canonical reference mark for notional calculations (stable, auditable). Falls back to order.price if absent. */
+  referenceMark?: Price;
 }
 
 export type RiskCheckResult = Result<void, RiskError>;
@@ -140,8 +142,21 @@ export function checkRisk(
     }
 
     // 3b. Max position size as % of equity
-    if (limits.maxPositionSizePct != null && snapshot.equity != null && order.price) {
-      const resultingNotional = resultingSize.mul(order.price);
+    if (limits.maxPositionSizePct != null && snapshot.equity != null) {
+      let markForNotional: typeof snapshot.referenceMark;
+      if (snapshot.referenceMark && order.price) {
+        markForNotional = snapshot.referenceMark.gt(order.price) ? snapshot.referenceMark : order.price;
+      } else {
+        markForNotional = snapshot.referenceMark ?? order.price;
+      }
+      if (!markForNotional) {
+        return err({
+          code: 'risk.no_mark_for_notional',
+          message: 'maxPositionSizePct configured but no reference mark or order price available',
+          context: { maxPositionSizePct: limits.maxPositionSizePct },
+        });
+      }
+      const resultingNotional = resultingSize.mul(markForNotional);
       const maxNotionalByPct = snapshot.equity.mul(new Decimal(limits.maxPositionSizePct)).div(new Decimal(100));
       if (resultingNotional.gt(maxNotionalByPct)) {
         return err({
@@ -157,8 +172,27 @@ export function checkRisk(
     }
 
     // 4. Max order notional (optional)
-    if (limits.maxOrderNotional && order.price) {
-      const notional = order.quantity.mul(order.price);
+    // For limit orders, the actual execution price is the limit — use the worse of
+    // (referenceMark, order.price) so an aggressively priced limit can't bypass the cap.
+    if (limits.maxOrderNotional) {
+      const markPrice = snapshot.referenceMark;
+      const orderPrice = order.price;
+      // Worst-case price: highest of mark vs limit (for buys the limit is the ceiling;
+      // for sells the mark may be higher — conservative approach uses max of both).
+      let markForNotional: typeof markPrice;
+      if (markPrice && orderPrice) {
+        markForNotional = markPrice.gt(orderPrice) ? markPrice : orderPrice;
+      } else {
+        markForNotional = markPrice ?? orderPrice;
+      }
+      if (!markForNotional) {
+        return err({
+          code: 'risk.no_mark_for_notional',
+          message: 'maxOrderNotional configured but no reference mark or order price available',
+          context: { maxOrderNotional: limits.maxOrderNotional.toString() },
+        });
+      }
+      const notional = order.quantity.mul(markForNotional);
       if (notional.gt(limits.maxOrderNotional)) {
         return err({
           code: 'risk.max_order_notional_exceeded',

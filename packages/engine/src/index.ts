@@ -17,6 +17,12 @@ export { ShadowExecutor } from './shadow-executor.js';
 export { PollingMarketDataFeed } from './market-data-feed.js';
 export type { MarketDataFeed, TickerSnapshot, TradeEvent, TradeHandler } from './market-data-feed.js';
 
+export { StreamMarketDataFeed } from './stream-market-data-feed.js';
+export type { StreamPoolHandle, TickerFetcher } from './stream-market-data-feed.js';
+
+export { LastFillMarkSource, MarkSelector } from './mark-source.js';
+export type { FillLookup, FillRecord, MarkSelectorConfig } from './mark-source.js';
+
 export { flatPosition, applyFill } from './position-tracker.js';
 export type { PositionState } from './position-tracker.js';
 
@@ -28,7 +34,7 @@ export type { Journal, JournalEntry, JournalEventType } from './journal.js';
 
 export { InMemoryJournal } from './journal-memory.js';
 
-export { reconcile, reconcileWithThresholds, Reconciler } from './reconciliation/index.js';
+export { reconcile, reconcileWithThresholds, Reconciler, createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './reconciliation/index.js';
 export type {
   LocalState,
   VenueState,
@@ -44,4 +50,5 @@ export type {
   DriftThresholds,
   ReconcilerConfig,
   ReconcilerDeps,
+  VenueStateLoader,
 } from './reconciliation/index.js';

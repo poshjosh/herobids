@@ -3,6 +3,8 @@ export {
   VenueConfigSchema,
   ReconciliationConfigSchema,
   StreamConfigSchema,
+  PublicStreamConfigSchema,
+  MarkingConfigSchema,
   TradingInstanceConfigSchema,
   RiskConfigSchema,
   StrategyConfigSchema,

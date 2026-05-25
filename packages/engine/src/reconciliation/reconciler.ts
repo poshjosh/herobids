@@ -1,4 +1,3 @@
-import type { OrderbookVenuePort } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 import type { Journal } from '../journal.js';
 import { reconcileWithThresholds } from './reconcile.js';
@@ -17,9 +16,15 @@ export interface ReconcilerConfig {
   autoCorrect?: boolean;
 }
 
+/**
+ * Canonical venue-state loader function.
+ * Implementations translate venue-specific data (orderbook or swap) into the common VenueState shape.
+ */
+export type VenueStateLoader = (since: Date | null) => Promise<VenueState | null>;
+
 export interface ReconcilerDeps {
-  /** The venue port to fetch state from */
-  venue: OrderbookVenuePort;
+  /** Loads venue state in canonical form for comparison. Replaces direct OrderbookVenuePort dependency. */
+  fetchVenueState: VenueStateLoader;
   /** Loads local state for comparison */
   loadLocalState: () => Promise<LocalState>;
   /** Persists reconciliation results with full state snapshots */
@@ -166,37 +171,8 @@ export class Reconciler {
   private async fetchVenueState(): Promise<VenueState | null> {
     const since = this.deps.getLastReconciledAt
       ? await this.deps.getLastReconciledAt()
-      : undefined;
-    const [posResult, balResult, fillResult, orderResult] = await Promise.all([
-      this.deps.venue.fetchPositions(),
-      this.deps.venue.fetchBalances(),
-      this.deps.venue.fetchRecentFills(since ?? undefined),
-      this.deps.venue.fetchOpenOrders(),
-    ]);
-
-    if (!posResult.ok) {
-      this.deps.logger.error({ err: posResult.error }, 'Failed to fetch venue positions');
-      return null;
-    }
-    if (!balResult.ok) {
-      this.deps.logger.error({ err: balResult.error }, 'Failed to fetch venue balances');
-      return null;
-    }
-    if (!fillResult.ok) {
-      this.deps.logger.error({ err: fillResult.error }, 'Failed to fetch venue fills');
-      return null;
-    }
-    if (!orderResult.ok) {
-      this.deps.logger.error({ err: orderResult.error }, 'Failed to fetch venue orders');
-      return null;
-    }
-
-    return {
-      positions: posResult.data,
-      balances: balResult.data,
-      recentFills: fillResult.data,
-      openOrders: orderResult.data,
-    };
+      : null;
+    return this.deps.fetchVenueState(since);
   }
 
   get isRunning(): boolean {

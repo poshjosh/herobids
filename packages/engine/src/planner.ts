@@ -28,6 +28,8 @@ export interface PlannedOrder {
   type: OrderType;
   quantity: Quantity;
   price?: Price;
+  /** Explicit swap routing params — populated when venueType is 'swap' and swapAssets are configured */
+  swapParams?: { inputAsset: string; outputAsset: string; amount: Quantity };
 }
 
 export interface PlannerDeps {
@@ -38,6 +40,8 @@ export interface PlannerDeps {
   symbol: string;
   /** Venue type — determines order type emitted. Default: 'orderbook' */
   venueType?: 'orderbook' | 'swap';
+  /** Explicit swap asset identifiers for routing (avoids fragile symbol parsing) */
+  swapAssets?: { baseAsset: string; quoteAsset: string };
 }
 
 /**
@@ -81,7 +85,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
         orders.push({
           side: 'buy',
           type: orderType,
-          quantity: currentSize, // close short
+          quantity: currentSize,
           price: decision.limitPrice,
         });
         if (targetSize.gt(0)) {
@@ -93,7 +97,6 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
           });
         }
       } else {
-        // Already flat or long
         action = currentSide === 'flat' ? 'open_long' : 'increase';
         const deficit = targetSize.minus(currentSize);
         if (deficit.gt(0)) {
@@ -109,6 +112,21 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
     }
 
     case 'go_short': {
+      if (venueType === 'swap') {
+        action = 'close';
+        // Spot swap venues can reduce or close existing base holdings,
+        // but they cannot open or reverse into a borrowed short.
+        if (currentSide === 'long' && currentSize.gt(0)) {
+          orders.push({
+            side: 'sell',
+            type: orderType,
+            quantity: currentSize,
+            price: decision.limitPrice,
+          });
+        }
+        break;
+      }
+
       if (currentSide === 'long') {
         // Close long first, then open short
         action = 'reverse';
@@ -175,8 +193,20 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
       action = 'close';
   }
 
+  // Populate swapParams on each order when configured for swap venues
+  if (venueType === 'swap' && deps.swapAssets) {
+    const { baseAsset, quoteAsset } = deps.swapAssets;
+    for (const order of orders) {
+      // Buy = spend quote to acquire base; Sell = spend base to acquire quote
+      const [inputAsset, outputAsset] = order.side === 'buy'
+        ? [quoteAsset, baseAsset]
+        : [baseAsset, quoteAsset];
+      order.swapParams = { inputAsset, outputAsset, amount: order.quantity };
+    }
+  }
+
   return {
-    id: '', // caller assigns ID
+    id: '',
     decisionId: decision.id,
     tradingInstanceId: decision.tradingInstanceId,
     venue,

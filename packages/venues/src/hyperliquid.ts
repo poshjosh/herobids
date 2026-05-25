@@ -241,7 +241,9 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
   }
 
   async subscribePublic(_symbols: string[], _handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>> {
-    return err({ code: 'venue.not_implemented', message: 'Public stream subscription not yet implemented (Phase 2c)' });
+    // Real implementation delegates to the worker-scoped PublicStreamPool.
+    // The adapter does not own a public WebSocket — the pool manages shared connections.
+    return err({ code: 'venue.not_implemented', message: 'subscribePublic requires a worker-scoped PublicStreamPool. Use the pool directly.' });
   }
 
   /**

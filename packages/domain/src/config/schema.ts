@@ -20,12 +20,26 @@ export const ReconciliationConfigSchema = z.object({
   autoCorrect: z.boolean().default(false),
 });
 
+export const PublicStreamConfigSchema = z.object({
+  reconnectBaseMs: z.number().min(100).default(1_000),
+  reconnectMaxMs: z.number().min(1000).default(30_000),
+  maxReconnectAttempts: z.number().min(1).default(20),
+  depthLevels: z.number().min(1).max(50).default(5),
+});
+
+export const MarkingConfigSchema = z.object({
+  stalenessThresholdMs: z.number().min(10_000).default(300_000),
+  oracleBaseUrl: z.string().url().optional(),
+  instrumentToCoinId: z.record(z.string(), z.string()).optional(),
+});
+
 export const StreamConfigSchema = z.object({
   private: z.object({
     reconnectBaseMs: z.number().min(100).default(1_000),
     reconnectMaxMs: z.number().min(1000).default(30_000),
     maxReconnectAttempts: z.number().min(1).default(10),
   }).default({}),
+  public: PublicStreamConfigSchema.default({}),
 });
 
 export const AppConfigSchema = z.object({
@@ -54,6 +68,7 @@ export const AppConfigSchema = z.object({
   }),
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
+  marking: MarkingConfigSchema.default({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -88,7 +103,31 @@ export const TradingInstanceConfigSchema = z.object({
   symbol: z.string(),
   venueType: z.enum(['orderbook', 'swap']).default('orderbook'),
   shadowPollIntervalMs: z.number().min(100).default(2000),
-});
+  /** Explicit swap asset identifiers — required for swap venues to avoid fragile symbol parsing */
+  swapAssets: z.object({
+    baseAsset: z.string(),
+    quoteAsset: z.string(),
+    /** Decimal places for the base asset (e.g. 9 for SOL). Required for raw-unit conversion. */
+    baseDecimals: z.number().int().min(0).max(18),
+    /** Decimal places for the quote asset (e.g. 6 for USDC). Required for raw-unit conversion. */
+    quoteDecimals: z.number().int().min(0).max(18),
+  }).optional(),
+}).refine(
+  (data) => data.venueType !== 'swap' || data.swapAssets !== undefined,
+  { message: 'swapAssets is required when venueType is "swap"', path: ['swapAssets'] },
+).refine(
+  (data) => data.venueType !== 'swap' || data.execution.mode !== 'paper',
+  { message: 'Swap venues cannot run in paper mode (no price source). Use shadow mode.', path: ['execution', 'mode'] },
+).refine(
+  (data) => {
+    // Enforce venue string matches venueType to prevent config/adapter mismatch
+    const swapVenues = ['jupiter'];
+    const orderbookVenues = ['hyperliquid'];
+    if (data.venueType === 'swap') return swapVenues.includes(data.venue);
+    return orderbookVenues.includes(data.venue);
+  },
+  { message: 'venue must match venueType: swap venues are [jupiter], orderbook venues are [hyperliquid]', path: ['venue'] },
+);
 
 export type TradingInstanceConfig = z.infer<typeof TradingInstanceConfigSchema>;
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;

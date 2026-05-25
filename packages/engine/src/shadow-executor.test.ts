@@ -254,6 +254,56 @@ describe('ShadowExecutor', () => {
     });
   });
 
+  describe('swap orders', () => {
+    it('uses quoted output amount as the filled base quantity for swap buys', async () => {
+      feed.setTicker({
+        symbol: 'SOL/USDC',
+        last: price('150'),
+        ask: price('151'),
+        bid: price('149'),
+        timestamp: new Date().toISOString(),
+      });
+
+      const swapVenue = {
+        quote: async () => ({
+          ok: true as const,
+          data: {
+            quoteData: {},
+            inputAsset: 'USDC',
+            outputAsset: 'SOL',
+            inputAmount: quantity('150'),
+            expectedOutputAmount: quantity('0.98'),
+            minimumOutputAmount: quantity('0.97'),
+            priceImpact: 0.01,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          },
+        }),
+      };
+
+      executor = new ShadowExecutor(makeIdGen(), feed, swapVenue as any);
+
+      const plan = makePlan({
+        venue: 'jupiter',
+        symbol: 'SOL/USDC',
+        action: 'open_long',
+        orders: [{
+          side: 'buy',
+          type: 'swap',
+          quantity: quantity('1'),
+          swapParams: { inputAsset: 'USDC', outputAsset: 'SOL', amount: quantity('1') },
+        }],
+      });
+
+      const result = await executor.execute(plan, price('150'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.orders[0].quantity.toString()).toBe('1');
+      expect(result.data.orders[0].filledQuantity.toString()).toBe('0.98');
+      expect(result.data.fills[0].quantity.toString()).toBe('0.98');
+    });
+  });
+
   describe('dispose', () => {
     it('cleans up trade handlers and pending limits', async () => {
       feed.setTicker({

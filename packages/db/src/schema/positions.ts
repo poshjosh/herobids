@@ -15,6 +15,8 @@ export const positions = pgTable('positions', {
   entryPrice: numeric('entry_price').notNull(),
   /** Realized P&L for this position (accumulated from partial closes) */
   realizedPnl: numeric('realized_pnl').notNull().default('0'),
+  /** Source of the canonical mark price used for P&L/risk: last_fill | oracle | ticker */
+  markSource: text('mark_source'),
   openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

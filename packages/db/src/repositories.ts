@@ -26,6 +26,7 @@ export interface UpsertPosition {
   size: string;
   entryPrice: string;
   realizedPnl: string;
+  markSource?: string;
 }
 
 /**
@@ -64,6 +65,51 @@ export class FillRepository {
       .from(fills)
       .where(and(...conditions))
       .orderBy(desc(fills.filledAt));
+  }
+
+  /** Get recent fills for ALL instances sharing a venue account.
+   *  Prevents false unknown_fill drift when venue fills are fetched account-wide
+   *  but local fills were previously scoped to a single instance. */
+  async getRecentByVenueAccount(venueAccountId: string, since?: Date) {
+    const conditions = [eq(tradingInstances.venueAccountId, venueAccountId)];
+    if (since) {
+      conditions.push(gte(fills.filledAt, since));
+    }
+    return this.db
+      .select({
+        id: fills.id,
+        orderId: fills.orderId,
+        tradingInstanceId: fills.tradingInstanceId,
+        venueRefId: fills.venueRefId,
+        venue: fills.venue,
+        symbol: fills.symbol,
+        side: fills.side,
+        quantity: fills.quantity,
+        price: fills.price,
+        fee: fills.fee,
+        feeCurrency: fills.feeCurrency,
+        filledAt: fills.filledAt,
+        createdAt: fills.createdAt,
+      })
+      .from(fills)
+      .innerJoin(tradingInstances, eq(fills.tradingInstanceId, tradingInstances.id))
+      .where(and(...conditions))
+      .orderBy(desc(fills.filledAt));
+  }
+
+  async getLatestFillByInstrument(instrument: string, tradingInstanceId?: string): Promise<{ price: string; filledAt: string } | null> {
+    const conditions = [eq(fills.symbol, instrument)];
+    if (tradingInstanceId) {
+      conditions.push(eq(fills.tradingInstanceId, tradingInstanceId));
+    }
+    const rows = await this.db
+      .select({ price: fills.price, filledAt: fills.filledAt })
+      .from(fills)
+      .where(and(...conditions))
+      .orderBy(desc(fills.filledAt))
+      .limit(1);
+    if (!rows[0]) return null;
+    return { price: rows[0].price!, filledAt: rows[0].filledAt.toISOString() };
   }
 }
 
@@ -111,6 +157,7 @@ export class PositionRepository {
           size: pos.size,
           entryPrice: pos.entryPrice,
           realizedPnl: pos.realizedPnl,
+          markSource: pos.markSource ?? null,
           updatedAt: new Date(),
         })
         .where(eq(positions.id, existing[0]!.id));
@@ -126,6 +173,7 @@ export class PositionRepository {
         size: pos.size,
         entryPrice: pos.entryPrice,
         realizedPnl: pos.realizedPnl,
+        markSource: pos.markSource ?? null,
         openedAt: new Date(),
       });
     }
@@ -358,18 +406,40 @@ export class OrderRepository {
   }
 }
 
+export interface InsertBalanceSnapshot {
+  venueAccountId: string;
+  venue: string;
+  balances: Array<{ asset: string; free: string; locked: string; total: string }>;
+  markSource?: string;
+  snapshotAt: Date;
+}
+
 /**
- * Repository for balance snapshot queries.
+ * Repository for balance snapshot persistence and queries.
  */
 export class BalanceSnapshotRepository {
   constructor(private readonly db: Database) {}
 
-  /** Get the latest balance snapshot for a venue account */
-  async getLatestByVenueAccount(venueAccountId: string) {
+  /** Persist a point-in-time balance snapshot */
+  async insertSnapshot(snapshot: InsertBalanceSnapshot): Promise<string> {
+    const id = crypto.randomUUID();
+    await this.db.insert(balanceSnapshots).values({
+      id,
+      venueAccountId: snapshot.venueAccountId,
+      venue: snapshot.venue,
+      balances: snapshot.balances,
+      markSource: snapshot.markSource ?? null,
+      snapshotAt: snapshot.snapshotAt,
+    });
+    return id;
+  }
+
+  /** Get the latest balance snapshot for a venue account on a specific venue */
+  async getLatestByVenueAccount(venueAccountId: string, venue: string) {
     const [row] = await this.db
       .select()
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.venueAccountId, venueAccountId))
+      .where(and(eq(balanceSnapshots.venueAccountId, venueAccountId), eq(balanceSnapshots.venue, venue)))
       .orderBy(desc(balanceSnapshots.snapshotAt))
       .limit(1);
     return row ?? null;

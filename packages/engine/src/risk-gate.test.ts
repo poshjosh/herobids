@@ -113,11 +113,23 @@ describe('Risk Gate', () => {
     }
   });
 
-  it('passes notional check when no price on market order', () => {
+  it('rejects notional check when no price and no referenceMark on market order (fail closed)', () => {
     const result = checkRisk(
       makePlan({ orders: [{ side: 'buy', type: 'market', quantity: quantity('2') }] }),
       { ...baseLimits, maxOrderNotional: price('80000') },
       baseSnapshot,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('risk.no_mark_for_notional');
+    }
+  });
+
+  it('passes notional check on market order when referenceMark provided', () => {
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'market', quantity: quantity('2') }] }),
+      { ...baseLimits, maxOrderNotional: price('80000') },
+      { ...baseSnapshot, referenceMark: price('30000') },
     );
     expect(result.ok).toBe(true);
   });
@@ -205,5 +217,81 @@ describe('Risk Gate', () => {
     );
     // 1 * 50000 = 50000 notional, 33% of 500000 = 165000 → should pass
     expect(result.ok).toBe(true);
+  });
+
+  // --- referenceMark edge cases ---
+
+  it('referenceMark overrides order.price for maxOrderNotional check', () => {
+    // order.price = 50000 (would pass: 2*50000=100000 < 120000)
+    // referenceMark = 70000 (should reject: 2*70000=140000 > 120000)
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'limit', quantity: quantity('2'), price: price('50000') }] }),
+      { ...baseLimits, maxOrderNotional: price('120000') },
+      { ...baseSnapshot, referenceMark: price('70000') },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('risk.max_order_notional_exceeded');
+    }
+  });
+
+  it('referenceMark overrides order.price for maxPositionSizePct check', () => {
+    // order.price = 10000 → notional 1*10000=10000 (would pass at 33% of 500000 = 165000)
+    // referenceMark = 200000 → notional 1*200000=200000 > 165000 → reject
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'limit', quantity: quantity('1'), price: price('10000') }] }),
+      { ...baseLimits, maxPositionSizePct: 33 },
+      { ...baseSnapshot, equity: price('500000'), referenceMark: price('200000') },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('risk.max_position_size_pct_exceeded');
+    }
+  });
+
+  it('fails closed for maxPositionSizePct when no mark and no order price', () => {
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'market', quantity: quantity('1') }] }),
+      { ...baseLimits, maxPositionSizePct: 33 },
+      { ...baseSnapshot, equity: price('500000') },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('risk.no_mark_for_notional');
+    }
+  });
+
+  it('uses referenceMark for maxPositionSizePct on market order (no order.price)', () => {
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'market', quantity: quantity('1') }] }),
+      { ...baseLimits, maxPositionSizePct: 33 },
+      { ...baseSnapshot, equity: price('500000'), referenceMark: price('50000') },
+    );
+    // 1 * 50000 = 50000 < 165000 → pass
+    expect(result.ok).toBe(true);
+  });
+
+  it('falls back to order.price when referenceMark absent but order has price', () => {
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'limit', quantity: quantity('2'), price: price('50000') }] }),
+      { ...baseLimits, maxOrderNotional: price('120000') },
+      baseSnapshot, // no referenceMark
+    );
+    // 2 * 50000 = 100000 < 120000 → pass
+    expect(result.ok).toBe(true);
+  });
+
+  it('uses order.price when it exceeds referenceMark for maxOrderNotional (worst-case)', () => {
+    // referenceMark = 40000 (would pass: 2*40000=80000 < 120000)
+    // order.price = 65000 → max(40000, 65000)=65000 → 2*65000=130000 > 120000 → reject
+    const result = checkRisk(
+      makePlan({ orders: [{ side: 'buy', type: 'limit', quantity: quantity('2'), price: price('65000') }] }),
+      { ...baseLimits, maxOrderNotional: price('120000') },
+      { ...baseSnapshot, referenceMark: price('40000') },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('risk.max_order_notional_exceeded');
+    }
   });
 });

@@ -115,7 +115,7 @@ export class ReconciliationEventRepository {
       .offset(filters.offset ?? 0);
   }
 
-  /** Get the last reconciled timestamp for a venue account */
+  /** Get the last reconciled timestamp for a venue account (shared cursor) */
   async getLastReconciledAt(venueAccountId: string): Promise<Date | null> {
     const [row] = await this.db
       .select({ lastReconciledAt: venueAccounts.lastReconciledAt })
@@ -124,5 +124,21 @@ export class ReconciliationEventRepository {
       .limit(1);
 
     return row?.lastReconciledAt ?? null;
+  }
+
+  /**
+   * Get the last reconciled timestamp scoped to a specific trading instance.
+   * Uses the max createdAt from reconciliation_events for this instance,
+   * avoiding cursor advancement by sibling instances sharing the same venue account.
+   */
+  async getLastReconciledAtForInstance(tradingInstanceId: string): Promise<Date | null> {
+    const [row] = await this.db
+      .select({ createdAt: reconciliationEvents.createdAt })
+      .from(reconciliationEvents)
+      .where(eq(reconciliationEvents.tradingInstanceId, tradingInstanceId))
+      .orderBy(desc(reconciliationEvents.createdAt))
+      .limit(1);
+
+    return row?.createdAt ?? null;
   }
 }
