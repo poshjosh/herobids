@@ -5,7 +5,7 @@ argument-hint: The proposed direction or what to grill self about
 handoffs:
   - label: Create Plan
     agent: PlanCreator
-    prompt: "Create an implementation plan based on the contemplation output above."
+    prompt: "Create or update an implementation plan based on the contemplation output above."
     send: true
     model: GPT-5.4
 ---
