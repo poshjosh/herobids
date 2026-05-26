@@ -3,22 +3,18 @@ import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, Subscr
 import type { TradingInstanceId } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import {
-  planDecision,
   PaperExecutor,
   ShadowExecutor,
   PollingMarketDataFeed,
   StreamMarketDataFeed,
   flatPosition,
   applyFill,
-  checkRisk,
-  decisionEvent,
-  planEvent,
-  orderEvent,
   fillEvent,
-  riskEvent,
   Reconciler,
   createOrderbookVenueStateLoader,
   createSwapVenueStateLoader,
+  runTradingCycle,
+  realClock,
 } from '@herobids/engine';
 import type {
   Executor,
@@ -26,13 +22,13 @@ import type {
   PositionState,
   RiskLimits,
   IdGenerator,
-  PlannerDeps,
   ReconcilerConfig,
   LocalState,
   MarketDataFeed,
   TickerSnapshot,
   StreamPoolHandle,
   Diff,
+  TradingCyclePersistence,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -41,6 +37,7 @@ import type {
   OrderRepository,
   BalanceSnapshotRepository,
   ReconciliationEventRepository,
+  DecisionRepository,
 } from '@herobids/db';
 import { price, quantity, Decimal } from '@herobids/domain';
 
@@ -57,6 +54,7 @@ export interface TradingActorDeps {
   positionRepo: PositionRepository;
   planRepo: ExecutionPlanRepository;
   orderRepo: OrderRepository;
+  decisionRepo: DecisionRepository;
   balanceSnapshotRepo: BalanceSnapshotRepository;
   reconciliationRepo: ReconciliationEventRepository;
   riskLimits: RiskLimits;
@@ -115,7 +113,7 @@ export class TradingActor implements InstanceActor {
 
   constructor(
     tradingInstanceId: string,
-    private readonly config: Record<string, unknown>,
+    private readonly strategyConfig: Record<string, unknown>,
     private readonly deps: TradingActorDeps,
     private readonly scanIntervalMs: number = 5000,
   ) {
@@ -782,165 +780,79 @@ export class TradingActor implements InstanceActor {
       }
       if (!snapshot) return;
 
-      // 1. Evaluate strategy
-      const evalResult = await this.deps.strategy.evaluate(snapshot, this.config);
-      if (!evalResult.ok) {
-        this.logger.warn({ err: evalResult.error }, 'Strategy evaluation failed');
-        return;
-      }
-
-      const decision = evalResult.data;
-      if (!decision) return; // Strategy has no opinion (hold)
-
-      // Stamp the trading instance ID
-      const stampedDecision = {
-        ...decision,
-        tradingInstanceId: this.tradingInstanceId as TradingInstanceId,
-      };
-
-      // 2. Journal the decision
-      await this.deps.journal.append(decisionEvent(stampedDecision));
-
-      // 3. Plan the execution
-      const plannerDeps: PlannerDeps = {
+      // Delegate the core decision/plan/risk/execute path to the reusable trading cycle
+      const cycleResult = await runTradingCycle(snapshot, this.position, {
+        tradingInstanceId: this.tradingInstanceId,
         venue: this.deps.venue,
         symbol: this.deps.symbol,
+        venueAccountId: this.deps.venueAccountId,
         venueType: this.deps.venueType,
         swapAssets: this.deps.swapAssets,
-        currentPosition: this.position.side === 'flat' ? null : {
-          symbol: this.position.symbol,
-          side: this.position.side,
-          size: this.position.size,
-          entryPrice: this.position.entryPrice,
-        },
-      };
-      const plan = {
-        ...planDecision(stampedDecision, plannerDeps),
-        id: this.deps.idGen.planId(),
-      };
-
-      if (plan.orders.length === 0) return; // Nothing to do
-
-      // Write-ahead: persist execution plan to DB BEFORE execution
-      await this.deps.planRepo.insertPlan({
-        id: plan.id,
-        decisionId: stampedDecision.id ?? plan.decisionId,
-        tradingInstanceId: this.tradingInstanceId,
-        venue: this.deps.venue,
-        symbol: this.deps.symbol,
-        action: plan.action,
-        plannedOrders: plan.orders.map((o) => ({
-          side: o.side,
-          type: o.type,
-          quantity: o.quantity.toString(),
-          price: o.price?.toString(),
-        })),
+        strategy: this.deps.strategy,
+        strategyConfig: this.strategyConfig,
+        executor: this.executor,
+        journal: this.deps.journal,
+        riskLimits: this.deps.riskLimits,
+        markSource: this.deps.markSource,
+        persistence: this.buildCyclePersistence(),
+        idGen: this.deps.idGen,
+        clock: realClock,
       });
 
-      await this.deps.journal.append(planEvent(plan, 'plan.created'));
+      this.position = cycleResult.position;
 
-      // 4. Risk check — use stable mark source for notional calculations (falls back to snapshot price).
-      // If the mark is stale (e.g. old fill when oracle is down), prefer the live ticker snapshot
-      // to avoid underpricing risk checks with hours-old data.
-      const markResult = this.deps.markSource
-        ? await this.deps.markSource.fetchMark(this.deps.symbol)
-        : undefined;
-      const referenceMark = (markResult?.ok && !markResult.data.stale)
-        ? markResult.data.price
-        : snapshot.price;
-
-      const riskResult = checkRisk(plan, this.deps.riskLimits, {
-        currentPosition: this.position.side === 'flat' ? null : this.position,
-        openPositionCount: this.position.side === 'flat' ? 0 : 1,
-        currentDrawdown: price('0'), // TODO: compute from equity curve
-        referenceMark,
-      });
-
-      if (!riskResult.ok) {
-        await this.deps.planRepo.markFailed(plan.id);
-        await this.deps.journal.append(riskEvent(this.tradingInstanceId, riskResult.error));
-        this.logger.warn({ code: riskResult.error.code }, 'Risk gate rejected');
-        return;
+      if (cycleResult.decided && cycleResult.executionResult) {
+        this.logger.info(
+          { intent: cycleResult.decision?.intent, fills: cycleResult.executionResult.fills.length, position: this.position.side },
+          'Tick completed',
+        );
+      } else if (cycleResult.riskRejected) {
+        this.logger.warn({ decision: cycleResult.decision?.intent }, 'Risk gate rejected');
+      } else if (cycleResult.executionFailed) {
+        this.logger.error({ decision: cycleResult.decision?.intent }, 'Execution failed');
       }
-
-      // 5. Execute (paper mode)
-      await this.deps.planRepo.markExecuting(plan.id);
-      const execResult = await this.executor.execute(plan, snapshot.price);
-      if (!execResult.ok) {
-        await this.deps.planRepo.markFailed(plan.id);
-        await this.deps.journal.append(planEvent(plan, 'plan.failed'));
-        this.logger.error({ err: execResult.error }, 'Execution failed');
-        return;
-      }
-
-      // 6. Record fills + update position
-      for (const fill of execResult.data.fills) {
-        this.position = applyFill(this.position, fill);
-        await this.deps.journal.append(fillEvent(fill));
-
-        // Persist fill to DB
-        await this.deps.fillRepo.insertFill({
-          orderId: fill.orderId,
-          tradingInstanceId: this.tradingInstanceId,
-          venue: this.deps.venue,
-          symbol: this.deps.symbol,
-          side: fill.side,
-          quantity: fill.quantity.toString(),
-          price: fill.price.toString(),
-          fee: fill.fee?.toString(),
-          feeCurrency: fill.feeCurrency,
-          filledAt: new Date(fill.filledAt),
-        });
-      }
-
-      // Persist position state to DB (reuses markResult from risk check above)
-      await this.deps.positionRepo.upsert({
-        tradingInstanceId: this.tradingInstanceId,
-        venueAccountId: this.deps.venueAccountId,
-        venue: this.deps.venue,
-        symbol: this.deps.symbol,
-        side: this.position.side,
-        size: this.position.size.toString(),
-        entryPrice: this.position.entryPrice.toString(),
-        realizedPnl: this.position.realizedPnl.toString(),
-        markSource: markResult?.ok ? markResult.data.source : undefined,
-      });
-
-      // Mark plan status based on executor result
-      if (execResult.data.plan.status === 'completed') {
-        await this.deps.planRepo.markCompleted(plan.id);
-        await this.deps.journal.append(planEvent(execResult.data.plan, 'plan.completed'));
-      }
-      // If still 'executing' (e.g. shadow limit orders pending), leave as executing
-
-      for (const order of execResult.data.orders) {
-        await this.deps.journal.append(orderEvent(order));
-        // Persist order with executionPlanId linkage for crash recovery
-        await this.deps.orderRepo.upsertByVenueRefId({
-          id: order.id,
-          tradingInstanceId: this.tradingInstanceId,
-          executionPlanId: order.executionPlanId,
-          venueRefId: order.venueRefId ?? `local-${order.id}`,
-          clientOrderId: order.clientOrderId,
-          venue: order.venue,
-          symbol: order.symbol,
-          side: order.side,
-          type: order.type,
-          quantity: order.quantity.toString(),
-          price: order.price?.toString(),
-          status: order.status,
-          filledQuantity: order.filledQuantity?.toString(),
-          avgFillPrice: order.avgFillPrice?.toString(),
-        });
-      }
-
-      this.logger.info(
-        { intent: stampedDecision.intent, fills: execResult.data.fills.length, position: this.position.side },
-        'Tick completed',
-      );
     } catch (err) {
       this.logger.error({ err }, 'Tick error');
     }
+  }
+
+  /** Build persistence hooks that delegate to real DB repositories */
+  private buildCyclePersistence(): TradingCyclePersistence {
+    return {
+      persistDecision: async (decision) => {
+        await this.deps.decisionRepo.insertDecision({
+          id: decision.id,
+          tradingInstanceId: decision.tradingInstanceId,
+          instrumentId: decision.instrumentId,
+          intent: decision.intent,
+          targetSize: decision.targetSize.toString(),
+          limitPrice: decision.limitPrice?.toString(),
+          contextHash: decision.contextHash,
+          metadata: decision.metadata,
+        });
+      },
+      persistPlan: async (plan) => {
+        await this.deps.planRepo.insertPlan(plan);
+      },
+      markPlanExecuting: async (planId) => {
+        await this.deps.planRepo.markExecuting(planId);
+      },
+      markPlanCompleted: async (planId) => {
+        await this.deps.planRepo.markCompleted(planId);
+      },
+      markPlanFailed: async (planId) => {
+        await this.deps.planRepo.markFailed(planId);
+      },
+      persistFill: async (fill) => {
+        await this.deps.fillRepo.insertFill(fill);
+      },
+      persistPosition: async (pos) => {
+        await this.deps.positionRepo.upsert(pos);
+      },
+      persistOrder: async (order) => {
+        await this.deps.orderRepo.upsertByVenueRefId(order);
+      },
+    };
   }
 
   /** Expose current position for read queries */

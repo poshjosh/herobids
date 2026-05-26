@@ -6,6 +6,7 @@ import { journalEvents } from './schema/index.js';
 /** Journal entry shape — structurally compatible with @herobids/engine Journal port */
 export interface JournalEntryInput {
   tradingInstanceId?: string;
+  backtestRunId?: string;
   type: string;
   payload: Record<string, unknown>;
 }
@@ -30,6 +31,7 @@ export class PgJournal implements JournalPort {
     await this.db.insert(journalEvents).values({
       id: crypto.randomUUID(),
       tradingInstanceId: entry.tradingInstanceId ?? null,
+      backtestRunId: entry.backtestRunId ?? null,
       type: entry.type,
       payload: entry.payload,
     });
@@ -41,6 +43,7 @@ export class PgJournal implements JournalPort {
       entries.map((entry) => ({
         id: crypto.randomUUID(),
         tradingInstanceId: entry.tradingInstanceId ?? null,
+        backtestRunId: entry.backtestRunId ?? null,
         type: entry.type,
         payload: entry.payload,
       })),
@@ -50,6 +53,7 @@ export class PgJournal implements JournalPort {
   /** Query journal events with optional filters */
   async query(filters: {
     tradingInstanceId?: string;
+    backtestRunId?: string;
     type?: string;
     limit?: number;
     offset?: number;
@@ -57,6 +61,9 @@ export class PgJournal implements JournalPort {
     const conditions: SQL[] = [];
     if (filters.tradingInstanceId) {
       conditions.push(eq(journalEvents.tradingInstanceId, filters.tradingInstanceId));
+    }
+    if (filters.backtestRunId) {
+      conditions.push(eq(journalEvents.backtestRunId, filters.backtestRunId));
     }
     if (filters.type) {
       conditions.push(eq(journalEvents.type, filters.type));

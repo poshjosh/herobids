@@ -3,6 +3,9 @@ import {
   TradingInstanceConfigSchema,
   PublicStreamConfigSchema,
   MarkingConfigSchema,
+  StrategyConfigSchema,
+  MomentumParamsSchema,
+  LlmParamsSchema,
 } from './schema.js';
 
 describe('TradingInstanceConfigSchema', () => {
@@ -156,5 +159,331 @@ describe('MarkingConfigSchema', () => {
     if (result.success) {
       expect(result.data.instrumentToCoinId).toEqual({ 'SOL/USDC': 'solana', 'BTC/USD': 'bitcoin' });
     }
+  });
+});
+
+describe('StrategyConfigSchema', () => {
+  it('accepts momentum strategy with defaults', () => {
+    const result = StrategyConfigSchema.safeParse({ type: 'momentum' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.type).toBe('momentum');
+      expect(result.data.params.lookbackPeriod).toBe(5);
+      expect(result.data.params.threshold).toBe(0.02);
+      expect(result.data.params.positionSize).toBe('1');
+    }
+  });
+
+  it('accepts momentum strategy with custom params', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'momentum',
+      params: { lookbackPeriod: 10, threshold: 0.05, positionSize: '2.5', instrumentId: 'BTC/USD:USD' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.params.lookbackPeriod).toBe(10);
+      expect(result.data.params.instrumentId).toBe('BTC/USD:USD');
+    }
+  });
+
+  it('rejects momentum with lookbackPeriod below 2', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'momentum',
+      params: { lookbackPeriod: 1 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects momentum with negative threshold', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'momentum',
+      params: { threshold: -0.01 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts llm strategy with required fields', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.type).toBe('llm');
+      expect(result.data.params.maxTokens).toBe(1024);
+      expect(result.data.params.timeoutMs).toBe(30_000);
+      expect(result.data.params.positionSize).toBe('1');
+    }
+  });
+
+  it('accepts llm strategy with all fields', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        promptVersion: 'v2',
+        maxTokens: 2048,
+        timeoutMs: 60_000,
+        instrumentId: 'ETH/USD:USD',
+        positionSize: '0.5',
+        baseUrl: 'https://proxy.example.com/v1',
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.params.baseUrl).toBe('https://proxy.example.com/v1');
+    }
+  });
+
+  it('rejects llm strategy without provider', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { model: 'gpt-4' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm strategy without model', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm with maxTokens below 1', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4', maxTokens: 0 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm with timeoutMs below 1000', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4', timeoutMs: 500 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm with invalid baseUrl', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4', baseUrl: 'not-a-url' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown strategy type', () => {
+    const result = StrategyConfigSchema.safeParse({ type: 'unknown', params: {} });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing type field', () => {
+    const result = StrategyConfigSchema.safeParse({ params: {} });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('MomentumParamsSchema', () => {
+  it('provides all defaults when empty object given', () => {
+    const result = MomentumParamsSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.lookbackPeriod).toBe(5);
+      expect(result.data.threshold).toBe(0.02);
+      expect(result.data.positionSize).toBe('1');
+      expect(result.data.instrumentId).toBeUndefined();
+    }
+  });
+
+  it('rejects non-integer lookbackPeriod', () => {
+    const result = MomentumParamsSchema.safeParse({ lookbackPeriod: 3.5 });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('LlmParamsSchema', () => {
+  it('rejects empty object (requires provider and model)', () => {
+    const result = LlmParamsSchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts minimal valid config', () => {
+    const result = LlmParamsSchema.safeParse({ provider: 'openai', model: 'gpt-4' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.maxTokens).toBe(1024);
+      expect(result.data.timeoutMs).toBe(30_000);
+      expect(result.data.positionSize).toBe('1');
+    }
+  });
+
+  it('rejects non-integer maxTokens', () => {
+    const result = LlmParamsSchema.safeParse({ provider: 'openai', model: 'gpt-4', maxTokens: 1.5 });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('StrategyConfigSchema (discriminated union)', () => {
+  it('accepts momentum type with default params', () => {
+    const result = StrategyConfigSchema.safeParse({ type: 'momentum' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.type).toBe('momentum');
+      expect(result.data.params.positionSize).toBe('1');
+    }
+  });
+
+  it('accepts momentum type with custom params', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'momentum',
+      params: { lookbackPeriod: 10, threshold: 0.05, positionSize: '2.5' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.params).toEqual({
+        lookbackPeriod: 10,
+        threshold: 0.05,
+        positionSize: '2.5',
+      });
+    }
+  });
+
+  it('rejects momentum with lookbackPeriod < 2', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'momentum',
+      params: { lookbackPeriod: 1 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects momentum with negative threshold', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'momentum',
+      params: { threshold: -0.01 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts llm type with required params', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.type).toBe('llm');
+      expect(result.data.params.maxTokens).toBe(1024);
+      expect(result.data.params.timeoutMs).toBe(30_000);
+      expect(result.data.params.positionSize).toBe('1');
+    }
+  });
+
+  it('accepts llm type with all optional params', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: {
+        provider: 'anthropic',
+        model: 'claude-4',
+        promptVersion: 'v2',
+        maxTokens: 2048,
+        timeoutMs: 60_000,
+        instrumentId: 'BTC/USD:USD',
+        positionSize: '0.5',
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.params.promptVersion).toBe('v2');
+      expect(result.data.params.instrumentId).toBe('BTC/USD:USD');
+    }
+  });
+
+  it('rejects llm type without provider', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { model: 'gpt-4' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm type without model', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm type with maxTokens < 1', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4', maxTokens: 0 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects llm type with timeoutMs < 1000', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'llm',
+      params: { provider: 'openai', model: 'gpt-4', timeoutMs: 500 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown strategy type', () => {
+    const result = StrategyConfigSchema.safeParse({
+      type: 'unknown_strategy',
+      params: {},
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects missing type field', () => {
+    const result = StrategyConfigSchema.safeParse({ params: {} });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('MomentumParamsSchema', () => {
+  it('applies all defaults', () => {
+    const result = MomentumParamsSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.lookbackPeriod).toBe(5);
+      expect(result.data.threshold).toBe(0.02);
+      expect(result.data.positionSize).toBe('1');
+      expect(result.data.instrumentId).toBeUndefined();
+    }
+  });
+
+  it('rejects non-integer lookbackPeriod', () => {
+    const result = MomentumParamsSchema.safeParse({ lookbackPeriod: 3.5 });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('LlmParamsSchema', () => {
+  it('requires provider and model', () => {
+    const result = LlmParamsSchema.safeParse({});
+    expect(result.success).toBe(false);
+  });
+
+  it('applies defaults for optional numeric fields', () => {
+    const result = LlmParamsSchema.safeParse({ provider: 'openai', model: 'gpt-4' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.maxTokens).toBe(1024);
+      expect(result.data.timeoutMs).toBe(30_000);
+      expect(result.data.positionSize).toBe('1');
+    }
+  });
+
+  it('rejects maxTokens as float', () => {
+    const result = LlmParamsSchema.safeParse({ provider: 'x', model: 'y', maxTokens: 10.5 });
+    expect(result.success).toBe(false);
   });
 });

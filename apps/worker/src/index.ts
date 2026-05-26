@@ -2,17 +2,18 @@ import pino from 'pino';
 import Redis from 'ioredis';
 import { WorkerRuntime, QUEUE_NAME } from './runtime.js';
 import type { PersistedInstance } from './runtime.js';
+import { BacktestRuntime } from './backtest-runtime.js';
 import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
-import { MomentumStrategy } from '@herobids/strategy';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
+import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
-import type { MarketSnapshot, OrderId, FillId } from '@herobids/domain';
+import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
@@ -53,6 +54,21 @@ const planRepo = new ExecutionPlanRepository(db);
 const orderRepo = new OrderRepository(db);
 const balanceSnapshotRepo = new BalanceSnapshotRepository(db);
 const reconciliationRepo = new ReconciliationEventRepository(db);
+const decisionRepo = new DecisionRepository(db);
+const backtestingRepo = new BacktestingRepository(db);
+
+// Strategy factory keyed by config.strategy.type
+function createStrategy(strategyConfig: StrategyConfig): Strategy {
+  switch (strategyConfig.type) {
+    case 'momentum':
+      return new MomentumStrategy(() => idGen.decisionId());
+    case 'llm':
+      return new LlmStrategy(
+        () => idGen.decisionId(),
+        async (artifact) => { await backtestingRepo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
+      );
+  }
+}
 
 // Reconciliation config sourced from operator config
 const reconciliationConfig = appConfig.reconciliation;
@@ -109,7 +125,7 @@ const runtime = new WorkerRuntime(
     }
     const config = parseResult.data;
 
-    const strategy = new MomentumStrategy(() => idGen.decisionId());
+    const strategy = createStrategy(config.strategy);
 
     // Resolve credentials: try DB lookup via venueAccountId, fall back to process env
     const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string ?? 'default';
@@ -217,6 +233,7 @@ const runtime = new WorkerRuntime(
       positionRepo,
       planRepo,
       orderRepo,
+      decisionRepo,
       balanceSnapshotRepo,
       reconciliationRepo,
       riskLimits: {
@@ -256,7 +273,7 @@ const runtime = new WorkerRuntime(
         logger.error({ tradingInstanceId: instanceId }, 'Instance marked as crashed in DB');
       },
     };
-    return new TradingActor(tradingInstanceId, rawConfig, deps);
+    return new TradingActor(tradingInstanceId, config.strategy.params as Record<string, unknown>, deps);
   },
   // Instance loader for crash recovery — loads all 'running' instances from DB
   async (): Promise<PersistedInstance[]> => {
@@ -272,6 +289,7 @@ const runtime = new WorkerRuntime(
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
+  await backtestRuntime.stop();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await redisClient.quit();
@@ -280,11 +298,19 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
+  await backtestRuntime.stop();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await redisClient.quit();
   process.exit(0);
 });
+
+// Start backtest runtime (BullMQ consumer for bounded backtest jobs)
+const backtestRuntime = new BacktestRuntime(
+  { redis: redisConnection, concurrency: 2 },
+  db,
+);
+backtestRuntime.start();
 
 await runtime.start();
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

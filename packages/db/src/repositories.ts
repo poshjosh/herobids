@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, isNull, inArray, desc, or, gte, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, tradingInstances, executionPlans, orders, balanceSnapshots } from './schema/index.js';
+import { fills, positions, tradingInstances, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -443,5 +443,46 @@ export class BalanceSnapshotRepository {
       .orderBy(desc(balanceSnapshots.snapshotAt))
       .limit(1);
     return row ?? null;
+  }
+}
+
+export interface InsertDecision {
+  id: string;
+  tradingInstanceId: string;
+  instrumentId: string;
+  intent: string;
+  targetSize: string;
+  limitPrice?: string;
+  contextHash?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Repository for persisting strategy decisions (append-only).
+ */
+export class DecisionRepository {
+  constructor(private readonly db: Database) {}
+
+  async insertDecision(decision: InsertDecision): Promise<void> {
+    await this.db.insert(decisions).values({
+      id: decision.id,
+      tradingInstanceId: decision.tradingInstanceId,
+      instrumentId: decision.instrumentId,
+      intent: decision.intent,
+      targetSize: decision.targetSize,
+      limitPrice: decision.limitPrice ?? null,
+      contextHash: decision.contextHash ?? null,
+      metadata: decision.metadata ?? null,
+    });
+  }
+
+  /** Get decisions for a trading instance ordered by most recent first */
+  async getByInstance(tradingInstanceId: string, limit = 50) {
+    return this.db
+      .select()
+      .from(decisions)
+      .where(eq(decisions.tradingInstanceId, tradingInstanceId))
+      .orderBy(desc(decisions.createdAt))
+      .limit(limit);
   }
 }

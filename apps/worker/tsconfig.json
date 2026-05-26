@@ -13,6 +13,7 @@
     { "path": "../../packages/db" },
     { "path": "../../packages/engine" },
     { "path": "../../packages/venues" },
-    { "path": "../../packages/strategy" }
+    { "path": "../../packages/strategy" },
+    { "path": "../../packages/backtesting" }
   ]
 }

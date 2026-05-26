@@ -6,6 +6,7 @@ import { quantity } from '@herobids/domain';
 import type { Executor, ExecutionResult, EngineError } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { ManagedOrder, FillEvent } from './order-state.js';
+import type { Clock } from './trading-cycle.js';
 
 export interface IdGenerator {
   orderId(): OrderId;
@@ -17,10 +18,13 @@ export interface IdGenerator {
  * No venue interaction. Used for paper trading mode.
  */
 export class PaperExecutor implements Executor {
-  constructor(private readonly idGen: IdGenerator) {}
+  constructor(
+    private readonly idGen: IdGenerator,
+    private readonly clock?: Clock,
+  ) {}
 
   async execute(plan: ExecutionPlan, currentPrice: Price): Promise<Result<ExecutionResult, EngineError>> {
-    const now = new Date().toISOString();
+    const now = this.clock ? this.clock.now() : new Date().toISOString();
     const orders: ManagedOrder[] = [];
     const fills: FillEvent[] = [];
 

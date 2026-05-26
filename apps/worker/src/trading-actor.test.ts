@@ -36,6 +36,7 @@ function stubRepo() {
     getIncomplete: vi.fn().mockResolvedValue([]),
     getByExecutionPlanId: vi.fn().mockResolvedValue([]),
     upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
+    insertDecision: vi.fn().mockResolvedValue(undefined),
     insert: vi.fn().mockResolvedValue(undefined),
     getLastReconciledAt: vi.fn().mockResolvedValue(null),
     getLastReconciledAtForInstance: vi.fn().mockResolvedValue(null),
@@ -53,6 +54,7 @@ function makeBaseDeps(overrides?: Partial<TradingActorDeps>): TradingActorDeps {
     positionRepo: repo as any,
     planRepo: repo as any,
     orderRepo: repo as any,
+    decisionRepo: repo as any,
     balanceSnapshotRepo: repo as any,
     reconciliationRepo: repo as any,
     riskLimits: {

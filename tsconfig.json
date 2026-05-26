@@ -6,6 +6,7 @@
     { "path": "packages/engine" },
     { "path": "packages/venues" },
     { "path": "packages/strategy" },
+    { "path": "packages/backtesting" },
     { "path": "apps/api" },
     { "path": "apps/worker" }
   ]

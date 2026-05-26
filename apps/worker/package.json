@@ -10,6 +10,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@herobids/backtesting": "workspace:*",
     "@herobids/db": "workspace:*",
     "@herobids/domain": "workspace:*",
     "@herobids/engine": "workspace:*",

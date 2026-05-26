@@ -22,6 +22,20 @@
       "when": 1779694708317,
       "tag": "0002_slow_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779868800000,
+      "tag": "0003_backtest_journal_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779955200000,
+      "tag": "0004_backtesting_tables",
+      "breakpoints": true
     }
   ]
 }

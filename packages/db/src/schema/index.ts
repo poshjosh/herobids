@@ -11,3 +11,8 @@ export { positions } from './positions.js';
 export { balanceSnapshots } from './balance-snapshots.js';
 export { journalEvents } from './journal-events.js';
 export { reconciliationEvents } from './reconciliation-events.js';
+export { decisionContexts } from './decision-contexts.js';
+export { replayCorpora } from './replay-corpora.js';
+export { replayMarketEvents } from './replay-market-events.js';
+export { backtestRuns } from './backtest-runs.js';
+export { llmDecisionArtifacts } from './llm-decision-artifacts.js';

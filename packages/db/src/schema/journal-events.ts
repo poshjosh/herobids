@@ -8,6 +8,8 @@ import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 export const journalEvents = pgTable('journal_events', {
   id: text('id').primaryKey(),               // UUIDv7
   tradingInstanceId: text('trading_instance_id'),
+  /** Optional backtest run scope — null for live events */
+  backtestRunId: text('backtest_run_id'),
   /** Event type, e.g. "decision.created", "order.filled", "risk.breach" */
   type: text('type').notNull(),
   /** Structured event payload */
@@ -17,4 +19,5 @@ export const journalEvents = pgTable('journal_events', {
   index('idx_journal_events_trading_instance_id').on(t.tradingInstanceId),
   index('idx_journal_events_type').on(t.type),
   index('idx_journal_events_created_at').on(t.createdAt),
+  index('idx_journal_events_backtest_run_id').on(t.backtestRunId),
 ]);

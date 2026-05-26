@@ -85,10 +85,28 @@ export const RiskConfigSchema = z.object({
   maxOrderNotional: z.string().optional(),
 });
 
-export const StrategyConfigSchema = z.object({
-  type: z.string(),
-  params: z.record(z.unknown()).default({}),
+export const MomentumParamsSchema = z.object({
+  lookbackPeriod: z.number().int().min(2).default(5),
+  threshold: z.number().min(0).default(0.02),
+  positionSize: z.string().default('1'),
+  instrumentId: z.string().optional(),
 });
+
+export const LlmParamsSchema = z.object({
+  provider: z.string(),
+  model: z.string(),
+  promptVersion: z.string().optional(),
+  maxTokens: z.number().int().min(1).default(1024),
+  timeoutMs: z.number().min(1000).default(30_000),
+  instrumentId: z.string().optional(),
+  positionSize: z.string().default('1'),
+  baseUrl: z.string().url().optional(),
+});
+
+export const StrategyConfigSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('momentum'), params: MomentumParamsSchema.default({}) }),
+  z.object({ type: z.literal('llm'), params: LlmParamsSchema }),
+]);
 
 export const ExecutionConfigSchema = z.object({
   mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
@@ -132,3 +150,5 @@ export const TradingInstanceConfigSchema = z.object({
 export type TradingInstanceConfig = z.infer<typeof TradingInstanceConfigSchema>;
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;
 export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
+export type MomentumParams = z.infer<typeof MomentumParamsSchema>;
+export type LlmParams = z.infer<typeof LlmParamsSchema>;

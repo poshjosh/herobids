@@ -54,6 +54,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@herobids/backtesting':
+        specifier: workspace:*
+        version: link:../../packages/backtesting
       '@herobids/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -91,6 +94,19 @@ importers:
       tsx:
         specifier: ^4.19.0
         version: 4.22.3
+
+  packages/backtesting:
+    dependencies:
+      '@herobids/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@herobids/engine':
+        specifier: workspace:*
+        version: link:../engine
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
   packages/db:
     dependencies:

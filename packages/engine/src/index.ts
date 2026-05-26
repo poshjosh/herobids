@@ -34,6 +34,18 @@ export type { Journal, JournalEntry, JournalEventType } from './journal.js';
 
 export { InMemoryJournal } from './journal-memory.js';
 
+export { runTradingCycle, realClock } from './trading-cycle.js';
+export type {
+  Clock,
+  TradingCycleDeps,
+  TradingCyclePersistence,
+  TradingCycleResult,
+  InsertPlanParams,
+  PersistFillParams,
+  PersistPositionParams,
+  PersistOrderParams,
+} from './trading-cycle.js';
+
 export { reconcile, reconcileWithThresholds, Reconciler, createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './reconciliation/index.js';
 export type {
   LocalState,

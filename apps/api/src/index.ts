@@ -6,7 +6,8 @@ import { venueAccountRoutes, portfolioRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes, portfolioPositionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
-import type { LifecycleJob } from './types.js';
+import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
+import type { LifecycleJob, BacktestJob } from './types.js';
 
 const app = Fastify({ logger: true });
 
@@ -22,6 +23,10 @@ const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
   connection: redisConnection,
 });
 
+const backtestQueue = new Queue<BacktestJob>(BACKTEST_QUEUE_NAME, {
+  connection: redisConnection,
+});
+
 // Health endpoint
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
@@ -34,6 +39,7 @@ await journalRoutes(app, db);
 await positionRoutes(app, db);
 await portfolioPositionRoutes(app, db);
 await reconciliationRoutes(app, db);
+await backtestRoutes(app, backtestQueue, db);
 
 const port = parseInt(process.env['PORT'] ?? '3000', 10);
 

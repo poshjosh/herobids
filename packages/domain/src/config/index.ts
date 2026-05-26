@@ -9,6 +9,8 @@ export {
   RiskConfigSchema,
   StrategyConfigSchema,
   ExecutionConfigSchema,
+  MomentumParamsSchema,
+  LlmParamsSchema,
 } from './schema.js';
 
 export type {
@@ -16,4 +18,6 @@ export type {
   TradingInstanceConfig,
   RiskConfig,
   StrategyConfig,
+  MomentumParams,
+  LlmParams,
 } from './schema.js';
