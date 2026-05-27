@@ -17,6 +17,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@herobids/backtesting':
+        specifier: workspace:*
+        version: link:../../packages/backtesting
       '@herobids/db':
         specifier: workspace:*
         version: link:../../packages/db

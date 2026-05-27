@@ -4,6 +4,7 @@ import { ArrayHistoricalDataFeed } from './historical-data-feed.js';
 import { runBacktest } from './replay-runner.js';
 import { price, quantity, ok } from '@herobids/domain';
 import type { Strategy, MarketSnapshot, Decision, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
+import { vi } from 'vitest';
 
 function makeFrames(count: number, startPrice = 50000, step = 100) {
   const base = new Date('2026-01-01T00:00:00.000Z').getTime();
@@ -161,5 +162,40 @@ describe('runBacktest', () => {
     expect(r1.finalPosition.side).toBe(r2.finalPosition.side);
     expect(r1.finalPosition.size.toString()).toBe(r2.finalPosition.size.toString());
     expect(r1.realizedPnl).toBe(r2.realizedPnl);
+  });
+
+  it('uses custom persistence hooks to persist decisions and replay contexts', async () => {
+    const frames = makeFrames(6);
+    const feed = new ArrayHistoricalDataFeed(frames);
+    const persistence = {
+      persistDecision: vi.fn().mockResolvedValue(undefined),
+      persistDecisionContext: vi.fn().mockResolvedValue(undefined),
+      persistPlan: vi.fn().mockResolvedValue(undefined),
+      markPlanExecuting: vi.fn().mockResolvedValue(undefined),
+      markPlanCompleted: vi.fn().mockResolvedValue(undefined),
+      markPlanFailed: vi.fn().mockResolvedValue(undefined),
+      persistFill: vi.fn().mockResolvedValue(undefined),
+      persistPosition: vi.fn().mockResolvedValue(undefined),
+      persistOrder: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await runBacktest(feed, {
+      runId: 'persist-run',
+      tradingInstanceId: 'inst-bt-persist',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: alwaysLong,
+      strategyConfig: { lookbackPeriod: 3 },
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      warmUpFrames: 0,
+      persistence,
+    });
+
+    expect(persistence.persistDecision).toHaveBeenCalled();
+    expect(persistence.persistDecisionContext).toHaveBeenCalled();
+    const persistedContext = persistence.persistDecisionContext.mock.calls[0]![0];
+    expect(persistedContext.snapshot.symbol).toBe('BTC/USD:USD');
+    expect(persistedContext.strategyParams).toEqual({ lookbackPeriod: 3 });
   });
 });

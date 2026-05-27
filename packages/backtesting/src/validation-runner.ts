@@ -1,6 +1,5 @@
-import type { Strategy, MarketSnapshot, Decision } from '@herobids/domain';
+import type { Strategy, Decision } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
-import type { TradingCycleResult } from '@herobids/engine';
 import type { BacktestConfig } from './replay-runner.js';
 import type { BacktestReport } from './backtest-report.js';
 import { runBacktest } from './replay-runner.js';

@@ -33,6 +33,26 @@ export const MarkingConfigSchema = z.object({
   instrumentToCoinId: z.record(z.string(), z.string()).optional(),
 });
 
+export const BacktestingConfigSchema = z.object({
+  warmupLookbackBars: z.number().int().min(1).default(200),
+  maxDataGapMs: z.number().min(1).default(60_000),
+  persistJournal: z.boolean().default(true),
+});
+
+export const MarketDataRecordingConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  captureTrades: z.boolean().default(true),
+  captureTopOfBook: z.boolean().default(true),
+  captureCandles: z.boolean().default(true),
+});
+
+export const LlmValidationConfigSchema = z.object({
+  requirePinnedModel: z.boolean().default(true),
+  minReplayContexts: z.number().int().min(1).default(100),
+  maxDecisionDivergencePct: z.number().min(0).max(100).default(20),
+  maxPnlRegressionPct: z.number().min(0).max(100).default(10),
+});
+
 export const StreamConfigSchema = z.object({
   private: z.object({
     reconnectBaseMs: z.number().min(100).default(1_000),
@@ -69,9 +89,15 @@ export const AppConfigSchema = z.object({
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
   marking: MarkingConfigSchema.default({}),
+  backtesting: BacktestingConfigSchema.default({}),
+  marketDataRecording: MarketDataRecordingConfigSchema.default({}),
+  llmValidation: LlmValidationConfigSchema.default({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
+export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
+export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 

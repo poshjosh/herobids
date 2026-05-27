@@ -154,12 +154,13 @@ export class BacktestingRepository {
   }
 
   /** Detect gaps in the corpus — returns timestamps where the gap exceeds maxGapMs */
-  async detectGaps(corpusId: string, symbol: string, maxGapMs: number, venue?: string): Promise<Array<{ before: Date; after: Date; gapMs: number }>> {
+  async detectGaps(corpusId: string, symbol: string, maxGapMs: number, venue?: string, eventType?: string): Promise<Array<{ before: Date; after: Date; gapMs: number }>> {
     const conditions = [
       eq(replayMarketEvents.corpusId, corpusId),
       eq(replayMarketEvents.symbol, symbol),
     ];
     if (venue) conditions.push(eq(replayMarketEvents.venue, venue));
+    if (eventType) conditions.push(eq(replayMarketEvents.eventType, eventType));
 
     const events = await this.db
       .select({ eventAt: replayMarketEvents.eventAt })

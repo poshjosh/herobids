@@ -33,6 +33,7 @@ function makeStrategy(decision: Decision | null): Strategy {
 function makePersistence(): TradingCyclePersistence & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {
     persistDecision: [],
+    persistDecisionContext: [],
     persistPlan: [],
     markPlanExecuting: [],
     markPlanCompleted: [],
@@ -44,6 +45,7 @@ function makePersistence(): TradingCyclePersistence & { calls: Record<string, un
   return {
     calls,
     persistDecision: vi.fn(async (...args) => { calls['persistDecision']!.push(args); }),
+    persistDecisionContext: vi.fn(async (...args) => { calls['persistDecisionContext']!.push(args); }),
     persistPlan: vi.fn(async (...args) => { calls['persistPlan']!.push(args); }),
     markPlanExecuting: vi.fn(async (...args) => { calls['markPlanExecuting']!.push(args); }),
     markPlanCompleted: vi.fn(async (...args) => { calls['markPlanCompleted']!.push(args); }),
@@ -127,6 +129,7 @@ describe('runTradingCycle', () => {
 
     // Persistence hooks called
     expect(persistence.calls['persistDecision']!.length).toBe(1);
+    expect(persistence.calls['persistDecisionContext']!.length).toBe(1);
     expect(persistence.calls['persistPlan']!.length).toBe(1);
     expect(persistence.calls['markPlanExecuting']!.length).toBe(1);
     expect(persistence.calls['markPlanCompleted']!.length).toBe(1);
@@ -293,6 +296,32 @@ describe('runTradingCycle', () => {
     });
 
     expect(result.decision!.tradingInstanceId).toBe('my-instance-99');
+  });
+
+  it('computes a replayable context hash when the strategy does not provide one', async () => {
+    const journal = new InMemoryJournal();
+    const persistence = makePersistence();
+    const idGen = makeIdGen();
+
+    const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
+      tradingInstanceId: 'inst-hash',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: makeStrategy(makeDecision()),
+      strategyConfig: { lookbackPeriod: 5 },
+      executor: new PaperExecutor(idGen),
+      journal,
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      persistence,
+      idGen,
+      clock: realClock,
+    });
+
+    expect(result.decision!.contextHash).toHaveLength(16);
+    const persistedContext = persistence.calls['persistDecisionContext']![0]![0] as { contextHash: string; referenceMark: { source: string } };
+    expect(persistedContext.contextHash).toBe(result.decision!.contextHash);
+    expect(persistedContext.referenceMark.source).toBe('snapshot');
   });
 
   it('uses mark source price for risk check when available and not stale', async () => {

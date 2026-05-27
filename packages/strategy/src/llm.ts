@@ -52,6 +52,12 @@ export interface LlmDecisionArtifact {
 export type ArtifactCallback = (artifact: LlmDecisionArtifact) => Promise<void>;
 
 const DEFAULT_PROMPT_VERSION = 'v1';
+const MAX_CACHE_SIZE = 1000;
+const responseCache = new Map<string, LlmResponse>();
+
+export function clearLlmResponseCache(): void {
+  responseCache.clear();
+}
 
 /**
  * LLM-based trading strategy.
@@ -74,6 +80,7 @@ export class LlmStrategy implements Strategy {
     const contextHash = this.computeContextHash(snapshot, config);
     const decisionId = this.idGen();
     const prompt = this.buildPrompt(snapshot, config);
+    const cacheKey = `${config.provider}:${config.model}:${config.promptVersion ?? DEFAULT_PROMPT_VERSION}:${config.baseUrl ?? ''}:${contextHash}`;
 
     const providerConfig: LlmProviderConfig = {
       provider: config.provider,
@@ -83,37 +90,50 @@ export class LlmStrategy implements Strategy {
       baseUrl: config.baseUrl,
     };
 
-    const result = await callLlmProvider(providerConfig, {
-      messages: [
-        { role: 'system', content: 'You are a quantitative trading assistant. Respond with JSON only.' },
-        { role: 'user', content: prompt },
-      ],
-      maxTokens: config.maxTokens,
-    });
+    let llmResponse = responseCache.get(cacheKey);
 
-    if (!result.ok) {
-      // Emit artifact for provider error
-      await this.emitArtifact({
-        decisionId,
-        contextHash,
-        context: { snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp, data: snapshot.data } },
-        promptPayload: prompt,
-        promptVersion: config.promptVersion ?? DEFAULT_PROMPT_VERSION,
-        rawResponse: null,
-        parsedDecision: null,
-        parseStatus: 'provider_error',
-        parseError: result.error.message,
-        provider: config.provider,
-        model: config.model,
-        tokensUsed: 0,
-        latencyMs: 0,
-        cached: false,
+    if (!llmResponse) {
+      const result = await callLlmProvider(providerConfig, {
+        messages: [
+          { role: 'system', content: 'You are a quantitative trading assistant. Respond with JSON only.' },
+          { role: 'user', content: prompt },
+        ],
+        maxTokens: config.maxTokens,
       });
 
-      return err({ code: 'strategy.llm_provider_error', message: result.error.message });
+      if (!result.ok) {
+        // Emit artifact for provider error
+        await this.emitArtifact({
+          decisionId,
+          contextHash,
+          context: { snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp, data: snapshot.data } },
+          promptPayload: prompt,
+          promptVersion: config.promptVersion ?? DEFAULT_PROMPT_VERSION,
+          rawResponse: null,
+          parsedDecision: null,
+          parseStatus: 'provider_error',
+          parseError: result.error.message,
+          provider: config.provider,
+          model: config.model,
+          tokensUsed: 0,
+          latencyMs: 0,
+          cached: false,
+        });
+
+        return err({ code: 'strategy.llm_provider_error', message: result.error.message });
+      }
+
+      llmResponse = { ...result.data, cached: false };
+      if (responseCache.size >= MAX_CACHE_SIZE) {
+        // Evict oldest entry (first inserted key)
+        const firstKey = responseCache.keys().next().value;
+        if (firstKey !== undefined) responseCache.delete(firstKey);
+      }
+      responseCache.set(cacheKey, llmResponse);
+    } else {
+      llmResponse = { ...llmResponse, cached: true, latencyMs: 0 };
     }
 
-    const llmResponse = result.data;
     const parsed = this.parseResponse(llmResponse.content);
 
     // Emit artifact

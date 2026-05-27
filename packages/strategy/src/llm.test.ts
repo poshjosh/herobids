@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LlmStrategy } from './llm.js';
+import { LlmStrategy, clearLlmResponseCache } from './llm.js';
 import type { LlmDecisionArtifact } from './llm.js';
 import type { MarketSnapshot } from '@herobids/domain';
 import { price } from '@herobids/domain';
@@ -33,11 +33,13 @@ describe('LlmStrategy', () => {
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    clearLlmResponseCache();
     vi.stubEnv('LLM_API_KEY_OPENAI', 'test-key-123');
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    clearLlmResponseCache();
     vi.unstubAllEnvs();
   });
 
@@ -344,5 +346,29 @@ describe('LlmStrategy', () => {
     if (result.ok) {
       expect(result.data!.targetSize.toString()).toBe('2.5');
     }
+  });
+
+  it('reuses cached provider output for identical replay contexts', async () => {
+    const fetchMock = mockFetch({
+      choices: [{ message: { content: '{"intent": "go_long", "confidence": 0.9}' } }],
+      usage: { total_tokens: 150 },
+      model: 'gpt-4',
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const artifacts: LlmDecisionArtifact[] = [];
+    const strategy = new LlmStrategy(() => 'cache-test-id', async (artifact) => {
+      artifacts.push(artifact);
+    });
+
+    const first = await strategy.evaluate(baseSnapshot, baseConfig);
+    const second = await strategy.evaluate(baseSnapshot, baseConfig);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(artifacts).toHaveLength(2);
+    expect(artifacts[0]!.cached).toBe(false);
+    expect(artifacts[1]!.cached).toBe(true);
   });
 });

@@ -37,6 +37,7 @@ function stubRepo() {
     getByExecutionPlanId: vi.fn().mockResolvedValue([]),
     upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
     insertDecision: vi.fn().mockResolvedValue(undefined),
+    insertDecisionContext: vi.fn().mockResolvedValue('ctx-id'),
     insert: vi.fn().mockResolvedValue(undefined),
     getLastReconciledAt: vi.fn().mockResolvedValue(null),
     getLastReconciledAtForInstance: vi.fn().mockResolvedValue(null),
@@ -55,6 +56,7 @@ function makeBaseDeps(overrides?: Partial<TradingActorDeps>): TradingActorDeps {
     planRepo: repo as any,
     orderRepo: repo as any,
     decisionRepo: repo as any,
+    backtestingRepo: repo as any,
     balanceSnapshotRepo: repo as any,
     reconciliationRepo: repo as any,
     riskLimits: {
@@ -63,7 +65,7 @@ function makeBaseDeps(overrides?: Partial<TradingActorDeps>): TradingActorDeps {
       maxDrawdown: price('10000'),
     },
     idGen: makeIdGen(),
-    fetchPrice: vi.fn().mockResolvedValue({ symbol: 'BTC/USD', price: price('50000'), timestamp: new Date().toISOString() }),
+    fetchPrice: vi.fn().mockResolvedValue({ symbol: 'BTC/USD:USD', price: price('50000'), timestamp: new Date().toISOString() }),
     venue: 'hyperliquid',
     symbol: 'BTC/USD:USD',
     venueAccountId: 'va-1',
@@ -209,6 +211,48 @@ describe('TradingActor lifecycle', () => {
       expect(persistedOrder.tradingInstanceId).toBe('inst-6');
       expect(persistedOrder.venue).toBe('hyperliquid');
       expect(persistedOrder.symbol).toBe('BTC/USD:USD');
+
+      await actor.stop();
+    });
+
+    it('persists a replayable decision context during the live cycle', async () => {
+      const backtestingRepo = {
+        insertDecisionContext: vi.fn().mockResolvedValue('ctx-1'),
+      };
+
+      const deps = makeBaseDeps({
+        executionMode: 'paper',
+        backtestingRepo: backtestingRepo as any,
+        balanceSnapshotRepo: {
+          getLatestByVenueAccount: vi.fn().mockResolvedValue({
+            balances: [{ asset: 'USD', free: '1000', locked: '0', total: '1000' }],
+          }),
+        } as any,
+        strategy: {
+          evaluate: vi.fn().mockResolvedValueOnce(ok({
+            id: 'd-context',
+            tradingInstanceId: 'inst-context' as TradingInstanceId,
+            instrumentId: 'BTC/USD:USD',
+            intent: 'go_long',
+            targetSize: quantity('1'),
+            timestamp: new Date().toISOString(),
+          })).mockResolvedValue(ok(null)),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-context', { lookbackPeriod: 5 }, deps, 60000);
+      await actor.start();
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(backtestingRepo.insertDecisionContext).toHaveBeenCalledTimes(1);
+      const persistedContext = backtestingRepo.insertDecisionContext.mock.calls[0]![0];
+      expect(persistedContext.context.snapshot.symbol).toBe('BTC/USD:USD');
+      expect(persistedContext.context.balanceSnapshot).toEqual({
+        balances: [{ asset: 'USD', free: '1000', locked: '0', total: '1000' }],
+      });
+      expect(persistedContext.context.strategyParams).toEqual({ lookbackPeriod: 5 });
+      expect(persistedContext.contextHash).toHaveLength(16);
 
       await actor.stop();
     });

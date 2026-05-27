@@ -58,3 +58,20 @@ marking:
     BTC/USD:USD: bitcoin
     ETH/USD:USD: ethereum
     SOL/USD:USD: solana
+
+backtesting:
+  warmupLookbackBars: 200
+  maxDataGapMs: 60000
+  persistJournal: true
+
+marketDataRecording:
+  enabled: false
+  captureTrades: true
+  captureTopOfBook: true
+  captureCandles: true
+
+llmValidation:
+  requirePinnedModel: true
+  minReplayContexts: 100
+  maxDecisionDivergencePct: 20
+  maxPnlRegressionPct: 10

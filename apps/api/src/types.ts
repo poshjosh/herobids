@@ -8,9 +8,13 @@ export interface LifecycleJob {
 
 export interface BacktestJob {
   runId: string;
-  strategyType: string;
-  config: Record<string, unknown>;
+  mode?: 'backtest' | 'validation';
+  strategyType?: string;
+  config?: Record<string, unknown>;
   corpusId: string;
   venue: string;
   symbol: string;
+  baseline?: { strategyType: string; config: Record<string, unknown> };
+  candidate?: { strategyType: string; config: Record<string, unknown> };
+  thresholds?: { maxDecisionDivergencePct?: number; maxPnlRegressionPct?: number };
 }

@@ -1,4 +1,4 @@
-import type { Strategy, MarketSnapshot, Decision } from '@herobids/domain';
+import type { Strategy, MarketSnapshot } from '@herobids/domain';
 import type { Price } from '@herobids/domain';
 
 /**

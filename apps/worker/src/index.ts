@@ -7,6 +7,7 @@ import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
+import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, OracleMarkSource } from '@herobids/venues';
@@ -226,6 +227,61 @@ const runtime = new WorkerRuntime(
       };
     };
 
+    let recordMarketSnapshot: TradingActorDeps['recordMarketSnapshot'];
+    let recordReferenceMark: TradingActorDeps['recordReferenceMark'];
+
+    if (appConfig.marketDataRecording.enabled) {
+      const recorder = new MarketDataRecorder(config.venue);
+      const corpusId = await backtestingRepo.insertCorpus({
+        name: `${tradingInstanceId}-${new Date().toISOString()}`,
+        source: 'live-recording',
+        venue: config.venue,
+        symbols: [config.symbol],
+        metadata: {
+          tradingInstanceId,
+          venueAccountId,
+          captureTrades: appConfig.marketDataRecording.captureTrades,
+          captureTopOfBook: appConfig.marketDataRecording.captureTopOfBook,
+          captureCandles: appConfig.marketDataRecording.captureCandles,
+        },
+      });
+
+      let corpusStartAt: Date | undefined;
+      let corpusEndAt: Date | undefined;
+
+      const flushRecordedEvents = async (): Promise<void> => {
+        const events = recorder.flush();
+        if (events.length === 0) return;
+
+        await backtestingRepo.insertMarketEventsBatch(events.map((event) => ({
+          corpusId,
+          venue: event.venue,
+          symbol: event.symbol,
+          eventType: event.eventType,
+          price: event.price,
+          eventAt: event.eventAt,
+          data: event.data,
+        })));
+
+        const batchStart = events[0]!.eventAt;
+        const batchEnd = events[events.length - 1]!.eventAt;
+        corpusStartAt = corpusStartAt && corpusStartAt < batchStart ? corpusStartAt : batchStart;
+        corpusEndAt = corpusEndAt && corpusEndAt > batchEnd ? corpusEndAt : batchEnd;
+        await backtestingRepo.updateCorpusWindow(corpusId, corpusStartAt, corpusEndAt);
+      };
+
+      recordMarketSnapshot = async (snapshot) => {
+        if (!appConfig.marketDataRecording.captureTopOfBook) return;
+        recorder.recordSnapshot(snapshot);
+        await flushRecordedEvents();
+      };
+
+      recordReferenceMark = async (mark) => {
+        recorder.recordMark(mark.symbol, mark.price, mark.source, mark.timestamp);
+        await flushRecordedEvents();
+      };
+    }
+
     const deps: TradingActorDeps = {
       strategy,
       journal,
@@ -234,6 +290,7 @@ const runtime = new WorkerRuntime(
       planRepo,
       orderRepo,
       decisionRepo,
+      backtestingRepo,
       balanceSnapshotRepo,
       reconciliationRepo,
       riskLimits: {
@@ -263,6 +320,8 @@ const runtime = new WorkerRuntime(
         new LastFillMarkSource(fillRepo, tradingInstanceId),
         oracleMarkSource,
       ),
+      recordMarketSnapshot,
+      recordReferenceMark,
       shadowPollIntervalMs: config.shadowPollIntervalMs,
       onCrashed: async (instanceId: string) => {
         await db.update(tradingInstances)
@@ -307,7 +366,16 @@ process.on('SIGINT', async () => {
 
 // Start backtest runtime (BullMQ consumer for bounded backtest jobs)
 const backtestRuntime = new BacktestRuntime(
-  { redis: redisConnection, concurrency: 2 },
+  {
+    redis: redisConnection,
+    concurrency: 2,
+    maxDataGapMs: appConfig.backtesting.maxDataGapMs,
+    defaultWarmUpFrames: appConfig.backtesting.warmupLookbackBars,
+    validationThresholds: {
+      maxDecisionDivergencePct: appConfig.llmValidation.maxDecisionDivergencePct,
+      maxPnlRegressionPct: appConfig.llmValidation.maxPnlRegressionPct,
+    },
+  },
   db,
 );
 backtestRuntime.start();

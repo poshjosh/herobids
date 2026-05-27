@@ -36,6 +36,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Marking
   MARKING_STALENESS_MS: { path: 'marking.stalenessThresholdMs', type: 'number' },
   MARKING_ORACLE_BASE_URL: { path: 'marking.oracleBaseUrl', type: 'string' },
+  // Backtesting
+  BACKTEST_MAX_DATA_GAP_MS: { path: 'backtesting.maxDataGapMs', type: 'number' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

@@ -1,6 +1,7 @@
 import type { Strategy, MarketSnapshot, Decision, MarkSource, TradingInstanceId } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { price } from '@herobids/domain';
+import crypto from 'node:crypto';
 import type { Executor, ExecutionResult, EngineError } from './executor.js';
 import type { ExecutionPlan, PlannerDeps } from './planner.js';
 import { planDecision } from './planner.js';
@@ -30,6 +31,7 @@ export const realClock: Clock = {
  */
 export interface TradingCyclePersistence {
   persistDecision(decision: Decision): Promise<void>;
+  persistDecisionContext(context: PersistDecisionContextParams): Promise<void>;
   persistPlan(plan: InsertPlanParams): Promise<void>;
   markPlanExecuting(planId: string): Promise<void>;
   markPlanCompleted(planId: string): Promise<void>;
@@ -60,6 +62,29 @@ export interface PersistFillParams {
   fee?: string;
   feeCurrency?: string;
   filledAt: Date;
+}
+
+export interface PersistDecisionContextParams {
+  decisionId: string;
+  tradingInstanceId: string;
+  contextHash: string;
+  snapshot: {
+    symbol: string;
+    price: string;
+    timestamp: string;
+    data?: Record<string, unknown>;
+  };
+  position: {
+    side: string;
+    size: string;
+    entryPrice: string;
+    realizedPnl: string;
+  } | null;
+  referenceMark: {
+    price: string;
+    source: string;
+  };
+  strategyParams: Record<string, unknown>;
 }
 
 export interface PersistPositionParams {
@@ -166,10 +191,38 @@ export async function runTradingCycle(
   const stampedDecision: Decision = {
     ...decision,
     tradingInstanceId: deps.tradingInstanceId as TradingInstanceId,
+    contextHash: decision.contextHash ?? computeContextHash(snapshot, position, deps.strategyConfig),
   };
 
   // Persist decision
   await deps.persistence.persistDecision(stampedDecision);
+
+  const { markResult, referenceMark, referenceMarkSource } = await resolveReferenceMark(snapshot, deps.symbol, deps.markSource);
+
+  await deps.persistence.persistDecisionContext({
+    decisionId: stampedDecision.id,
+    tradingInstanceId: deps.tradingInstanceId,
+    contextHash: stampedDecision.contextHash,
+    snapshot: {
+      symbol: snapshot.symbol,
+      price: snapshot.price.toString(),
+      timestamp: snapshot.timestamp,
+      data: snapshot.data,
+    },
+    position: position.side === 'flat'
+      ? null
+      : {
+          side: position.side,
+          size: position.size.toString(),
+          entryPrice: position.entryPrice.toString(),
+          realizedPnl: position.realizedPnl.toString(),
+        },
+    referenceMark: {
+      price: referenceMark.toString(),
+      source: referenceMarkSource,
+    },
+    strategyParams: deps.strategyConfig,
+  });
 
   // Journal the decision
   await deps.journal.append(decisionEvent(stampedDecision));
@@ -216,13 +269,6 @@ export async function runTradingCycle(
   await deps.journal.append(planEvent(plan, 'plan.created'));
 
   // 3. Risk check
-  const markResult = deps.markSource
-    ? await deps.markSource.fetchMark(deps.symbol)
-    : undefined;
-  const referenceMark = (markResult?.ok && !markResult.data.stale)
-    ? markResult.data.price
-    : snapshot.price;
-
   const riskResult = checkRisk(plan, deps.riskLimits, {
     currentPosition: position.side === 'flat' ? null : position,
     openPositionCount: position.side === 'flat' ? 0 : 1,
@@ -313,5 +359,59 @@ export async function runTradingCycle(
     position: updatedPosition,
     executionFailed: false,
     strategyError: false,
+  };
+}
+
+function computeContextHash(
+  snapshot: MarketSnapshot,
+  position: PositionState,
+  strategyConfig: Record<string, unknown>,
+): string {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      snapshot: {
+        symbol: snapshot.symbol,
+        price: snapshot.price.toString(),
+        timestamp: snapshot.timestamp,
+        data: snapshot.data,
+      },
+      position: {
+        side: position.side,
+        size: position.size.toString(),
+        entryPrice: position.entryPrice.toString(),
+        realizedPnl: position.realizedPnl.toString(),
+      },
+      strategyConfig,
+    }))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+async function resolveReferenceMark(
+  snapshot: MarketSnapshot,
+  symbol: string,
+  markSource?: MarkSource,
+): Promise<{
+  markResult: Awaited<ReturnType<MarkSource['fetchMark']>> | undefined;
+  referenceMark: typeof snapshot.price;
+  referenceMarkSource: string;
+}> {
+  const markResult = markSource
+    ? await markSource.fetchMark(symbol)
+    : undefined;
+
+  if (markResult?.ok && !markResult.data.stale) {
+    return {
+      markResult,
+      referenceMark: markResult.data.price,
+      referenceMarkSource: markResult.data.source,
+    };
+  }
+
+  return {
+    markResult,
+    referenceMark: snapshot.price,
+    referenceMarkSource: 'snapshot',
   };
 }

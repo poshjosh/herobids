@@ -46,6 +46,7 @@ export interface BacktestConfig {
 /** No-op persistence for backtests that don't need DB writes */
 const noopPersistence: TradingCyclePersistence = {
   persistDecision: async () => {},
+  persistDecisionContext: async () => {},
   persistPlan: async () => {},
   markPlanExecuting: async () => {},
   markPlanCompleted: async () => {},

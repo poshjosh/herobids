@@ -5,7 +5,7 @@ import type { StoredDecisionContext } from './context-replay.js';
 import { ArrayHistoricalDataFeed } from './historical-data-feed.js';
 import type { BacktestConfig } from './replay-runner.js';
 import { price, quantity, ok, err } from '@herobids/domain';
-import type { Strategy, MarketSnapshot, Decision, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
+import type { Strategy, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
 
 function makeFrames(count: number, startPrice = 50000, step = 100) {
   const base = new Date('2026-01-01T00:00:00.000Z').getTime();

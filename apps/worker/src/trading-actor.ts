@@ -38,6 +38,7 @@ import type {
   BalanceSnapshotRepository,
   ReconciliationEventRepository,
   DecisionRepository,
+  BacktestingRepository,
 } from '@herobids/db';
 import { price, quantity, Decimal } from '@herobids/domain';
 
@@ -55,6 +56,7 @@ export interface TradingActorDeps {
   planRepo: ExecutionPlanRepository;
   orderRepo: OrderRepository;
   decisionRepo: DecisionRepository;
+  backtestingRepo: BacktestingRepository;
   balanceSnapshotRepo: BalanceSnapshotRepository;
   reconciliationRepo: ReconciliationEventRepository;
   riskLimits: RiskLimits;
@@ -84,6 +86,10 @@ export interface TradingActorDeps {
   streamPool?: StreamPoolHandle;
   /** Canonical mark source for P&L/risk valuation (Phase 2c §8.4) */
   markSource?: MarkSource;
+  /** Optional live market-data recorder hook for replay corpora */
+  recordMarketSnapshot?: (snapshot: MarketSnapshot) => Promise<void>;
+  /** Optional reference-mark recorder hook for replay corpora */
+  recordReferenceMark?: (mark: { symbol: string; price: string; source: string; timestamp: string }) => Promise<void>;
   /** Callback invoked when the actor crashes (e.g. max reconnect reached). Used to persist crashed status. */
   onCrashed?: (tradingInstanceId: string) => Promise<void>;
 }
@@ -780,6 +786,14 @@ export class TradingActor implements InstanceActor {
       }
       if (!snapshot) return;
 
+      if (this.deps.recordMarketSnapshot) {
+        try {
+          await this.deps.recordMarketSnapshot(snapshot);
+        } catch (err) {
+          this.logger.warn({ err }, 'Failed to record live market snapshot');
+        }
+      }
+
       // Delegate the core decision/plan/risk/execute path to the reusable trading cycle
       const cycleResult = await runTradingCycle(snapshot, this.position, {
         tradingInstanceId: this.tradingInstanceId,
@@ -830,6 +844,40 @@ export class TradingActor implements InstanceActor {
           contextHash: decision.contextHash,
           metadata: decision.metadata,
         });
+      },
+      persistDecisionContext: async (context) => {
+        const latestBalanceSnapshot = await this.deps.balanceSnapshotRepo.getLatestByVenueAccount(
+          this.deps.venueAccountId,
+          this.deps.venue,
+        );
+
+        await this.deps.backtestingRepo.insertDecisionContext({
+          decisionId: context.decisionId,
+          tradingInstanceId: context.tradingInstanceId,
+          contextHash: context.contextHash,
+          context: {
+            snapshot: context.snapshot,
+            position: context.position,
+            referenceMark: context.referenceMark,
+            balanceSnapshot: latestBalanceSnapshot
+              ? { balances: latestBalanceSnapshot.balances }
+              : null,
+            strategyParams: context.strategyParams,
+          },
+        });
+
+        if (this.deps.recordReferenceMark) {
+          try {
+            await this.deps.recordReferenceMark({
+              symbol: context.snapshot.symbol,
+              price: context.referenceMark.price,
+              source: context.referenceMark.source,
+              timestamp: context.snapshot.timestamp,
+            });
+          } catch (err) {
+            this.logger.warn({ err }, 'Failed to record reference mark');
+          }
+        }
       },
       persistPlan: async (plan) => {
         await this.deps.planRepo.insertPlan(plan);
