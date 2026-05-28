@@ -268,6 +268,7 @@ export class BacktestRuntime {
       symbol: params.symbol,
       venueAccountId: 'backtest',
       strategy: params.strategy,
+      strategyType: params.strategyType,
       strategyConfig: strategyParams,
       riskLimits: {
         maxPositionSize: quantity(String(params.rawConfig['maxPositionSize'] ?? '100')),

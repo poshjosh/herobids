@@ -23,6 +23,8 @@ export interface BacktestConfig {
   venueAccountId: string;
   /** Strategy to evaluate */
   strategy: Strategy;
+  /** Explicit strategy type (e.g. 'llm', 'momentum'). Used for type-specific guards. */
+  strategyType?: string;
   /** Strategy params to pass into evaluate() */
   strategyConfig: Record<string, unknown>;
   /** Risk limits */
@@ -70,6 +72,17 @@ export async function runBacktest(
     throw new Error(`warmUpFrames (${config.warmUpFrames}) must be less than feed length (${feed.length})`);
   }
 
+  // LLM strategies must not run warm-up frames — they perform provider I/O on every evaluate()
+  // call, which wastes tokens and hides provider failures during frames that are supposed to be
+  // non-trading warm-up. Stateless strategies like LLM have no lookback buffer to fill.
+  const isLlm = config.strategyType === 'llm' || config.strategy.id.startsWith('llm');
+  if (config.warmUpFrames > 0 && isLlm) {
+    throw new Error(
+      `warmUpFrames must be 0 for LLM strategies (got ${config.warmUpFrames}). `
+      + 'LLM strategies perform provider I/O on every evaluate() call — warm-up would spend tokens without trading benefit.',
+    );
+  }
+
   const clock = new SimulatedClock(feed.frame(0).timestamp);
   const journal = config.journal ?? new InMemoryJournal();
   const persistence = config.persistence ?? noopPersistence;
@@ -92,8 +105,14 @@ export async function runBacktest(
     const frame = feed.frame(i);
     clock.advance(frame.timestamp);
     const snapshot: MarketSnapshot = { symbol: frame.symbol, price: frame.price, timestamp: frame.timestamp, data: frame.data };
-    // Only evaluate strategy to build up internal state (e.g. lookback buffers)
-    await config.strategy.evaluate(snapshot, config.strategyConfig);
+    // Evaluate strategy to build up internal state (e.g. lookback buffers).
+    // Errors during warm-up indicate corrupted internal state — fail fast.
+    const warmUpResult = await config.strategy.evaluate(snapshot, config.strategyConfig);
+    if (!warmUpResult.ok) {
+      throw new Error(
+        `Strategy error during warm-up frame ${i}: ${warmUpResult.error.code} — ${warmUpResult.error.message}`,
+      );
+    }
   }
 
   // Main replay loop

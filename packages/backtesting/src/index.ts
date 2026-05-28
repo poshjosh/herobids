@@ -10,5 +10,5 @@ export { parseCsvToFrames } from './importers/index.js';
 export type { CsvColumnMapping, CsvImportOptions } from './importers/index.js';
 export { runValidation } from './validation-runner.js';
 export type { ValidationComparison, ValidationResult, ValidationThresholds, DecisionDiff } from './validation-runner.js';
-export { replayContexts } from './context-replay.js';
-export type { StoredDecisionContext, ContextReplayResult, ContextReplaySummary } from './context-replay.js';
+export { replayContexts, normalizeForReplay, normalizeForReplayBatch } from './context-replay.js';
+export type { StoredDecisionContext, ContextReplayResult, ContextReplaySummary, PersistedDecisionContext, PersistedDecisionRow } from './context-replay.js';

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SimulatedClock } from './simulated-clock.js';
 import { ArrayHistoricalDataFeed } from './historical-data-feed.js';
 import { runBacktest } from './replay-runner.js';
-import { price, quantity, ok } from '@herobids/domain';
+import { price, quantity, ok, err } from '@herobids/domain';
 import type { Strategy, MarketSnapshot, Decision, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
 import { vi } from 'vitest';
 
@@ -197,5 +197,78 @@ describe('runBacktest', () => {
     const persistedContext = persistence.persistDecisionContext.mock.calls[0]![0];
     expect(persistedContext.snapshot.symbol).toBe('BTC/USD:USD');
     expect(persistedContext.strategyParams).toEqual({ lookbackPeriod: 3 });
+  });
+
+  it('rejects non-zero warmUpFrames for LLM strategies', async () => {
+    const llmStrategy: Strategy = {
+      id: 'llm-v1',
+      name: 'LLM Strategy',
+      evaluate: async () => ok(null),
+    };
+    const frames = makeFrames(10);
+    const feed = new ArrayHistoricalDataFeed(frames);
+
+    await expect(runBacktest(feed, {
+      runId: 'test-llm-warmup',
+      tradingInstanceId: 'inst-bt-llm',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: llmStrategy,
+      strategyConfig: { provider: 'openai', model: 'gpt-4' },
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      warmUpFrames: 3,
+    })).rejects.toThrow('warmUpFrames must be 0 for LLM strategies');
+  });
+
+  it('allows zero warmUpFrames for LLM strategies', async () => {
+    const llmStrategy: Strategy = {
+      id: 'llm-v1',
+      name: 'LLM Strategy',
+      evaluate: async () => ok(null),
+    };
+    const frames = makeFrames(5);
+    const feed = new ArrayHistoricalDataFeed(frames);
+
+    const report = await runBacktest(feed, {
+      runId: 'test-llm-no-warmup',
+      tradingInstanceId: 'inst-bt-llm-ok',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: llmStrategy,
+      strategyConfig: { provider: 'openai', model: 'gpt-4' },
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      warmUpFrames: 0,
+    });
+
+    expect(report.totalFrames).toBe(5);
+  });
+
+  it('surfaces strategy errors during warm-up instead of swallowing them', async () => {
+    let callCount = 0;
+    const failsOnSecondCall: Strategy = {
+      id: 'fragile',
+      name: 'Fragile Strategy',
+      evaluate: async () => {
+        callCount++;
+        if (callCount === 2) return err({ code: 'strategy.broken', message: 'config invalid' });
+        return ok(null);
+      },
+    };
+    const frames = makeFrames(10);
+    const feed = new ArrayHistoricalDataFeed(frames);
+
+    await expect(runBacktest(feed, {
+      runId: 'test-warmup-error',
+      tradingInstanceId: 'inst-bt-warmup-err',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: failsOnSecondCall,
+      strategyConfig: {},
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      warmUpFrames: 5,
+    })).rejects.toThrow('Strategy error during warm-up frame 1');
   });
 });

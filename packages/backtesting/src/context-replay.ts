@@ -146,3 +146,72 @@ export async function replayContexts(
     divergences,
   };
 }
+
+// --- Normalization adapter ---
+
+/**
+ * The canonical nested shape stored in the `decision_contexts` DB table.
+ * Matches the column type from `packages/db/src/schema/decision-contexts.ts`.
+ */
+export interface PersistedDecisionContext {
+  snapshot: { symbol: string; price: string; timestamp: string; data?: Record<string, unknown> };
+  position: { side: string; size: string; entryPrice: string; realizedPnl: string } | null;
+  referenceMark: { price: string; source: string } | null;
+  balanceSnapshot: { balances: Array<{ asset: string; free: string; locked: string; total: string }> } | null;
+  strategyParams: Record<string, unknown>;
+}
+
+/**
+ * A persisted decision row (from the `decisions` table).
+ * Only the fields needed for normalization.
+ */
+export interface PersistedDecisionRow {
+  id: string;
+  intent: string;
+  targetSize: string;
+}
+
+/**
+ * Normalize a persisted decision + context row pair into the flat
+ * `StoredDecisionContext` shape that `replayContexts()` expects.
+ *
+ * This bridges the gap between the nested canonical storage format
+ * (snapshot, position, referenceMark, strategyParams) and the flat
+ * replay helper input (symbol, price, timestamp).
+ */
+export function normalizeForReplay(
+  decision: PersistedDecisionRow,
+  contextRow: { contextHash: string; context: PersistedDecisionContext },
+): StoredDecisionContext {
+  const ctx = contextRow.context;
+  return {
+    decisionId: decision.id,
+    contextHash: contextRow.contextHash,
+    context: {
+      symbol: ctx.snapshot.symbol,
+      price: ctx.snapshot.price,
+      timestamp: ctx.snapshot.timestamp,
+      // Merge original snapshot data with enrichment fields so they reach
+      // the strategy via snapshot.data during replayContexts()
+      data: {
+        ...ctx.snapshot.data,
+        position: ctx.position,
+        referenceMark: ctx.referenceMark,
+        balanceSnapshot: ctx.balanceSnapshot,
+        strategyParams: ctx.strategyParams,
+      },
+    },
+    originalIntent: decision.intent,
+    originalTargetSize: decision.targetSize,
+  };
+}
+
+/**
+ * Batch-normalize an array of joined decision + context rows.
+ * Convenience wrapper for loading from a query result.
+ */
+export function normalizeForReplayBatch(
+  rows: Array<{ decision: PersistedDecisionRow; context: { contextHash: string; context: PersistedDecisionContext } }>,
+): StoredDecisionContext[] {
+  return rows.map(r => normalizeForReplay(r.decision, r.context));
+}

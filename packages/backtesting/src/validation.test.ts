@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runValidation } from './validation-runner.js';
-import { replayContexts } from './context-replay.js';
-import type { StoredDecisionContext } from './context-replay.js';
+import { replayContexts, normalizeForReplay, normalizeForReplayBatch } from './context-replay.js';
+import type { StoredDecisionContext, PersistedDecisionContext } from './context-replay.js';
 import { ArrayHistoricalDataFeed } from './historical-data-feed.js';
 import type { BacktestConfig } from './replay-runner.js';
 import { price, quantity, ok, err } from '@herobids/domain';
@@ -316,5 +316,104 @@ describe('replayContexts', () => {
     expect(summary.intentMatchPct).toBe(0);
     expect(summary.sizeMatchPct).toBe(0);
     expect(summary.divergences).toHaveLength(0);
+  });
+});
+
+describe('normalizeForReplay', () => {
+  it('maps nested DB shape to flat StoredDecisionContext', () => {
+    const decision = { id: 'd-1', intent: 'go_long', targetSize: '1.5' };
+    const contextRow = {
+      contextHash: 'abc123',
+      context: {
+        snapshot: { symbol: 'BTC/USD:USD', price: '50000', timestamp: '2026-01-01T00:00:00.000Z', data: { source: 'ws' } },
+        position: { side: 'long', size: '1', entryPrice: '49500', realizedPnl: '0' },
+        referenceMark: { price: '50100', source: 'binance' },
+        balanceSnapshot: { balances: [{ asset: 'USDC', free: '10000', locked: '0', total: '10000' }] },
+        strategyParams: { lookbackPeriod: 5 },
+      } satisfies PersistedDecisionContext,
+    };
+
+    const result = normalizeForReplay(decision, contextRow);
+
+    expect(result.decisionId).toBe('d-1');
+    expect(result.contextHash).toBe('abc123');
+    expect(result.originalIntent).toBe('go_long');
+    expect(result.originalTargetSize).toBe('1.5');
+    // Flat fields extracted from snapshot
+    expect(result.context.symbol).toBe('BTC/USD:USD');
+    expect(result.context.price).toBe('50000');
+    expect(result.context.timestamp).toBe('2026-01-01T00:00:00.000Z');
+    // Enrichment fields merged into data so they reach strategy via snapshot.data
+    expect(result.context.data).toEqual({
+      source: 'ws',
+      position: contextRow.context.position,
+      referenceMark: contextRow.context.referenceMark,
+      balanceSnapshot: contextRow.context.balanceSnapshot,
+      strategyParams: { lookbackPeriod: 5 },
+    });
+  });
+
+  it('handles null optional fields', () => {
+    const decision = { id: 'd-2', intent: 'go_short', targetSize: '0.5' };
+    const contextRow = {
+      contextHash: 'def456',
+      context: {
+        snapshot: { symbol: 'ETH/USD:USD', price: '3000', timestamp: '2026-01-02T00:00:00.000Z' },
+        position: null,
+        referenceMark: null,
+        balanceSnapshot: null,
+        strategyParams: {},
+      } satisfies PersistedDecisionContext,
+    };
+
+    const result = normalizeForReplay(decision, contextRow);
+
+    expect(result.context.symbol).toBe('ETH/USD:USD');
+    // No original snapshot.data, so data only contains enrichment fields
+    expect(result.context.data).toEqual({
+      position: null,
+      referenceMark: null,
+      balanceSnapshot: null,
+      strategyParams: {},
+    });
+  });
+});
+
+describe('normalizeForReplayBatch', () => {
+  it('normalizes multiple rows', () => {
+    const rows = [
+      {
+        decision: { id: 'd-1', intent: 'go_long', targetSize: '1' },
+        context: {
+          contextHash: 'h1',
+          context: {
+            snapshot: { symbol: 'BTC/USD:USD', price: '50000', timestamp: '2026-01-01T00:00:00.000Z' },
+            position: null, referenceMark: null, balanceSnapshot: null, strategyParams: {},
+          } satisfies PersistedDecisionContext,
+        },
+      },
+      {
+        decision: { id: 'd-2', intent: 'go_short', targetSize: '2' },
+        context: {
+          contextHash: 'h2',
+          context: {
+            snapshot: { symbol: 'ETH/USD:USD', price: '3000', timestamp: '2026-01-02T00:00:00.000Z' },
+            position: null, referenceMark: null, balanceSnapshot: null, strategyParams: {},
+          } satisfies PersistedDecisionContext,
+        },
+      },
+    ];
+
+    const results = normalizeForReplayBatch(rows);
+
+    expect(results).toHaveLength(2);
+    expect(results[0]!.decisionId).toBe('d-1');
+    expect(results[0]!.context.symbol).toBe('BTC/USD:USD');
+    expect(results[1]!.decisionId).toBe('d-2');
+    expect(results[1]!.context.symbol).toBe('ETH/USD:USD');
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(normalizeForReplayBatch([])).toEqual([]);
   });
 });
