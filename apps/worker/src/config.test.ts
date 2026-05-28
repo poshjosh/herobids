@@ -175,14 +175,13 @@ liveRollout:
   enabled: true
   allowedVenues:
     - hyperliquid
-    - kraken
   maxInitialOrderNotionalUsd: "100"
 `);
 
       const config = loadConfig(tmpDir);
 
       expect(config.liveRollout.enabled).toBe(true);
-      expect(config.liveRollout.allowedVenues).toEqual(['hyperliquid', 'kraken']);
+      expect(config.liveRollout.allowedVenues).toEqual(['hyperliquid']);
       expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('100');
     });
 
@@ -235,6 +234,16 @@ liveRollout:
       writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
 liveRollout:
   maxInitialOrderNotionalUsd: " 50 "
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects unsupported venues in allowedVenues', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+liveRollout:
+  allowedVenues:
+    - kraken
 `);
 
       expect(() => loadConfig(tmpDir)).toThrow();

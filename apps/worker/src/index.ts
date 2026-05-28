@@ -111,7 +111,14 @@ const runtime = new WorkerRuntime(
     scanIntervalMs: 5000,
     concurrency: 10,
     onStartFailed: async (tradingInstanceId, error) => {
-      logger.error({ tradingInstanceId, err: error.message }, 'Instance start failed — marking crashed');
+      logger.error(
+        {
+          tradingInstanceId,
+          err: error.message,
+          ...(error instanceof LiveGateError && { code: error.code }),
+        },
+        'Instance start failed — marking crashed'
+      );
       await db.update(tradingInstances)
         .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
         .where(eq(tradingInstances.id, tradingInstanceId));

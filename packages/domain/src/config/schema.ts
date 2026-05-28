@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+// Supported venues for live rollout
+export const SUPPORTED_LIVE_VENUES = ['hyperliquid'] as const;
+export type SupportedLiveVenue = typeof SUPPORTED_LIVE_VENUES[number];
+
 // --- Operator Config (loaded from YAML + env at startup) ---
 
 export const VenueConfigSchema = z.object({
@@ -66,7 +70,7 @@ export const LiveRolloutConfigSchema = z.object({
   /** Master switch — must be true for any instance to run in live mode */
   enabled: z.boolean().default(false),
   /** Venues permitted to execute live orders (others are rejected at startup) */
-  allowedVenues: z.array(z.string()).default(['hyperliquid']),
+  allowedVenues: z.array(z.enum(SUPPORTED_LIVE_VENUES)).default(['hyperliquid']),
   /** Require DB-backed credentials (reject env-var fallback for live mode) */
   requireDbCredentials: z.boolean().default(true),
   /** Hard cap on single-order notional (USD) during rollout — instance maxOrderNotional is clamped to this */
