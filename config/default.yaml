@@ -75,3 +75,14 @@ llmValidation:
   minReplayContexts: 100
   maxDecisionDivergencePct: 20
   maxPnlRegressionPct: 10
+
+# Live rollout gating — fail-closed operator policy for live execution mode.
+# All checks must pass before an instance is allowed to trade live.
+liveRollout:
+  enabled: false                   # master switch — must be true for any live instance to start
+  allowedVenues:                   # venues permitted to execute live orders
+    - hyperliquid
+  requireDbCredentials: true       # reject env-var credential fallback for live mode
+  maxInitialOrderNotionalUsd: "50" # hard cap on single-order notional (USD) during rollout
+  maxConsecutiveVenueErrors: 3     # circuit-breaker: halt after N consecutive venue errors (wired in Step 2)
+  slippageAlertBps: 50             # log warning when fill slippage exceeds this (wired in Step 2)

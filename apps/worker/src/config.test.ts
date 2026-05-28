@@ -154,4 +154,90 @@ marking:
     expect(config.reconciliation.driftAlertOnly).toBe(false);
     expect(config.reconciliation.autoCorrect).toBe(true);
   });
+
+  describe('liveRollout config', () => {
+    it('applies Zod defaults when liveRollout is omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.liveRollout.enabled).toBe(false);
+      expect(config.liveRollout.allowedVenues).toEqual(['hyperliquid']);
+      expect(config.liveRollout.requireDbCredentials).toBe(true);
+      expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('50');
+      expect(config.liveRollout.maxConsecutiveVenueErrors).toBe(3);
+      expect(config.liveRollout.slippageAlertBps).toBe(50);
+    });
+
+    it('loads explicit liveRollout from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+liveRollout:
+  enabled: true
+  allowedVenues:
+    - hyperliquid
+    - kraken
+  maxInitialOrderNotionalUsd: "100"
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.liveRollout.enabled).toBe(true);
+      expect(config.liveRollout.allowedVenues).toEqual(['hyperliquid', 'kraken']);
+      expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('100');
+    });
+
+    it('applies LIVE_ROLLOUT_ENABLED env override', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+      process.env['LIVE_ROLLOUT_ENABLED'] = 'true';
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.liveRollout.enabled).toBe(true);
+    });
+
+    it('applies LIVE_ROLLOUT_MAX_ORDER_NOTIONAL_USD env override', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+      process.env['LIVE_ROLLOUT_MAX_ORDER_NOTIONAL_USD'] = '25';
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('25');
+    });
+
+    it('rejects non-numeric maxInitialOrderNotionalUsd', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+liveRollout:
+  maxInitialOrderNotionalUsd: "fifty"
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects zero maxInitialOrderNotionalUsd', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+liveRollout:
+  maxInitialOrderNotionalUsd: "0"
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects Infinity maxInitialOrderNotionalUsd', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+liveRollout:
+  maxInitialOrderNotionalUsd: "Infinity"
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects whitespace-padded maxInitialOrderNotionalUsd', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+liveRollout:
+  maxInitialOrderNotionalUsd: " 50 "
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+  });
 });

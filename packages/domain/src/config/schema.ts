@@ -62,6 +62,24 @@ export const StreamConfigSchema = z.object({
   public: PublicStreamConfigSchema.default({}),
 });
 
+export const LiveRolloutConfigSchema = z.object({
+  /** Master switch — must be true for any instance to run in live mode */
+  enabled: z.boolean().default(false),
+  /** Venues permitted to execute live orders (others are rejected at startup) */
+  allowedVenues: z.array(z.string()).default(['hyperliquid']),
+  /** Require DB-backed credentials (reject env-var fallback for live mode) */
+  requireDbCredentials: z.boolean().default(true),
+  /** Hard cap on single-order notional (USD) during rollout — instance maxOrderNotional is clamped to this */
+  maxInitialOrderNotionalUsd: z.string().default('50').refine(
+    (v) => { const n = Number(v); return v === v.trim() && Number.isFinite(n) && n > 0; },
+    { message: 'maxInitialOrderNotionalUsd must be a finite positive numeric string (no surrounding whitespace)' },
+  ),
+  /** Consecutive venue errors before circuit-breaker halts the actor */
+  maxConsecutiveVenueErrors: z.number().int().min(1).default(3),
+  /** Slippage alert threshold (bps) — log warning when fill deviates beyond this */
+  slippageAlertBps: z.number().min(0).default(50),
+});
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -92,12 +110,14 @@ export const AppConfigSchema = z.object({
   backtesting: BacktestingConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
+  liveRollout: LiveRolloutConfigSchema.default({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
+export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 

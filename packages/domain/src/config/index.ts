@@ -11,6 +11,7 @@ export {
   ExecutionConfigSchema,
   MomentumParamsSchema,
   LlmParamsSchema,
+  LiveRolloutConfigSchema,
 } from './schema.js';
 
 export type {
@@ -20,4 +21,5 @@ export type {
   StrategyConfig,
   MomentumParams,
   LlmParams,
+  LiveRolloutConfig,
 } from './schema.js';

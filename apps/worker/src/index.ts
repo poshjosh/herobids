@@ -18,6 +18,7 @@ import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '
 import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
+import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -133,6 +134,7 @@ const runtime = new WorkerRuntime(
     let apiKey = process.env['HYPERLIQUID_API_KEY'] ?? '';
     let secret = process.env['HYPERLIQUID_SECRET'] ?? '';
     let testnet = true;
+    let credentialsFromDb = false;
 
     // Credential resolution is only needed for orderbook venues (exchange API keys).
     // Swap venues are wallet-only — they resolve their address from venueAccountRef later.
@@ -148,6 +150,7 @@ const runtime = new WorkerRuntime(
               apiKey = decrypted.apiKey;
               secret = decrypted.secret;
               testnet = decrypted.testnet ?? false;
+              credentialsFromDb = true;
             } else {
               throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt credentials for venueAccount ${venueAccountId}`);
             }
@@ -162,6 +165,18 @@ const runtime = new WorkerRuntime(
         throw new CredentialResolutionError(`Failed to load credentials for venueAccount ${venueAccountId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+
+    // --- Live-mode startup gate (fail-closed) ---
+    const liveGateResult = assertLiveReadiness(appConfig.liveRollout, {
+      executionMode: config.execution.mode,
+      venue: config.venue,
+      venueType: config.venueType,
+      venueAccountId,
+      credentialsFromDb,
+      credentialsPresent: !!(apiKey.trim() && secret.trim()),
+      driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
+      instanceMaxOrderNotional: config.risk.maxOrderNotional,
+    });
 
     // Stream config (shared between adapter construction and actor deps)
     const streamConfig = appConfig.streams.private;
@@ -300,7 +315,7 @@ const runtime = new WorkerRuntime(
         maxPositionSizePct: config.risk.maxPositionSizePct,
         dailyMaxLossPct: config.risk.dailyMaxLossPct,
         stopLossCooldownMs: config.risk.stopLossCooldownMs,
-        maxOrderNotional: config.risk.maxOrderNotional ? price(config.risk.maxOrderNotional) : undefined,
+        maxOrderNotional: liveGateResult.effectiveMaxOrderNotional,
       },
       idGen,
       fetchPrice,
