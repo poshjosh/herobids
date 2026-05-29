@@ -55,16 +55,20 @@ export class FillRepository {
   }
 
   /** Get recent fills for a trading instance, optionally since a timestamp */
-  async getRecentByInstance(tradingInstanceId: string, since?: Date) {
+  async getRecentByInstance(tradingInstanceId: string, since?: Date, limit?: number) {
     const conditions = [eq(fills.tradingInstanceId, tradingInstanceId)];
     if (since) {
       conditions.push(gte(fills.filledAt, since));
     }
-    return this.db
+    const query = this.db
       .select()
       .from(fills)
       .where(and(...conditions))
       .orderBy(desc(fills.filledAt));
+    if (limit) {
+      return query.limit(limit);
+    }
+    return query;
   }
 
   /** Get recent fills for ALL instances sharing a venue account.

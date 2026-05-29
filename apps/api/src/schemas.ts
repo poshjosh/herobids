@@ -54,9 +54,17 @@ export const ReconciliationEventQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+export const LiveStatusQuerySchema = z.object({
+  /** Only return events since this ISO timestamp */
+  since: z.string().datetime().optional(),
+  /** Max number of recent events to return per category */
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;
 export type UpdateInstanceConfigInput = z.infer<typeof UpdateInstanceConfigSchema>;
 export type CreateVenueAccountInput = z.infer<typeof CreateVenueAccountSchema>;
 export type CreatePortfolioInput = z.infer<typeof CreatePortfolioSchema>;
 export type JournalQueryInput = z.infer<typeof JournalQuerySchema>;
 export type ReconciliationEventQueryInput = z.infer<typeof ReconciliationEventQuerySchema>;
+export type LiveStatusQueryInput = z.infer<typeof LiveStatusQuerySchema>;

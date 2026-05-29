@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, desc, and, type SQL } from 'drizzle-orm';
+import { eq, desc, and, inArray, gte, like, type SQL } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { journalEvents } from './schema/index.js';
 
@@ -78,5 +78,53 @@ export class PgJournal implements JournalPort {
       .orderBy(desc(journalEvents.createdAt))
       .limit(filters.limit ?? 100)
       .offset(filters.offset ?? 0);
+  }
+
+  /** Query journal events matching multiple types (for live observability aggregation) */
+  async queryByTypes(filters: {
+    tradingInstanceId: string;
+    types: string[];
+    since?: Date;
+    limit?: number;
+  }): Promise<Array<typeof journalEvents.$inferSelect>> {
+    const conditions: SQL[] = [
+      eq(journalEvents.tradingInstanceId, filters.tradingInstanceId),
+    ];
+    if (filters.types.length > 0) {
+      conditions.push(inArray(journalEvents.type, filters.types));
+    }
+    if (filters.since) {
+      conditions.push(gte(journalEvents.createdAt, filters.since));
+    }
+
+    return this.db
+      .select()
+      .from(journalEvents)
+      .where(and(...conditions))
+      .orderBy(desc(journalEvents.createdAt))
+      .limit(filters.limit ?? 100);
+  }
+
+  /** Query journal events matching a type prefix (e.g. 'live.' for all live events) */
+  async queryByTypePrefix(filters: {
+    tradingInstanceId: string;
+    typePrefix: string;
+    since?: Date;
+    limit?: number;
+  }): Promise<Array<typeof journalEvents.$inferSelect>> {
+    const conditions: SQL[] = [
+      eq(journalEvents.tradingInstanceId, filters.tradingInstanceId),
+      like(journalEvents.type, `${filters.typePrefix}%`),
+    ];
+    if (filters.since) {
+      conditions.push(gte(journalEvents.createdAt, filters.since));
+    }
+
+    return this.db
+      .select()
+      .from(journalEvents)
+      .where(and(...conditions))
+      .orderBy(desc(journalEvents.createdAt))
+      .limit(filters.limit ?? 100);
   }
 }

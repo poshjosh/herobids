@@ -7,6 +7,7 @@ import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes, portfolioPositionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
 import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
+import { liveStatusRoutes } from './routes/live-status.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
 
 const app = Fastify({ logger: true });
@@ -40,6 +41,7 @@ await positionRoutes(app, db);
 await portfolioPositionRoutes(app, db);
 await reconciliationRoutes(app, db);
 await backtestRoutes(app, backtestQueue, db);
+await liveStatusRoutes(app, db);
 
 const port = parseInt(process.env['PORT'] ?? '3000', 10);
 

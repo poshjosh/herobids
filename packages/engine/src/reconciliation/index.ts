@@ -11,6 +11,7 @@ export type {
   Diff,
   DiffType,
   DiffSeverity,
+  DriftCategory,
   DriftThresholds,
 } from './reconcile.js';
 

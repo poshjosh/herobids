@@ -1,4 +1,5 @@
 import type { Decision } from '@herobids/domain';
+import { Decimal } from '@herobids/domain';
 import type { ExecutionPlan } from './planner.js';
 import type { ManagedOrder, FillEvent } from './order-state.js';
 import type { RiskError } from './risk-gate.js';
@@ -23,6 +24,13 @@ export type JournalEventType =
   | 'instance.started'
   | 'instance.stopped'
   | 'instance.crashed'
+  | 'instance.live_blocked'
+  | 'instance.live_armed'
+  | 'order.submitted_to_venue'
+  | 'order.acknowledged'
+  | 'order.fill_confirmed_from_stream'
+  | 'order.completion_recovered'
+  | 'live.slippage_alert'
   | 'reconciliation.match'
   | 'reconciliation.drift_detected'
   | 'reconciliation.drift_within_threshold'
@@ -130,4 +138,113 @@ export function riskEvent(tradingInstanceId: string, error: RiskError): Omit<Jou
       context: error.context,
     },
   };
+}
+
+// --- Live observability event helpers ---
+
+export interface LiveBlockedPayload {
+  reason: string;
+  code: string;
+  venue?: string;
+  venueAccountId?: string;
+}
+
+export function liveBlockedEvent(tradingInstanceId: string, payload: LiveBlockedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'instance.live_blocked', payload };
+}
+
+export interface LiveArmedPayload {
+  venue: string;
+  venueAccountId: string;
+  effectiveMaxOrderNotional?: string;
+}
+
+export function liveArmedEvent(tradingInstanceId: string, payload: LiveArmedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'instance.live_armed', payload };
+}
+
+export interface OrderSubmittedToVenuePayload {
+  orderId: string;
+  clientOrderId: string;
+  venue: string;
+  symbol: string;
+  side: string;
+  type: string;
+  quantity: string;
+  referencePrice?: string;
+}
+
+export function orderSubmittedToVenueEvent(tradingInstanceId: string, payload: OrderSubmittedToVenuePayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'order.submitted_to_venue', payload };
+}
+
+export interface OrderAcknowledgedPayload {
+  orderId: string;
+  clientOrderId: string;
+  venueRefId: string;
+  venue: string;
+  symbol: string;
+  status: string;
+}
+
+export function orderAcknowledgedEvent(tradingInstanceId: string, payload: OrderAcknowledgedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'order.acknowledged', payload };
+}
+
+export interface FillConfirmedFromStreamPayload {
+  orderId: string;
+  venueRefId: string;
+  fillVenueRefId: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  price: string;
+  fee?: string;
+}
+
+export function fillConfirmedFromStreamEvent(tradingInstanceId: string, payload: FillConfirmedFromStreamPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'order.fill_confirmed_from_stream', payload };
+}
+
+export interface CompletionRecoveredPayload {
+  planId: string;
+  orderId: string;
+  venueRefId?: string;
+  recoverySource: 'reconciliation' | 'private_stream' | 'startup_recovery';
+}
+
+export function completionRecoveredEvent(tradingInstanceId: string, payload: CompletionRecoveredPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'order.completion_recovered', payload };
+}
+
+export interface SlippageAlertPayload {
+  orderId: string;
+  venue: string;
+  symbol: string;
+  side: string;
+  referencePrice: string;
+  avgFillPrice: string;
+  slippageBps: number;
+  thresholdBps: number;
+}
+
+export function slippageAlertEvent(tradingInstanceId: string, payload: SlippageAlertPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'live.slippage_alert', payload };
+}
+
+/**
+ * Compute slippage in basis points between reference price and actual fill price.
+ * Returns positive when fill is worse than reference (buy higher, sell lower).
+ * Uses Decimal arithmetic to avoid IEEE-754 precision loss on price strings.
+ */
+export function computeSlippageBps(referencePrice: string, avgFillPrice: string, side: 'buy' | 'sell'): number {
+  const ref = new Decimal(referencePrice);
+  const fill = new Decimal(avgFillPrice);
+  if (ref.isZero()) return 0;
+  // For buys, slippage = (fill - ref) / ref * 10000
+  // For sells, slippage = (ref - fill) / ref * 10000
+  const raw = side === 'buy'
+    ? fill.minus(ref).div(ref).mul(10_000)
+    : ref.minus(fill).div(ref).mul(10_000);
+  return raw.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
 }

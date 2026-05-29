@@ -32,8 +32,8 @@ export type { PositionState } from './position-tracker.js';
 export { checkRisk } from './risk-gate.js';
 export type { RiskError, RiskLimits, RiskSnapshot, RiskCheckResult } from './risk-gate.js';
 
-export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent } from './journal.js';
-export type { Journal, JournalEntry, JournalEventType } from './journal.js';
+export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent, liveBlockedEvent, liveArmedEvent, orderSubmittedToVenueEvent, orderAcknowledgedEvent, fillConfirmedFromStreamEvent, completionRecoveredEvent, slippageAlertEvent, computeSlippageBps } from './journal.js';
+export type { Journal, JournalEntry, JournalEventType, LiveBlockedPayload, LiveArmedPayload, OrderSubmittedToVenuePayload, OrderAcknowledgedPayload, FillConfirmedFromStreamPayload, CompletionRecoveredPayload, SlippageAlertPayload } from './journal.js';
 
 export { InMemoryJournal } from './journal-memory.js';
 
@@ -62,6 +62,7 @@ export type {
   Diff,
   DiffType,
   DiffSeverity,
+  DriftCategory,
   DriftThresholds,
   ReconcilerConfig,
   ReconcilerDeps,

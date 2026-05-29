@@ -65,6 +65,16 @@ export type DiffType = 'position_mismatch' | 'balance_mismatch' | 'unknown_fill'
 
 export type DiffSeverity = 'critical' | 'acceptable';
 
+/**
+ * Live-mode drift classification — helps operators distinguish root causes of balance/position discrepancies.
+ * Optional: only set when the reconciler can infer the category from available data.
+ */
+export type DriftCategory =
+  | 'fee_funding_adjustment'
+  | 'unexplained_balance_delta'
+  | 'open_order_drift'
+  | 'position_size_drift';
+
 export interface Diff {
   type: DiffType;
   symbol?: string;
@@ -74,6 +84,8 @@ export interface Diff {
   venue: unknown;
   /** Severity classification. 'acceptable' means within configured threshold. */
   severity?: DiffSeverity;
+  /** Live-mode drift category for operator diagnostics. */
+  category?: DriftCategory;
 }
 
 // --- Tolerance for floating point comparison ---
@@ -130,7 +142,8 @@ export function reconcileWithThresholds(
 
   const classifiedDiffs: Diff[] = baseResult.diffs.map((diff) => {
     const severity = classifyDiffSeverity(diff, posThreshold, balThreshold);
-    return { ...diff, severity };
+    const category = classifyDriftCategory(diff);
+    return { ...diff, severity, category };
   });
 
   const hasCritical = classifiedDiffs.some((d) => d.severity === 'critical');
@@ -166,6 +179,36 @@ function classifyDiffSeverity(diff: Diff, posThreshold: Decimal, balThreshold: D
 
   // unknown_fill and orphaned_order are always critical — they indicate state not tracked
   return 'critical';
+}
+
+/**
+ * Classify a diff into a drift category for operator diagnostics.
+ * Conservative: only assigns a category when the diff shape unambiguously matches.
+ * Defaults to undefined (no category) rather than guessing.
+ */
+function classifyDriftCategory(diff: Diff): DriftCategory | undefined {
+  if (diff.type === 'position_mismatch') {
+    // Only classify as size drift when both local and venue positions exist
+    // with matching side — side flips or missing positions are more serious
+    // and should not be lumped under "size drift".
+    const localObj = diff.local as { side?: string; size?: string } | null;
+    const venueObj = diff.venue as { side?: string; size?: string } | null;
+    if (localObj?.side && venueObj?.side && localObj.side === venueObj.side) {
+      return 'position_size_drift';
+    }
+    return undefined;
+  }
+  if (diff.type === 'orphaned_order') {
+    return 'open_order_drift';
+  }
+  if (diff.type === 'balance_mismatch') {
+    // Without venue-provided attribution (funding history, fee ledger),
+    // we cannot reliably distinguish fees from other causes.
+    // Default to unexplained; fee_funding_adjustment should only be set
+    // when the venue explicitly reports the deduction type.
+    return 'unexplained_balance_delta';
+  }
+  return undefined;
 }
 
 function reconcilePositions(local: LocalPosition[], venue: Position[]): Diff[] {
