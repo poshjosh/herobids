@@ -381,6 +381,9 @@ export class OrderRepository {
             status: order.status,
             filledQuantity: order.filledQuantity,
             avgFillPrice: order.avgFillPrice,
+            // Backfill plan linkage when provided (handles stream-before-persist race)
+            ...(order.executionPlanId && !existing[0]!.executionPlanId && { executionPlanId: order.executionPlanId }),
+            ...(order.clientOrderId && !existing[0]!.clientOrderId && { clientOrderId: order.clientOrderId }),
             updatedAt: new Date(),
           })
           .where(eq(orders.venueRefId, order.venueRefId));

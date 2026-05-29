@@ -455,4 +455,178 @@ describe('TradingActor lifecycle', () => {
       expect(onCrashed).toHaveBeenCalledWith('inst-7');
     });
   });
+
+  describe('live mode', () => {
+    it('selects LiveExecutor and starts successfully with reconciliation + stream', async () => {
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn(), onStateChange: vi.fn() })),
+        submitOrder: vi.fn().mockResolvedValue(ok({
+          orderId: 'venue-oid-1',
+          clientOrderId: 'test',
+          status: 'open',
+          venueRefId: 'vref-1',
+          timestamp: new Date().toISOString(),
+        })),
+      } as any;
+
+      const deps = makeBaseDeps({
+        venuePort,
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        executionMode: 'live',
+        strategy: {
+          evaluate: vi.fn().mockResolvedValue(ok(null)),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-live-1', {}, deps);
+      await actor.start();
+      await actor.stop();
+    });
+
+    it('throws when live mode is used without a venue port', () => {
+      const deps = makeBaseDeps({ executionMode: 'live', venuePort: undefined });
+      expect(() => new TradingActor('inst-live-no-port', {}, deps)).toThrow(
+        'Live execution mode requires a venue port',
+      );
+    });
+
+    it('skips tick when unresolved live plans exist', async () => {
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn(), onStateChange: vi.fn() })),
+        submitOrder: vi.fn(),
+      } as any;
+
+      const planRepo = {
+        insertPlan: vi.fn().mockResolvedValue(undefined),
+        markExecuting: vi.fn().mockResolvedValue(undefined),
+        markCompleted: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([]),
+        getIncomplete: vi.fn().mockResolvedValue([{ id: 'plan-unresolved', status: 'executing' }]),
+      };
+
+      const orderRepo = {
+        getOpenByInstance: vi.fn().mockResolvedValue([]),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([{ id: 'o-1', status: 'open' }]),
+        upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const strategyEvaluate = vi.fn().mockResolvedValue(ok({
+        id: 'd-live',
+        tradingInstanceId: 'inst-live-overlap' as TradingInstanceId,
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: quantity('1'),
+        timestamp: new Date().toISOString(),
+      }));
+
+      const deps = makeBaseDeps({
+        venuePort,
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        executionMode: 'live',
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        strategy: { evaluate: strategyEvaluate } as any,
+      });
+
+      const actor = new TradingActor('inst-live-overlap', {}, deps, 100_000);
+      await actor.start();
+
+      // Wait a bit for the tick to fire
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Strategy should NOT have been called because unresolved plan blocks the tick
+      expect(strategyEvaluate).not.toHaveBeenCalled();
+      expect(venuePort.submitOrder).not.toHaveBeenCalled();
+
+      await actor.stop();
+    });
+
+    it('private stream disconnect pauses live actor', async () => {
+      let stateChangeHandler: ((state: string) => void) | undefined;
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({
+          unsubscribe: vi.fn(),
+          onStateChange: (handler: (state: string) => void) => { stateChangeHandler = handler; },
+        })),
+      } as any;
+
+      const strategyEvaluate = vi.fn().mockResolvedValue(ok(null));
+
+      const deps = makeBaseDeps({
+        venuePort,
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        executionMode: 'live',
+        strategy: { evaluate: strategyEvaluate } as any,
+      });
+
+      const actor = new TradingActor('inst-live-disconnect', {}, deps, 100_000);
+      await actor.start();
+
+      // Wait for the initial fire-and-forget tick from start() to complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Simulate disconnect
+      stateChangeHandler!('disconnected');
+
+      // Clear previous calls from the startup tick
+      strategyEvaluate.mockClear();
+
+      // Force a tick — should be a no-op because paused
+      await (actor as any).tick();
+      expect(strategyEvaluate).not.toHaveBeenCalled();
+
+      // Simulate reconnect
+      stateChangeHandler!('connected');
+      await actor.stop();
+    });
+
+    it('private stream closed state crashes live actor', async () => {
+      let stateChangeHandler: ((state: string) => void) | undefined;
+      const onCrashed = vi.fn().mockResolvedValue(undefined);
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({
+          unsubscribe: vi.fn(),
+          onStateChange: (handler: (state: string) => void) => { stateChangeHandler = handler; },
+        })),
+      } as any;
+
+      const deps = makeBaseDeps({
+        venuePort,
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        executionMode: 'live',
+        onCrashed,
+      });
+
+      const actor = new TradingActor('inst-live-crash', {}, deps, 100_000);
+      await actor.start();
+
+      // Simulate stream closed (max reconnect exhausted)
+      stateChangeHandler!('closed');
+
+      // Give async crash a tick to complete
+      await new Promise((r) => setTimeout(r, 50));
+      expect(onCrashed).toHaveBeenCalledWith('inst-live-crash');
+    });
+  });
 });

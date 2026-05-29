@@ -14,6 +14,9 @@ export type { IdGenerator } from './paper-executor.js';
 
 export { ShadowExecutor } from './shadow-executor.js';
 
+export { LiveExecutor } from './live-executor.js';
+export type { LiveExecutorDeps } from './live-executor.js';
+
 export { PollingMarketDataFeed } from './market-data-feed.js';
 export type { MarketDataFeed, TickerSnapshot, TradeEvent, TradeHandler } from './market-data-feed.js';
 

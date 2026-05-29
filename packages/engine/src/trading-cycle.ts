@@ -323,13 +323,13 @@ export async function runTradingCycle(
     markSource: markResult?.ok ? markResult.data.source : undefined,
   });
 
-  // Mark plan status
+  // Mark plan completed immediately (paper/shadow fill synchronously)
   if (execResult.data.plan.status === 'completed') {
     await deps.persistence.markPlanCompleted(plan.id);
     await deps.journal.append(planEvent(execResult.data.plan, 'plan.completed'));
   }
 
-  // Persist orders
+  // Persist orders (before marking failed — ensures rejection detail survives partial failures)
   for (const order of execResult.data.orders) {
     await deps.journal.append(orderEvent(order));
     await deps.persistence.persistOrder({
@@ -348,6 +348,12 @@ export async function runTradingCycle(
       filledQuantity: order.filledQuantity?.toString(),
       avgFillPrice: order.avgFillPrice?.toString(),
     });
+  }
+
+  // Mark plan failed AFTER order detail is persisted
+  if (execResult.data.plan.status === 'failed') {
+    await deps.persistence.markPlanFailed(plan.id);
+    await deps.journal.append(planEvent(execResult.data.plan, 'plan.failed'));
   }
 
   return {

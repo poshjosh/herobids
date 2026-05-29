@@ -5,6 +5,7 @@ import type { InstanceActor } from './runtime.js';
 import {
   PaperExecutor,
   ShadowExecutor,
+  LiveExecutor,
   PollingMarketDataFeed,
   StreamMarketDataFeed,
   flatPosition,
@@ -130,7 +131,14 @@ export class TradingActor implements InstanceActor {
     // Executor selection based on execution mode
     const mode = deps.executionMode ?? 'paper';
     if (mode === 'live') {
-      throw new Error('Live execution mode is not yet implemented. Use paper or shadow mode.');
+      if (!deps.venuePort) {
+        throw new Error('Live execution mode requires a venue port (OrderbookVenuePort).');
+      }
+      this.executor = new LiveExecutor({
+        venuePort: deps.venuePort,
+        idGen: deps.idGen,
+        clientOrderId: (planId, idx) => `${tradingInstanceId}:${planId}:${idx}`,
+      });
     } else if (mode === 'shadow' && (deps.venuePort || deps.swapVenue)) {
       // Prefer stream pool (Phase 2c) over polling (Phase 2b) for market data.
       // Only use stream pool for orderbook venues — swap venues have no registered
@@ -795,6 +803,34 @@ export class TradingActor implements InstanceActor {
       }
 
       // Delegate the core decision/plan/risk/execute path to the reusable trading cycle
+      // Live mode guard: skip tick if there are unresolved live plans to prevent overlapping real orders
+      if (this.deps.executionMode === 'live') {
+        const incompletePlans = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+        if (incompletePlans.length > 0) {
+          // Attempt to resolve plans whose orders are all terminal (fallback for stream-before-persist race)
+          let resolved = 0;
+          for (const plan of incompletePlans) {
+            if (plan.status !== 'executing') continue;
+            const planOrders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
+            if (planOrders.length > 0 && planOrders.every((o) => ['filled', 'cancelled', 'rejected'].includes(o.status))) {
+              const anyFilled = planOrders.some((o) => o.status === 'filled');
+              if (anyFilled) {
+                await this.deps.planRepo.markCompleted(plan.id);
+                this.logger.info({ planId: plan.id }, 'Completed live plan — all orders terminal');
+              } else {
+                await this.deps.planRepo.markFailed(plan.id);
+                this.logger.info({ planId: plan.id }, 'Failed live plan — all orders cancelled/rejected, no fills');
+              }
+              resolved++;
+            }
+          }
+          if (resolved < incompletePlans.length) {
+            this.logger.debug({ count: incompletePlans.length - resolved }, 'Skipping tick — unresolved live plans');
+            return;
+          }
+        }
+      }
+
       const cycleResult = await runTradingCycle(snapshot, this.position, {
         tradingInstanceId: this.tradingInstanceId,
         venue: this.deps.venue,
@@ -977,6 +1013,12 @@ export class TradingActor implements InstanceActor {
       type: 'fill.private_stream',
       payload: fill as unknown as Record<string, unknown>,
     });
+
+    // After position is updated, check if the owning plan can be completed.
+    // This is the safe trigger point for 'filled' orders — position already reflects the fill.
+    if (this.deps.executionMode === 'live') {
+      await this.tryCompleteLivePlan(fill.venueRefId ?? fill.orderId);
+    }
   }
 
   /**
@@ -1011,8 +1053,44 @@ export class TradingActor implements InstanceActor {
         type: 'order.private_stream',
         payload: order as unknown as Record<string, unknown>,
       });
+
+      // In live mode, when an order is cancelled/rejected (no fill expected), check if the
+      // owning plan's orders are all terminal. Do NOT trigger on 'filled' here — that path
+      // is handled after the fill event updates the position, preventing the next tick from
+      // trading against stale exposure.
+      if (this.deps.executionMode === 'live' && ['cancelled', 'rejected'].includes(order.status)) {
+        await this.tryCompleteLivePlan(order.venueRefId);
+      }
     } catch (err) {
       this.logger.error({ err, venueRefId: order.venueRefId }, 'Failed to persist private stream order');
+    }
+  }
+
+  /**
+   * Attempt to mark the owning execution plan as completed/failed when all its orders are terminal.
+   * Completed = at least one order filled. Failed = all cancelled/rejected (no fills).
+   * Looks up the order's executionPlanId (may be null during stream-before-persist race;
+   * in that case, the overlap guard's fallback handles completion on the next tick).
+   */
+  private async tryCompleteLivePlan(venueRefId: string): Promise<void> {
+    try {
+      const incompletePlans = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+      for (const plan of incompletePlans) {
+        if (plan.status !== 'executing') continue;
+        const orders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
+        if (orders.length > 0 && orders.every((o) => ['filled', 'cancelled', 'rejected'].includes(o.status))) {
+          const anyFilled = orders.some((o) => o.status === 'filled');
+          if (anyFilled) {
+            await this.deps.planRepo.markCompleted(plan.id);
+            this.logger.info({ planId: plan.id }, 'Completed live plan via private stream — all orders terminal');
+          } else {
+            await this.deps.planRepo.markFailed(plan.id);
+            this.logger.info({ planId: plan.id }, 'Failed live plan via private stream — all orders cancelled/rejected');
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn({ err, venueRefId }, 'Failed to check live plan completion after stream order update');
     }
   }
 
