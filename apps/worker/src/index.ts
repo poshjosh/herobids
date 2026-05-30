@@ -157,10 +157,10 @@ const runtime = new WorkerRuntime(
           if (cred) {
             const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
             if (encryptionKey) {
-              const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { apiKey: string; secret: string; walletAddress: string; testnet?: boolean };
+              const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { apiKey: string; secret: string; walletAddress?: string; testnet?: boolean };
               apiKey = decrypted.apiKey;
               secret = decrypted.secret;
-              walletAddress = decrypted.walletAddress;
+              walletAddress = decrypted.walletAddress || walletAddress;
               testnet = decrypted.testnet ?? false;
               credentialsFromDb = true;
               resolvedCredentialId = account.credentialId;

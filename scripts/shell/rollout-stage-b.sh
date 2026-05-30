@@ -310,7 +310,19 @@ EXISTING_CRED_ID=$(curl -sf "$API_URL/credentials" | node -e "
 
 if [[ -n "$EXISTING_CRED_ID" ]]; then
   CRED_ID="$EXISTING_CRED_ID"
-  ok "Credential (existing): $CRED_ID"
+  # Rotate existing credential to ensure walletAddress is included
+  ROTATE_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/credentials/$CRED_ID/rotate" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"secrets\": {
+        \"apiKey\": \"$HYPERLIQUID_API_KEY\",
+        \"secret\": \"$HYPERLIQUID_SECRET\",
+        \"walletAddress\": \"$HYPERLIQUID_ACCOUNT_ADDRESS\"
+      }
+    }")
+  [[ "$ROTATE_HTTP" -ge 200 && "$ROTATE_HTTP" -lt 300 ]] \
+    || die "Failed to rotate credential $CRED_ID (HTTP $ROTATE_HTTP)"
+  ok "Credential (rotated): $CRED_ID"
 else
   CRED_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/credentials" \
     -H "Content-Type: application/json" \
