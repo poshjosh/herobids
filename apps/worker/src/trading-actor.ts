@@ -955,7 +955,9 @@ export class TradingActor implements InstanceActor {
         await this.deps.positionRepo.upsert(pos);
       },
       persistOrder: async (order) => {
-        await this.deps.orderRepo.upsertByVenueRefId(order);
+        if (order.venueRefId) {
+          await this.deps.orderRepo.upsertByVenueRefId({ ...order, venueRefId: order.venueRefId });
+        }
       },
     };
   }

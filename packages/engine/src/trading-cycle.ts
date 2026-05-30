@@ -1,17 +1,15 @@
 import type { Strategy, MarketSnapshot, Decision, MarkSource, TradingInstanceId } from '@herobids/domain';
-import type { Result } from '@herobids/domain';
 import { price } from '@herobids/domain';
 import crypto from 'node:crypto';
-import type { Executor, ExecutionResult, EngineError } from './executor.js';
+import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan, PlannerDeps } from './planner.js';
 import { planDecision } from './planner.js';
 import type { Journal } from './journal.js';
 import { decisionEvent, planEvent, fillEvent, orderEvent, riskEvent } from './journal.js';
-import type { RiskLimits, RiskSnapshot } from './risk-gate.js';
+import type { RiskLimits } from './risk-gate.js';
 import { checkRisk } from './risk-gate.js';
 import type { PositionState } from './position-tracker.js';
 import { applyFill } from './position-tracker.js';
-import type { FillEvent, ManagedOrder } from './order-state.js';
 
 /**
  * Clock abstraction — allows backtesting to inject simulated time.
@@ -188,10 +186,11 @@ export async function runTradingCycle(
   }
 
   // Stamp the trading instance ID
+  const contextHash = decision.contextHash ?? computeContextHash(snapshot, position, deps.strategyConfig);
   const stampedDecision: Decision = {
     ...decision,
     tradingInstanceId: deps.tradingInstanceId as TradingInstanceId,
-    contextHash: decision.contextHash ?? computeContextHash(snapshot, position, deps.strategyConfig),
+    contextHash,
   };
 
   // Persist decision
@@ -202,7 +201,7 @@ export async function runTradingCycle(
   await deps.persistence.persistDecisionContext({
     decisionId: stampedDecision.id,
     tradingInstanceId: deps.tradingInstanceId,
-    contextHash: stampedDecision.contextHash,
+    contextHash,
     snapshot: {
       symbol: snapshot.symbol,
       price: snapshot.price.toString(),

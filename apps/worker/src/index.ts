@@ -140,6 +140,7 @@ const runtime = new WorkerRuntime(
     const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string ?? 'default';
     let apiKey = process.env['HYPERLIQUID_API_KEY'] ?? '';
     let secret = process.env['HYPERLIQUID_SECRET'] ?? '';
+    let walletAddress = process.env['HYPERLIQUID_ACCOUNT_ADDRESS'] ?? '';
     let testnet = true;
     let credentialsFromDb = false;
     let resolvedCredentialId: string | undefined;
@@ -156,9 +157,10 @@ const runtime = new WorkerRuntime(
           if (cred) {
             const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
             if (encryptionKey) {
-              const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { apiKey: string; secret: string; testnet?: boolean };
+              const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { apiKey: string; secret: string; walletAddress: string; testnet?: boolean };
               apiKey = decrypted.apiKey;
               secret = decrypted.secret;
+              walletAddress = decrypted.walletAddress;
               testnet = decrypted.testnet ?? false;
               credentialsFromDb = true;
               resolvedCredentialId = account.credentialId;
@@ -229,7 +231,7 @@ const runtime = new WorkerRuntime(
     // Construct venue adapters based on venueType
     const venueAdapter = config.venueType !== 'swap'
       ? new HyperliquidAdapter({
-          credentials: { apiKey, secret, testnet },
+          credentials: { apiKey, secret, walletAddress, testnet },
           streamConfig,
         })
       : undefined;

@@ -26,6 +26,14 @@ import ccxt, { type Position as CcxtPosition } from 'ccxt';
 export interface HyperliquidCredentials {
   apiKey: string;
   secret: string;
+  /**
+   * The main Hyperliquid account address (EVM 0x...) whose positions and
+   * balances will be queried. Required for fetchPositions / fetchBalances.
+   * When using an agent/API wallet, this is the parent account address.
+   * When using the main wallet key directly, set this to the same address
+   * as apiKey.
+   */
+  walletAddress: string;
   /** If true, use testnet endpoints */
   testnet?: boolean;
 }
@@ -58,6 +66,7 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
     this.exchange = new ccxt.hyperliquid({
       apiKey: config.credentials.apiKey,
       secret: config.credentials.secret,
+      walletAddress: config.credentials.walletAddress,
       enableRateLimit: false, // we manage our own
     });
 

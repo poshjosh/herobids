@@ -195,7 +195,7 @@ export class LlmStrategy implements Strategy {
     };
   }
 
-  private buildPrompt(snapshot: MarketSnapshot, config: LlmStrategyConfig): string {
+  private buildPrompt(snapshot: MarketSnapshot, _config: LlmStrategyConfig): string {
     return [
       `Analyze the following market data and provide a trading decision.`,
       ``,

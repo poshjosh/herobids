@@ -8,6 +8,7 @@
     "declarationMap": false
   },
   "include": ["src"],
+  "exclude": ["src/**/*.test.ts"],
   "references": [
     { "path": "../../packages/domain" },
     { "path": "../../packages/db" },

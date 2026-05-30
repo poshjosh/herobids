@@ -13,6 +13,9 @@
     "build": "tsc --build",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
+  "devDependencies": {
+    "@types/node": "^25.9.1"
+  },
   "dependencies": {
     "@herobids/domain": "workspace:*"
   }

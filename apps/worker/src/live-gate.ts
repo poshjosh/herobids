@@ -50,7 +50,7 @@ export function assertLiveReadiness(
     );
   }
 
-  if (!liveRollout.allowedVenues.includes(input.venue)) {
+  if (!(liveRollout.allowedVenues as string[]).includes(input.venue)) {
     throw new LiveGateError(
       'live_rollout.venue_not_allowed',
       `Venue "${input.venue}" is not in liveRollout.allowedVenues [${liveRollout.allowedVenues.join(', ')}]`,
