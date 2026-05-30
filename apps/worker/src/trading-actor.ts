@@ -16,6 +16,7 @@ import {
   createSwapVenueStateLoader,
   runTradingCycle,
   realClock,
+  credentialUsedEvent,
 } from '@herobids/engine';
 import type {
   Executor,
@@ -93,6 +94,8 @@ export interface TradingActorDeps {
   recordReferenceMark?: (mark: { symbol: string; price: string; source: string; timestamp: string }) => Promise<void>;
   /** Callback invoked when the actor crashes (e.g. max reconnect reached). Used to persist crashed status. */
   onCrashed?: (tradingInstanceId: string) => Promise<void>;
+  /** Credential ID used by this actor (for audit trail). Set when credentials resolved from DB. */
+  credentialId?: string;
 }
 
 /**
@@ -850,6 +853,24 @@ export class TradingActor implements InstanceActor {
       });
 
       this.position = cycleResult.position;
+
+      // Emit credential.used audit event for live order submissions
+      if (cycleResult.decided && cycleResult.executionResult && this.deps.executionMode === 'live' && this.deps.credentialId) {
+        // Only count orders that were actually submitted to the venue (market type).
+        // Limit/swap orders are rejected locally by LiveExecutor without calling submitOrder.
+        const submittedCount = cycleResult.executionResult.orders.filter((o) => o.type === 'market').length;
+        if (submittedCount > 0) {
+          this.deps.journal.append(credentialUsedEvent(this.tradingInstanceId, {
+            credentialId: this.deps.credentialId,
+            venue: this.deps.venue,
+            venueAccountId: this.deps.venueAccountId,
+            action: 'live_order_submit',
+            ordersSubmitted: submittedCount,
+          })).catch((err) => {
+            this.logger.error({ err, credentialId: this.deps.credentialId, eventType: 'credential.used' }, 'Failed to persist credential audit event');
+          });
+        }
+      }
 
       if (cycleResult.decided && cycleResult.executionResult) {
         this.logger.info(

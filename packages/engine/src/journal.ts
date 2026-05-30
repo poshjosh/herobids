@@ -34,7 +34,12 @@ export type JournalEventType =
   | 'reconciliation.match'
   | 'reconciliation.drift_detected'
   | 'reconciliation.drift_within_threshold'
-  | 'reconciliation.correction';
+  | 'reconciliation.correction'
+  | 'credential.created'
+  | 'credential.rotated'
+  | 'credential.deleted'
+  | 'credential.decrypted'
+  | 'credential.used';
 
 export interface JournalEntry {
   id: string;
@@ -247,4 +252,62 @@ export function computeSlippageBps(referencePrice: string, avgFillPrice: string,
     ? fill.minus(ref).div(ref).mul(10_000)
     : ref.minus(fill).div(ref).mul(10_000);
   return raw.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+}
+
+// --- Credential audit event helpers ---
+
+export interface CredentialCreatedPayload {
+  credentialId: string;
+  venue: string;
+  userId: string;
+  label: string;
+}
+
+export function credentialCreatedEvent(payload: CredentialCreatedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { type: 'credential.created', payload };
+}
+
+export interface CredentialRotatedPayload {
+  credentialId: string;
+  venue: string;
+  userId?: string;
+}
+
+export function credentialRotatedEvent(payload: CredentialRotatedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { type: 'credential.rotated', payload };
+}
+
+export interface CredentialDeletedPayload {
+  credentialId: string;
+  venue: string;
+  userId?: string;
+}
+
+export function credentialDeletedEvent(payload: CredentialDeletedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { type: 'credential.deleted', payload };
+}
+
+export interface CredentialDecryptedPayload {
+  credentialId: string;
+  venue: string;
+  venueAccountId: string;
+  tradingInstanceId: string;
+  outcome: 'success' | 'failure';
+  error?: string;
+}
+
+export function credentialDecryptedEvent(payload: CredentialDecryptedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId: payload.tradingInstanceId, type: 'credential.decrypted', payload };
+}
+
+export interface CredentialUsedPayload {
+  credentialId: string;
+  venue: string;
+  venueAccountId: string;
+  action: string;
+  ordersSubmitted: number;
+}
+
+export function credentialUsedEvent(tradingInstanceId: string, payload: CredentialUsedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { tradingInstanceId, type: 'credential.used', payload };
 }

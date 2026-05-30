@@ -628,5 +628,115 @@ describe('TradingActor lifecycle', () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(onCrashed).toHaveBeenCalledWith('inst-live-crash');
     });
+
+    it('emits credential.used event on successful live order submission', async () => {
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({
+          unsubscribe: vi.fn(),
+          onStateChange: vi.fn(),
+        })),
+        submitOrder: vi.fn().mockResolvedValue(ok({
+          orderId: 'venue-oid-cred',
+          clientOrderId: 'test',
+          status: 'open',
+          venueRefId: 'vref-cred',
+          timestamp: new Date().toISOString(),
+        })),
+      } as any;
+
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const deps = makeBaseDeps({
+        venuePort,
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        executionMode: 'live',
+        credentialId: 'cred-xyz',
+        journal: { append: journalAppend } as any,
+        strategy: {
+          evaluate: vi.fn().mockResolvedValue(ok({
+            id: 'd-cred',
+            tradingInstanceId: 'inst-cred-used' as TradingInstanceId,
+            instrumentId: 'BTC/USD:USD',
+            intent: 'go_long',
+            targetSize: quantity('0.1'),
+            timestamp: new Date().toISOString(),
+          })),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-cred-used', {}, deps, 100_000);
+      await actor.start();
+
+      // Wait for the initial tick to fire
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Find the credential.used event among journal calls
+      const credUsedCalls = journalAppend.mock.calls.filter(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'credential.used',
+      );
+      expect(credUsedCalls.length).toBeGreaterThan(0);
+      const payload = (credUsedCalls[0]![0] as { payload: Record<string, unknown> }).payload;
+      expect(payload.credentialId).toBe('cred-xyz');
+      expect(payload.venue).toBe('hyperliquid');
+      expect(payload.action).toBe('live_order_submit');
+      expect(payload.ordersSubmitted).toBe(1);
+
+      await actor.stop();
+    });
+
+    it('does not emit credential.used when credentialId is not set', async () => {
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({
+          unsubscribe: vi.fn(),
+          onStateChange: vi.fn(),
+        })),
+        submitOrder: vi.fn().mockResolvedValue(ok({
+          orderId: 'venue-oid-nocred',
+          clientOrderId: 'test',
+          status: 'open',
+          venueRefId: 'vref-nocred',
+          timestamp: new Date().toISOString(),
+        })),
+      } as any;
+
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const deps = makeBaseDeps({
+        venuePort,
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        executionMode: 'live',
+        // No credentialId — env fallback scenario
+        journal: { append: journalAppend } as any,
+        strategy: {
+          evaluate: vi.fn().mockResolvedValue(ok({
+            id: 'd-nocred',
+            tradingInstanceId: 'inst-nocred' as TradingInstanceId,
+            instrumentId: 'BTC/USD:USD',
+            intent: 'go_long',
+            targetSize: quantity('0.1'),
+            timestamp: new Date().toISOString(),
+          })),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-nocred', {}, deps, 100_000);
+      await actor.start();
+      await new Promise((r) => setTimeout(r, 50));
+
+      const credUsedCalls = journalAppend.mock.calls.filter(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'credential.used',
+      );
+      expect(credUsedCalls.length).toBe(0);
+
+      await actor.stop();
+    });
   });
 });

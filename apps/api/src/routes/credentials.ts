@@ -2,11 +2,21 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { credentials } from '@herobids/db';
+import { credentials, PgJournal } from '@herobids/db';
+import { credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent } from '@herobids/engine';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { CreateCredentialSchema, RotateCredentialSchema } from '../schemas.js';
 
+/** Best-effort audit append — never fails the HTTP request if the mutation already succeeded */
+function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<InstanceType<typeof PgJournal>['append']>[0], log: { error: (obj: unknown, msg: string) => void }): void {
+  journal.append(entry).catch((err) => {
+    log.error({ err, eventType: entry.type }, 'Failed to persist credential audit event');
+  });
+}
+
 export async function credentialRoutes(app: FastifyInstance, db: Database): Promise<void> {
+  const journal = new PgJournal(db);
+
   // Create credential
   app.post('/credentials', async (request, reply) => {
     const parsed = CreateCredentialSchema.safeParse(request.body);
@@ -32,6 +42,13 @@ export async function credentialRoutes(app: FastifyInstance, db: Database): Prom
       createdAt: now,
       updatedAt: now,
     });
+
+    auditAppend(journal, credentialCreatedEvent({
+      credentialId: id,
+      venue: parsed.data.venue,
+      userId: parsed.data.userId,
+      label: parsed.data.label,
+    }), app.log);
 
     // Return without secrets
     return reply.status(201).send({
@@ -88,7 +105,7 @@ export async function credentialRoutes(app: FastifyInstance, db: Database): Prom
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const [existing] = await db.select({ id: credentials.id }).from(credentials).where(eq(credentials.id, id));
+    const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(eq(credentials.id, id));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
@@ -101,6 +118,12 @@ export async function credentialRoutes(app: FastifyInstance, db: Database): Prom
       .set({ encryptedData, encryptionMeta, updatedAt: new Date() })
       .where(eq(credentials.id, id));
 
+    auditAppend(journal, credentialRotatedEvent({
+      credentialId: id,
+      venue: existing.venue,
+      userId: existing.userId,
+    }), app.log);
+
     return reply.send({ status: 'rotated', credentialId: id });
   });
 
@@ -108,12 +131,19 @@ export async function credentialRoutes(app: FastifyInstance, db: Database): Prom
   app.delete<{ Params: { id: string } }>('/credentials/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [existing] = await db.select({ id: credentials.id }).from(credentials).where(eq(credentials.id, id));
+    const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(eq(credentials.id, id));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
 
     await db.delete(credentials).where(eq(credentials.id, id));
+
+    auditAppend(journal, credentialDeletedEvent({
+      credentialId: id,
+      venue: existing.venue,
+      userId: existing.userId,
+    }), app.log);
+
     return reply.send({ status: 'deleted', credentialId: id });
   });
 }

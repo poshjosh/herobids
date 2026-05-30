@@ -12,7 +12,7 @@ import { createDatabase, PgJournal, FillRepository, PositionRepository, Executio
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
-import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
+import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
 import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '@herobids/domain';
 import crypto from 'node:crypto';
@@ -142,13 +142,16 @@ const runtime = new WorkerRuntime(
     let secret = process.env['HYPERLIQUID_SECRET'] ?? '';
     let testnet = true;
     let credentialsFromDb = false;
+    let resolvedCredentialId: string | undefined;
 
     // Credential resolution is only needed for orderbook venues (exchange API keys).
     // Swap venues are wallet-only — they resolve their address from venueAccountRef later.
     if (venueAccountId !== 'default' && config.venueType !== 'swap') {
+      let pendingCredentialId: string | undefined;
       try {
         const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
         if (account?.credentialId) {
+          pendingCredentialId = account.credentialId;
           const [cred] = await db.select().from(credentials).where(eq(credentials.id, account.credentialId)).limit(1);
           if (cred) {
             const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
@@ -158,10 +161,34 @@ const runtime = new WorkerRuntime(
               secret = decrypted.secret;
               testnet = decrypted.testnet ?? false;
               credentialsFromDb = true;
+              resolvedCredentialId = account.credentialId;
+              journal.append(credentialDecryptedEvent({
+                credentialId: account.credentialId,
+                venue: config.venue,
+                venueAccountId,
+                tradingInstanceId,
+                outcome: 'success',
+              })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
             } else {
+              journal.append(credentialDecryptedEvent({
+                credentialId: account.credentialId,
+                venue: config.venue,
+                venueAccountId,
+                tradingInstanceId,
+                outcome: 'failure',
+                error: 'CREDENTIAL_ENCRYPTION_KEY not set',
+              })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
               throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt credentials for venueAccount ${venueAccountId}`);
             }
           } else {
+            journal.append(credentialDecryptedEvent({
+              credentialId: account.credentialId,
+              venue: config.venue,
+              venueAccountId,
+              tradingInstanceId,
+              outcome: 'failure',
+              error: 'Credential record not found (dangling reference)',
+            })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
             throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
           }
         } else {
@@ -169,6 +196,17 @@ const runtime = new WorkerRuntime(
         }
       } catch (err) {
         if (err instanceof CredentialResolutionError) throw err;
+        // Decrypt or parse failed — emit failure audit before re-throwing
+        if (pendingCredentialId) {
+          journal.append(credentialDecryptedEvent({
+            credentialId: pendingCredentialId,
+            venue: config.venue,
+            venueAccountId,
+            tradingInstanceId,
+            outcome: 'failure',
+            error: err instanceof Error ? err.message : String(err),
+          })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: pendingCredentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+        }
         throw new CredentialResolutionError(`Failed to load credentials for venueAccount ${venueAccountId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
@@ -345,6 +383,7 @@ const runtime = new WorkerRuntime(
       recordMarketSnapshot,
       recordReferenceMark,
       shadowPollIntervalMs: config.shadowPollIntervalMs,
+      credentialId: resolvedCredentialId,
       onCrashed: async (instanceId: string) => {
         await db.update(tradingInstances)
           .set({ status: 'crashed', stoppedAt: new Date() })

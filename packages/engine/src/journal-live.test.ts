@@ -8,6 +8,11 @@ import {
   completionRecoveredEvent,
   slippageAlertEvent,
   computeSlippageBps,
+  credentialCreatedEvent,
+  credentialRotatedEvent,
+  credentialDeletedEvent,
+  credentialDecryptedEvent,
+  credentialUsedEvent,
 } from './journal.js';
 import type { JournalEventType } from './journal.js';
 
@@ -134,5 +139,86 @@ describe('computeSlippageBps', () => {
     // 1 bps = 0.01% = 0.0001 relative
     const bps = computeSlippageBps('10000', '10001', 'buy');
     expect(bps).toBe(1); // (1/10000) * 10000 = 1
+  });
+});
+
+describe('credential audit event helpers', () => {
+  it('credentialCreatedEvent produces correct shape without secrets', () => {
+    const entry = credentialCreatedEvent({
+      credentialId: 'cred-1',
+      venue: 'hyperliquid',
+      userId: 'user-1',
+      label: 'prod-key',
+    });
+    expect(entry.type).toBe('credential.created');
+    expect(entry.tradingInstanceId).toBeUndefined();
+    expect(entry.payload).toMatchObject({
+      credentialId: 'cred-1',
+      venue: 'hyperliquid',
+      userId: 'user-1',
+      label: 'prod-key',
+    });
+  });
+
+  it('credentialRotatedEvent produces correct shape', () => {
+    const entry = credentialRotatedEvent({
+      credentialId: 'cred-2',
+      venue: 'hyperliquid',
+      userId: 'user-1',
+    });
+    expect(entry.type).toBe('credential.rotated');
+    expect(entry.payload.credentialId).toBe('cred-2');
+  });
+
+  it('credentialDeletedEvent produces correct shape', () => {
+    const entry = credentialDeletedEvent({
+      credentialId: 'cred-3',
+      venue: 'hyperliquid',
+      userId: 'user-2',
+    });
+    expect(entry.type).toBe('credential.deleted');
+    expect(entry.payload.credentialId).toBe('cred-3');
+  });
+
+  it('credentialDecryptedEvent includes tradingInstanceId and outcome', () => {
+    const entry = credentialDecryptedEvent({
+      credentialId: 'cred-4',
+      venue: 'hyperliquid',
+      venueAccountId: 'va-1',
+      tradingInstanceId: 'inst-1',
+      outcome: 'success',
+    });
+    expect(entry.type).toBe('credential.decrypted');
+    expect(entry.tradingInstanceId).toBe('inst-1');
+    expect(entry.payload.outcome).toBe('success');
+    expect(entry.payload.error).toBeUndefined();
+  });
+
+  it('credentialDecryptedEvent includes error on failure', () => {
+    const entry = credentialDecryptedEvent({
+      credentialId: 'cred-5',
+      venue: 'hyperliquid',
+      venueAccountId: 'va-2',
+      tradingInstanceId: 'inst-2',
+      outcome: 'failure',
+      error: 'Key not set',
+    });
+    expect(entry.type).toBe('credential.decrypted');
+    expect(entry.payload.outcome).toBe('failure');
+    expect(entry.payload.error).toBe('Key not set');
+  });
+
+  it('credentialUsedEvent includes ordersSubmitted count', () => {
+    const entry = credentialUsedEvent('inst-3', {
+      credentialId: 'cred-6',
+      venue: 'hyperliquid',
+      venueAccountId: 'va-3',
+      action: 'live_order_submit',
+      ordersSubmitted: 2,
+    });
+    expect(entry.type).toBe('credential.used');
+    expect(entry.tradingInstanceId).toBe('inst-3');
+    expect(entry.payload.ordersSubmitted).toBe(2);
+    expect(entry.payload.action).toBe('live_order_submit');
   });
 });

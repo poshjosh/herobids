@@ -32,8 +32,8 @@ export type { PositionState } from './position-tracker.js';
 export { checkRisk } from './risk-gate.js';
 export type { RiskError, RiskLimits, RiskSnapshot, RiskCheckResult } from './risk-gate.js';
 
-export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent, liveBlockedEvent, liveArmedEvent, orderSubmittedToVenueEvent, orderAcknowledgedEvent, fillConfirmedFromStreamEvent, completionRecoveredEvent, slippageAlertEvent, computeSlippageBps } from './journal.js';
-export type { Journal, JournalEntry, JournalEventType, LiveBlockedPayload, LiveArmedPayload, OrderSubmittedToVenuePayload, OrderAcknowledgedPayload, FillConfirmedFromStreamPayload, CompletionRecoveredPayload, SlippageAlertPayload } from './journal.js';
+export { decisionEvent, planEvent, orderEvent, fillEvent, riskEvent, liveBlockedEvent, liveArmedEvent, orderSubmittedToVenueEvent, orderAcknowledgedEvent, fillConfirmedFromStreamEvent, completionRecoveredEvent, slippageAlertEvent, computeSlippageBps, credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent, credentialDecryptedEvent, credentialUsedEvent } from './journal.js';
+export type { Journal, JournalEntry, JournalEventType, LiveBlockedPayload, LiveArmedPayload, OrderSubmittedToVenuePayload, OrderAcknowledgedPayload, FillConfirmedFromStreamPayload, CompletionRecoveredPayload, SlippageAlertPayload, CredentialCreatedPayload, CredentialRotatedPayload, CredentialDeletedPayload, CredentialDecryptedPayload, CredentialUsedPayload } from './journal.js';
 
 export { InMemoryJournal } from './journal-memory.js';
 

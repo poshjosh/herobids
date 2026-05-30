@@ -1,4 +1,9 @@
 # TODO
+
+- [ ] Deleting a credential does not revoke already-running actors, so the system can keep trading with a credential that has already been marked deleted. The delete route in credentials.ts only removes the row and emits the audit event at credentials.ts and credentials.ts. The worker resolves and caches the credential once at startup in index.ts through index.ts, passes the resolved credential id into the actor at index.ts, and the actor continues to emit usage events from that cached id in trading-actor.ts. I did not find any restart or invalidation hook on credential mutation, while config changes do explicitly restart running instances in instances.ts. This means a credential can be “deleted” in audit while still being used live.
+
+- [ ] The delete path can create the dangling-reference failure state that the worker now audits. credentials.ts deletes the credential row without clearing or rejecting linked venue accounts, and venue-accounts.ts shows that the reference is just a nullable text column with no foreign key. On the next startup, the worker treats that missing row as a credential resolution failure in index.ts through index.ts. So the API now has a first-class way to put venue accounts into a broken state.
+
 - [ ] Consider getting HYPERLIQUID_TESTNET_API_KEY and setting it, to enable the related integration tests. 
 - [ ] After monorepo scaffold: add `eslint-plugin-boundaries` if deep-path imports across packages become a recurring review issue. Until then, pnpm workspace resolution + clean barrel exports (`src/index.ts`) enforce dependency direction at build time.
 - [ ] After monorepo scaffold: move §21 Conventions (Result type, error code naming) from the design doc into `packages/domain/README.md` or a top-level `docs/conventions.md` — somewhere that lives next to the code, not buried in a feature proposal.
