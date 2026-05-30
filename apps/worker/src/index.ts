@@ -281,7 +281,10 @@ const runtime = new WorkerRuntime(
     const fetchPrice = async (): Promise<MarketSnapshot | null> => {
       if (!venueAdapter) return null; // Swap venues don't use orderbook ticker
       const result = await venueAdapter.fetchTicker(config.symbol);
-      if (!result.ok) return null;
+      if (!result.ok) {
+        logger.warn({ tradingInstanceId, symbol: config.symbol, error: result.error }, 'fetchTicker failed');
+        return null;
+      }
       return {
         symbol: config.symbol,
         price: result.data.last,

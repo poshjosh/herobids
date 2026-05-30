@@ -3,7 +3,7 @@
 #
 # Launches one real production trading instance on Hyperliquid with:
 #   - Strict operator-level notional cap ($25 USD default)
-#   - Single symbol (ETH/USD:USD default)
+#   - Single symbol (ETH/USDC:USDC default)
 #   - DB-backed credentials only
 #   - Fail-closed reconciliation (driftAlertOnly=false)
 #
@@ -64,7 +64,7 @@ fi
 
 API_PORT="${API_PORT:-3000}"
 API_URL="http://localhost:${API_PORT}"
-SYMBOL="${ROLLOUT_SYMBOL:-ETH/USD:USD}"
+SYMBOL="${ROLLOUT_SYMBOL:-ETH/USDC:USDC}"
 MAX_NOTIONAL="${ROLLOUT_MAX_NOTIONAL:-25}"
 USER_ID="rollout-operator"
 
@@ -230,7 +230,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo "    7. Start instance in $EXEC_MODE mode"
   echo ""
   echo "  Instance config payload:"
-  echo "    {\"strategy\":{\"type\":\"momentum\",\"params\":{\"lookbackPeriod\":5,\"threshold\":0.02,\"positionSize\":\"$POSITION_SIZE\"}},"
+  echo "    {\"strategy\":{\"type\":\"momentum\",\"params\":{\"lookbackPeriod\":20,\"threshold\":0.0001,\"positionSize\":\"$POSITION_SIZE\"}}},"
   echo "     \"risk\":{\"maxOrderNotional\":\"$MAX_NOTIONAL\",\"maxPositionSize\":\"$MAX_POSITION_SIZE\"},"
   echo "     \"execution\":{\"mode\":\"$EXEC_MODE\"},\"venue\":\"hyperliquid\",\"symbol\":\"$SYMBOL\",\"venueType\":\"orderbook\"}"
   echo ""
@@ -444,8 +444,8 @@ INST_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/instances" \
       \"strategy\": {
         \"type\": \"momentum\",
         \"params\": {
-          \"lookbackPeriod\": 5,
-          \"threshold\": 0.02,
+          \"lookbackPeriod\": 20,
+          \"threshold\": 0.0001,
           \"positionSize\": \"$POSITION_SIZE\"
         }
       },
