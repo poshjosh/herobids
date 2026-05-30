@@ -1,11 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import type { Queue } from 'bullmq';
 import type { Database } from '@herobids/db';
 import { credentials, PgJournal } from '@herobids/db';
 import { credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent } from '@herobids/engine';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { CreateCredentialSchema, RotateCredentialSchema } from '../schemas.js';
+import { findCredentialDependents } from '../credential-dependents.js';
+import type { LifecycleJob } from '../types.js';
 
 /** Best-effort audit append — never fails the HTTP request if the mutation already succeeded */
 function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<InstanceType<typeof PgJournal>['append']>[0], log: { error: (obj: unknown, msg: string) => void }): void {
@@ -14,7 +17,7 @@ function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<
   });
 }
 
-export async function credentialRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database): Promise<void> {
   const journal = new PgJournal(db);
 
   // Create credential
@@ -124,10 +127,46 @@ export async function credentialRoutes(app: FastifyInstance, db: Database): Prom
       userId: existing.userId,
     }), app.log);
 
-    return reply.send({ status: 'rotated', credentialId: id });
+    // Best-effort restart of running dependents — rotation already succeeded above,
+    // so failures here must not mask the successful update.
+    let runningInstanceIds: string[] = [];
+    let restartedIds: string[] = [];
+    let restartError: string | undefined;
+    let restartErrorCode: 'lookup_failed' | 'enqueue_failed' | undefined;
+    try {
+      const deps = await findCredentialDependents(db, id);
+      runningInstanceIds = deps.runningInstanceIds;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown error';
+      restartErrorCode = 'lookup_failed';
+      restartError = `Failed to determine dependent instances: ${msg}`;
+      app.log.error({ err, credentialId: id }, 'Failed to look up credential dependents after rotation');
+    }
+    try {
+      for (const instanceId of runningInstanceIds) {
+        await queue.add('restart-instance', {
+          command: 'restart',
+          tradingInstanceId: instanceId,
+        });
+        restartedIds.push(instanceId);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown error';
+      restartErrorCode = 'enqueue_failed';
+      restartError = `Failed to enqueue all restart jobs: ${msg}`;
+      app.log.error({ err, credentialId: id, restartedIds, runningInstanceIds }, 'Failed to enqueue restart jobs after credential rotation');
+    }
+
+    return reply.send({
+      status: 'rotated',
+      credentialId: id,
+      dependentTradingInstanceIds: runningInstanceIds,
+      restartedTradingInstanceIds: restartedIds,
+      ...(restartError ? { restartErrorCode, restartError } : {}),
+    });
   });
 
-  // Delete credential
+  // Delete credential — fail-closed: reject if any venue accounts still reference it
   app.delete<{ Params: { id: string } }>('/credentials/:id', async (request, reply) => {
     const { id } = request.params;
 
@@ -136,7 +175,33 @@ export async function credentialRoutes(app: FastifyInstance, db: Database): Prom
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    await db.delete(credentials).where(eq(credentials.id, id));
+    // Check for dependents — block delete if any venue accounts still link to this credential
+    const { venueAccountIds, runningInstanceIds } = await findCredentialDependents(db, id);
+    if (venueAccountIds.length > 0) {
+      return reply.status(409).send({
+        error: 'credential_in_use',
+        credentialId: id,
+        blockingVenueAccountIds: venueAccountIds,
+        blockingTradingInstanceIds: runningInstanceIds,
+      });
+    }
+
+    try {
+      await db.delete(credentials).where(eq(credentials.id, id));
+    } catch (err: unknown) {
+      // FK violation (concurrent link between pre-check and delete) → translate to 409
+      const pgErr = err as { code?: string };
+      if (pgErr.code === '23503') {
+        const deps = await findCredentialDependents(db, id);
+        return reply.status(409).send({
+          error: 'credential_in_use',
+          credentialId: id,
+          blockingVenueAccountIds: deps.venueAccountIds,
+          blockingTradingInstanceIds: deps.runningInstanceIds,
+        });
+      }
+      throw err;
+    }
 
     auditAppend(journal, credentialDeletedEvent({
       credentialId: id,

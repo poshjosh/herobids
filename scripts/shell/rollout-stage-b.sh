@@ -20,6 +20,7 @@
 # Usage:
 #   ./scripts/shell/rollout-stage-b.sh --dry-run  # validate config + print plan, no side effects
 #   ./scripts/shell/rollout-stage-b.sh --paper     # full pipeline, simulated fills
+#   ./scripts/shell/rollout-stage-b.sh --shadow    # real WS data + private stream, simulated fills
 #   ./scripts/shell/rollout-stage-b.sh             # full pipeline, LIVE (real money)
 #
 # Credentials:
@@ -31,10 +32,12 @@ set -euo pipefail
 # --- Parse flags ---
 DRY_RUN=false
 PAPER_MODE=false
+SHADOW_MODE=false
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --paper)  PAPER_MODE=true ;;
+    --shadow) SHADOW_MODE=true ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -42,9 +45,17 @@ done
 if [[ "$DRY_RUN" == "true" && "$PAPER_MODE" == "true" ]]; then
   echo "Cannot use --dry-run and --paper together" >&2; exit 1
 fi
+if [[ "$DRY_RUN" == "true" && "$SHADOW_MODE" == "true" ]]; then
+  echo "Cannot use --dry-run and --shadow together" >&2; exit 1
+fi
+if [[ "$PAPER_MODE" == "true" && "$SHADOW_MODE" == "true" ]]; then
+  echo "Cannot use --paper and --shadow together" >&2; exit 1
+fi
 
 if [[ "$PAPER_MODE" == "true" ]]; then
   EXEC_MODE="paper"
+elif [[ "$SHADOW_MODE" == "true" ]]; then
+  EXEC_MODE="shadow"
 else
   EXEC_MODE="live"
 fi
@@ -150,6 +161,16 @@ elif [[ "$PAPER_MODE" == "true" ]]; then
   echo "  Max position:  $MAX_POSITION_SIZE ETH"
   echo "  Mode:       PAPER (full pipeline, simulated fills)"
   echo ""
+elif [[ "$SHADOW_MODE" == "true" ]]; then
+  echo -e "${YELLOW}=== STAGE B — SHADOW MODE ===${NC}"
+  echo ""
+  echo "  Venue:      Hyperliquid (PRODUCTION endpoint, shadow execution)"
+  echo "  Symbol:     $SYMBOL"
+  echo "  Max notional: \$${MAX_NOTIONAL} USD per order"
+  echo "  Position size: $POSITION_SIZE ETH (computed from mark price)"
+  echo "  Max position:  $MAX_POSITION_SIZE ETH"
+  echo "  Mode:       SHADOW (real WS data, private stream, simulated fills)"
+  echo ""
 else
   echo -e "${YELLOW}=== PRODUCTION LIVE ROLLOUT — STAGE B ===${NC}"
   echo ""
@@ -187,8 +208,8 @@ ACCOUNT_EQUITY=$(echo "$PREFLIGHT_RESPONSE" | node -e "
   })")
 
 if [[ "$ACCOUNT_EQUITY" == "0" || -z "$ACCOUNT_EQUITY" ]]; then
-  if [[ "$PAPER_MODE" == "true" ]]; then
-    warn "Account equity is $0 — expected for paper mode (no real funds needed)."
+  if [[ "$PAPER_MODE" == "true" || "$SHADOW_MODE" == "true" ]]; then
+    warn "Account equity is $0 — expected for paper/shadow mode (no real funds needed)."
   else
     die "Pre-flight failed: account has zero equity or clearinghouse state unavailable. Fund the account first."
   fi
@@ -311,7 +332,7 @@ EXISTING_CRED_ID=$(curl -sf "$API_URL/credentials" | node -e "
 if [[ -n "$EXISTING_CRED_ID" ]]; then
   CRED_ID="$EXISTING_CRED_ID"
   # Rotate existing credential to ensure walletAddress is included
-  ROTATE_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/credentials/$CRED_ID/rotate" \
+  ROTATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/credentials/$CRED_ID/rotate" \
     -H "Content-Type: application/json" \
     -d "{
       \"secrets\": {
@@ -320,8 +341,33 @@ if [[ -n "$EXISTING_CRED_ID" ]]; then
         \"walletAddress\": \"$HYPERLIQUID_ACCOUNT_ADDRESS\"
       }
     }")
+  ROTATE_HTTP=$(echo "$ROTATE_RESPONSE" | tail -1)
+  ROTATE_BODY=$(echo "$ROTATE_RESPONSE" | sed '$d')
   [[ "$ROTATE_HTTP" -ge 200 && "$ROTATE_HTTP" -lt 300 ]] \
-    || die "Failed to rotate credential $CRED_ID (HTTP $ROTATE_HTTP)"
+    || die "Failed to rotate credential $CRED_ID (HTTP $ROTATE_HTTP): $ROTATE_BODY"
+  # Parse restart status — prefer machine-readable restartErrorCode, fall back to
+  # restartError string presence so we never silently pass on an unexpected shape.
+  RESTART_ERROR_CODE=$(echo "$ROTATE_BODY" | node -e "
+    process.stdin.resume(); let d='';
+    process.stdin.on('data',c=>d+=c);
+    process.stdin.on('end',()=>{
+      try { const b=JSON.parse(d); console.log(b.restartErrorCode||''); }
+      catch { console.log(''); }
+    });")
+  RESTART_ERROR=$(echo "$ROTATE_BODY" | node -e "
+    process.stdin.resume(); let d='';
+    process.stdin.on('data',c=>d+=c);
+    process.stdin.on('end',()=>{
+      try { const b=JSON.parse(d); console.log(b.restartError||''); }
+      catch { console.log(''); }
+    });")
+  if [[ "$RESTART_ERROR_CODE" == "lookup_failed" ]]; then
+    die "Credential rotated but dependent instance lookup FAILED — cannot verify restarts. Response: $ROTATE_BODY"
+  elif [[ -n "$RESTART_ERROR_CODE" ]]; then
+    warn "Credential rotated but some instance restarts failed — check API logs. Response: $ROTATE_BODY"
+  elif [[ -n "$RESTART_ERROR" ]]; then
+    warn "Credential rotated but restart reported an error (no code). Response: $ROTATE_BODY"
+  fi
   ok "Credential (rotated): $CRED_ID"
 else
   CRED_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/credentials" \
@@ -485,6 +531,8 @@ echo ""
 
 if [[ "$PAPER_MODE" == "true" ]]; then
   ok "Instance started in PAPER mode. Strategy runs, fills are simulated."
+elif [[ "$SHADOW_MODE" == "true" ]]; then
+  ok "Instance started in SHADOW mode. Real WS data + private stream, fills are simulated."
 else
   ok "Instance started in LIVE mode on Hyperliquid PRODUCTION."
 fi

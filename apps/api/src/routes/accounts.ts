@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts, portfolios } from '@herobids/db';
+import { venueAccounts, portfolios, credentials } from '@herobids/db';
 import { CreateVenueAccountSchema, CreatePortfolioSchema } from '../schemas.js';
 
 export async function venueAccountRoutes(app: FastifyInstance, db: Database): Promise<void> {
@@ -13,19 +13,60 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database): Pr
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
+    // Validate credential linkage if credentialId is provided
+    if (parsed.data.credentialId) {
+      const [cred] = await db
+        .select({ id: credentials.id, userId: credentials.userId, venue: credentials.venue })
+        .from(credentials)
+        .where(eq(credentials.id, parsed.data.credentialId));
+
+      if (!cred) {
+        return reply.status(400).send({
+          error: 'credential.not_found',
+          message: `Credential ${parsed.data.credentialId} does not exist`,
+        });
+      }
+
+      if (cred.userId !== parsed.data.userId) {
+        return reply.status(400).send({
+          error: 'credential.user_mismatch',
+          message: 'Credential belongs to a different user',
+        });
+      }
+
+      if (cred.venue !== parsed.data.venue) {
+        return reply.status(400).send({
+          error: 'credential.venue_mismatch',
+          message: `Credential is for venue "${cred.venue}", not "${parsed.data.venue}"`,
+        });
+      }
+    }
+
     const id = crypto.randomUUID();
     const now = new Date();
 
-    await db.insert(venueAccounts).values({
-      id,
-      userId: parsed.data.userId,
-      venue: parsed.data.venue,
-      label: parsed.data.label,
-      venueAccountRef: parsed.data.venueAccountRef ?? null,
-      credentialId: parsed.data.credentialId ?? null,
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      await db.insert(venueAccounts).values({
+        id,
+        userId: parsed.data.userId,
+        venue: parsed.data.venue,
+        label: parsed.data.label,
+        venueAccountRef: parsed.data.venueAccountRef ?? null,
+        credentialId: parsed.data.credentialId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (err: unknown) {
+      // FK violation — credential deleted between validation and insert
+      const pgErr = err as { code?: string };
+      if (pgErr.code === '23503') {
+        return reply.status(400).send({
+          error: 'credential.not_found',
+          message: `Credential ${parsed.data.credentialId} was removed before the account could be created`,
+        });
+      }
+      throw err;
+    }
 
     const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, id));
     return reply.status(201).send(account);

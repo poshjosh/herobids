@@ -35,7 +35,7 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 await instanceRoutes(app, lifecycleQueue, db);
 await venueAccountRoutes(app, db);
 await portfolioRoutes(app, db);
-await credentialRoutes(app, db);
+await credentialRoutes(app, lifecycleQueue, db);
 await journalRoutes(app, db);
 await positionRoutes(app, db);
 await portfolioPositionRoutes(app, db);
