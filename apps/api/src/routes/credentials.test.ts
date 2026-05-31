@@ -256,6 +256,78 @@ describe('credential audit events', () => {
       expect(body.error).toBe('validation_error');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.secret' }));
     });
+
+    it('creates 1inch credential successfully', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: '1inch',
+          label: 'base-wallet',
+          secrets: {
+            privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+            apiKey: 'oneinch-api-key',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('rejects 1inch credential with malformed privateKey', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: '1inch',
+          label: 'base-wallet',
+          secrets: {
+            privateKey: 'not-a-private-key',
+            apiKey: 'oneinch-api-key',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('validation_error');
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.privateKey' }));
+    });
+
+    it('rejects 1inch credential with missing apiKey', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: '1inch',
+          label: 'base-wallet',
+          secrets: {
+            privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+            apiKey: '',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('validation_error');
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.apiKey' }));
+    });
   });
 
   describe('POST /credentials/:id/rotate', () => {

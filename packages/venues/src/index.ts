@@ -19,6 +19,6 @@ export type { JupiterSwapConfig } from './jupiter-swap.js';
 export { OneInchSwapAdapter } from './oneinch-swap.js';
 export type { OneInchSwapConfig } from './oneinch-swap.js';
 export { EvmSigner } from './evm-signer.js';
-export type { EvmSignerConfig, EvmSignerError, TransactionRequest } from './evm-signer.js';
+export type { EvmSignerConfig, EvmSignerError, TransactionRequest, SignableTransactionRequest, Erc20BalanceResult } from './evm-signer.js';
 export { OracleMarkSource } from './oracle-mark-source.js';
 export type { OracleMarkSourceConfig } from './oracle-mark-source.js';

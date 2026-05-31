@@ -24,6 +24,9 @@ export interface BybitPrivateStreamConfig {
   maxReconnectAttempts: number;
 }
 
+const BYBIT_PING_INTERVAL_MS = 18_000;
+const BYBIT_PONG_TIMEOUT_MS = 45_000;
+
 /**
  * Bybit private WebSocket stream (v5 API).
  * Subscribes to order, execution (fill), and position topics.
@@ -39,6 +42,7 @@ export class BybitPrivateStream implements Subscription {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private pingTimer?: ReturnType<typeof setTimeout>;
   private closed = false;
+  private lastPongAt = 0;
   /** Deferred resolver for connect() — only resolved once auth is confirmed or fails */
   private connectResolve?: (result: Result<void, VenueError>) => void;
 
@@ -55,12 +59,24 @@ export class BybitPrivateStream implements Subscription {
 
         this.ws.on('open', () => {
           this.reconnectAttempts = 0;
+          this.recordHeartbeat();
           this.authenticate();
           this.startPingLoop();
         });
 
         this.ws.on('message', (data: WebSocket.RawData) => {
           this.handleMessage(data);
+        });
+
+        this.ws.on('pong', () => {
+          this.recordHeartbeat();
+        });
+
+        this.ws.on('ping', () => {
+          this.recordHeartbeat();
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.pong();
+          }
         });
 
         this.ws.on('close', () => {
@@ -145,17 +161,25 @@ export class BybitPrivateStream implements Subscription {
   private subscribeTopics(): void {
     this.ws?.send(JSON.stringify({
       op: 'subscribe',
-      args: ['order', 'execution', 'position'],
+      args: ['order', 'execution', 'position', 'wallet'],
     }));
   }
 
   private startPingLoop(): void {
-    // Bybit requires ping every 20s to keep connection alive
+    this.recordHeartbeat();
+    // Bybit requires ping every ~20s to keep connection alive.
+    // We also fail the socket if pongs stop arriving so reconnect can recover.
     this.pingTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ op: 'ping' }));
+      if (this.ws?.readyState !== WebSocket.OPEN) {
+        return;
       }
-    }, 18_000);
+      if ((Date.now() - this.lastPongAt) > BYBIT_PONG_TIMEOUT_MS) {
+        this.handlers.onError?.(new Error('Bybit private stream heartbeat timeout'));
+        this.ws.close(4000, 'heartbeat timeout');
+        return;
+      }
+      this.ws.send(JSON.stringify({ op: 'ping' }));
+    }, BYBIT_PING_INTERVAL_MS);
   }
 
   private stopPingLoop(): void {
@@ -168,6 +192,14 @@ export class BybitPrivateStream implements Subscription {
   private handleMessage(data: WebSocket.RawData): void {
     try {
       const msg = JSON.parse(data.toString()) as BybitWsMessage;
+
+      if (msg.op === 'ping' || msg.ret_msg === 'ping') {
+        this.recordHeartbeat();
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ op: 'pong' }));
+        }
+        return;
+      }
 
       // Auth response — subscribe to topics after successful auth
       if (msg.op === 'auth') {
@@ -196,7 +228,10 @@ export class BybitPrivateStream implements Subscription {
       }
 
       // Pong response — ignore
-      if (msg.op === 'pong' || msg.ret_msg === 'pong') return;
+      if (msg.op === 'pong' || msg.ret_msg === 'pong') {
+        this.recordHeartbeat();
+        return;
+      }
 
       // Data messages
       if (msg.topic === 'execution') {
@@ -205,6 +240,8 @@ export class BybitPrivateStream implements Subscription {
         this.handleOrderUpdates(msg.data);
       } else if (msg.topic === 'position') {
         this.handlePositionUpdates(msg.data);
+      } else if (msg.topic === 'wallet') {
+        this.handleWalletUpdates(msg.data);
       }
     } catch {
       // Malformed message — ignore
@@ -266,6 +303,15 @@ export class BybitPrivateStream implements Subscription {
     }
   }
 
+  private handleWalletUpdates(_data: unknown): void {
+    // The shared private-stream contract has no balance update event yet.
+    // We still subscribe so wallet changes participate in liveness and future extensions.
+  }
+
+  private recordHeartbeat(): void {
+    this.lastPongAt = Date.now();
+  }
+
   private attemptReconnect(): void {
     if (this.closed) return;
     if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
@@ -290,12 +336,24 @@ export class BybitPrivateStream implements Subscription {
 
       this.ws.on('open', () => {
         this.reconnectAttempts = 0;
+        this.recordHeartbeat();
         this.authenticate();
         this.startPingLoop();
       });
 
       this.ws.on('message', (data: WebSocket.RawData) => {
         this.handleMessage(data);
+      });
+
+      this.ws.on('pong', () => {
+        this.recordHeartbeat();
+      });
+
+      this.ws.on('ping', () => {
+        this.recordHeartbeat();
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.pong();
+        }
       });
 
       this.ws.on('close', () => {

@@ -6,6 +6,7 @@ const signerState = vi.hoisted(() => ({
   address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' as `0x${string}`,
   sendTransaction: vi.fn(),
   readErc20Balance: vi.fn(),
+  readErc20Balances: vi.fn(),
   readErc20Allowance: vi.fn(),
   readErc20Decimals: vi.fn(),
   approveErc20: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('./evm-signer.js', () => {
 
     sendTransaction = signerState.sendTransaction;
     readErc20Balance = signerState.readErc20Balance;
+    readErc20Balances = signerState.readErc20Balances;
     readErc20Allowance = signerState.readErc20Allowance;
     readErc20Decimals = signerState.readErc20Decimals;
     approveErc20 = signerState.approveErc20;
@@ -136,6 +138,7 @@ describe('OneInch adapter behavior', () => {
 
     signerState.sendTransaction.mockReset();
     signerState.readErc20Balance.mockReset();
+    signerState.readErc20Balances.mockReset();
     signerState.readErc20Allowance.mockReset();
     signerState.readErc20Decimals.mockReset();
     signerState.approveErc20.mockReset();
@@ -147,6 +150,7 @@ describe('OneInch adapter behavior', () => {
       data: { transactionHash: '0xswaphash', gasUsed: 45_678n },
     });
     signerState.readErc20Balance.mockResolvedValue(0n);
+    signerState.readErc20Balances.mockResolvedValue([]);
     signerState.readErc20Allowance.mockResolvedValue(0n);
     signerState.readErc20Decimals.mockResolvedValue(6);
     signerState.approveErc20.mockResolvedValue({
@@ -183,7 +187,9 @@ describe('OneInch adapter behavior', () => {
   });
 
   it('preserves configured asset ids when reporting balances', async () => {
-    signerState.readErc20Balance.mockResolvedValue(2_500_000n);
+    signerState.readErc20Balances.mockResolvedValue([
+      { tokenAddress: USDC_LOWER, balance: 2_500_000n },
+    ]);
 
     const adapter = createAdapter({ tokenDecimals: { [USDC_CONFIGURED]: 6 } });
     const result = await adapter.fetchBalances();
@@ -193,7 +199,7 @@ describe('OneInch adapter behavior', () => {
     expect(result.data.balances).toEqual([
       { asset: USDC_CONFIGURED, amount: quantity('2.5') },
     ]);
-    expect(signerState.readErc20Balance).toHaveBeenCalledTimes(1);
+    expect(signerState.readErc20Balances).toHaveBeenCalledTimes(1);
   });
 
   it('approves ERC-20 input before swap when allowance is insufficient', async () => {
@@ -266,6 +272,159 @@ describe('OneInch adapter behavior', () => {
     await secondQuote;
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('parses ERC-20 transfers into recent swap transactions', async () => {
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            transactionHash: '0xtx1',
+            address: USDC_LOWER,
+            blockNumber: 999n,
+            logIndex: 1,
+            args: {
+              from: signerState.address,
+              to: ONEINCH_SPENDER,
+              value: 1_500_000n,
+            },
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            transactionHash: '0xtx1',
+            address: WETH,
+            blockNumber: 999n,
+            logIndex: 2,
+            args: {
+              from: ONEINCH_SPENDER,
+              to: signerState.address,
+              value: 750_000_000_000_000n,
+            },
+          },
+        ]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_800n }),
+      getTransaction: vi.fn(),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+
+    const adapter = createAdapter();
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected transactions to succeed');
+    expect(result.data).toEqual([
+      {
+        executionRef: '0xtx1',
+        inputAsset: USDC_CONFIGURED,
+        outputAsset: WETH,
+        inputAmount: quantity('1.5'),
+        outputAmount: quantity('0.00075'),
+        timestamp: '2024-05-31T12:00:00.000Z',
+      },
+    ]);
+    expect(publicClient.getTransaction).not.toHaveBeenCalled();
+  });
+
+  it('falls back to native-token input when the swap sends value directly', async () => {
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            transactionHash: '0xtx2',
+            address: USDC_LOWER,
+            blockNumber: 998n,
+            logIndex: 1,
+            args: {
+              from: ONEINCH_SPENDER,
+              to: signerState.address,
+              value: 2_500_000n,
+            },
+          },
+        ]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_860n }),
+      getTransaction: vi.fn().mockResolvedValue({
+        from: signerState.address,
+        value: 200_000_000_000_000_000n,
+      }),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+
+    const adapter = createAdapter();
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected transactions to succeed');
+    expect(result.data).toEqual([
+      {
+        executionRef: '0xtx2',
+        inputAsset: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        outputAsset: USDC_CONFIGURED,
+        inputAmount: quantity('0.2'),
+        outputAmount: quantity('2.5'),
+        timestamp: '2024-05-31T12:01:00.000Z',
+      },
+    ]);
+    expect(publicClient.getTransaction).toHaveBeenCalledWith({ hash: '0xtx2' });
+  });
+
+  it('filters out transactions whose counterparties do not include the configured router', async () => {
+    const LP_POOL = '0xdead000000000000000000000000000000000001';
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([
+          // tx1: swap via the 1inch router (counterparty = ONEINCH_SPENDER)
+          {
+            transactionHash: '0xtx1',
+            address: USDC_LOWER,
+            blockNumber: 999n,
+            logIndex: 1,
+            args: { from: signerState.address, to: ONEINCH_SPENDER, value: 1_000_000n },
+          },
+          // tx2: LP deposit to an unrelated pool (counterparty = LP_POOL)
+          {
+            transactionHash: '0xtx2',
+            address: USDC_LOWER,
+            blockNumber: 998n,
+            logIndex: 3,
+            args: { from: signerState.address, to: LP_POOL, value: 500_000n },
+          },
+        ])
+        .mockResolvedValueOnce([
+          // tx1 output from the router
+          {
+            transactionHash: '0xtx1',
+            address: WETH,
+            blockNumber: 999n,
+            logIndex: 2,
+            args: { from: ONEINCH_SPENDER, to: signerState.address, value: 400_000_000_000_000n },
+          },
+          // tx2 LP receipt from the pool
+          {
+            transactionHash: '0xtx2',
+            address: WETH,
+            blockNumber: 998n,
+            logIndex: 4,
+            args: { from: LP_POOL, to: signerState.address, value: 200_000_000_000_000n },
+          },
+        ]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_800n }),
+      getTransaction: vi.fn(),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+
+    const adapter = createAdapter({ routerAddress: ONEINCH_SPENDER });
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    // Only tx1 (router counterparty) should be included; tx2 (LP pool) filtered out
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]!.executionRef).toBe('0xtx1');
   });
 });
 

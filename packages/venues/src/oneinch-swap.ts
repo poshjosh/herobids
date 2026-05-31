@@ -28,10 +28,21 @@ export interface OneInchSwapConfig {
   rateLimitPerSec?: number;
   /** Token decimals cache: address → decimals. Pre-populated known tokens. */
   tokenDecimals?: Record<string, number>;
+  /** 1inch aggregation router address. When set, fetchRecentTransactions filters
+   *  to only report swaps where a Transfer counterparty matches this address.
+   *  Without it, any bidirectional transfer is reported (LP deposits, staking, etc.). */
+  routerAddress?: string;
 }
 
 /** Native ETH address placeholder used by 1inch API */
 const NATIVE_TOKEN_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' as `0x${string}`;
+
+interface ParsedTransferGroup {
+  blockNumber?: bigint;
+  sent: Map<string, bigint>;
+  received: Map<string, bigint>;
+  counterparties: Set<string>;
+}
 
 /**
  * 1inch DEX aggregator adapter implementing SwapVenuePort.
@@ -46,6 +57,7 @@ export class OneInchSwapAdapter implements SwapVenuePort {
   private readonly rateLimiter: TokenBucketRateLimiter;
   private readonly decimalsCache: Map<string, number>;
   private readonly assetIds: Map<string, string>;
+  private readonly routerAddress?: string;
 
   constructor(config: OneInchSwapConfig) {
     this.apiUrl = config.apiUrl.replace(/\/$/, '');
@@ -59,6 +71,9 @@ export class OneInchSwapAdapter implements SwapVenuePort {
     });
     this.decimalsCache = new Map();
     this.assetIds = new Map();
+    this.routerAddress = config.routerAddress
+      ? this.normalizeAssetId(config.routerAddress)
+      : undefined;
 
     for (const [assetId, decimals] of Object.entries(config.tokenDecimals ?? {})) {
       const normalizedAssetId = this.normalizeAssetId(assetId);
@@ -166,6 +181,35 @@ export class OneInchSwapAdapter implements SwapVenuePort {
     const intPart = padded.slice(0, padded.length - decimals);
     const fracPart = padded.slice(padded.length - decimals);
     return `${intPart}.${fracPart}`.replace(/\.?0+$/, '') || '0';
+  }
+
+  private addTransferAmount(totals: Map<string, bigint>, asset: string, amountRaw: bigint): void {
+    const existing = totals.get(asset) ?? 0n;
+    totals.set(asset, existing + amountRaw);
+  }
+
+  private async pickDominantTransfer(totals: Map<string, bigint>): Promise<{ asset: string; amount: string } | undefined> {
+    let best:
+      | { asset: string; amountRaw: bigint; decimals: number; normalizedAmount: Decimal }
+      | undefined;
+
+    for (const [asset, amountRaw] of totals.entries()) {
+      const decimals = await this.getDecimals(asset);
+      const humanAmount = this.fromRawAmount(amountRaw.toString(), decimals);
+      const normalizedAmount = new Decimal(humanAmount);
+      if (!best || normalizedAmount.gt(best.normalizedAmount)) {
+        best = { asset, amountRaw, decimals, normalizedAmount };
+      }
+    }
+
+    if (!best) {
+      return undefined;
+    }
+
+    return {
+      asset: this.getCanonicalAssetId(best.asset),
+      amount: this.fromRawAmount(best.amountRaw.toString(), best.decimals),
+    };
   }
 
   async quote(params: SwapQuoteParams): Promise<Result<SwapQuote, SwapVenueError>> {
@@ -361,24 +405,49 @@ export class OneInchSwapAdapter implements SwapVenuePort {
         });
       }
 
-      // For ERC-20 tokens: iterate over known tokens in the decimals cache
-      for (const [tokenAddress, decimals] of this.decimalsCache.entries()) {
-        if (tokenAddress === NATIVE_TOKEN_ADDRESS) continue;
+      const erc20Tokens = Array.from(this.decimalsCache.entries())
+        .filter(([tokenAddress]) => tokenAddress !== NATIVE_TOKEN_ADDRESS)
+        .map(([tokenAddress]) => tokenAddress as `0x${string}`);
+
+      if (erc20Tokens.length > 0) {
         try {
-          const balance = await this.signer.readErc20Balance(
-            tokenAddress as `0x${string}`,
-            address,
-          );
-          if (balance > 0n) {
+          const erc20Balances = await this.signer.readErc20Balances(erc20Tokens, address);
+          for (const result of erc20Balances) {
+            const tokenAddress = this.normalizeAssetId(result.tokenAddress);
+            const decimals = this.decimalsCache.get(tokenAddress);
+            if (result.error) {
+              console.warn(`[1inch] Failed to read ERC-20 balance for ${tokenAddress}: ${result.error.message}`);
+              continue;
+            }
+            if (decimals === undefined || result.balance === undefined || result.balance <= 0n) {
+              continue;
+            }
+
             balances.push({
               asset: this.getCanonicalAssetId(tokenAddress),
-              amount: quantity(this.fromRawAmount(balance.toString(), decimals)),
+              amount: quantity(this.fromRawAmount(result.balance.toString(), decimals)),
             });
           }
-        } catch (tokenErr) {
-          // Log but don't fail the entire snapshot — partial data is preferable to no data.
-          // Reconciler will retry on next cycle; drift detection catches real issues.
-          console.warn(`[1inch] Failed to read ERC-20 balance for ${tokenAddress}: ${tokenErr instanceof Error ? tokenErr.message : String(tokenErr)}`);
+        } catch (multicallErr) {
+          // Transport-level failure — fall back to individual per-token reads so
+          // balances aren't permanently missing on providers without multicall support.
+          console.warn(`[1inch] Multicall failed, falling back to per-token reads: ${multicallErr instanceof Error ? multicallErr.message : String(multicallErr)}`);
+          for (const tokenAddress of erc20Tokens) {
+            const normalized = this.normalizeAssetId(tokenAddress);
+            const decimals = this.decimalsCache.get(normalized);
+            if (decimals === undefined) continue;
+            try {
+              const balance = await this.signer.readErc20Balance(tokenAddress, address);
+              if (balance > 0n) {
+                balances.push({
+                  asset: this.getCanonicalAssetId(normalized),
+                  amount: quantity(this.fromRawAmount(balance.toString(), decimals)),
+                });
+              }
+            } catch (tokenErr) {
+              console.warn(`[1inch] Failed to read ERC-20 balance for ${normalized}: ${tokenErr instanceof Error ? tokenErr.message : String(tokenErr)}`);
+            }
+          }
         }
       }
 
@@ -417,6 +486,7 @@ export class OneInchSwapAdapter implements SwapVenuePort {
     try {
       const publicClient = this.signer.getPublicClient();
       const address = this.signer.address;
+      const normalizedAddress = this.normalizeAssetId(address);
 
       // Query ERC-20 Transfer events where our address is sender or recipient
       const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)');
@@ -443,35 +513,119 @@ export class OneInchSwapAdapter implements SwapVenuePort {
         }),
       ]);
 
-      // Merge and deduplicate by tx hash
-      const txMap = new Map<string, Log>();
+      const txMap = new Map<string, ParsedTransferGroup>();
+      const seenLogs = new Set<string>();
       for (const log of [...sentLogs, ...receivedLogs]) {
-        if (log.transactionHash) {
-          txMap.set(log.transactionHash, log);
+        const txHash = log.transactionHash;
+        if (!txHash) {
+          continue;
         }
+
+        const dedupeKey = `${txHash}:${String(log.logIndex ?? 'unknown')}`;
+        if (seenLogs.has(dedupeKey)) {
+          continue;
+        }
+        seenLogs.add(dedupeKey);
+
+        const transferArgs = log.args as {
+          from?: `0x${string}`;
+          to?: `0x${string}`;
+          value?: bigint;
+        } | undefined;
+        const value = transferArgs?.value;
+        if (value === undefined) {
+          continue;
+        }
+
+        const group = txMap.get(txHash) ?? {
+          blockNumber: log.blockNumber ?? undefined,
+          sent: new Map<string, bigint>(),
+          received: new Map<string, bigint>(),
+          counterparties: new Set<string>(),
+        };
+        if (group.blockNumber === undefined && log.blockNumber !== null) {
+          group.blockNumber = log.blockNumber ?? undefined;
+        }
+
+        const asset = this.rememberAssetId(log.address);
+        const from = transferArgs?.from ? this.normalizeAssetId(transferArgs.from) : undefined;
+        const to = transferArgs?.to ? this.normalizeAssetId(transferArgs.to) : undefined;
+        if (from === normalizedAddress) {
+          this.addTransferAmount(group.sent, asset, value);
+          if (to) group.counterparties.add(to);
+        }
+        if (to === normalizedAddress) {
+          this.addTransferAmount(group.received, asset, value);
+          if (from) group.counterparties.add(from);
+        }
+
+        txMap.set(txHash, group);
       }
 
+      await Promise.all(Array.from(txMap.entries()).map(async ([txHash, group]) => {
+        if (group.sent.size > 0) {
+          return;
+        }
+
+        const transaction = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
+        if (this.normalizeAssetId(transaction.from) === normalizedAddress && transaction.value > 0n) {
+          this.addTransferAmount(group.sent, NATIVE_TOKEN_ADDRESS, transaction.value);
+          if (transaction.to) {
+            group.counterparties.add(this.normalizeAssetId(transaction.to));
+          }
+        }
+      }));
+
+      const blockNumbers = Array.from(new Set(
+        Array.from(txMap.values())
+          .map((group) => group.blockNumber)
+          .filter((blockNumber): blockNumber is bigint => blockNumber !== undefined),
+      ));
+      const blockTimestamps = new Map<bigint, string>();
+
+      await Promise.all(blockNumbers.map(async (blockNumber) => {
+        const block = await publicClient.getBlock({ blockNumber });
+        blockTimestamps.set(blockNumber, new Date(Number(block.timestamp) * 1000).toISOString());
+      }));
+
       const txs: SwapTransaction[] = [];
-      for (const [txHash, log] of txMap.entries()) {
-        // Get block timestamp
-        let timestamp: string;
-        if (log.blockNumber) {
-          const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
-          timestamp = new Date(Number(block.timestamp) * 1000).toISOString();
-        } else {
-          timestamp = new Date().toISOString();
+      for (const [txHash, group] of txMap.entries()) {
+        // When routerAddress is configured, only include transactions where a
+        // Transfer counterparty matches the router. This filters out LP deposits,
+        // staking wrappers, and other bidirectional flows unrelated to 1inch.
+        if (this.routerAddress && !group.counterparties.has(this.routerAddress)) {
+          continue;
+        }
+
+        const inputTransfer = await this.pickDominantTransfer(group.sent);
+        const outputTransfer = await this.pickDominantTransfer(group.received);
+        // Require both sides present — a real swap sends one asset and receives another.
+        // Plain deposits/withdrawals/airdrops only have one side and should be excluded.
+        // NOTE: ERC20→native swaps (e.g. USDC→ETH) will be excluded here because native
+        // ETH receipt produces no Transfer event. Detecting native output requires trace
+        // API support (debug_traceTransaction) which is not universally available.
+        if (!inputTransfer || !outputTransfer) {
+          continue;
+        }
+
+        const timestamp = group.blockNumber
+          ? blockTimestamps.get(group.blockNumber) ?? new Date().toISOString()
+          : new Date().toISOString();
+        if (since && new Date(timestamp).getTime() < since.getTime()) {
+          continue;
         }
 
         txs.push({
           executionRef: txHash,
-          inputAsset: 'unknown', // Full swap parsing requires trace analysis — out of scope for v1
-          outputAsset: 'unknown',
-          inputAmount: quantity('0'),
-          outputAmount: quantity('0'),
+          inputAsset: inputTransfer?.asset ?? 'unknown',
+          outputAsset: outputTransfer?.asset ?? 'unknown',
+          inputAmount: quantity(inputTransfer?.amount ?? '0'),
+          outputAmount: quantity(outputTransfer?.amount ?? '0'),
           timestamp,
         });
       }
 
+      txs.sort((left, right) => right.timestamp.localeCompare(left.timestamp));
       return ok(txs);
     } catch (error) {
       return err({ code: 'TX_ERROR', message: error instanceof Error ? error.message : String(error) });

@@ -344,6 +344,7 @@ const runtime = new WorkerRuntime(
               rateLimitPerSec: oneInchConfig?.rateLimitPerSec,
               tokenDecimals,
               timeoutMs: oneInchConfig?.timeoutMs,
+              routerAddress: oneInchConfig?.routerAddress,
             });
           }
 

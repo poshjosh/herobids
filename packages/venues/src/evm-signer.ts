@@ -11,7 +11,7 @@ import {
   type Account,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { base } from 'viem/chains';
+import { arbitrum, base, mainnet } from 'viem/chains';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 
@@ -38,7 +38,21 @@ export interface TransactionRequest {
   gas?: bigint;
 }
 
+export interface SignableTransactionRequest extends TransactionRequest {
+  nonce: number;
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}
+
+export interface Erc20BalanceResult {
+  tokenAddress: `0x${string}`;
+  balance?: bigint;
+  error?: EvmSignerError;
+}
+
 const CHAIN_MAP: Record<number, Chain> = {
+  1: mainnet,
+  42161: arbitrum,
   8453: base,
 };
 
@@ -117,6 +131,30 @@ export class EvmSigner {
     }
   }
 
+  /** Sign a transaction offline for deterministic tests and future pre-sign flows. */
+  async signTransaction(tx: SignableTransactionRequest): Promise<Result<`0x${string}`, EvmSignerError>> {
+    try {
+      const signed = await this.account.signTransaction({
+        type: 'eip1559',
+        chainId: this.wallet.chain!.id,
+        to: tx.to,
+        data: tx.data,
+        value: tx.value ?? 0n,
+        gas: tx.gas,
+        nonce: tx.nonce,
+        maxFeePerGas: tx.maxFeePerGas,
+        maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+      });
+
+      return ok(signed);
+    } catch (error) {
+      return err({
+        code: 'evm.sign_failed',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   /** Read ERC-20 balance for a token at a given address */
   async readErc20Balance(tokenAddress: `0x${string}`, ownerAddress: `0x${string}`): Promise<bigint> {
     const data = await this.publicClient.readContract({
@@ -126,6 +164,47 @@ export class EvmSigner {
       args: [ownerAddress],
     });
     return data as bigint;
+  }
+
+  /** Read ERC-20 balances in one RPC round-trip where the client supports multicall. */
+  async readErc20Balances(
+    tokenAddresses: Array<`0x${string}`>,
+    ownerAddress: `0x${string}`,
+  ): Promise<Erc20BalanceResult[]> {
+    const results = await this.publicClient.multicall({
+      contracts: tokenAddresses.map((tokenAddress) => ({
+        address: tokenAddress,
+        abi: ERC20_BALANCE_ABI,
+        functionName: 'balanceOf',
+        args: [ownerAddress],
+      })),
+      allowFailure: true,
+    });
+
+    return results.map((result, index) => {
+      const tokenAddress = tokenAddresses[index];
+      if (!tokenAddress) {
+        return {
+          tokenAddress: '0x0000000000000000000000000000000000000000',
+          error: { code: 'evm.multicall_failed', message: 'Token address missing for multicall result' },
+        } satisfies Erc20BalanceResult;
+      }
+
+      if (result.status !== 'success') {
+        return {
+          tokenAddress,
+          error: {
+            code: 'evm.multicall_failed',
+            message: result.error instanceof Error ? result.error.message : String(result.error),
+          },
+        } satisfies Erc20BalanceResult;
+      }
+
+      return {
+        tokenAddress,
+        balance: result.result as bigint,
+      } satisfies Erc20BalanceResult;
+    });
   }
 
   /** Read ERC-20 allowance for a token owner/spender pair */

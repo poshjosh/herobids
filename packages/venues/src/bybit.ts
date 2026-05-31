@@ -46,6 +46,12 @@ export interface BybitAdapterConfig {
   };
 }
 
+type BybitAccountMode = 'unified' | 'standard';
+
+interface BybitExchangeWithAccountMode extends InstanceType<typeof ccxt.bybit> {
+  isUnifiedEnabled?: () => Promise<[boolean | undefined, boolean | undefined]>;
+}
+
 /**
  * Bybit venue adapter implementing OrderbookVenuePort.
  * Supports both Unified Trading Account (UTA) and Standard accounts.
@@ -55,6 +61,7 @@ export class BybitAdapter implements OrderbookVenuePort {
   private readonly exchange: InstanceType<typeof ccxt.bybit>;
   private readonly rateLimiter: TokenBucketRateLimiter;
   private readonly adapterConfig: BybitAdapterConfig;
+  private accountModePromise?: Promise<BybitAccountMode>;
 
   constructor(config: BybitAdapterConfig) {
     this.adapterConfig = config;
@@ -71,6 +78,10 @@ export class BybitAdapter implements OrderbookVenuePort {
     this.rateLimiter = new TokenBucketRateLimiter(
       config.rateLimit ?? { capacity: 20, refillRate: 10 },
     );
+
+    // Prime account-mode detection early so standard accounts can be routed to
+    // the derivatives wallet before the first balance/position reconciliation.
+    void this.getAccountMode().catch(() => undefined);
   }
 
   async submitOrder(cmd: OrderCommand): Promise<Result<OrderReceipt, VenueError>> {
@@ -128,7 +139,10 @@ export class BybitAdapter implements OrderbookVenuePort {
 
   async fetchPositions(): Promise<Result<Position[], VenueError>> {
     return this.withRateLimit(async () => {
-      const positions = await this.exchange.fetchPositions();
+      const requestParams = await this.getStandardDerivativesParams();
+      const positions = requestParams
+        ? await this.exchange.fetchPositions(undefined, requestParams)
+        : await this.exchange.fetchPositions();
       const mapped: Position[] = positions
         .filter((p: CcxtPosition) => p.contracts !== undefined && p.contracts !== 0)
         .map((p: CcxtPosition) => ({
@@ -145,7 +159,10 @@ export class BybitAdapter implements OrderbookVenuePort {
 
   async fetchBalances(): Promise<Result<BalanceSnapshot, VenueError>> {
     return this.withRateLimit(async () => {
-      const balance = await this.exchange.fetchBalance();
+      const requestParams = await this.getStandardDerivativesParams();
+      const balance = requestParams
+        ? await this.exchange.fetchBalance(requestParams)
+        : await this.exchange.fetchBalance();
       const totals = (balance.total ?? {}) as Record<string, number>;
       const freeBalances = (balance.free ?? {}) as Record<string, number>;
       const usedBalances = (balance.used ?? {}) as Record<string, number>;
@@ -180,7 +197,10 @@ export class BybitAdapter implements OrderbookVenuePort {
 
   async fetchOpenOrders(): Promise<Result<VenueOrder[], VenueError>> {
     return this.withRateLimit(async () => {
-      const openOrders = await this.exchange.fetchOpenOrders();
+      const requestParams = await this.getStandardDerivativesParams();
+      const openOrders = requestParams
+        ? await this.exchange.fetchOpenOrders(undefined, undefined, undefined, requestParams)
+        : await this.exchange.fetchOpenOrders();
       const mapped: VenueOrder[] = openOrders.map((o) => ({
         venueRefId: o.id ?? '',
         clientOrderId: o.clientOrderId ?? undefined,
@@ -201,7 +221,10 @@ export class BybitAdapter implements OrderbookVenuePort {
   async fetchRecentFills(since?: Date): Promise<Result<VenueFill[], VenueError>> {
     return this.withRateLimit(async () => {
       const sinceMs = since ? since.getTime() : undefined;
-      const trades = await this.exchange.fetchMyTrades(undefined, sinceMs);
+      const requestParams = await this.getStandardDerivativesParams();
+      const trades = requestParams
+        ? await this.exchange.fetchMyTrades(undefined, sinceMs, undefined, requestParams)
+        : await this.exchange.fetchMyTrades(undefined, sinceMs);
       const mapped: VenueFill[] = trades.map((t) => ({
         venueRefId: t.id ?? '',
         orderId: t.order ?? undefined,
@@ -262,6 +285,49 @@ export class BybitAdapter implements OrderbookVenuePort {
     } catch (e: unknown) {
       return err(mapCcxtError(e));
     }
+  }
+
+  private async getAccountMode(): Promise<BybitAccountMode> {
+    if (!this.accountModePromise) {
+      this.accountModePromise = this.detectAccountMode().catch((e) => {
+        // Clear cached promise so next call retries instead of permanently failing
+        this.accountModePromise = undefined;
+        throw e;
+      });
+    }
+    return this.accountModePromise;
+  }
+
+  private async detectAccountMode(): Promise<BybitAccountMode> {
+    const exchangeWithAccountMode = this.exchange as BybitExchangeWithAccountMode;
+    if (typeof exchangeWithAccountMode.isUnifiedEnabled === 'function') {
+      try {
+        const [enableUnifiedMargin, enableUnifiedAccount] = await exchangeWithAccountMode.isUnifiedEnabled();
+        return (enableUnifiedMargin || enableUnifiedAccount) ? 'unified' : 'standard';
+      } catch (e: unknown) {
+        // Only suppress auth/permission errors — these indicate the key lacks
+        // "Account Transfer" permission. Default to 'unified' (safe: no extra routing params).
+        // Transient errors (network, timeout, rate limit) must propagate so
+        // getAccountMode() clears the cached promise and retries on next call.
+        if (e instanceof ccxt.AuthenticationError) {
+          return 'unified';
+        }
+        throw e;
+      }
+    }
+    // Fallback: ccxt always has isUnifiedEnabled on bybit, but guard anyway
+    return 'unified';
+  }
+
+  private async getStandardDerivativesParams(): Promise<Record<string, string> | undefined> {
+    const accountMode = await this.getAccountMode();
+    if (accountMode !== 'standard') {
+      return undefined;
+    }
+    return {
+      type: 'swap',
+      subType: 'linear',
+    };
   }
 }
 

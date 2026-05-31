@@ -14,6 +14,7 @@ export const VenueConfigSchema = z.object({
   chainId: z.number().int().positive().optional(),
   rateLimitPerSec: z.number().min(1).default(10),
   timeoutMs: z.number().min(1000).default(30_000),
+  routerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address (0x + 40 hex chars)').optional(),
 });
 
 export const ReconciliationConfigSchema = z.object({
