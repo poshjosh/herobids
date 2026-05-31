@@ -6,6 +6,8 @@
 
 **Depends on:** [009-phase-3-plan.md](009-phase-3-plan.md) exit criteria and the current Phase 2/3 worker runtime, reconciliation, private-stream, and backtesting infrastructure
 
+**Latest rollout status:** [015-phase-4-live-rollout-status-2026-05-30.md](015-phase-4-live-rollout-status-2026-05-30.md)
+
 **Scope note:** This phase covers bot-driven live execution on one orderbook venue. Swap live execution, multi-venue live routing, manual-user execution, and any frontend/dashboard remain deferred. The first live strategy should be whichever strategy has the strongest replay + shadow evidence; this plan does not assume LLM goes live before the existing mechanical baseline proves the path.
 
 **Phase-gating note:** Phase 4 may proceed on the mechanical live path while the LLM-specific Phase 3 follow-ups in [009b-not-addressed.md](009b-not-addressed.md) remain open. This plan is not approval to promote `strategy.type: llm` to live; LLM live consideration still requires those follow-ups to close in addition to the replay/shadow evidence already required by Phase 3.

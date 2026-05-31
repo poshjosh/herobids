@@ -2,6 +2,8 @@
 
 **Parent plan:** [010-phase-4-live-rollout-plan.md](010-phase-4-live-rollout-plan.md)
 
+**Latest rollout status:** [015-phase-4-live-rollout-status-2026-05-30.md](015-phase-4-live-rollout-status-2026-05-30.md)
+
 **Purpose:** Break Phase 4 into reviewable PRs that each change one decision boundary, keep validation narrow, and avoid mixing live-capital rollout work with unrelated refactors.
 
 **Execution rule:** Each PR must leave the repo in a green state on its own. Do not start the next PR until the current PR's focused validation passes.
