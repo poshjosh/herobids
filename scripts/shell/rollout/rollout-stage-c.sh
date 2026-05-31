@@ -23,16 +23,16 @@
 #     (falls back to HYPERLIQUID_API_KEY, HYPERLIQUID_SECRET, HYPERLIQUID_ACCOUNT_ADDRESS)
 #
 # Usage:
-#   ./scripts/shell/rollout-stage-c.sh <instance-id>
-#   ./scripts/shell/rollout-stage-c.sh <instance-id> --skip-restart
+#   ./scripts/shell/rollout/rollout-stage-c.sh <instance-id>
+#   ./scripts/shell/rollout/rollout-stage-c.sh <instance-id> --skip-restart
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT_DIR"
 
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck source=/dev/null

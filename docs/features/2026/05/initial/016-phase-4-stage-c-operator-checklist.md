@@ -22,10 +22,10 @@ It is grounded in the current API surface, not the older Stage C helper script a
 
 The current helper scripts are useful references, but parts of the Stage C flow have drifted from the live API:
 
-- `scripts/shell/rollout-stage-c.sh` calls `PUT /credentials/:id/rotate`, but the current route is `POST /credentials/:id/rotate`
-- `scripts/shell/rollout-stage-c.sh` calls `/reconciliation`, but the current route is `GET /instances/:id/reconciliation-events`
-- `scripts/shell/rollout-stage-c.sh` expects `GET /venue-accounts/:id`, but the current API only exposes `GET /venue-accounts`
-- `scripts/shell/rollout-monitor.sh` is still useful for fills/status/reconciliation, but its internal `liveEvents` field is not authoritative because `GET /instances/:id/live-status` returns `recentLiveEvents`
+- `scripts/shell/rollout/rollout-stage-c.sh` calls `PUT /credentials/:id/rotate`, but the current route is `POST /credentials/:id/rotate`
+- `scripts/shell/rollout/rollout-stage-c.sh` calls `/reconciliation`, but the current route is `GET /instances/:id/reconciliation-events`
+- `scripts/shell/rollout/rollout-stage-c.sh` expects `GET /venue-accounts/:id`, but the current API only exposes `GET /venue-accounts`
+- `scripts/shell/rollout/rollout-monitor.sh` is still useful for fills/status/reconciliation, but its internal `liveEvents` field is not authoritative because `GET /instances/:id/live-status` returns `recentLiveEvents`
 
 Until those helpers are updated, this checklist is the authoritative Stage C runbook.
 
@@ -87,7 +87,7 @@ Do not start Stage C if any of these are already true:
 You can keep a live monitor running in another shell during the restart and rotation steps.
 
 ```bash
-./scripts/shell/rollout-monitor.sh "$INSTANCE_ID" --interval 5
+./scripts/shell/rollout/rollout-monitor.sh "$INSTANCE_ID" --interval 5
 ```
 
 Treat this helper as observational only. The authoritative evidence still comes from explicit API snapshots and journal queries.

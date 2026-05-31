@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # rollout-check-prerequisites.sh — Verify all prerequisites for Phase 4 live rollout.
-# Run from the monorepo root: ./scripts/shell/rollout-check-prerequisites.sh
+# Run from the monorepo root: ./scripts/shell/rollout/rollout-check-prerequisites.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck source=/dev/null

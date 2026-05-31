@@ -17,7 +17,7 @@
 #   export HYPERLIQUID_TESTNET_SECRET=<your-testnet-secret>
 #
 # Usage:
-#   ./scripts/shell/rollout-stage-a.sh
+#   ./scripts/shell/rollout/rollout-stage-a.sh
 #
 # Credentials:
 #   Obtain testnet credentials at https://app.hyperliquid-testnet.xyz
@@ -26,10 +26,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT_DIR"
 
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck source=/dev/null

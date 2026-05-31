@@ -153,7 +153,7 @@ async function main(): Promise<void> {
     process.exit(1);
   } else {
     console.log('All tests passed — testnet credentials and connectivity verified.');
-    console.log('Safe to proceed with Stage A (./scripts/shell/rollout-stage-a.sh)');
+    console.log('Safe to proceed with Stage A (./scripts/shell/rollout/rollout-stage-a.sh)');
   }
 }
 

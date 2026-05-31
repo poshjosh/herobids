@@ -16,14 +16,14 @@
 #   - Packages built (pnpm build)
 #
 # Usage:
-#   ./scripts/shell/rollout-stage-c-runner.sh --shadow    # default: target a shadow instance
-#   ./scripts/shell/rollout-stage-c-runner.sh --live      # target a live instance (real money)
-#   ./scripts/shell/rollout-stage-c-runner.sh             # same as --shadow
+#   ./scripts/shell/rollout/rollout-stage-c-runner.sh --shadow    # default: target a shadow instance
+#   ./scripts/shell/rollout/rollout-stage-c-runner.sh --live      # target a live instance (real money)
+#   ./scripts/shell/rollout/rollout-stage-c-runner.sh             # same as --shadow
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT_DIR"
 
 # --- Parse flags (matches rollout-stage-b.sh convention) ---

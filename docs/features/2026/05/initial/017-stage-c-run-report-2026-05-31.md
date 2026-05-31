@@ -1,7 +1,7 @@
 # Stage C Verification Run Report
 
 **Date:** 2026-05-31 09:55 UTC  
-**Script:** `./scripts/shell/rollout-stage-c-runner.sh --shadow`  
+**Script:** `./scripts/shell/rollout/rollout-stage-c-runner.sh --shadow`  
 **Instance:** `93a2c7bd-d10d-4946-aacc-13460bf039f2` (shadow mode)  
 **Credential:** `99361dcf-f1f2-4856-9d76-15bbcbbf952e`  
 **Verdict:** **PASS** (shadow mode — `credential.used` is N/A)

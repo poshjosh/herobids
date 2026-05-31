@@ -18,10 +18,10 @@
 #   export HYPERLIQUID_SECRET=<agent-private-key>                 # agent private key from HL dashboard
 #
 # Usage:
-#   ./scripts/shell/rollout-stage-b.sh --dry-run  # validate config + print plan, no side effects
-#   ./scripts/shell/rollout-stage-b.sh --paper     # full pipeline, simulated fills
-#   ./scripts/shell/rollout-stage-b.sh --shadow    # real WS data + private stream, simulated fills
-#   ./scripts/shell/rollout-stage-b.sh             # full pipeline, LIVE (real money)
+#   ./scripts/shell/rollout/rollout-stage-b.sh --dry-run  # validate config + print plan, no side effects
+#   ./scripts/shell/rollout/rollout-stage-b.sh --paper     # full pipeline, simulated fills
+#   ./scripts/shell/rollout/rollout-stage-b.sh --shadow    # real WS data + private stream, simulated fills
+#   ./scripts/shell/rollout/rollout-stage-b.sh             # full pipeline, LIVE (real money)
 #
 # Credentials:
 #   Obtain production credentials at https://app.hyperliquid.xyz
@@ -61,11 +61,11 @@ else
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT_DIR"
 export PATH="$ROOT_DIR/node_modules/.bin:$PATH"
 
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck source=/dev/null

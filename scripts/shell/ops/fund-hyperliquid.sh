@@ -2,18 +2,18 @@
 # fund-hyperliquid.sh — Load scripts/.env then run the fund-hyperliquid TypeScript script.
 #
 # Usage:
-#   scripts/shell/fund-hyperliquid.sh            # interactive (asks to confirm each tx)
-#   scripts/shell/fund-hyperliquid.sh --dry-run  # simulate — no transactions sent
+#   scripts/shell/ops/fund-hyperliquid.sh            # interactive (asks to confirm each tx)
+#   scripts/shell/ops/fund-hyperliquid.sh --dry-run  # simulate — no transactions sent
 #
 # Setup:
 #   cp scripts/.env.example scripts/.env
 #   # edit scripts/.env with your BASE_WALLET_PRIVATE_KEY, HYPERLIQUID_ACCOUNT_ADDRESS, AMOUNT_USDC
-#   chmod +x scripts/shell/fund-hyperliquid.sh
+#   chmod +x scripts/shell/ops/fund-hyperliquid.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ENV_FILE="$REPO_ROOT/scripts/.env"
 
 # ---------------------------------------------------------------------------

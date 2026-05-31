@@ -5,13 +5,13 @@
 # Useful during Stage B manual monitoring window.
 #
 # Usage:
-#   ./scripts/shell/rollout-monitor.sh <instance-id>
-#   ./scripts/shell/rollout-monitor.sh <instance-id> --interval 10
+#   ./scripts/shell/rollout/rollout-monitor.sh <instance-id>
+#   ./scripts/shell/rollout/rollout-monitor.sh <instance-id> --interval 10
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+ENV_FILE="$SCRIPT_DIR/../../.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck source=/dev/null
