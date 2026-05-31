@@ -198,7 +198,19 @@ export class WorkerRuntime {
       case 'restart':
         await this.stopInstance(tradingInstanceId);
         try {
-          await this.startInstance(tradingInstanceId, config ?? {});
+          let restartConfig = config;
+          if (!restartConfig || Object.keys(restartConfig).length === 0) {
+            // Config not in job payload (e.g. rotation-triggered restart) — load from DB
+            if (this.instanceLoader) {
+              const instances = await this.instanceLoader();
+              const found = instances.find(i => i.id === tradingInstanceId);
+              restartConfig = found?.config;
+            }
+            if (!restartConfig || Object.keys(restartConfig).length === 0) {
+              throw new Error(`No config available for restart of instance ${tradingInstanceId}`);
+            }
+          }
+          await this.startInstance(tradingInstanceId, restartConfig);
         } catch (err) {
           if (this.onStartFailed) {
             await this.onStartFailed(tradingInstanceId, err instanceof Error ? err : new Error(String(err)));
