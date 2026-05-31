@@ -10,7 +10,7 @@ import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { HyperliquidAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, OracleMarkSource } from '@herobids/venues';
+import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
 import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
@@ -84,19 +84,25 @@ const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
 };
 
 // Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
-// Only initialised when the Hyperliquid venue is configured; swap-only deployments skip this.
+// Initialised when at least one orderbook venue has a wsUrl configured.
 const publicStreamConfig = appConfig.streams.public;
 const hyperliquidVenueConfig = appConfig.venues['hyperliquid'];
+const bybitVenueConfig = appConfig.venues['bybit'];
 
-const publicStreamPool = hyperliquidVenueConfig?.wsUrl
-  ? new PublicStreamPool(
-      publicStreamConfig,
-      new Map([
-        ['hyperliquid', () => new HyperliquidPublicStream({
-          wsUrl: hyperliquidVenueConfig.wsUrl!,
-        })],
-      ]),
-    )
+const streamConnectors = new Map<string, () => import('@herobids/venues').VenueStreamConnector>();
+if (hyperliquidVenueConfig?.wsUrl) {
+  streamConnectors.set('hyperliquid', () => new HyperliquidPublicStream({
+    wsUrl: hyperliquidVenueConfig.wsUrl!,
+  }));
+}
+if (bybitVenueConfig?.wsPublicUrl || bybitVenueConfig?.wsUrl) {
+  streamConnectors.set('bybit', () => new BybitPublicStream({
+    wsUrl: bybitVenueConfig.wsPublicUrl ?? 'wss://stream.bybit.com/v5/public/linear',
+  }));
+}
+
+const publicStreamPool = streamConnectors.size > 0
+  ? new PublicStreamPool(publicStreamConfig, streamConnectors)
   : undefined;
 
 // Worker-scoped oracle mark source (stateless, safe to share)
@@ -136,10 +142,14 @@ const runtime = new WorkerRuntime(
 
     const strategy = createStrategy(config.strategy);
 
-    // Resolve credentials: try DB lookup via venueAccountId, fall back to process env
+    // Resolve credentials: try DB lookup via venueAccountId, fall back to venue-specific env vars
     const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string ?? 'default';
-    let apiKey = process.env['HYPERLIQUID_API_KEY'] ?? '';
-    let secret = process.env['HYPERLIQUID_SECRET'] ?? '';
+    let apiKey = config.venue === 'bybit'
+      ? process.env['BYBIT_API_KEY'] ?? ''
+      : process.env['HYPERLIQUID_API_KEY'] ?? '';
+    let secret = config.venue === 'bybit'
+      ? process.env['BYBIT_SECRET'] ?? ''
+      : process.env['HYPERLIQUID_SECRET'] ?? '';
     let walletAddress = process.env['HYPERLIQUID_ACCOUNT_ADDRESS'] ?? '';
     let testnet = true;
     let credentialsFromDb = false;
@@ -230,10 +240,16 @@ const runtime = new WorkerRuntime(
 
     // Construct venue adapters based on venueType
     const venueAdapter = config.venueType !== 'swap'
-      ? new HyperliquidAdapter({
-          credentials: { apiKey, secret, walletAddress, testnet },
-          streamConfig,
-        })
+      ? config.venue === 'bybit'
+        ? new BybitAdapter({
+            credentials: { apiKey, secret, testnet },
+            wsUrl: bybitVenueConfig?.wsUrl,
+            streamConfig,
+          })
+        : new HyperliquidAdapter({
+            credentials: { apiKey, secret, walletAddress, testnet },
+            streamConfig,
+          })
       : undefined;
 
     // Construct swap venue adapter when venueType is 'swap'

@@ -33,6 +33,9 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   JUPITER_API_URL: { path: 'venues.jupiter.baseUrl', type: 'string' },
   HYPERLIQUID_BASE_URL: { path: 'venues.hyperliquid.baseUrl', type: 'string' },
   HYPERLIQUID_WS_URL: { path: 'venues.hyperliquid.wsUrl', type: 'string' },
+  BYBIT_BASE_URL: { path: 'venues.bybit.baseUrl', type: 'string' },
+  BYBIT_WS_URL: { path: 'venues.bybit.wsUrl', type: 'string' },
+  BYBIT_WS_PUBLIC_URL: { path: 'venues.bybit.wsPublicUrl', type: 'string' },
   // Marking
   MARKING_STALENESS_MS: { path: 'marking.stalenessThresholdMs', type: 'number' },
   MARKING_ORACLE_BASE_URL: { path: 'marking.oracleBaseUrl', type: 'string' },

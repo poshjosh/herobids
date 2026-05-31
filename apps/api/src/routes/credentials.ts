@@ -38,6 +38,13 @@ function validateVenueSecrets(venue: string, secrets: Record<string, string>): S
     } else if (!/^0x[0-9a-fA-F]{40}$/.test(secrets['walletAddress'])) {
       errors.push({ field: 'secrets.walletAddress', message: 'walletAddress must be a valid EVM address (0x + 40 hex chars)' });
     }
+  } else if (venue === 'bybit') {
+    if (!secrets['apiKey']?.trim()) {
+      errors.push({ field: 'secrets.apiKey', message: 'apiKey is required for Bybit credentials' });
+    }
+    if (!secrets['secret']?.trim()) {
+      errors.push({ field: 'secrets.secret', message: 'secret is required for Bybit credentials' });
+    }
   }
 
   return errors;

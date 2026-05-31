@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Supported venues for live rollout
-export const SUPPORTED_LIVE_VENUES = ['hyperliquid'] as const;
+export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit'] as const;
 export type SupportedLiveVenue = typeof SUPPORTED_LIVE_VENUES[number];
 
 // --- Operator Config (loaded from YAML + env at startup) ---
@@ -9,6 +9,7 @@ export type SupportedLiveVenue = typeof SUPPORTED_LIVE_VENUES[number];
 export const VenueConfigSchema = z.object({
   baseUrl: z.string().url(),
   wsUrl: z.string().url().optional(),
+  wsPublicUrl: z.string().url().optional(),
   rateLimitPerSec: z.number().min(1).default(10),
   timeoutMs: z.number().min(1000).default(30_000),
 });
@@ -190,11 +191,11 @@ export const TradingInstanceConfigSchema = z.object({
   (data) => {
     // Enforce venue string matches venueType to prevent config/adapter mismatch
     const swapVenues = ['jupiter'];
-    const orderbookVenues = ['hyperliquid'];
+    const orderbookVenues = ['hyperliquid', 'bybit'];
     if (data.venueType === 'swap') return swapVenues.includes(data.venue);
     return orderbookVenues.includes(data.venue);
   },
-  { message: 'venue must match venueType: swap venues are [jupiter], orderbook venues are [hyperliquid]', path: ['venue'] },
+  { message: 'venue must match venueType: swap venues are [jupiter], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
 );
 
 export type TradingInstanceConfig = z.infer<typeof TradingInstanceConfigSchema>;

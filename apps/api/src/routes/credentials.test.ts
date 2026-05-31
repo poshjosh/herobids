@@ -193,6 +193,69 @@ describe('credential audit events', () => {
       const body = JSON.parse(res.body);
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
     });
+
+    it('creates Bybit credential successfully', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: 'bybit',
+          label: 'bybit-main',
+          secrets: { apiKey: 'bybit-key-123', secret: 'bybit-secret-456' },
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('rejects Bybit credential with empty apiKey', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: 'bybit',
+          label: 'bybit-main',
+          secrets: { apiKey: '', secret: 'valid-secret' },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('validation_error');
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.apiKey' }));
+    });
+
+    it('rejects Bybit credential with empty secret', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: 'bybit',
+          label: 'bybit-main',
+          secrets: { apiKey: 'valid-key', secret: '' },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('validation_error');
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.secret' }));
+    });
   });
 
   describe('POST /credentials/:id/rotate', () => {

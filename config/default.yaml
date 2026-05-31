@@ -19,6 +19,12 @@ venues:
     wsUrl: wss://api.hyperliquid.xyz/ws
     rateLimitPerSec: 10
     timeoutMs: 30000
+  bybit:
+    baseUrl: https://api.bybit.com
+    wsUrl: wss://stream.bybit.com/v5/private
+    wsPublicUrl: wss://stream.bybit.com/v5/public/linear
+    rateLimitPerSec: 10
+    timeoutMs: 30000
   jupiter:
     baseUrl: https://quote-api.jup.ag/v6
     timeoutMs: 15000
