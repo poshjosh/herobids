@@ -1,6 +1,6 @@
 # Bug Report: Crashed Instances Block Start of Same-Account Instances via Unique Constraint
 
-- **Status:** FIXED (workaround in runner script)
+- **Status:** FIXED
 - **Severity:** Medium
 - **Date:** 2026-05-31
 - **Discovered:** Stage C runner Step 6 — `POST /instances/:id/start` returned 500
@@ -37,28 +37,20 @@ The scenario:
 2. Instance B (shadow, same venue account) is `stopped`
 3. Operator tries to start Instance B → sets status to `running` → violates unique constraint because A still holds it
 
-## Workaround Applied
+## Fix Applied
 
-The runner script now stops all crashed instances before attempting to start a new one:
+The `POST /instances/:id/start` route now handles this at the API layer:
 
-```bash
-CRASHED_IDS=$(echo "$INSTANCES_RESPONSE" | jq -r '[.instances[] | select(.status == "crashed")] | .[].id')
-for cid in $CRASHED_IDS; do
-  curl -s -X POST "$API_URL/instances/$cid/stop" >/dev/null 2>&1 || true
-done
-```
+1. **Blocker detection** — before updating status, queries for any non-stopped instance on the same venue account.
+2. **Crashed auto-clear** — if the blocker is `crashed`, transitions it to `stopped` (it's inert) and enqueues a stop job.
+3. **Running conflict** — if the blocker is legitimately `running`, returns a clear `409 venue_account_conflict` with the blocking instance ID.
+4. **Race condition safety** — the update uses a conditional WHERE (`status <> 'running'`) with `.returning()` to reject duplicate starts atomically, and catches PostgreSQL `23505` on the partial unique index as a final backstop.
 
-## Proper Fix (TODO)
-
-The start route should handle this gracefully:
-- Before setting status=running, check if another non-stopped instance holds the same venue_account_id
-- If the blocker is `crashed`, auto-transition it to `stopped` (it's not doing anything useful)
-- Return a clear 409 error if the blocker is legitimately `running` (another worker has it)
-
-Alternatively, a periodic cleanup job could transition `crashed` instances to `stopped` after a configurable timeout.
+The runner script workaround (pre-stopping crashed instances) has been removed since the API handles it natively.
 
 ## Impact
 
-- Blocks any instance start when a crashed instance exists on the same venue account
+- Previously blocked any instance start when a crashed instance existed on the same venue account
 - Common in development: instances crash frequently during testing, accumulate in `crashed` state
-- The 500 error gives no indication of which other instance is blocking
+- The 500 error gave no indication of which other instance was blocking
+- Now resolved with informative 409 responses

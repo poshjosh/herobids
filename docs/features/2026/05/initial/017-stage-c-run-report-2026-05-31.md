@@ -52,7 +52,8 @@ Three issues were discovered and fixed during the run:
 
 **Symptom:** 500 from `POST /instances/:id/start` — partial unique index `uq_trading_instances_active_venue_account` violated by existing crashed instance sharing the same venue account.  
 **Cause:** Runner tried to set status=running on an instance while another non-stopped instance held the same `venue_account_id`.  
-**Fix:** Added pre-start cleanup in runner: stop all crashed instances before attempting to start a stopped one.
+**Fix (during run):** Added pre-start cleanup in runner: stop all crashed instances before attempting to start a stopped one.  
+**Superseded by:** Proper API-level fix in `POST /instances/:id/start` — blocker detection, crashed auto-clear, and unique constraint catch. Runner workaround removed. See bug report 003.
 
 ### 3. Restart-after-rotation crashes with empty config
 

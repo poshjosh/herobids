@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { tradingInstances } from '@herobids/db';
 import { TradingInstanceConfigSchema } from '@herobids/domain';
@@ -54,9 +54,57 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    await db.update(tradingInstances)
-      .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
-      .where(eq(tradingInstances.id, id));
+    if (instance.status === 'running') {
+      return reply.status(409).send({ error: 'already_running', tradingInstanceId: id });
+    }
+
+    // Check for another non-stopped instance on the same venue account (unique constraint guard)
+    const [blocker] = await db.select({ id: tradingInstances.id, status: tradingInstances.status })
+      .from(tradingInstances)
+      .where(and(
+        eq(tradingInstances.venueAccountId, instance.venueAccountId),
+        ne(tradingInstances.id, id),
+        ne(tradingInstances.status, 'stopped'),
+      ));
+
+    if (blocker) {
+      if (blocker.status === 'crashed') {
+        // Crashed instances are inert — clear them to free the slot
+        await db.update(tradingInstances)
+          .set({ status: 'stopped', updatedAt: new Date() })
+          .where(eq(tradingInstances.id, blocker.id));
+        await queue.add('stop-instance', { command: 'stop', tradingInstanceId: blocker.id });
+      } else {
+        // A legitimately running instance holds this venue account
+        return reply.status(409).send({
+          error: 'venue_account_conflict',
+          message: `Another instance (${blocker.id}) is already ${blocker.status} on this venue account`,
+          blockingInstanceId: blocker.id,
+        });
+      }
+    }
+
+    try {
+      const [updated] = await db.update(tradingInstances)
+        .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(tradingInstances.id, id), ne(tradingInstances.status, 'running')))
+        .returning({ id: tradingInstances.id });
+
+      if (!updated) {
+        // Concurrent request already moved this instance to running
+        return reply.status(409).send({ error: 'already_running', tradingInstanceId: id });
+      }
+    } catch (err: unknown) {
+      // Unique constraint race: another concurrent start claimed this venue account between our check and update
+      const pgErr = err as { code?: string; constraint_name?: string };
+      if (pgErr.code === '23505' && pgErr.constraint_name === 'uq_trading_instances_active_venue_account') {
+        return reply.status(409).send({
+          error: 'venue_account_conflict',
+          message: 'Another instance was started on this venue account concurrently',
+        });
+      }
+      throw err;
+    }
 
     await queue.add('start-instance', {
       command: 'start',

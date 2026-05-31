@@ -177,13 +177,6 @@ RUNNING_INSTANCE=$(echo "$INSTANCES_RESPONSE" | jq -r --arg mode "$TARGET_MODE" 
 if [[ -z "$RUNNING_INSTANCE" || "$RUNNING_INSTANCE" == "null" ]]; then
   log "  No running $TARGET_MODE instances found — looking for a stopped one to start..."
 
-  # Stop any crashed instances that might block the unique constraint on venue_account_id
-  CRASHED_IDS=$(echo "$INSTANCES_RESPONSE" | jq -r '[.instances[] | select(.status == "crashed")] | .[].id')
-  for cid in $CRASHED_IDS; do
-    log "  Stopping crashed instance $cid to clear venue_account_id constraint..."
-    curl -s -X POST "$API_URL/instances/$cid/stop" >/dev/null 2>&1 || true
-  done
-
   STOPPED_INSTANCE_ID=$(echo "$INSTANCES_RESPONSE" | jq -r --arg mode "$TARGET_MODE" '
     [.instances[] | select((.status == "stopped" or .status == "crashed") and .config.execution.mode == $mode)] | first | .id // empty
   ')
