@@ -112,7 +112,7 @@ describe('credential audit events', () => {
           userId: 'user-1',
           venue: 'hyperliquid',
           label: 'prod-key',
-          secrets: { apiKey: 'secret-key', secret: 'secret-value' },
+          secrets: { apiKey: 'secret-key', secret: 'secret-value', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
         },
       });
 
@@ -144,11 +144,54 @@ describe('credential audit events', () => {
           userId: 'user-1',
           venue: 'hyperliquid',
           label: 'prod-key',
-          secrets: { apiKey: 'k', secret: 's' },
+          secrets: { apiKey: 'k', secret: 's', walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
         },
       });
 
       expect(res.statusCode).toBe(201);
+    });
+
+    it('rejects Hyperliquid credential with empty walletAddress', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: 'hyperliquid',
+          label: 'prod-key',
+          secrets: { apiKey: 'key', secret: 'sec', walletAddress: '' },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('validation_error');
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
+    });
+
+    it('rejects Hyperliquid credential with malformed walletAddress', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          userId: 'user-1',
+          venue: 'hyperliquid',
+          label: 'prod-key',
+          secrets: { apiKey: 'key', secret: 'sec', walletAddress: 'not-an-address' },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
     });
   });
 
@@ -163,7 +206,7 @@ describe('credential audit events', () => {
         method: 'POST',
         url: '/credentials/cred-1/rotate',
         payload: {
-          secrets: { apiKey: 'new-secret-key', secret: 'new-secret-value' },
+          secrets: { apiKey: 'secret-key', secret: 'secret-value', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
         },
       });
 
@@ -195,7 +238,7 @@ describe('credential audit events', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/credentials/cred-1/rotate',
-        payload: { secrets: { apiKey: 'new-key', secret: 'new-secret' } },
+        payload: { secrets: { apiKey: 'new-key', secret: 'new-secret', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
       });
 
       expect(res.statusCode).toBe(200);
@@ -230,7 +273,7 @@ describe('credential audit events', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/credentials/cred-1/rotate',
-        payload: { secrets: { apiKey: 'k', secret: 's' } },
+        payload: { secrets: { apiKey: 'k', secret: 's', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
       });
 
       expect(res.statusCode).toBe(200);
@@ -253,6 +296,26 @@ describe('credential audit events', () => {
       });
 
       expect(res.statusCode).toBe(404);
+      expect(mockJournalAppend).not.toHaveBeenCalled();
+    });
+
+    it('rejects rotation with empty walletAddress for Hyperliquid', async () => {
+      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      const app = Fastify();
+      const db = buildMockDb();
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials/cred-1/rotate',
+        payload: { secrets: { apiKey: 'k', secret: 's', walletAddress: '' } },
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('validation_error');
+      expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
+      // Must not persist or rotate
       expect(mockJournalAppend).not.toHaveBeenCalled();
     });
   });
@@ -385,7 +448,7 @@ describe('credential audit events', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/credentials/cred-5/rotate',
-        payload: { secrets: { apiKey: 'k', secret: 's' } },
+        payload: { secrets: { apiKey: 'k', secret: 's', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
       });
 
       expect(res.statusCode).toBe(200);
@@ -412,7 +475,7 @@ describe('credential audit events', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/credentials/cred-6/rotate',
-        payload: { secrets: { apiKey: 'k', secret: 's' } },
+        payload: { secrets: { apiKey: 'k', secret: 's', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } },
       });
 
       expect(res.statusCode).toBe(200);

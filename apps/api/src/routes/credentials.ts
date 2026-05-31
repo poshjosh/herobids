@@ -17,6 +17,32 @@ function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<
   });
 }
 
+interface SecretValidationError {
+  field: string;
+  message: string;
+}
+
+/** Venue-specific validation of credential secrets. Returns empty array if valid. */
+function validateVenueSecrets(venue: string, secrets: Record<string, string>): SecretValidationError[] {
+  const errors: SecretValidationError[] = [];
+
+  if (venue === 'hyperliquid') {
+    if (!secrets['apiKey']?.trim()) {
+      errors.push({ field: 'secrets.apiKey', message: 'apiKey is required for Hyperliquid credentials' });
+    }
+    if (!secrets['secret']?.trim()) {
+      errors.push({ field: 'secrets.secret', message: 'secret is required for Hyperliquid credentials' });
+    }
+    if (!secrets['walletAddress']?.trim()) {
+      errors.push({ field: 'secrets.walletAddress', message: 'walletAddress is required for Hyperliquid credentials' });
+    } else if (!/^0x[0-9a-fA-F]{40}$/.test(secrets['walletAddress'])) {
+      errors.push({ field: 'secrets.walletAddress', message: 'walletAddress must be a valid EVM address (0x + 40 hex chars)' });
+    }
+  }
+
+  return errors;
+}
+
 export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database): Promise<void> {
   const journal = new PgJournal(db);
 
@@ -25,6 +51,12 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     const parsed = CreateCredentialSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    // Venue-specific secret validation — fail fast on incomplete credentials
+    const venueSecretErrors = validateVenueSecrets(parsed.data.venue, parsed.data.secrets);
+    if (venueSecretErrors.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
     }
 
     const encryptionKey = getEncryptionKey();
@@ -111,6 +143,12 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(eq(credentials.id, id));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
+    }
+
+    // Venue-specific secret validation — fail fast on incomplete credentials
+    const venueSecretErrors = validateVenueSecrets(existing.venue, parsed.data.secrets);
+    if (venueSecretErrors.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
     }
 
     const encryptionKey = getEncryptionKey();

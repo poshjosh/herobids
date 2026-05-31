@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] Credential lifecycle hardening is tracked in [docs/features/2026/05/initial/014-phase-4-credential-lifecycle-plan.md](docs/features/2026/05/initial/014-phase-4-credential-lifecycle-plan.md).
+- [x] Credential lifecycle hardening is tracked in [docs/features/2026/05/initial/014-phase-4-credential-lifecycle-plan.md](docs/features/2026/05/initial/014-phase-4-credential-lifecycle-plan.md). ✅ Complete (live-verified 2026-05-31, see 018-stage-c-live-run-report).
 
 - [ ] Consider getting HYPERLIQUID_TESTNET_API_KEY and setting it, to enable the related integration tests. 
 - [ ] After monorepo scaffold: add `eslint-plugin-boundaries` if deep-path imports across packages become a recurring review issue. Until then, pnpm workspace resolution + clean barrel exports (`src/index.ts`) enforce dependency direction at build time.

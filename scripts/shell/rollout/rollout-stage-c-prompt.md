@@ -1,5 +1,5 @@
 - run `./scripts/shell/rollout/rollout-stage-c-runner.sh --shadow`
-- if any errors, fix, file a bug report and docs/bug-reports/yyyy/MM/dd/<SERIAL>-<report-name>.md and re-try
+- if any errors, fix, file a bug report at docs/bug-reports/yyyy/MM/dd/<SERIAL>-<report-name>.md and re-try
 - observe, analyse and report. 
-- Save the report
+- Save the report to docs/features/2026/05/initial/
 - Ask clarifying questions, if need
