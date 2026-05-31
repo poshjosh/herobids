@@ -4,18 +4,14 @@ This note triages residual Phase 3 concerns so the repo has one clear record of 
 
 ## Must Fix Before LLM Validation Is Considered Closed
 
-1. **LLM warm-up frames can still spend tokens and hide provider failures.**
-	- `BacktestRuntime` defaults LLM runs to `warmUpFrames: 0`, so this is not a universal/default-path cost leak today.
-	- The remaining issue is still real when an operator configures non-zero warm-up or when validation requires matching warm-up settings across strategies.
-	- `replay-runner.ts` currently calls `strategy.evaluate(...)` during warm-up and ignores the returned `Result`, which means `LlmStrategy` can make provider calls and persist artifacts on frames that are supposed to be non-trading warm-up.
-	- Required follow-up: either reject non-zero warm-up for `strategy.type: llm`, or add a warm-up path that does not perform provider I/O. Any warm-up failure that does execute strategy logic must be surfaced in the run/report outcome rather than silently discarded.
-	- Phase 4 impact: does not block mechanical live rollout; does block treating LLM replay validation as complete evidence.
+Both items below have been resolved as of 2026-05-31.
 
-2. **Stored decision-context replay still needs an adapter or schema alignment.**
-	- Persisted decision contexts are stored in the nested canonical shape used by the trading cycle (`context.snapshot`, `context.position`, `context.referenceMark`, `context.strategyParams`).
-	- `context-replay.ts` currently expects a flatter replay helper shape (`context.symbol`, `context.price`, `context.timestamp`) plus original decision fields alongside it.
-	- Required follow-up: add a normalization adapter from persisted decision rows plus `decision_contexts` rows into the replay helper input, or change the replay helper to consume the stored nested shape directly.
-	- Phase 4 impact: does not block mechanical live rollout; does block claiming the stored-context LLM regression path is complete.
+1. **~~LLM warm-up frames can still spend tokens and hide provider failures.~~** ✅ Fixed
+	- Resolution: `replay-runner.ts` now rejects `warmUpFrames > 0` for LLM strategies at invocation time (throws with a clear message). Tests in `backtesting.test.ts` cover both the rejection and the zero-warm-up happy path.
+	- Approach chosen: "reject non-zero warm-up for `strategy.type: llm`" (stateless strategies have no lookback buffer to fill).
+
+2. **~~Stored decision-context replay still needs an adapter or schema alignment.~~** ✅ Fixed
+	- Resolution: `context-replay.ts` exports `normalizeForReplay()` and `normalizeForReplayBatch()` which bridge the nested canonical DB shape (`snapshot`, `position`, `referenceMark`, `balanceSnapshot`, `strategyParams`) into the flat `StoredDecisionContext` shape consumed by `replayContexts()`. Tests in `validation.test.ts` cover both single-row and batch normalization.
 
 ## Clarified Non-blockers
 
@@ -31,5 +27,5 @@ This note triages residual Phase 3 concerns so the repo has one clear record of 
 ## Phase 4 Read-through
 
 - Phase 4 may proceed with the mechanical baseline as the first live candidate.
-- This note must not be read as approval to promote `strategy.type: llm` into live trading.
-- LLM live consideration still requires closing the two must-fix items above plus the replay/shadow evidence already required by the Phase 3 plan.
+- With both must-fix items resolved, `strategy.type: llm` may be promoted to live pending the replay/shadow evidence already required by the Phase 3 plan.
+- LLM live consideration still requires demonstrating sufficient replay match rates and shadow-mode parity before live capital is allocated.
