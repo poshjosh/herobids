@@ -10,7 +10,7 @@ import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
+import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
 import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
@@ -261,7 +261,93 @@ const runtime = new WorkerRuntime(
               `swapAssets config required for swap venue instance ${tradingInstanceId} — cannot route swaps without explicit asset identifiers and decimals`,
             );
           }
-          // Resolve wallet from venue account record; fall back to env var only for the 'default' account
+          // Build token decimals map from configured swap assets
+          const tokenDecimals: Record<string, number> = {
+            [config.swapAssets.baseAsset]: config.swapAssets.baseDecimals,
+            [config.swapAssets.quoteAsset]: config.swapAssets.quoteDecimals,
+          };
+
+          if (config.venue === '1inch') {
+            // 1inch requires a private key and API key — resolve from DB credential or env (default account only)
+            let privateKey: string | undefined;
+            let oneInchApiKey: string | undefined;
+            let oneInchCredentialId: string | undefined;
+            if (venueAccountId !== 'default') {
+              const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
+              if (account?.credentialId) {
+                oneInchCredentialId = account.credentialId;
+                const [cred] = await db.select().from(credentials).where(eq(credentials.id, account.credentialId)).limit(1);
+                const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
+                if (cred && encryptionKey) {
+                  try {
+                    const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string; apiKey: string };
+                    privateKey = decrypted.privateKey;
+                    oneInchApiKey = decrypted.apiKey;
+                    journal.append(credentialDecryptedEvent({
+                      credentialId: account.credentialId,
+                      venue: config.venue,
+                      venueAccountId,
+                      tradingInstanceId,
+                      outcome: 'success',
+                    })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+                  } catch (decryptErr) {
+                    journal.append(credentialDecryptedEvent({
+                      credentialId: account.credentialId,
+                      venue: config.venue,
+                      venueAccountId,
+                      tradingInstanceId,
+                      outcome: 'failure',
+                      error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
+                    })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+                    throw new CredentialResolutionError(`Failed to decrypt 1inch credentials for venueAccount ${venueAccountId}: ${decryptErr instanceof Error ? decryptErr.message : String(decryptErr)}`);
+                  }
+                } else if (!encryptionKey && cred) {
+                  journal.append(credentialDecryptedEvent({
+                    credentialId: account.credentialId,
+                    venue: config.venue,
+                    venueAccountId,
+                    tradingInstanceId,
+                    outcome: 'failure',
+                    error: 'CREDENTIAL_ENCRYPTION_KEY not set',
+                  })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+                  throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt 1inch credentials for venueAccount ${venueAccountId}`);
+                } else {
+                  throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
+                }
+              } else {
+                throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential — cannot resolve 1inch secrets`);
+              }
+            } else {
+              // Default account: env var fallback is acceptable
+              privateKey = process.env['ONEINCH_PRIVATE_KEY'];
+              oneInchApiKey = process.env['ONEINCH_API_KEY'];
+            }
+            if (!privateKey) {
+              throw new CredentialResolutionError(
+                `privateKey required for 1inch venue instance ${tradingInstanceId}. Store in DB credential or set ONEINCH_PRIVATE_KEY env var.`,
+              );
+            }
+            if (!oneInchApiKey) {
+              throw new CredentialResolutionError(
+                `apiKey required for 1inch venue instance ${tradingInstanceId}. Store in DB credential or set ONEINCH_API_KEY env var.`,
+              );
+            }
+            const oneInchConfig = appConfig.venues['1inch'];
+            return new OneInchSwapAdapter({
+              apiUrl: oneInchConfig?.baseUrl ?? 'https://api.1inch.dev/swap/v6.0/8453',
+              apiKey: oneInchApiKey,
+              signer: {
+                privateKey,
+                rpcUrl: oneInchConfig?.rpcUrl ?? process.env['BASE_RPC_URL'] ?? 'https://mainnet.base.org',
+                chainId: oneInchConfig?.chainId ?? 8453,
+              },
+              rateLimitPerSec: oneInchConfig?.rateLimitPerSec,
+              tokenDecimals,
+              timeoutMs: oneInchConfig?.timeoutMs,
+            });
+          }
+
+          // Non-1inch swap venues (Jupiter) require a wallet address
           let walletAddress: string | undefined;
           if (venueAccountId !== 'default') {
             const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
@@ -279,11 +365,7 @@ const runtime = new WorkerRuntime(
               `Wallet address required for swap venue instance ${tradingInstanceId}. Set venueAccountRef on the venue account or SWAP_WALLET_ADDRESS env var.`,
             );
           }
-          // Build token decimals map from configured swap assets
-          const tokenDecimals: Record<string, number> = {
-            [config.swapAssets.baseAsset]: config.swapAssets.baseDecimals,
-            [config.swapAssets.quoteAsset]: config.swapAssets.quoteDecimals,
-          };
+
           return new JupiterSwapAdapter({
             walletAddress,
             apiUrl: appConfig.venues['jupiter']?.baseUrl ?? 'https://quote-api.jup.ag/v6',

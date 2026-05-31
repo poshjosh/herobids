@@ -10,6 +10,8 @@ export const VenueConfigSchema = z.object({
   baseUrl: z.string().url(),
   wsUrl: z.string().url().optional(),
   wsPublicUrl: z.string().url().optional(),
+  rpcUrl: z.string().url().optional(),
+  chainId: z.number().int().positive().optional(),
   rateLimitPerSec: z.number().min(1).default(10),
   timeoutMs: z.number().min(1000).default(30_000),
 });
@@ -190,12 +192,12 @@ export const TradingInstanceConfigSchema = z.object({
 ).refine(
   (data) => {
     // Enforce venue string matches venueType to prevent config/adapter mismatch
-    const swapVenues = ['jupiter'];
+    const swapVenues = ['jupiter', '1inch'];
     const orderbookVenues = ['hyperliquid', 'bybit'];
     if (data.venueType === 'swap') return swapVenues.includes(data.venue);
     return orderbookVenues.includes(data.venue);
   },
-  { message: 'venue must match venueType: swap venues are [jupiter], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
+  { message: 'venue must match venueType: swap venues are [jupiter, 1inch], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
 );
 
 export type TradingInstanceConfig = z.infer<typeof TradingInstanceConfigSchema>;

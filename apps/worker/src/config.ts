@@ -36,6 +36,9 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   BYBIT_BASE_URL: { path: 'venues.bybit.baseUrl', type: 'string' },
   BYBIT_WS_URL: { path: 'venues.bybit.wsUrl', type: 'string' },
   BYBIT_WS_PUBLIC_URL: { path: 'venues.bybit.wsPublicUrl', type: 'string' },
+  ONEINCH_BASE_URL: { path: 'venues.1inch.baseUrl', type: 'string' },
+  ONEINCH_RPC_URL: { path: 'venues.1inch.rpcUrl', type: 'string' },
+  ONEINCH_CHAIN_ID: { path: 'venues.1inch.chainId', type: 'number' },
   // Marking
   MARKING_STALENESS_MS: { path: 'marking.stalenessThresholdMs', type: 'number' },
   MARKING_ORACLE_BASE_URL: { path: 'marking.oracleBaseUrl', type: 'string' },

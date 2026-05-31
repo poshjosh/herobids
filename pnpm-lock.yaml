@@ -167,6 +167,9 @@ importers:
       ccxt:
         specifier: ^4.4.0
         version: 4.5.54
+      viem:
+        specifier: ^2.51.3
+        version: 2.51.3(typescript@5.9.3)(zod@3.25.76)
       ws:
         specifier: ^8.21.0
         version: 8.21.0

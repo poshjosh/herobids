@@ -45,6 +45,16 @@ function validateVenueSecrets(venue: string, secrets: Record<string, string>): S
     if (!secrets['secret']?.trim()) {
       errors.push({ field: 'secrets.secret', message: 'secret is required for Bybit credentials' });
     }
+  } else if (venue === '1inch') {
+    const pk = secrets['privateKey']?.trim() ?? '';
+    if (!pk) {
+      errors.push({ field: 'secrets.privateKey', message: 'privateKey is required for 1inch credentials' });
+    } else if (!/^(0x)?[0-9a-fA-F]{64}$/.test(pk)) {
+      errors.push({ field: 'secrets.privateKey', message: 'privateKey must be 64 hex chars (optionally 0x-prefixed)' });
+    }
+    if (!secrets['apiKey']?.trim()) {
+      errors.push({ field: 'secrets.apiKey', message: 'apiKey (1inch developer portal key) is required for 1inch credentials' });
+    }
   }
 
   return errors;
