@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, desc, and, inArray, gte, like, type SQL } from 'drizzle-orm';
+import { eq, desc, asc, and, inArray, gte, gt, notInArray, like, sql, type SQL } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { journalEvents } from './schema/index.js';
 
@@ -126,5 +126,78 @@ export class PgJournal implements JournalPort {
       .where(and(...conditions))
       .orderBy(desc(journalEvents.createdAt))
       .limit(filters.limit ?? 100);
+  }
+
+  /** Get a single journal event by its ID. */
+  async getById(id: string): Promise<typeof journalEvents.$inferSelect | null> {
+    const [row] = await this.db
+      .select()
+      .from(journalEvents)
+      .where(eq(journalEvents.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Get multiple journal events by their IDs. */
+  async getByIds(ids: string[]): Promise<Array<typeof journalEvents.$inferSelect>> {
+    if (ids.length === 0) return [];
+    return this.db
+      .select()
+      .from(journalEvents)
+      .where(inArray(journalEvents.id, ids));
+  }
+
+  /**
+   * Cursor-based global scan with a stable (createdAt, id) cursor pair.
+   * Returns events strictly after the cursor, ordered ascending (oldest first).
+   * The caller should advance the cursor to the last returned row's (createdAt, id).
+   *
+   * Using (createdAt, id) is stable under timestamp ties: events with the same
+   * createdAt are disambiguated by id, so no events are missed or replayed.
+   */
+  async scanAfter(opts: {
+    /**
+     * Cursor as (createdAt, seenIds) pair — omit to start from the beginning.
+     *
+     * seenIds holds every event ID already processed at the boundary timestamp.
+     * Using a seen-ID set instead of a single id makes the cursor stable under
+     * timestamp ties: `appendBatch` inserts rows in one statement so all rows in
+     * a batch share the same `created_at` (PostgreSQL transaction time). With a
+     * single-id tiebreak, any row whose random UUID sorts before the saved id
+     * would be permanently skipped on the next scan.
+     */
+    cursor?: { createdAt: Date; seenIds: string[] };
+    typePrefixes?: string[];
+    limit: number;
+  }): Promise<Array<typeof journalEvents.$inferSelect>> {
+    const conditions: SQL[] = [];
+
+    if (opts.cursor) {
+      if (opts.cursor.seenIds.length > 0) {
+        // Include events at or after the cursor timestamp, excluding already-seen IDs.
+        // >= (not >) ensures new events at the same timestamp are returned.
+        conditions.push(gte(journalEvents.createdAt, opts.cursor.createdAt));
+        conditions.push(notInArray(journalEvents.id, opts.cursor.seenIds));
+      } else {
+        // seenIds empty (defensive fallback): advance strictly past the cursor timestamp.
+        conditions.push(gt(journalEvents.createdAt, opts.cursor.createdAt));
+      }
+    }
+
+    if (opts.typePrefixes && opts.typePrefixes.length > 0) {
+      const prefixConditions = opts.typePrefixes.map((p) => like(journalEvents.type, `${p}%`));
+      const orCondition = prefixConditions.reduce<SQL | undefined>((acc, cond) => {
+        if (!acc) return cond;
+        return sql`${acc} OR ${cond}`;
+      }, undefined);
+      if (orCondition) conditions.push(orCondition);
+    }
+
+    return this.db
+      .select()
+      .from(journalEvents)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(asc(journalEvents.createdAt), asc(journalEvents.id))
+      .limit(opts.limit);
   }
 }

@@ -1,30 +1,29 @@
 # herobids
 
+General idea: "To bring the use of AI agents to the masses"
+
 ## Vision
 
-Everyone with a trading idea can execute it — regardless of technical skill, venue knowledge, or capital scale.
+Anyone can use AI to act on their ideas or intentions — regardless of knowledge, technical skill, or budget.
 
 ## Mission
 
-Make AI-powered trading across crypto, forex, and other tradable assets as simple as describing what you want. No expertise required, no need for api keys, no infrastructure to manage — just intent in, trades out.
+Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea/intention in, outcomes out.
+
+The first and core use case is trading: crypto, forex, and other tradable assets.
 
 ## Core Beliefs
 
-1. **Trading should be accessible.** You shouldn't need to know what Binance, Base, or Solana are to trade on them.
+1. **Execution should be accessible.** You shouldn't need to know how markets, venues, or APIs work to act within them.
 
-2. **AI should do the work.** Give it instructions and constraints; it handles venue selection, execution, and continuous operation.
+2. **AI should do the work.** Give it instructions and constraints; it handles the rest — continuously, reliably, and within bounds you define.
 
-## Concept 
+3. **Start narrow, build trust.** Trading is a proving ground: it demands real-time decisions, external integrations, and measurable outcomes. Winning here validates the platform for everything else.
 
-User provides wallet key or something else needed for trading, then gives AI instructions on how to trade. Thereafter, the AI trades for the user continously within the user provided time constraints. The foregoing is all that is needed. 
+## Concept
 
-Users generally do not need to know about Binance, Base, Solana, CMC etc. The user may or may not specify where to trade e.g Solana/Base etc. If a user does not specify where to trade or provide credentials, the app ships with default credentials and decides for them. 
+A user describes what they want to accomplish and provides whatever credentials or context are needed. From there, an AI agent takes over — operating continuously within the user's time, risk, and resource constraints.
 
-Users may provide credentials for various venues, in which case those are used for the user.  
+Users don't need to understand the underlying systems. The agent manages execution, and adapts to changing conditions. If no credentials or preferences are provided, the platform supplies sensible defaults.
 
-- Each user may have one or more agents. 
-- Each user may have one or more bots.
-- Each agent may have one or more bots.
-
-Agents are isolated especially because they can execute code, browse the internet etc
-
+Each user can run one or more agents, each operating independently with its own goals and constraints.

@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp, jsonb, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { users } from './users.js';
 
 /**
  * Trading instances — the core runtime unit.
@@ -7,7 +8,7 @@ import { sql } from 'drizzle-orm';
  */
 export const tradingInstances = pgTable('trading_instances', {
   id: text('id').primaryKey(),               // UUIDv7
-  userId: text('user_id').notNull(),
+  userId: text('user_id').notNull().references(() => users.id),
   portfolioId: text('portfolio_id').notNull(),
   venueAccountId: text('venue_account_id').notNull(),
   /** Strategy type identifier */

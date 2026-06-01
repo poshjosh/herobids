@@ -21,6 +21,7 @@ export interface InsertCorpus {
   source: string;
   venue: string;
   symbols: string[];
+  userId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -78,6 +79,7 @@ export class BacktestingRepository {
     const id = crypto.randomUUID();
     await this.db.insert(replayCorpora).values({
       id,
+      userId: corpus.userId ?? null,
       name: corpus.name,
       source: corpus.source,
       venue: corpus.venue,
@@ -96,11 +98,71 @@ export class BacktestingRepository {
     return row ?? null;
   }
 
+  async getCorpusForUser(corpusId: string, userId: string) {
+    const [row] = await this.db
+      .select()
+      .from(replayCorpora)
+      .where(and(eq(replayCorpora.id, corpusId), eq(replayCorpora.userId, userId)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async listCorporaForUser(userId: string, limit = 50, offset = 0) {
+    return this.db
+      .select()
+      .from(replayCorpora)
+      .where(eq(replayCorpora.userId, userId))
+      .orderBy(desc(replayCorpora.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
   async updateCorpusWindow(corpusId: string, startAt: Date, endAt: Date): Promise<void> {
     await this.db
       .update(replayCorpora)
       .set({ startAt, endAt })
       .where(eq(replayCorpora.id, corpusId));
+  }
+
+  /** Insert a corpus together with all its market events in a single transaction.
+   * Prevents partial imports where the corpus row exists but events are missing
+   * (or the time-window update never ran), which would cause opaque backtest failures. */
+  async importCorpus(opts: InsertCorpus & {
+    events: Array<Omit<InsertMarketEvent, 'corpusId'>>;
+  }): Promise<{ corpusId: string; eventCount: number }> {
+    return this.db.transaction(async (tx) => {
+      const corpusId = crypto.randomUUID();
+      await tx.insert(replayCorpora).values({
+        id: corpusId,
+        userId: opts.userId ?? null,
+        name: opts.name,
+        source: opts.source,
+        venue: opts.venue,
+        symbols: opts.symbols.join(','),
+        metadata: opts.metadata ?? null,
+      });
+
+      if (opts.events.length > 0) {
+        await tx.insert(replayMarketEvents).values(
+          opts.events.map((event) => ({
+            id: crypto.randomUUID(),
+            corpusId,
+            venue: event.venue,
+            symbol: event.symbol,
+            eventType: event.eventType,
+            price: event.price,
+            eventAt: event.eventAt,
+            data: event.data ?? null,
+          })),
+        );
+        const times = opts.events.map((e) => e.eventAt.getTime());
+        const startAt = new Date(Math.min(...times));
+        const endAt = new Date(Math.max(...times));
+        await tx.update(replayCorpora).set({ startAt, endAt }).where(eq(replayCorpora.id, corpusId));
+      }
+
+      return { corpusId, eventCount: opts.events.length };
+    });
   }
 
   // --- Replay Market Events ---
@@ -189,9 +251,11 @@ export class BacktestingRepository {
     corpusId?: string;
     venue: string;
     symbol: string;
+    userId?: string;
   }): Promise<void> {
     await this.db.insert(backtestRuns).values({
       id: run.id,
+      userId: run.userId ?? null,
       strategyType: run.strategyType,
       config: run.config,
       corpusId: run.corpusId ?? null,
@@ -231,10 +295,29 @@ export class BacktestingRepository {
     return row ?? null;
   }
 
+  async getBacktestRunForUser(runId: string, userId: string) {
+    const [row] = await this.db
+      .select()
+      .from(backtestRuns)
+      .where(and(eq(backtestRuns.id, runId), eq(backtestRuns.userId, userId)))
+      .limit(1);
+    return row ?? null;
+  }
+
   async listBacktestRuns(limit = 50, offset = 0) {
     return this.db
       .select()
       .from(backtestRuns)
+      .orderBy(desc(backtestRuns.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async listBacktestRunsForUser(userId: string, limit = 50, offset = 0) {
+    return this.db
+      .select()
+      .from(backtestRuns)
+      .where(eq(backtestRuns.userId, userId))
       .orderBy(desc(backtestRuns.createdAt))
       .limit(limit)
       .offset(offset);

@@ -9,7 +9,20 @@ import { venueAccountRoutes } from './accounts.js';
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
+  and: vi.fn((...args) => ({ _and: args })),
 }));
+
+const TEST_USER_ID = 'user-1';
+
+/** Decorate Fastify app with a fake authenticated userId and planId (simulates auth plugin) */
+function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
+  app.decorateRequest('userId', '');
+  app.decorateRequest('userPlanId', '');
+  app.addHook('onRequest', async (request) => {
+    request.userId = userId;
+    request.userPlanId = 'free';
+  });
+}
 
 let credentialLookupResult: Record<string, unknown>[] = [];
 let insertedRow: Record<string, unknown> | undefined;
@@ -51,13 +64,13 @@ describe('POST /venue-accounts credential validation', () => {
     credentialLookupResult = []; // credential not found
     const app = Fastify();
     const db = buildMockDb();
+    decorateWithAuth(app);
     await venueAccountRoutes(app, db);
 
     const res = await app.inject({
       method: 'POST',
       url: '/venue-accounts',
       payload: {
-        userId: 'user-1',
         venue: 'hyperliquid',
         label: 'Test Account',
         credentialId: 'nonexistent-cred',
@@ -70,16 +83,18 @@ describe('POST /venue-accounts credential validation', () => {
   });
 
   it('rejects when credential belongs to a different user', async () => {
-    credentialLookupResult = [{ id: 'cred-1', userId: 'user-other', venue: 'hyperliquid' }];
+    // The ownership-scoped WHERE filters out foreign credentials, so the mock returns empty —
+    // the same response as a missing credential (prevents probing foreign IDs).
+    credentialLookupResult = [];
     const app = Fastify();
     const db = buildMockDb();
+    decorateWithAuth(app);
     await venueAccountRoutes(app, db);
 
     const res = await app.inject({
       method: 'POST',
       url: '/venue-accounts',
       payload: {
-        userId: 'user-1',
         venue: 'hyperliquid',
         label: 'Test Account',
         credentialId: 'cred-1',
@@ -88,20 +103,20 @@ describe('POST /venue-accounts credential validation', () => {
 
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
-    expect(body.error).toBe('credential.user_mismatch');
+    expect(body.error).toBe('credential.not_found');
   });
 
   it('rejects when credential is for a different venue', async () => {
     credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'jupiter' }];
     const app = Fastify();
     const db = buildMockDb();
+    decorateWithAuth(app);
     await venueAccountRoutes(app, db);
 
     const res = await app.inject({
       method: 'POST',
       url: '/venue-accounts',
       payload: {
-        userId: 'user-1',
         venue: 'hyperliquid',
         label: 'Test Account',
         credentialId: 'cred-1',
@@ -117,13 +132,13 @@ describe('POST /venue-accounts credential validation', () => {
     credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'hyperliquid' }];
     const app = Fastify();
     const db = buildMockDb();
+    decorateWithAuth(app);
     await venueAccountRoutes(app, db);
 
     const res = await app.inject({
       method: 'POST',
       url: '/venue-accounts',
       payload: {
-        userId: 'user-1',
         venue: 'hyperliquid',
         label: 'Test Account',
         credentialId: 'cred-1',
@@ -136,13 +151,13 @@ describe('POST /venue-accounts credential validation', () => {
   it('succeeds when no credentialId is provided (wallet-only)', async () => {
     const app = Fastify();
     const db = buildMockDb();
+    decorateWithAuth(app);
     await venueAccountRoutes(app, db);
 
     const res = await app.inject({
       method: 'POST',
       url: '/venue-accounts',
       payload: {
-        userId: 'user-1',
         venue: 'jupiter',
         label: 'Swap Wallet',
       },
@@ -162,13 +177,13 @@ describe('POST /venue-accounts credential validation', () => {
     db.insert = vi.fn().mockReturnValue({
       values: vi.fn().mockRejectedValue(fkError),
     });
+    decorateWithAuth(app);
     await venueAccountRoutes(app, db);
 
     const res = await app.inject({
       method: 'POST',
       url: '/venue-accounts',
       payload: {
-        userId: 'user-1',
         venue: 'hyperliquid',
         label: 'Test Account',
         credentialId: 'cred-1',

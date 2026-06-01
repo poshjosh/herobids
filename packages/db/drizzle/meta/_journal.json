@@ -43,6 +43,34 @@
       "when": 1780300800000,
       "tag": "0005_credential_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780560000000,
+      "tag": "0006_auth_and_alerts",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780646400000,
+      "tag": "0007_alert_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780732800000,
+      "tag": "0008_user_plans_and_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780819200000,
+      "tag": "0009_oauth_identity_unique",
+      "breakpoints": true
     }
   ]
 }

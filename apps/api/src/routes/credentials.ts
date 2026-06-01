@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 import type { Database } from '@herobids/db';
 import { credentials, PgJournal } from '@herobids/db';
 import { credentialCreatedEvent, credentialRotatedEvent, credentialDeletedEvent } from '@herobids/engine';
+import type { PlansConfig } from '@herobids/domain';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { CreateCredentialSchema, RotateCredentialSchema } from '../schemas.js';
 import { findCredentialDependents } from '../credential-dependents.js';
+import { checkCredentialLimit } from '../plan-guards.js';
 import type { LifecycleJob } from '../types.js';
 
 /** Best-effort audit append — never fails the HTTP request if the mutation already succeeded */
@@ -60,7 +62,7 @@ function validateVenueSecrets(venue: string, secrets: Record<string, string>): S
   return errors;
 }
 
-export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database): Promise<void> {
+export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
   const journal = new PgJournal(db);
 
   // Create credential
@@ -76,6 +78,14 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
     }
 
+    // Plan enforcement
+    if (plansConfig) {
+      const planCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      if (!planCheck.ok) {
+        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+      }
+    }
+
     const encryptionKey = getEncryptionKey();
     const id = crypto.randomUUID();
     const now = new Date();
@@ -86,7 +96,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
 
     await db.insert(credentials).values({
       id,
-      userId: parsed.data.userId,
+      userId: request.userId,
       venue: parsed.data.venue,
       label: parsed.data.label,
       encryptedData,
@@ -98,14 +108,14 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     auditAppend(journal, credentialCreatedEvent({
       credentialId: id,
       venue: parsed.data.venue,
-      userId: parsed.data.userId,
+      userId: request.userId,
       label: parsed.data.label,
     }), app.log);
 
     // Return without secrets
     return reply.status(201).send({
       id,
-      userId: parsed.data.userId,
+      userId: request.userId,
       venue: parsed.data.venue,
       label: parsed.data.label,
       createdAt: now,
@@ -114,7 +124,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
   });
 
   // List credentials (metadata only, no secrets)
-  app.get('/credentials', async (_request, reply) => {
+  app.get('/credentials', async (request, reply) => {
     const rows = await db
       .select({
         id: credentials.id,
@@ -124,7 +134,8 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
         createdAt: credentials.createdAt,
         updatedAt: credentials.updatedAt,
       })
-      .from(credentials);
+      .from(credentials)
+      .where(eq(credentials.userId, request.userId));
     return reply.send({ credentials: rows });
   });
 
@@ -141,7 +152,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
         updatedAt: credentials.updatedAt,
       })
       .from(credentials)
-      .where(eq(credentials.id, id));
+      .where(and(eq(credentials.id, id), eq(credentials.userId, request.userId)));
 
     if (!row) {
       return reply.status(404).send({ error: 'not_found' });
@@ -157,7 +168,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(eq(credentials.id, id));
+    const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(and(eq(credentials.id, id), eq(credentials.userId, request.userId)));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
@@ -179,7 +190,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     auditAppend(journal, credentialRotatedEvent({
       credentialId: id,
       venue: existing.venue,
-      userId: existing.userId,
+      userId: request.userId,
     }), app.log);
 
     // Best-effort restart of running dependents — rotation already succeeded above,
@@ -225,7 +236,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
   app.delete<{ Params: { id: string } }>('/credentials/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(eq(credentials.id, id));
+    const [existing] = await db.select({ id: credentials.id, venue: credentials.venue, userId: credentials.userId }).from(credentials).where(and(eq(credentials.id, id), eq(credentials.userId, request.userId)));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
@@ -261,7 +272,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     auditAppend(journal, credentialDeletedEvent({
       credentialId: id,
       venue: existing.venue,
-      userId: existing.userId,
+      userId: request.userId,
     }), app.log);
 
     return reply.send({ status: 'deleted', credentialId: id });

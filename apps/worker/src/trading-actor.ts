@@ -591,6 +591,11 @@ export class TradingActor implements InstanceActor {
         if (!this.paused) {
           this.paused = true;
           this.logger.warn('Private stream disconnected — pausing scan loop');
+          void this.deps.journal.append({
+            tradingInstanceId: this.tradingInstanceId,
+            type: 'stream.disconnect',
+            payload: { state, venue: this.deps.venue, symbol: this.deps.symbol },
+          }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append stream.disconnect journal event'));
         }
       } else if (state === 'connected') {
         if (this.paused) {
@@ -601,6 +606,11 @@ export class TradingActor implements InstanceActor {
         // Only crash if this wasn't a graceful shutdown
         if (!this.stopping) {
           this.logger.error('Private stream closed (max reconnect attempts) — crashing actor');
+          void this.deps.journal.append({
+            tradingInstanceId: this.tradingInstanceId,
+            type: 'instance.crashed',
+            payload: { reason: 'max_reconnect_attempts_exhausted', venue: this.deps.venue, symbol: this.deps.symbol },
+          }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append instance.crashed journal event'));
           void this.crash();
         }
       }
@@ -881,9 +891,19 @@ export class TradingActor implements InstanceActor {
         this.logger.warn({ decision: cycleResult.decision?.intent }, 'Risk gate rejected');
       } else if (cycleResult.executionFailed) {
         this.logger.error({ decision: cycleResult.decision?.intent }, 'Execution failed');
+        void this.deps.journal.append({
+          tradingInstanceId: this.tradingInstanceId,
+          type: 'execution.failure',
+          payload: { intent: cycleResult.decision?.intent, planId: cycleResult.plan?.id },
+        }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append execution.failure journal event'));
       }
     } catch (err) {
       this.logger.error({ err }, 'Tick error');
+      void this.deps.journal.append({
+        tradingInstanceId: this.tradingInstanceId,
+        type: 'instance.tick_error',
+        payload: { error: err instanceof Error ? err.message : String(err) },
+      }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append instance.tick_error journal event'));
     }
   }
 

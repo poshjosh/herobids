@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 export const CreateInstanceSchema = z.object({
-  userId: z.string().min(1),
   portfolioId: z.string().min(1),
   venueAccountId: z.string().min(1),
   strategyId: z.string().min(1),
@@ -15,7 +14,6 @@ export const UpdateInstanceConfigSchema = z.object({
 });
 
 export const CreateVenueAccountSchema = z.object({
-  userId: z.string().min(1),
   venue: z.string().min(1),
   label: z.string().min(1),
   venueAccountRef: z.string().optional(),
@@ -23,12 +21,10 @@ export const CreateVenueAccountSchema = z.object({
 });
 
 export const CreatePortfolioSchema = z.object({
-  userId: z.string().min(1),
   name: z.string().min(1),
 });
 
 export const CreateCredentialSchema = z.object({
-  userId: z.string().min(1),
   venue: z.string().min(1),
   label: z.string().min(1),
   /** The actual secrets to encrypt (API key, secret, passphrase, etc.) */
@@ -42,6 +38,7 @@ export const RotateCredentialSchema = z.object({
 
 export const JournalQuerySchema = z.object({
   tradingInstanceId: z.string().optional(),
+  backtestRunId: z.string().optional(),
   type: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
   offset: z.coerce.number().int().min(0).default(0),

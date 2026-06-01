@@ -8,7 +8,7 @@ import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
@@ -19,6 +19,7 @@ import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
+import { AlertDispatcher } from './alerting/index.js';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -58,6 +59,7 @@ const balanceSnapshotRepo = new BalanceSnapshotRepository(db);
 const reconciliationRepo = new ReconciliationEventRepository(db);
 const decisionRepo = new DecisionRepository(db);
 const backtestingRepo = new BacktestingRepository(db);
+const alertDeliveryRepo = new AlertDeliveryRepository(db);
 
 // Strategy factory keyed by config.strategy.type
 function createStrategy(strategyConfig: StrategyConfig): Strategy {
@@ -144,6 +146,7 @@ const runtime = new WorkerRuntime(
 
     // Resolve credentials: try DB lookup via venueAccountId, fall back to venue-specific env vars
     const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string ?? 'default';
+    const instanceUserId = rawConfig['userId'] as string | undefined;
     let apiKey = config.venue === 'bybit'
       ? process.env['BYBIT_API_KEY'] ?? ''
       : process.env['HYPERLIQUID_API_KEY'] ?? '';
@@ -401,6 +404,7 @@ const runtime = new WorkerRuntime(
         source: 'live-recording',
         venue: config.venue,
         symbols: [config.symbol],
+        userId: instanceUserId,
         metadata: {
           tradingInstanceId,
           venueAccountId,
@@ -504,30 +508,11 @@ const runtime = new WorkerRuntime(
     const running = await db.select().from(tradingInstances).where(eq(tradingInstances.status, 'running'));
     return running.map((row) => ({
       id: row.id,
-      config: { ...row.config, venueAccountId: row.venueAccountId },
+      config: { ...row.config, venueAccountId: row.venueAccountId, userId: row.userId },
     }));
   },
   lease,
 );
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down...');
-  await backtestRuntime.stop();
-  await runtime.shutdown();
-  await publicStreamPool?.shutdown();
-  await redisClient.quit();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down...');
-  await backtestRuntime.stop();
-  await runtime.shutdown();
-  await publicStreamPool?.shutdown();
-  await redisClient.quit();
-  process.exit(0);
-});
 
 // Start backtest runtime (BullMQ consumer for bounded backtest jobs)
 const backtestRuntime = new BacktestRuntime(
@@ -544,6 +529,34 @@ const backtestRuntime = new BacktestRuntime(
   db,
 );
 backtestRuntime.start();
+
+// Start alert dispatcher (polls journal → routes → delivers to Telegram)
+// Uses Redis lease for singleton coordination across multiple workers
+const alertDispatcher = new AlertDispatcher(appConfig.alerts, journal, alertDeliveryRepo, logger, redisClient, workerId);
+await alertDispatcher.start();
+
+// Register graceful shutdown handlers after all services are fully initialized.
+// Placing them here guarantees no temporal-dead-zone reference errors if a
+// signal arrives during the async startup above.
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down...');
+  await alertDispatcher.stop();
+  await backtestRuntime.stop();
+  await runtime.shutdown();
+  await publicStreamPool?.shutdown();
+  await redisClient.quit();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down...');
+  await alertDispatcher.stop();
+  await backtestRuntime.stop();
+  await runtime.shutdown();
+  await publicStreamPool?.shutdown();
+  await redisClient.quit();
+  process.exit(0);
+});
 
 await runtime.start();
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

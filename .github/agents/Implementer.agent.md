@@ -7,7 +7,7 @@ handoffs:
     agent: UnitTester
     prompt: "Write unit tests for the unstaged changes. Focus on the new/modified functions and edge cases."
     send: true
-    model: Claude Opus 4.6
+    model: Claude Sonnet 4.6
   - label: Review Code
     agent: CodeReviewer
     prompt: "The unstaged changes in the codebase represent new implementation. Review the code and provide feedback on any issues or improvements."
@@ -17,7 +17,7 @@ handoffs:
     agent: Contemplator
     prompt: "Implementation hit an open question that requires deeper analysis before proceeding. Think through the tradeoffs and recommend a direction."
     send: true
-    model: Claude Opus 4.6
+    model: Claude Sonnet 4.6
 ---
 You are an implementation agent. Your task is to write clean, secure, production-ready code according to a provided plan or task.
 

@@ -4,7 +4,10 @@ import { z } from 'zod';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal } from '@herobids/db';
 import { StrategyConfigSchema, Decimal } from '@herobids/domain';
+import type { PlansConfig } from '@herobids/domain';
+import { eq } from 'drizzle-orm';
 import { parseCsvToFrames } from '@herobids/backtesting';
+import { checkBacktestLimit } from '../plan-guards.js';
 import type { BacktestJob } from '../types.js';
 import crypto from 'node:crypto';
 
@@ -59,7 +62,7 @@ const CsvImportSchema = z.object({
 
 export const BACKTEST_QUEUE_NAME = 'backtest-runs';
 
-export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<BacktestJob>, db: Database) {
+export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<BacktestJob>, db: Database, plansConfig?: PlansConfig) {
   const repo = new BacktestingRepository(db);
   const journal = new PgJournal(db);
 
@@ -82,24 +85,22 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       return reply.status(400).send({ error: message });
     }
 
-    const corpusId = await repo.insertCorpus({
+    const { corpusId } = await repo.importCorpus({
       name: parsed.data.name ?? `${parsed.data.symbol}-${new Date().toISOString()}`,
       source: parsed.data.source ?? 'csv-import',
       venue: parsed.data.venue,
       symbols: [parsed.data.symbol],
+      userId: request.userId,
       metadata: { importedFormat: 'csv' },
+      events: frames.map((frame) => ({
+        venue: parsed.data.venue,
+        symbol: frame.symbol,
+        eventType: 'ticker',
+        price: frame.price.toString(),
+        eventAt: new Date(frame.timestamp),
+        data: frame.data,
+      })),
     });
-
-    await repo.insertMarketEventsBatch(frames.map((frame) => ({
-      corpusId,
-      venue: parsed.data.venue,
-      symbol: frame.symbol,
-      eventType: 'ticker',
-      price: frame.price.toString(),
-      eventAt: new Date(frame.timestamp),
-      data: frame.data,
-    })));
-    await repo.updateCorpusWindow(corpusId, new Date(frames[0]!.timestamp), new Date(frames[frames.length - 1]!.timestamp));
 
     return reply.status(201).send({
       corpusId,
@@ -110,7 +111,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
   });
 
   app.get<{ Params: { corpusId: string } }>('/backtests/corpora/:corpusId', async (request, reply) => {
-    const corpus = await repo.getCorpusById(request.params.corpusId);
+    const corpus = await repo.getCorpusForUser(request.params.corpusId, request.userId);
     if (!corpus) return reply.status(404).send({ error: 'Corpus not found' });
     return corpus;
   });
@@ -147,7 +148,32 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       }
 
       const runId = crypto.randomUUID();
-      await repo.insertBacktestRun({ id: runId, strategyType, config, corpusId, venue, symbol });
+
+      // Plan enforcement: check concurrent backtest limit
+      if (plansConfig) {
+        const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+        if (!planCheck.ok) {
+          return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+        }
+      }
+
+      // Verify corpus belongs to this user
+      const corpus = await repo.getCorpusForUser(corpusId, request.userId);
+      if (!corpus) {
+        return reply.status(404).send({ error: 'corpus_not_found', message: 'Corpus not found or does not belong to you' });
+      }
+
+      // Reject mismatched venue/symbol early — the worker would fail the job later
+      // with an opaque "no market data frames" error otherwise.
+      if (corpus.venue !== venue) {
+        return reply.status(400).send({ error: 'corpus_venue_mismatch', message: `Corpus venue is "${corpus.venue}", not "${venue}"` });
+      }
+      const corpusSymbols = corpus.symbols.split(',').map((s) => s.trim());
+      if (!corpusSymbols.includes(symbol)) {
+        return reply.status(400).send({ error: 'corpus_symbol_not_found', message: `Symbol "${symbol}" not found in corpus (contains: ${corpus.symbols})` });
+      }
+
+      await repo.insertBacktestRun({ id: runId, strategyType, config, corpusId, venue, symbol, userId: request.userId });
 
       try {
         await backtestQueue.add('backtest', { runId, mode: 'backtest', strategyType, config, corpusId, venue, symbol });
@@ -191,6 +217,30 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
     }
 
     const runId = crypto.randomUUID();
+
+    // Plan enforcement: check concurrent backtest limit
+    if (plansConfig) {
+      const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      if (!planCheck.ok) {
+        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+      }
+    }
+
+    // Verify corpus belongs to this user
+    const validationCorpus = await repo.getCorpusForUser(parsed.data.corpusId, request.userId);
+    if (!validationCorpus) {
+      return reply.status(404).send({ error: 'corpus_not_found', message: 'Corpus not found or does not belong to you' });
+    }
+
+    // Reject mismatched venue/symbol early (same guard as regular backtest path)
+    if (validationCorpus.venue !== parsed.data.venue) {
+      return reply.status(400).send({ error: 'corpus_venue_mismatch', message: `Corpus venue is "${validationCorpus.venue}", not "${parsed.data.venue}"` });
+    }
+    const validationCorpusSymbols = validationCorpus.symbols.split(',').map((s) => s.trim());
+    if (!validationCorpusSymbols.includes(parsed.data.symbol)) {
+      return reply.status(400).send({ error: 'corpus_symbol_not_found', message: `Symbol "${parsed.data.symbol}" not found in corpus (contains: ${validationCorpus.symbols})` });
+    }
+
     await repo.insertBacktestRun({
       id: runId,
       strategyType: 'validation',
@@ -198,6 +248,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       corpusId: parsed.data.corpusId,
       venue: parsed.data.venue,
       symbol: parsed.data.symbol,
+      userId: request.userId,
     });
 
     try {
@@ -223,7 +274,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
 
   // Get backtest run status
   app.get<{ Params: { runId: string } }>('/backtests/:runId', async (request, reply) => {
-    const run = await repo.getBacktestRun(request.params.runId);
+    const run = await repo.getBacktestRunForUser(request.params.runId, request.userId);
     if (!run) return reply.status(404).send({ error: 'Backtest run not found' });
     return run;
   });
@@ -232,12 +283,12 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
   app.get<{ Querystring: { limit?: string; offset?: string } }>('/backtests', async (request) => {
     const limit = Math.min(Math.max(1, parseInt(request.query.limit ?? '50', 10) || 50), 500);
     const offset = Math.max(0, parseInt(request.query.offset ?? '0', 10) || 0);
-    return repo.listBacktestRuns(limit, offset);
+    return repo.listBacktestRunsForUser(request.userId, limit, offset);
   });
 
   // Get backtest report/metrics
   app.get<{ Params: { runId: string } }>('/backtests/:runId/report', async (request, reply) => {
-    const run = await repo.getBacktestRun(request.params.runId);
+    const run = await repo.getBacktestRunForUser(request.params.runId, request.userId);
     if (!run) return reply.status(404).send({ error: 'Backtest run not found' });
     if (run.status !== 'completed') return reply.status(409).send({ error: 'Backtest not yet completed', status: run.status });
     return { runId: run.id, status: run.status, metrics: run.metrics };
@@ -247,7 +298,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
   app.get<{ Params: { runId: string }; Querystring: { type?: string; limit?: string; offset?: string } }>(
     '/backtests/:runId/journal',
     async (request, reply) => {
-      const run = await repo.getBacktestRun(request.params.runId);
+      const run = await repo.getBacktestRunForUser(request.params.runId, request.userId);
       if (!run) return reply.status(404).send({ error: 'Backtest run not found' });
 
       const events = await journal.query({

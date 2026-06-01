@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { venueAccounts, portfolios, credentials } from '@herobids/db';
+import type { PlansConfig } from '@herobids/domain';
 import { CreateVenueAccountSchema, CreatePortfolioSchema } from '../schemas.js';
+import { checkVenueAccountLimit, checkPortfolioLimit } from '../plan-guards.js';
 
-export async function venueAccountRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function venueAccountRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create venue account
   app.post('/venue-accounts', async (request, reply) => {
     const parsed = CreateVenueAccountSchema.safeParse(request.body);
@@ -13,24 +15,27 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database): Pr
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    // Validate credential linkage if credentialId is provided
+    // Plan enforcement
+    if (plansConfig) {
+      const planCheck = await checkVenueAccountLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      if (!planCheck.ok) {
+        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+      }
+    }
+
+    // Validate credential linkage if credentialId is provided — scope the lookup by userId so
+    // that a credential owned by another user returns the same "not found" response as a
+    // genuinely missing credential (prevents probing foreign credential IDs).
     if (parsed.data.credentialId) {
       const [cred] = await db
-        .select({ id: credentials.id, userId: credentials.userId, venue: credentials.venue })
+        .select({ id: credentials.id, venue: credentials.venue })
         .from(credentials)
-        .where(eq(credentials.id, parsed.data.credentialId));
+        .where(and(eq(credentials.id, parsed.data.credentialId), eq(credentials.userId, request.userId)));
 
       if (!cred) {
         return reply.status(400).send({
           error: 'credential.not_found',
           message: `Credential ${parsed.data.credentialId} does not exist`,
-        });
-      }
-
-      if (cred.userId !== parsed.data.userId) {
-        return reply.status(400).send({
-          error: 'credential.user_mismatch',
-          message: 'Credential belongs to a different user',
         });
       }
 
@@ -48,7 +53,7 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database): Pr
     try {
       await db.insert(venueAccounts).values({
         id,
-        userId: parsed.data.userId,
+        userId: request.userId,
         venue: parsed.data.venue,
         label: parsed.data.label,
         venueAccountRef: parsed.data.venueAccountRef ?? null,
@@ -73,13 +78,13 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database): Pr
   });
 
   // List venue accounts
-  app.get('/venue-accounts', async (_request, reply) => {
-    const accounts = await db.select().from(venueAccounts);
+  app.get('/venue-accounts', async (request, reply) => {
+    const accounts = await db.select().from(venueAccounts).where(eq(venueAccounts.userId, request.userId));
     return reply.send({ venueAccounts: accounts });
   });
 }
 
-export async function portfolioRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function portfolioRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create portfolio
   app.post('/portfolios', async (request, reply) => {
     const parsed = CreatePortfolioSchema.safeParse(request.body);
@@ -87,11 +92,19 @@ export async function portfolioRoutes(app: FastifyInstance, db: Database): Promi
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
+    // Plan enforcement
+    if (plansConfig) {
+      const planCheck = await checkPortfolioLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      if (!planCheck.ok) {
+        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+      }
+    }
+
     const id = crypto.randomUUID();
 
     await db.insert(portfolios).values({
       id,
-      userId: parsed.data.userId,
+      userId: request.userId,
       name: parsed.data.name,
     });
 
@@ -100,8 +113,8 @@ export async function portfolioRoutes(app: FastifyInstance, db: Database): Promi
   });
 
   // List portfolios
-  app.get('/portfolios', async (_request, reply) => {
-    const all = await db.select().from(portfolios);
+  app.get('/portfolios', async (request, reply) => {
+    const all = await db.select().from(portfolios).where(eq(portfolios.userId, request.userId));
     return reply.send({ portfolios: all });
   });
 }

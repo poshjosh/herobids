@@ -17,3 +17,5 @@ export { ReconciliationEventRepository } from './reconciliation-repository.js';
 export type { InsertReconciliationEvent, ReconciliationEventQuery } from './reconciliation-repository.js';
 export { BacktestingRepository } from './backtesting-repository.js';
 export type { InsertDecisionContext, InsertCorpus, InsertMarketEvent } from './backtesting-repository.js';
+export { AlertDeliveryRepository } from './alert-delivery-repository.js';
+export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repository.js';

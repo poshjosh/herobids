@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+import { users } from './users.js';
 
 /**
  * Backtest runs — bounded replay jobs.
@@ -6,6 +7,8 @@ import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
  */
 export const backtestRuns = pgTable('backtest_runs', {
   id: text('id').primaryKey(),
+  /** Owner user ID (nullable for legacy runs) */
+  userId: text('user_id').references(() => users.id),
   /** Strategy type used for this run */
   strategyType: text('strategy_type').notNull(),
   /** Full config snapshot at run creation time */

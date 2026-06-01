@@ -9,6 +9,18 @@ import { credentialRoutes } from './credentials.js';
  * - Delete is fail-closed (409 when credential is in use)
  */
 
+const TEST_USER_ID = 'user-1';
+
+/** Decorate Fastify app with a fake authenticated userId and planId (simulates auth plugin) */
+function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
+  app.decorateRequest('userId', '');
+  app.decorateRequest('userPlanId', '');
+  app.addHook('onRequest', async (request) => {
+    request.userId = userId;
+    request.userPlanId = 'free';
+  });
+}
+
 // --- Mock wiring ---
 
 const mockJournalAppend = vi.fn().mockResolvedValue(undefined);
@@ -24,8 +36,13 @@ vi.mock('@herobids/db', () => {
     createdAt: 'credentials.created_at',
     updatedAt: 'credentials.updated_at',
   };
+  const users = {
+    id: 'users.id',
+    planId: 'users.plan_id',
+  };
   return {
     credentials,
+    users,
     PgJournal: vi.fn().mockImplementation(() => ({
       append: mockJournalAppend,
     })),
@@ -34,6 +51,7 @@ vi.mock('@herobids/db', () => {
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
+  and: vi.fn((...args) => ({ _and: args })),
 }));
 
 vi.mock('../crypto.js', () => ({
@@ -103,13 +121,13 @@ describe('credential audit events', () => {
     it('emits credential.created event with metadata only', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'hyperliquid',
           label: 'prod-key',
           secrets: { apiKey: 'secret-key', secret: 'secret-value', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
@@ -135,13 +153,13 @@ describe('credential audit events', () => {
       mockJournalAppend.mockRejectedValueOnce(new Error('journal unavailable'));
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'hyperliquid',
           label: 'prod-key',
           secrets: { apiKey: 'k', secret: 's', walletAddress: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
@@ -154,13 +172,13 @@ describe('credential audit events', () => {
     it('rejects Hyperliquid credential with empty walletAddress', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'hyperliquid',
           label: 'prod-key',
           secrets: { apiKey: 'key', secret: 'sec', walletAddress: '' },
@@ -176,13 +194,13 @@ describe('credential audit events', () => {
     it('rejects Hyperliquid credential with malformed walletAddress', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'hyperliquid',
           label: 'prod-key',
           secrets: { apiKey: 'key', secret: 'sec', walletAddress: 'not-an-address' },
@@ -197,13 +215,13 @@ describe('credential audit events', () => {
     it('creates Bybit credential successfully', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'bybit',
           label: 'bybit-main',
           secrets: { apiKey: 'bybit-key-123', secret: 'bybit-secret-456' },
@@ -216,13 +234,13 @@ describe('credential audit events', () => {
     it('rejects Bybit credential with empty apiKey', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'bybit',
           label: 'bybit-main',
           secrets: { apiKey: '', secret: 'valid-secret' },
@@ -238,13 +256,13 @@ describe('credential audit events', () => {
     it('rejects Bybit credential with empty secret', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: 'bybit',
           label: 'bybit-main',
           secrets: { apiKey: 'valid-key', secret: '' },
@@ -260,13 +278,13 @@ describe('credential audit events', () => {
     it('creates 1inch credential successfully', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: '1inch',
           label: 'base-wallet',
           secrets: {
@@ -282,13 +300,13 @@ describe('credential audit events', () => {
     it('rejects 1inch credential with malformed privateKey', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: '1inch',
           label: 'base-wallet',
           secrets: {
@@ -307,13 +325,13 @@ describe('credential audit events', () => {
     it('rejects 1inch credential with missing apiKey', async () => {
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
         method: 'POST',
         url: '/credentials',
         payload: {
-          userId: 'user-1',
           venue: '1inch',
           label: 'base-wallet',
           secrets: {
@@ -335,6 +353,7 @@ describe('credential audit events', () => {
       mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -368,6 +387,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       const queue = buildMockQueue();
+      decorateWithAuth(app);
       await credentialRoutes(app, queue, db);
 
       const res = await app.inject({
@@ -403,6 +423,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       const queue = buildMockQueue();
+      decorateWithAuth(app);
       await credentialRoutes(app, queue, db);
 
       const res = await app.inject({
@@ -422,6 +443,7 @@ describe('credential audit events', () => {
       mockDbRows = [];
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -438,6 +460,7 @@ describe('credential audit events', () => {
       mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -457,7 +480,7 @@ describe('credential audit events', () => {
 
   describe('DELETE /credentials/:id', () => {
     it('succeeds and emits credential.deleted when no dependents', async () => {
-      mockDbRows = [{ id: 'cred-2', venue: 'hyperliquid', userId: 'user-2' }];
+      mockDbRows = [{ id: 'cred-2', venue: 'hyperliquid', userId: TEST_USER_ID }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: [],
         runningInstanceIds: [],
@@ -465,6 +488,7 @@ describe('credential audit events', () => {
 
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -480,11 +504,11 @@ describe('credential audit events', () => {
       expect(journalCall.type).toBe('credential.deleted');
       expect(journalCall.payload.credentialId).toBe('cred-2');
       expect(journalCall.payload.venue).toBe('hyperliquid');
-      expect(journalCall.payload.userId).toBe('user-2');
+      expect(journalCall.payload.userId).toBe(TEST_USER_ID);
     });
 
     it('returns 409 when venue accounts still reference the credential', async () => {
-      mockDbRows = [{ id: 'cred-3', venue: 'hyperliquid', userId: 'user-3' }];
+      mockDbRows = [{ id: 'cred-3', venue: 'hyperliquid', userId: TEST_USER_ID }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1'],
@@ -492,6 +516,7 @@ describe('credential audit events', () => {
 
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -516,6 +541,7 @@ describe('credential audit events', () => {
       mockDbRows = [];
       const app = Fastify();
       const db = buildMockDb();
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -548,6 +574,7 @@ describe('credential audit events', () => {
         venueAccountIds: ['va-raced'],
         runningInstanceIds: [],
       });
+      decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
 
       const res = await app.inject({
@@ -578,6 +605,7 @@ describe('credential audit events', () => {
       mockQueueAdd
         .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error('Redis connection refused'));
+      decorateWithAuth(app);
       await credentialRoutes(app, queue, db);
 
       const res = await app.inject({
@@ -605,6 +633,7 @@ describe('credential audit events', () => {
       const app = Fastify();
       const db = buildMockDb();
       const queue = buildMockQueue();
+      decorateWithAuth(app);
       await credentialRoutes(app, queue, db);
 
       const res = await app.inject({

@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, integer, jsonb, index } from 'drizzle-orm/pg-core';
+import { users } from './users.js';
 
 /**
  * Replay corpora — metadata about a collection of market events for replay.
@@ -6,6 +7,8 @@ import { pgTable, text, timestamp, integer, jsonb, index } from 'drizzle-orm/pg-
  */
 export const replayCorpora = pgTable('replay_corpora', {
   id: text('id').primaryKey(),
+  /** Owner user ID (nullable for legacy corpora) */
+  userId: text('user_id').references(() => users.id),
   /** Human-readable name */
   name: text('name').notNull(),
   /** Source description (e.g. "live-recording", "csv-import:btc-2025-q4") */

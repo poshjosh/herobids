@@ -16,3 +16,8 @@ export { replayCorpora } from './replay-corpora.js';
 export { replayMarketEvents } from './replay-market-events.js';
 export { backtestRuns } from './backtest-runs.js';
 export { llmDecisionArtifacts } from './llm-decision-artifacts.js';
+export { alertDeliveries } from './alert-deliveries.js';
+export { users } from './users.js';
+export { userPlans } from './user-plans.js';
+export { oauthIdentities } from './oauth-identities.js';
+export { sessions } from './sessions.js';

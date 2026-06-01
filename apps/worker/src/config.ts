@@ -48,6 +48,15 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Live rollout
   LIVE_ROLLOUT_ENABLED: { path: 'liveRollout.enabled', type: 'boolean' },
   LIVE_ROLLOUT_MAX_ORDER_NOTIONAL_USD: { path: 'liveRollout.maxInitialOrderNotionalUsd', type: 'string' },
+  // Alerts
+  ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
+  TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
+  // Auth
+  AUTH_PUBLIC_BASE_URL: { path: 'auth.publicBaseUrl', type: 'string' },
+  AUTH_JWT_SECRET: { path: 'auth.jwtSecret', type: 'string' },
+  AUTH_JWT_TTL_SECS: { path: 'auth.jwtTtlSecs', type: 'number' },
+  GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
+  GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

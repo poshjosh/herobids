@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { users } from './users.js';
 
 /**
  * Credentials — encrypted API keys/secrets per venue.
@@ -6,7 +7,7 @@ import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
  */
 export const credentials = pgTable('credentials', {
   id: text('id').primaryKey(),               // UUIDv7
-  userId: text('user_id').notNull(),
+  userId: text('user_id').notNull().references(() => users.id),
   venue: text('venue').notNull(),
   /** Display label */
   label: text('label').notNull(),

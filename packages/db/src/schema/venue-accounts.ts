@@ -1,5 +1,6 @@
 import { pgTable, text, timestamp, index, foreignKey } from 'drizzle-orm/pg-core';
 import { credentials } from './credentials.js';
+import { users } from './users.js';
 
 /**
  * Venue accounts — user's authenticated sessions on venues.
@@ -7,7 +8,7 @@ import { credentials } from './credentials.js';
  */
 export const venueAccounts = pgTable('venue_accounts', {
   id: text('id').primaryKey(),               // UUIDv7
-  userId: text('user_id').notNull(),
+  userId: text('user_id').notNull().references(() => users.id),
   venue: text('venue').notNull(),            // e.g. "hyperliquid"
   /** Display label, e.g. "My Hyperliquid Main" */
   label: text('label').notNull(),

@@ -98,3 +98,35 @@ liveRollout:
   maxInitialOrderNotionalUsd: "50" # hard cap on single-order notional (USD) during rollout
   maxConsecutiveVenueErrors: 3     # circuit-breaker: halt after N consecutive venue errors (wired in Step 2)
   slippageAlertBps: 50             # log warning when fill slippage exceeds this (wired in Step 2)
+
+# Alerting — dispatches journal events to Telegram channels.
+alerts:
+  enabled: false                    # master switch — override: ALERTS_ENABLED
+  dispatchIntervalMs: 10000         # poll interval for new events
+  defaultCooldownMs: 300000         # 5 min cooldown between duplicate alert types
+  maxBatchSize: 20                  # max events per dispatch cycle
+  maxRetries: 3                     # delivery attempts before permanent failure
+  telegram:
+    botToken: ""                    # override: TELEGRAM_BOT_TOKEN
+    channels: []                    # configured via env-specific yaml
+
+# Authentication — Google OAuth + JWT sessions.
+auth:
+  publicBaseUrl: http://localhost:3000    # override: AUTH_PUBLIC_BASE_URL
+  jwtSecret: change-me-in-production-this-is-32-chars!!  # override: AUTH_JWT_SECRET
+  jwtTtlSecs: 86400                      # 24h
+  googleClientId: ""                     # override: GOOGLE_CLIENT_ID
+  googleClientSecret: ""                 # override: GOOGLE_CLIENT_SECRET
+  secureCookie: false                    # set true in production (HTTPS only)
+
+# Plan enforcement — coarse resource limits per user plan.
+plans:
+  defaultPlanId: free
+  plans:
+    free:
+      maxPortfolios: 3
+      maxVenueAccounts: 5
+      maxCredentials: 5
+      maxTradingInstances: 5
+      maxConcurrentBacktests: 3
+      liveEnabled: false

@@ -7,13 +7,25 @@ import { liveStatusRoutes } from './live-status.js';
  * Uses a mock Database that intercepts Drizzle queries and PgJournal/Repo methods.
  */
 
+const TEST_USER_ID = 'user-1';
+
+/** Decorate Fastify app with a fake authenticated userId and planId (simulates auth plugin) */
+function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
+  app.decorateRequest('userId', '');
+  app.decorateRequest('userPlanId', '');
+  app.addHook('onRequest', async (request) => {
+    request.userId = userId;
+    request.userPlanId = 'free';
+  });
+}
+
 // --- Mock wiring ---
 
 // We mock the @herobids/db module so that PgJournal, repos, and tradingInstances
 // are test-controllable without a real Postgres connection.
 
 vi.mock('@herobids/db', () => {
-  const tradingInstances = { id: 'trading_instances.id' };
+  const tradingInstances = { id: 'trading_instances.id', userId: 'trading_instances.user_id' };
   return {
     PgJournal: vi.fn(),
     ReconciliationEventRepository: vi.fn(),
@@ -25,6 +37,7 @@ vi.mock('@herobids/db', () => {
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
+  and: vi.fn((...args) => ({ _and: args })),
 }));
 
 // Pull the mocked constructors so we can configure return values per test
@@ -45,6 +58,7 @@ let mockFillRepo: { getRecentByInstance: ReturnType<typeof vi.fn> };
 
 function buildApp() {
   const app = Fastify();
+  decorateWithAuth(app);
 
   // Mock db.select().from().where() chain
   const db = {

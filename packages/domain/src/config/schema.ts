@@ -70,6 +70,72 @@ export const StreamConfigSchema = z.object({
   public: PublicStreamConfigSchema.default({}),
 });
 
+export const TelegramChannelConfigSchema = z.object({
+  /** Telegram chat ID (numeric string or @channel) */
+  chatId: z.string().min(1),
+  /** Event type prefixes to route to this channel */
+  eventPrefixes: z.array(z.string().min(1)).default(['risk.', 'execution.', 'stream.', 'instance.', 'reconciliation.']),
+  /** Minimum severity to route: info | warn | critical */
+  minSeverity: z.enum(['info', 'warn', 'critical']).default('warn'),
+});
+
+export const AlertsConfigSchema = z.object({
+  /** Master switch for alert dispatching */
+  enabled: z.boolean().default(false),
+  /** How often the dispatcher polls for new events (ms) */
+  dispatchIntervalMs: z.number().min(1000).default(10_000),
+  /** Default cooldown between duplicate alerts for the same event type (ms) */
+  defaultCooldownMs: z.number().min(0).default(300_000),
+  /** Max events to process per dispatch cycle */
+  maxBatchSize: z.number().min(1).default(20),
+  /** Max delivery attempts before marking permanently failed */
+  maxRetries: z.number().min(1).default(3),
+  telegram: z.object({
+    /** Bot token resolved from TELEGRAM_BOT_TOKEN env var */
+    botToken: z.string().default(''),
+    /** Telegram channel routing rules */
+    channels: z.array(TelegramChannelConfigSchema).default([]),
+  }).default({}),
+});
+
+export const AuthConfigSchema = z.object({
+  /** Public-facing base URL (used for OAuth callback construction) */
+  publicBaseUrl: z.string().url().default('http://localhost:3000'),
+  /** JWT signing secret — override: AUTH_JWT_SECRET */
+  jwtSecret: z.string().min(32).default('change-me-in-production-this-is-32-chars!!'),
+  /** JWT token TTL in seconds */
+  jwtTtlSecs: z.number().min(60).default(86_400),
+  /** Google OAuth client ID — override: GOOGLE_CLIENT_ID */
+  googleClientId: z.string().default(''),
+  /** Google OAuth client secret — override: GOOGLE_CLIENT_SECRET */
+  googleClientSecret: z.string().default(''),
+  /** Use Secure flag on session cookies (should be true in production / HTTPS) */
+  secureCookie: z.boolean().default(false),
+});
+
+export const PlansConfigSchema = z.object({
+  /** Default plan applied to new users */
+  defaultPlanId: z.string().default('free'),
+  /** Plan definitions keyed by plan ID */
+  plans: z.record(z.string(), z.object({
+    maxPortfolios: z.number().min(1).default(3),
+    maxVenueAccounts: z.number().min(1).default(5),
+    maxCredentials: z.number().min(1).default(5),
+    maxTradingInstances: z.number().min(1).default(5),
+    maxConcurrentBacktests: z.number().min(1).default(3),
+    liveEnabled: z.boolean().default(false),
+  })).default({
+    free: {
+      maxPortfolios: 3,
+      maxVenueAccounts: 5,
+      maxCredentials: 5,
+      maxTradingInstances: 5,
+      maxConcurrentBacktests: 3,
+      liveEnabled: false,
+    },
+  }),
+});
+
 export const LiveRolloutConfigSchema = z.object({
   /** Master switch — must be true for any instance to run in live mode */
   enabled: z.boolean().default(false),
@@ -119,6 +185,17 @@ export const AppConfigSchema = z.object({
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),
+  alerts: AlertsConfigSchema.default({}),
+  auth: AuthConfigSchema.default({}),
+  plans: PlansConfigSchema.default({}),
+}).superRefine((data, ctx) => {
+  if (!(data.plans.defaultPlanId in data.plans.plans)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `plans.defaultPlanId '${data.plans.defaultPlanId}' does not exist in the plans map — check config`,
+      path: ['plans', 'defaultPlanId'],
+    });
+  }
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -126,6 +203,10 @@ export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
+export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
+export type PlansConfig = z.infer<typeof PlansConfigSchema>;
+export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 

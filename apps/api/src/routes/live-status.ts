@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { PgJournal, ReconciliationEventRepository, OrderRepository, FillRepository } from '@herobids/db';
 import { tradingInstances } from '@herobids/db';
@@ -40,8 +40,8 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
         return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
       }
 
-      // Verify instance exists
-      const [instance] = await db.select().from(tradingInstances).where(eq(tradingInstances.id, id));
+      // Verify instance exists and belongs to user
+      const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
       if (!instance) {
         return reply.status(404).send({ error: 'not_found' });
       }
@@ -151,7 +151,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
     async (request, reply) => {
       const { id } = request.params;
 
-      const [instance] = await db.select().from(tradingInstances).where(eq(tradingInstances.id, id));
+      const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
       if (!instance) {
         return reply.status(404).send({ error: 'not_found' });
       }

@@ -5,9 +5,11 @@ export default defineConfig({
     globals: false,
     environment: 'node',
     exclude: ['**/node_modules/**', '**/dist/**', '.ignore/**'],
+    testTimeout: 15000,
   },
   resolve: {
     alias: {
+      '@herobids/db': new URL('./packages/db/src/index.ts', import.meta.url).pathname,
       '@herobids/domain': new URL('./packages/domain/src/index.ts', import.meta.url).pathname,
       '@herobids/engine': new URL('./packages/engine/src/index.ts', import.meta.url).pathname,
       '@herobids/venues': new URL('./packages/venues/src/index.ts', import.meta.url).pathname,

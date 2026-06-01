@@ -12,6 +12,10 @@ export {
   MomentumParamsSchema,
   LlmParamsSchema,
   LiveRolloutConfigSchema,
+  AlertsConfigSchema,
+  AuthConfigSchema,
+  PlansConfigSchema,
+  TelegramChannelConfigSchema,
 } from './schema.js';
 
 export type {
@@ -22,4 +26,8 @@ export type {
   MomentumParams,
   LlmParams,
   LiveRolloutConfig,
+  AlertsConfig,
+  AuthConfig,
+  PlansConfig,
+  TelegramChannelConfig,
 } from './schema.js';

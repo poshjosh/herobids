@@ -3,15 +3,17 @@ import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
 import { eq, and, ne } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { tradingInstances } from '@herobids/db';
+import { tradingInstances, portfolios, venueAccounts } from '@herobids/db';
 import { TradingInstanceConfigSchema } from '@herobids/domain';
+import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
   UpdateInstanceConfigSchema,
 } from '../schemas.js';
+import { checkTradingInstanceLimit, checkLiveEnabled } from '../plan-guards.js';
 import type { LifecycleJob } from '../types.js';
 
-export async function instanceRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database): Promise<void> {
+export async function instanceRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create trading instance
   app.post('/instances', async (request, reply) => {
     const parsed = CreateInstanceSchema.safeParse(request.body);
@@ -25,12 +27,33 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       return reply.status(400).send({ error: 'invalid_config', details: configResult.error.issues });
     }
 
+    // Plan enforcement
+    if (plansConfig) {
+      const planCheck = await checkTradingInstanceLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      if (!planCheck.ok) {
+        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+      }
+    }
+
+    // Verify ownership of the portfolio and venue account
+    const [portfolio] = await db.select({ id: portfolios.id }).from(portfolios)
+      .where(and(eq(portfolios.id, parsed.data.portfolioId), eq(portfolios.userId, request.userId)));
+    if (!portfolio) {
+      return reply.status(404).send({ error: 'not_found', message: 'Portfolio not found' });
+    }
+
+    const [venueAccount] = await db.select({ id: venueAccounts.id }).from(venueAccounts)
+      .where(and(eq(venueAccounts.id, parsed.data.venueAccountId), eq(venueAccounts.userId, request.userId)));
+    if (!venueAccount) {
+      return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+    }
+
     const id = crypto.randomUUID();
     const now = new Date();
 
     await db.insert(tradingInstances).values({
       id,
-      userId: parsed.data.userId,
+      userId: request.userId,
       portfolioId: parsed.data.portfolioId,
       venueAccountId: parsed.data.venueAccountId,
       strategyId: parsed.data.strategyId,
@@ -49,13 +72,25 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
   app.post<{ Params: { id: string } }>('/instances/:id/start', async (request, reply) => {
     const { id } = request.params;
 
-    const [instance] = await db.select().from(tradingInstances).where(eq(tradingInstances.id, id));
+    const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
     if (!instance) {
       return reply.status(404).send({ error: 'not_found' });
     }
 
     if (instance.status === 'running') {
       return reply.status(409).send({ error: 'already_running', tradingInstanceId: id });
+    }
+
+    // Live-mode plan gate: reject start if plan disallows live and instance is configured for live
+    if (plansConfig) {
+      const instanceConfig = instance.config as Record<string, unknown> | undefined;
+      const executionMode = (instanceConfig?.['execution'] as Record<string, unknown> | undefined)?.['mode'];
+      if (executionMode === 'live') {
+        const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free');
+        if (!liveCheck.ok) {
+          return reply.status(403).send({ error: liveCheck.error.code, message: liveCheck.error.message });
+        }
+      }
     }
 
     // Check for another non-stopped instance on the same venue account (unique constraint guard)
@@ -109,7 +144,7 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
     await queue.add('start-instance', {
       command: 'start',
       tradingInstanceId: id,
-      config: { ...instance.config, venueAccountId: instance.venueAccountId },
+      config: { ...instance.config, venueAccountId: instance.venueAccountId, userId: instance.userId },
     });
     return reply.send({ status: 'starting', tradingInstanceId: id });
   });
@@ -117,6 +152,11 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
   // Stop a trading instance
   app.post<{ Params: { id: string } }>('/instances/:id/stop', async (request, reply) => {
     const { id } = request.params;
+
+    const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
+    if (!instance) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
 
     await db.update(tradingInstances)
       .set({ status: 'stopped', stoppedAt: new Date(), updatedAt: new Date() })
@@ -137,7 +177,7 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const [existing] = await db.select().from(tradingInstances).where(eq(tradingInstances.id, id));
+    const [existing] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
@@ -146,6 +186,20 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
     const configResult = TradingInstanceConfigSchema.safeParse(parsed.data.config);
     if (!configResult.success) {
       return reply.status(400).send({ error: 'invalid_config', details: configResult.error.issues });
+    }
+
+    // Live-mode plan gate — checked here as well as on start so that patching
+    // execution.mode to 'live' on a running instance cannot bypass the gate via
+    // the auto-restart path (the worker restarts with the new config verbatim,
+    // with no opportunity to re-evaluate plan eligibility).
+    if (plansConfig) {
+      const newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'];
+      if (newExecutionMode === 'live') {
+        const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free');
+        if (!liveCheck.ok) {
+          return reply.status(403).send({ error: liveCheck.error.code, message: liveCheck.error.message });
+        }
+      }
     }
 
     const newVersion = existing.configVersion + 1;
@@ -162,7 +216,7 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       await queue.add('restart-instance', {
         command: 'restart',
         tradingInstanceId: id,
-        config: { ...parsed.data.config, venueAccountId: existing.venueAccountId },
+        config: { ...parsed.data.config, venueAccountId: existing.venueAccountId, userId: existing.userId },
       });
     }
 
@@ -170,15 +224,15 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
   });
 
   // List instances
-  app.get('/instances', async (_request, reply) => {
-    const instances = await db.select().from(tradingInstances);
+  app.get('/instances', async (request, reply) => {
+    const instances = await db.select().from(tradingInstances).where(eq(tradingInstances.userId, request.userId));
     return reply.send({ instances });
   });
 
   // Get single instance
   app.get<{ Params: { id: string } }>('/instances/:id', async (request, reply) => {
     const { id } = request.params;
-    const [instance] = await db.select().from(tradingInstances).where(eq(tradingInstances.id, id));
+    const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
     if (!instance) {
       return reply.status(404).send({ error: 'not_found' });
     }

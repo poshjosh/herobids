@@ -7,7 +7,7 @@ handoffs:
     agent: Implementer
     prompt: "Implement the plan. The plan is documented in the most recent file under `docs/features/`. Look for the newest file by date. If unsure, ask. Follow the plan step by step."
     send: true
-    model: Claude Opus 4.6
+    model: Claude Sonnet 4.6
 ---
 You are a planning agent. Your task is to take a contemplation, task description, or feature request and create/update a concrete, actionable implementation plan.
 
