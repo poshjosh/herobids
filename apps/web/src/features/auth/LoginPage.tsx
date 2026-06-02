@@ -1,6 +1,41 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { config } from '../../lib/config.js';
+import { auth } from '../../lib/api-client.js';
+import { useSession } from '../../app/providers/SessionProvider.js';
+
+type EmailMode = 'login' | 'register';
 
 export function LoginPage() {
+  const navigate = useNavigate();
+  const { login } = useSession();
+
+  // 'email' tab state
+  const [tab, setTab] = useState<'google' | 'email'>('google');
+  const [emailMode, setEmailMode] = useState<EmailMode>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleEmailSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    try {
+      const { token } = emailMode === 'register'
+        ? await auth.register(email, password, displayName)
+        : await auth.login(email, password);
+      await login(token);
+      navigate('/mission-control', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <div
       style={{
@@ -44,33 +79,133 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Sign-in */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <a
-            href={config.googleAuthUrl}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              padding: '12px 20px',
-              background: 'white',
-              color: '#3c4043',
-              borderRadius: '8px',
-              border: '1px solid #dadce0',
-              textDecoration: 'none',
-              fontSize: '15px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              transition: 'background 0.15s',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#f8f9fa'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = 'white'; }}
-          >
-            <GoogleIcon />
-            Continue with Google
-          </a>
+        {/* Tab switcher */}
+        <div style={{ display: 'flex', gap: '4px', background: 'var(--color-surface-0)', borderRadius: '8px', padding: '4px' }}>
+          {(['google', 'email'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setError(null); }}
+              style={{
+                flex: 1,
+                padding: '8px',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                background: tab === t ? 'var(--color-surface-1)' : 'transparent',
+                color: tab === t ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              {t === 'google' ? 'Google' : 'Email'}
+            </button>
+          ))}
         </div>
+
+        {/* Sign-in panel */}
+        {tab === 'google' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <a
+              href={config.googleAuthUrl}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                padding: '12px 20px',
+                background: 'white',
+                color: '#3c4043',
+                borderRadius: '8px',
+                border: '1px solid #dadce0',
+                textDecoration: 'none',
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#f8f9fa'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = 'white'; }}
+            >
+              <GoogleIcon />
+              Continue with Google
+            </a>
+          </div>
+        ) : (
+          <form onSubmit={(e) => { void handleEmailSubmit(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {emailMode === 'register' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Name</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your name"
+                  required
+                  autoComplete="name"
+                  style={inputStyle}
+                />
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={emailMode === 'register' ? 'At least 8 characters' : ''}
+                required
+                autoComplete={emailMode === 'register' ? 'new-password' : 'current-password'}
+                style={inputStyle}
+              />
+            </div>
+
+            {error && (
+              <div style={{ fontSize: '13px', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={pending}
+              style={{
+                padding: '12px',
+                background: 'var(--color-brand)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: pending ? 'not-allowed' : 'pointer',
+                opacity: pending ? 0.7 : 1,
+              }}
+            >
+              {pending ? 'Please wait…' : emailMode === 'register' ? 'Create account' : 'Sign in'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setEmailMode(emailMode === 'login' ? 'register' : 'login'); setError(null); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text-muted)', textDecoration: 'underline' }}
+            >
+              {emailMode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            </button>
+          </form>
+        )}
 
         <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
           By signing in you agree to the terms of service.
@@ -79,6 +214,18 @@ export function LoginPage() {
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  background: 'var(--color-surface-0)',
+  border: '1px solid var(--color-border)',
+  borderRadius: '6px',
+  fontSize: '14px',
+  color: 'var(--color-text-primary)',
+  outline: 'none',
+  width: '100%',
+  boxSizing: 'border-box',
+};
 
 function GoogleIcon() {
   return (

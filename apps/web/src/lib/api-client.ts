@@ -82,6 +82,16 @@ export const auth = {
       method: 'POST',
       body: JSON.stringify({ code }),
     }),
+  register: (email: string, password: string, displayName: string) =>
+    request<{ token: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, displayName }),
+    }),
+  login: (email: string, password: string) =>
+    request<{ token: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
   me: () => request<MeResponse>('/auth/me'),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };

@@ -118,6 +118,8 @@ function isPublicRoute(url: string, method: string): boolean {
   if (path === '/auth/google/callback') return true;
   // Exchange endpoint: browser POSTs a one-time code obtained from the OAuth redirect
   if (path === '/auth/exchange') return true;
+  if (path === '/auth/register') return true;
+  if (path === '/auth/login') return true;
 
   // /auth/me and /auth/logout require a valid session
   return false;

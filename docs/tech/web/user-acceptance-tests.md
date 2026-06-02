@@ -22,6 +22,17 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 |----|-----------|-------|----------|--------|-------|
 | A-01 | Login page renders unauthenticated | Navigate to `/` without a token | Redirected to `/login`; login page shows Google sign-in button | — | |
 | A-02 | Google OAuth login | Click "Sign in with Google"; complete Google auth flow | Redirected to `/auth/callback`, then to `/mission-control`; user is authenticated; nav shows | — | |
+| A-02b | Email tab visible | Open login page | Two tabs shown: "Google" and "Email" | — | |
+| A-02c | Register new account | Click Email tab; click "Don't have an account? Sign up"; fill name/email/password (≥8 chars); submit | Account created; redirected to `/mission-control`; authenticated | — | |
+| A-02d | Login with email | Register first; log out; go to Email tab; enter credentials; submit | Authenticated and redirected to `/mission-control` | — | |
+| A-02e | Register — duplicate email | Try to register with an already-registered email | Error message "An account with this email already exists" shown; form stays open | — | |
+| A-02f | Register — short password | Submit with password < 8 chars | Error "Password must be at least 8 characters" shown | — | |
+| A-02g | Register — invalid email | Submit with "notanemail" as email | Error "Invalid email address" shown | — | |
+| A-02h | Register — missing fields | Submit with blank name or email or password | Error or browser validation shown; account not created | — | |
+| A-02i | Login — wrong password | Submit with correct email but wrong password | Error "Invalid email or password"; does not reveal whether email exists | — | |
+| A-02j | Login — unknown email | Submit with unregistered email | Error "Invalid email or password" (same message, no enumeration) | — | |
+| A-02k | Submit button disabled while pending | Click submit on email form | Button shows "Please wait…" and is non-interactive until response arrives | — | |
+| A-02l | Toggle login ↔ register | Click "Don't have an account?" and "Already have an account?" links | Form switches between modes; error banner clears on switch | — | |
 | A-03 | Auth callback with invalid/expired code | Navigate to `/auth/callback?code=invalid-code` | Error state shown; user remains on login page or sees meaningful error | — | |
 | A-04 | Auth callback with missing code param | Navigate to `/auth/callback` (no `?code=`) | Error state shown; does not crash | — | |
 | A-05 | One-time code use | Copy the `/auth/callback?code=…` URL; open it in a second tab after first use | Second tab shows error (code already consumed); does not grant a second session | — | |

@@ -1,11 +1,31 @@
 import crypto from 'node:crypto';
+import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type { AuthConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { users, oauthIdentities, sessions, userPlans } from '@herobids/db';
+import { users, oauthIdentities, localIdentities, sessions, userPlans } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
+
+const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = await scrypt(password, salt, 64);
+  return `${salt}:${hash.toString('hex')}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const colonIdx = stored.indexOf(':');
+  if (colonIdx < 0) return false;
+  const salt = stored.slice(0, colonIdx);
+  const storedHash = stored.slice(colonIdx + 1);
+  const derived = await scrypt(password, salt, 64);
+  const storedBuf = Buffer.from(storedHash, 'hex');
+  if (derived.length !== storedBuf.length) return false;
+  return crypto.timingSafeEqual(derived, storedBuf);
+}
 
 // ---------------------------------------------------------------------------
 // CSRF helpers — stateless HMAC-signed state token stored in a httpOnly cookie
@@ -58,6 +78,99 @@ interface GoogleUserInfo {
 }
 
 export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: Database, redis: Redis, defaultPlanId = 'free') {
+  /**
+   * POST /auth/register — Create a new local (email + password) account.
+   * Returns a JWT directly (no exchange code needed — direct POST, not a redirect).
+   */
+  app.post('/auth/register', async (request, reply) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const email = typeof body?.['email'] === 'string' ? body['email'].toLowerCase().trim() : undefined;
+    const password = typeof body?.['password'] === 'string' ? body['password'] : undefined;
+    const displayName = typeof body?.['displayName'] === 'string' ? body['displayName'].trim() : undefined;
+
+    if (!email || !password || !displayName) {
+      return reply.status(400).send({ error: 'email, password, and displayName are required' });
+    }
+    if (password.length < 8) {
+      return reply.status(400).send({ error: 'Password must be at least 8 characters' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reply.status(400).send({ error: 'Invalid email address' });
+    }
+
+    // Check for existing account
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    if (existing) {
+      return reply.status(409).send({ error: 'An account with this email already exists' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const userId = crypto.randomUUID();
+    const now = new Date();
+
+    await db.transaction(async (tx) => {
+      await tx.insert(users).values({
+        id: userId,
+        displayName,
+        email,
+        avatarUrl: null,
+        planId: defaultPlanId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await tx.insert(localIdentities).values({
+        id: crypto.randomUUID(),
+        userId,
+        passwordHash,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await tx.insert(userPlans).values({
+        id: crypto.randomUUID(),
+        userId,
+        planId: defaultPlanId,
+      });
+    });
+
+    const token = await issueSession(config, db, userId);
+    return reply.status(201).send({ token });
+  });
+
+  /**
+   * POST /auth/login — Authenticate with email + password.
+   * Returns a JWT directly.
+   */
+  app.post('/auth/login', async (request, reply) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const email = typeof body?.['email'] === 'string' ? body['email'].toLowerCase().trim() : undefined;
+    const password = typeof body?.['password'] === 'string' ? body['password'] : undefined;
+
+    if (!email || !password) {
+      return reply.status(400).send({ error: 'email and password are required' });
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (!user) {
+      // Constant-time response to avoid user enumeration
+      await hashPassword('dummy-constant-time-work');
+      return reply.status(401).send({ error: 'Invalid email or password' });
+    }
+
+    const [identity] = await db.select().from(localIdentities).where(eq(localIdentities.userId, user.id)).limit(1);
+    if (!identity) {
+      await hashPassword('dummy-constant-time-work');
+      return reply.status(401).send({ error: 'Invalid email or password' });
+    }
+
+    const valid = await verifyPassword(password, identity.passwordHash);
+    if (!valid) {
+      return reply.status(401).send({ error: 'Invalid email or password' });
+    }
+
+    const token = await issueSession(config, db, user.id);
+    return reply.send({ token });
+  });
+
   /**
    * GET /auth/google — Redirects to Google OAuth consent screen.
    */
@@ -152,23 +265,9 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     // Find or create user
     const userId = await findOrCreateUser(db, googleUser, defaultPlanId);
 
-    // Create session
-    const sessionId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + config.jwtTtlSecs * 1000);
-
-    await db.insert(sessions).values({
-      id: sessionId,
-      userId,
-      expiresAt,
-      createdAt: new Date(),
-    });
-
-    // Issue JWT
-    const token = await createSessionToken(config, userId, sessionId);
-
-    // Store JWT behind a short-lived one-time exchange code and redirect the
-    // browser to the frontend callback route.  This avoids embedding the JWT in
-    // a JSON response that the browser received without its own origin context.
+    // Issue JWT and store behind a short-lived one-time exchange code so the
+    // browser redirect never carries the token in a URL fragment or history entry.
+    const token = await issueSession(config, db, userId);
     const exchangeCode = crypto.randomUUID();
     await redis.set(`auth:code:${exchangeCode}`, token, 'EX', config.exchangeCodeTtlSecs);
 
@@ -342,4 +441,12 @@ async function findOrCreateUser(db: Database, googleUser: GoogleUserInfo, defaul
     if (!identity) throw new Error('Failed to establish OAuth identity');
     return identity.userId;
   });
+}
+
+/** Create a new session and return a signed JWT. Shared by OAuth and local auth flows. */
+async function issueSession(config: AuthConfig, db: Database, userId: string): Promise<string> {
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + config.jwtTtlSecs * 1000);
+  await db.insert(sessions).values({ id: sessionId, userId, expiresAt, createdAt: new Date() });
+  return createSessionToken(config, userId, sessionId);
 }

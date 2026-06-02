@@ -20,4 +20,5 @@ export { alertDeliveries } from './alert-deliveries.js';
 export { users } from './users.js';
 export { userPlans } from './user-plans.js';
 export { oauthIdentities } from './oauth-identities.js';
+export { localIdentities } from './local-identities.js';
 export { sessions } from './sessions.js';

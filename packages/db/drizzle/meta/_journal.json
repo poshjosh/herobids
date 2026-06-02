@@ -71,6 +71,13 @@
       "when": 1780819200000,
       "tag": "0009_oauth_identity_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780905600000,
+      "tag": "0010_local_auth",
+      "breakpoints": true
     }
   ]
 }
