@@ -113,8 +113,10 @@ alerts:
 # Authentication — Google OAuth + JWT sessions.
 auth:
   publicBaseUrl: http://localhost:3000    # override: AUTH_PUBLIC_BASE_URL
+  frontendOrigin: http://localhost:5173   # override: AUTH_FRONTEND_ORIGIN (Vite dev server default)
   jwtSecret: change-me-in-production-this-is-32-chars!!  # override: AUTH_JWT_SECRET
-  jwtTtlSecs: 86400                      # 24h
+  jwtTtlSecs: 86400                      # 24h — override: AUTH_JWT_TTL_SECS
+  exchangeCodeTtlSecs: 60                # seconds — override: AUTH_EXCHANGE_CODE_TTL_SECS
   googleClientId: ""                     # override: GOOGLE_CLIENT_ID
   googleClientSecret: ""                 # override: GOOGLE_CLIENT_SECRET
   secureCookie: false                    # set true in production (HTTPS only)

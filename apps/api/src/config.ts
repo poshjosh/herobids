@@ -23,8 +23,10 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   REDIS_URL: { path: 'redis.url', type: 'string' },
   // Auth
   AUTH_PUBLIC_BASE_URL: { path: 'auth.publicBaseUrl', type: 'string' },
+  AUTH_FRONTEND_ORIGIN: { path: 'auth.frontendOrigin', type: 'string' },
   AUTH_JWT_SECRET: { path: 'auth.jwtSecret', type: 'string' },
   AUTH_JWT_TTL_SECS: { path: 'auth.jwtTtlSecs', type: 'number' },
+  AUTH_EXCHANGE_CODE_TTL_SECS: { path: 'auth.exchangeCodeTtlSecs', type: 'number' },
   GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
 

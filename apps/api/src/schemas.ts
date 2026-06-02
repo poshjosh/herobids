@@ -58,6 +58,16 @@ export const LiveStatusQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const DashboardActivityQuerySchema = z.object({
+  /** Return events created before this ISO timestamp (cursor-based pagination) */
+  before: z.string().datetime().optional(),
+  /** Tie-breaker ID for the before cursor — ensures correct pagination when multiple
+   * events share the same createdAt timestamp */
+  beforeId: z.string().optional(),
+  /** Max events to return */
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
 export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;
 export type UpdateInstanceConfigInput = z.infer<typeof UpdateInstanceConfigSchema>;
 export type CreateVenueAccountInput = z.infer<typeof CreateVenueAccountSchema>;
@@ -65,3 +75,4 @@ export type CreatePortfolioInput = z.infer<typeof CreatePortfolioSchema>;
 export type JournalQueryInput = z.infer<typeof JournalQuerySchema>;
 export type ReconciliationEventQueryInput = z.infer<typeof ReconciliationEventQuerySchema>;
 export type LiveStatusQueryInput = z.infer<typeof LiveStatusQuerySchema>;
+export type DashboardActivityQueryInput = z.infer<typeof DashboardActivityQuerySchema>;

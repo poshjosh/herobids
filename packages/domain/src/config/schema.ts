@@ -101,10 +101,14 @@ export const AlertsConfigSchema = z.object({
 export const AuthConfigSchema = z.object({
   /** Public-facing base URL (used for OAuth callback construction) */
   publicBaseUrl: z.string().url().default('http://localhost:3000'),
+  /** Frontend app origin — used for CORS and OAuth browser redirect */
+  frontendOrigin: z.string().url().default('http://localhost:5173'),
   /** JWT signing secret — override: AUTH_JWT_SECRET */
   jwtSecret: z.string().min(32).default('change-me-in-production-this-is-32-chars!!'),
   /** JWT token TTL in seconds */
   jwtTtlSecs: z.number().min(60).default(86_400),
+  /** Short-lived OAuth exchange code TTL in seconds (browser callback handoff) */
+  exchangeCodeTtlSecs: z.number().min(30).max(600).default(60),
   /** Google OAuth client ID — override: GOOGLE_CLIENT_ID */
   googleClientId: z.string().default(''),
   /** Google OAuth client secret — override: GOOGLE_CLIENT_SECRET */

@@ -1,0 +1,148 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { venueAccounts as venueAccountsApi, credentials as credentialsApi } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
+import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
+
+const SUPPORTED_VENUES = ['hyperliquid', 'bybit', '1inch'];
+
+export function VenueAccountsPage() {
+  const [showCreate, setShowCreate] = useState(false);
+  const qc = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['venue-accounts'],
+    queryFn: () => venueAccountsApi.list(),
+  });
+
+  const items = query.data?.venueAccounts ?? [];
+
+  return (
+    <PageShell>
+      <PageHeader
+        title="Venue Accounts"
+        subtitle="Exchange sub-accounts and wallets connected to your agents"
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add venue account</Button>}
+      />
+
+      {query.isLoading && <LoadingRows count={3} />}
+      {query.isError && <ErrorState message={(query.error as Error).message} onRetry={() => void query.refetch()} />}
+
+      {query.isSuccess && items.length === 0 && (
+        <EmptyState
+          title="No venue accounts yet"
+          message="Add a venue account to link your exchange sub-account or wallet to an agent."
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add venue account</Button>}
+        />
+      )}
+
+      {query.isSuccess && items.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {items.map((va) => (
+            <Card key={va.id} style={{ padding: '14px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: '500', marginBottom: '2px' }}>{va.label}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    {va.venue}{va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
+                  </div>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  {va.credentialId ? 'Credentials linked' : 'No credentials'}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showCreate && (
+        <CreateVenueAccountModal
+          onClose={() => setShowCreate(false)}
+          onSuccess={() => {
+            void qc.invalidateQueries({ queryKey: ['venue-accounts'] });
+            setShowCreate(false);
+          }}
+        />
+      )}
+    </PageShell>
+  );
+}
+
+function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [venue, setVenue] = useState(SUPPORTED_VENUES[0]!);
+  const [label, setLabel] = useState('');
+  const [venueAccountRef, setVenueAccountRef] = useState('');
+  const [credentialId, setCredentialId] = useState('');
+
+  const credentialsQuery = useQuery({
+    queryKey: ['credentials'],
+    queryFn: () => credentialsApi.list(),
+  });
+
+  const venueCredentials = credentialsQuery.data?.credentials.filter((c) => c.venue === venue) ?? [];
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      venueAccountsApi.create({
+        venue,
+        label,
+        venueAccountRef: venueAccountRef.trim() || undefined,
+        credentialId: credentialId || undefined,
+      }),
+    onSuccess,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    mutation.mutate();
+  };
+
+  return (
+    <Modal title="Add venue account" onClose={onClose}>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: '16px' }}>
+          <FieldLabel>Venue</FieldLabel>
+          <select
+            value={venue}
+            onChange={(e) => { setVenue(e.target.value); setCredentialId(''); }}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            {SUPPORTED_VENUES.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <FieldLabel>Label</FieldLabel>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Main BTC account" style={inputStyle} />
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <FieldLabel>Account reference (optional)</FieldLabel>
+          <input value={venueAccountRef} onChange={(e) => setVenueAccountRef(e.target.value)} placeholder="Sub-account ID or wallet address" style={inputStyle} />
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <FieldLabel>Credentials (optional)</FieldLabel>
+          <select
+            value={credentialId}
+            onChange={(e) => setCredentialId(e.target.value)}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">— None —</option>
+            {venueCredentials.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+
+        {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+          <Button variant="primary" type="submit" disabled={mutation.isPending || !label.trim()}>
+            {mutation.isPending ? 'Creating…' : 'Create'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

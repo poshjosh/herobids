@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
 import { createDatabase } from '@herobids/db';
 import { instanceRoutes } from './routes/instances.js';
 import { venueAccountRoutes, portfolioRoutes } from './routes/accounts.js';
@@ -9,6 +11,7 @@ import { reconciliationRoutes } from './routes/reconciliation.js';
 import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
 import { liveStatusRoutes } from './routes/live-status.js';
 import { authRoutes } from './routes/auth.js';
+import { dashboardRoutes } from './routes/dashboard.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -27,6 +30,10 @@ const redisConnection = {
   ...(parsedRedisUrl.protocol === 'rediss:' && { tls: {} }),
 };
 
+// Shared Redis client for auth exchange codes and any future short-lived server state
+const redisClient = new Redis(redisConnection);
+redisClient.on('error', (err: Error) => app.log.error({ err }, 'Redis client error'));
+
 const db = createDatabase(appConfig.database.url);
 
 const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
@@ -40,11 +47,18 @@ const backtestQueue = new Queue<BacktestJob>(BACKTEST_QUEUE_NAME, {
 // Register auth plugin (JWT verification on all non-public routes)
 await authPlugin(app, { config: appConfig.auth, db });
 
+// CORS — allow the configured frontend origin to make credentialed requests
+await app.register(cors, {
+  origin: [appConfig.auth.frontendOrigin],
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+});
+
 // Health endpoint (public — no auth required)
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// Auth routes (public — Google OAuth flow)
-await authRoutes(app, appConfig.auth, db, appConfig.plans.defaultPlanId);
+// Auth routes (public — Google OAuth flow + exchange endpoint)
+await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId);
 
 // Register route modules (all require auth)
 await instanceRoutes(app, lifecycleQueue, db, appConfig.plans);
@@ -57,6 +71,7 @@ await portfolioPositionRoutes(app, db);
 await reconciliationRoutes(app, db);
 await backtestRoutes(app, backtestQueue, db, appConfig.plans);
 await liveStatusRoutes(app, db);
+await dashboardRoutes(app, db, appConfig.plans);
 
 const port = appConfig.app.port;
 

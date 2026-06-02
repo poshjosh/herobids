@@ -1,0 +1,77 @@
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { auth } from '../../lib/api-client.js';
+import { useSession } from '../../app/providers/SessionProvider.js';
+
+type CallbackState = 'loading' | 'error';
+
+export function AuthCallbackPage() {
+  const navigate = useNavigate();
+  const { login } = useSession();
+  const [state, setState] = useState<CallbackState>('loading');
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const ran = useRef(false);
+
+  useEffect(() => {
+    // Strict-mode double-invoke guard — exchange code is one-time-use
+    if (ran.current) return;
+    ran.current = true;
+
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+
+    if (!code) {
+      setState('error');
+      setErrorMessage('Missing exchange code in callback URL.');
+      return;
+    }
+
+    auth.exchange(code)
+      .then(({ token }) => login(token))
+      .then(() => navigate('/mission-control', { replace: true }))
+      .catch((err: unknown) => {
+        setState('error');
+        setErrorMessage(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
+      });
+  }, [login, navigate]);
+
+  if (state === 'error') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', maxWidth: '400px', padding: '24px' }}>
+          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-danger)' }}>
+            Sign-in failed
+          </div>
+          <div style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>{errorMessage}</div>
+          <a href="/login" style={{ color: 'var(--color-brand)', textDecoration: 'none' }}>
+            Back to sign-in
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+        <Spinner />
+        <div style={{ color: 'var(--color-text-secondary)' }}>Signing you in…</div>
+      </div>
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <div
+      style={{
+        width: '32px',
+        height: '32px',
+        border: '3px solid var(--color-surface-3)',
+        borderTopColor: 'var(--color-brand)',
+        borderRadius: '50%',
+        animation: 'spin 0.7s linear infinite',
+      }}
+    />
+  );
+}

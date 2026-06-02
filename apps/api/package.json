@@ -10,6 +10,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@herobids/backtesting": "workspace:*",
     "@herobids/db": "workspace:*",
     "@herobids/domain": "workspace:*",

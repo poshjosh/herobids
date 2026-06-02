@@ -5,7 +5,6 @@ import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal } from '@herobids/db';
 import { StrategyConfigSchema, Decimal } from '@herobids/domain';
 import type { PlansConfig } from '@herobids/domain';
-import { eq } from 'drizzle-orm';
 import { parseCsvToFrames } from '@herobids/backtesting';
 import { checkBacktestLimit } from '../plan-guards.js';
 import type { BacktestJob } from '../types.js';

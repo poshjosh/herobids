@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
 import type { AuthConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { users, oauthIdentities, sessions, userPlans } from '@herobids/db';
@@ -56,11 +57,11 @@ interface GoogleUserInfo {
   picture?: string;
 }
 
-export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: Database, defaultPlanId = 'free') {
+export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: Database, redis: Redis, defaultPlanId = 'free') {
   /**
    * GET /auth/google — Redirects to Google OAuth consent screen.
    */
-  app.get('/auth/google', async (request, reply) => {
+  app.get('/auth/google', async (_request, reply) => {
     const redirectUri = `${config.publicBaseUrl}/auth/google/callback`;
     const state = generateOAuthState(config.jwtSecret);
     const params = new URLSearchParams({
@@ -165,7 +166,34 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     // Issue JWT
     const token = await createSessionToken(config, userId, sessionId);
 
-    return reply.send({ token, expiresAt: expiresAt.toISOString() });
+    // Store JWT behind a short-lived one-time exchange code and redirect the
+    // browser to the frontend callback route.  This avoids embedding the JWT in
+    // a JSON response that the browser received without its own origin context.
+    const exchangeCode = crypto.randomUUID();
+    await redis.set(`auth:code:${exchangeCode}`, token, 'EX', config.exchangeCodeTtlSecs);
+
+    const callbackUrl = new URL('/auth/callback', config.frontendOrigin);
+    callbackUrl.searchParams.set('code', exchangeCode);
+    return reply.redirect(callbackUrl.toString());
+  });
+
+  /**
+   * POST /auth/exchange — Exchanges a short-lived one-time code for a JWT.
+   * The code is issued by the OAuth callback redirect and valid for exchangeCodeTtlSecs.
+   * It is deleted on use (one-time).
+   */
+  app.post('/auth/exchange', async (request, reply) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const code = typeof body?.['code'] === 'string' ? body['code'] : undefined;
+    if (!code) {
+      return reply.status(400).send({ error: 'Missing exchange code' });
+    }
+    // Atomic get-and-delete — one-time use
+    const token = await redis.getdel(`auth:code:${code}`);
+    if (!token) {
+      return reply.status(400).send({ error: 'Invalid or expired exchange code' });
+    }
+    return reply.send({ token });
   });
 
   /**
