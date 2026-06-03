@@ -13,10 +13,15 @@ export const decisions = pgTable('decisions', {
   limitPrice: numeric('limit_price'),
   /** Hash of the context (market snapshot) that produced this decision */
   contextHash: text('context_hash'),
+  /** Actor type that produced this decision: agent, bot, user, system */
+  actorType: text('actor_type').notNull().default('system'),
+  /** Stable identifier of the actor that produced this decision */
+  actorId: text('actor_id'),
   /** Freeform metadata from strategy */
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_decisions_trading_instance_id').on(t.tradingInstanceId),
   index('idx_decisions_created_at').on(t.createdAt),
+  index('idx_decisions_actor_type').on(t.actorType),
 ]);

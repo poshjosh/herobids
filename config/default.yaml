@@ -131,4 +131,24 @@ plans:
       maxCredentials: 5
       maxTradingInstances: 5
       maxConcurrentBacktests: 3
+      maxAgents: 5
       liveEnabled: false
+
+# Billing — multi-provider subscription billing (Creem primary, Stripe fallback).
+# Billing is disabled by default; set enabled: true once providers are configured.
+billing:
+  enabled: false
+  primaryProvider: creem                      # 'creem' | 'stripe' | 'mock' (dev: auto-fulfills without payment)
+  # fallbackProvider: stripe                  # optional — uncomment to enable failover
+  checkoutSuccessUrl: http://localhost:5173/billing?session=success
+  checkoutCancelUrl: http://localhost:5173/billing?session=cancelled
+  stripe:
+    secretKey: ""                             # override: STRIPE_SECRET_KEY
+    webhookSecret: ""                         # override: STRIPE_WEBHOOK_SECRET
+    customerPortalConfigurationId: ""         # optional Stripe portal config ID
+    planPrices: {}                            # map of planId → [{stripePriceId, interval, displayLabel, amountCents}]
+  creem:
+    apiKey: ""                               # override: CREEM_API_KEY
+    webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
+    apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
+    planProducts: {}                          # map of planId → [{creemProductId, interval, displayLabel, amountCents}]

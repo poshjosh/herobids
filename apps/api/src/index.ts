@@ -12,6 +12,8 @@ import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
 import { liveStatusRoutes } from './routes/live-status.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { billingRoutes } from './routes/billing.js';
+import { agentRoutes } from './routes/agents.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -72,6 +74,11 @@ await reconciliationRoutes(app, db);
 await backtestRoutes(app, backtestQueue, db, appConfig.plans);
 await liveStatusRoutes(app, db);
 await dashboardRoutes(app, db, appConfig.plans);
+await agentRoutes(app, db, appConfig.plans);
+
+// Billing routes — always registered; the summary endpoint is needed even when
+// billing is disabled so the web UI can render the "not enabled" state.
+await billingRoutes(app, appConfig.billing, appConfig.plans, db);
 
 const port = appConfig.app.port;
 

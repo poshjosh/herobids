@@ -1,15 +1,12 @@
 import type { Strategy, MarketSnapshot, Decision, MarkSource, TradingInstanceId } from '@herobids/domain';
-import { price } from '@herobids/domain';
 import crypto from 'node:crypto';
 import type { Executor, ExecutionResult } from './executor.js';
-import type { ExecutionPlan, PlannerDeps } from './planner.js';
-import { planDecision } from './planner.js';
+import type { ExecutionPlan } from './planner.js';
 import type { Journal } from './journal.js';
-import { decisionEvent, planEvent, fillEvent, orderEvent, riskEvent } from './journal.js';
 import type { RiskLimits } from './risk-gate.js';
-import { checkRisk } from './risk-gate.js';
 import type { PositionState } from './position-tracker.js';
-import { applyFill } from './position-tracker.js';
+import { submitDecisionForExecution } from './decision-intake.js';
+import type { DecisionContext } from './decision-intake.js';
 
 /**
  * Clock abstraction — allows backtesting to inject simulated time.
@@ -185,23 +182,20 @@ export async function runTradingCycle(
     return { decided: false, riskRejected: false, position, executionFailed: false, strategyError: false };
   }
 
-  // Stamp the trading instance ID
+  // Stamp the trading instance ID and context hash
   const contextHash = decision.contextHash ?? computeContextHash(snapshot, position, deps.strategyConfig);
   const stampedDecision: Decision = {
     ...decision,
     tradingInstanceId: deps.tradingInstanceId as TradingInstanceId,
     contextHash,
+    actorType: decision.actorType ?? 'system',
   };
 
-  // Persist decision
-  await deps.persistence.persistDecision(stampedDecision);
+  // Resolve reference mark for context
+  const { referenceMark, referenceMarkSource, markResult } = await resolveReferenceMark(snapshot, deps.symbol, deps.markSource);
 
-  const { markResult, referenceMark, referenceMarkSource } = await resolveReferenceMark(snapshot, deps.symbol, deps.markSource);
-
-  await deps.persistence.persistDecisionContext({
-    decisionId: stampedDecision.id,
-    tradingInstanceId: deps.tradingInstanceId,
-    contextHash,
+  // Build decision context
+  const decisionContext: DecisionContext = {
     snapshot: {
       symbol: snapshot.symbol,
       price: snapshot.price.toString(),
@@ -221,148 +215,33 @@ export async function runTradingCycle(
       source: referenceMarkSource,
     },
     strategyParams: deps.strategyConfig,
-  });
+  };
 
-  // Journal the decision
-  await deps.journal.append(decisionEvent(stampedDecision));
-
-  // 2. Plan the execution
-  const plannerDeps: PlannerDeps = {
+  // 2. Submit decision through the shared intake pipeline
+  const intakeResult = await submitDecisionForExecution(stampedDecision, decisionContext, position, {
+    tradingInstanceId: deps.tradingInstanceId,
     venue: deps.venue,
     symbol: deps.symbol,
+    venueAccountId: deps.venueAccountId,
     venueType: deps.venueType,
     swapAssets: deps.swapAssets,
-    currentPosition: position.side === 'flat' ? null : {
-      symbol: position.symbol,
-      side: position.side,
-      size: position.size,
-      entryPrice: position.entryPrice,
-    },
-  };
-  const plan: ExecutionPlan = {
-    ...planDecision(stampedDecision, plannerDeps),
-    id: deps.idGen.planId(),
-    createdAt: deps.clock.now(),
-  };
-
-  if (plan.orders.length === 0) {
-    return { decided: true, decision: stampedDecision, riskRejected: false, position, executionFailed: false, strategyError: false };
-  }
-
-  // Write-ahead: persist execution plan BEFORE execution
-  await deps.persistence.persistPlan({
-    id: plan.id,
-    decisionId: stampedDecision.id ?? plan.decisionId,
-    tradingInstanceId: deps.tradingInstanceId,
-    venue: deps.venue,
-    symbol: deps.symbol,
-    action: plan.action,
-    plannedOrders: plan.orders.map((o) => ({
-      side: o.side,
-      type: o.type,
-      quantity: o.quantity.toString(),
-      price: o.price?.toString(),
-    })),
+    executor: deps.executor,
+    journal: deps.journal,
+    riskLimits: deps.riskLimits,
+    markSource: deps.markSource,
+    persistence: deps.persistence,
+    idGen: deps.idGen,
+    clock: deps.clock,
   });
-
-  await deps.journal.append(planEvent(plan, 'plan.created'));
-
-  // 3. Risk check
-  const riskResult = checkRisk(plan, deps.riskLimits, {
-    currentPosition: position.side === 'flat' ? null : position,
-    openPositionCount: position.side === 'flat' ? 0 : 1,
-    currentDrawdown: price('0'),
-    referenceMark,
-  });
-
-  if (!riskResult.ok) {
-    await deps.persistence.markPlanFailed(plan.id);
-    await deps.journal.append(riskEvent(deps.tradingInstanceId, riskResult.error));
-    return { decided: true, decision: stampedDecision, plan, riskRejected: true, position, executionFailed: false, strategyError: false };
-  }
-
-  // 4. Execute
-  await deps.persistence.markPlanExecuting(plan.id);
-  const execResult = await deps.executor.execute(plan, snapshot.price);
-  if (!execResult.ok) {
-    await deps.persistence.markPlanFailed(plan.id);
-    await deps.journal.append(planEvent(plan, 'plan.failed'));
-    return { decided: true, decision: stampedDecision, plan, riskRejected: false, position, executionFailed: true, strategyError: false };
-  }
-
-  // 5. Record fills + update position
-  let updatedPosition = position;
-  for (const fill of execResult.data.fills) {
-    updatedPosition = applyFill(updatedPosition, fill);
-    await deps.journal.append(fillEvent(fill));
-    await deps.persistence.persistFill({
-      orderId: fill.orderId as string,
-      tradingInstanceId: deps.tradingInstanceId,
-      venue: deps.venue,
-      symbol: deps.symbol,
-      side: fill.side,
-      quantity: fill.quantity.toString(),
-      price: fill.price.toString(),
-      fee: fill.fee?.toString(),
-      feeCurrency: fill.feeCurrency,
-      filledAt: new Date(fill.filledAt),
-    });
-  }
-
-  // Persist position state
-  await deps.persistence.persistPosition({
-    tradingInstanceId: deps.tradingInstanceId,
-    venueAccountId: deps.venueAccountId,
-    venue: deps.venue,
-    symbol: deps.symbol,
-    side: updatedPosition.side,
-    size: updatedPosition.size.toString(),
-    entryPrice: updatedPosition.entryPrice.toString(),
-    realizedPnl: updatedPosition.realizedPnl.toString(),
-    markSource: markResult?.ok ? markResult.data.source : undefined,
-  });
-
-  // Mark plan completed immediately (paper/shadow fill synchronously)
-  if (execResult.data.plan.status === 'completed') {
-    await deps.persistence.markPlanCompleted(plan.id);
-    await deps.journal.append(planEvent(execResult.data.plan, 'plan.completed'));
-  }
-
-  // Persist orders (before marking failed — ensures rejection detail survives partial failures)
-  for (const order of execResult.data.orders) {
-    await deps.journal.append(orderEvent(order));
-    await deps.persistence.persistOrder({
-      id: order.id as string,
-      tradingInstanceId: deps.tradingInstanceId,
-      executionPlanId: order.executionPlanId,
-      venueRefId: order.venueRefId ?? `local-${order.id}`,
-      clientOrderId: order.clientOrderId,
-      venue: order.venue,
-      symbol: order.symbol,
-      side: order.side,
-      type: order.type,
-      quantity: order.quantity.toString(),
-      price: order.price?.toString(),
-      status: order.status,
-      filledQuantity: order.filledQuantity?.toString(),
-      avgFillPrice: order.avgFillPrice?.toString(),
-    });
-  }
-
-  // Mark plan failed AFTER order detail is persisted
-  if (execResult.data.plan.status === 'failed') {
-    await deps.persistence.markPlanFailed(plan.id);
-    await deps.journal.append(planEvent(execResult.data.plan, 'plan.failed'));
-  }
 
   return {
     decided: true,
-    decision: stampedDecision,
-    plan: execResult.data.plan,
-    riskRejected: false,
-    executionResult: execResult.data,
-    position: updatedPosition,
-    executionFailed: false,
+    decision: intakeResult.decision,
+    plan: intakeResult.plan,
+    riskRejected: intakeResult.riskRejected,
+    executionResult: intakeResult.executionResult,
+    position: intakeResult.position,
+    executionFailed: intakeResult.executionFailed,
     strategyError: false,
   };
 }

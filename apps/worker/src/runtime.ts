@@ -23,6 +23,8 @@ export interface WorkerRuntimeConfig {
   reclaimIntervalMs?: number;
   /** Called when an instance fails to start (factory or actor.start threw). Use to persist status. */
   onStartFailed?: (tradingInstanceId: string, error: Error) => Promise<void>;
+  /** Called after an instance actor is stopped (both graceful stop and shutdown). Use to clean up external state. */
+  onStopped?: (tradingInstanceId: string) => void | Promise<void>;
 }
 
 /** Persisted instance record needed for rehydration */
@@ -66,6 +68,7 @@ export class WorkerRuntime {
   private readonly pendingStops = new Set<string>();
 
   private readonly onStartFailed?: (tradingInstanceId: string, error: Error) => Promise<void>;
+  private readonly onStopped?: (tradingInstanceId: string) => void;
 
   constructor(
     config: WorkerRuntimeConfig,
@@ -77,6 +80,7 @@ export class WorkerRuntime {
     this.lease = lease;
     this.reclaimIntervalMs = config.reclaimIntervalMs ?? 15_000;
     this.onStartFailed = config.onStartFailed;
+    this.onStopped = config.onStopped;
 
     this.queue = new Queue(QUEUE_NAME, { connection: config.redis });
 
@@ -298,6 +302,7 @@ export class WorkerRuntime {
     }
     await actor.stop();
     this.actors.delete(id);
+    await this.onStopped?.(id);
 
     // Release distributed lease
     if (this.lease) {

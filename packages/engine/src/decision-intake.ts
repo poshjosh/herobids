@@ -1,0 +1,266 @@
+import crypto from 'node:crypto';
+import type { Decision, MarkSource } from '@herobids/domain';
+import { price } from '@herobids/domain';
+import type { Executor, ExecutionResult } from './executor.js';
+import type { ExecutionPlan, PlannerDeps } from './planner.js';
+import { planDecision } from './planner.js';
+import type { Journal } from './journal.js';
+import { decisionEvent, planEvent, fillEvent, orderEvent, riskEvent } from './journal.js';
+import type { RiskLimits } from './risk-gate.js';
+import { checkRisk } from './risk-gate.js';
+import type { PositionState } from './position-tracker.js';
+import { applyFill } from './position-tracker.js';
+import type {
+  Clock,
+  TradingCyclePersistence,
+  PersistFillParams,
+  PersistOrderParams,
+  PersistPositionParams,
+} from './trading-cycle.js';
+
+/**
+ * Dependencies for decision intake — the shared execution pipeline
+ * that both strategies and agents funnel through.
+ */
+export interface DecisionIntakeDeps {
+  tradingInstanceId: string;
+  venue: string;
+  symbol: string;
+  venueAccountId: string;
+  venueType?: 'orderbook' | 'swap';
+  swapAssets?: { baseAsset: string; quoteAsset: string };
+  executor: Executor;
+  journal: Journal;
+  riskLimits: RiskLimits;
+  markSource?: MarkSource;
+  persistence: TradingCyclePersistence;
+  idGen: { planId(): string };
+  clock: Clock;
+}
+
+/**
+ * Context snapshot for the decision — the market state at decision time.
+ */
+export interface DecisionContext {
+  snapshot: {
+    symbol: string;
+    price: string;
+    timestamp: string;
+    data?: Record<string, unknown>;
+  };
+  position: {
+    side: string;
+    size: string;
+    entryPrice: string;
+    realizedPnl: string;
+  } | null;
+  referenceMark: {
+    price: string;
+    source: string;
+  };
+  strategyParams: Record<string, unknown>;
+}
+
+/**
+ * Result of submitting a decision for execution.
+ */
+export interface DecisionIntakeResult {
+  decision: Decision;
+  plan?: ExecutionPlan;
+  riskRejected: boolean;
+  executionResult?: ExecutionResult;
+  position: PositionState;
+  executionFailed: boolean;
+}
+
+/**
+ * Submit a validated decision for execution through the engine-owned pipeline.
+ *
+ * This is the single reusable path for both strategy-originated and agent-originated decisions.
+ * It performs: persist decision → persist context → plan → risk check → execute → journal.
+ *
+ * The caller is responsible for:
+ * - validating the decision (schema, authorization, staleness)
+ * - stamping `tradingInstanceId` and `contextHash`
+ * - providing the decision context snapshot
+ */
+export async function submitDecisionForExecution(
+  decision: Decision,
+  context: DecisionContext,
+  position: PositionState,
+  deps: DecisionIntakeDeps,
+): Promise<DecisionIntakeResult> {
+  const contextHash = normalizeContextHash(decision.contextHash) ?? computeDecisionContextHash(context);
+  const resolvedDecision: Decision = decision.contextHash === contextHash
+    ? decision
+    : { ...decision, contextHash };
+
+  // 1. Persist decision
+  await deps.persistence.persistDecision(resolvedDecision);
+
+  // 2. Persist decision context
+  await deps.persistence.persistDecisionContext({
+    decisionId: resolvedDecision.id,
+    tradingInstanceId: deps.tradingInstanceId,
+    contextHash,
+    snapshot: context.snapshot,
+    position: context.position,
+    referenceMark: context.referenceMark,
+    strategyParams: context.strategyParams,
+  });
+
+  // 3. Journal the decision
+  await deps.journal.append(decisionEvent(resolvedDecision));
+
+  // 4. Plan the execution
+  const plannerDeps: PlannerDeps = {
+    venue: deps.venue,
+    symbol: deps.symbol,
+    venueType: deps.venueType,
+    swapAssets: deps.swapAssets,
+    currentPosition: position.side === 'flat' ? null : {
+      symbol: position.symbol,
+      side: position.side,
+      size: position.size,
+      entryPrice: position.entryPrice,
+    },
+  };
+  const plan: ExecutionPlan = {
+    ...planDecision(resolvedDecision, plannerDeps),
+    id: deps.idGen.planId(),
+    createdAt: deps.clock.now(),
+  };
+
+  if (plan.orders.length === 0) {
+    return { decision: resolvedDecision, riskRejected: false, position, executionFailed: false };
+  }
+
+  // 5. Write-ahead: persist execution plan BEFORE execution
+  await deps.persistence.persistPlan({
+    id: plan.id,
+    decisionId: resolvedDecision.id,
+    tradingInstanceId: deps.tradingInstanceId,
+    venue: deps.venue,
+    symbol: deps.symbol,
+    action: plan.action,
+    plannedOrders: plan.orders.map((o) => ({
+      side: o.side,
+      type: o.type,
+      quantity: o.quantity.toString(),
+      price: o.price?.toString(),
+    })),
+  });
+
+  await deps.journal.append(planEvent(plan, 'plan.created'));
+
+  // 6. Risk check
+  const referenceMark = price(context.referenceMark.price);
+  const riskResult = checkRisk(plan, deps.riskLimits, {
+    currentPosition: position.side === 'flat' ? null : position,
+    openPositionCount: position.side === 'flat' ? 0 : 1,
+    currentDrawdown: price('0'),
+    referenceMark,
+  });
+
+  if (!riskResult.ok) {
+    await deps.persistence.markPlanFailed(plan.id);
+    await deps.journal.append(riskEvent(deps.tradingInstanceId, riskResult.error));
+    return { decision: resolvedDecision, plan, riskRejected: true, position, executionFailed: false };
+  }
+
+  // 7. Execute
+  await deps.persistence.markPlanExecuting(plan.id);
+  const snapshotPrice = price(context.snapshot.price);
+  const execResult = await deps.executor.execute(plan, snapshotPrice);
+  if (!execResult.ok) {
+    await deps.persistence.markPlanFailed(plan.id);
+    await deps.journal.append(planEvent(plan, 'plan.failed'));
+    return { decision: resolvedDecision, plan, riskRejected: false, position, executionFailed: true };
+  }
+
+  // 8. Record fills + update position
+  let updatedPosition = position;
+  for (const fill of execResult.data.fills) {
+    updatedPosition = applyFill(updatedPosition, fill);
+    await deps.journal.append(fillEvent(fill));
+    await deps.persistence.persistFill({
+      orderId: fill.orderId as string,
+      tradingInstanceId: deps.tradingInstanceId,
+      venue: deps.venue,
+      symbol: deps.symbol,
+      side: fill.side,
+      quantity: fill.quantity.toString(),
+      price: fill.price.toString(),
+      fee: fill.fee?.toString(),
+      feeCurrency: fill.feeCurrency,
+      filledAt: new Date(fill.filledAt),
+    });
+  }
+
+  // Persist position state
+  await deps.persistence.persistPosition({
+    tradingInstanceId: deps.tradingInstanceId,
+    venueAccountId: deps.venueAccountId,
+    venue: deps.venue,
+    symbol: deps.symbol,
+    side: updatedPosition.side,
+    size: updatedPosition.size.toString(),
+    entryPrice: updatedPosition.entryPrice.toString(),
+    realizedPnl: updatedPosition.realizedPnl.toString(),
+  });
+
+  // Mark plan completed/failed
+  if (execResult.data.plan.status === 'completed') {
+    await deps.persistence.markPlanCompleted(plan.id);
+    await deps.journal.append(planEvent(execResult.data.plan, 'plan.completed'));
+  }
+
+  // Persist orders
+  for (const order of execResult.data.orders) {
+    await deps.journal.append(orderEvent(order));
+    await deps.persistence.persistOrder({
+      id: order.id as string,
+      tradingInstanceId: deps.tradingInstanceId,
+      executionPlanId: order.executionPlanId,
+      venueRefId: order.venueRefId ?? `local-${order.id}`,
+      clientOrderId: order.clientOrderId,
+      venue: order.venue,
+      symbol: order.symbol,
+      side: order.side,
+      type: order.type,
+      quantity: order.quantity.toString(),
+      price: order.price?.toString(),
+      status: order.status,
+      filledQuantity: order.filledQuantity?.toString(),
+      avgFillPrice: order.avgFillPrice?.toString(),
+    });
+  }
+
+  // Mark plan failed AFTER order detail is persisted
+  if (execResult.data.plan.status === 'failed') {
+    await deps.persistence.markPlanFailed(plan.id);
+    await deps.journal.append(planEvent(execResult.data.plan, 'plan.failed'));
+  }
+
+  return {
+    decision: resolvedDecision,
+    plan: execResult.data.plan,
+    riskRejected: false,
+    executionResult: execResult.data,
+    position: updatedPosition,
+    executionFailed: false,
+  };
+}
+
+function normalizeContextHash(contextHash: string | undefined): string | undefined {
+  const trimmed = contextHash?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function computeDecisionContextHash(context: DecisionContext): string {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(context))
+    .digest('hex')
+    .slice(0, 16);
+}

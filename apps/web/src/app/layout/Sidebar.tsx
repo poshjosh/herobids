@@ -9,10 +9,11 @@ const NAV_ITEMS = [
 ];
 
 const MANAGE_ITEMS = [
-  { path: '/instances', label: 'Agents', icon: '⊡' },
+  { path: '/agents', label: 'Agents', icon: '⊡' },
   { path: '/portfolios', label: 'Portfolios', icon: '⊞' },
   { path: '/venue-accounts', label: 'Venues', icon: '⬡' },
   { path: '/credentials', label: 'Credentials', icon: '⊛' },
+  { path: '/billing', label: 'Billing', icon: '⊘' },
 ];
 
 export function Sidebar() {

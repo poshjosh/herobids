@@ -1,6 +1,6 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { tradingInstances, venueAccounts, credentials, portfolios, backtestRuns } from '@herobids/db';
+import { tradingInstances, venueAccounts, credentials, portfolios, backtestRuns, agents } from '@herobids/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -11,6 +11,7 @@ interface PlanLimits {
   maxCredentials: number;
   maxTradingInstances: number;
   maxConcurrentBacktests: number;
+  maxAgents: number;
   liveEnabled: boolean;
 }
 
@@ -19,7 +20,7 @@ function resolvePlanLimits(config: PlansConfig, planId: string): PlanLimits {
   const plan = config.plans[planId] ?? config.plans[config.defaultPlanId];
   if (!plan) {
     // Absolute fallback — should never happen if config is valid
-    return { maxPortfolios: 1, maxVenueAccounts: 1, maxCredentials: 1, maxTradingInstances: 1, maxConcurrentBacktests: 1, liveEnabled: false };
+    return { maxPortfolios: 1, maxVenueAccounts: 1, maxCredentials: 1, maxTradingInstances: 1, maxConcurrentBacktests: 1, maxAgents: 0, liveEnabled: false };
   }
   return plan;
 }
@@ -85,6 +86,16 @@ export async function checkBacktestLimit(db: Database, config: PlansConfig, user
     .where(and(eq(backtestRuns.userId, userId), inArray(backtestRuns.status, ['pending', 'running'])));
   if (rows.length >= limits.maxConcurrentBacktests) {
     return err({ code: 'plan.limit_exceeded', message: `Concurrent backtest limit reached (${limits.maxConcurrentBacktests})`, limit: limits.maxConcurrentBacktests, current: rows.length });
+  }
+  return ok(undefined);
+}
+
+/** Check if user can create a new agent */
+export async function checkAgentLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+  const limits = resolvePlanLimits(config, planId);
+  const rows = await db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId));
+  if (rows.length >= limits.maxAgents) {
+    return err({ code: 'plan.limit_exceeded', message: `Agent limit reached (${limits.maxAgents})`, limit: limits.maxAgents, current: rows.length });
   }
   return ok(undefined);
 }

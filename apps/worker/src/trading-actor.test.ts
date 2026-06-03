@@ -215,6 +215,44 @@ describe('TradingActor lifecycle', () => {
       await actor.stop();
     });
 
+    it('preserves actor attribution when persisting decisions', async () => {
+      const decisionRepo = {
+        insertDecision: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const deps = makeBaseDeps({
+        executionMode: 'paper',
+        decisionRepo: decisionRepo as any,
+        strategy: {
+          evaluate: vi.fn().mockResolvedValueOnce(ok({
+            id: 'd-agent',
+            tradingInstanceId: 'inst-agent' as TradingInstanceId,
+            instrumentId: 'BTC/USD:USD',
+            intent: 'go_long',
+            targetSize: quantity('1'),
+            timestamp: new Date().toISOString(),
+            actorType: 'agent',
+            actorId: 'agent-123',
+          })).mockResolvedValue(ok(null)),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-agent', {}, deps, 60_000);
+      await actor.start();
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(decisionRepo.insertDecision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'd-agent',
+          actorType: 'agent',
+          actorId: 'agent-123',
+        }),
+      );
+
+      await actor.stop();
+    });
+
     it('persists a replayable decision context during the live cycle', async () => {
       const backtestingRepo = {
         insertDecisionContext: vi.fn().mockResolvedValue('ctx-1'),

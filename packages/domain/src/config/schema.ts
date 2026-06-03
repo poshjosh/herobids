@@ -127,6 +127,7 @@ export const PlansConfigSchema = z.object({
     maxCredentials: z.number().min(1).default(5),
     maxTradingInstances: z.number().min(1).default(5),
     maxConcurrentBacktests: z.number().min(1).default(3),
+    maxAgents: z.number().min(0).default(5),
     liveEnabled: z.boolean().default(false),
   })).default({
     free: {
@@ -135,9 +136,74 @@ export const PlansConfigSchema = z.object({
       maxCredentials: 5,
       maxTradingInstances: 5,
       maxConcurrentBacktests: 3,
+      maxAgents: 5,
       liveEnabled: false,
     },
   }),
+});
+
+export const BillingProviderSchema = z.enum(['creem', 'stripe', 'mock']);
+export type BillingProvider = z.infer<typeof BillingProviderSchema>;
+
+export const BillingPlanPriceSchema = z.object({
+  /** Stripe price ID for this plan+interval */
+  stripePriceId: z.string().min(1),
+  /** Billing interval */
+  interval: z.enum(['month', 'year']),
+  /** Display label shown in UI */
+  displayLabel: z.string().min(1),
+  /** Amount in cents for display (informational — Stripe is authoritative) */
+  amountCents: z.number().int().min(0).optional(),
+});
+
+export const BillingPlanProductSchema = z.object({
+  /** Creem product ID for this plan */
+  creemProductId: z.string().min(1),
+  /** Billing interval */
+  interval: z.enum(['month', 'year']),
+  /** Display label shown in UI */
+  displayLabel: z.string().min(1),
+  /** Amount in cents for display (informational — Creem is authoritative) */
+  amountCents: z.number().int().min(0).optional(),
+});
+
+export const StripeConfigSchema = z.object({
+  /** Stripe secret key — override: STRIPE_SECRET_KEY */
+  secretKey: z.string().default(''),
+  /** Stripe webhook signing secret — override: STRIPE_WEBHOOK_SECRET */
+  webhookSecret: z.string().default(''),
+  /** Stripe Customer Portal configuration ID (optional) */
+  customerPortalConfigurationId: z.string().optional(),
+  /** Map of internal plan IDs to their Stripe price entries */
+  planPrices: z.record(z.string(), z.array(BillingPlanPriceSchema).min(1)).default({}),
+});
+
+export const CreemConfigSchema = z.object({
+  /** Creem API key — override: CREEM_API_KEY */
+  apiKey: z.string().default(''),
+  /** Creem webhook signing secret — override: CREEM_WEBHOOK_SECRET */
+  webhookSecret: z.string().default(''),
+  /** Creem API base URL (auto-detected from key prefix if omitted) */
+  apiBaseUrl: z.string().url().default('https://api.creem.io/v1'),
+  /** Map of internal plan IDs to their Creem product entries */
+  planProducts: z.record(z.string(), z.array(BillingPlanProductSchema).min(1)).default({}),
+});
+
+export const BillingConfigSchema = z.object({
+  /** Master switch — set true once a provider is configured */
+  enabled: z.boolean().default(false),
+  /** Primary payment provider */
+  primaryProvider: BillingProviderSchema.default('creem'),
+  /** Fallback payment provider (optional) */
+  fallbackProvider: BillingProviderSchema.optional(),
+  /** URL the browser lands on after successful checkout */
+  checkoutSuccessUrl: z.string().url().default('http://localhost:5173/billing?session=success'),
+  /** URL the browser lands on if checkout is cancelled */
+  checkoutCancelUrl: z.string().url().default('http://localhost:5173/billing?session=cancelled'),
+  /** Stripe configuration */
+  stripe: StripeConfigSchema.default({}),
+  /** Creem configuration */
+  creem: CreemConfigSchema.default({}),
 });
 
 export const LiveRolloutConfigSchema = z.object({
@@ -192,6 +258,7 @@ export const AppConfigSchema = z.object({
   alerts: AlertsConfigSchema.default({}),
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
+  billing: BillingConfigSchema.default({}),
 }).superRefine((data, ctx) => {
   if (!(data.plans.defaultPlanId in data.plans.plans)) {
     ctx.addIssue({
@@ -199,6 +266,109 @@ export const AppConfigSchema = z.object({
       message: `plans.defaultPlanId '${data.plans.defaultPlanId}' does not exist in the plans map — check config`,
       path: ['plans', 'defaultPlanId'],
     });
+  }
+  // If billing is enabled, validate provider credentials and plan mappings
+  if (data.billing.enabled) {
+    const { primaryProvider, fallbackProvider, stripe, creem } = data.billing;
+
+    // Validate primary provider credentials
+    if (primaryProvider === 'stripe' || fallbackProvider === 'stripe') {
+      if (!stripe.secretKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'billing.stripe.secretKey is required when Stripe is a configured provider',
+          path: ['billing', 'stripe', 'secretKey'],
+        });
+      }
+      if (!stripe.webhookSecret) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'billing.stripe.webhookSecret is required when Stripe is a configured provider',
+          path: ['billing', 'stripe', 'webhookSecret'],
+        });
+      }
+    }
+
+    if (primaryProvider === 'creem' || fallbackProvider === 'creem') {
+      if (!creem.apiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'billing.creem.apiKey is required when Creem is a configured provider',
+          path: ['billing', 'creem', 'apiKey'],
+        });
+      }
+      if (!creem.webhookSecret) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'billing.creem.webhookSecret is required when Creem is a configured provider',
+          path: ['billing', 'creem', 'webhookSecret'],
+        });
+      }
+    }
+
+    // Validate that primaryProvider !== fallbackProvider
+    if (fallbackProvider && primaryProvider === fallbackProvider) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'billing.fallbackProvider must differ from billing.primaryProvider',
+        path: ['billing', 'fallbackProvider'],
+      });
+    }
+
+    // Every plan in stripe.planPrices must exist in plans.plans
+    for (const planId of Object.keys(stripe.planPrices)) {
+      if (!(planId in data.plans.plans)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `billing.stripe.planPrices references unknown plan '${planId}' — must exist in plans.plans`,
+          path: ['billing', 'stripe', 'planPrices', planId],
+        });
+      }
+    }
+
+    // Every plan in creem.planProducts must exist in plans.plans
+    for (const planId of Object.keys(creem.planProducts)) {
+      if (!(planId in data.plans.plans)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `billing.creem.planProducts references unknown plan '${planId}' — must exist in plans.plans`,
+          path: ['billing', 'creem', 'planProducts', planId],
+        });
+      }
+    }
+
+    // When both primary and fallback providers are real (non-mock), validate that
+    // every plan/interval in the primary mapping also exists in the fallback.
+    // Without this, a failover during checkout silently lands on the first
+    // configured interval instead of the one the user selected.
+    if (fallbackProvider && fallbackProvider !== 'mock' && primaryProvider !== 'mock') {
+      const primaryIntervals: Record<string, string[]> = {};
+      if (primaryProvider === 'stripe') {
+        for (const [planId, prices] of Object.entries(stripe.planPrices)) {
+          primaryIntervals[planId] = prices.map((p) => p.interval);
+        }
+      } else if (primaryProvider === 'creem') {
+        for (const [planId, products] of Object.entries(creem.planProducts)) {
+          primaryIntervals[planId] = products.map((p) => p.interval);
+        }
+      }
+
+      for (const [planId, intervals] of Object.entries(primaryIntervals)) {
+        for (const interval of intervals) {
+          const fallbackHas =
+            fallbackProvider === 'stripe'
+              ? (stripe.planPrices[planId]?.some((p) => p.interval === interval) ?? false)
+              : (creem.planProducts[planId]?.some((p) => p.interval === interval) ?? false);
+          if (!fallbackHas) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `billing.${fallbackProvider} fallback is missing a '${interval}' entry for plan '${planId}' — failover would silently use a different interval`,
+              path: ['billing', fallbackProvider === 'stripe' ? 'stripe' : 'creem', fallbackProvider === 'stripe' ? 'planPrices' : 'planProducts'],
+            });
+          }
+        }
+      }
+    }
   }
 });
 
@@ -210,6 +380,9 @@ export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;
+export type BillingConfig = z.infer<typeof BillingConfigSchema>;
+export type StripeConfig = z.infer<typeof StripeConfigSchema>;
+export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---

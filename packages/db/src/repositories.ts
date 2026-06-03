@@ -461,6 +461,8 @@ export interface InsertDecision {
   targetSize: string;
   limitPrice?: string;
   contextHash?: string;
+  actorType?: string;
+  actorId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -479,6 +481,8 @@ export class DecisionRepository {
       targetSize: decision.targetSize,
       limitPrice: decision.limitPrice ?? null,
       contextHash: decision.contextHash ?? null,
+      actorType: decision.actorType ?? 'system',
+      actorId: decision.actorId ?? null,
       metadata: decision.metadata ?? null,
     });
   }

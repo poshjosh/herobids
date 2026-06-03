@@ -31,6 +31,7 @@ import type {
   StreamPoolHandle,
   Diff,
   TradingCyclePersistence,
+  DecisionIntakeDeps,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -116,6 +117,8 @@ export class TradingActor implements InstanceActor {
   private running = false;
   private paused = false;
   private stopping = false;
+  /** Most recent market snapshot — used to provide context to agent decision handler */
+  private lastSnapshot: MarketSnapshot | null = null;
   /** Serializes async position mutations to prevent stale-read overwrites from concurrent fills */
   private positionMutex: Promise<void> = Promise.resolve();
   /** Cached mark result to avoid redundant oracle calls during fill bursts */
@@ -807,6 +810,8 @@ export class TradingActor implements InstanceActor {
       }
       if (!snapshot) return;
 
+      this.lastSnapshot = snapshot;
+
       if (this.deps.recordMarketSnapshot) {
         try {
           await this.deps.recordMarketSnapshot(snapshot);
@@ -919,6 +924,8 @@ export class TradingActor implements InstanceActor {
           targetSize: decision.targetSize.toString(),
           limitPrice: decision.limitPrice?.toString(),
           contextHash: decision.contextHash,
+            actorType: decision.actorType,
+            actorId: decision.actorId,
           metadata: decision.metadata,
         });
       },
@@ -985,6 +992,40 @@ export class TradingActor implements InstanceActor {
   /** Expose current position for read queries */
   get currentPosition(): PositionState {
     return this.position;
+  }
+
+  /** Whether the actor is actively running */
+  get isRunning(): boolean {
+    return this.running;
+  }
+
+  /** Execution mode for this actor */
+  get executionMode(): 'paper' | 'shadow' | 'live' {
+    return this.deps.executionMode ?? 'paper';
+  }
+
+  /** Most recent market snapshot (null if no tick has completed yet) */
+  getLastSnapshot(): MarketSnapshot | null {
+    return this.lastSnapshot;
+  }
+
+  /** Build decision intake deps for the agent decision handler */
+  getIntakeDeps(): DecisionIntakeDeps {
+    return {
+      tradingInstanceId: this.tradingInstanceId,
+      venue: this.deps.venue,
+      symbol: this.deps.symbol,
+      venueAccountId: this.deps.venueAccountId,
+      venueType: this.deps.venueType,
+      swapAssets: this.deps.swapAssets,
+      executor: this.executor,
+      journal: this.deps.journal,
+      riskLimits: this.deps.riskLimits,
+      markSource: this.deps.markSource,
+      persistence: this.buildCyclePersistence(),
+      idGen: this.deps.idGen,
+      clock: realClock,
+    };
   }
 
   /**

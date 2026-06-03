@@ -2,6 +2,8 @@
 
 Implement Step 6 of [Phase 5 Outline](../../../../features/2026/05/initial/019-phase-5-outline.md): agents and autonomous tool use.
 
+Follow-on execution detail for the current in-repo agent implementation lives in [005-agent-runtime-integrity-patch-plan.md](./005-agent-runtime-integrity-patch-plan.md). That document is the concrete patch plan for the current lifecycle, context-hash, and audit-provenance gaps.
+
 ## Canonical Inputs
 
 Use these as the source of truth for Step 6:

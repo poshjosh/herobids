@@ -8,11 +8,12 @@ import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
+import type { DecisionContext } from '@herobids/engine';
 import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '@herobids/domain';
 import crypto from 'node:crypto';
@@ -20,6 +21,16 @@ import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { AlertDispatcher } from './alerting/index.js';
+import {
+  AgentMessageBroker,
+  AgentDecisionHandler,
+  AgentSessionManager,
+  AgentStreamConsumer,
+  AgentHealthMonitor,
+  AgentReconnectHandler,
+  InstanceEventPublisher,
+} from './agents/index.js';
+import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -60,6 +71,75 @@ const reconciliationRepo = new ReconciliationEventRepository(db);
 const decisionRepo = new DecisionRepository(db);
 const backtestingRepo = new BacktestingRepository(db);
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
+
+// Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
+// actor factory can subscribe streams and register actors on creation.
+const actorRegistry = new Map<string, TradingActor>();
+const agentRepo = new AgentRepository(db);
+const eventPublisher = new InstanceEventPublisher(redisClient);
+
+const intakeResolver: DecisionIntakeResolver = {
+  getIntakeDeps: (instanceId: string) => {
+    const actor = actorRegistry.get(instanceId);
+    return actor?.isRunning ? actor.getIntakeDeps() : undefined;
+  },
+  getDecisionContext: (instanceId: string): DecisionContext | undefined => {
+    const actor = actorRegistry.get(instanceId);
+    if (!actor?.isRunning) return undefined;
+    const snapshot = actor.getLastSnapshot();
+    if (!snapshot) return undefined;
+    const pos = actor.currentPosition;
+    return {
+      snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp },
+      position: pos.side === 'flat' ? null : {
+        side: pos.side,
+        size: pos.size.toString(),
+        entryPrice: pos.entryPrice.toString(),
+        realizedPnl: pos.realizedPnl.toString(),
+      },
+      referenceMark: { price: snapshot.price.toString(), source: 'last_price' },
+      strategyParams: {},
+    };
+  },
+  getPosition: (instanceId: string) => {
+    const actor = actorRegistry.get(instanceId);
+    return actor?.isRunning ? actor.currentPosition : undefined;
+  },
+};
+
+const agentDecisionHandler = new AgentDecisionHandler(agentRepo, intakeResolver, eventPublisher);
+
+const snapshotResolver: ContextSnapshotResolver = {
+  resolveSnapshot: (instanceId: string) => {
+    const actor = actorRegistry.get(instanceId);
+    if (!actor?.isRunning) return undefined;
+    const snapshot = actor.getLastSnapshot();
+    if (!snapshot) return undefined;
+    const pos = actor.currentPosition;
+    return {
+      snapshotId: crypto.randomUUID(),
+      symbol: snapshot.symbol,
+      price: snapshot.price.toString(),
+      timestamp: snapshot.timestamp,
+      position: pos.side === 'flat' ? null : {
+        side: pos.side,
+        size: pos.size.toString(),
+        entryPrice: pos.entryPrice.toString(),
+        realizedPnl: pos.realizedPnl.toString(),
+      },
+      referenceMark: { price: snapshot.price.toString(), source: 'last_price' },
+      strategyParams: {},
+      executionMode: actor.executionMode,
+      guardrails: {},
+    };
+  },
+};
+
+const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, eventPublisher, undefined, snapshotResolver);
+const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, undefined, agentReconnectHandler);
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher);
+const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
+const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager);
 
 // Strategy factory keyed by config.strategy.type
 function createStrategy(strategyConfig: StrategyConfig): Strategy {
@@ -130,6 +210,14 @@ const runtime = new WorkerRuntime(
       await db.update(tradingInstances)
         .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
         .where(eq(tradingInstances.id, tradingInstanceId));
+    },
+    onStopped: async (instanceId: string) => {
+      actorRegistry.delete(instanceId);
+      agentStreamConsumer.unsubscribe(instanceId);
+      const activeSessions = await agentRepo.getActiveSessionsByInstance(instanceId);
+      for (const session of activeSessions) {
+        await sessionManager.stopSession(session.id);
+      }
     },
   },
   async (tradingInstanceId, rawConfig) => {
@@ -492,8 +580,8 @@ const runtime = new WorkerRuntime(
       recordReferenceMark,
       shadowPollIntervalMs: config.shadowPollIntervalMs,
       credentialId: resolvedCredentialId,
-      onCrashed: async (instanceId: string) => {
-        await db.update(tradingInstances)
+      onCrashed: async (instanceId: string) => {          actorRegistry.delete(instanceId);
+          agentStreamConsumer.unsubscribe(instanceId);        await db.update(tradingInstances)
           .set({ status: 'crashed', stoppedAt: new Date() })
           .where(eq(tradingInstances.id, instanceId));
         // Remove from runtime map and release lease
@@ -501,9 +589,13 @@ const runtime = new WorkerRuntime(
         logger.error({ tradingInstanceId: instanceId }, 'Instance marked as crashed in DB');
       },
     };
-    return new TradingActor(tradingInstanceId, config.strategy.params as Record<string, unknown>, deps);
+    const actor = new TradingActor(tradingInstanceId, config.strategy.params as Record<string, unknown>, deps);
+    actorRegistry.set(tradingInstanceId, actor);
+    agentStreamConsumer.subscribe(tradingInstanceId).catch((err: unknown) => {
+      logger.warn({ tradingInstanceId, err }, 'Failed to subscribe agent stream for instance');
+    });
+    return actor;
   },
-  // Instance loader for crash recovery — loads all 'running' instances from DB
   async (): Promise<PersistedInstance[]> => {
     const running = await db.select().from(tradingInstances).where(eq(tradingInstances.status, 'running'));
     return running.map((row) => ({
@@ -540,6 +632,9 @@ await alertDispatcher.start();
 // signal arrives during the async startup above.
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
+  agentHealthMonitor.stop();
+  agentStreamConsumer.stop();
+  sessionManager.stop();
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await runtime.shutdown();
@@ -550,6 +645,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
+  agentHealthMonitor.stop();
+  agentStreamConsumer.stop();
+  sessionManager.stop();
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await runtime.shutdown();
@@ -557,6 +655,10 @@ process.on('SIGINT', async () => {
   await redisClient.quit();
   process.exit(0);
 });
+
+sessionManager.start();
+await agentStreamConsumer.start();
+agentHealthMonitor.start();
 
 await runtime.start();
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

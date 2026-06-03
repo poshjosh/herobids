@@ -122,6 +122,12 @@ function isPublicRoute(url: string, method: string): boolean {
   if (path === '/auth/login') return true;
 
   // /auth/me and /auth/logout require a valid session
+
+  // Billing webhooks — signature-verified by providers, not by JWT
+  if (path === '/billing/webhook') return true;
+  if (path === '/billing/webhook/stripe') return true;
+  if (path === '/billing/webhook/creem') return true;
+
   return false;
 }
 

@@ -19,3 +19,7 @@ export { BacktestingRepository } from './backtesting-repository.js';
 export type { InsertDecisionContext, InsertCorpus, InsertMarketEvent } from './backtesting-repository.js';
 export { AlertDeliveryRepository } from './alert-delivery-repository.js';
 export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repository.js';
+export { BillingRepository } from './billing-repository.js';
+export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';
+export { AgentRepository } from './agent-repository.js';
+export type { InsertAgent, UpdateAgent, InsertAgentInstanceLink, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, InsertAgentMessage, InsertAgentArtifact } from './agent-repository.js';

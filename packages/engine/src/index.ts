@@ -49,6 +49,9 @@ export type {
   PersistOrderParams,
 } from './trading-cycle.js';
 
+export { submitDecisionForExecution } from './decision-intake.js';
+export type { DecisionIntakeDeps, DecisionIntakeResult, DecisionContext } from './decision-intake.js';
+
 export { reconcile, reconcileWithThresholds, Reconciler, createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './reconciliation/index.js';
 export type {
   LocalState,

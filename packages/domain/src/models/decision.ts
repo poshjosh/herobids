@@ -2,6 +2,9 @@ import type { DecisionId, InstrumentId, TradingInstanceId } from '../values/ids.
 import type { Quantity, Price } from '../values/money.js';
 import type { DecisionIntent } from '../enums.js';
 
+/** Valid actor types for decision attribution (ADR 001). */
+export type ActorType = 'agent' | 'bot' | 'user' | 'system';
+
 /**
  * A Decision is the output of a Strategy.
  * It represents a desired target exposure — not a specific order.
@@ -22,4 +25,8 @@ export interface Decision {
   contextHash?: string;
   /** Freeform metadata the strategy wants to record */
   metadata?: Record<string, unknown>;
+  /** Actor type that produced this decision (defaults to 'system' for strategy-originated). */
+  actorType?: ActorType;
+  /** Stable identifier of the actor that produced this decision. */
+  actorId?: string;
 }

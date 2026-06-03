@@ -15,6 +15,12 @@ export {
   AlertsConfigSchema,
   AuthConfigSchema,
   PlansConfigSchema,
+  BillingConfigSchema,
+  BillingPlanPriceSchema,
+  BillingPlanProductSchema,
+  BillingProviderSchema,
+  StripeConfigSchema,
+  CreemConfigSchema,
   TelegramChannelConfigSchema,
 } from './schema.js';
 
@@ -29,5 +35,9 @@ export type {
   AlertsConfig,
   AuthConfig,
   PlansConfig,
+  BillingConfig,
+  BillingProvider,
+  StripeConfig,
+  CreemConfig,
   TelegramChannelConfig,
 } from './schema.js';

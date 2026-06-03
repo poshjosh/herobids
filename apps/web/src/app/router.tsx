@@ -11,6 +11,9 @@ import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailP
 import { PortfoliosPage } from '../features/portfolios/PortfoliosPage.js';
 import { CredentialsPage } from '../features/credentials/CredentialsPage.js';
 import { VenueAccountsPage } from '../features/venue-accounts/VenueAccountsPage.js';
+import { BillingPage } from '../features/billing/BillingPage.js';
+import { AgentsPage } from '../features/agents/AgentsPage.js';
+import { AgentDetailPage } from '../features/agents/AgentDetailPage.js';
 
 export const router = createBrowserRouter([
   {
@@ -35,6 +38,9 @@ export const router = createBrowserRouter([
       { path: 'portfolios', element: <PortfoliosPage /> },
       { path: 'credentials', element: <CredentialsPage /> },
       { path: 'venue-accounts', element: <VenueAccountsPage /> },
+      { path: 'agents', element: <AgentsPage /> },
+      { path: 'agents/:id', element: <AgentDetailPage /> },
+      { path: 'billing', element: <BillingPage /> },
     ],
   },
 ]);

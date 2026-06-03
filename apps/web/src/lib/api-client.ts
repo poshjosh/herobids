@@ -313,3 +313,97 @@ export const journal = {
     return request<{ events: JournalEvent[] }>(`/journal?${qs.toString()}`);
   },
 };
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+
+export interface BillingPlanPrice {
+  id: string;
+  interval: 'month' | 'year';
+  displayLabel: string;
+  amountCents: number | null;
+}
+
+export interface AvailablePlan {
+  planId: string;
+  prices: BillingPlanPrice[];
+}
+
+export interface BillingSubscriptionSummary {
+  status: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  trialEnd: string | null;
+}
+
+export interface BillingSummary {
+  planId: string;
+  planLabel: string;
+  billingInterval: string | null;
+  planLimits: Record<string, unknown> | null;
+  hasPaymentCustomer: boolean;
+  provider: 'creem' | 'stripe' | 'mock';
+  subscription: BillingSubscriptionSummary | null;
+  billingEnabled: boolean;
+  availablePlans: AvailablePlan[];
+}
+
+export const billing = {
+  summary: () => request<BillingSummary>('/billing/summary'),
+  createCheckoutSession: (planId: string, priceId?: string) =>
+    request<{ url: string; provider: string }>('/billing/checkout-session', {
+      method: 'POST',
+      body: JSON.stringify({ planId, priceId }),
+    }),
+  createPortalSession: () =>
+    request<{ url: string }>('/billing/customer-portal', { method: 'POST' }),
+  cancelSubscription: () =>
+    request<{ success: boolean; cancelAtPeriodEnd: boolean }>('/billing/cancel-subscription', { method: 'POST' }),
+  upgradeSubscription: (planId: string, priceId?: string) =>
+    request<{ success: boolean; newPlanId: string; provider: string }>('/billing/upgrade-subscription', {
+      method: 'POST',
+      body: JSON.stringify({ planId, priceId }),
+    }),
+};
+
+// --- Agents ---
+
+export interface Agent {
+  id: string;
+  userId: string;
+  name: string;
+  goal: string;
+  status: string;
+  pauseState: Record<string, unknown> | null;
+  toolPolicy: Record<string, unknown> | null;
+  modelPolicy: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  activeLink?: { id: string; tradingInstanceId: string; status: string } | null;
+  activeSession?: { id: string; status: string; lastHeartbeatAt: string } | null;
+}
+
+export const agents = {
+  list: () => request<Agent[]>('/agents'),
+  get: (id: string) => request<Agent>(`/agents/${id}`),
+  create: (data: { name: string; goal: string; tradingInstanceId: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+    request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { name?: string; goal?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+    request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
+  start: (id: string) =>
+    request<{ status: string; sessionId: string }>(`/agents/${id}/start`, { method: 'POST' }),
+  pause: (id: string, reason: string) =>
+    request<{ status: string }>(`/agents/${id}/pause`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  resume: (id: string) =>
+    request<{ status: string }>(`/agents/${id}/resume`, { method: 'POST' }),
+  link: (id: string, tradingInstanceId: string) =>
+    request<{ id: string; tradingInstanceId: string; status: string }>(`/agents/${id}/link`, { method: 'POST', body: JSON.stringify({ tradingInstanceId }) }),
+  activity: (id: string, limit?: number) =>
+    request<unknown[]>(`/agents/${id}/activity${limit ? `?limit=${limit}` : ''}`),
+  artifacts: (id: string, limit?: number) =>
+    request<unknown[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
+  sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
+};

@@ -4,3 +4,4 @@ export * from './enums.js';
 export * from './models/index.js';
 export * from './ports/index.js';
 export * from './config/index.js';
+export * from './agent-protocol.js';

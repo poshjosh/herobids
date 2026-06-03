@@ -6,7 +6,7 @@ Implement Step 4 of Phase 5 as the first real user-facing product surface: an au
 
 The Step 4 label in the Phase 5 outline still says "Frontend / dashboard", but the product target for this phase should be Mission Control, not a classic trading dashboard.
 
-The frontend should be built around the surfaces already identified in `docs/features/2026/06/phase-5e-frontend-dashboard/000-frontend-q-and-a.md`:
+The frontend should be built around the surfaces already identified in `docs/features/2026/06/002-phase-5e-frontend-dashboard/000-frontend-q-and-a.md`:
 
 1. Agent Overview
 2. Activity Feed
@@ -342,7 +342,7 @@ Existing route files already useful to the frontend:
 
 Existing canonical design references the frontend must align to:
 
-- `docs/features/2026/06/phase-5e-frontend-dashboard/000-frontend-q-and-a.md`
+- `docs/features/2026/06/002-phase-5e-frontend-dashboard/000-frontend-q-and-a.md`
 - `docs/tech/agents/runtime-boundary-and-message-contract.md`
 - `docs/tech/agents/message-catalog.md`
 - `docs/tech/agents/recovery-and-replay.md`
