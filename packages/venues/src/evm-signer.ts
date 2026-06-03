@@ -8,9 +8,8 @@ import {
   type Chain,
   type TransactionReceipt,
   type SendTransactionParameters,
-  type Account,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { arbitrum, base, mainnet } from 'viem/chains';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -63,7 +62,7 @@ const CHAIN_MAP: Record<number, Chain> = {
 export class EvmSigner {
   private readonly wallet: WalletClient;
   private readonly publicClient: PublicClient;
-  private readonly account: Account;
+  private readonly account: PrivateKeyAccount;
   private readonly confirmationTimeoutMs: number;
 
   constructor(config: EvmSignerConfig) {

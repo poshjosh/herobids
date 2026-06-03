@@ -1,3 +1,4 @@
+import React from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -368,5 +369,35 @@ export function RelativeTime({ timestamp }: { timestamp: string | null }) {
     <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }} title={timestamp}>
       {label}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Form helpers (also used by SettingsPage and other features)
+// ---------------------------------------------------------------------------
+
+export function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
+      {children}
+    </div>
+  );
+}
+
+export function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        padding: '10px 14px',
+        background: 'var(--color-danger-subtle)',
+        border: '1px solid var(--color-danger)',
+        borderRadius: '7px',
+        color: 'var(--color-danger)',
+        fontSize: '13px',
+        marginBottom: '16px',
+      }}
+    >
+      {message}
+    </div>
   );
 }

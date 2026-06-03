@@ -13,7 +13,7 @@ import { ok, err, quantity, Decimal } from '@herobids/domain';
 import { EvmSigner } from './evm-signer.js';
 import type { EvmSignerConfig } from './evm-signer.js';
 import { TokenBucketRateLimiter } from './rate-limiter.js';
-import { parseAbiItem, type Log } from 'viem';
+import { parseAbiItem } from 'viem';
 
 export interface OneInchSwapConfig {
   /** 1inch Swap API base URL (includes chain path, e.g. https://api.1inch.dev/swap/v6.0/8453) */

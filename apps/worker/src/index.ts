@@ -382,11 +382,9 @@ const runtime = new WorkerRuntime(
             // 1inch requires a private key and API key — resolve from DB credential or env (default account only)
             let privateKey: string | undefined;
             let oneInchApiKey: string | undefined;
-            let oneInchCredentialId: string | undefined;
             if (venueAccountId !== 'default') {
               const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
               if (account?.credentialId) {
-                oneInchCredentialId = account.credentialId;
                 const [cred] = await db.select().from(credentials).where(eq(credentials.id, account.credentialId)).limit(1);
                 const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
                 if (cred && encryptionKey) {

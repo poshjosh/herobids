@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+# Build context: monorepo root
+# One-shot service: applies Drizzle SQL migrations against the target database.
+# drizzle-kit reads drizzle.config.ts (which sources DATABASE_URL from env)
+# and applies all pending migrations from packages/db/drizzle/.
+
+FROM node:22-alpine AS base
+RUN corepack enable
+
+FROM base AS runtime
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+WORKDIR /app/packages/db
+CMD ["pnpm", "run", "db:migrate"]

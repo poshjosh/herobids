@@ -1,6 +1,3 @@
-import pino from 'pino';
-
-const logger = pino({ name: 'sandbox-enforcer' });
 
 /**
  * Sandbox resource limits — configurable per agent session.

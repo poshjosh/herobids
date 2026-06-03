@@ -38,11 +38,11 @@ export class AgentMessageBroker {
   private readonly sendMessageCounters = new Map<string, { count: number; windowStart: number }>();
 
   constructor(
-    private readonly redis: Redis,
+    _redis: Redis,
     private readonly agentRepo: AgentRepository,
     private readonly decisionHandler: AgentDecisionHandler,
     private readonly sessionManager: AgentSessionManager,
-    private readonly eventPublisher: InstanceEventPublisher,
+    _eventPublisher: InstanceEventPublisher,
     private readonly telegram?: TelegramClient,
   ) {}
 

@@ -126,7 +126,7 @@ export class CapabilityPolicyEngine {
    * Check whether a capability invocation is allowed.
    * Returns an error string if denied, undefined if allowed.
    */
-  checkAccess(capability: string, agentId: string, sessionId: string): string | undefined {
+  checkAccess(capability: string, _agentId: string, sessionId: string): string | undefined {
     // Kill switch
     if (this.killed) {
       return 'kill_switch_active';

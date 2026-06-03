@@ -45,7 +45,7 @@ export class PlatformAlertService {
   constructor(
     private readonly agentRepo: AgentRepository,
     private readonly telegram: TelegramClient | undefined,
-    private readonly botToken: string | undefined,
+    _botToken: string | undefined,
   ) {}
 
   /**

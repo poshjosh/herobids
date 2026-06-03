@@ -112,7 +112,7 @@ export class AgentStreamConsumer {
 
         if (!results) continue;
 
-        for (const [_streamKey, messages] of results) {
+        for (const [_streamKey, messages] of results as Array<[string, Array<[string, string[]]>]>) {
           for (const [messageStreamId, fields] of messages) {
             await this.processMessage(messageStreamId, fields, _streamKey as string);
           }

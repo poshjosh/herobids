@@ -48,7 +48,7 @@ export interface BybitAdapterConfig {
 
 type BybitAccountMode = 'unified' | 'standard';
 
-interface BybitExchangeWithAccountMode extends InstanceType<typeof ccxt.bybit> {
+interface BybitExchangeWithAccountMode extends Omit<InstanceType<typeof ccxt.bybit>, 'isUnifiedEnabled'> {
   isUnifiedEnabled?: () => Promise<[boolean | undefined, boolean | undefined]>;
 }
 

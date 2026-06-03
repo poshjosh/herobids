@@ -1,0 +1,49 @@
+# Development override — apply on top of the base stack:
+#   docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build
+#
+# This override replaces the built-artifact runtime commands with hot-reload
+# watch mode and bind-mounts source so edits are reflected without a full
+# image rebuild.  Postgres, Redis, and migrate are inherited unchanged from
+# the base stack.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build          # reuse the build stage; no pnpm deploy needed
+    working_dir: /app/apps/api
+    volumes:
+      - ./apps/api/src:/app/apps/api/src:ro
+      - ./config:/app/config:ro
+    command: ['node', '--import', 'tsx/esm', 'src/index.ts']
+    environment:
+      NODE_ENV: development
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: build
+    working_dir: /app/apps/worker
+    volumes:
+      - ./apps/worker/src:/app/apps/worker/src:ro
+      - ./config:/app/config:ro
+    command: ['node', '--import', 'tsx/esm', 'src/index.ts']
+    environment:
+      NODE_ENV: development
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: build
+    working_dir: /app/apps/web
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./apps/web/src:/app/apps/web/src:ro
+    command: ['pnpm', '--filter', '@herobids/web', 'run', 'dev', '--host', '0.0.0.0']
+    environment:
+      # Proxy in vite.config.ts reads this to forward /api to the api service
+      VITE_API_PROXY_TARGET: http://api:3000
