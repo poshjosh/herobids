@@ -62,6 +62,20 @@ If the worker dies, the replacement path follows the existing Herobids rehydrati
 
 No trading loop should resume until the instance has a reconciled baseline it can trust.
 
+## Transport Choice
+
+V1 should use Redis Streams as the durable at-least-once transport for the canonical agent protocol path rather than bare pub/sub.
+
+Recommended shape:
+
+- persist delivery state so reconnect and replay are possible
+- use Redis Streams consumer-group semantics for runtime and platform consumers
+- deduplicate by `messageId`
+- keep transport-order independence and idempotent handlers
+- support bounded replay checkpoints after reconnect
+
+This is the simplest transport that matches the existing recovery model without forcing a second bespoke reliability layer.
+
 ## Reconnect Surface For Agents
 
 V1 uses a hybrid replay model.

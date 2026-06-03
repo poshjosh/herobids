@@ -67,6 +67,19 @@ These capabilities must never be direct from the agent runtime:
 - decrypted venue secret access
 - worker or host process control
 
+## Artifact Storage And Retention
+
+Large agent artifacts should be stored out of band with DB metadata kept in path.
+
+Recommended v1 shape:
+
+- store artifact metadata in Postgres
+- store large artifact bodies in object storage
+- keep retention class and expiry policy on the metadata record
+- fetch metadata first, then fetch the body on demand from the UI or API
+
+This keeps audit, retention, and cost controls explicit without putting large blobs into the operational database.
+
 ## Enforcement Model
 
 Policy must be enforced server-side, not only in prompts.
@@ -98,6 +111,8 @@ Open egress still requires hard runtime controls:
 - download and storage limits
 - audit logging expectations
 
+These controls must be configuration-driven, with conservative defaults and a runtime kill switch.
+
 Internal systems, mutable stores, and secret-bearing services remain blocked unless the access path is explicitly brokered.
 
 ## Filesystem And Process Policy
@@ -112,7 +127,7 @@ Agent runtimes must run with:
 
 Any code-execution feature must run without inheriting worker memory, host privileges, or secret-bearing mounts.
 
-Code execution should ship in the first agent release. It should run behind the strongest sandbox boundary available, preferably as a stricter nested sandbox or separate tool runtime rather than unconstrained execution inside the main agent process.
+Code execution should ship in the first agent release. In v1 it runs inside the agent container as a restricted local subprocess or sandbox, not as unconstrained execution inside the main agent process and not in a second dedicated code-execution container.
 
 ## Secret Handling
 
@@ -137,8 +152,6 @@ This does not require storing every raw response forever. It does require enough
 
 These remain implementation choices under the policy above:
 
-- exact open-egress runtime guardrails for rate, concurrency, timeout, response size, and kill-switch behavior
-- whether first-release code execution runs in a nested sandbox, sidecar, or separate service boundary
 - how any readonly internal credential surfaces, if they ever exist, are rotated and revoked
 
 Those decisions must not weaken the baseline guarantees in this document.
