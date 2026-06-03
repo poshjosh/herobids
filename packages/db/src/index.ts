@@ -22,4 +22,4 @@ export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repos
 export { BillingRepository } from './billing-repository.js';
 export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';
 export { AgentRepository } from './agent-repository.js';
-export type { InsertAgent, UpdateAgent, InsertAgentInstanceLink, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, InsertAgentMessage, InsertAgentArtifact } from './agent-repository.js';
+export type { InsertAgent, UpdateAgent, InsertAgentInstanceLink, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';

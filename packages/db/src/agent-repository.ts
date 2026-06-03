@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { agents, agentInstanceLinks, agentRuntimeSessions, agentMessages, agentArtifacts } from './schema/index.js';
+import { agents, agentInstanceLinks, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, users } from './schema/index.js';
 
 // --- Agent ---
 
@@ -78,6 +78,18 @@ export interface InsertAgentArtifact {
   metadata?: Record<string, unknown>;
   retentionClass?: string;
   expiresAt?: Date;
+}
+
+// --- Agent Outbound Message ---
+
+export interface InsertAgentOutboundMessage {
+  agentId: string;
+  sessionId?: string;
+  /** 'agent' | 'platform' */
+  authoredBy: string;
+  subject?: string;
+  body: string;
+  contextRef?: string;
 }
 
 /**
@@ -381,5 +393,57 @@ export class AgentRepository {
       .where(eq(agentArtifacts.agentId, agentId))
       .orderBy(desc(agentArtifacts.createdAt))
       .limit(limit);
+  }
+
+  // --- Agent Outbound Messages ---
+
+  async insertOutboundMessage(input: InsertAgentOutboundMessage): Promise<string> {
+    const id = crypto.randomUUID();
+    await this.db.insert(agentOutboundMessages).values({
+      id,
+      agentId: input.agentId,
+      sessionId: input.sessionId ?? null,
+      authoredBy: input.authoredBy,
+      subject: input.subject ?? null,
+      body: input.body,
+      contextRef: input.contextRef ?? null,
+      deliveryStatus: 'pending',
+    });
+    return id;
+  }
+
+  async markOutboundMessageSent(id: string, telegramMessageId: string, telegramChatId: string): Promise<void> {
+    await this.db.update(agentOutboundMessages).set({
+      deliveryStatus: 'sent',
+      telegramMessageId,
+      telegramChatId,
+    }).where(eq(agentOutboundMessages.id, id));
+  }
+
+  async markOutboundMessageFailed(id: string, error: string): Promise<void> {
+    await this.db.update(agentOutboundMessages).set({
+      deliveryStatus: 'failed',
+      deliveryError: error,
+    }).where(eq(agentOutboundMessages.id, id));
+  }
+
+  async getOutboundMessages(agentId: string, limit = 50) {
+    return this.db.select().from(agentOutboundMessages)
+      .where(eq(agentOutboundMessages.agentId, agentId))
+      .orderBy(desc(agentOutboundMessages.createdAt))
+      .limit(limit);
+  }
+
+  // --- User Telegram ---
+
+  /** Look up the Telegram chat ID for the user that owns the given agent. */
+  async getUserTelegramChatId(agentId: string): Promise<string | null> {
+    const rows = await this.db
+      .select({ telegramChatId: users.telegramChatId })
+      .from(agents)
+      .innerJoin(users, eq(agents.userId, users.id))
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    return rows[0]?.telegramChatId ?? null;
   }
 }

@@ -30,3 +30,4 @@ export { agentInstanceLinks } from './agent-instance-links.js';
 export { agentRuntimeSessions } from './agent-runtime-sessions.js';
 export { agentMessages } from './agent-messages.js';
 export { agentArtifacts } from './agent-artifacts.js';
+export { agentOutboundMessages } from './agent-outbound-messages.js';

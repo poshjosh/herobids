@@ -3,6 +3,8 @@ import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { AgentReconnectHandler } from './agent-reconnect-handler.js';
 import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
+import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
+import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-session-manager' });
@@ -35,6 +37,7 @@ export class AgentSessionManager {
     private readonly runtimeLauncher: AgentRuntimeLauncher,
     config?: Partial<AgentSessionManagerConfig>,
     private readonly reconnectHandler?: AgentReconnectHandler,
+    private readonly platformAlerts?: PlatformAlertService,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
@@ -238,6 +241,12 @@ export class AgentSessionManager {
     await this.runtimeLauncher.stop(sessionId);
     await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
     logger.warn({ sessionId, agentId: session.agentId }, 'Agent session start timed out');
+
+    this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, {
+      agentId: session.agentId,
+      sessionId,
+      message: 'Agent runtime failed to start — the runtime did not connect within the expected window.',
+    }).catch((err: unknown) => logger.warn({ err }, 'Failed to send platform start-timeout alert'));
   }
 
   /** Mark a session as unhealthy (called by health monitor) */
@@ -255,5 +264,11 @@ export class AgentSessionManager {
     });
 
     logger.warn({ sessionId, agentId: session.agentId }, 'Agent session marked unhealthy — heartbeat lost');
+
+    this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_UNHEALTHY, {
+      agentId: session.agentId,
+      sessionId,
+      message: 'Agent runtime heartbeat lost. New decisions will not be accepted until the runtime reconnects.',
+    }).catch((err: unknown) => logger.warn({ err }, 'Failed to send platform unhealthy alert'));
   }
 }

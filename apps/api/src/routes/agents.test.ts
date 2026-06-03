@@ -19,6 +19,7 @@ function buildDb(options: {
 } = {}) {
   const insertedValues: Array<Record<string, unknown>> = [];
   const updateSets: Array<Record<string, unknown>> = [];
+  const deletedTargets: unknown[] = [];
   const selectResponses = [
     ...(options.agentRows ? [options.agentRows] : [[]]),
     ...(options.activeLinkRows ? [options.activeLinkRows] : [[]]),
@@ -48,10 +49,15 @@ function buildDb(options: {
       }),
     }),
     transaction: vi.fn().mockImplementation(async (callback: (tx: any) => Promise<unknown>) => callback(db)),
-    delete: vi.fn(),
+    delete: vi.fn().mockImplementation((target: unknown) => {
+      deletedTargets.push(target);
+      return {
+        where: vi.fn().mockResolvedValue(undefined),
+      };
+    }),
   };
 
-  return { db, insertedValues, updateSets };
+  return { db, insertedValues, updateSets, deletedTargets };
 }
 
 describe('agent routes lifecycle', () => {
@@ -124,5 +130,28 @@ describe('agent routes lifecycle', () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('no_active_link');
+  });
+
+  it('deletes outbound messages before deleting the agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { agentOutboundMessages, agentArtifacts, agentRuntimeSessions, agentInstanceLinks, agents } = await import('@herobids/db');
+    const { db, deletedTargets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    expect(deletedTargets).toEqual([
+      agentOutboundMessages,
+      agentArtifacts,
+      agentRuntimeSessions,
+      agentInstanceLinks,
+      agents,
+    ]);
   });
 });

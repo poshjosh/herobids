@@ -75,10 +75,17 @@ export function AgentsPage() {
   );
 }
 
+const PRESET_OPTIONS = [
+  { value: 'momentum_trader', label: 'Momentum Trader', description: 'Trend-following breakout strategy' },
+  { value: 'range_trader', label: 'Range Trader', description: 'Mean-reversion within defined ranges' },
+  { value: 'dca_accumulator', label: 'DCA Accumulator', description: 'Dollar-cost averaging accumulation' },
+] as const;
+
 function CreateAgentModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
   const [tradingInstanceId, setTradingInstanceId] = useState('');
+  const [preset, setPreset] = useState<string>('momentum_trader');
 
   const instancesQuery = useQuery({
     queryKey: ['instances'],
@@ -86,7 +93,7 @@ function CreateAgentModal({ onClose, onCreated }: { onClose: () => void; onCreat
   });
 
   const mutation = useMutation({
-    mutationFn: () => agentsApi.create({ name, goal, tradingInstanceId }),
+    mutationFn: () => agentsApi.create({ name, goal, tradingInstanceId, preset }),
     onSuccess: onCreated,
   });
 
@@ -111,6 +118,15 @@ function CreateAgentModal({ onClose, onCreated }: { onClose: () => void; onCreat
             placeholder="Trade BTC momentum breakouts with risk-managed position sizing"
             required
           />
+        </div>
+
+        <div>
+          <FieldLabel>Preset</FieldLabel>
+          <select style={inputStyle} value={preset} onChange={(e) => setPreset(e.target.value)}>
+            {PRESET_OPTIONS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label} — {p.description}</option>
+            ))}
+          </select>
         </div>
 
         <div>

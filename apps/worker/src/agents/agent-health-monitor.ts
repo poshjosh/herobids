@@ -1,7 +1,8 @@
-import { eq, and, lt, inArray } from 'drizzle-orm';
+import { eq, and, lt, inArray, notInArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentRuntimeSessions } from '@herobids/db';
 import type { AgentSessionManager } from './agent-session-manager.js';
+import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-health-monitor' });
@@ -32,6 +33,7 @@ export class AgentHealthMonitor {
     private readonly db: Database,
     private readonly sessionManager: AgentSessionManager,
     config?: Partial<HealthMonitorConfig>,
+    private readonly runtimeLauncher?: AgentRuntimeLauncher,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
@@ -75,6 +77,26 @@ export class AgentHealthMonitor {
       for (const session of staleStartingSessions) {
         logger.warn({ sessionId: session.id, agentId: session.agentId, startedAt: session.startedAt }, 'Stale agent start detected');
         await this.sessionManager.handleStartTimeout(session.id);
+      }
+
+      // Clean up in-memory runtime handles for sessions that are now stopped/crashed in DB.
+      // This handles the case where the API stop endpoint marks a session stopped but the
+      // launcher's in-memory map still has a handle (e.g. between health check cycles).
+      if (this.runtimeLauncher) {
+        const activeHandles = this.runtimeLauncher.getActiveRuntimes();
+        if (activeHandles.length > 0) {
+          const handleSessionIds = activeHandles.map((h) => h.sessionId);
+          const stoppedSessions = await this.db.select({ id: agentRuntimeSessions.id })
+            .from(agentRuntimeSessions)
+            .where(and(
+              inArray(agentRuntimeSessions.id, handleSessionIds),
+              notInArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+            ));
+          for (const session of stoppedSessions) {
+            logger.info({ sessionId: session.id }, 'Cleaning up runtime handle for stopped session');
+            await this.runtimeLauncher.stop(session.id);
+          }
+        }
       }
     } catch (err) {
       logger.error({ err }, 'Health check failed');

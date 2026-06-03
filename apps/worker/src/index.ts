@@ -21,6 +21,7 @@ import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { AlertDispatcher } from './alerting/index.js';
+import { TelegramClient, PlatformAlertService } from './alerting/index.js';
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
@@ -147,10 +148,18 @@ const snapshotResolver: ContextSnapshotResolver = {
 };
 
 const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, eventPublisher, undefined, snapshotResolver);
-const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler);
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher);
+
+// Platform alert service — mandatory safety alerts to users via Telegram.
+// Uses the same bot token as the operator alert dispatcher.
+const workerTelegram = appConfig.alerts.telegram.botToken
+  ? new TelegramClient(appConfig.alerts.telegram.botToken)
+  : undefined;
+const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
+
+const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler, platformAlerts);
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
-const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager);
+const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
 
 // Strategy factory keyed by config.strategy.type
 function createStrategy(strategyConfig: StrategyConfig): Strategy {

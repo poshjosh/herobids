@@ -78,6 +78,12 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 20, maxConcurrent: 3, timeoutMs: 10_000 },
   },
   {
+    capability: 'send_message',
+    tier: 'brokered',
+    enabled: true,
+    limits: { maxPerMinute: 10, maxConcurrent: 5, timeoutMs: 10_000, maxResponseBytes: 4096 },
+  },
+  {
     capability: 'venue_api',
     tier: 'never',
     enabled: false,

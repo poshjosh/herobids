@@ -14,6 +14,7 @@ const MANAGE_ITEMS = [
   { path: '/venue-accounts', label: 'Venues', icon: '⬡' },
   { path: '/credentials', label: 'Credentials', icon: '⊛' },
   { path: '/billing', label: 'Billing', icon: '⊘' },
+  { path: '/settings', label: 'Settings', icon: '⊙' },
 ];
 
 export function Sidebar() {

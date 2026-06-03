@@ -14,6 +14,7 @@ import { VenueAccountsPage } from '../features/venue-accounts/VenueAccountsPage.
 import { BillingPage } from '../features/billing/BillingPage.js';
 import { AgentsPage } from '../features/agents/AgentsPage.js';
 import { AgentDetailPage } from '../features/agents/AgentDetailPage.js';
+import { SettingsPage } from '../features/settings/SettingsPage.js';
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
       { path: 'agents', element: <AgentsPage /> },
       { path: 'agents/:id', element: <AgentDetailPage /> },
       { path: 'billing', element: <BillingPage /> },
+      { path: 'settings', element: <SettingsPage /> },
     ],
   },
 ]);

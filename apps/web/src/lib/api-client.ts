@@ -67,12 +67,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // Auth
 // ---------------------------------------------------------------------------
 
+function buildQuery(params: Record<string, string | number | boolean | undefined | null>): string {
+  const qs = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+  return qs ? `?${qs}` : '';
+}
+
 export interface MeResponse {
   id: string;
   displayName: string;
   email: string;
   avatarUrl: string | null;
   planId: string;
+  telegramChatId: string | null;
   createdAt: string;
 }
 
@@ -93,6 +102,8 @@ export const auth = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<MeResponse>('/auth/me'),
+  updateMe: (data: { telegramChatId?: string | null }) =>
+    request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };
 
@@ -375,6 +386,7 @@ export interface Agent {
   userId: string;
   name: string;
   goal: string;
+  preset: string | null;
   status: string;
   pauseState: Record<string, unknown> | null;
   toolPolicy: Record<string, unknown> | null;
@@ -382,19 +394,55 @@ export interface Agent {
   createdAt: string;
   updatedAt: string;
   activeLink?: { id: string; tradingInstanceId: string; status: string } | null;
-  activeSession?: { id: string; status: string; lastHeartbeatAt: string } | null;
+  activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
+}
+
+export interface AgentArtifact {
+  id: string;
+  agentId: string;
+  sessionId: string;
+  artifactType: string;
+  contentType: string;
+  summary: string;
+  createdAt: string;
+}
+
+export interface AgentDecision {
+  id: string;
+  intent: string;
+  instrumentId: string;
+  targetSize: string;
+  limitPrice: string | null;
+  createdAt: string;
+}
+
+export interface AgentOutboundMessage {
+  id: string;
+  agentId: string;
+  sessionId: string | null;
+  authoredBy: 'agent' | 'platform';
+  subject: string | null;
+  body: string;
+  contextRef: string | null;
+  deliveryStatus: 'pending' | 'sent' | 'failed';
+  telegramMessageId: string | null;
+  telegramChatId: string | null;
+  deliveryError: string | null;
+  createdAt: string;
 }
 
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
-  create: (data: { name: string; goal: string; tradingInstanceId: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+  create: (data: { name: string; goal: string; tradingInstanceId: string; preset?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: { name?: string; goal?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
   start: (id: string) =>
     request<{ status: string; sessionId: string }>(`/agents/${id}/start`, { method: 'POST' }),
+  stop: (id: string) =>
+    request<{ status: string }>(`/agents/${id}/stop`, { method: 'POST' }),
   pause: (id: string, reason: string) =>
     request<{ status: string }>(`/agents/${id}/pause`, { method: 'POST', body: JSON.stringify({ reason }) }),
   resume: (id: string) =>
@@ -404,6 +452,10 @@ export const agents = {
   activity: (id: string, limit?: number) =>
     request<unknown[]>(`/agents/${id}/activity${limit ? `?limit=${limit}` : ''}`),
   artifacts: (id: string, limit?: number) =>
-    request<unknown[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
+    request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
+  decisions: (id: string, limit?: number) =>
+    request<AgentDecision[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
+  messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
+    request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
 };

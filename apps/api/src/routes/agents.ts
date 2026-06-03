@@ -3,9 +3,31 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents, agentInstanceLinks, agentRuntimeSessions, tradingInstances, agentMessages, agentArtifacts } from '@herobids/db';
+import { agents, agentInstanceLinks, agentRuntimeSessions, tradingInstances, agentMessages, agentArtifacts, agentOutboundMessages, decisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
+
+/**
+ * V1 preset registry — resolved server-side at create time.
+ * The preset name is stored on the agent record. Defaults bundle tool policy and framing.
+ */
+const PRESET_IDS = ['momentum_trader', 'range_trader', 'dca_accumulator'] as const;
+type PresetId = typeof PRESET_IDS[number];
+
+const PRESET_DEFAULTS: Record<PresetId, { description: string; toolPolicy: Record<string, unknown> }> = {
+  momentum_trader: {
+    description: 'Momentum and trend-following strategy',
+    toolPolicy: { decision_submit: { enabled: true }, send_message: { enabled: true, maxPerMinute: 5 } },
+  },
+  range_trader: {
+    description: 'Range and mean-reversion strategy',
+    toolPolicy: { decision_submit: { enabled: true }, send_message: { enabled: true, maxPerMinute: 5 } },
+  },
+  dca_accumulator: {
+    description: 'DCA and position accumulation strategy',
+    toolPolicy: { decision_submit: { enabled: true }, send_message: { enabled: true, maxPerMinute: 3 } },
+  },
+};
 
 // --- Request Schemas ---
 
@@ -13,6 +35,7 @@ const CreateAgentSchema = z.object({
   name: z.string().min(1).max(100),
   goal: z.string().min(1).max(1000),
   tradingInstanceId: z.string().min(1),
+  preset: z.enum(PRESET_IDS).default('momentum_trader'),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
 });
@@ -62,13 +85,21 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const linkId = crypto.randomUUID();
     const now = new Date();
 
+    // Merge preset-default tool policy with any user-supplied overrides.
+    // Preset defaults are applied first; explicit toolPolicy in the request wins.
+    const presetDefaults = PRESET_DEFAULTS[parsed.data.preset];
+    const mergedToolPolicy = parsed.data.toolPolicy
+      ? { ...presetDefaults.toolPolicy, ...parsed.data.toolPolicy }
+      : presetDefaults.toolPolicy;
+
     await db.insert(agents).values({
       id: agentId,
       userId: request.userId,
       name: parsed.data.name,
       goal: parsed.data.goal,
+      preset: parsed.data.preset,
       status: 'stopped',
-      toolPolicy: parsed.data.toolPolicy ?? null,
+      toolPolicy: mergedToolPolicy,
       modelPolicy: parsed.data.modelPolicy ?? null,
       createdAt: now,
       updatedAt: now,
@@ -166,7 +197,8 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     }
 
     // Delete FK-referencing child rows before removing the parent so PG doesn't reject.
-    // Order matters: artifacts → sessions → links → agent
+    // Order matters: outbound messages → artifacts → sessions → links → agent
+    await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
     await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
     await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
     await db.delete(agentInstanceLinks).where(eq(agentInstanceLinks.agentId, id));
@@ -414,7 +446,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
 
     const artifacts = await db.select().from(agentArtifacts)
       .where(eq(agentArtifacts.agentId, id))
-      .orderBy(agentArtifacts.createdAt)
+      .orderBy(desc(agentArtifacts.createdAt))
       .limit(limit);
 
     return reply.send(artifacts);
@@ -435,5 +467,97 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       .orderBy(agentRuntimeSessions.startedAt);
 
     return reply.send(sessions);
+  });
+
+  // Stop agent (active/paused/starting → stopped).
+  // Marks the agent and its active sessions as stopped. The worker's health monitor
+  // cleans up any in-memory runtime handles on the next check cycle.
+  app.post<{ Params: { id: string } }>('/agents/:id/stop', async (request, reply) => {
+    const { id } = request.params;
+    const now = new Date();
+    const result = await db.transaction(async (tx) => {
+      const [agent] = await tx.select({ status: agents.status })
+        .from(agents)
+        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+      if (!agent) return { kind: 'not_found' as const };
+      if (agent.status === 'stopped') return { kind: 'already_stopped' as const };
+
+      await tx.update(agents).set({ status: 'stopped', pauseState: null, updatedAt: now })
+        .where(eq(agents.id, id));
+
+      await tx.update(agentRuntimeSessions)
+        .set({ status: 'stopped', stoppedAt: now })
+        .where(and(
+          eq(agentRuntimeSessions.agentId, id),
+          inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+        ));
+
+      return { kind: 'stopped' as const };
+    });
+
+    if (result.kind === 'not_found') return reply.status(404).send({ error: 'not_found' });
+    return reply.send({ status: 'stopped' });
+  });
+
+  // Get agent outbound messages (agent-authored + platform safety alerts).
+  // Returns the actual content sent to the user, with authorship distinction.
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; authoredBy?: string } }>('/agents/:id/messages', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
+    const authoredByFilter = request.query.authoredBy;
+
+    const [agent] = await db.select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const query = db.select().from(agentOutboundMessages)
+      .where(
+        authoredByFilter
+          ? and(eq(agentOutboundMessages.agentId, id), eq(agentOutboundMessages.authoredBy, authoredByFilter))
+          : eq(agentOutboundMessages.agentId, id),
+      )
+      .orderBy(desc(agentOutboundMessages.createdAt))
+      .limit(limit);
+
+    return reply.send(await query);
+  });
+
+  // Get agent's recent decisions submitted to the engine
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/agents/:id/decisions', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '10', 10), 50);
+
+    const [agent] = await db.select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const [link] = await db.select({ tradingInstanceId: agentInstanceLinks.tradingInstanceId })
+      .from(agentInstanceLinks)
+      .where(and(eq(agentInstanceLinks.agentId, id), eq(agentInstanceLinks.status, 'active')));
+    if (!link) return reply.send([]);
+
+    const rows = await db
+      .select({
+        id: decisions.id,
+        intent: decisions.intent,
+        instrumentId: decisions.instrumentId,
+        targetSize: decisions.targetSize,
+        limitPrice: decisions.limitPrice,
+        createdAt: decisions.createdAt,
+      })
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.tradingInstanceId, link.tradingInstanceId),
+          eq(decisions.actorType, 'agent'),
+          eq(decisions.actorId, id),
+        ),
+      )
+      .orderBy(desc(decisions.createdAt))
+      .limit(limit);
+
+    return reply.send(rows);
   });
 }

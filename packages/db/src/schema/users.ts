@@ -14,6 +14,8 @@ export const users = pgTable('users', {
   avatarUrl: text('avatar_url'),
   /** Plan ID — references plans config section */
   planId: text('plan_id').notNull().default('free'),
+  /** Telegram chat ID for direct user messaging (optional, user-provided) */
+  telegramChatId: text('telegram_chat_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

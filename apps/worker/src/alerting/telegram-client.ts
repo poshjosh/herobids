@@ -21,7 +21,11 @@ export class TelegramClient {
   /** Send a formatted alert message to a chat. */
   async sendAlert(chatId: string, event: JournalEventRow): Promise<Result<TelegramSendResult, { code: string; message: string }>> {
     const text = formatAlertMessage(event);
+    return this.sendText(chatId, text);
+  }
 
+  /** Send a plain HTML text message directly to a chat. */
+  async sendText(chatId: string, text: string): Promise<Result<TelegramSendResult, { code: string; message: string }>> {
     try {
       const response = await fetch(`${this.baseUrl}/sendMessage`, {
         method: 'POST',

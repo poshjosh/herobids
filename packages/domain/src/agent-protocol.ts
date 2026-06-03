@@ -85,6 +85,21 @@ export const ArtifactPublishPayloadSchema = z.object({
 
 export type ArtifactPublishPayload = z.infer<typeof ArtifactPublishPayloadSchema>;
 
+/**
+ * Brokered outbound user message — agent requests the platform send a message to the user.
+ * The platform owns recipient resolution. Body is bounded. Always available in the MVP.
+ */
+export const SendMessagePayloadSchema = z.object({
+  /** Optional short subject or category (max 200 chars) */
+  subject: z.string().max(200).optional(),
+  /** Message body — bounded at 2000 chars */
+  body: z.string().min(1).max(2000),
+  /** Optional reference to a decision ID or context hash */
+  contextRef: z.string().optional(),
+});
+
+export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const ContextSnapshotPayloadSchema = z.object({
@@ -191,6 +206,7 @@ export const AGENT_MESSAGE_TYPES = {
   LIFECYCLE_STOP: 'agent.lifecycle.stop_request',
   RUNTIME_HEARTBEAT: 'agent.runtime.heartbeat',
   ARTIFACT_PUBLISH: 'agent.artifact.publish',
+  SEND_MESSAGE: 'agent.message.send',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -211,6 +227,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.LIFECYCLE_STOP]: StopRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.RUNTIME_HEARTBEAT]: HeartbeatPayloadSchema,
   [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: ArtifactPublishPayloadSchema,
+  [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: SendMessagePayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

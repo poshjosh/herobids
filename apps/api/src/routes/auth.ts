@@ -320,7 +320,45 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       email: user.email,
       avatarUrl: user.avatarUrl,
       planId: user.planId,
+      telegramChatId: user.telegramChatId ?? null,
       createdAt: user.createdAt.toISOString(),
+    });
+  });
+
+  /**
+   * PATCH /auth/me — Update mutable user profile fields.
+   * Currently supports: telegramChatId (for user-level Telegram binding).
+   */
+  app.patch('/auth/me', async (request, reply) => {
+    const userId = request.userId;
+    if (!userId) {
+      return reply.status(401).send({ error: 'Not authenticated' });
+    }
+
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const updates: { telegramChatId?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+
+    if ('telegramChatId' in body) {
+      const val = body['telegramChatId'];
+      if (val !== null && typeof val !== 'string') {
+        return reply.status(400).send({ error: 'validation_error', message: 'telegramChatId must be a string or null' });
+      }
+      updates.telegramChatId = (val as string | null) ?? null;
+    }
+
+    await db.update(users).set(updates).where(eq(users.id, userId));
+
+    const [updated] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!updated) return reply.status(404).send({ error: 'User not found' });
+
+    return reply.send({
+      id: updated.id,
+      displayName: updated.displayName,
+      email: updated.email,
+      avatarUrl: updated.avatarUrl,
+      planId: updated.planId,
+      telegramChatId: updated.telegramChatId ?? null,
+      createdAt: updated.createdAt.toISOString(),
     });
   });
 
