@@ -1,5 +1,4 @@
 import type { Strategy, MarketSnapshot, Decision, MarkSource, TradingInstanceId } from '@herobids/domain';
-import crypto from 'node:crypto';
 import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { Journal } from './journal.js';
@@ -7,6 +6,7 @@ import type { RiskLimits } from './risk-gate.js';
 import type { PositionState } from './position-tracker.js';
 import { submitDecisionForExecution } from './decision-intake.js';
 import type { DecisionContext } from './decision-intake.js';
+import { computeDecisionContextHash } from './decision-context-hash.js';
 
 /**
  * Clock abstraction — allows backtesting to inject simulated time.
@@ -182,17 +182,8 @@ export async function runTradingCycle(
     return { decided: false, riskRejected: false, position, executionFailed: false, strategyError: false };
   }
 
-  // Stamp the trading instance ID and context hash
-  const contextHash = decision.contextHash ?? computeContextHash(snapshot, position, deps.strategyConfig);
-  const stampedDecision: Decision = {
-    ...decision,
-    tradingInstanceId: deps.tradingInstanceId as TradingInstanceId,
-    contextHash,
-    actorType: decision.actorType ?? 'system',
-  };
-
   // Resolve reference mark for context
-  const { referenceMark, referenceMarkSource, markResult } = await resolveReferenceMark(snapshot, deps.symbol, deps.markSource);
+  const { referenceMark, referenceMarkSource } = await resolveReferenceMark(snapshot, deps.symbol, deps.markSource);
 
   // Build decision context
   const decisionContext: DecisionContext = {
@@ -215,6 +206,15 @@ export async function runTradingCycle(
       source: referenceMarkSource,
     },
     strategyParams: deps.strategyConfig,
+  };
+
+  // Stamp the trading instance ID and canonical context hash.
+  const contextHash = computeDecisionContextHash(decisionContext);
+  const stampedDecision: Decision = {
+    ...decision,
+    tradingInstanceId: deps.tradingInstanceId as TradingInstanceId,
+    contextHash,
+    actorType: decision.actorType ?? 'system',
   };
 
   // 2. Submit decision through the shared intake pipeline
@@ -244,32 +244,6 @@ export async function runTradingCycle(
     executionFailed: intakeResult.executionFailed,
     strategyError: false,
   };
-}
-
-function computeContextHash(
-  snapshot: MarketSnapshot,
-  position: PositionState,
-  strategyConfig: Record<string, unknown>,
-): string {
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify({
-      snapshot: {
-        symbol: snapshot.symbol,
-        price: snapshot.price.toString(),
-        timestamp: snapshot.timestamp,
-        data: snapshot.data,
-      },
-      position: {
-        side: position.side,
-        size: position.size.toString(),
-        entryPrice: position.entryPrice.toString(),
-        realizedPnl: position.realizedPnl.toString(),
-      },
-      strategyConfig,
-    }))
-    .digest('hex')
-    .slice(0, 16);
 }
 
 async function resolveReferenceMark(

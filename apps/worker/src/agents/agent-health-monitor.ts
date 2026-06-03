@@ -1,4 +1,4 @@
-import { eq, and, lt } from 'drizzle-orm';
+import { eq, and, lt, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agentRuntimeSessions } from '@herobids/db';
 import type { AgentSessionManager } from './agent-session-manager.js';
@@ -53,16 +53,28 @@ export class AgentHealthMonitor {
       const threshold = new Date(Date.now() - this.config.heartbeatTimeoutMs);
 
       // Find running sessions with stale heartbeats
-      const staleSessions = await this.db.select()
+      const staleRunningSessions = await this.db.select()
         .from(agentRuntimeSessions)
         .where(and(
           eq(agentRuntimeSessions.status, 'running'),
           lt(agentRuntimeSessions.lastHeartbeatAt, threshold),
         ));
 
-      for (const session of staleSessions) {
+      for (const session of staleRunningSessions) {
         logger.warn({ sessionId: session.id, agentId: session.agentId, lastHeartbeat: session.lastHeartbeatAt }, 'Stale agent session detected');
         await this.sessionManager.markUnhealthy(session.id);
+      }
+
+      const staleStartingSessions = await this.db.select()
+        .from(agentRuntimeSessions)
+        .where(and(
+          inArray(agentRuntimeSessions.status, ['starting', 'launching']),
+          lt(agentRuntimeSessions.startedAt, threshold),
+        ));
+
+      for (const session of staleStartingSessions) {
+        logger.warn({ sessionId: session.id, agentId: session.agentId, startedAt: session.startedAt }, 'Stale agent start detected');
+        await this.sessionManager.handleStartTimeout(session.id);
       }
     } catch (err) {
       logger.error({ err }, 'Health check failed');

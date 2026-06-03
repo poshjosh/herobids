@@ -39,6 +39,11 @@ export class AgentRuntimeLauncher {
    * Returns a handle for tracking and cleanup.
    */
   async launch(config: RuntimeLaunchConfig): Promise<RuntimeHandle> {
+    const existing = this.runtimes.get(config.sessionId);
+    if (existing) {
+      return existing;
+    }
+
     // V1: In production this would shell out to Docker or call the ECS API.
     // For now, we model the contract and track state in memory.
     const handle: RuntimeHandle = {
@@ -65,6 +70,13 @@ export class AgentRuntimeLauncher {
     logger.info({ sessionId, containerId: handle.containerId }, 'Agent runtime stopped');
   }
 
+  /** Stop all tracked runtimes. */
+  async stopAll(): Promise<void> {
+    for (const sessionId of [...this.runtimes.keys()]) {
+      await this.stop(sessionId);
+    }
+  }
+
   /**
    * Kill a runtime immediately (SIGKILL).
    */
@@ -79,6 +91,11 @@ export class AgentRuntimeLauncher {
 
   /** Check if a runtime is tracked as running */
   isRunning(sessionId: string): boolean {
+    return this.runtimes.has(sessionId);
+  }
+
+  /** Check if a runtime is tracked. */
+  hasRuntime(sessionId: string): boolean {
     return this.runtimes.has(sessionId);
   }
 

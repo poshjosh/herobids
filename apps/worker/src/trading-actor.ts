@@ -1009,6 +1009,12 @@ export class TradingActor implements InstanceActor {
     return this.lastSnapshot;
   }
 
+  /** Most recent cached mark result — exposes the same value used by the trading cycle so agent
+   * decision contexts share the oracle mark rather than falling back to raw snapshot price. */
+  getLastMarkResult() {
+    return this.cachedMark?.result;
+  }
+
   /** Build decision intake deps for the agent decision handler */
   getIntakeDeps(): DecisionIntakeDeps {
     return {

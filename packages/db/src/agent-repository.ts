@@ -45,6 +45,12 @@ export interface UpdateAgentRuntimeSession {
   stoppedAt?: Date;
 }
 
+export interface LaunchableStartingSession {
+  id: string;
+  agentId: string;
+  tradingInstanceId: string;
+}
+
 // --- Agent Message ---
 
 export interface InsertAgentMessage {
@@ -198,6 +204,45 @@ export class AgentRepository {
     return rows[0] ?? null;
   }
 
+  async getSessionsByStatuses(statuses: string[]) {
+    if (statuses.length === 0) return [];
+
+    return this.db.select().from(agentRuntimeSessions)
+      .where(inArray(agentRuntimeSessions.status, statuses));
+  }
+
+  /** Atomically claim a 'starting' session for launch by transitioning it to 'launching'.
+   * Returns true if the claim succeeded (this worker owns the launch); false if another worker
+   * already claimed it. Prevents duplicate runtime launches in multi-worker deployments. */
+  async claimStartingSession(sessionId: string): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      status: 'launching',
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      eq(agentRuntimeSessions.status, 'starting'),
+    )).returning({ id: agentRuntimeSessions.id });
+    return updated.length > 0;
+  }
+
+  async getLaunchableStartingSessions(): Promise<LaunchableStartingSession[]> {
+    return this.db.select({
+      id: agentRuntimeSessions.id,
+      agentId: agentRuntimeSessions.agentId,
+      tradingInstanceId: agentRuntimeSessions.tradingInstanceId,
+    }).from(agentRuntimeSessions)
+      .innerJoin(agents, eq(agentRuntimeSessions.agentId, agents.id))
+      .innerJoin(agentInstanceLinks, and(
+        eq(agentInstanceLinks.agentId, agents.id),
+        eq(agentInstanceLinks.tradingInstanceId, agentRuntimeSessions.tradingInstanceId),
+        eq(agentInstanceLinks.status, 'active'),
+      ))
+      .where(and(
+        eq(agentRuntimeSessions.status, 'starting'),
+        eq(agents.status, 'starting'),
+      ))
+      .orderBy(desc(agentRuntimeSessions.startedAt));
+  }
+
   async getActiveSessionsByInstance(tradingInstanceId: string) {
     return this.db.select().from(agentRuntimeSessions)
       .where(and(
@@ -219,6 +264,42 @@ export class AgentRepository {
 
   async updateSession(id: string, update: UpdateAgentRuntimeSession): Promise<void> {
     await this.db.update(agentRuntimeSessions).set(update).where(eq(agentRuntimeSessions.id, id));
+  }
+
+  async markSessionRunning(sessionId: string, heartbeatAt: Date): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      status: 'running',
+      lastHeartbeatAt: heartbeatAt,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
+  }
+
+  async markSessionStopped(sessionId: string, stoppedAt: Date): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      status: 'stopped',
+      stoppedAt,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
+  }
+
+  async markSessionStartTimedOut(sessionId: string, stoppedAt: Date): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      status: 'stopped',
+      stoppedAt,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      inArray(agentRuntimeSessions.status, ['starting', 'launching']),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
   }
 
   // --- Agent Messages ---

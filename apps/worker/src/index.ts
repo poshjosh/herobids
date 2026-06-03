@@ -24,6 +24,7 @@ import { AlertDispatcher } from './alerting/index.js';
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
+  AgentRuntimeLauncher,
   AgentSessionManager,
   AgentStreamConsumer,
   AgentHealthMonitor,
@@ -77,6 +78,7 @@ const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const actorRegistry = new Map<string, TradingActor>();
 const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
+const agentRuntimeLauncher = new AgentRuntimeLauncher();
 
 const intakeResolver: DecisionIntakeResolver = {
   getIntakeDeps: (instanceId: string) => {
@@ -89,6 +91,10 @@ const intakeResolver: DecisionIntakeResolver = {
     const snapshot = actor.getLastSnapshot();
     if (!snapshot) return undefined;
     const pos = actor.currentPosition;
+    const lastMark = actor.getLastMarkResult();
+    const referenceMark = (lastMark?.ok && !lastMark.data.stale)
+      ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
+      : { price: snapshot.price.toString(), source: 'snapshot' };
     return {
       snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp },
       position: pos.side === 'flat' ? null : {
@@ -97,7 +103,7 @@ const intakeResolver: DecisionIntakeResolver = {
         entryPrice: pos.entryPrice.toString(),
         realizedPnl: pos.realizedPnl.toString(),
       },
-      referenceMark: { price: snapshot.price.toString(), source: 'last_price' },
+      referenceMark,
       strategyParams: {},
     };
   },
@@ -127,7 +133,12 @@ const snapshotResolver: ContextSnapshotResolver = {
         entryPrice: pos.entryPrice.toString(),
         realizedPnl: pos.realizedPnl.toString(),
       },
-      referenceMark: { price: snapshot.price.toString(), source: 'last_price' },
+      referenceMark: (() => {
+        const lastMark = actor.getLastMarkResult();
+        return (lastMark?.ok && !lastMark.data.stale)
+          ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
+          : { price: snapshot.price.toString(), source: 'snapshot' };
+      })(),
       strategyParams: {},
       executionMode: actor.executionMode,
       guardrails: {},
@@ -136,7 +147,7 @@ const snapshotResolver: ContextSnapshotResolver = {
 };
 
 const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, eventPublisher, undefined, snapshotResolver);
-const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, undefined, agentReconnectHandler);
+const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler);
 const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager);
@@ -591,9 +602,12 @@ const runtime = new WorkerRuntime(
     };
     const actor = new TradingActor(tradingInstanceId, config.strategy.params as Record<string, unknown>, deps);
     actorRegistry.set(tradingInstanceId, actor);
-    agentStreamConsumer.subscribe(tradingInstanceId).catch((err: unknown) => {
-      logger.warn({ tradingInstanceId, err }, 'Failed to subscribe agent stream for instance');
-    });
+    try {
+      await agentStreamConsumer.subscribe(tradingInstanceId);
+    } catch (err: unknown) {
+      actorRegistry.delete(tradingInstanceId);
+      throw err;
+    }
     return actor;
   },
   async (): Promise<PersistedInstance[]> => {
@@ -634,7 +648,7 @@ process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
-  sessionManager.stop();
+  await sessionManager.stop();
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await runtime.shutdown();
@@ -647,7 +661,7 @@ process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
-  sessionManager.stop();
+  await sessionManager.stop();
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await runtime.shutdown();
@@ -656,9 +670,9 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-sessionManager.start();
 await agentStreamConsumer.start();
-agentHealthMonitor.start();
 
 await runtime.start();
+sessionManager.start();
+agentHealthMonitor.start();
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

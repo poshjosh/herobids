@@ -2,6 +2,7 @@ import type { MessageEnvelope, HeartbeatPayload, PauseRequestPayload, StopReques
 import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { AgentReconnectHandler } from './agent-reconnect-handler.js';
+import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-session-manager' });
@@ -24,42 +25,74 @@ const DEFAULT_CONFIG: AgentSessionManagerConfig = {
  * Monitors agent runtime health and marks sessions unhealthy when heartbeats stop.
  */
 export class AgentSessionManager {
-  private healthCheckTimer?: ReturnType<typeof setInterval>;
+  private reconcileTimer?: ReturnType<typeof setInterval>;
+  private stopping = false;
   private readonly config: AgentSessionManagerConfig;
 
   constructor(
     private readonly agentRepo: AgentRepository,
     private readonly eventPublisher: InstanceEventPublisher,
+    private readonly runtimeLauncher: AgentRuntimeLauncher,
     config?: Partial<AgentSessionManagerConfig>,
     private readonly reconnectHandler?: AgentReconnectHandler,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  /** Start the health check loop */
+  /** Start the launch reconciliation loop. */
   start(): void {
-    this.healthCheckTimer = setInterval(() => this.checkStaleSessions(), this.config.healthCheckIntervalMs);
+    void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
+    this.reconcileTimer = setInterval(() => {
+      void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
+    }, this.config.healthCheckIntervalMs);
   }
 
-  /** Stop the health check loop */
-  stop(): void {
-    if (this.healthCheckTimer) {
-      clearInterval(this.healthCheckTimer);
-      this.healthCheckTimer = undefined;
+  /** Stop the launch loop and any tracked runtimes. */
+  async stop(): Promise<void> {
+    this.stopping = true;
+    if (this.reconcileTimer) {
+      clearInterval(this.reconcileTimer);
+      this.reconcileTimer = undefined;
     }
+
+    await this.runtimeLauncher.stopAll();
   }
 
   /** Start a new agent runtime session */
   async startSession(agentId: string, tradingInstanceId: string, sessionId?: string): Promise<string> {
     const createdSessionId = await this.agentRepo.createSession({ id: sessionId, agentId, tradingInstanceId });
-    await this.agentRepo.updateSession(createdSessionId, {
-      status: 'running',
-      lastHeartbeatAt: new Date(),
-    });
-    await this.agentRepo.updateAgent(agentId, { status: 'active' });
-
-    logger.info({ agentId, sessionId: createdSessionId, tradingInstanceId }, 'Agent session started');
+    logger.info({ agentId, sessionId: createdSessionId, tradingInstanceId }, 'Agent session created');
     return createdSessionId;
+  }
+
+  /** Launch any starting sessions that have not yet been connected. */
+  async reconcileStartingSessions(): Promise<void> {
+    if (this.stopping) return;
+    const sessions = await this.agentRepo.getLaunchableStartingSessions();
+
+    for (const session of sessions) {
+      if (this.stopping) return;
+      if (this.runtimeLauncher.hasRuntime(session.id)) {
+        continue;
+      }
+
+      // Atomically claim the session (starting → launching) before launching.
+      // This prevents duplicate launches when multiple worker processes reconcile concurrently.
+      const claimed = await this.agentRepo.claimStartingSession(session.id);
+      if (!claimed) {
+        continue;
+      }
+
+      try {
+        await this.runtimeLauncher.launch({
+          agentId: session.agentId,
+          sessionId: session.id,
+          tradingInstanceId: session.tradingInstanceId,
+        });
+      } catch (err) {
+        logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to launch starting session');
+      }
+    }
   }
 
   /** Stop an agent session gracefully */
@@ -67,10 +100,12 @@ export class AgentSessionManager {
     const session = await this.agentRepo.getSession(sessionId);
     if (!session) return;
 
-    await this.agentRepo.updateSession(sessionId, {
-      status: 'stopped',
-      stoppedAt: new Date(),
-    });
+    await this.runtimeLauncher.stop(sessionId);
+
+    const stopped = await this.agentRepo.markSessionStopped(sessionId, new Date());
+    if (!stopped) {
+      return;
+    }
 
     // Update agent status
     await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
@@ -79,46 +114,43 @@ export class AgentSessionManager {
 
   /** Handle heartbeat from agent runtime */
   async handleHeartbeat(envelope: MessageEnvelope, payload: HeartbeatPayload): Promise<void> {
-    let session = await this.agentRepo.getSession(payload.sessionId);
-    let shouldBootstrapRecovery = session?.status === 'starting' || session?.status === 'unhealthy';
+    const session = await this.agentRepo.getSession(payload.sessionId);
     if (!session) {
-      const agent = await this.agentRepo.getAgent(envelope.initiatorId);
-      if (!agent || agent.status === 'paused' || agent.status === 'stopped') {
-        logger.warn({ sessionId: payload.sessionId, agentId: envelope.initiatorId }, 'Heartbeat for unknown session');
-        return;
-      }
-
-      // Reject heartbeats from stale runtimes (e.g. old instance after a relink).
-      // Only allow auto-create when the envelope instance matches the active link.
-      const activeLink = await this.agentRepo.getActiveLink(agent.id);
-      if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
-        logger.warn({ agentId: agent.id, envelopeInstanceId: envelope.tradingInstanceId }, 'Heartbeat from stale/unlinked instance — ignoring');
-        return;
-      }
-
-      // Retire any stale sessions (e.g. from a previous start that never connected)
-      // before opening the new one so there is never more than one live session.
-      await this.agentRepo.retireActiveSessions(agent.id);
-      await this.startSession(agent.id, envelope.tradingInstanceId, payload.sessionId);
-      shouldBootstrapRecovery = true;
-      session = await this.agentRepo.getSession(payload.sessionId);
-      if (!session) {
-        logger.error({ sessionId: payload.sessionId, agentId: envelope.initiatorId }, 'Failed to materialize session for heartbeat');
-        return;
-      }
-    }
-
-    // Only accept heartbeats for running/starting sessions
-    if (session.status !== 'running' && session.status !== 'starting' && session.status !== 'unhealthy') {
+      logger.warn({ sessionId: payload.sessionId, agentId: envelope.initiatorId }, 'Heartbeat for unknown session');
       return;
     }
 
-    await this.agentRepo.updateSession(payload.sessionId, {
-      status: 'running',
-      lastHeartbeatAt: new Date(),
-      cpuPct: payload.cpuPct,
-      memoryBytes: payload.memoryBytes,
-    });
+    const activeLink = await this.agentRepo.getActiveLink(session.agentId);
+    if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
+      logger.warn({ agentId: session.agentId, envelopeInstanceId: envelope.tradingInstanceId }, 'Heartbeat from stale/unlinked instance — ignoring');
+      return;
+    }
+
+      // Also bootstrap if the session is already 'running' in the DB but the launcher has no
+      // in-memory handle — this happens when the worker restarts while a runtime was live.
+      const shouldBootstrapRecovery = session.status === 'starting' || session.status === 'launching' || session.status === 'unhealthy'
+        || (session.status === 'running' && !this.runtimeLauncher.hasRuntime(payload.sessionId));
+
+    // Only accept heartbeats for running/starting/launching sessions.
+    if (session.status !== 'running' && session.status !== 'starting' && session.status !== 'launching' && session.status !== 'unhealthy') {
+      return;
+    }
+
+    const markedRunning = await this.agentRepo.markSessionRunning(payload.sessionId, new Date());
+    if (!markedRunning) {
+      return;
+    }
+
+    if (payload.cpuPct !== undefined || payload.memoryBytes !== undefined) {
+      await this.agentRepo.updateSession(payload.sessionId, {
+        cpuPct: payload.cpuPct,
+        memoryBytes: payload.memoryBytes,
+      });
+    }
+
+    if (shouldBootstrapRecovery) {
+      await this.agentRepo.updateAgent(session.agentId, { status: 'active' });
+    }
 
     // First successful connect and unhealthy recovery both bootstrap the runtime
     // with the latest instance status/context via the reconnect handler.
@@ -191,11 +223,21 @@ export class AgentSessionManager {
     logger.info({ agentId: agent.id, reason: payload.reason }, 'Agent stop requested');
   }
 
-  /** Check for sessions that missed heartbeats */
-  private async checkStaleSessions(): Promise<void> {
-    // This is a simplified implementation — in production, this would query
-    // sessions where lastHeartbeatAt < now - heartbeatTimeoutMs.
-    // For now, individual session health is checked during message processing.
+  /** Mark a never-connected session as stopped after launch timeout. */
+  async handleStartTimeout(sessionId: string): Promise<void> {
+    const session = await this.agentRepo.getSession(sessionId);
+    if (!session || (session.status !== 'starting' && session.status !== 'launching')) {
+      return;
+    }
+
+    const timedOut = await this.agentRepo.markSessionStartTimedOut(sessionId, new Date());
+    if (!timedOut) {
+      return;
+    }
+
+    await this.runtimeLauncher.stop(sessionId);
+    await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
+    logger.warn({ sessionId, agentId: session.agentId }, 'Agent session start timed out');
   }
 
   /** Mark a session as unhealthy (called by health monitor) */

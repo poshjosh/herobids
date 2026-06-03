@@ -12,7 +12,7 @@ export const agents = pgTable('agents', {
   name: text('name').notNull(),
   /** High-level goal description visible to the user */
   goal: text('goal').notNull(),
-  /** Current status: active, paused, stopped */
+  /** Current status: starting, active, paused, stopped */
   status: text('status').notNull().default('stopped'),
   /** Pause state detail (reason, requested_by, paused_at) */
   pauseState: jsonb('pause_state').$type<{ reason: string; requestedBy: string; pausedAt: string } | null>(),

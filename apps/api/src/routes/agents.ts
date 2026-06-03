@@ -227,8 +227,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     return reply.send({ status: 'active' });
   });
 
-  // Start agent (stopped → active) — creates a runtime session record so the
-  // DB is consistent before the external runtime process connects.
+  // Start agent (stopped → starting) — records the request durably.
   app.post<{ Params: { id: string } }>('/agents/:id/start', async (request, reply) => {
     const { id } = request.params;
     const sessionId = crypto.randomUUID();
@@ -252,7 +251,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       }
 
       const [claimedAgent] = await tx.update(agents).set({
-        status: 'active',
+        status: 'starting',
         pauseState: null,
         updatedAt: now,
       }).where(and(
@@ -293,7 +292,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(409).send({ error: 'not_stopped', message: 'Agent is not stopped' });
     }
 
-    return reply.send({ status: 'active', sessionId });
+    return reply.status(202).send({ status: 'starting', sessionId });
   });
 
   // --- Linking ---

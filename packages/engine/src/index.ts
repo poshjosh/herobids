@@ -49,6 +49,8 @@ export type {
   PersistOrderParams,
 } from './trading-cycle.js';
 
+export { computeDecisionContextHash, DecisionContextHashMismatchError, DECISION_CONTEXT_HASH_MISMATCH_CODE } from './decision-context-hash.js';
+
 export { submitDecisionForExecution } from './decision-intake.js';
 export type { DecisionIntakeDeps, DecisionIntakeResult, DecisionContext } from './decision-intake.js';
 

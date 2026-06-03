@@ -7,6 +7,7 @@ import { InMemoryJournal } from './journal-memory.js';
 import { ok, price, quantity } from '@herobids/domain';
 import type { OrderId, FillId, TradingInstanceId, DecisionId, InstrumentId, MarketSnapshot, Strategy, Decision } from '@herobids/domain';
 import type { Executor } from './executor.js';
+import { computeDecisionContextHash } from './decision-context-hash.js';
 
 function makeIdGen() {
   let c = 0;
@@ -318,9 +319,24 @@ describe('runTradingCycle', () => {
       clock: realClock,
     });
 
-    expect(result.decision!.contextHash).toHaveLength(16);
+    const expectedContextHash = computeDecisionContextHash({
+      snapshot: {
+        symbol: snapshot.symbol,
+        price: snapshot.price.toString(),
+        timestamp: snapshot.timestamp,
+        data: snapshot.data,
+      },
+      position: null,
+      referenceMark: {
+        price: snapshot.price.toString(),
+        source: 'snapshot',
+      },
+      strategyParams: { lookbackPeriod: 5 },
+    });
+
+    expect(result.decision!.contextHash).toBe(expectedContextHash);
     const persistedContext = persistence.calls['persistDecisionContext']![0]![0] as { contextHash: string; referenceMark: { source: string } };
-    expect(persistedContext.contextHash).toBe(result.decision!.contextHash);
+    expect(persistedContext.contextHash).toBe(expectedContextHash);
     expect(persistedContext.referenceMark.source).toBe('snapshot');
   });
 

@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import type { Decision, MarkSource } from '@herobids/domain';
 import { price } from '@herobids/domain';
 import type { Executor, ExecutionResult } from './executor.js';
@@ -10,12 +9,10 @@ import type { RiskLimits } from './risk-gate.js';
 import { checkRisk } from './risk-gate.js';
 import type { PositionState } from './position-tracker.js';
 import { applyFill } from './position-tracker.js';
+import { computeDecisionContextHash, DecisionContextHashMismatchError } from './decision-context-hash.js';
 import type {
   Clock,
   TradingCyclePersistence,
-  PersistFillParams,
-  PersistOrderParams,
-  PersistPositionParams,
 } from './trading-cycle.js';
 
 /**
@@ -90,10 +87,15 @@ export async function submitDecisionForExecution(
   position: PositionState,
   deps: DecisionIntakeDeps,
 ): Promise<DecisionIntakeResult> {
-  const contextHash = normalizeContextHash(decision.contextHash) ?? computeDecisionContextHash(context);
-  const resolvedDecision: Decision = decision.contextHash === contextHash
+  const canonicalContextHash = computeDecisionContextHash(context);
+  const suppliedContextHash = normalizeContextHash(decision.contextHash);
+  if (suppliedContextHash && suppliedContextHash !== canonicalContextHash) {
+    throw new DecisionContextHashMismatchError(canonicalContextHash, suppliedContextHash);
+  }
+
+  const resolvedDecision: Decision = decision.contextHash === canonicalContextHash
     ? decision
-    : { ...decision, contextHash };
+    : { ...decision, contextHash: canonicalContextHash };
 
   // 1. Persist decision
   await deps.persistence.persistDecision(resolvedDecision);
@@ -102,7 +104,7 @@ export async function submitDecisionForExecution(
   await deps.persistence.persistDecisionContext({
     decisionId: resolvedDecision.id,
     tradingInstanceId: deps.tradingInstanceId,
-    contextHash,
+    contextHash: canonicalContextHash,
     snapshot: context.snapshot,
     position: context.position,
     referenceMark: context.referenceMark,
@@ -207,6 +209,7 @@ export async function submitDecisionForExecution(
     size: updatedPosition.size.toString(),
     entryPrice: updatedPosition.entryPrice.toString(),
     realizedPnl: updatedPosition.realizedPnl.toString(),
+    markSource: context.referenceMark.source,
   });
 
   // Mark plan completed/failed
@@ -255,12 +258,4 @@ export async function submitDecisionForExecution(
 function normalizeContextHash(contextHash: string | undefined): string | undefined {
   const trimmed = contextHash?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
-}
-
-function computeDecisionContextHash(context: DecisionContext): string {
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(context))
-    .digest('hex')
-    .slice(0, 16);
 }

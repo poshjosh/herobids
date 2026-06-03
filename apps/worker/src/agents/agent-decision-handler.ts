@@ -2,7 +2,7 @@ import type { Decision, TradingInstanceId, DecisionId, InstrumentId } from '@her
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
-import { submitDecisionForExecution } from '@herobids/engine';
+import { submitDecisionForExecution, DecisionContextHashMismatchError } from '@herobids/engine';
 import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import pino from 'pino';
@@ -141,99 +141,108 @@ export class AgentDecisionHandler {
       actorId: initiatorId,
     };
 
-    // 6. Emit accepted
-    await this.eventPublisher.emitDecisionAccepted(tradingInstanceId, {
-      decisionId: payload.decisionId,
-      acceptedAt: new Date().toISOString(),
-      normalizedDecision: {
-        id: decision.id,
-        instrumentId: decision.instrumentId,
-        intent: decision.intent,
-        targetSize: decision.targetSize.toString(),
-        limitPrice: decision.limitPrice?.toString(),
-        actorType: decision.actorType,
-        actorId: decision.actorId,
-      },
-    });
-
-    // 7. Submit through the shared decision intake pipeline
-    // Resolve reference mark via markSource when available so agent decisions
-    // use the same mark as strategy-originated decisions (oracle > last fill > snapshot).
-    let resolvedContext = context;
-    if (intakeDeps.markSource) {
-      const markResult = await intakeDeps.markSource.fetchMark(intakeDeps.symbol);
-      if (markResult.ok && !markResult.data.stale) {
-        resolvedContext = {
-          ...context,
-          referenceMark: { price: markResult.data.price.toString(), source: markResult.data.source },
-        };
-      }
-    }
-
+    // 6. Submit through the shared decision intake pipeline.
+    // The handler forwards the exact context it resolved for the agent so the
+    // payload hash and server hash are computed over the same data.
+    // Acceptance is emitted after successful intake so we never send accepted
+    // followed by rejected for the same decision (e.g. on hash mismatch).
     try {
-      const result = await submitDecisionForExecution(decision, resolvedContext, position, intakeDeps);
+      const result = await submitDecisionForExecution(decision, context, position, intakeDeps);
 
-      // 8. Emit plan status
-      if (result.plan) {
-        await this.eventPublisher.emitPlanStatus(tradingInstanceId, {
+      try {
+        // 7. Emit accepted — deferred until hash and risk checks pass.
+        await this.eventPublisher.emitDecisionAccepted(tradingInstanceId, {
           decisionId: payload.decisionId,
-          planId: result.plan.id,
-          status: result.plan.status as 'created' | 'executing' | 'completed' | 'failed',
-          action: result.plan.action,
-          venue: result.plan.venue,
-          symbol: result.plan.symbol,
-          orderCount: result.plan.orders.length,
+          acceptedAt: new Date().toISOString(),
+          normalizedDecision: {
+            id: decision.id,
+            instrumentId: decision.instrumentId,
+            intent: decision.intent,
+            targetSize: decision.targetSize.toString(),
+            limitPrice: decision.limitPrice?.toString(),
+            actorType: decision.actorType,
+            actorId: decision.actorId,
+          },
         });
-      }
 
-      // 9. Emit execution result or guardrail
-      if (result.riskRejected) {
-        await this.eventPublisher.emitGuardrailTriggered(tradingInstanceId, {
-          scope: 'risk_gate',
-          code: 'risk.rejected',
-          message: 'Decision rejected by risk gate',
-          decisionId: payload.decisionId,
-        });
-      } else if (result.executionFailed) {
-        await this.eventPublisher.emitExecutionResult(tradingInstanceId, {
-          decisionId: payload.decisionId,
-          planId: result.plan?.id ?? '',
-          orders: [],
-          fills: [],
-          positionAfter: {
-            side: result.position.side,
-            size: result.position.size.toString(),
-            entryPrice: result.position.entryPrice.toString(),
-          },
-          executionFailed: true,
-          completedAt: new Date().toISOString(),
-        });
-      } else if (result.executionResult) {
-        await this.eventPublisher.emitExecutionResult(tradingInstanceId, {
-          decisionId: payload.decisionId,
-          planId: result.plan?.id ?? '',
-          orders: result.executionResult.orders.map((o) => ({
-            id: o.id,
-            side: o.side,
-            type: o.type,
-            quantity: o.quantity.toString(),
-            status: o.status,
-          })),
-          fills: result.executionResult.fills.map((f) => ({
-            side: f.side,
-            quantity: f.quantity.toString(),
-            price: f.price.toString(),
-          })),
-          positionAfter: {
-            side: result.position.side,
-            size: result.position.size.toString(),
-            entryPrice: result.position.entryPrice.toString(),
-          },
-          executionFailed: false,
-          completedAt: new Date().toISOString(),
-        });
+        // 8. Emit plan status
+        if (result.plan) {
+          await this.eventPublisher.emitPlanStatus(tradingInstanceId, {
+            decisionId: payload.decisionId,
+            planId: result.plan.id,
+            status: result.plan.status as 'created' | 'executing' | 'completed' | 'failed',
+            action: result.plan.action,
+            venue: result.plan.venue,
+            symbol: result.plan.symbol,
+            orderCount: result.plan.orders.length,
+          });
+        }
+
+        // 9. Emit execution result or guardrail
+        if (result.riskRejected) {
+          await this.eventPublisher.emitGuardrailTriggered(tradingInstanceId, {
+            scope: 'risk_gate',
+            code: 'risk.rejected',
+            message: 'Decision rejected by risk gate',
+            decisionId: payload.decisionId,
+          });
+        } else if (result.executionFailed) {
+          await this.eventPublisher.emitExecutionResult(tradingInstanceId, {
+            decisionId: payload.decisionId,
+            planId: result.plan?.id ?? '',
+            orders: [],
+            fills: [],
+            positionAfter: {
+              side: result.position.side,
+              size: result.position.size.toString(),
+              entryPrice: result.position.entryPrice.toString(),
+            },
+            executionFailed: true,
+            completedAt: new Date().toISOString(),
+          });
+        } else if (result.executionResult) {
+          await this.eventPublisher.emitExecutionResult(tradingInstanceId, {
+            decisionId: payload.decisionId,
+            planId: result.plan?.id ?? '',
+            orders: result.executionResult.orders.map((o) => ({
+              id: o.id,
+              side: o.side,
+              type: o.type,
+              quantity: o.quantity.toString(),
+              status: o.status,
+            })),
+            fills: result.executionResult.fills.map((f) => ({
+              side: f.side,
+              quantity: f.quantity.toString(),
+              price: f.price.toString(),
+            })),
+            positionAfter: {
+              side: result.position.side,
+              size: result.position.size.toString(),
+              entryPrice: result.position.entryPrice.toString(),
+            },
+            executionFailed: false,
+            completedAt: new Date().toISOString(),
+          });
+        }
+      } catch (publishErr) {
+        logger.error({ decisionId: payload.decisionId, err: publishErr }, 'Failed to publish decision outcome');
       }
     } catch (err) {
+      if (err instanceof DecisionContextHashMismatchError) {
+        await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+          decisionId: payload.decisionId,
+          code: 'context_hash_mismatch',
+          message: 'Decision context hash does not match the server-resolved context',
+          retryable: false,
+          details: {
+            expectedHash: err.expectedHash,
+            suppliedHash: err.suppliedHash,
+          },
+        });
+        return;
+      }
+
       logger.error({ decisionId: payload.decisionId, err }, 'Decision execution failed');
       await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
         decisionId: payload.decisionId,
