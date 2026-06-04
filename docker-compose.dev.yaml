@@ -8,6 +8,7 @@
 
 services:
   api:
+    image: herobids-api-dev
     build:
       context: .
       dockerfile: apps/api/Dockerfile
