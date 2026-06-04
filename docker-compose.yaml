@@ -49,6 +49,8 @@ services:
       AUTH_JWT_SECRET: docker-local-dev-secret-change-in-production!!
       AUTH_PUBLIC_BASE_URL: http://localhost:3000
       AUTH_FRONTEND_ORIGIN: http://localhost:5173
+      # Dev-only default — override with a real 64-hex-char key in production.
+      CREDENTIAL_ENCRYPTION_KEY: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -63,6 +65,8 @@ services:
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
+      # Dev-only default — override with a real 64-hex-char key in production.
+      CREDENTIAL_ENCRYPTION_KEY: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
     depends_on:
       migrate:
         condition: service_completed_successfully

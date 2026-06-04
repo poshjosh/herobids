@@ -156,7 +156,7 @@ const workerTelegram = appConfig.alerts.telegram.botToken
   : undefined;
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
-const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler, platformAlerts);
+const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, { healthCheckIntervalMs: 2000 }, agentReconnectHandler, platformAlerts);
 const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
