@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router';
 import Decimal from 'decimal.js';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { instances as instancesApi, journal, type ActivityEvent } from '../../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
 import { TimelineEvent } from '../../timeline/TimelineEvent.js';
 
 export function InstanceDetailPage() {
@@ -14,6 +14,10 @@ export function InstanceDetailPage() {
     queryKey: ['instances', id],
     queryFn: () => instancesApi.get(id!),
     enabled: Boolean(id),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status as string | undefined;
+      return status === 'running' || status === 'starting' ? 5000 : false;
+    },
   });
 
   const positionsQuery = useQuery({
@@ -53,6 +57,7 @@ export function InstanceDetailPage() {
   });
 
   const inst = instanceQuery.data;
+  const lifecycleError = startMutation.error ?? stopMutation.error;
 
   if (instanceQuery.isLoading) {
     return <PageShell><LoadingRows count={4} /></PageShell>;
@@ -128,6 +133,18 @@ export function InstanceDetailPage() {
           {execMode} mode
         </span>
       </div>
+
+      {inst.status === 'crashed' && (
+        <div style={{ marginBottom: '16px' }}>
+          <ErrorBanner message="This instance crashed during startup. Check the latest journal events and verify the linked venue account and credential before retrying." />
+        </div>
+      )}
+
+      {lifecycleError && (
+        <div style={{ marginBottom: '16px' }}>
+          <ErrorBanner message={(lifecycleError as Error).message} />
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px', alignItems: 'start' }}>
         {/* Left: timeline */}

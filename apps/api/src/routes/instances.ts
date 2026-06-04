@@ -93,6 +93,23 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
       }
     }
 
+    const instanceConfig = instance.config as Record<string, unknown> | undefined;
+    const venueType = (instanceConfig?.['venueType'] as string | undefined) ?? 'orderbook';
+
+    if (instance.venueAccountId !== 'default' && venueType !== 'swap') {
+      const [venueAccount] = await db.select({ credentialId: venueAccounts.credentialId })
+        .from(venueAccounts)
+        .where(and(eq(venueAccounts.id, instance.venueAccountId), eq(venueAccounts.userId, request.userId)));
+
+      if (!venueAccount) {
+        return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+      }
+
+      if (!venueAccount.credentialId) {
+        return reply.status(409).send({ error: 'no_credential', message: 'Linked venue account has no credential' });
+      }
+    }
+
     // Check for another non-stopped instance on the same venue account (unique constraint guard)
     const [blocker] = await db.select({ id: tradingInstances.id, status: tradingInstances.status })
       .from(tradingInstances)

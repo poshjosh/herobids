@@ -1,7 +1,7 @@
 import { useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type AgentDecision } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -11,6 +11,7 @@ export function AgentDetailPage() {
     queryKey: ['agents', id],
     queryFn: () => agentsApi.get(id!),
     enabled: !!id,
+    refetchInterval: 5000,
   });
 
   const startMutation = useMutation({
@@ -81,7 +82,13 @@ export function AgentDetailPage() {
   const agent = query.data;
   if (!agent) return <PageShell><ErrorState message="Agent not found" /></PageShell>;
 
+  const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error;
   const canStop = ['active', 'starting', 'paused', 'unhealthy'].includes(agent.status);
+  const runtimeAlert = agent.status === 'crashed'
+    ? 'Agent crashed. The runtime stopped unexpectedly. Review recent activity and messages below.'
+    : agent.activeSession?.status === 'unhealthy'
+      ? 'Agent runtime is unhealthy. Heartbeats are missing and the worker is recovering.'
+      : null;
 
   return (
     <PageShell>
@@ -92,7 +99,7 @@ export function AgentDetailPage() {
           <div style={{ display: 'flex', gap: '8px' }}>
             {agent.status === 'stopped' && (
               <Button variant="primary" onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
-                Start
+                {startMutation.isPending ? 'Starting...' : 'Start'}
               </Button>
             )}
             {agent.status === 'active' && (
@@ -115,6 +122,9 @@ export function AgentDetailPage() {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {runtimeAlert && <ErrorBanner message={runtimeAlert} />}
+        {lifecycleError && <ErrorBanner message={(lifecycleError as Error).message} />}
+
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Status</h3>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>

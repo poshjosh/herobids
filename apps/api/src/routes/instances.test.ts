@@ -134,6 +134,10 @@ describe('instance routes', () => {
           }),
         }),
       };
+              if (selectCallCount === 2) {
+                // Venue account lookup: credential exists, so the live gate still controls the response
+                return Promise.resolve([{ credentialId: 'cred-1' }]);
+              }
       // Override for the first call (instance lookup by id+userId)
       (db.select as ReturnType<typeof vi.fn>).mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -190,6 +194,7 @@ describe('instance routes', () => {
             where: vi.fn().mockImplementation(() => {
               selectCallCount++;
               if (selectCallCount === 1) return Promise.resolve([liveInstance]);
+              if (selectCallCount === 2) return Promise.resolve([{ credentialId: 'cred-1' }]);
               return Promise.resolve([]); // No blocker
             }),
           }),
@@ -221,6 +226,52 @@ describe('instance routes', () => {
           userId: TEST_USER_ID,
         }),
       });
+    });
+
+    it('returns 409 when the linked venue account has no credential', async () => {
+      const { instanceRoutes } = await import('./instances.js');
+
+      const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
+
+      const paperInstance = {
+        id: 'inst-2',
+        userId: TEST_USER_ID,
+        portfolioId: 'port-1',
+        venueAccountId: 'va-2',
+        strategyId: 'momentum',
+        config: validConfig,
+        status: 'stopped',
+        configVersion: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        startedAt: null,
+        stoppedAt: null,
+      };
+
+      let selectCallCount = 0;
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              selectCallCount++;
+              if (selectCallCount === 1) return Promise.resolve([paperInstance]);
+              if (selectCallCount === 2) return Promise.resolve([{ credentialId: null }]);
+              return Promise.resolve([]);
+            }),
+          }),
+        }),
+      };
+
+      const app = Fastify();
+      decorateWithAuth(app);
+      await instanceRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+
+      const res = await app.inject({ method: 'POST', url: '/instances/inst-2/start' });
+
+      expect(res.statusCode).toBe(409);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('no_credential');
+      expect(mockQueue.add).not.toHaveBeenCalled();
     });
   });
 
