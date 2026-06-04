@@ -19,6 +19,7 @@ services:
     command: ['node', '--import', 'tsx/esm', 'src/index.ts']
     environment:
       NODE_ENV: development
+      AUTH_FRONTEND_ORIGIN: http://localhost:${WEB_PORT:-8080}
 
   worker:
     build:
@@ -40,7 +41,7 @@ services:
       target: build
     working_dir: /app/apps/web
     ports:
-      - '5173:5173'
+      - "${WEB_PORT:-8080}:5173"
     volumes:
       - ./apps/web/src:/app/apps/web/src:ro
     command: ['pnpm', '--filter', '@herobids/web', 'run', 'dev', '--host', '0.0.0.0']
