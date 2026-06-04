@@ -79,7 +79,7 @@ const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const actorRegistry = new Map<string, TradingActor>();
 const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
-const agentRuntimeLauncher = new AgentRuntimeLauncher();
+const agentRuntimeLauncher = new AgentRuntimeLauncher({ redis: redisClient });
 
 const intakeResolver: DecisionIntakeResolver = {
   getIntakeDeps: (instanceId: string) => {
@@ -156,7 +156,7 @@ const workerTelegram = appConfig.alerts.telegram.botToken
   : undefined;
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
-const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, { healthCheckIntervalMs: 2000 }, agentReconnectHandler, platformAlerts);
+const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler, platformAlerts);
 const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
@@ -314,8 +314,10 @@ const runtime = new WorkerRuntime(
             })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
             throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
           }
-        } else {
+        } else if (config.execution.mode !== 'paper') {
           throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential`);
+        } else {
+          logger.warn({ venueAccountId, tradingInstanceId }, 'Paper mode: venue account has no linked credential — proceeding without credentials');
         }
       } catch (err) {
         if (err instanceof CredentialResolutionError) throw err;
@@ -578,7 +580,7 @@ const runtime = new WorkerRuntime(
       },
       idGen,
       fetchPrice,
-      venuePort: venueAdapter ?? undefined,
+      venuePort: config.execution.mode === 'paper' ? undefined : (venueAdapter ?? undefined),
       reconciliationConfig,
       executionMode: config.execution.mode,
       streamConfig,

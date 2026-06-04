@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+import type { Redis } from 'ioredis';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-runtime-launcher' });
@@ -25,6 +27,18 @@ export interface RuntimeHandle {
   startedAt: string;
 }
 
+export interface AgentRuntimeLauncherConfig {
+  /**
+   * Redis client used by the stub to publish synthetic heartbeats.
+   * When provided the stub acts as a minimal "always-ready" runtime.
+   */
+  redis?: Redis;
+  /** Stream key prefix for inbound agent messages. Default: 'agent:inbound:' */
+  streamKeyPrefix?: string;
+  /** Interval between stub heartbeats in ms. Default: 5000 */
+  heartbeatIntervalMs?: number;
+}
+
 /**
  * AgentRuntimeLauncher — launches, stops, and kills sandboxed agent runtimes.
  *
@@ -33,6 +47,16 @@ export interface RuntimeHandle {
  */
 export class AgentRuntimeLauncher {
   private readonly runtimes = new Map<string, RuntimeHandle>();
+  private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly redis?: Redis;
+  private readonly streamKeyPrefix: string;
+  private readonly heartbeatIntervalMs: number;
+
+  constructor(config?: AgentRuntimeLauncherConfig) {
+    this.redis = config?.redis;
+    this.streamKeyPrefix = config?.streamKeyPrefix ?? 'agent:inbound:';
+    this.heartbeatIntervalMs = config?.heartbeatIntervalMs ?? 5_000;
+  }
 
   /**
    * Launch a new isolated agent runtime container.
@@ -55,7 +79,40 @@ export class AgentRuntimeLauncher {
 
     this.runtimes.set(config.sessionId, handle);
     logger.info({ ...handle }, 'Agent runtime launched');
+
+    if (this.redis) {
+      this.startStubHeartbeats(handle, config.tradingInstanceId);
+    }
+
     return handle;
+  }
+
+  private startStubHeartbeats(handle: RuntimeHandle, tradingInstanceId: string): void {
+    const streamKey = `${this.streamKeyPrefix}${tradingInstanceId}`;
+
+    const publish = async (): Promise<void> => {
+      const envelope = {
+        schemaVersion: 'v1',
+        messageId: crypto.randomUUID(),
+        correlationId: handle.sessionId,
+        initiatorType: 'agent',
+        initiatorId: handle.agentId,
+        tradingInstanceId,
+        type: 'agent.runtime.heartbeat',
+        createdAt: new Date().toISOString(),
+        payload: { sessionId: handle.sessionId, status: 'ready' },
+      };
+      try {
+        await this.redis!.xadd(streamKey, '*', 'envelope', JSON.stringify(envelope));
+      } catch (err) {
+        logger.warn({ err, sessionId: handle.sessionId }, 'Stub heartbeat publish failed');
+      }
+    };
+
+    void publish();
+    const timer = setInterval(() => void publish(), this.heartbeatIntervalMs);
+    this.heartbeatTimers.set(handle.sessionId, timer);
+    logger.debug({ sessionId: handle.sessionId, tradingInstanceId, intervalMs: this.heartbeatIntervalMs }, 'Stub heartbeat publisher started');
   }
 
   /**
@@ -64,6 +121,12 @@ export class AgentRuntimeLauncher {
   async stop(sessionId: string): Promise<void> {
     const handle = this.runtimes.get(sessionId);
     if (!handle) return;
+
+    const timer = this.heartbeatTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.heartbeatTimers.delete(sessionId);
+    }
 
     // V1: Would send SIGTERM to the container and wait
     this.runtimes.delete(sessionId);
@@ -83,6 +146,12 @@ export class AgentRuntimeLauncher {
   async kill(sessionId: string): Promise<void> {
     const handle = this.runtimes.get(sessionId);
     if (!handle) return;
+
+    const timer = this.heartbeatTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.heartbeatTimers.delete(sessionId);
+    }
 
     // V1: Would SIGKILL the container
     this.runtimes.delete(sessionId);

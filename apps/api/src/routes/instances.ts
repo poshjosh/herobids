@@ -95,8 +95,9 @@ export async function instanceRoutes(app: FastifyInstance, queue: Queue<Lifecycl
 
     const instanceConfig = instance.config as Record<string, unknown> | undefined;
     const venueType = (instanceConfig?.['venueType'] as string | undefined) ?? 'orderbook';
+    const executionMode = (instanceConfig?.['execution'] as Record<string, unknown> | undefined)?.['mode'];
 
-    if (instance.venueAccountId !== 'default' && venueType !== 'swap') {
+    if (instance.venueAccountId !== 'default' && venueType !== 'swap' && executionMode !== 'paper') {
       const [venueAccount] = await db.select({ credentialId: venueAccounts.credentialId })
         .from(venueAccounts)
         .where(and(eq(venueAccounts.id, instance.venueAccountId), eq(venueAccounts.userId, request.userId)));
