@@ -4,9 +4,9 @@ import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { createDatabase } from '@herobids/db';
 import { instanceRoutes } from './routes/instances.js';
-import { venueAccountRoutes, portfolioRoutes } from './routes/accounts.js';
+import { venueAccountRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
-import { journalRoutes, positionRoutes, portfolioPositionRoutes } from './routes/views.js';
+import { journalRoutes, positionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
 import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
 import { liveStatusRoutes } from './routes/live-status.js';
@@ -65,11 +65,9 @@ await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPl
 // Register route modules (all require auth)
 await instanceRoutes(app, lifecycleQueue, db, appConfig.plans);
 await venueAccountRoutes(app, db, appConfig.plans);
-await portfolioRoutes(app, db, appConfig.plans);
 await credentialRoutes(app, lifecycleQueue, db, appConfig.plans);
 await journalRoutes(app, db);
 await positionRoutes(app, db);
-await portfolioPositionRoutes(app, db);
 await reconciliationRoutes(app, db);
 await backtestRoutes(app, backtestQueue, db, appConfig.plans);
 await liveStatusRoutes(app, db);

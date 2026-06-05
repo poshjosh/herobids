@@ -1,9 +1,7 @@
 import { z } from 'zod';
 
 export const CreateInstanceSchema = z.object({
-  portfolioId: z.string().min(1),
   venueAccountId: z.string().min(1),
-  strategyId: z.string().min(1),
   venue: z.string().min(1),
   symbol: z.string().min(1),
   config: z.record(z.unknown()),
@@ -37,7 +35,7 @@ export const RotateCredentialSchema = z.object({
 });
 
 export const JournalQuerySchema = z.object({
-  tradingInstanceId: z.string().optional(),
+  actorId: z.string().optional(),
   backtestRunId: z.string().optional(),
   type: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),

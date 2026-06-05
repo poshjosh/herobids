@@ -6,7 +6,13 @@ import { pgTable, text, timestamp, numeric, index } from 'drizzle-orm/pg-core';
  */
 export const orders = pgTable('orders', {
   id: text('id').primaryKey(),               // UUIDv7
-  tradingInstanceId: text('trading_instance_id').notNull(),
+  // tradingInstanceId REMOVED — orders are actor-scoped via actorType/actorId
+  /** Venue account this order was placed through */
+  venueAccountId: text('venue_account_id').notNull(),
+  /** Actor type that placed this order: agent | bot | user | system */
+  actorType: text('actor_type').notNull().default('system'),
+  /** Stable identifier of the actor that placed this order */
+  actorId: text('actor_id'),
   executionPlanId: text('execution_plan_id'),
   /** Venue's own reference ID for reconciliation */
   venueRefId: text('venue_ref_id'),
@@ -27,7 +33,8 @@ export const orders = pgTable('orders', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  index('idx_orders_trading_instance_id').on(t.tradingInstanceId),
+  index('idx_orders_venue_account_id').on(t.venueAccountId),
+  index('idx_orders_actor_id').on(t.actorId),
   index('idx_orders_venue_ref_id').on(t.venueRefId),
   index('idx_orders_status').on(t.status),
 ]);

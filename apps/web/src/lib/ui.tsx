@@ -401,3 +401,48 @@ export function ErrorBanner({ message }: { message: string }) {
     </div>
   );
 }
+
+export const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '9px 12px',
+  background: 'var(--color-surface-2)',
+  border: '1px solid var(--color-border)',
+  borderRadius: '7px',
+  color: 'var(--color-text-primary)',
+  fontSize: '14px',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+        padding: '24px',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-surface-1)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '12px',
+          padding: '28px',
+          width: '100%',
+          maxWidth: '480px',
+        }}
+      >
+        <div style={{ fontWeight: '600', fontSize: '17px', marginBottom: '24px' }}>{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}

@@ -1,11 +1,13 @@
 import crypto from 'node:crypto';
-import { eq, and, isNull, inArray, desc, or, gte, notInArray } from 'drizzle-orm';
+import { eq, and, isNull, desc, or, gte, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, tradingInstances, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
+import { fills, positions, bots, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   venueRefId?: string;
   venue: string;
   symbol: string;
@@ -18,8 +20,9 @@ export interface InsertFill {
 }
 
 export interface UpsertPosition {
-  tradingInstanceId: string;
   venueAccountId: string;
+  actorType: string;
+  actorId: string;
   venue: string;
   symbol: string;
   side: string;
@@ -40,7 +43,9 @@ export class FillRepository {
     await this.db.insert(fills).values({
       id,
       orderId: fill.orderId,
-      tradingInstanceId: fill.tradingInstanceId,
+      venueAccountId: fill.venueAccountId,
+      actorType: fill.actorType ?? 'system',
+      actorId: fill.actorId ?? null,
       venueRefId: fill.venueRefId ?? null,
       venue: fill.venue,
       symbol: fill.symbol,
@@ -54,9 +59,12 @@ export class FillRepository {
     return id;
   }
 
-  /** Get recent fills for a trading instance, optionally since a timestamp */
-  async getRecentByInstance(tradingInstanceId: string, since?: Date, limit?: number) {
-    const conditions = [eq(fills.tradingInstanceId, tradingInstanceId)];
+  /** Get recent fills for an actor, optionally since a timestamp */
+  async getRecentByActor(actorType: string, actorId: string, since?: Date, limit?: number) {
+    const conditions = [
+      eq(fills.actorType, actorType),
+      eq(fills.actorId, actorId),
+    ];
     if (since) {
       conditions.push(gte(fills.filledAt, since));
     }
@@ -71,40 +79,23 @@ export class FillRepository {
     return query;
   }
 
-  /** Get recent fills for ALL instances sharing a venue account.
-   *  Prevents false unknown_fill drift when venue fills are fetched account-wide
-   *  but local fills were previously scoped to a single instance. */
+  /** Get recent fills for a venue account (all actors). Used by reconciliation. */
   async getRecentByVenueAccount(venueAccountId: string, since?: Date) {
-    const conditions = [eq(tradingInstances.venueAccountId, venueAccountId)];
+    const conditions = [eq(fills.venueAccountId, venueAccountId)];
     if (since) {
       conditions.push(gte(fills.filledAt, since));
     }
     return this.db
-      .select({
-        id: fills.id,
-        orderId: fills.orderId,
-        tradingInstanceId: fills.tradingInstanceId,
-        venueRefId: fills.venueRefId,
-        venue: fills.venue,
-        symbol: fills.symbol,
-        side: fills.side,
-        quantity: fills.quantity,
-        price: fills.price,
-        fee: fills.fee,
-        feeCurrency: fills.feeCurrency,
-        filledAt: fills.filledAt,
-        createdAt: fills.createdAt,
-      })
+      .select()
       .from(fills)
-      .innerJoin(tradingInstances, eq(fills.tradingInstanceId, tradingInstances.id))
       .where(and(...conditions))
       .orderBy(desc(fills.filledAt));
   }
 
-  async getLatestFillByInstrument(instrument: string, tradingInstanceId?: string): Promise<{ price: string; filledAt: string } | null> {
+  async getLatestFillByInstrument(instrument: string, actorId?: string): Promise<{ price: string; filledAt: string } | null> {
     const conditions = [eq(fills.symbol, instrument)];
-    if (tradingInstanceId) {
-      conditions.push(eq(fills.tradingInstanceId, tradingInstanceId));
+    if (actorId) {
+      conditions.push(eq(fills.actorId, actorId));
     }
     const rows = await this.db
       .select({ price: fills.price, filledAt: fills.filledAt })
@@ -120,15 +111,16 @@ export class FillRepository {
 export class PositionRepository {
   constructor(private readonly db: Database) {}
 
-  /** Upsert the current position for a trading instance + symbol */
+  /** Upsert the current position for an actor + symbol */
   async upsert(pos: UpsertPosition): Promise<void> {
-    // Find existing open position for this instance+symbol
+    // Find existing open position for this actor+symbol
     const existing = await this.db
       .select()
       .from(positions)
       .where(
         and(
-          eq(positions.tradingInstanceId, pos.tradingInstanceId),
+          eq(positions.actorType, pos.actorType),
+          eq(positions.actorId, pos.actorId),
           eq(positions.symbol, pos.symbol),
           isNull(positions.closedAt),
         ),
@@ -169,8 +161,9 @@ export class PositionRepository {
       // Insert new
       await this.db.insert(positions).values({
         id: crypto.randomUUID(),
-        tradingInstanceId: pos.tradingInstanceId,
         venueAccountId: pos.venueAccountId,
+        actorType: pos.actorType,
+        actorId: pos.actorId,
         venue: pos.venue,
         symbol: pos.symbol,
         side: pos.side,
@@ -183,73 +176,56 @@ export class PositionRepository {
     }
   }
 
-  /** Get open positions for a trading instance */
-  async getOpenByInstance(tradingInstanceId: string) {
+  /** Get open positions for an actor */
+  async getOpenByActor(actorType: string, actorId: string) {
     return this.db
       .select()
       .from(positions)
       .where(
         and(
-          eq(positions.tradingInstanceId, tradingInstanceId),
+          eq(positions.actorType, actorType),
+          eq(positions.actorId, actorId),
           isNull(positions.closedAt),
         ),
       );
   }
 
-  /** Get all positions for a trading instance (including closed) */
-  async getAllByInstance(tradingInstanceId: string) {
-    return this.db
-      .select()
-      .from(positions)
-      .where(eq(positions.tradingInstanceId, tradingInstanceId))
-      .orderBy(desc(positions.updatedAt));
-  }
-
-  /** Get all positions across all instances in a portfolio */
-  async getAllByPortfolio(portfolioId: string) {
-    // Get instance IDs for this portfolio
-    const instances = await this.db
-      .select({ id: tradingInstances.id })
-      .from(tradingInstances)
-      .where(eq(tradingInstances.portfolioId, portfolioId));
-
-    if (instances.length === 0) return [];
-
-    const instanceIds = instances.map((i) => i.id);
-    return this.db
-      .select()
-      .from(positions)
-      .where(inArray(positions.tradingInstanceId, instanceIds))
-      .orderBy(desc(positions.updatedAt));
-  }
-
-  /** Get open positions across all instances in a portfolio */
-  async getOpenByPortfolio(portfolioId: string) {
-    const instances = await this.db
-      .select({ id: tradingInstances.id })
-      .from(tradingInstances)
-      .where(eq(tradingInstances.portfolioId, portfolioId));
-
-    if (instances.length === 0) return [];
-
-    const instanceIds = instances.map((i) => i.id);
+  /** Get all positions for an actor (including closed) */
+  async getAllByActor(actorType: string, actorId: string) {
     return this.db
       .select()
       .from(positions)
       .where(
         and(
-          inArray(positions.tradingInstanceId, instanceIds),
-          isNull(positions.closedAt),
+          eq(positions.actorType, actorType),
+          eq(positions.actorId, actorId),
         ),
       )
       .orderBy(desc(positions.updatedAt));
+  }
+
+  /** Get open positions for a venue account + symbol across ALL actors.
+   *  Used by the risk gate to calculate total exposure. */
+  async getOpenByVenueAndSymbol(venueAccountId: string, symbol: string) {
+    return this.db
+      .select()
+      .from(positions)
+      .where(
+        and(
+          eq(positions.venueAccountId, venueAccountId),
+          eq(positions.symbol, symbol),
+          isNull(positions.closedAt),
+        ),
+      );
   }
 }
 
 export interface InsertExecutionPlan {
   id: string;
   decisionId: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   venue: string;
   symbol: string;
   action: string;
@@ -258,7 +234,9 @@ export interface InsertExecutionPlan {
 
 export interface UpsertOrder {
   id?: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   executionPlanId?: string;
   venueRefId: string;
   clientOrderId?: string;
@@ -286,7 +264,9 @@ export class ExecutionPlanRepository {
     await this.db.insert(executionPlans).values({
       id: plan.id,
       decisionId: plan.decisionId,
-      tradingInstanceId: plan.tradingInstanceId,
+      venueAccountId: plan.venueAccountId,
+      actorType: plan.actorType ?? 'system',
+      actorId: plan.actorId ?? null,
       venue: plan.venue,
       symbol: plan.symbol,
       action: plan.action,
@@ -319,14 +299,15 @@ export class ExecutionPlanRepository {
       .where(eq(executionPlans.id, planId));
   }
 
-  /** Find incomplete plans for a trading instance (pending or executing — not terminal) */
-  async getIncomplete(tradingInstanceId: string) {
+  /** Find incomplete plans for an actor (pending or executing — not terminal) */
+  async getIncomplete(actorType: string, actorId: string) {
     return this.db
       .select()
       .from(executionPlans)
       .where(
         and(
-          eq(executionPlans.tradingInstanceId, tradingInstanceId),
+          eq(executionPlans.actorType, actorType),
+          eq(executionPlans.actorId, actorId),
           or(
             eq(executionPlans.status, 'pending'),
             eq(executionPlans.status, 'executing'),
@@ -346,14 +327,15 @@ const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'rejected'];
 export class OrderRepository {
   constructor(private readonly db: Database) {}
 
-  /** Get open (non-terminal) orders for a trading instance */
-  async getOpenByInstance(tradingInstanceId: string) {
+  /** Get open (non-terminal) orders for an actor */
+  async getOpenByActor(actorType: string, actorId: string) {
     return this.db
       .select()
       .from(orders)
       .where(
         and(
-          eq(orders.tradingInstanceId, tradingInstanceId),
+          eq(orders.actorType, actorType),
+          eq(orders.actorId, actorId),
           notInArray(orders.status, TERMINAL_ORDER_STATUSES),
         ),
       )
@@ -394,7 +376,9 @@ export class OrderRepository {
       } else {
         await tx.insert(orders).values({
           id: order.id ?? crypto.randomUUID(),
-          tradingInstanceId: order.tradingInstanceId,
+          venueAccountId: order.venueAccountId,
+          actorType: order.actorType ?? 'system',
+          actorId: order.actorId ?? null,
           executionPlanId: order.executionPlanId,
           venueRefId: order.venueRefId,
           clientOrderId: order.clientOrderId,
@@ -455,7 +439,7 @@ export class BalanceSnapshotRepository {
 
 export interface InsertDecision {
   id: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
   instrumentId: string;
   intent: string;
   targetSize: string;
@@ -475,7 +459,7 @@ export class DecisionRepository {
   async insertDecision(decision: InsertDecision): Promise<void> {
     await this.db.insert(decisions).values({
       id: decision.id,
-      tradingInstanceId: decision.tradingInstanceId,
+      venueAccountId: decision.venueAccountId,
       instrumentId: decision.instrumentId,
       intent: decision.intent,
       targetSize: decision.targetSize,
@@ -487,13 +471,64 @@ export class DecisionRepository {
     });
   }
 
-  /** Get decisions for a trading instance ordered by most recent first */
-  async getByInstance(tradingInstanceId: string, limit = 50) {
+  /** Get decisions for an actor ordered by most recent first */
+  async getByActor(actorType: string, actorId: string, limit = 50) {
     return this.db
       .select()
       .from(decisions)
-      .where(eq(decisions.tradingInstanceId, tradingInstanceId))
+      .where(
+        and(
+          eq(decisions.actorType, actorType),
+          eq(decisions.actorId, actorId),
+        ),
+      )
       .orderBy(desc(decisions.createdAt))
       .limit(limit);
+  }
+
+  /** Get recent decisions for a venue account ordered by most recent first */
+  async getByVenueAccount(venueAccountId: string, limit = 50) {
+    return this.db
+      .select()
+      .from(decisions)
+      .where(eq(decisions.venueAccountId, venueAccountId))
+      .orderBy(desc(decisions.createdAt))
+      .limit(limit);
+  }
+}
+
+/**
+ * Repository for bot persistence and queries.
+ */
+export class BotRepository {
+  constructor(private readonly db: Database) {}
+
+  /** Get all bots created by an actor (agent, user, or system) */
+  async getBotsByCreator(creatorType: string, creatorId: string) {
+    return this.db
+      .select()
+      .from(bots)
+      .where(
+        and(
+          eq(bots.creatorType, creatorType),
+          eq(bots.creatorId, creatorId),
+        ),
+      )
+      .orderBy(desc(bots.createdAt));
+  }
+
+  /** Count running bots for an actor — used by broker to enforce maxBotsPerAgent limit */
+  async countRunningBotsByCreator(creatorType: string, creatorId: string): Promise<number> {
+    const rows = await this.db
+      .select({ id: bots.id })
+      .from(bots)
+      .where(
+        and(
+          eq(bots.creatorType, creatorType),
+          eq(bots.creatorId, creatorId),
+          eq(bots.status, 'running'),
+        ),
+      );
+    return rows.length;
   }
 }

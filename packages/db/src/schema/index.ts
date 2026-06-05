@@ -1,8 +1,8 @@
 export { instruments } from './instruments.js';
 export { venueAccounts } from './venue-accounts.js';
-export { credentials } from './credentials.js';
-export { portfolios } from './portfolios.js';
-export { tradingInstances } from './trading-instances.js';
+export { userCredentials } from './user-credentials.js';
+// portfolios REMOVED — no MVP benefit; user thinks in wallets/accounts
+export { bots } from './bots.js';
 export { decisions } from './decisions.js';
 export { executionPlans } from './execution-plans.js';
 export { orders } from './orders.js';
@@ -26,7 +26,9 @@ export { billingCustomers } from './billing-customers.js';
 export { billingSubscriptions } from './billing-subscriptions.js';
 export { billingWebhookEvents } from './billing-webhook-events.js';
 export { agents } from './agents.js';
-export { agentInstanceLinks } from './agent-instance-links.js';
+export { skills } from './skills.js';
+export { agentCredentials } from './agent-credentials.js';
+// agentInstanceLinks REMOVED — replaced by bots.creatorType/creatorId
 export { agentRuntimeSessions } from './agent-runtime-sessions.js';
 export { agentMessages } from './agent-messages.js';
 export { agentArtifacts } from './agent-artifacts.js';

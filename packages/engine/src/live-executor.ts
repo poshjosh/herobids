@@ -1,5 +1,5 @@
 import type { Result } from '@herobids/domain';
-import type { OrderId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId } from '@herobids/domain';
 import type { Price } from '@herobids/domain';
 import type { OrderbookVenuePort, OrderCommand } from '@herobids/domain';
 import { ok } from '@herobids/domain';
@@ -39,7 +39,9 @@ export class LiveExecutor implements Executor {
       if (planned.type !== 'market') {
         orders.push({
           id: this.deps.idGen.orderId(),
-          tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: plan.venueAccountId,
+          actorType: plan.actorType,
+          actorId: plan.actorId,
           executionPlanId: plan.id,
           venueRefId: undefined,
           clientOrderId: this.deps.clientOrderId(plan.id, i),
@@ -74,7 +76,9 @@ export class LiveExecutor implements Executor {
         // Venue rejected the order — record as rejected with error context
         orders.push({
           id: this.deps.idGen.orderId(),
-          tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: plan.venueAccountId,
+          actorType: plan.actorType,
+          actorId: plan.actorId,
           executionPlanId: plan.id,
           venueRefId: undefined,
           clientOrderId,
@@ -97,7 +101,9 @@ export class LiveExecutor implements Executor {
       const receipt = submitResult.data;
       orders.push({
         id: receipt.orderId as unknown as OrderId,
-        tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+        venueAccountId: plan.venueAccountId,
+        actorType: plan.actorType,
+        actorId: plan.actorId,
         executionPlanId: plan.id,
         venueRefId: receipt.venueRefId,
         clientOrderId,

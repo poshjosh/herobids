@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { PgJournal, ReconciliationEventRepository, OrderRepository, FillRepository } from '@herobids/db';
-import { tradingInstances } from '@herobids/db';
+import { bots } from '@herobids/db';
 import { LiveStatusQuerySchema } from '../schemas.js';
 
 /** Live event types for the general timeline query (excludes slippage_alert which has its own field) */
@@ -32,7 +32,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
    * - recent live events
    */
   app.get<{ Params: { id: string }; Querystring: Record<string, string> }>(
-    '/instances/:id/live-status',
+    '/bots/:id/live-status',
     async (request, reply) => {
       const { id } = request.params;
       const parsed = LiveStatusQuerySchema.safeParse(request.query);
@@ -40,13 +40,13 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
         return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
       }
 
-      // Verify instance exists and belongs to user
-      const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
-      if (!instance) {
+      // Verify bot exists and belongs to user
+      const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+      if (!bot) {
         return reply.status(404).send({ error: 'not_found' });
       }
 
-      const config = instance.config as Record<string, unknown>;
+      const config = bot.config as Record<string, unknown>;
       const executionConfig = config['execution'] as Record<string, unknown> | undefined;
       const executionMode = executionConfig?.['mode'] ?? 'paper';
 
@@ -61,17 +61,17 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
         slippageAlerts,
         liveEvents,
       ] = await Promise.all([
-        reconRepo.getByInstance(id, { limit: 1 }),
-        orderRepo.getOpenByInstance(id),
-        fillRepo.getRecentByInstance(id, since, limit),
+        reconRepo.getByVenueAccount(bot.venueAccountId, { limit: 1 }),
+        orderRepo.getOpenByActor('bot', id),
+        fillRepo.getRecentByActor('bot', id, since, limit),
         journal.queryByTypes({
-          tradingInstanceId: id,
+          actorId: id,
           types: ['live.slippage_alert'],
           since,
           limit,
         }),
         journal.queryByTypes({
-          tradingInstanceId: id,
+          actorId: id,
           types: [...LIVE_EVENT_TYPES],
           since,
           limit,
@@ -81,10 +81,10 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       const lastRecon = recentRecon[0];
 
       return reply.send({
-        tradingInstanceId: id,
+        botId: id,
         executionMode,
-        status: instance.status,
-        startedAt: instance.startedAt?.toISOString() ?? null,
+        status: bot.status,
+        startedAt: bot.startedAt?.toISOString() ?? null,
         lastReconciliation: lastRecon
           ? {
               result: lastRecon.result,
@@ -147,28 +147,28 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
    * (at which point the actor crashes and status becomes 'crashed').
    */
   app.get<{ Params: { id: string } }>(
-    '/instances/:id/live-readiness',
+    '/bots/:id/live-readiness',
     async (request, reply) => {
       const { id } = request.params;
 
-      const [instance] = await db.select().from(tradingInstances).where(and(eq(tradingInstances.id, id), eq(tradingInstances.userId, request.userId)));
-      if (!instance) {
+      const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+      if (!bot) {
         return reply.status(404).send({ error: 'not_found' });
       }
 
-      const config = instance.config as Record<string, unknown>;
+      const config = bot.config as Record<string, unknown>;
       const executionConfig = config['execution'] as Record<string, unknown> | undefined;
       const executionMode = executionConfig?.['mode'] ?? 'paper';
 
       // Check for recent live_blocked or live_armed events
       const [blockedEvents, armedEvents] = await Promise.all([
         journal.queryByTypes({
-          tradingInstanceId: id,
+          actorId: id,
           types: ['instance.live_blocked'],
           limit: 1,
         }),
         journal.queryByTypes({
-          tradingInstanceId: id,
+          actorId: id,
           types: ['instance.live_armed'],
           limit: 1,
         }),
@@ -177,11 +177,8 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       const lastBlocked = blockedEvents[0];
       const lastArmed = armedEvents[0];
 
-      // Determine readiness state from most recent event, but override if
-      // the instance is no longer running (crashed/stopped instances cannot be armed).
       let readinessState: 'unknown' | 'armed' | 'blocked' = 'unknown';
-      if (instance.status !== 'running') {
-        // Non-running instances are definitively blocked — they cannot trade live
+      if (bot.status !== 'running') {
         readinessState = 'blocked';
       } else if (lastArmed && lastBlocked) {
         readinessState = lastArmed.createdAt > lastBlocked.createdAt ? 'armed' : 'blocked';
@@ -192,9 +189,9 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       }
 
       return reply.send({
-        tradingInstanceId: id,
+        botId: id,
         executionMode,
-        status: instance.status,
+        status: bot.status,
         readinessState,
         lastBlocked: lastBlocked
           ? { reason: (lastBlocked.payload as Record<string, unknown>)['reason'], code: (lastBlocked.payload as Record<string, unknown>)['code'], timestamp: lastBlocked.createdAt.toISOString() }

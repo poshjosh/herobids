@@ -6,8 +6,12 @@ import { pgTable, text, timestamp, numeric, index } from 'drizzle-orm/pg-core';
  */
 export const positions = pgTable('positions', {
   id: text('id').primaryKey(),               // UUIDv7
-  tradingInstanceId: text('trading_instance_id').notNull(),
+  // tradingInstanceId REMOVED — positions are actor-scoped via actorType/actorId
   venueAccountId: text('venue_account_id').notNull(),
+  /** Actor type: agent | bot | user | system */
+  actorType: text('actor_type').notNull().default('system'),
+  /** Stable identifier of the actor holding this position */
+  actorId: text('actor_id'),
   venue: text('venue').notNull(),
   symbol: text('symbol').notNull(),
   side: text('side').notNull(),              // long | short | flat
@@ -21,7 +25,9 @@ export const positions = pgTable('positions', {
   closedAt: timestamp('closed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  index('idx_positions_trading_instance_id').on(t.tradingInstanceId),
   index('idx_positions_venue_account_id').on(t.venueAccountId),
-  index('idx_positions_open').on(t.tradingInstanceId, t.closedAt),
+  // Per-actor query: "what positions does this agent/bot hold?"
+  index('idx_positions_actor').on(t.actorType, t.actorId),
+  // Risk gate query: "total exposure for (venueAccount, symbol) across ALL actors"
+  index('idx_positions_venue_symbol').on(t.venueAccountId, t.symbol),
 ]);

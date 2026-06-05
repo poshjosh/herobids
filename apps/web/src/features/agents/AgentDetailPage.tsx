@@ -94,7 +94,7 @@ export function AgentDetailPage() {
     <PageShell>
       <PageHeader
         title={agent.name}
-        subtitle={agent.goal}
+        subtitle={agent.prompt}
         action={
           <div style={{ display: 'flex', gap: '8px' }}>
             {agent.status === 'stopped' && (
@@ -129,7 +129,6 @@ export function AgentDetailPage() {
           <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Status</h3>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label="Status" value={<StatusBadge status={agent.status} />} />
-            {agent.preset && <KV label="Preset" value={agent.preset} />}
             <KV label="Created" value={<RelativeTime timestamp={agent.createdAt} />} />
             <KV label="Updated" value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>
@@ -137,7 +136,7 @@ export function AgentDetailPage() {
 
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Objective</h3>
-          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{agent.goal}</p>
+          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{agent.prompt}</p>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             {agent.activeSession?.startedAt && (
               <KV label="Active since" value={<RelativeTime timestamp={agent.activeSession.startedAt} />} />
@@ -150,13 +149,6 @@ export function AgentDetailPage() {
             )}
           </div>
         </Card>
-
-        {agent.activeLink && (
-          <Card>
-            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Linked Instance</h3>
-            <KV label="Instance" value={agent.activeLink.tradingInstanceId} />
-          </Card>
-        )}
 
         {agent.activeSession && (
           <Card>

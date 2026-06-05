@@ -31,10 +31,12 @@ export interface ReconcilerDeps {
   persistResult: (result: ReconciliationResult, localState: LocalState, venueState: VenueState) => Promise<void>;
   /** Journal for audit logging */
   journal: Journal;
-  /** Trading instance ID this reconciler is for */
-  tradingInstanceId: string;
   /** Venue account ID */
   venueAccountId: string;
+  /** Actor type for journal attribution */
+  actorType?: string;
+  /** Actor ID for journal attribution */
+  actorId?: string;
   /** Logger */
   logger: { info(obj: Record<string, unknown>, msg: string): void; warn(obj: Record<string, unknown>, msg: string): void; error(obj: Record<string, unknown>, msg: string): void };
   /** Optional: callback on reconciliation pass completion */
@@ -110,7 +112,8 @@ export class Reconciler {
           ? 'reconciliation.drift_within_threshold'
           : 'reconciliation.drift_detected';
       await this.deps.journal.append({
-        tradingInstanceId: this.deps.tradingInstanceId,
+        actorType: this.deps.actorType,
+        actorId: this.deps.actorId,
         type: journalType,
         payload: {
           venueAccountId: this.deps.venueAccountId,
@@ -124,17 +127,17 @@ export class Reconciler {
       // 5. Log result
       if (result.status === 'match') {
         this.deps.logger.info(
-          { tradingInstanceId: this.deps.tradingInstanceId },
+          { venueAccountId: this.deps.venueAccountId },
           'Reconciliation pass: match',
         );
       } else if (result.status === 'drift_within_threshold') {
         this.deps.logger.info(
-          { tradingInstanceId: this.deps.tradingInstanceId, diffCount: result.diffs.length, diffs: result.diffs },
+          { venueAccountId: this.deps.venueAccountId, diffCount: result.diffs.length, diffs: result.diffs },
           'Reconciliation pass: drift within acceptable threshold',
         );
       } else {
         this.deps.logger.warn(
-          { tradingInstanceId: this.deps.tradingInstanceId, diffCount: result.diffs.length, diffs: result.diffs },
+          { venueAccountId: this.deps.venueAccountId, diffCount: result.diffs.length, diffs: result.diffs },
           'Reconciliation pass: drift detected',
         );
       }
@@ -145,14 +148,15 @@ export class Reconciler {
       return result;
     } catch (err) {
       this.deps.logger.error(
-        { err, tradingInstanceId: this.deps.tradingInstanceId },
+        { err, venueAccountId: this.deps.venueAccountId },
         'Reconciliation pass failed',
       );
 
       // Journal the failure so operators can alert on repeated failures
       try {
         await this.deps.journal.append({
-          tradingInstanceId: this.deps.tradingInstanceId,
+          actorType: this.deps.actorType,
+          actorId: this.deps.actorId,
           type: 'reconciliation.drift_detected',
           payload: {
             venueAccountId: this.deps.venueAccountId,

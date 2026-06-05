@@ -5,7 +5,8 @@ import { journalEvents } from './schema/index.js';
 
 /** Journal entry shape — structurally compatible with @herobids/engine Journal port */
 export interface JournalEntryInput {
-  tradingInstanceId?: string;
+  actorType?: string;
+  actorId?: string;
   backtestRunId?: string;
   type: string;
   payload: Record<string, unknown>;
@@ -30,7 +31,8 @@ export class PgJournal implements JournalPort {
   async append(entry: JournalEntryInput): Promise<void> {
     await this.db.insert(journalEvents).values({
       id: crypto.randomUUID(),
-      tradingInstanceId: entry.tradingInstanceId ?? null,
+      actorType: entry.actorType ?? null,
+      actorId: entry.actorId ?? null,
       backtestRunId: entry.backtestRunId ?? null,
       type: entry.type,
       payload: entry.payload,
@@ -42,7 +44,8 @@ export class PgJournal implements JournalPort {
     await this.db.insert(journalEvents).values(
       entries.map((entry) => ({
         id: crypto.randomUUID(),
-        tradingInstanceId: entry.tradingInstanceId ?? null,
+        actorType: entry.actorType ?? null,
+        actorId: entry.actorId ?? null,
         backtestRunId: entry.backtestRunId ?? null,
         type: entry.type,
         payload: entry.payload,
@@ -52,15 +55,15 @@ export class PgJournal implements JournalPort {
 
   /** Query journal events with optional filters */
   async query(filters: {
-    tradingInstanceId?: string;
+    actorId?: string;
     backtestRunId?: string;
     type?: string;
     limit?: number;
     offset?: number;
   }): Promise<Array<typeof journalEvents.$inferSelect>> {
     const conditions: SQL[] = [];
-    if (filters.tradingInstanceId) {
-      conditions.push(eq(journalEvents.tradingInstanceId, filters.tradingInstanceId));
+    if (filters.actorId) {
+      conditions.push(eq(journalEvents.actorId, filters.actorId));
     }
     if (filters.backtestRunId) {
       conditions.push(eq(journalEvents.backtestRunId, filters.backtestRunId));
@@ -80,15 +83,15 @@ export class PgJournal implements JournalPort {
       .offset(filters.offset ?? 0);
   }
 
-  /** Query journal events matching multiple types (for live observability aggregation) */
+  /** Query journal events matching multiple types for an actor */
   async queryByTypes(filters: {
-    tradingInstanceId: string;
+    actorId: string;
     types: string[];
     since?: Date;
     limit?: number;
   }): Promise<Array<typeof journalEvents.$inferSelect>> {
     const conditions: SQL[] = [
-      eq(journalEvents.tradingInstanceId, filters.tradingInstanceId),
+      eq(journalEvents.actorId, filters.actorId),
     ];
     if (filters.types.length > 0) {
       conditions.push(inArray(journalEvents.type, filters.types));
@@ -105,15 +108,15 @@ export class PgJournal implements JournalPort {
       .limit(filters.limit ?? 100);
   }
 
-  /** Query journal events matching a type prefix (e.g. 'live.' for all live events) */
+  /** Query journal events matching a type prefix for an actor */
   async queryByTypePrefix(filters: {
-    tradingInstanceId: string;
+    actorId: string;
     typePrefix: string;
     since?: Date;
     limit?: number;
   }): Promise<Array<typeof journalEvents.$inferSelect>> {
     const conditions: SQL[] = [
-      eq(journalEvents.tradingInstanceId, filters.tradingInstanceId),
+      eq(journalEvents.actorId, filters.actorId),
       like(journalEvents.type, `${filters.typePrefix}%`),
     ];
     if (filters.since) {

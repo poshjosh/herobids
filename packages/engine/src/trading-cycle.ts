@@ -1,4 +1,4 @@
-import type { Strategy, MarketSnapshot, Decision, MarkSource, TradingInstanceId } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, Decision, MarkSource } from '@herobids/domain';
 import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { Journal } from './journal.js';
@@ -39,7 +39,9 @@ export interface TradingCyclePersistence {
 export interface InsertPlanParams {
   id: string;
   decisionId: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   venue: string;
   symbol: string;
   action: string;
@@ -48,7 +50,9 @@ export interface InsertPlanParams {
 
 export interface PersistFillParams {
   orderId: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   venue: string;
   symbol: string;
   side: string;
@@ -61,7 +65,8 @@ export interface PersistFillParams {
 
 export interface PersistDecisionContextParams {
   decisionId: string;
-  tradingInstanceId: string;
+  actorType?: string;
+  actorId?: string;
   contextHash: string;
   snapshot: {
     symbol: string;
@@ -83,8 +88,9 @@ export interface PersistDecisionContextParams {
 }
 
 export interface PersistPositionParams {
-  tradingInstanceId: string;
   venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   venue: string;
   symbol: string;
   side: string;
@@ -96,7 +102,9 @@ export interface PersistPositionParams {
 
 export interface PersistOrderParams {
   id: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   executionPlanId?: string;
   venueRefId?: string;
   clientOrderId?: string;
@@ -115,7 +123,8 @@ export interface PersistOrderParams {
  * Dependencies for a single trading cycle invocation.
  */
 export interface TradingCycleDeps {
-  tradingInstanceId: string;
+  actorType: string;
+  actorId: string;
   venue: string;
   symbol: string;
   venueAccountId: string;
@@ -170,7 +179,8 @@ export async function runTradingCycle(
   if (!evalResult.ok) {
     // Surface strategy failures — journal them so they are observable
     await deps.journal.append({
-      tradingInstanceId: deps.tradingInstanceId,
+      actorType: deps.actorType,
+      actorId: deps.actorId,
       type: 'strategy.error',
       payload: { code: evalResult.error.code, message: evalResult.error.message },
     });
@@ -208,18 +218,20 @@ export async function runTradingCycle(
     strategyParams: deps.strategyConfig,
   };
 
-  // Stamp the trading instance ID and canonical context hash.
+  // Stamp actor context and canonical context hash.
   const contextHash = computeDecisionContextHash(decisionContext);
   const stampedDecision: Decision = {
     ...decision,
-    tradingInstanceId: deps.tradingInstanceId as TradingInstanceId,
+    venueAccountId: deps.venueAccountId as Decision['venueAccountId'],
+    actorType: decision.actorType ?? deps.actorType as Decision['actorType'],
+    actorId: decision.actorId || deps.actorId,
     contextHash,
-    actorType: decision.actorType ?? 'system',
   };
 
   // 2. Submit decision through the shared intake pipeline
   const intakeResult = await submitDecisionForExecution(stampedDecision, decisionContext, position, {
-    tradingInstanceId: deps.tradingInstanceId,
+    actorType: deps.actorType,
+    actorId: deps.actorId,
     venue: deps.venue,
     symbol: deps.symbol,
     venueAccountId: deps.venueAccountId,

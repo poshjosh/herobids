@@ -1,6 +1,6 @@
 import type { Strategy, MarketSnapshot, StrategyError } from '@herobids/domain';
 import type { Decision } from '@herobids/domain';
-import type { DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
+import type { DecisionId, VenueAccountId, InstrumentId } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok } from '@herobids/domain';
 import { quantity, Decimal } from '@herobids/domain';
@@ -68,7 +68,9 @@ export class MomentumStrategy implements Strategy {
       // Upward momentum → go long
       decision = {
         id: this.idGen() as DecisionId,
-        tradingInstanceId: '' as TradingInstanceId, // caller sets this
+        venueAccountId: '' as VenueAccountId, // caller sets this
+        actorType: 'system',
+        actorId: 'momentum-v1',
         instrumentId: config.instrumentId as InstrumentId,
         intent: 'go_long',
         targetSize: quantity(config.positionSize),
@@ -79,7 +81,9 @@ export class MomentumStrategy implements Strategy {
       // Downward momentum → go short
       decision = {
         id: this.idGen() as DecisionId,
-        tradingInstanceId: '' as TradingInstanceId,
+        venueAccountId: '' as VenueAccountId,
+        actorType: 'system',
+        actorId: 'momentum-v1',
         instrumentId: config.instrumentId as InstrumentId,
         intent: 'go_short',
         targetSize: quantity(config.positionSize),

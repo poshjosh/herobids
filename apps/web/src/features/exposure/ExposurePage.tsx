@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
-import { dashboard, instances as instancesApi } from '../../lib/api-client.js';
+import { dashboard, bots as botsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel } from '../../lib/ui.js';
 
 export function ExposurePage() {
@@ -13,7 +13,7 @@ export function ExposurePage() {
   // Include ALL instances that have open positions — not just running ones.
   // A crashed or manually-stopped agent can still hold open positions that represent
   // real risk and must remain visible.
-  const instancesWithPositions = overview?.instances.filter((i) => i.openPositionsCount > 0) ?? [];
+  const instancesWithPositions = overview?.bots.filter((i) => i.openPositionsCount > 0) ?? [];
 
   return (
     <PageShell>
@@ -50,8 +50,8 @@ export function ExposurePage() {
 
 function InstancePositions({ instanceId, instanceLabel }: { instanceId: string; instanceLabel: string }) {
   const query = useQuery({
-    queryKey: ['instances', instanceId, 'positions', 'open'],
-    queryFn: () => instancesApi.openPositions(instanceId),
+    queryKey: ['bots', instanceId, 'positions', 'open'],
+    queryFn: () => botsApi.openPositions(instanceId),
   });
 
   const positions = query.data?.positions ?? [];

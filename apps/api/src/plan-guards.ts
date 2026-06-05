@@ -1,6 +1,6 @@
 import type { PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { tradingInstances, venueAccounts, credentials, portfolios, backtestRuns, agents } from '@herobids/db';
+import { bots, venueAccounts, userCredentials, backtestRuns, agents } from '@herobids/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -27,16 +27,6 @@ function resolvePlanLimits(config: PlansConfig, planId: string): PlanLimits {
 
 export type PlanCheckResult = Result<void, { code: string; message: string; limit: number; current: number }>;
 
-/** Check if user can create a new portfolio */
-export async function checkPortfolioLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
-  const limits = resolvePlanLimits(config, planId);
-  const rows = await db.select({ id: portfolios.id }).from(portfolios).where(eq(portfolios.userId, userId));
-  if (rows.length >= limits.maxPortfolios) {
-    return err({ code: 'plan.limit_exceeded', message: `Portfolio limit reached (${limits.maxPortfolios})`, limit: limits.maxPortfolios, current: rows.length });
-  }
-  return ok(undefined);
-}
-
 /** Check if user can create a new venue account */
 export async function checkVenueAccountLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
   const limits = resolvePlanLimits(config, planId);
@@ -50,25 +40,26 @@ export async function checkVenueAccountLimit(db: Database, config: PlansConfig, 
 /** Check if user can create a new credential */
 export async function checkCredentialLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
   const limits = resolvePlanLimits(config, planId);
-  const rows = await db.select({ id: credentials.id }).from(credentials).where(eq(credentials.userId, userId));
+  const rows = await db.select({ id: userCredentials.id }).from(userCredentials).where(eq(userCredentials.userId, userId));
   if (rows.length >= limits.maxCredentials) {
     return err({ code: 'plan.limit_exceeded', message: `Credential limit reached (${limits.maxCredentials})`, limit: limits.maxCredentials, current: rows.length });
   }
   return ok(undefined);
 }
 
-/** Check if user can create a new trading instance */
-export async function checkTradingInstanceLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+/** Check if user can create a new bot */
+export async function checkBotLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
   const limits = resolvePlanLimits(config, planId);
-  // Count all instances (including stopped) — maxTradingInstances is a total-instance cap,
-  // not a concurrent cap, to prevent unbounded accumulation of stopped instances.
-  const rows = await db.select({ id: tradingInstances.id }).from(tradingInstances)
-    .where(eq(tradingInstances.userId, userId));
+  const rows = await db.select({ id: bots.id }).from(bots)
+    .where(eq(bots.userId, userId));
   if (rows.length >= limits.maxTradingInstances) {
-    return err({ code: 'plan.limit_exceeded', message: `Trading instance limit reached (${limits.maxTradingInstances})`, limit: limits.maxTradingInstances, current: rows.length });
+    return err({ code: 'plan.limit_exceeded', message: `Bot limit reached (${limits.maxTradingInstances})`, limit: limits.maxTradingInstances, current: rows.length });
   }
   return ok(undefined);
 }
+
+/** Check if user can create a new trading instance (alias for checkBotLimit) */
+export const checkTradingInstanceLimit = checkBotLimit;
 
 /** Check if user's plan allows live execution */
 export function checkLiveEnabled(config: PlansConfig, planId: string): PlanCheckResult {

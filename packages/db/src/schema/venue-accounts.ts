@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, index, foreignKey } from 'drizzle-orm/pg-core';
-import { credentials } from './credentials.js';
+import { userCredentials } from './user-credentials.js';
 import { users } from './users.js';
 
 /**
@@ -23,5 +23,5 @@ export const venueAccounts = pgTable('venue_accounts', {
 }, (t) => [
   index('idx_venue_accounts_user_id').on(t.userId),
   index('idx_venue_accounts_credential_id').on(t.credentialId),
-  foreignKey({ columns: [t.credentialId], foreignColumns: [credentials.id] }).onDelete('restrict'),
+  foreignKey({ columns: [t.credentialId], foreignColumns: [userCredentials.id] }).onDelete('restrict'),
 ]);

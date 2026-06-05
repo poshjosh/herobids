@@ -11,7 +11,9 @@ import { Decimal } from '@herobids/domain';
 export interface ExecutionPlan {
   id: string;
   decisionId: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string;
   venue: string;
   symbol: string;
   action: PlanAction;
@@ -208,7 +210,9 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
   return {
     id: '',
     decisionId: decision.id,
-    tradingInstanceId: decision.tradingInstanceId,
+    venueAccountId: decision.venueAccountId,
+    actorType: decision.actorType,
+    actorId: decision.actorId,
     venue,
     symbol,
     action,

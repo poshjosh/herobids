@@ -1,4 +1,4 @@
-import type { Decision, TradingInstanceId, DecisionId, InstrumentId } from '@herobids/domain';
+import type { Decision, VenueAccountId, DecisionId, InstrumentId } from '@herobids/domain';
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
@@ -11,19 +11,16 @@ const logger = pino({ name: 'agent-decision-handler' });
 
 /**
  * Resolves the execution context needed by the decision intake pipeline.
- * This is provided by the trading actor / instance runtime.
+ * Keyed by botId.
  */
 export interface DecisionIntakeResolver {
-  getIntakeDeps(tradingInstanceId: string): DecisionIntakeDeps | undefined;
-  getDecisionContext(tradingInstanceId: string): DecisionContext | undefined;
-  getPosition(tradingInstanceId: string): PositionState | undefined;
+  getIntakeDeps(botId: string): DecisionIntakeDeps | undefined;
+  getDecisionContext(botId: string): DecisionContext | undefined;
+  getPosition(botId: string): PositionState | undefined;
 }
 
 /**
  * AgentDecisionHandler — translates `agent.decision.submit` into the engine decision-ingestion path.
- *
- * Validates authorization, resolves context, builds a Decision, and submits it through
- * the shared `submitDecisionForExecution` pipeline.
  */
 export class AgentDecisionHandler {
   constructor(
@@ -33,25 +30,13 @@ export class AgentDecisionHandler {
   ) {}
 
   async handleDecisionSubmit(envelope: MessageEnvelope, payload: DecisionSubmitPayload): Promise<void> {
-    const { tradingInstanceId, initiatorId, initiatorType } = envelope;
+    const { agentId, botId, initiatorId, initiatorType } = envelope;
+    const resolveId = botId ?? agentId;
 
-    // 1. Verify agent has active link to this instance
-    const link = await this.agentRepo.getActiveLink(initiatorId);
-    if (!link || link.tradingInstanceId !== tradingInstanceId) {
-      logger.warn({ agentId: initiatorId, tradingInstanceId }, 'No active link for decision');
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
-        decisionId: payload.decisionId,
-        code: 'unauthorized_link',
-        message: 'Agent does not have an active link to this trading instance',
-        retryable: false,
-      });
-      return;
-    }
-
-    // 2. Verify agent is not paused
-    const agent = await this.agentRepo.getAgent(initiatorId);
+    // 1. Verify agent is not paused
+    const agent = await this.agentRepo.getAgent(agentId ?? initiatorId);
     if (!agent || agent.status === 'paused' || agent.status === 'stopped') {
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'agent_paused',
         message: `Agent is ${agent?.status ?? 'unknown'} — cannot accept decisions`,
@@ -60,12 +45,10 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // 3. Verify a running session exists for this specific agent-instance pair.
-    // starting/unhealthy sessions are not trusted — the runtime has not yet
-    // proven liveness (starting) or has missed heartbeats (unhealthy).
-    const session = await this.agentRepo.getSessionForAgentAndInstance(initiatorId, tradingInstanceId);
+    // 2. Verify a running session exists
+    const session = await this.agentRepo.getActiveSession(agentId);
     if (!session || session.status !== 'running') {
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'no_active_session',
         message: 'No running runtime session',
@@ -74,23 +57,23 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // 4. Resolve execution deps from the running instance
-    const intakeDeps = this.intakeResolver.getIntakeDeps(tradingInstanceId);
+    // 3. Resolve execution deps from the running bot
+    const intakeDeps = this.intakeResolver.getIntakeDeps(resolveId);
     if (!intakeDeps) {
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'instance_not_running',
-        message: 'Trading instance is not currently active',
+        message: 'Bot is not currently active',
         retryable: true,
       });
       return;
     }
 
     if (payload.instrumentId !== intakeDeps.symbol) {
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'instrument_mismatch',
-        message: 'Decision instrument does not match the linked trading instance symbol',
+        message: 'Decision instrument does not match the bot symbol',
         retryable: false,
         details: {
           expectedInstrumentId: intakeDeps.symbol,
@@ -100,20 +83,20 @@ export class AgentDecisionHandler {
       return;
     }
 
-    const context = this.intakeResolver.getDecisionContext(tradingInstanceId);
+    const context = this.intakeResolver.getDecisionContext(resolveId);
     if (!context) {
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'no_context',
-        message: 'No decision context available — instance may still be initializing',
+        message: 'No decision context available — bot may still be initializing',
         retryable: true,
       });
       return;
     }
 
-    const position = this.intakeResolver.getPosition(tradingInstanceId);
+    const position = this.intakeResolver.getPosition(resolveId);
     if (!position) {
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'no_position_state',
         message: 'Position state not available',
@@ -122,10 +105,10 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // 5. Build the Decision from the agent payload
+    // 4. Build the Decision from the agent payload
     const decision: Decision = {
       id: payload.decisionId as DecisionId,
-      tradingInstanceId: tradingInstanceId as TradingInstanceId,
+      venueAccountId: intakeDeps.venueAccountId as VenueAccountId,
       instrumentId: payload.instrumentId as InstrumentId,
       intent: payload.intent,
       targetSize: new Decimal(payload.targetSize),
@@ -141,17 +124,13 @@ export class AgentDecisionHandler {
       actorId: initiatorId,
     };
 
-    // 6. Submit through the shared decision intake pipeline.
-    // The handler forwards the exact context it resolved for the agent so the
-    // payload hash and server hash are computed over the same data.
-    // Acceptance is emitted after successful intake so we never send accepted
-    // followed by rejected for the same decision (e.g. on hash mismatch).
+    // 5. Submit through the shared decision intake pipeline.
     try {
       const result = await submitDecisionForExecution(decision, context, position, intakeDeps);
 
       try {
-        // 7. Emit accepted — deferred until hash and risk checks pass.
-        await this.eventPublisher.emitDecisionAccepted(tradingInstanceId, {
+        // 6. Emit accepted — deferred until hash and risk checks pass.
+        await this.eventPublisher.emitDecisionAccepted(agentId, {
           decisionId: payload.decisionId,
           acceptedAt: new Date().toISOString(),
           normalizedDecision: {
@@ -165,9 +144,9 @@ export class AgentDecisionHandler {
           },
         });
 
-        // 8. Emit plan status
+        // 7. Emit plan status
         if (result.plan) {
-          await this.eventPublisher.emitPlanStatus(tradingInstanceId, {
+          await this.eventPublisher.emitPlanStatus(agentId, {
             decisionId: payload.decisionId,
             planId: result.plan.id,
             status: result.plan.status as 'created' | 'executing' | 'completed' | 'failed',
@@ -178,16 +157,16 @@ export class AgentDecisionHandler {
           });
         }
 
-        // 9. Emit execution result or guardrail
+        // 8. Emit execution result or guardrail
         if (result.riskRejected) {
-          await this.eventPublisher.emitGuardrailTriggered(tradingInstanceId, {
+          await this.eventPublisher.emitGuardrailTriggered(agentId, {
             scope: 'risk_gate',
             code: 'risk.rejected',
             message: 'Decision rejected by risk gate',
             decisionId: payload.decisionId,
           });
         } else if (result.executionFailed) {
-          await this.eventPublisher.emitExecutionResult(tradingInstanceId, {
+          await this.eventPublisher.emitExecutionResult(agentId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
             orders: [],
@@ -201,7 +180,7 @@ export class AgentDecisionHandler {
             completedAt: new Date().toISOString(),
           });
         } else if (result.executionResult) {
-          await this.eventPublisher.emitExecutionResult(tradingInstanceId, {
+          await this.eventPublisher.emitExecutionResult(agentId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
             orders: result.executionResult.orders.map((o) => ({
@@ -230,7 +209,7 @@ export class AgentDecisionHandler {
       }
     } catch (err) {
       if (err instanceof DecisionContextHashMismatchError) {
-        await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+        await this.eventPublisher.emitDecisionRejected(agentId, {
           decisionId: payload.decisionId,
           code: 'context_hash_mismatch',
           message: 'Decision context hash does not match the server-resolved context',
@@ -244,7 +223,7 @@ export class AgentDecisionHandler {
       }
 
       logger.error({ decisionId: payload.decisionId, err }, 'Decision execution failed');
-      await this.eventPublisher.emitDecisionRejected(tradingInstanceId, {
+      await this.eventPublisher.emitDecisionRejected(agentId, {
         decisionId: payload.decisionId,
         code: 'execution_error',
         message: err instanceof Error ? err.message : 'Unknown execution error',

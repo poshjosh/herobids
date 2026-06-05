@@ -5,7 +5,7 @@ import type { StoredDecisionContext, PersistedDecisionContext } from './context-
 import { ArrayHistoricalDataFeed } from './historical-data-feed.js';
 import type { BacktestConfig } from './replay-runner.js';
 import { price, quantity, ok, err } from '@herobids/domain';
-import type { Strategy, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
+import type { Strategy, DecisionId, VenueAccountId, InstrumentId } from '@herobids/domain';
 
 function makeFrames(count: number, startPrice = 50000, step = 100) {
   const base = new Date('2026-01-01T00:00:00.000Z').getTime();
@@ -25,7 +25,9 @@ function alwaysLongStrategy(): Strategy {
     async evaluate(snapshot) {
       return ok({
         id: `d-${++counter}` as DecisionId,
-        tradingInstanceId: '' as TradingInstanceId,
+        venueAccountId: '' as VenueAccountId,
+      actorType: 'system',
+      actorId: 'test',
         instrumentId: snapshot.symbol as InstrumentId,
         intent: 'go_long' as const,
         targetSize: quantity('1'),
@@ -46,7 +48,9 @@ function alternatingStrategy(): Strategy {
       const intent = counter % 2 === 0 ? 'go_short' : 'go_long';
       return ok({
         id: `d-${counter}` as DecisionId,
-        tradingInstanceId: '' as TradingInstanceId,
+        venueAccountId: '' as VenueAccountId,
+      actorType: 'system',
+      actorId: 'test',
         instrumentId: snapshot.symbol as InstrumentId,
         intent: intent as 'go_long' | 'go_short',
         targetSize: quantity('1'),
@@ -70,7 +74,7 @@ function holdStrategy(): Strategy {
 function baseConfig(strategy: Strategy): BacktestConfig {
   return {
     runId: 'test-run',
-    tradingInstanceId: 'inst-1',
+    botId: 'inst-1',
     venue: 'hyperliquid',
     symbol: 'BTC/USD:USD',
     venueAccountId: 'va-1',
@@ -147,7 +151,9 @@ describe('runValidation', () => {
         const intent = counter % 3 === 0 ? 'go_flat' : 'go_long';
         return ok({
           id: `d-${counter}` as DecisionId,
-          tradingInstanceId: '' as TradingInstanceId,
+          venueAccountId: '' as VenueAccountId,
+      actorType: 'system',
+      actorId: 'test',
           instrumentId: snapshot.symbol as InstrumentId,
           intent: intent as 'go_long' | 'go_flat',
           targetSize: intent === 'go_flat' ? quantity('0') : quantity('1'),

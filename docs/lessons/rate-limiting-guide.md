@@ -1,6 +1,6 @@
 # Rate Limiting — Survival Guide
 
-Rate limit related wisdom from .ignore/repos/aitradingbot/docs/tech/rate-limiting-guide.md. It covers what will bite you, why non-obvious decisions were made, and operational knowledge that took real debugging to discover.
+Rate limit related wisdom from /Users/chinomso.ikwuagwu/dev_ai/aitradingbot/docs/tech/rate-limiting-guide.md. It covers what will bite you, why non-obvious decisions were made, and operational knowledge that took real debugging to discover.
 
 For API reference (constructor params, config schema, method signatures), read `src/utils/rate-limiter.ts` directly — it's well-commented.
 

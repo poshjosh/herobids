@@ -1,5 +1,5 @@
 import type { Result, DomainError } from '@herobids/domain';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId } from '@herobids/domain';
 import type { Price, Quantity } from '@herobids/domain';
 import type { OrderSide, OrderType } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -19,7 +19,9 @@ export interface OrderManagerError extends DomainError {
 /** Parameters for creating a new order */
 export interface CreateOrderParams {
   id: OrderId;
-  tradingInstanceId: TradingInstanceId;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string;
   executionPlanId?: string;
   clientOrderId?: string;
   venue: string;
@@ -65,7 +67,9 @@ export class OrderManager {
     const now = new Date().toISOString();
     const order: ManagedOrder = {
       id: params.id,
-      tradingInstanceId: params.tradingInstanceId,
+      venueAccountId: params.venueAccountId,
+      actorType: params.actorType,
+      actorId: params.actorId,
       executionPlanId: params.executionPlanId,
       clientOrderId: params.clientOrderId,
       venue: params.venue,
@@ -155,7 +159,9 @@ export class OrderManager {
     const fill: FillEvent = {
       id: params.fillId,
       orderId: order.id,
-      tradingInstanceId: order.tradingInstanceId,
+      venueAccountId: order.venueAccountId,
+      actorType: order.actorType,
+      actorId: order.actorId,
       venueRefId: params.venueRefId,
       venue: order.venue,
       symbol: order.symbol,

@@ -11,7 +11,7 @@ export function createDatabase(connectionString: string) {
 
 export * from './schema/index.js';
 export { PgJournal } from './journal-pg.js';
-export { FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, DecisionRepository } from './repositories.js';
+export { FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, DecisionRepository, BotRepository } from './repositories.js';
 export type { InsertFill, UpsertPosition, InsertExecutionPlan, UpsertOrder, InsertBalanceSnapshot, InsertDecision } from './repositories.js';
 export { ReconciliationEventRepository } from './reconciliation-repository.js';
 export type { InsertReconciliationEvent, ReconciliationEventQuery } from './reconciliation-repository.js';
@@ -22,4 +22,4 @@ export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repos
 export { BillingRepository } from './billing-repository.js';
 export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';
 export { AgentRepository } from './agent-repository.js';
-export type { InsertAgent, UpdateAgent, InsertAgentInstanceLink, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';
+export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';

@@ -86,7 +86,7 @@ An orchestration or product-level control around the agent runtime such as tool 
 | Venue API execution | no | yes | no |
 | Reconciliation | no | yes | no |
 | Journal and durable writes | no | yes | platform storage only through instance-owned paths |
-| Lifecycle orchestration | request only | authoritative per instance | authoritative for runtime scheduling |
+| Lifecycle orchestration | **authority over own bots** (create, start, stop, delete) | authoritative per instance execution | authoritative for runtime scheduling |
 | Tool policy enforcement | receives capability grant | may validate artifacts | authoritative |
 
 The agent runtime may analyze context and propose intent.
@@ -104,6 +104,44 @@ Herobids preserves agent purity with a narrow interpretation:
 This means the engine may reject intent that is malformed, unauthorized, stale against required context, inconsistent with reconciled state, or outside explicit safety bounds.
 
 This does not permit the engine to substitute a different discretionary strategy because it prefers another size, another timing choice, or another thesis.
+
+## Agent Mode Purity
+
+When an agent is running, the agent's goal text is the **sole source of trading policy**. The platform must not inject hidden constraints the user did not ask for.
+
+### Constraints vs Data
+
+| Category | Examples | Agent mode rule |
+|---|---|---|
+| **Constraints** (restrict decisions) | Stop-loss %, take-profit %, max simultaneous positions, portfolio stop, position size caps | **Never apply** unless explicitly derived from the agent's goal or instructions |
+| **Data** (inform reasoning) | Price, P&L, position state, market context, progress score, fills history | **Always provide** — the agent reasons over it |
+| **Operational mechanics** | Execution mode, slippage tolerance, retry logic, schema validation | **Always apply** — these are infrastructure, not trading policy |
+
+The distinction: a constraint mechanically overrides or prevents the agent's decision. Data is input the agent reads and reasons about — it restricts nothing.
+
+### What this means in practice
+
+1. **No default stop-loss or take-profit.** Unless the goal or instructions specify them, these fields are absent. The engine does not apply bot blueprint risk defaults as constraints over the agent's reasoning.
+
+2. **No position count cap.** If the goal does not say "max 3 positions", the platform does not enforce one.
+
+3. **No portfolio stop.** Unless the goal says "stop after X% loss", no circuit breaker fires on the agent's behalf.
+
+4. **Risk config from the bot blueprint is data, not policy.** The agent may read the blueprint's risk fields as context. The engine does not silently enforce them as hard limits over agent decisions unless they represent explicit safety invariants (see below).
+
+5. **The engine risk gate still applies to hard safety invariants.** Malformed payloads, unauthorized access, unreconciled state, and limits explicitly configured by the user are still enforced. The purity rule removes hidden defaults — it does not remove user-configured constraints.
+
+### Agent Lifecycle Authority
+
+An agent has full lifecycle authority over its own bots. It may create, start, stop, reconfigure, and delete bots without requiring user confirmation for each action.
+
+This authority is bounded by three hard constraints only:
+
+1. **Tenancy** — an agent may only act on bots owned by the same user
+2. **Execution authority stays with the engine** — the agent cannot bypass the risk gate or directly submit orders to a venue
+3. **No raw credentials** — the agent cannot read or exfiltrate venue API keys or private keys
+
+These are institutional trust boundaries, not capability restrictions. A human employee at a trading firm has the same kind of boundary: they can manage their own book freely, but they cannot access other clients' accounts or bypass the firm's risk controls.
 
 ## Hard Invariants
 

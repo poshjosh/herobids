@@ -1,4 +1,4 @@
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId } from '@herobids/domain';
 import type { OrderSide, OrderType, OrderStatus } from '@herobids/domain';
 import type { Price, Quantity } from '@herobids/domain';
 
@@ -8,7 +8,9 @@ import type { Price, Quantity } from '@herobids/domain';
  */
 export interface ManagedOrder {
   id: OrderId;
-  tradingInstanceId: TradingInstanceId;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string;
   executionPlanId?: string;
   venueRefId?: string;
   clientOrderId?: string;
@@ -49,7 +51,9 @@ export function isTerminal(status: OrderStatus): boolean {
 export interface FillEvent {
   id: FillId;
   orderId: OrderId;
-  tradingInstanceId: TradingInstanceId;
+  venueAccountId: string;
+  actorType: string;
+  actorId: string;
   venueRefId?: string;
   venue: string;
   symbol: string;

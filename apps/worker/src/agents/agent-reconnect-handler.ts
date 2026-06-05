@@ -16,7 +16,7 @@ export interface ReconnectConfig {
 
 /** Optional resolver to supply a live context snapshot on reconnect */
 export interface ContextSnapshotResolver {
-  resolveSnapshot(tradingInstanceId: string): ContextSnapshotPayload | undefined;
+  resolveSnapshot(agentId: string): ContextSnapshotPayload | undefined;
 }
 
 const DEFAULT_CONFIG: ReconnectConfig = {
@@ -59,8 +59,8 @@ export class AgentReconnectHandler {
    * Handle an agent runtime reconnect.
    * Called when a previously-disconnected runtime re-establishes its connection.
    */
-  async handleReconnect(agentId: string, sessionId: string, tradingInstanceId: string): Promise<void> {
-    logger.info({ agentId, sessionId, tradingInstanceId }, 'Handling agent reconnect');
+  async handleReconnect(agentId: string, sessionId: string): Promise<void> {
+    logger.info({ agentId, sessionId }, 'Handling agent reconnect');
 
     // 1. Update session status back to running
     await this.agentRepo.updateSession(sessionId, {
@@ -69,7 +69,7 @@ export class AgentReconnectHandler {
     });
 
     // 2. Emit latest instance status
-    await this.eventPublisher.emitInstanceStatus(tradingInstanceId, {
+    await this.eventPublisher.emitInstanceStatus(agentId, {
       status: 'running',
       reason: 'reconnect_recovery',
       updatedAt: new Date().toISOString(),
@@ -77,9 +77,9 @@ export class AgentReconnectHandler {
 
     // 3. Emit context snapshot if the instance is currently running
     if (this.snapshotResolver) {
-      const snapshot = this.snapshotResolver.resolveSnapshot(tradingInstanceId);
+      const snapshot = this.snapshotResolver.resolveSnapshot(agentId);
       if (snapshot) {
-        await this.eventPublisher.emitContextSnapshot(tradingInstanceId, snapshot);
+        await this.eventPublisher.emitContextSnapshot(agentId, snapshot);
         logger.debug({ agentId, sessionId }, 'Context snapshot sent on reconnect');
       } else {
         logger.debug({ agentId, sessionId }, 'No context snapshot available for reconnect (instance not running or no tick yet)');
@@ -87,7 +87,7 @@ export class AgentReconnectHandler {
     }
 
     // 4. Replay bounded high-value missed events from the outbound stream
-    await this.replayMissedEvents(tradingInstanceId, sessionId);
+    await this.replayMissedEvents(agentId, sessionId);
 
     logger.info({ agentId, sessionId }, 'Reconnect recovery complete');
   }
@@ -96,8 +96,8 @@ export class AgentReconnectHandler {
    * Replay high-value missed events from the outbound Redis stream.
    * Uses bounded time window and max count to prevent unbounded replay.
    */
-  private async replayMissedEvents(tradingInstanceId: string, sessionId: string): Promise<void> {
-    const streamKey = `agent:outbound:${tradingInstanceId}`;
+  private async replayMissedEvents(agentId: string, sessionId: string): Promise<void> {
+    const streamKey = `agent:outbound:${agentId}`;
 
     try {
       // Calculate the stream ID for the start of the replay window
@@ -114,7 +114,7 @@ export class AgentReconnectHandler {
       );
 
       if (!results || results.length === 0) {
-        logger.debug({ tradingInstanceId, sessionId }, 'No events to replay');
+        logger.debug({ agentId, sessionId }, 'No events to replay');
         return;
       }
 
@@ -146,7 +146,7 @@ export class AgentReconnectHandler {
               // on messageId identity.
               const replayEnvelope = { ...envelope, messageId: crypto.randomUUID() };
               await this.redis.xadd(
-                `agent:outbound:${tradingInstanceId}`,
+                `agent:outbound:${agentId}`,
                 '*',
                 'envelope', JSON.stringify(replayEnvelope),
                 'is_replay', '1',
@@ -159,9 +159,9 @@ export class AgentReconnectHandler {
         }
       }
 
-      logger.info({ tradingInstanceId, sessionId, replayed }, 'Replayed missed events');
+      logger.info({ agentId, sessionId, replayed }, 'Replayed missed events');
     } catch (err) {
-      logger.error({ tradingInstanceId, err }, 'Failed to replay missed events');
+      logger.error({ agentId, err }, 'Failed to replay missed events');
     }
   }
 }

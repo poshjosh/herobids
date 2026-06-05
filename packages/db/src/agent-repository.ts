@@ -1,40 +1,49 @@
 import crypto from 'node:crypto';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { agents, agentInstanceLinks, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, users } from './schema/index.js';
+import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, users } from './schema/index.js';
 
 // --- Agent ---
 
 export interface InsertAgent {
   userId: string;
   name: string;
-  goal: string;
+  prompt: string;
+  skillIds?: string[];
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
+  telegramChatId?: string;
+  executionMode?: string;
+  dailyTokenBudget?: number;
+  dailyLossLimit?: string;
+  maxBots?: number;
+  maxSlippageBps?: number;
 }
 
 export interface UpdateAgent {
   name?: string;
-  goal?: string;
+  prompt?: string;
+  skillIds?: string[];
   status?: string;
   pauseState?: { reason: string; requestedBy: string; pausedAt: string } | null;
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
+  telegramChatId?: string;
+  executionMode?: string;
+  dailyTokenBudget?: number;
+  dailyLossLimit?: string;
+  maxBots?: number;
+  maxSlippageBps?: number;
 }
 
-// --- Agent Instance Link ---
-
-export interface InsertAgentInstanceLink {
-  agentId: string;
-  tradingInstanceId: string;
-}
+// agent_instance_links REMOVED — replaced by bots.creatorType/creatorId
 
 // --- Agent Runtime Session ---
 
 export interface InsertAgentRuntimeSession {
   id?: string;
   agentId: string;
-  tradingInstanceId: string;
+  // tradingInstanceId REMOVED — sessions are agent-scoped
 }
 
 export interface UpdateAgentRuntimeSession {
@@ -48,7 +57,7 @@ export interface UpdateAgentRuntimeSession {
 export interface LaunchableStartingSession {
   id: string;
   agentId: string;
-  tradingInstanceId: string;
+  // tradingInstanceId REMOVED
 }
 
 // --- Agent Message ---
@@ -58,7 +67,8 @@ export interface InsertAgentMessage {
   correlationId: string;
   actorType: string;
   actorId: string;
-  tradingInstanceId: string;
+  agentId: string;    // was tradingInstanceId — primary grouping key
+  botId?: string;     // nullable — set when message is bot-scoped
   type: string;
   direction: 'inbound' | 'outbound';
   schemaVersion?: string;
@@ -106,10 +116,17 @@ export class AgentRepository {
       id,
       userId: input.userId,
       name: input.name,
-      goal: input.goal,
+      prompt: input.prompt,
+      skillIds: input.skillIds ?? [],
       status: 'stopped',
       toolPolicy: input.toolPolicy ?? null,
       modelPolicy: input.modelPolicy ?? null,
+      telegramChatId: input.telegramChatId ?? null,
+      executionMode: input.executionMode ?? null,
+      dailyTokenBudget: input.dailyTokenBudget ?? null,
+      dailyLossLimit: input.dailyLossLimit ?? null,
+      maxBots: input.maxBots ?? null,
+      maxSlippageBps: input.maxSlippageBps ?? null,
     });
     return id;
   }
@@ -134,38 +151,6 @@ export class AgentRepository {
     await this.db.delete(agents).where(eq(agents.id, id));
   }
 
-  // --- Agent Instance Links ---
-
-  async createLink(input: InsertAgentInstanceLink): Promise<string> {
-    const id = crypto.randomUUID();
-    await this.db.insert(agentInstanceLinks).values({
-      id,
-      agentId: input.agentId,
-      tradingInstanceId: input.tradingInstanceId,
-      status: 'active',
-    });
-    return id;
-  }
-
-  async getActiveLink(agentId: string) {
-    const rows = await this.db.select().from(agentInstanceLinks)
-      .where(and(eq(agentInstanceLinks.agentId, agentId), eq(agentInstanceLinks.status, 'active')))
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
-  async getLinksByInstance(tradingInstanceId: string) {
-    return this.db.select().from(agentInstanceLinks)
-      .where(eq(agentInstanceLinks.tradingInstanceId, tradingInstanceId));
-  }
-
-  async revokeLink(id: string): Promise<void> {
-    await this.db.update(agentInstanceLinks).set({
-      status: 'revoked',
-      updatedAt: new Date(),
-    }).where(eq(agentInstanceLinks.id, id));
-  }
-
   // --- Agent Runtime Sessions ---
 
   async createSession(input: InsertAgentRuntimeSession): Promise<string> {
@@ -173,7 +158,7 @@ export class AgentRepository {
     await this.db.insert(agentRuntimeSessions).values({
       id,
       agentId: input.agentId,
-      tradingInstanceId: input.tradingInstanceId,
+      // tradingInstanceId REMOVED
       status: 'starting',
     });
     return id;
@@ -194,26 +179,14 @@ export class AgentRepository {
     return rows[0] ?? null;
   }
 
-  async getSessionForAgentAndInstance(agentId: string, tradingInstanceId: string) {
-    const rows = await this.db.select().from(agentRuntimeSessions)
-      .where(and(
-        eq(agentRuntimeSessions.agentId, agentId),
-        eq(agentRuntimeSessions.tradingInstanceId, tradingInstanceId),
-        inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
-      ))
-      .orderBy(desc(agentRuntimeSessions.startedAt))
-      .limit(1);
-    return rows[0] ?? null;
+  async getSessionForAgentAndInstance(agentId: string, _tradingInstanceId: string) {
+    // tradingInstanceId no longer stored on sessions — use getActiveSession(agentId) instead.
+    return this.getActiveSession(agentId);
   }
 
-  async getActiveSessionByInstance(tradingInstanceId: string) {
-    const rows = await this.db.select().from(agentRuntimeSessions)
-      .where(and(
-        eq(agentRuntimeSessions.tradingInstanceId, tradingInstanceId),
-        eq(agentRuntimeSessions.status, 'running'),
-      ))
-      .limit(1);
-    return rows[0] ?? null;
+  async getActiveSessionByInstance(_tradingInstanceId: string) {
+    // tradingInstanceId no longer stored on sessions. Returns null; callers should migrate.
+    return null;
   }
 
   async getSessionsByStatuses(statuses: string[]) {
@@ -240,14 +213,8 @@ export class AgentRepository {
     return this.db.select({
       id: agentRuntimeSessions.id,
       agentId: agentRuntimeSessions.agentId,
-      tradingInstanceId: agentRuntimeSessions.tradingInstanceId,
     }).from(agentRuntimeSessions)
       .innerJoin(agents, eq(agentRuntimeSessions.agentId, agents.id))
-      .innerJoin(agentInstanceLinks, and(
-        eq(agentInstanceLinks.agentId, agents.id),
-        eq(agentInstanceLinks.tradingInstanceId, agentRuntimeSessions.tradingInstanceId),
-        eq(agentInstanceLinks.status, 'active'),
-      ))
       .where(and(
         eq(agentRuntimeSessions.status, 'starting'),
         eq(agents.status, 'starting'),
@@ -255,13 +222,10 @@ export class AgentRepository {
       .orderBy(desc(agentRuntimeSessions.startedAt));
   }
 
-  async getActiveSessionsByInstance(tradingInstanceId: string) {
-    return this.db.select().from(agentRuntimeSessions)
-      .where(and(
-        eq(agentRuntimeSessions.tradingInstanceId, tradingInstanceId),
-        inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
-      ))
-      .orderBy(desc(agentRuntimeSessions.startedAt));
+  async getActiveSessionsByInstance(_tradingInstanceId: string) {
+    // tradingInstanceId no longer stored on sessions. Callers should migrate to getActiveSession(agentId).
+    // This stub preserves the call site signature during the transition period.
+    return [];
   }
 
   /** Retire all non-terminal sessions for an agent (starting/running/unhealthy → stopped). */
@@ -324,7 +288,8 @@ export class AgentRepository {
       correlationId: input.correlationId,
       actorType: input.actorType,
       actorId: input.actorId,
-      tradingInstanceId: input.tradingInstanceId,
+      agentId: input.agentId,
+      botId: input.botId ?? null,
       type: input.type,
       direction: input.direction,
       schemaVersion: input.schemaVersion ?? 'v1',
@@ -356,9 +321,9 @@ export class AgentRepository {
       .orderBy(agentMessages.createdAt);
   }
 
-  async getRecentMessages(tradingInstanceId: string, limit = 50) {
+  async getRecentMessages(agentId: string, limit = 50) {
     return this.db.select().from(agentMessages)
-      .where(eq(agentMessages.tradingInstanceId, tradingInstanceId))
+      .where(eq(agentMessages.agentId, agentId))
       .orderBy(desc(agentMessages.createdAt))
       .limit(limit);
   }

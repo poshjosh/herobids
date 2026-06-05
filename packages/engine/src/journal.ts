@@ -47,7 +47,8 @@ export type JournalEventType =
 
 export interface JournalEntry {
   id: string;
-  tradingInstanceId?: string;
+  actorType?: string;
+  actorId?: string;
   type: JournalEventType;
   payload: Record<string, unknown>;
   createdAt: string;
@@ -65,7 +66,8 @@ export interface Journal {
 /** Helper: create a journal entry for a decision */
 export function decisionEvent(decision: Decision): Omit<JournalEntry, 'id' | 'createdAt'> {
   return {
-    tradingInstanceId: decision.tradingInstanceId,
+    actorType: decision.actorType,
+    actorId: decision.actorId,
     type: 'decision.created',
     payload: {
       decisionId: decision.id,
@@ -81,7 +83,8 @@ export function decisionEvent(decision: Decision): Omit<JournalEntry, 'id' | 'cr
 /** Helper: create a journal entry for a plan */
 export function planEvent(plan: ExecutionPlan, type: 'plan.created' | 'plan.completed' | 'plan.failed'): Omit<JournalEntry, 'id' | 'createdAt'> {
   return {
-    tradingInstanceId: plan.tradingInstanceId,
+    actorType: plan.actorType,
+    actorId: plan.actorId,
     type,
     payload: {
       planId: plan.id,
@@ -103,7 +106,8 @@ export function orderEvent(order: ManagedOrder): Omit<JournalEntry, 'id' | 'crea
     rejected: 'order.rejected',
   };
   return {
-    tradingInstanceId: order.tradingInstanceId,
+    actorType: order.actorType,
+    actorId: order.actorId,
     type: typeMap[order.status] ?? 'order.submitted',
     payload: {
       orderId: order.id,
@@ -121,7 +125,8 @@ export function orderEvent(order: ManagedOrder): Omit<JournalEntry, 'id' | 'crea
 /** Helper: create a journal entry for a fill */
 export function fillEvent(fill: FillEvent): Omit<JournalEntry, 'id' | 'createdAt'> {
   return {
-    tradingInstanceId: fill.tradingInstanceId,
+    actorType: fill.actorType,
+    actorId: fill.actorId,
     type: 'fill.recorded',
     payload: {
       fillId: fill.id,
@@ -137,9 +142,10 @@ export function fillEvent(fill: FillEvent): Omit<JournalEntry, 'id' | 'createdAt
 }
 
 /** Helper: create a journal entry for a risk rejection */
-export function riskEvent(tradingInstanceId: string, error: RiskError): Omit<JournalEntry, 'id' | 'createdAt'> {
+export function riskEvent(actorType: string, actorId: string, error: RiskError): Omit<JournalEntry, 'id' | 'createdAt'> {
   return {
-    tradingInstanceId,
+    actorType,
+    actorId,
     type: 'risk.rejected',
     payload: {
       code: error.code,
@@ -158,8 +164,8 @@ export interface LiveBlockedPayload {
   venueAccountId?: string;
 }
 
-export function liveBlockedEvent(tradingInstanceId: string, payload: LiveBlockedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'instance.live_blocked', payload: payload as unknown as Record<string, unknown> };
+export function liveBlockedEvent(actorType: string, actorId: string, payload: LiveBlockedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'instance.live_blocked', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface LiveArmedPayload {
@@ -168,8 +174,8 @@ export interface LiveArmedPayload {
   effectiveMaxOrderNotional?: string;
 }
 
-export function liveArmedEvent(tradingInstanceId: string, payload: LiveArmedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'instance.live_armed', payload: payload as unknown as Record<string, unknown> };
+export function liveArmedEvent(actorType: string, actorId: string, payload: LiveArmedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'instance.live_armed', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface OrderSubmittedToVenuePayload {
@@ -183,8 +189,8 @@ export interface OrderSubmittedToVenuePayload {
   referencePrice?: string;
 }
 
-export function orderSubmittedToVenueEvent(tradingInstanceId: string, payload: OrderSubmittedToVenuePayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'order.submitted_to_venue', payload: payload as unknown as Record<string, unknown> };
+export function orderSubmittedToVenueEvent(actorType: string, actorId: string, payload: OrderSubmittedToVenuePayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'order.submitted_to_venue', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface OrderAcknowledgedPayload {
@@ -196,8 +202,8 @@ export interface OrderAcknowledgedPayload {
   status: string;
 }
 
-export function orderAcknowledgedEvent(tradingInstanceId: string, payload: OrderAcknowledgedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'order.acknowledged', payload: payload as unknown as Record<string, unknown> };
+export function orderAcknowledgedEvent(actorType: string, actorId: string, payload: OrderAcknowledgedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'order.acknowledged', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface FillConfirmedFromStreamPayload {
@@ -211,8 +217,8 @@ export interface FillConfirmedFromStreamPayload {
   fee?: string;
 }
 
-export function fillConfirmedFromStreamEvent(tradingInstanceId: string, payload: FillConfirmedFromStreamPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'order.fill_confirmed_from_stream', payload: payload as unknown as Record<string, unknown> };
+export function fillConfirmedFromStreamEvent(actorType: string, actorId: string, payload: FillConfirmedFromStreamPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'order.fill_confirmed_from_stream', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface CompletionRecoveredPayload {
@@ -222,8 +228,8 @@ export interface CompletionRecoveredPayload {
   recoverySource: 'reconciliation' | 'private_stream' | 'startup_recovery';
 }
 
-export function completionRecoveredEvent(tradingInstanceId: string, payload: CompletionRecoveredPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'order.completion_recovered', payload: payload as unknown as Record<string, unknown> };
+export function completionRecoveredEvent(actorType: string, actorId: string, payload: CompletionRecoveredPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'order.completion_recovered', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface SlippageAlertPayload {
@@ -237,8 +243,8 @@ export interface SlippageAlertPayload {
   thresholdBps: number;
 }
 
-export function slippageAlertEvent(tradingInstanceId: string, payload: SlippageAlertPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'live.slippage_alert', payload: payload as unknown as Record<string, unknown> };
+export function slippageAlertEvent(actorType: string, actorId: string, payload: SlippageAlertPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'live.slippage_alert', payload: payload as unknown as Record<string, unknown> };
 }
 
 /**
@@ -295,13 +301,14 @@ export interface CredentialDecryptedPayload {
   credentialId: string;
   venue: string;
   venueAccountId: string;
-  tradingInstanceId: string;
+  actorType: string;
+  actorId: string;
   outcome: 'success' | 'failure';
   error?: string;
 }
 
 export function credentialDecryptedEvent(payload: CredentialDecryptedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId: payload.tradingInstanceId, type: 'credential.decrypted', payload: payload as unknown as Record<string, unknown> };
+  return { actorType: payload.actorType, actorId: payload.actorId, type: 'credential.decrypted', payload: payload as unknown as Record<string, unknown> };
 }
 
 export interface CredentialUsedPayload {
@@ -312,6 +319,6 @@ export interface CredentialUsedPayload {
   ordersSubmitted: number;
 }
 
-export function credentialUsedEvent(tradingInstanceId: string, payload: CredentialUsedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
-  return { tradingInstanceId, type: 'credential.used', payload: payload as unknown as Record<string, unknown> };
+export function credentialUsedEvent(actorType: string, actorId: string, payload: CredentialUsedPayload): Omit<JournalEntry, 'id' | 'createdAt'> {
+  return { actorType, actorId, type: 'credential.used', payload: payload as unknown as Record<string, unknown> };
 }

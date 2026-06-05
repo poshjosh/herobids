@@ -60,8 +60,8 @@ export class TelegramClient {
 function formatAlertMessage(event: JournalEventRow): string {
   const severity = classifySeverity(event.type);
   const icon = severity === 'critical' ? '🚨' : severity === 'warn' ? '⚠️' : 'ℹ️';
-  const instanceLabel = event.tradingInstanceId
-    ? `\n<b>Instance:</b> <code>${escapeHtml(event.tradingInstanceId.slice(0, 8))}</code>`
+  const instanceLabel = event.actorId
+    ? `\n<b>Actor:</b> <code>${escapeHtml(event.actorId.slice(0, 8))}</code>`
     : '';
 
   const payloadSummary = summarizePayload(event.payload);

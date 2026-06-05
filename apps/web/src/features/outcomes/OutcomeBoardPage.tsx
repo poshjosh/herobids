@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import Decimal from 'decimal.js';
-import { dashboard } from '../../lib/api-client.js';
-import { instances as instancesApi } from '../../lib/api-client.js';
+import { dashboard, bots as botsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, KV, StatusBadge, SectionLabel } from '../../lib/ui.js';
 
 export function OutcomeBoardPage() {
@@ -27,14 +26,14 @@ export function OutcomeBoardPage() {
         />
       )}
 
-      {overview && overview.instances.length === 0 && (
+      {overview && overview.bots.length === 0 && (
         <EmptyState
           title="No agents yet"
           message="Create a trading agent to see outcome metrics here."
         />
       )}
 
-      {overview && overview.instances.length > 0 && (
+      {overview && overview.bots.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Summary scorecard */}
           <div
@@ -44,8 +43,8 @@ export function OutcomeBoardPage() {
               gap: '12px',
             }}
           >
-            <ScoreCard label="Total agents" value={overview.summary.totalInstances} />
-            <ScoreCard label="Running" value={overview.summary.runningInstances} highlight />
+            <ScoreCard label="Total agents" value={overview.summary.totalBots} />
+            <ScoreCard label="Running" value={overview.summary.runningBots} highlight />
             <ScoreCard label="Open positions" value={overview.summary.totalOpenPositions} />
             <ScoreCard label="Plan" value={overview.user.planId} />
           </div>
@@ -53,7 +52,7 @@ export function OutcomeBoardPage() {
           {/* Per-agent outcomes */}
           <SectionLabel>Per-agent results</SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {overview.instances.map((inst) => (
+            {overview.bots.map((inst) => (
               <AgentOutcomeRow key={inst.id} instance={inst} />
             ))}
           </div>
@@ -82,10 +81,10 @@ function ScoreCard({ label, value, highlight }: { label: string; value: string |
   );
 }
 
-function AgentOutcomeRow({ instance }: { instance: { id: string; status: string; strategyId: string; venue: string; symbol: string; openPositionsCount: number; startedAt: string | null } }) {
+function AgentOutcomeRow({ instance }: { instance: { id: string; status: string; venue: string; symbol: string; openPositionsCount: number; startedAt: string | null } }) {
   const positionsQuery = useQuery({
-    queryKey: ['instances', instance.id, 'positions', 'open'],
-    queryFn: () => instancesApi.openPositions(instance.id),
+    queryKey: ['bots', instance.id, 'positions', 'open'],
+    queryFn: () => botsApi.openPositions(instance.id),
     // Fetch for all statuses — stopped/crashed agents may still hold open positions
     enabled: instance.openPositionsCount > 0,
   });
@@ -106,7 +105,7 @@ function AgentOutcomeRow({ instance }: { instance: { id: string; status: string;
             </span>
             <StatusBadge status={instance.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{instance.strategyId}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{instance.venueLabel || instance.venue}</div>
         </div>
 
         <div style={{ display: 'flex', gap: '28px' }}>

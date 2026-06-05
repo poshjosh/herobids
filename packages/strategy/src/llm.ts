@@ -1,4 +1,4 @@
-import type { Strategy, MarketSnapshot, StrategyError, Decision, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, StrategyError, Decision, DecisionId, VenueAccountId, InstrumentId } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err, quantity } from '@herobids/domain';
 import { callLlmProvider } from './llm-provider.js';
@@ -165,7 +165,9 @@ export class LlmStrategy implements Strategy {
 
     const decision: Decision = {
       id: decisionId as DecisionId,
-      tradingInstanceId: '' as TradingInstanceId, // caller stamps this
+      venueAccountId: '' as VenueAccountId, // caller stamps this
+      actorType: 'system',
+      actorId: 'llm-strategy',
       instrumentId: (config.instrumentId ?? snapshot.symbol) as InstrumentId,
       intent: parsed.data.intent,
       targetSize: quantity(config.positionSize ?? '1'),

@@ -44,9 +44,9 @@ export class AgentStreamConsumer {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  /** Subscribe to a trading instance's inbound stream */
-  async subscribe(tradingInstanceId: string): Promise<void> {
-    const streamKey = `${this.config.streamKeyPrefix}${tradingInstanceId}`;
+  /** Subscribe to an agent's inbound stream */
+  async subscribe(agentId: string): Promise<void> {
+    const streamKey = `${this.config.streamKeyPrefix}${agentId}`;
     if (this.subscribedStreams.has(streamKey)) return;
 
     // Ensure consumer group exists (MKSTREAM creates stream if absent)
@@ -63,9 +63,9 @@ export class AgentStreamConsumer {
     logger.info({ streamKey, group: this.config.group }, 'Subscribed to agent inbound stream');
   }
 
-  /** Unsubscribe from a trading instance's inbound stream */
-  unsubscribe(tradingInstanceId: string): void {
-    const streamKey = `${this.config.streamKeyPrefix}${tradingInstanceId}`;
+  /** Unsubscribe from an agent's inbound stream */
+  unsubscribe(agentId: string): void {
+    const streamKey = `${this.config.streamKeyPrefix}${agentId}`;
     this.subscribedStreams.delete(streamKey);
   }
 

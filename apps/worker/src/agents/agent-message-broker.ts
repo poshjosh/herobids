@@ -86,7 +86,8 @@ export class AgentMessageBroker {
       correlationId: envelope.correlationId,
       actorType: envelope.initiatorType,
       actorId: envelope.initiatorId,
-      tradingInstanceId: envelope.tradingInstanceId,
+      agentId: envelope.agentId,
+      botId: envelope.botId,
       type: envelope.type,
       direction: 'inbound',
       schemaVersion: envelope.schemaVersion,
@@ -167,13 +168,8 @@ export class AgentMessageBroker {
       throw new Error('Agent not found');
     }
 
-    const activeLink = await this.agentRepo.getActiveLink(agent.id);
-    if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
-      throw new Error("Artifact publish does not match the agent's active link");
-    }
-
-    // Require a running session — starting/unhealthy sessions should not publish artifacts.
-    const activeSession = await this.agentRepo.getSessionForAgentAndInstance(agent.id, envelope.tradingInstanceId);
+    // Require a running session
+    const activeSession = await this.agentRepo.getActiveSession(agent.id);
     if (!activeSession || activeSession.status !== 'running') {
       throw new Error('No running session for agent');
     }
@@ -202,12 +198,7 @@ export class AgentMessageBroker {
       throw new Error('Agent not found');
     }
 
-    const activeLink = await this.agentRepo.getActiveLink(agent.id);
-    if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
-      throw new Error("send_message does not match the agent's active link");
-    }
-
-    const activeSession = await this.agentRepo.getSessionForAgentAndInstance(agent.id, envelope.tradingInstanceId);
+    const activeSession = await this.agentRepo.getActiveSession(agent.id);
     if (!activeSession || activeSession.status !== 'running') {
       throw new Error('No running session for agent — send_message requires an active session');
     }

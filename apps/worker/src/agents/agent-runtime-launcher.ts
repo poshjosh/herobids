@@ -7,7 +7,6 @@ const logger = pino({ name: 'agent-runtime-launcher' });
 export interface RuntimeLaunchConfig {
   agentId: string;
   sessionId: string;
-  tradingInstanceId: string;
   /** Container image for the agent runtime */
   image?: string;
   /** Resource limits */
@@ -81,14 +80,14 @@ export class AgentRuntimeLauncher {
     logger.info({ ...handle }, 'Agent runtime launched');
 
     if (this.redis) {
-      this.startStubHeartbeats(handle, config.tradingInstanceId);
+      this.startStubHeartbeats(handle);
     }
 
     return handle;
   }
 
-  private startStubHeartbeats(handle: RuntimeHandle, tradingInstanceId: string): void {
-    const streamKey = `${this.streamKeyPrefix}${tradingInstanceId}`;
+  private startStubHeartbeats(handle: RuntimeHandle): void {
+    const streamKey = `${this.streamKeyPrefix}${handle.agentId}`;
 
     const publish = async (): Promise<void> => {
       const envelope = {
@@ -97,7 +96,7 @@ export class AgentRuntimeLauncher {
         correlationId: handle.sessionId,
         initiatorType: 'agent',
         initiatorId: handle.agentId,
-        tradingInstanceId,
+        agentId: handle.agentId,
         type: 'agent.runtime.heartbeat',
         createdAt: new Date().toISOString(),
         payload: { sessionId: handle.sessionId, status: 'ready' },
@@ -112,7 +111,7 @@ export class AgentRuntimeLauncher {
     void publish();
     const timer = setInterval(() => void publish(), this.heartbeatIntervalMs);
     this.heartbeatTimers.set(handle.sessionId, timer);
-    logger.debug({ sessionId: handle.sessionId, tradingInstanceId, intervalMs: this.heartbeatIntervalMs }, 'Stub heartbeat publisher started');
+    logger.debug({ sessionId: handle.sessionId, agentId: handle.agentId, intervalMs: this.heartbeatIntervalMs }, 'Stub heartbeat publisher started');
   }
 
   /**

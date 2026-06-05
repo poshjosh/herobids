@@ -1,5 +1,5 @@
 import type { Result } from '@herobids/domain';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId } from '@herobids/domain';
 import type { Price } from '@herobids/domain';
 import { ok } from '@herobids/domain';
 import { quantity } from '@herobids/domain';
@@ -36,7 +36,9 @@ export class PaperExecutor implements Executor {
 
       const order: ManagedOrder = {
         id: orderId,
-        tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+        venueAccountId: plan.venueAccountId,
+        actorType: plan.actorType,
+        actorId: plan.actorId,
         executionPlanId: plan.id,
         venueRefId: `paper-${orderId}`,
         clientOrderId: undefined,
@@ -57,7 +59,9 @@ export class PaperExecutor implements Executor {
       const fill: FillEvent = {
         id: fillId,
         orderId,
-        tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+        venueAccountId: plan.venueAccountId,
+        actorType: plan.actorType,
+        actorId: plan.actorId,
         venueRefId: `paper-${fillId}`,
         venue: plan.venue,
         symbol: plan.symbol,

@@ -62,9 +62,9 @@ export class AgentSessionManager {
   }
 
   /** Start a new agent runtime session */
-  async startSession(agentId: string, tradingInstanceId: string, sessionId?: string): Promise<string> {
-    const createdSessionId = await this.agentRepo.createSession({ id: sessionId, agentId, tradingInstanceId });
-    logger.info({ agentId, sessionId: createdSessionId, tradingInstanceId }, 'Agent session created');
+  async startSession(agentId: string, sessionId?: string): Promise<string> {
+    const createdSessionId = await this.agentRepo.createSession({ id: sessionId, agentId });
+    logger.info({ agentId, sessionId: createdSessionId }, 'Agent session created');
     return createdSessionId;
   }
 
@@ -90,7 +90,6 @@ export class AgentSessionManager {
         await this.runtimeLauncher.launch({
           agentId: session.agentId,
           sessionId: session.id,
-          tradingInstanceId: session.tradingInstanceId,
         });
       } catch (err) {
         logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to launch starting session');
@@ -123,11 +122,6 @@ export class AgentSessionManager {
       return;
     }
 
-    const activeLink = await this.agentRepo.getActiveLink(session.agentId);
-    if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
-      logger.warn({ agentId: session.agentId, envelopeInstanceId: envelope.tradingInstanceId }, 'Heartbeat from stale/unlinked instance — ignoring');
-      return;
-    }
 
       // Also bootstrap if the session is already 'running' in the DB but the launcher has no
       // in-memory handle — this happens when the worker restarts while a runtime was live.
@@ -158,7 +152,7 @@ export class AgentSessionManager {
     // First successful connect and unhealthy recovery both bootstrap the runtime
     // with the latest instance status/context via the reconnect handler.
     if (shouldBootstrapRecovery && this.reconnectHandler) {
-      this.reconnectHandler.handleReconnect(session.agentId, payload.sessionId, session.tradingInstanceId).catch(
+      this.reconnectHandler.handleReconnect(session.agentId, payload.sessionId).catch(
         (err: unknown) => logger.error({ err, sessionId: payload.sessionId }, 'Reconnect recovery failed'),
       );
     }
@@ -172,13 +166,6 @@ export class AgentSessionManager {
     // Idempotent: already paused is success
     if (agent.status === 'paused') return;
 
-    // Reject pauses from runtimes that are no longer on the active link.
-    const activeLink = await this.agentRepo.getActiveLink(agent.id);
-    if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
-      logger.warn({ agentId: agent.id, envelopeInstanceId: envelope.tradingInstanceId }, 'Pause request does not match active link — ignoring');
-      return;
-    }
-
     await this.agentRepo.updateAgent(agent.id, {
       status: 'paused',
       pauseState: {
@@ -188,7 +175,7 @@ export class AgentSessionManager {
       },
     });
 
-    await this.eventPublisher.emitInstanceStatus(activeLink.tradingInstanceId, {
+    await this.eventPublisher.emitInstanceStatus(agent.id, {
       status: 'paused',
       reason: payload.reason,
       updatedAt: new Date().toISOString(),
@@ -207,19 +194,10 @@ export class AgentSessionManager {
 
     // Use instance-scoped lookup so a stale runtime from an old link cannot
     // stop the session belonging to the current (relinked) instance.
-    const session = await this.agentRepo.getSessionForAgentAndInstance(agent.id, envelope.tradingInstanceId);
+    const session = await this.agentRepo.getActiveSession(agent.id);
     if (session) {
       await this.stopSession(session.id);
     } else {
-      // No session for this instance — only stop the agent if the instance still matches
-      // the active link. Prevents a stale runtime (from a revoked link) from stopping the
-      // agent when its sessions have already been retired.
-      const activeLink = await this.agentRepo.getActiveLink(agent.id);
-      if (!activeLink || activeLink.tradingInstanceId !== envelope.tradingInstanceId) {
-        logger.warn({ agentId: agent.id, envelopeInstanceId: envelope.tradingInstanceId }, 'Stop request does not match active link — ignoring');
-        return;
-      }
-
       await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
     }
 
@@ -257,7 +235,7 @@ export class AgentSessionManager {
     await this.agentRepo.updateSession(sessionId, { status: 'unhealthy' });
 
     // Emit guardrail triggered
-    await this.eventPublisher.emitGuardrailTriggered(session.tradingInstanceId, {
+    await this.eventPublisher.emitGuardrailTriggered(session.agentId, {
       scope: 'agent_guardrail',
       code: 'heartbeat.timeout',
       message: 'Agent runtime heartbeat lost — new decisions will not be trusted',

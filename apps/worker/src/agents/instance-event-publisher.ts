@@ -24,51 +24,51 @@ const logger = pino({ name: 'instance-event-publisher' });
 export class InstanceEventPublisher {
   constructor(private readonly redis: Redis) {}
 
-  async emitContextSnapshot(tradingInstanceId: string, payload: ContextSnapshotPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT, payload);
+  async emitContextSnapshot(agentId: string, payload: ContextSnapshotPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT, payload);
   }
 
-  async emitDecisionAccepted(tradingInstanceId: string, payload: DecisionAcceptedPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED, payload);
+  async emitDecisionAccepted(agentId: string, payload: DecisionAcceptedPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED, payload);
   }
 
-  async emitDecisionRejected(tradingInstanceId: string, payload: DecisionRejectedPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.DECISION_REJECTED, payload);
+  async emitDecisionRejected(agentId: string, payload: DecisionRejectedPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.DECISION_REJECTED, payload);
   }
 
-  async emitPlanStatus(tradingInstanceId: string, payload: PlanStatusPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.PLAN_STATUS, payload);
+  async emitPlanStatus(agentId: string, payload: PlanStatusPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.PLAN_STATUS, payload);
   }
 
-  async emitExecutionResult(tradingInstanceId: string, payload: ExecutionResultPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.EXECUTION_RESULT, payload);
+  async emitExecutionResult(agentId: string, payload: ExecutionResultPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.EXECUTION_RESULT, payload);
   }
 
-  async emitGuardrailTriggered(tradingInstanceId: string, payload: GuardrailTriggeredPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED, payload);
+  async emitGuardrailTriggered(agentId: string, payload: GuardrailTriggeredPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED, payload);
   }
 
-  async emitReconciliationNotice(tradingInstanceId: string, payload: ReconciliationNoticePayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.RECONCILIATION_NOTICE, payload);
+  async emitReconciliationNotice(agentId: string, payload: ReconciliationNoticePayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.RECONCILIATION_NOTICE, payload);
   }
 
-  async emitInstanceStatus(tradingInstanceId: string, payload: InstanceStatusPayload): Promise<void> {
-    await this.publish(tradingInstanceId, INSTANCE_MESSAGE_TYPES.STATUS, payload);
+  async emitInstanceStatus(agentId: string, payload: InstanceStatusPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.STATUS, payload);
   }
 
   /**
    * Publish a protocol message to the instance's outbound Redis Stream.
-   * Stream key: `agent:outbound:{tradingInstanceId}`
+   * Stream key: `agent:outbound:{agentId}`
    */
-  private async publish(tradingInstanceId: string, type: string, payload: Record<string, unknown>): Promise<void> {
-    const streamKey = `agent:outbound:${tradingInstanceId}`;
+  private async publish(agentId: string, type: string, payload: Record<string, unknown>): Promise<void> {
+    const streamKey = `agent:outbound:${agentId}`;
     const envelope = {
       schemaVersion: 'v1',
       messageId: crypto.randomUUID(),
       correlationId: (payload as { decisionId?: string }).decisionId ?? crypto.randomUUID(),
       initiatorType: 'system',
-      initiatorId: tradingInstanceId,
-      tradingInstanceId,
+      initiatorId: agentId,
+      agentId,
       type,
       createdAt: new Date().toISOString(),
       payload,

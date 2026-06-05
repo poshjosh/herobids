@@ -13,8 +13,8 @@ import { buildReport } from './backtest-report.js';
 export interface BacktestConfig {
   /** Unique run identifier */
   runId: string;
-  /** Trading instance ID (for persistence hooks) */
-  tradingInstanceId: string;
+  /** Bot ID (for persistence hooks) */
+  botId?: string;
   /** Venue name */
   venue: string;
   /** Symbol being traded */
@@ -123,7 +123,8 @@ export async function runBacktest(
     const snapshot: MarketSnapshot = { symbol: frame.symbol, price: frame.price, timestamp: frame.timestamp, data: frame.data };
 
     const result = await runTradingCycle(snapshot, position, {
-      tradingInstanceId: config.tradingInstanceId,
+      actorType: 'system',
+      actorId: config.botId ?? config.runId,
       venue: config.venue,
       symbol: config.symbol,
       venueAccountId: config.venueAccountId,

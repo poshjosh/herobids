@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, instances as instancesApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
+import { agents as agentsApi } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 
 export function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -50,7 +49,7 @@ export function AgentsPage() {
                     <StatusBadge status={agent.status} />
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
-                    {agent.goal}
+                    {agent.prompt}
                   </div>
                   <div style={{ display: 'flex', gap: '24px' }}>
                     <KV label="Created" value={<RelativeTime timestamp={agent.createdAt} />} />
@@ -75,29 +74,14 @@ export function AgentsPage() {
   );
 }
 
-const PRESET_OPTIONS = [
-  { value: 'momentum_trader', label: 'Momentum Trader', description: 'Trend-following breakout strategy' },
-  { value: 'range_trader', label: 'Range Trader', description: 'Mean-reversion within defined ranges' },
-  { value: 'dca_accumulator', label: 'DCA Accumulator', description: 'Dollar-cost averaging accumulation' },
-] as const;
-
 function CreateAgentModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState('');
-  const [goal, setGoal] = useState('');
-  const [tradingInstanceId, setTradingInstanceId] = useState('');
-  const [preset, setPreset] = useState<string>('momentum_trader');
-
-  const instancesQuery = useQuery({
-    queryKey: ['instances'],
-    queryFn: () => instancesApi.list(),
-  });
+  const [prompt, setPrompt] = useState('');
 
   const mutation = useMutation({
-    mutationFn: () => agentsApi.create({ name, goal, tradingInstanceId, preset }),
+    mutationFn: () => agentsApi.create({ name, prompt }),
     onSuccess: onCreated,
   });
-
-  const instanceItems = instancesQuery.data?.instances ?? [];
 
   return (
     <Modal title="Create Agent" onClose={onClose}>
@@ -110,36 +94,17 @@ function CreateAgentModal({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
 
         <div>
-          <FieldLabel>Goal</FieldLabel>
+          <FieldLabel>Prompt</FieldLabel>
           <textarea
             style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }}
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
             placeholder="Trade BTC momentum breakouts with risk-managed position sizing"
             required
           />
         </div>
 
-        <div>
-          <FieldLabel>Preset</FieldLabel>
-          <select style={inputStyle} value={preset} onChange={(e) => setPreset(e.target.value)}>
-            {PRESET_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label} — {p.description}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <FieldLabel>Trading Instance</FieldLabel>
-          <select style={inputStyle} value={tradingInstanceId} onChange={(e) => setTradingInstanceId(e.target.value)} required>
-            <option value="">Select instance...</option>
-            {instanceItems.map((inst) => (
-              <option key={inst.id} value={inst.id}>{inst.strategyId} — {inst.id.slice(0, 8)}</option>
-            ))}
-          </select>
-        </div>
-
-        <Button variant="primary" type="submit" disabled={mutation.isPending || !name || !goal || !tradingInstanceId}>
+        <Button variant="primary" type="submit" disabled={mutation.isPending || !name || !prompt}>
           {mutation.isPending ? 'Creating...' : 'Create Agent'}
         </Button>
       </form>

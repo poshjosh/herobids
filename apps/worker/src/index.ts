@@ -8,7 +8,7 @@ import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, tradingInstances, venueAccounts, credentials } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, bots, venueAccounts, userCredentials } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
@@ -218,34 +218,31 @@ const runtime = new WorkerRuntime(
     redis: redisConnection,
     scanIntervalMs: 5000,
     concurrency: 10,
-    onStartFailed: async (tradingInstanceId, error) => {
+    onStartFailed: async (botId, error) => {
       logger.error(
         {
-          tradingInstanceId,
+          botId,
           err: error.message,
           ...(error instanceof LiveGateError && { code: error.code }),
         },
         'Instance start failed — marking crashed'
       );
-      await db.update(tradingInstances)
+      await db.update(bots)
         .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
-        .where(eq(tradingInstances.id, tradingInstanceId));
+        .where(eq(bots.id, botId));
     },
     onStopped: async (instanceId: string) => {
       actorRegistry.delete(instanceId);
       agentStreamConsumer.unsubscribe(instanceId);
-      const activeSessions = await agentRepo.getActiveSessionsByInstance(instanceId);
-      for (const session of activeSessions) {
-        await sessionManager.stopSession(session.id);
-      }
+      // Sessions are agent-scoped, not instance-scoped; stop session via agentRepo.getActiveSession if needed
     },
   },
-  async (tradingInstanceId, rawConfig) => {
+  async (botId, rawConfig) => {
     // Validate instance config — fail fast on invalid config
     const parseResult = TradingInstanceConfigSchema.safeParse(rawConfig);
     if (!parseResult.success) {
       throw new Error(
-        `Invalid config for instance ${tradingInstanceId}: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+        `Invalid config for bot ${botId}: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
       );
     }
     const config = parseResult.data;
@@ -274,7 +271,7 @@ const runtime = new WorkerRuntime(
         const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
         if (account?.credentialId) {
           pendingCredentialId = account.credentialId;
-          const [cred] = await db.select().from(credentials).where(eq(credentials.id, account.credentialId)).limit(1);
+          const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
           if (cred) {
             const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
             if (encryptionKey) {
@@ -289,7 +286,8 @@ const runtime = new WorkerRuntime(
                 credentialId: account.credentialId,
                 venue: config.venue,
                 venueAccountId,
-                tradingInstanceId,
+                actorType: "bot",
+                actorId: botId,
                 outcome: 'success',
               })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
             } else {
@@ -297,7 +295,8 @@ const runtime = new WorkerRuntime(
                 credentialId: account.credentialId,
                 venue: config.venue,
                 venueAccountId,
-                tradingInstanceId,
+                actorType: "bot",
+                actorId: botId,
                 outcome: 'failure',
                 error: 'CREDENTIAL_ENCRYPTION_KEY not set',
               })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -308,7 +307,8 @@ const runtime = new WorkerRuntime(
               credentialId: account.credentialId,
               venue: config.venue,
               venueAccountId,
-              tradingInstanceId,
+              actorType: "bot",
+              actorId: botId,
               outcome: 'failure',
               error: 'Credential record not found (dangling reference)',
             })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -317,7 +317,7 @@ const runtime = new WorkerRuntime(
         } else if (config.execution.mode !== 'paper') {
           throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential`);
         } else {
-          logger.warn({ venueAccountId, tradingInstanceId }, 'Paper mode: venue account has no linked credential — proceeding without credentials');
+          logger.warn({ venueAccountId, botId }, 'Paper mode: venue account has no linked credential — proceeding without credentials');
         }
       } catch (err) {
         if (err instanceof CredentialResolutionError) throw err;
@@ -327,7 +327,8 @@ const runtime = new WorkerRuntime(
             credentialId: pendingCredentialId,
             venue: config.venue,
             venueAccountId,
-            tradingInstanceId,
+            actorType: "bot",
+            actorId: botId,
             outcome: 'failure',
             error: err instanceof Error ? err.message : String(err),
           })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: pendingCredentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -371,7 +372,7 @@ const runtime = new WorkerRuntime(
           // swapAssets is required for swap venues — fail fast if missing
           if (!config.swapAssets) {
             throw new CredentialResolutionError(
-              `swapAssets config required for swap venue instance ${tradingInstanceId} — cannot route swaps without explicit asset identifiers and decimals`,
+              `swapAssets config required for swap venue bot ${botId} — cannot route swaps without explicit asset identifiers and decimals`,
             );
           }
           // Build token decimals map from configured swap assets
@@ -387,7 +388,7 @@ const runtime = new WorkerRuntime(
             if (venueAccountId !== 'default') {
               const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
               if (account?.credentialId) {
-                const [cred] = await db.select().from(credentials).where(eq(credentials.id, account.credentialId)).limit(1);
+                const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
                 const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
                 if (cred && encryptionKey) {
                   try {
@@ -398,7 +399,8 @@ const runtime = new WorkerRuntime(
                       credentialId: account.credentialId,
                       venue: config.venue,
                       venueAccountId,
-                      tradingInstanceId,
+                      actorType: "bot",
+                      actorId: botId,
                       outcome: 'success',
                     })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
                   } catch (decryptErr) {
@@ -406,7 +408,8 @@ const runtime = new WorkerRuntime(
                       credentialId: account.credentialId,
                       venue: config.venue,
                       venueAccountId,
-                      tradingInstanceId,
+                      actorType: "bot",
+                      actorId: botId,
                       outcome: 'failure',
                       error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
                     })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -417,7 +420,8 @@ const runtime = new WorkerRuntime(
                     credentialId: account.credentialId,
                     venue: config.venue,
                     venueAccountId,
-                    tradingInstanceId,
+                    actorType: "bot",
+                    actorId: botId,
                     outcome: 'failure',
                     error: 'CREDENTIAL_ENCRYPTION_KEY not set',
                   })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -435,12 +439,12 @@ const runtime = new WorkerRuntime(
             }
             if (!privateKey) {
               throw new CredentialResolutionError(
-                `privateKey required for 1inch venue instance ${tradingInstanceId}. Store in DB credential or set ONEINCH_PRIVATE_KEY env var.`,
+                `privateKey required for 1inch venue bot ${botId}. Store in DB credential or set ONEINCH_PRIVATE_KEY env var.`,
               );
             }
             if (!oneInchApiKey) {
               throw new CredentialResolutionError(
-                `apiKey required for 1inch venue instance ${tradingInstanceId}. Store in DB credential or set ONEINCH_API_KEY env var.`,
+                `apiKey required for 1inch venue bot ${botId}. Store in DB credential or set ONEINCH_API_KEY env var.`,
               );
             }
             const oneInchConfig = appConfig.venues['1inch'];
@@ -465,7 +469,7 @@ const runtime = new WorkerRuntime(
             const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
             if (!account?.venueAccountRef) {
               throw new CredentialResolutionError(
-                `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue instance ${tradingInstanceId}`,
+                `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue bot ${botId}`,
               );
             }
             walletAddress = account.venueAccountRef;
@@ -474,7 +478,7 @@ const runtime = new WorkerRuntime(
           }
           if (!walletAddress) {
             throw new CredentialResolutionError(
-              `Wallet address required for swap venue instance ${tradingInstanceId}. Set venueAccountRef on the venue account or SWAP_WALLET_ADDRESS env var.`,
+              `Wallet address required for swap venue bot ${botId}. Set venueAccountRef on the venue account or SWAP_WALLET_ADDRESS env var.`,
             );
           }
 
@@ -492,7 +496,7 @@ const runtime = new WorkerRuntime(
       if (!venueAdapter) return null; // Swap venues don't use orderbook ticker
       const result = await venueAdapter.fetchTicker(config.symbol);
       if (!result.ok) {
-        logger.warn({ tradingInstanceId, symbol: config.symbol, error: result.error }, 'fetchTicker failed');
+        logger.warn({ botId, symbol: config.symbol, error: result.error }, 'fetchTicker failed');
         return null;
       }
       return {
@@ -508,13 +512,13 @@ const runtime = new WorkerRuntime(
     if (appConfig.marketDataRecording.enabled) {
       const recorder = new MarketDataRecorder(config.venue);
       const corpusId = await backtestingRepo.insertCorpus({
-        name: `${tradingInstanceId}-${new Date().toISOString()}`,
+        name: `${botId}-${new Date().toISOString()}`,
         source: 'live-recording',
         venue: config.venue,
         symbols: [config.symbol],
         userId: instanceUserId,
         metadata: {
-          tradingInstanceId,
+          botId,
           venueAccountId,
           captureTrades: appConfig.marketDataRecording.captureTrades,
           captureTopOfBook: appConfig.marketDataRecording.captureTopOfBook,
@@ -593,7 +597,7 @@ const runtime = new WorkerRuntime(
       streamPool: config.venueType !== 'swap' ? publicStreamPool : undefined,
       markSource: new MarkSelector(
         { stalenessThresholdMs: appConfig.marking.stalenessThresholdMs },
-        new LastFillMarkSource(fillRepo, tradingInstanceId),
+        new LastFillMarkSource(fillRepo, botId),
         oracleMarkSource,
       ),
       recordMarketSnapshot,
@@ -601,26 +605,26 @@ const runtime = new WorkerRuntime(
       shadowPollIntervalMs: config.shadowPollIntervalMs,
       credentialId: resolvedCredentialId,
       onCrashed: async (instanceId: string) => {          actorRegistry.delete(instanceId);
-          agentStreamConsumer.unsubscribe(instanceId);        await db.update(tradingInstances)
+          agentStreamConsumer.unsubscribe(instanceId);        await db.update(bots)
           .set({ status: 'crashed', stoppedAt: new Date() })
-          .where(eq(tradingInstances.id, instanceId));
+          .where(eq(bots.id, instanceId));
         // Remove from runtime map and release lease
         await runtime.handleActorCrash(instanceId);
-        logger.error({ tradingInstanceId: instanceId }, 'Instance marked as crashed in DB');
+        logger.error({ botId: instanceId }, 'Bot marked as crashed in DB');
       },
     };
-    const actor = new TradingActor(tradingInstanceId, config.strategy.params as Record<string, unknown>, deps);
-    actorRegistry.set(tradingInstanceId, actor);
+    const actor = new TradingActor(botId, config.strategy.params as Record<string, unknown>, deps);
+    actorRegistry.set(botId, actor);
     try {
-      await agentStreamConsumer.subscribe(tradingInstanceId);
+      await agentStreamConsumer.subscribe(botId);
     } catch (err: unknown) {
-      actorRegistry.delete(tradingInstanceId);
+      actorRegistry.delete(botId);
       throw err;
     }
     return actor;
   },
   async (): Promise<PersistedInstance[]> => {
-    const running = await db.select().from(tradingInstances).where(eq(tradingInstances.status, 'running'));
+    const running = await db.select().from(bots).where(eq(bots.status, 'running'));
     return running.map((row) => ({
       id: row.id,
       config: { ...row.config, venueAccountId: row.venueAccountId, userId: row.userId },

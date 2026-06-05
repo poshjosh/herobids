@@ -111,37 +111,23 @@ export const auth = {
 // Dashboard composite read models
 // ---------------------------------------------------------------------------
 
-export interface InstanceSummary {
-  id: string;
-  status: 'stopped' | 'running' | 'crashed';
-  strategyId: string;
-  venue: string;
-  venueLabel: string;
-  symbol: string;
-  openPositionsCount: number;
-  lastActivityAt: string | null;
-  startedAt: string | null;
-  createdAt: string;
-}
-
 export interface DashboardOverview {
   user: { id: string; displayName: string; email: string; avatarUrl: string | null; planId: string };
   plan: {
-    maxTradingInstances: number;
-    maxPortfolios: number;
+    maxBots: number;
     maxVenueAccounts: number;
     maxCredentials: number;
     maxConcurrentBacktests: number;
     liveEnabled: boolean;
   } | null;
-  instances: InstanceSummary[];
-  summary: { totalInstances: number; runningInstances: number; totalOpenPositions: number };
+  bots: BotSummary[];
+  summary: { totalBots: number; runningBots: number; totalOpenPositions: number };
 }
 
 export interface ActivityEvent {
   id: string;
-  tradingInstanceId: string | null;
-  instanceLabel: string | null;
+  botId: string | null;
+  actorId: string | null;
   type: string;
   category: 'decision' | 'execution' | 'risk' | 'system';
   severity: 'info' | 'warn' | 'critical';
@@ -165,24 +151,6 @@ export const dashboard = {
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return request<ActivityFeedResponse>(`/dashboard/activity${query}`);
   },
-};
-
-// ---------------------------------------------------------------------------
-// Portfolios
-// ---------------------------------------------------------------------------
-
-export interface Portfolio {
-  id: string;
-  name: string;
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export const portfolios = {
-  list: () => request<{ portfolios: Portfolio[] }>('/portfolios'),
-  create: (name: string) => request<Portfolio>('/portfolios', { method: 'POST', body: JSON.stringify({ name }) }),
-  delete: (id: string) => request<void>(`/portfolios/${id}`, { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------
@@ -227,41 +195,50 @@ export const venueAccounts = {
 };
 
 // ---------------------------------------------------------------------------
-// Trading instances
+// Bots (formerly Trading Instances)
 // ---------------------------------------------------------------------------
 
-export interface TradingInstance {
+export interface Bot {
   id: string;
   status: 'stopped' | 'running' | 'crashed';
-  strategyId: string;
-  portfolioId: string;
   venueAccountId: string;
+  creatorType: string;
+  creatorId: string;
   config: Record<string, unknown>;
-  configVersion: number;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   stoppedAt: string | null;
 }
 
-export const instances = {
-  list: () => request<{ instances: TradingInstance[] }>('/instances'),
-  get: (id: string) => request<TradingInstance>(`/instances/${id}`),
+export interface BotSummary {
+  id: string;
+  status: 'stopped' | 'running' | 'crashed';
+  venue: string;
+  venueLabel: string;
+  symbol: string;
+  openPositionsCount: number;
+  lastActivityAt: string | null;
+  startedAt: string | null;
+  createdAt: string;
+}
+
+export const bots = {
+  list: () => request<{ bots: Bot[] }>('/bots'),
+  get: (id: string) => request<Bot>(`/bots/${id}`),
   create: (data: {
-    portfolioId: string;
     venueAccountId: string;
-    strategyId: string;
     venue: string;
     symbol: string;
     config: Record<string, unknown>;
-  }) => request<TradingInstance>('/instances', { method: 'POST', body: JSON.stringify(data) }),
-  start: (id: string) => request<{ status: string; tradingInstanceId: string }>(`/instances/${id}/start`, { method: 'POST' }),
-  stop: (id: string) => request<{ status: string; tradingInstanceId: string }>(`/instances/${id}/stop`, { method: 'POST' }),
+  }) => request<Bot>('/bots', { method: 'POST', body: JSON.stringify(data) }),
+  start: (id: string) => request<{ status: string; botId: string }>(`/bots/${id}/start`, { method: 'POST' }),
+  stop: (id: string) => request<{ status: string; botId: string }>(`/bots/${id}/stop`, { method: 'POST' }),
   updateConfig: (id: string, config: Record<string, unknown>) =>
-    request<{ status: string; tradingInstanceId: string; configVersion: number }>(`/instances/${id}/config`, { method: 'PATCH', body: JSON.stringify({ config }) }),
-  positions: (id: string) => request<{ tradingInstanceId: string; positions: Position[] }>(`/instances/${id}/positions`),
-  openPositions: (id: string) => request<{ tradingInstanceId: string; positions: Position[] }>(`/instances/${id}/positions/open`),
-  liveStatus: (id: string) => request<LiveStatus>(`/instances/${id}/live-status`),
+    request<{ status: string; botId: string }>(`/bots/${id}/config`, { method: 'PATCH', body: JSON.stringify({ config }) }),
+  positions: (id: string) => request<{ botId: string; positions: Position[] }>(`/bots/${id}/positions`),
+  openPositions: (id: string) => request<{ botId: string; positions: Position[] }>(`/bots/${id}/positions/open`),
+  liveStatus: (id: string) => request<LiveStatus>(`/bots/${id}/live-status`),
 };
 
 // ---------------------------------------------------------------------------
@@ -270,7 +247,9 @@ export const instances = {
 
 export interface Position {
   id: string;
-  tradingInstanceId: string;
+  botId: string | null;
+  actorType: string | null;
+  actorId: string | null;
   venueAccountId: string;
   venue: string;
   symbol: string;
@@ -289,7 +268,7 @@ export interface Position {
 // ---------------------------------------------------------------------------
 
 export interface LiveStatus {
-  tradingInstanceId: string;
+  botId: string;
   executionMode: string;
   status: string;
   startedAt: string | null;
@@ -306,7 +285,7 @@ export interface LiveStatus {
 
 export interface JournalEvent {
   id: string;
-  tradingInstanceId: string | null;
+  actorId: string | null;
   backtestRunId: string | null;
   type: string;
   payload: Record<string, unknown>;
@@ -314,9 +293,9 @@ export interface JournalEvent {
 }
 
 export const journal = {
-  query: (params: { tradingInstanceId?: string; backtestRunId?: string; type?: string; limit?: number; offset?: number }) => {
+  query: (params: { actorId?: string; backtestRunId?: string; type?: string; limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
-    if (params.tradingInstanceId) qs.set('tradingInstanceId', params.tradingInstanceId);
+    if (params.actorId) qs.set('actorId', params.actorId);
     if (params.backtestRunId) qs.set('backtestRunId', params.backtestRunId);
     if (params.type) qs.set('type', params.type);
     if (params.limit) qs.set('limit', String(params.limit));
@@ -385,15 +364,13 @@ export interface Agent {
   id: string;
   userId: string;
   name: string;
-  goal: string;
-  preset: string | null;
+  prompt: string;
   status: string;
   pauseState: Record<string, unknown> | null;
   toolPolicy: Record<string, unknown> | null;
   modelPolicy: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
-  activeLink?: { id: string; tradingInstanceId: string; status: string } | null;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
 }
 
@@ -434,9 +411,9 @@ export interface AgentOutboundMessage {
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
-  create: (data: { name: string; goal: string; tradingInstanceId: string; preset?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+  create: (data: { name: string; prompt: string; skillIds?: string[]; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: { name?: string; goal?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+  update: (id: string, data: { name?: string; prompt?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
   start: (id: string) =>
@@ -447,8 +424,6 @@ export const agents = {
     request<{ status: string }>(`/agents/${id}/pause`, { method: 'POST', body: JSON.stringify({ reason }) }),
   resume: (id: string) =>
     request<{ status: string }>(`/agents/${id}/resume`, { method: 'POST' }),
-  link: (id: string, tradingInstanceId: string) =>
-    request<{ id: string; tradingInstanceId: string; status: string }>(`/agents/${id}/link`, { method: 'POST', body: JSON.stringify({ tradingInstanceId }) }),
   activity: (id: string, limit?: number) =>
     request<unknown[]>(`/agents/${id}/activity${limit ? `?limit=${limit}` : ''}`),
   artifacts: (id: string, limit?: number) =>

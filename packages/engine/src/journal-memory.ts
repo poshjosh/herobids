@@ -20,9 +20,9 @@ export class InMemoryJournal implements Journal {
     return this.entries.filter((e) => e.type === type);
   }
 
-  /** Get entries filtered by trading instance */
-  byInstance(tradingInstanceId: string): Omit<JournalEntry, 'id' | 'createdAt'>[] {
-    return this.entries.filter((e) => e.tradingInstanceId === tradingInstanceId);
+  /** Get entries filtered by actor */
+  byActor(actorType: string, actorId: string): Omit<JournalEntry, 'id' | 'createdAt'>[] {
+    return this.entries.filter((e) => e.actorType === actorType && e.actorId === actorId);
   }
 
   clear(): void {

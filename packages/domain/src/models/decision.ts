@@ -1,4 +1,4 @@
-import type { DecisionId, InstrumentId, TradingInstanceId } from '../values/ids.js';
+import type { BotId, DecisionId, InstrumentId, VenueAccountId } from '../values/ids.js';
 import type { Quantity, Price } from '../values/money.js';
 import type { DecisionIntent } from '../enums.js';
 
@@ -12,7 +12,9 @@ export type ActorType = 'agent' | 'bot' | 'user' | 'system';
  */
 export interface Decision {
   id: DecisionId;
-  tradingInstanceId: TradingInstanceId;
+  // tradingInstanceId REMOVED — decisions are actor-scoped via actorType/actorId
+  /** Venue account the decision targets (execution context) */
+  venueAccountId: VenueAccountId;
   instrumentId: InstrumentId;
   intent: DecisionIntent;
   /** Target size (absolute). For go_flat, this is 0. */
@@ -25,8 +27,10 @@ export interface Decision {
   contextHash?: string;
   /** Freeform metadata the strategy wants to record */
   metadata?: Record<string, unknown>;
-  /** Actor type that produced this decision (defaults to 'system' for strategy-originated). */
-  actorType?: ActorType;
-  /** Stable identifier of the actor that produced this decision. */
-  actorId?: string;
+  /** Actor type that produced this decision */
+  actorType: ActorType;
+  /** Stable identifier of the actor that produced this decision */
+  actorId: string;
+  /** Bot that executed this decision (if produced via a bot) */
+  botId?: BotId;
 }

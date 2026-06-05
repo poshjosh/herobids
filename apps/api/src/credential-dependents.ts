@@ -1,15 +1,15 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts, tradingInstances } from '@herobids/db';
+import { venueAccounts, bots } from '@herobids/db';
 
 export interface CredentialDependents {
   venueAccountIds: string[];
-  runningInstanceIds: string[];
+  runningBotIds: string[];
 }
 
 /**
- * Lists venue accounts and running trading instances that depend on a credential.
- * Used by rotate (to restart running instances) and delete (to block if in-use).
+ * Lists venue accounts and running bots that depend on a credential.
+ * Used by rotate (to restart running bots) and delete (to block if in-use).
  */
 export async function findCredentialDependents(db: Database, credentialId: string): Promise<CredentialDependents> {
   // Find all venue accounts linked to this credential
@@ -21,19 +21,19 @@ export async function findCredentialDependents(db: Database, credentialId: strin
   const venueAccountIds = linkedAccounts.map((a) => a.id);
 
   if (venueAccountIds.length === 0) {
-    return { venueAccountIds: [], runningInstanceIds: [] };
+    return { venueAccountIds: [], runningBotIds: [] };
   }
 
-  // Find running trading instances that use those venue accounts (filtered in SQL)
-  const runningInstances = await db
-    .select({ id: tradingInstances.id })
-    .from(tradingInstances)
+  // Find running bots that use those venue accounts
+  const runningBots = await db
+    .select({ id: bots.id })
+    .from(bots)
     .where(and(
-      eq(tradingInstances.status, 'running'),
-      inArray(tradingInstances.venueAccountId, venueAccountIds),
+      eq(bots.status, 'running'),
+      inArray(bots.venueAccountId, venueAccountIds),
     ));
 
-  const runningInstanceIds = runningInstances.map((inst) => inst.id);
+  const runningBotIds = runningBots.map((b) => b.id);
 
-  return { venueAccountIds, runningInstanceIds };
+  return { venueAccountIds, runningBotIds };
 }

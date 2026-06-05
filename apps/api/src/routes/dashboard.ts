@@ -3,7 +3,7 @@ import { eq, and, or, isNull, inArray, desc, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   users,
-  tradingInstances,
+  bots,
   positions,
   journalEvents,
   venueAccounts,
@@ -137,9 +137,9 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     const userId = request.userId;
 
     // Fetch user + instances + venue account labels in parallel
-    const [userRow, instanceRows] = await Promise.all([
+    const [userRow, botRows] = await Promise.all([
       db.select().from(users).where(eq(users.id, userId)).limit(1),
-      db.select().from(tradingInstances).where(eq(tradingInstances.userId, userId)),
+      db.select().from(bots).where(eq(bots.userId, userId)),
     ]);
 
     const user = userRow[0];
@@ -147,8 +147,8 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Look up venue account labels for all instances at once
-    const venueAccountIds = [...new Set(instanceRows.map((i) => i.venueAccountId))];
+    // Look up venue account labels for all bots at once
+    const venueAccountIds = [...new Set(botRows.map((b) => b.venueAccountId))];
     const venueAccountRows = venueAccountIds.length > 0
       ? await db.select({ id: venueAccounts.id, label: venueAccounts.label, venue: venueAccounts.venue })
           .from(venueAccounts)
@@ -156,52 +156,50 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
       : [];
     const venueAccountMap = new Map(venueAccountRows.map((va) => [va.id, va]));
 
-    // Count open positions per instance
-    const instanceIds = instanceRows.map((i) => i.id);
-    const openPositionRows = instanceIds.length > 0
-      ? await db.select({ tradingInstanceId: positions.tradingInstanceId, count: sql<number>`count(*)::int` })
+    // Count open positions per bot (actorType='bot', actorId=botId)
+    const botIds = botRows.map((b) => b.id);
+    const openPositionRows = botIds.length > 0
+      ? await db.select({ actorId: positions.actorId, count: sql<number>`count(*)::int` })
           .from(positions)
-          .where(and(inArray(positions.tradingInstanceId, instanceIds), isNull(positions.closedAt)))
-          .groupBy(positions.tradingInstanceId)
+          .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds as [string, ...string[]]), isNull(positions.closedAt)))
+          .groupBy(positions.actorId)
       : [];
-    const openPositionMap = new Map(openPositionRows.map((r) => [r.tradingInstanceId, r.count]));
+    const openPositionMap = new Map(openPositionRows.map((r) => [r.actorId, r.count]));
 
-    // Get last journal event timestamp per instance
-    const lastActivityRows = instanceIds.length > 0
-      ? await db.select({ tradingInstanceId: journalEvents.tradingInstanceId, lastAt: sql<string>`max(${journalEvents.createdAt})` })
+    // Get last journal event timestamp per bot
+    const lastActivityRows = botIds.length > 0
+      ? await db.select({ actorId: journalEvents.actorId, lastAt: sql<string>`max(${journalEvents.createdAt})` })
           .from(journalEvents)
-          .where(and(inArray(journalEvents.tradingInstanceId, instanceIds)))
-          .groupBy(journalEvents.tradingInstanceId)
+          .where(inArray(journalEvents.actorId, botIds as [string, ...string[]]))
+          .groupBy(journalEvents.actorId)
       : [];
-    const lastActivityMap = new Map(lastActivityRows.map((r) => [r.tradingInstanceId, r.lastAt]));
+    const lastActivityMap = new Map(lastActivityRows.map((r) => [r.actorId, r.lastAt]));
 
     // Resolve plan limits
     const planId = request.userPlanId || user.planId || 'free';
     const planDef = plansConfig?.plans?.[planId];
 
-    const instancesSummary = instanceRows.map((inst) => {
-      const va = venueAccountMap.get(inst.venueAccountId);
-      const config = inst.config as Record<string, unknown>;
-      // Symbol is often in config.symbol or config.instruments[0]
+    const botsSummary = botRows.map((bot) => {
+      const va = venueAccountMap.get(bot.venueAccountId);
+      const config = bot.config as Record<string, unknown>;
       const symbol = (config['symbol'] as string | undefined)
         ?? (config['strategyParams'] as Record<string, unknown> | undefined)?.['symbol'] as string | undefined
         ?? '';
       return {
-        id: inst.id,
-        status: inst.status,
-        strategyId: inst.strategyId,
+        id: bot.id,
+        status: bot.status,
         venue: va?.venue ?? (config['venue'] as string | undefined) ?? '',
         venueLabel: va?.label ?? '',
         symbol,
-        openPositionsCount: openPositionMap.get(inst.id) ?? 0,
-        lastActivityAt: lastActivityMap.get(inst.id) ?? null,
-        startedAt: inst.startedAt?.toISOString() ?? null,
-        createdAt: inst.createdAt.toISOString(),
+        openPositionsCount: openPositionMap.get(bot.id) ?? 0,
+        lastActivityAt: lastActivityMap.get(bot.id) ?? null,
+        startedAt: bot.startedAt?.toISOString() ?? null,
+        createdAt: bot.createdAt.toISOString(),
       };
     });
 
-    const runningCount = instancesSummary.filter((i) => i.status === 'running').length;
-    const totalOpenPositions = instancesSummary.reduce((sum, i) => sum + i.openPositionsCount, 0);
+    const runningCount = botsSummary.filter((b) => b.status === 'running').length;
+    const totalOpenPositions = botsSummary.reduce((sum, b) => sum + b.openPositionsCount, 0);
 
     return reply.send({
       user: {
@@ -212,10 +210,10 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
         planId,
       },
       plan: planDef ?? null,
-      instances: instancesSummary,
+      bots: botsSummary,
       summary: {
-        totalInstances: instancesSummary.length,
-        runningInstances: runningCount,
+        totalBots: botsSummary.length,
+        runningBots: runningCount,
         totalOpenPositions,
       },
     });
@@ -235,39 +233,38 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     const userId = request.userId;
     const { limit, before, beforeId } = parsed.data;
 
-    // Resolve the user's instance IDs — ownership gate
-    const instanceRows = await db
-      .select({ id: tradingInstances.id, strategyId: tradingInstances.strategyId, venueAccountId: tradingInstances.venueAccountId })
-      .from(tradingInstances)
-      .where(eq(tradingInstances.userId, userId));
+    // Resolve the user's bot IDs — ownership gate
+    const botRows = await db
+      .select({ id: bots.id, venueAccountId: bots.venueAccountId })
+      .from(bots)
+      .where(eq(bots.userId, userId));
 
-    if (instanceRows.length === 0) {
+    if (botRows.length === 0) {
       return reply.send({ events: [], hasMore: false });
     }
 
-    const instanceIds = instanceRows.map((i) => i.id);
+    const botIds = botRows.map((b) => b.id);
 
     // Fetch venue account labels for display
-    const venueAccountIds = [...new Set(instanceRows.map((i) => i.venueAccountId))];
+    const venueAccountIds = [...new Set(botRows.map((b) => b.venueAccountId))];
     const vaRows = await db
       .select({ id: venueAccounts.id, label: venueAccounts.label, venue: venueAccounts.venue })
       .from(venueAccounts)
       .where(inArray(venueAccounts.id, venueAccountIds));
     const vaMap = new Map(vaRows.map((va) => [va.id, va]));
-    const instanceVaMap = new Map(instanceRows.map((i) => [i.id, vaMap.get(i.venueAccountId)]));
+    const botVaMap = new Map(botRows.map((b) => [b.id, vaMap.get(b.venueAccountId)]));
 
-    // Fetch events — fetch one extra to determine hasMore
+    // Fetch events by actorId — fetch one extra to determine hasMore
     const fetchLimit = limit + 1;
-    let query = db
+    const query = db
       .select()
       .from(journalEvents)
       .where(
         before
           ? and(
-              inArray(journalEvents.tradingInstanceId, instanceIds),
+              inArray(journalEvents.actorId, botIds as [string, ...string[]]),
               or(
                 sql`${journalEvents.createdAt} < ${new Date(before)}`,
-                // Tie-break: same timestamp, lower ID comes later when sorted desc
                 beforeId
                   ? and(
                       sql`${journalEvents.createdAt} = ${new Date(before)}`,
@@ -276,7 +273,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
                   : sql`false`,
               ),
             )
-          : inArray(journalEvents.tradingInstanceId, instanceIds),
+          : inArray(journalEvents.actorId, botIds as [string, ...string[]]),
       )
       .orderBy(desc(journalEvents.createdAt), desc(journalEvents.id))
       .limit(fetchLimit);
@@ -288,10 +285,10 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     const normalised = events.map((ev) => {
       const payload = ev.payload as Record<string, unknown>;
       const { category, severity, message } = classifyEvent(ev.type, payload);
-      const va = ev.tradingInstanceId ? instanceVaMap.get(ev.tradingInstanceId) : undefined;
+      const va = ev.actorId ? botVaMap.get(ev.actorId) : undefined;
       return {
         id: ev.id,
-        tradingInstanceId: ev.tradingInstanceId,
+        botId: ev.actorId,
         instanceLabel: va ? `${va.venue} / ${va.label}` : null,
         type: ev.type,
         category,

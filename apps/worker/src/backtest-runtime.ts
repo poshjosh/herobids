@@ -75,10 +75,10 @@ export class BacktestRuntime {
           const backtestJournal = new PgJournal(this.db);
           // Wrap to inject backtestRunId
           const scopedJournal = {
-            append: async (entry: { tradingInstanceId?: string; type: string; payload: Record<string, unknown> }) => {
+            append: async (entry: { actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }) => {
               await backtestJournal.append({ ...entry, backtestRunId: runId });
             },
-            appendBatch: async (entries: Array<{ tradingInstanceId?: string; type: string; payload: Record<string, unknown> }>) => {
+            appendBatch: async (entries: Array<{ actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }>) => {
               await backtestJournal.appendBatch(entries.map((e) => ({ ...e, backtestRunId: runId })));
             },
           };
@@ -136,7 +136,7 @@ export class BacktestRuntime {
     repo: BacktestingRepository,
     decisionRepo: DecisionRepository,
     feed: ArrayHistoricalDataFeed,
-    journal: { append: (entry: { tradingInstanceId?: string; type: string; payload: Record<string, unknown> }) => Promise<void>; appendBatch: (entries: Array<{ tradingInstanceId?: string; type: string; payload: Record<string, unknown> }>) => Promise<void> },
+    journal: { append: (entry: { actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }) => Promise<void>; appendBatch: (entries: Array<{ actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }>) => Promise<void> },
     job: BacktestJobData,
   ): Promise<void> {
     if (!job.strategyType || !job.config) {
@@ -182,7 +182,7 @@ export class BacktestRuntime {
     repo: BacktestingRepository,
     decisionRepo: DecisionRepository,
     feed: ArrayHistoricalDataFeed,
-    journal: { append: (entry: { tradingInstanceId?: string; type: string; payload: Record<string, unknown> }) => Promise<void>; appendBatch: (entries: Array<{ tradingInstanceId?: string; type: string; payload: Record<string, unknown> }>) => Promise<void> },
+    journal: { append: (entry: { actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }) => Promise<void>; appendBatch: (entries: Array<{ actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }>) => Promise<void> },
     job: BacktestJobData,
   ): Promise<void> {
     if (!job.baseline || !job.candidate) {
@@ -241,7 +241,7 @@ export class BacktestRuntime {
       strategy: Strategy;
       venue: string;
       symbol: string;
-      journal: { append: (entry: { tradingInstanceId?: string; type: string; payload: Record<string, unknown> }) => Promise<void>; appendBatch: (entries: Array<{ tradingInstanceId?: string; type: string; payload: Record<string, unknown> }>) => Promise<void> };
+      journal: { append: (entry: { actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }) => Promise<void>; appendBatch: (entries: Array<{ actorType?: string; actorId?: string; type: string; payload: Record<string, unknown> }>) => Promise<void> };
       repo: BacktestingRepository;
       decisionRepo: DecisionRepository;
     },
@@ -263,7 +263,7 @@ export class BacktestRuntime {
 
     return {
       runId: params.runId,
-      tradingInstanceId: `backtest-${params.runId}`,
+      botId: `backtest-${params.runId}`,
       venue: params.venue,
       symbol: params.symbol,
       venueAccountId: 'backtest',
@@ -288,10 +288,12 @@ export class BacktestRuntime {
     role: 'backtest' | 'baseline' | 'candidate',
   ) {
     return {
-      persistDecision: async (decision: { id: string; tradingInstanceId: string; instrumentId: string; intent: string; targetSize: { toString(): string }; limitPrice?: { toString(): string }; contextHash?: string; metadata?: Record<string, unknown> }) => {
+      persistDecision: async (decision: { id: string; venueAccountId: string; actorType?: string; actorId?: string; instrumentId: string; intent: string; targetSize: { toString(): string }; limitPrice?: { toString(): string }; contextHash?: string; metadata?: Record<string, unknown> }) => {
         await decisionRepo.insertDecision({
           id: decision.id,
-          tradingInstanceId: decision.tradingInstanceId,
+          venueAccountId: decision.venueAccountId,
+          actorType: decision.actorType,
+          actorId: decision.actorId,
           instrumentId: decision.instrumentId,
           intent: decision.intent,
           targetSize: decision.targetSize.toString(),
@@ -304,10 +306,12 @@ export class BacktestRuntime {
           },
         });
       },
-      persistDecisionContext: async (context: { decisionId: string; tradingInstanceId: string; contextHash: string; snapshot: { symbol: string; price: string; timestamp: string; data?: Record<string, unknown> }; position: { side: string; size: string; entryPrice: string; realizedPnl: string } | null; referenceMark: { price: string; source: string }; strategyParams: Record<string, unknown> }) => {
+      persistDecisionContext: async (context: { decisionId: string; venueAccountId: string; actorType?: string; actorId?: string; contextHash: string; snapshot: { symbol: string; price: string; timestamp: string; data?: Record<string, unknown> }; position: { side: string; size: string; entryPrice: string; realizedPnl: string } | null; referenceMark: { price: string; source: string }; strategyParams: Record<string, unknown> }) => {
         await repo.insertDecisionContext({
           decisionId: context.decisionId,
-          tradingInstanceId: context.tradingInstanceId,
+          venueAccountId: context.venueAccountId,
+          actorType: context.actorType,
+          actorId: context.actorId,
           contextHash: context.contextHash,
           context: {
             snapshot: context.snapshot,

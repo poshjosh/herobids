@@ -182,3 +182,4 @@ Stored in Postgres, loaded by the trading instance at startup:
 - **Mixing operator and user config.** Don't merge deploy-time settings with per-instance parameters into one blob.
 - **Over-configuring internals.** Not every constant needs config. Internal buffer sizes and log format strings stay as code constants unless there's a clear user need.
 - **Passing full operator config to containers.** Agent containers get only what they need via the message contract.
+- **Applying bot blueprint risk defaults as agent constraints.** When an agent is the actor, risk config fields in the bot blueprint are data the agent reasons over, not platform-enforced constraints. Never silently enforce a default stop-loss, position cap, or portfolio stop over an agent's decisions unless the user's goal explicitly specifies it. See [Agent Mode Purity](../tech/agents/runtime-boundary-and-message-contract.md#agent-mode-purity).

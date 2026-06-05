@@ -3,7 +3,7 @@ import { SimulatedClock } from './simulated-clock.js';
 import { ArrayHistoricalDataFeed } from './historical-data-feed.js';
 import { runBacktest } from './replay-runner.js';
 import { price, quantity, ok, err } from '@herobids/domain';
-import type { Strategy, MarketSnapshot, Decision, DecisionId, TradingInstanceId, InstrumentId } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, Decision, DecisionId, VenueAccountId, InstrumentId } from '@herobids/domain';
 import { vi } from 'vitest';
 
 function makeFrames(count: number, startPrice = 50000, step = 100) {
@@ -60,7 +60,9 @@ describe('runBacktest', () => {
     name: 'Always Long',
     evaluate: async (snapshot: MarketSnapshot): Promise<any> => ok({
       id: 'test-d' as DecisionId,
-      tradingInstanceId: '' as TradingInstanceId,
+      venueAccountId: '' as VenueAccountId,
+      actorType: 'system',
+      actorId: 'test',
       instrumentId: 'BTC/USD:USD' as InstrumentId,
       intent: 'go_long',
       targetSize: quantity('1'),
@@ -80,7 +82,7 @@ describe('runBacktest', () => {
 
     const report = await runBacktest(feed, {
       runId: 'test-run-1',
-      tradingInstanceId: 'inst-bt-1',
+      botId: 'inst-bt-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -102,7 +104,7 @@ describe('runBacktest', () => {
 
     const report = await runBacktest(feed, {
       runId: 'test-run-2',
-      tradingInstanceId: 'inst-bt-2',
+      botId: 'inst-bt-2',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -125,7 +127,7 @@ describe('runBacktest', () => {
 
     await expect(runBacktest(feed, {
       runId: 'test-run-3',
-      tradingInstanceId: 'inst-bt-3',
+      botId: 'inst-bt-3',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -143,7 +145,7 @@ describe('runBacktest', () => {
       const feed = new ArrayHistoricalDataFeed(frames);
       return runBacktest(feed, {
         runId: 'det-run',
-        tradingInstanceId: 'inst-bt-det',
+        botId: 'inst-bt-det',
         venue: 'hyperliquid',
         symbol: 'BTC/USD:USD',
         venueAccountId: 'va-1',
@@ -181,7 +183,7 @@ describe('runBacktest', () => {
 
     await runBacktest(feed, {
       runId: 'persist-run',
-      tradingInstanceId: 'inst-bt-persist',
+      botId: 'inst-bt-persist',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -210,7 +212,7 @@ describe('runBacktest', () => {
 
     await expect(runBacktest(feed, {
       runId: 'test-llm-warmup',
-      tradingInstanceId: 'inst-bt-llm',
+      botId: 'inst-bt-llm',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -232,7 +234,7 @@ describe('runBacktest', () => {
 
     const report = await runBacktest(feed, {
       runId: 'test-llm-no-warmup',
-      tradingInstanceId: 'inst-bt-llm-ok',
+      botId: 'inst-bt-llm-ok',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -261,7 +263,7 @@ describe('runBacktest', () => {
 
     await expect(runBacktest(feed, {
       runId: 'test-warmup-error',
-      tradingInstanceId: 'inst-bt-warmup-err',
+      botId: 'inst-bt-warmup-err',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',

@@ -1,6 +1,5 @@
 import pino from 'pino';
 import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource } from '@herobids/domain';
-import type { TradingInstanceId } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import {
   PaperExecutor,
@@ -314,7 +313,7 @@ export class TradingActor implements InstanceActor {
       await this.reconcileIncompletePlans();
 
       // 2. Rebuild position state from DB
-      const openPositions = await this.deps.positionRepo.getOpenByInstance(this.tradingInstanceId);
+      const openPositions = await this.deps.positionRepo.getOpenByActor('bot', this.tradingInstanceId);
       // Find the position matching this actor's symbol
       const match = openPositions.find((p) => p.symbol === this.deps.symbol && p.venue === this.deps.venue);
       if (match && match.side !== 'flat') {
@@ -339,7 +338,7 @@ export class TradingActor implements InstanceActor {
    * In shadow/live mode: query venue for actual order/fill status and reconcile.
    */
   private async reconcileIncompletePlans(): Promise<void> {
-    const incomplete = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+    const incomplete = await this.deps.planRepo.getIncomplete('bot', this.tradingInstanceId);
     if (incomplete.length === 0) return;
 
     this.logger.warn(
@@ -457,7 +456,6 @@ export class TradingActor implements InstanceActor {
         };
 
         await this.deps.reconciliationRepo.insert({
-          tradingInstanceId: this.tradingInstanceId,
           venueAccountId: this.deps.venueAccountId,
           result: result.status,
           localState: serializedLocal,
@@ -480,10 +478,11 @@ export class TradingActor implements InstanceActor {
         }
       },
       journal: this.deps.journal,
-      tradingInstanceId: this.tradingInstanceId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
       logger: this.logger,
-      getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.tradingInstanceId),
+      getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId),
     });
 
     // Run the first pass synchronously before starting ticks — no trading until reconciled
@@ -595,7 +594,8 @@ export class TradingActor implements InstanceActor {
           this.paused = true;
           this.logger.warn('Private stream disconnected — pausing scan loop');
           void this.deps.journal.append({
-            tradingInstanceId: this.tradingInstanceId,
+            actorType: 'bot',
+            actorId: this.tradingInstanceId,
             type: 'stream.disconnect',
             payload: { state, venue: this.deps.venue, symbol: this.deps.symbol },
           }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append stream.disconnect journal event'));
@@ -610,7 +610,8 @@ export class TradingActor implements InstanceActor {
         if (!this.stopping) {
           this.logger.error('Private stream closed (max reconnect attempts) — crashing actor');
           void this.deps.journal.append({
-            tradingInstanceId: this.tradingInstanceId,
+            actorType: 'bot',
+            actorId: this.tradingInstanceId,
             type: 'instance.crashed',
             payload: { reason: 'max_reconnect_attempts_exhausted', venue: this.deps.venue, symbol: this.deps.symbol },
           }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append instance.crashed journal event'));
@@ -626,14 +627,14 @@ export class TradingActor implements InstanceActor {
    */
   private async loadLocalState(): Promise<LocalState> {
     // Read per-instance cursor so sibling instances sharing a venue account don't skip each other's fills
-    const lastReconciledAt = await this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.tradingInstanceId);
+    const lastReconciledAt = await this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId);
 
     const [openPositions, recentFills, openOrders, balanceSnapshot] = await Promise.all([
-      this.deps.positionRepo.getOpenByInstance(this.tradingInstanceId),
+      this.deps.positionRepo.getOpenByActor('bot', this.tradingInstanceId),
       // Fetch fills across ALL instances sharing this venue account so that venue fills
       // from sibling/predecessor instances are matched and not flagged as unknown_fill drift.
       this.deps.fillRepo.getRecentByVenueAccount(this.deps.venueAccountId, lastReconciledAt ?? undefined),
-      this.deps.orderRepo.getOpenByInstance(this.tradingInstanceId),
+      this.deps.orderRepo.getOpenByActor('bot', this.tradingInstanceId),
       this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId, this.deps.venue),
     ]);
 
@@ -702,7 +703,8 @@ export class TradingActor implements InstanceActor {
           realizedPnl: this.position.realizedPnl,
         };
         await this.deps.positionRepo.upsert({
-          tradingInstanceId: this.tradingInstanceId,
+          actorType: 'bot',
+          actorId: this.tradingInstanceId,
           venueAccountId: this.deps.venueAccountId,
           venue: this.deps.venue,
           symbol: diff.symbol ?? this.deps.symbol,
@@ -719,7 +721,8 @@ export class TradingActor implements InstanceActor {
         // Balance corrections are recorded via journal only — no local balance store to update
         // (balance_snapshots are read from venue; local tracking is informational)
         await this.deps.journal.append({
-          tradingInstanceId: this.tradingInstanceId,
+          actorType: 'bot',
+          actorId: this.tradingInstanceId,
           type: 'reconciliation.correction',
           payload: {
             correctionType: 'balance',
@@ -744,8 +747,10 @@ export class TradingActor implements InstanceActor {
           this.position = applyFill(this.position, fill);
           await this.deps.journal.append(fillEvent(fill));
           await this.deps.fillRepo.insertFill({
+            venueAccountId: this.deps.venueAccountId,
             orderId: fill.orderId,
-            tradingInstanceId: this.tradingInstanceId,
+            actorType: 'bot',
+            actorId: this.tradingInstanceId,
             venue: this.deps.venue,
             symbol: this.deps.symbol,
             side: fill.side,
@@ -760,8 +765,10 @@ export class TradingActor implements InstanceActor {
           // Mark the corresponding orders as filled and plans as completed
           for (const fill of resolvedFills) {
             await this.deps.orderRepo.upsertByVenueRefId({
+              venueAccountId: this.deps.venueAccountId,
               id: fill.orderId as unknown as string,
-              tradingInstanceId: this.tradingInstanceId,
+              actorType: 'bot',
+              actorId: this.tradingInstanceId,
               venueRefId: `shadow-${fill.orderId}`,
               venue: this.deps.venue,
               symbol: this.deps.symbol,
@@ -776,7 +783,7 @@ export class TradingActor implements InstanceActor {
           }
           // In shadow mode each order belongs to exactly one plan; mark all executing plans
           // that have no remaining pending limits as completed
-          const executingPlans = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+          const executingPlans = await this.deps.planRepo.getIncomplete('bot', this.tradingInstanceId);
           for (const plan of executingPlans) {
             if (plan.status !== 'executing') continue;
             const planOrders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
@@ -787,7 +794,8 @@ export class TradingActor implements InstanceActor {
           }
 
           await this.deps.positionRepo.upsert({
-            tradingInstanceId: this.tradingInstanceId,
+            actorType: 'bot',
+            actorId: this.tradingInstanceId,
             venueAccountId: this.deps.venueAccountId,
             venue: this.deps.venue,
             symbol: this.deps.symbol,
@@ -823,7 +831,7 @@ export class TradingActor implements InstanceActor {
       // Delegate the core decision/plan/risk/execute path to the reusable trading cycle
       // Live mode guard: skip tick if there are unresolved live plans to prevent overlapping real orders
       if (this.deps.executionMode === 'live') {
-        const incompletePlans = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+        const incompletePlans = await this.deps.planRepo.getIncomplete('bot', this.tradingInstanceId);
         if (incompletePlans.length > 0) {
           // Attempt to resolve plans whose orders are all terminal (fallback for stream-before-persist race)
           let resolved = 0;
@@ -850,7 +858,8 @@ export class TradingActor implements InstanceActor {
       }
 
       const cycleResult = await runTradingCycle(snapshot, this.position, {
-        tradingInstanceId: this.tradingInstanceId,
+        actorType: 'bot',
+        actorId: this.tradingInstanceId,
         venue: this.deps.venue,
         symbol: this.deps.symbol,
         venueAccountId: this.deps.venueAccountId,
@@ -875,7 +884,7 @@ export class TradingActor implements InstanceActor {
         // Limit/swap orders are rejected locally by LiveExecutor without calling submitOrder.
         const submittedCount = cycleResult.executionResult.orders.filter((o) => o.type === 'market').length;
         if (submittedCount > 0) {
-          this.deps.journal.append(credentialUsedEvent(this.tradingInstanceId, {
+          this.deps.journal.append(credentialUsedEvent('bot', this.tradingInstanceId, {
             credentialId: this.deps.credentialId,
             venue: this.deps.venue,
             venueAccountId: this.deps.venueAccountId,
@@ -897,7 +906,8 @@ export class TradingActor implements InstanceActor {
       } else if (cycleResult.executionFailed) {
         this.logger.error({ decision: cycleResult.decision?.intent }, 'Execution failed');
         void this.deps.journal.append({
-          tradingInstanceId: this.tradingInstanceId,
+          actorType: 'bot',
+          actorId: this.tradingInstanceId,
           type: 'execution.failure',
           payload: { intent: cycleResult.decision?.intent, planId: cycleResult.plan?.id },
         }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append execution.failure journal event'));
@@ -905,7 +915,8 @@ export class TradingActor implements InstanceActor {
     } catch (err) {
       this.logger.error({ err }, 'Tick error');
       void this.deps.journal.append({
-        tradingInstanceId: this.tradingInstanceId,
+        actorType: 'bot',
+        actorId: this.tradingInstanceId,
         type: 'instance.tick_error',
         payload: { error: err instanceof Error ? err.message : String(err) },
       }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append instance.tick_error journal event'));
@@ -918,7 +929,7 @@ export class TradingActor implements InstanceActor {
       persistDecision: async (decision) => {
         await this.deps.decisionRepo.insertDecision({
           id: decision.id,
-          tradingInstanceId: decision.tradingInstanceId,
+          venueAccountId: decision.venueAccountId,
           instrumentId: decision.instrumentId,
           intent: decision.intent,
           targetSize: decision.targetSize.toString(),
@@ -937,7 +948,7 @@ export class TradingActor implements InstanceActor {
 
         await this.deps.backtestingRepo.insertDecisionContext({
           decisionId: context.decisionId,
-          tradingInstanceId: context.tradingInstanceId,
+          venueAccountId: this.deps.venueAccountId,
           contextHash: context.contextHash,
           context: {
             snapshot: context.snapshot,
@@ -976,10 +987,14 @@ export class TradingActor implements InstanceActor {
         await this.deps.planRepo.markFailed(planId);
       },
       persistFill: async (fill) => {
-        await this.deps.fillRepo.insertFill(fill);
+        await this.deps.fillRepo.insertFill({ ...fill, venueAccountId: fill.venueAccountId ?? this.deps.venueAccountId });
       },
       persistPosition: async (pos) => {
-        await this.deps.positionRepo.upsert(pos);
+        await this.deps.positionRepo.upsert({
+          ...pos,
+          actorType: pos.actorType ?? 'bot',
+          actorId: pos.actorId ?? this.tradingInstanceId,
+        });
       },
       persistOrder: async (order) => {
         if (order.venueRefId) {
@@ -1018,7 +1033,8 @@ export class TradingActor implements InstanceActor {
   /** Build decision intake deps for the agent decision handler */
   getIntakeDeps(): DecisionIntakeDeps {
     return {
-      tradingInstanceId: this.tradingInstanceId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       venue: this.deps.venue,
       symbol: this.deps.symbol,
       venueAccountId: this.deps.venueAccountId,
@@ -1055,8 +1071,10 @@ export class TradingActor implements InstanceActor {
 
   private async applyPrivateStreamFill(fill: PrivateStreamFill): Promise<void> {
     await this.deps.fillRepo.insertFill({
+      venueAccountId: this.deps.venueAccountId,
       orderId: fill.orderId,
-      tradingInstanceId: this.tradingInstanceId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       venueRefId: fill.venueRefId,
       venue: this.deps.venue,
       symbol: fill.symbol,
@@ -1072,7 +1090,9 @@ export class TradingActor implements InstanceActor {
     this.position = applyFill(this.position, {
       id: this.deps.idGen.fillId(),
       orderId: fill.orderId as unknown as import('@herobids/domain').OrderId,
-      tradingInstanceId: this.tradingInstanceId as TradingInstanceId,
+      venueAccountId: this.deps.venueAccountId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       venueRefId: fill.venueRefId,
       venue: this.deps.venue,
       symbol: fill.symbol,
@@ -1087,7 +1107,8 @@ export class TradingActor implements InstanceActor {
     // Persist updated position
     const markResult = await this.fetchCachedMark();
     await this.deps.positionRepo.upsert({
-      tradingInstanceId: this.tradingInstanceId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
       venue: this.deps.venue,
       symbol: this.deps.symbol,
@@ -1099,7 +1120,8 @@ export class TradingActor implements InstanceActor {
     });
 
     await this.deps.journal.append({
-      tradingInstanceId: this.tradingInstanceId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       type: 'fill.private_stream',
       payload: fill as unknown as Record<string, unknown>,
     });
@@ -1124,7 +1146,9 @@ export class TradingActor implements InstanceActor {
 
     try {
       await this.deps.orderRepo.upsertByVenueRefId({
-        tradingInstanceId: this.tradingInstanceId,
+        venueAccountId: this.deps.venueAccountId,
+        actorType: 'bot',
+        actorId: this.tradingInstanceId,
         venueRefId: order.venueRefId,
         clientOrderId: order.clientOrderId,
         venue: this.deps.venue,
@@ -1139,7 +1163,8 @@ export class TradingActor implements InstanceActor {
       });
 
       await this.deps.journal.append({
-        tradingInstanceId: this.tradingInstanceId,
+        actorType: 'bot',
+        actorId: this.tradingInstanceId,
         type: 'order.private_stream',
         payload: order as unknown as Record<string, unknown>,
       });
@@ -1164,7 +1189,7 @@ export class TradingActor implements InstanceActor {
    */
   private async tryCompleteLivePlan(venueRefId: string): Promise<void> {
     try {
-      const incompletePlans = await this.deps.planRepo.getIncomplete(this.tradingInstanceId);
+      const incompletePlans = await this.deps.planRepo.getIncomplete('bot', this.tradingInstanceId);
       for (const plan of incompletePlans) {
         if (plan.status !== 'executing') continue;
         const orders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
@@ -1215,7 +1240,8 @@ export class TradingActor implements InstanceActor {
 
     const markResult = await this.fetchCachedMark();
     await this.deps.positionRepo.upsert({
-      tradingInstanceId: this.tradingInstanceId,
+      actorType: 'bot',
+      actorId: this.tradingInstanceId,
       venueAccountId: this.deps.venueAccountId,
       venue: this.deps.venue,
       symbol: this.deps.symbol,

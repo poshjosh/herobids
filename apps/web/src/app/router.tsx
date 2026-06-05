@@ -8,7 +8,6 @@ import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
 import { ExposurePage } from '../features/exposure/ExposurePage.js';
 import { InstancesPage } from '../features/trading-instances/InstancesPage.js';
 import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailPage.js';
-import { PortfoliosPage } from '../features/portfolios/PortfoliosPage.js';
 import { CredentialsPage } from '../features/credentials/CredentialsPage.js';
 import { VenueAccountsPage } from '../features/venue-accounts/VenueAccountsPage.js';
 import { BillingPage } from '../features/billing/BillingPage.js';
@@ -36,7 +35,6 @@ export const router = createBrowserRouter([
       { path: 'exposure', element: <ExposurePage /> },
       { path: 'instances', element: <InstancesPage /> },
       { path: 'instances/:id', element: <InstanceDetailPage /> },
-      { path: 'portfolios', element: <PortfoliosPage /> },
       { path: 'credentials', element: <CredentialsPage /> },
       { path: 'venue-accounts', element: <VenueAccountsPage /> },
       { path: 'agents', element: <AgentsPage /> },

@@ -5,7 +5,6 @@ import { reconciliationEvents } from './schema/index.js';
 import { venueAccounts } from './schema/index.js';
 
 export interface InsertReconciliationEvent {
-  tradingInstanceId: string;
   venueAccountId: string;
   result: 'match' | 'drift_detected' | 'drift_within_threshold' | 'repaired';
   localState: Record<string, unknown>;
@@ -14,7 +13,6 @@ export interface InsertReconciliationEvent {
 }
 
 export interface ReconciliationEventQuery {
-  tradingInstanceId?: string;
   venueAccountId?: string;
   result?: string;
   since?: Date;
@@ -35,7 +33,6 @@ export class ReconciliationEventRepository {
 
     await this.db.insert(reconciliationEvents).values({
       id,
-      tradingInstanceId: event.tradingInstanceId,
       venueAccountId: event.venueAccountId,
       result: event.result,
       localState: event.localState,
@@ -53,23 +50,10 @@ export class ReconciliationEventRepository {
     return id;
   }
 
-  /** Query reconciliation events by instance */
-  async getByInstance(tradingInstanceId: string, opts?: { limit?: number; offset?: number; since?: Date; result?: string }) {
-    const conditions: SQL[] = [eq(reconciliationEvents.tradingInstanceId, tradingInstanceId)];
-    if (opts?.since) {
-      conditions.push(gte(reconciliationEvents.createdAt, opts.since));
-    }
-    if (opts?.result) {
-      conditions.push(eq(reconciliationEvents.result, opts.result));
-    }
-
-    return this.db
-      .select()
-      .from(reconciliationEvents)
-      .where(and(...conditions))
-      .orderBy(desc(reconciliationEvents.createdAt))
-      .limit(opts?.limit ?? 100)
-      .offset(opts?.offset ?? 0);
+  /** Query reconciliation events by venue account (primary query method) */
+  async getByInstance(venueAccountId: string, opts?: { limit?: number; offset?: number; since?: Date; result?: string }) {
+    // 'getByInstance' kept for call-site compatibility; scoped to venueAccountId now
+    return this.getByVenueAccount(venueAccountId, opts);
   }
 
   /** Query reconciliation events by venue account */
@@ -91,9 +75,6 @@ export class ReconciliationEventRepository {
   /** Query with flexible filters */
   async query(filters: ReconciliationEventQuery) {
     const conditions: SQL[] = [];
-    if (filters.tradingInstanceId) {
-      conditions.push(eq(reconciliationEvents.tradingInstanceId, filters.tradingInstanceId));
-    }
     if (filters.venueAccountId) {
       conditions.push(eq(reconciliationEvents.venueAccountId, filters.venueAccountId));
     }
@@ -127,18 +108,12 @@ export class ReconciliationEventRepository {
   }
 
   /**
-   * Get the last reconciled timestamp scoped to a specific trading instance.
-   * Uses the max createdAt from reconciliation_events for this instance,
-   * avoiding cursor advancement by sibling instances sharing the same venue account.
+   * Get the last reconciled timestamp for a specific venue account.
+   * Queries reconciliation_events directly for accurate per-account cursor.
    */
-  async getLastReconciledAtForInstance(tradingInstanceId: string): Promise<Date | null> {
-    const [row] = await this.db
-      .select({ createdAt: reconciliationEvents.createdAt })
-      .from(reconciliationEvents)
-      .where(eq(reconciliationEvents.tradingInstanceId, tradingInstanceId))
-      .orderBy(desc(reconciliationEvents.createdAt))
-      .limit(1);
-
-    return row?.createdAt ?? null;
+  async getLastReconciledAtForInstance(venueAccountId: string): Promise<Date | null> {
+    // Renamed: was getLastReconciledAtForInstance(tradingInstanceId)
+    // Now delegates to getLastReconciledAt since reconciliation is venue-account-scoped.
+    return this.getLastReconciledAt(venueAccountId);
   }
 }

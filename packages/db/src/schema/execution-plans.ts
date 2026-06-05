@@ -7,7 +7,13 @@ import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 export const executionPlans = pgTable('execution_plans', {
   id: text('id').primaryKey(),               // UUIDv7
   decisionId: text('decision_id').notNull(),
-  tradingInstanceId: text('trading_instance_id').notNull(),
+  // tradingInstanceId REMOVED — plans are actor-scoped via actorType/actorId
+  /** Venue account the plan executes against */
+  venueAccountId: text('venue_account_id').notNull(),
+  /** Actor type: agent | bot | user | system */
+  actorType: text('actor_type').notNull().default('system'),
+  /** Stable identifier of the actor that submitted this plan */
+  actorId: text('actor_id'),
   /** The venue + instrument this plan targets */
   venue: text('venue').notNull(),
   symbol: text('symbol').notNull(),
@@ -20,5 +26,6 @@ export const executionPlans = pgTable('execution_plans', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
 }, (t) => [
   index('idx_execution_plans_decision_id').on(t.decisionId),
-  index('idx_execution_plans_trading_instance_id').on(t.tradingInstanceId),
+  index('idx_execution_plans_venue_account_id').on(t.venueAccountId),
+  index('idx_execution_plans_actor_id').on(t.actorId),
 ]);

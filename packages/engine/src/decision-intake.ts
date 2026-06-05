@@ -20,7 +20,8 @@ import type {
  * that both strategies and agents funnel through.
  */
 export interface DecisionIntakeDeps {
-  tradingInstanceId: string;
+  actorType: string;
+  actorId: string;
   venue: string;
   symbol: string;
   venueAccountId: string;
@@ -103,7 +104,8 @@ export async function submitDecisionForExecution(
   // 2. Persist decision context
   await deps.persistence.persistDecisionContext({
     decisionId: resolvedDecision.id,
-    tradingInstanceId: deps.tradingInstanceId,
+    actorType: deps.actorType,
+    actorId: deps.actorId,
     contextHash: canonicalContextHash,
     snapshot: context.snapshot,
     position: context.position,
@@ -141,7 +143,9 @@ export async function submitDecisionForExecution(
   await deps.persistence.persistPlan({
     id: plan.id,
     decisionId: resolvedDecision.id,
-    tradingInstanceId: deps.tradingInstanceId,
+    venueAccountId: deps.venueAccountId,
+    actorType: deps.actorType,
+    actorId: deps.actorId,
     venue: deps.venue,
     symbol: deps.symbol,
     action: plan.action,
@@ -166,7 +170,7 @@ export async function submitDecisionForExecution(
 
   if (!riskResult.ok) {
     await deps.persistence.markPlanFailed(plan.id);
-    await deps.journal.append(riskEvent(deps.tradingInstanceId, riskResult.error));
+    await deps.journal.append(riskEvent(deps.actorType, deps.actorId, riskResult.error));
     return { decision: resolvedDecision, plan, riskRejected: true, position, executionFailed: false };
   }
 
@@ -187,7 +191,9 @@ export async function submitDecisionForExecution(
     await deps.journal.append(fillEvent(fill));
     await deps.persistence.persistFill({
       orderId: fill.orderId as string,
-      tradingInstanceId: deps.tradingInstanceId,
+      venueAccountId: deps.venueAccountId,
+      actorType: deps.actorType,
+      actorId: deps.actorId,
       venue: deps.venue,
       symbol: deps.symbol,
       side: fill.side,
@@ -201,8 +207,9 @@ export async function submitDecisionForExecution(
 
   // Persist position state
   await deps.persistence.persistPosition({
-    tradingInstanceId: deps.tradingInstanceId,
     venueAccountId: deps.venueAccountId,
+    actorType: deps.actorType,
+    actorId: deps.actorId,
     venue: deps.venue,
     symbol: deps.symbol,
     side: updatedPosition.side,
@@ -223,7 +230,9 @@ export async function submitDecisionForExecution(
     await deps.journal.append(orderEvent(order));
     await deps.persistence.persistOrder({
       id: order.id as string,
-      tradingInstanceId: deps.tradingInstanceId,
+      venueAccountId: deps.venueAccountId,
+      actorType: deps.actorType,
+      actorId: deps.actorId,
       executionPlanId: order.executionPlanId,
       venueRefId: order.venueRefId ?? `local-${order.id}`,
       clientOrderId: order.clientOrderId,

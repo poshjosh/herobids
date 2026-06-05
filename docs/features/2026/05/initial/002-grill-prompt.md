@@ -2,7 +2,7 @@ BACKGROUND
 
 - We are starting a new project named "herobids". 
 
-- We want to improve on an earlier project which we copied into this directory: .ignore/repos/aitradingbot/
+- We want to improve on an earlier project which we copied into this directory: /Users/chinomso.ikwuagwu/dev_ai/aitradingbot/
 
 - We have had some discussions. See: docs/features/2026/05/initial/
 

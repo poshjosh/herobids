@@ -8,7 +8,7 @@ export interface FillRecord {
 }
 
 export interface FillLookup {
-  getLatestFillByInstrument(instrument: string, tradingInstanceId?: string): Promise<FillRecord | null>;
+  getLatestFillByInstrument(instrument: string, actorId?: string): Promise<FillRecord | null>;
 }
 
 /**
@@ -18,11 +18,11 @@ export interface FillLookup {
 export class LastFillMarkSource implements MarkSource {
   constructor(
     private readonly fillLookup: FillLookup,
-    private readonly tradingInstanceId?: string,
+    private readonly actorId?: string,
   ) {}
 
   async fetchMark(instrument: string): Promise<Result<Mark, MarkError>> {
-    const fill = await this.fillLookup.getLatestFillByInstrument(instrument, this.tradingInstanceId);
+    const fill = await this.fillLookup.getLatestFillByInstrument(instrument, this.actorId);
     if (!fill) {
       return err({
         code: 'mark.no_fill',

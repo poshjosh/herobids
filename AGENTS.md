@@ -90,6 +90,24 @@ scripts/       # One-off spikes and shell utilities
 
 Package dependency direction: `domain` ← `engine` ← `strategy` / `venues` / `db` ← `apps/*`
 
+## Agent Mode Purity
+
+When an agent is running, the agent's goal text is the **sole source of trading policy**. Do not inject hidden constraints the user did not ask for.
+
+| Category | Examples | Rule |
+|---|---|---|
+| **Constraints** | Stop-loss %, position caps, portfolio stop | Never apply unless the goal explicitly specifies them |
+| **Data** | Price, P&L, market context, progress score | Always provide — the agent reasons over it |
+| **Operational mechanics** | Execution mode, slippage, retries, schema validation | Always apply — infrastructure, not policy |
+
+Key rules:
+- Do not apply bot blueprint risk defaults as constraints over agent decisions
+- Do not add confirmation gates or approval steps to agent bot lifecycle actions
+- An agent has full lifecycle authority over its own bots: create, start, stop, reconfigure, delete — no user confirmation required
+- The engine risk gate still enforces hard safety invariants (malformed payloads, unauthorised access, unreconciled state, user-configured limits)
+
+See [Agent Mode Purity](./docs/tech/agents/runtime-boundary-and-message-contract.md#agent-mode-purity) for the full specification.
+
 ## Best Practices
 
 Before making changes, read all documents in `./docs/best-practices/`. Follow the patterns and guidelines described there.

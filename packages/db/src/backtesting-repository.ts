@@ -5,7 +5,9 @@ import { decisionContexts, replayCorpora, replayMarketEvents, backtestRuns, llmD
 
 export interface InsertDecisionContext {
   decisionId: string;
-  tradingInstanceId: string;
+  venueAccountId: string;
+  actorType?: string;
+  actorId?: string;
   contextHash: string;
   context: {
     snapshot: { symbol: string; price: string; timestamp: string; data?: Record<string, unknown> };
@@ -48,7 +50,9 @@ export class BacktestingRepository {
     await this.db.insert(decisionContexts).values({
       id,
       decisionId: ctx.decisionId,
-      tradingInstanceId: ctx.tradingInstanceId,
+      venueAccountId: ctx.venueAccountId,
+      actorType: ctx.actorType ?? 'system',
+      actorId: ctx.actorId ?? null,
       contextHash: ctx.contextHash,
       context: ctx.context,
     });

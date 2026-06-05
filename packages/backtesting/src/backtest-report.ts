@@ -7,7 +7,7 @@ import type { BacktestConfig } from './replay-runner.js';
  */
 export interface BacktestReport {
   runId: string;
-  tradingInstanceId: string;
+  botId?: string;
   venue: string;
   symbol: string;
   /** Total frames processed (excluding warm-up) */
@@ -56,7 +56,7 @@ export function buildReport(
 
   return {
     runId: config.runId,
-    tradingInstanceId: config.tradingInstanceId,
+    botId: config.botId,
     venue: config.venue,
     symbol: config.symbol,
     totalFrames: results.length,

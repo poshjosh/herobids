@@ -2,10 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts, portfolios, credentials } from '@herobids/db';
+import { venueAccounts, userCredentials } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { CreateVenueAccountSchema, CreatePortfolioSchema } from '../schemas.js';
-import { checkVenueAccountLimit, checkPortfolioLimit } from '../plan-guards.js';
+import { CreateVenueAccountSchema } from '../schemas.js';
+import { checkVenueAccountLimit } from '../plan-guards.js';
 
 export async function venueAccountRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create venue account
@@ -28,9 +28,9 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
     // genuinely missing credential (prevents probing foreign credential IDs).
     if (parsed.data.credentialId) {
       const [cred] = await db
-        .select({ id: credentials.id, venue: credentials.venue })
-        .from(credentials)
-        .where(and(eq(credentials.id, parsed.data.credentialId), eq(credentials.userId, request.userId)));
+        .select({ id: userCredentials.id, venue: userCredentials.venue })
+        .from(userCredentials)
+        .where(and(eq(userCredentials.id, parsed.data.credentialId), eq(userCredentials.userId, request.userId)));
 
       if (!cred) {
         return reply.status(400).send({
@@ -81,40 +81,5 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
   app.get('/venue-accounts', async (request, reply) => {
     const accounts = await db.select().from(venueAccounts).where(eq(venueAccounts.userId, request.userId));
     return reply.send({ venueAccounts: accounts });
-  });
-}
-
-export async function portfolioRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
-  // Create portfolio
-  app.post('/portfolios', async (request, reply) => {
-    const parsed = CreatePortfolioSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
-    }
-
-    // Plan enforcement
-    if (plansConfig) {
-      const planCheck = await checkPortfolioLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
-      if (!planCheck.ok) {
-        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
-      }
-    }
-
-    const id = crypto.randomUUID();
-
-    await db.insert(portfolios).values({
-      id,
-      userId: request.userId,
-      name: parsed.data.name,
-    });
-
-    const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.id, id));
-    return reply.status(201).send(portfolio);
-  });
-
-  // List portfolios
-  app.get('/portfolios', async (request, reply) => {
-    const all = await db.select().from(portfolios).where(eq(portfolios.userId, request.userId));
-    return reply.send({ portfolios: all });
   });
 }

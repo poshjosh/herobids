@@ -33,4 +33,4 @@ await db.delete(agents).where(eq(agents.id, id));
 
 - [ ] When implementing venue adapters: apply rate-limiting lessons from `docs/lessons/rate-limiting-guide.md` — never nest rate-limited calls, short TTL for empty/error cache entries, staleness max on cached prices, self-healing pressure backoff, and check whether provider limits are per-IP or per-key before sharing counters.
 
-- [ ] Get insights from: .ignore/repos/aitradingbot/config.example.yaml. Is there anything you would add or change? Now or later?
+- [ ] Get insights from: /Users/chinomso.ikwuagwu/dev_ai/aitradingbot/config.example.yaml. Is there anything you would add or change? Now or later?

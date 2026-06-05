@@ -1,5 +1,5 @@
 import type { Result } from '@herobids/domain';
-import type { OrderId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId } from '@herobids/domain';
 import type { Price } from '@herobids/domain';
 import { ok } from '@herobids/domain';
 import { quantity, Decimal } from '@herobids/domain';
@@ -49,7 +49,9 @@ export class ShadowExecutor implements Executor {
 
         const order: ManagedOrder = {
           id: orderId,
-          tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: plan.venueAccountId,
+          actorType: plan.actorType,
+          actorId: plan.actorId,
           executionPlanId: plan.id,
           venueRefId: `shadow-${orderId}`,
           clientOrderId: undefined,
@@ -70,7 +72,9 @@ export class ShadowExecutor implements Executor {
         const fill: FillEvent = {
           id: fillId,
           orderId,
-          tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: plan.venueAccountId,
+          actorType: plan.actorType,
+          actorId: plan.actorId,
           venueRefId: `shadow-${fillId}`,
           venue: plan.venue,
           symbol: plan.symbol,
@@ -140,7 +144,9 @@ export class ShadowExecutor implements Executor {
         const fillId = this.idGen.fillId();
         const order: ManagedOrder = {
           id: orderId,
-          tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: plan.venueAccountId,
+          actorType: plan.actorType,
+          actorId: plan.actorId,
           executionPlanId: plan.id,
           venueRefId: `shadow-${orderId}`,
           clientOrderId: undefined,
@@ -161,7 +167,9 @@ export class ShadowExecutor implements Executor {
         const fill: FillEvent = {
           id: fillId,
           orderId,
-          tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: plan.venueAccountId,
+          actorType: plan.actorType,
+          actorId: plan.actorId,
           venueRefId: `shadow-${fillId}`,
           venue: plan.venue,
           symbol: plan.symbol,
@@ -186,7 +194,9 @@ export class ShadowExecutor implements Executor {
           const fillId = this.idGen.fillId();
           const order: ManagedOrder = {
             id: orderId,
-            tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+            venueAccountId: plan.venueAccountId,
+            actorType: plan.actorType,
+            actorId: plan.actorId,
             executionPlanId: plan.id,
             venueRefId: `shadow-${orderId}`,
             clientOrderId: undefined,
@@ -207,7 +217,9 @@ export class ShadowExecutor implements Executor {
           const fill: FillEvent = {
             id: fillId,
             orderId,
-            tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+            venueAccountId: plan.venueAccountId,
+            actorType: plan.actorType,
+            actorId: plan.actorId,
             venueRefId: `shadow-${fillId}`,
             venue: plan.venue,
             symbol: plan.symbol,
@@ -248,7 +260,9 @@ export class ShadowExecutor implements Executor {
           // For now, treat as open order (pending fill will be picked up on next tick or reconciliation)
           const order: ManagedOrder = {
             id: orderId,
-            tradingInstanceId: plan.tradingInstanceId as TradingInstanceId,
+            venueAccountId: plan.venueAccountId,
+            actorType: plan.actorType,
+            actorId: plan.actorId,
             executionPlanId: plan.id,
             venueRefId: `shadow-${orderId}`,
             clientOrderId: undefined,
@@ -287,7 +301,9 @@ export class ShadowExecutor implements Executor {
         fills.push({
           id: fillId,
           orderId: pending.orderId,
-          tradingInstanceId: pending.plan.tradingInstanceId as TradingInstanceId,
+          venueAccountId: pending.plan.venueAccountId,
+          actorType: pending.plan.actorType,
+          actorId: pending.plan.actorId,
           venueRefId: `shadow-${fillId}`,
           venue: pending.plan.venue,
           symbol: pending.plan.symbol,
