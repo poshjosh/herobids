@@ -6,7 +6,7 @@ Some of these may no longer be valid (they may have been done/implemented).
 
 - [ ] Sandbox enforcement on code execution has only been partially implemented. SandboxEnforcer and sandbox-exec.sh exist, and code_execute is in the capability grants, but no broker handler routes code_execute calls — the capability is defined but not wired on the production path
 
-- [ ] Make appropriate Foreign Keys `ON DELETE CASCADE` rather than manually deleting them e.g.
+- [x] Make appropriate Foreign Keys `ON DELETE CASCADE` rather than manually deleting them e.g.
 ```
 // Delete FK-referencing child rows before removing the parent so PG doesn't reject.
 // Order matters: outbound messages → artifacts → sessions → links → agent

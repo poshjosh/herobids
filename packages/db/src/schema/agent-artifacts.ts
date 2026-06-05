@@ -7,7 +7,7 @@ import { agents } from './agents.js';
  */
 export const agentArtifacts = pgTable('agent_artifacts', {
   id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull().references(() => agents.id),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   /** Runtime session that produced this artifact */
   sessionId: text('session_id').notNull(),
   /** Artifact type: tool_trace, web_fetch, code_exec_summary, prompt_summary */

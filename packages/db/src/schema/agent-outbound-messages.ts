@@ -13,7 +13,7 @@ import { agents } from './agents.js';
  */
 export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull().references(() => agents.id),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   /** Runtime session that produced this message (null for platform-authored) */
   sessionId: text('session_id'),
   /** Who authored this message: 'agent' | 'platform' */

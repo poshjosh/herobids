@@ -6,6 +6,8 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
+import { agentRuntimeSessions, agentArtifacts, agentOutboundMessages } from '@herobids/db';
+import { eq } from 'drizzle-orm';
 
 describe.skipIf(SKIP)('Agents functional', () => {
   let ctx: Awaited<ReturnType<typeof buildApp>>;
@@ -243,6 +245,57 @@ describe.skipIf(SKIP)('Agents functional', () => {
   });
 
   describe('DELETE /agents/:id', () => {
+    it('cascade-deletes dependent rows (sessions, artifacts, outbound messages) with the agent', async () => {
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: { name: 'With Children', prompt: 'I have dependents.' },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const { id } = createRes.json<{ id: string }>();
+
+      // Seed one row in each cascade-target table.
+      await ctx.db.insert(agentRuntimeSessions).values({
+        id: 'sess-cascade-test',
+        agentId: id,
+        status: 'stopped',
+        startedAt: new Date(),
+        stoppedAt: new Date(),
+      });
+      await ctx.db.insert(agentArtifacts).values({
+        id: 'art-cascade-test',
+        agentId: id,
+        sessionId: 'sess-cascade-test',
+        artifactType: 'tool_trace',
+        contentType: 'application/json',
+        summary: 'test artifact',
+        retentionClass: 'ephemeral',
+      });
+      await ctx.db.insert(agentOutboundMessages).values({
+        id: 'msg-cascade-test',
+        agentId: id,
+        authoredBy: 'platform',
+        body: 'cascade test message',
+        deliveryStatus: 'pending',
+      });
+
+      const deleteRes = await ctx.app.inject({
+        method: 'DELETE',
+        url: `/agents/${id}`,
+        headers: authHeader(),
+      });
+      expect(deleteRes.statusCode).toBe(204);
+
+      // Child rows must be gone — DB cascade, not application-side cleanup.
+      const sessions = await ctx.db.select().from(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
+      expect(sessions).toHaveLength(0);
+      const artifacts = await ctx.db.select().from(agentArtifacts).where(eq(agentArtifacts.agentId, id));
+      expect(artifacts).toHaveLength(0);
+      const messages = await ctx.db.select().from(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
+      expect(messages).toHaveLength(0);
+    });
+
     it('deletes a stopped agent and returns 204', async () => {
       const createRes = await ctx.app.inject({
         method: 'POST',

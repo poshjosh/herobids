@@ -9,7 +9,7 @@ import { agents } from './agents.js';
  */
 export const agentRuntimeSessions = pgTable('agent_runtime_sessions', {
   id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull().references(() => agents.id),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   // tradingInstanceId REMOVED — sessions are agent-scoped; one container manages all agent bots
   /** Runtime status: starting | launching | running | unhealthy | stopped | crashed */
   status: text('status').notNull().default('starting'),
