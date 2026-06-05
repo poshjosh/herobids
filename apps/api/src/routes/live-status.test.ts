@@ -26,12 +26,14 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 
 vi.mock('@herobids/db', () => {
   const tradingInstances = { id: 'trading_instances.id', userId: 'trading_instances.user_id' };
+  const bots = { id: 'bots.id', userId: 'bots.user_id' };
   return {
     PgJournal: vi.fn(),
     ReconciliationEventRepository: vi.fn(),
     OrderRepository: vi.fn(),
     FillRepository: vi.fn(),
     tradingInstances,
+    bots,
   };
 });
 

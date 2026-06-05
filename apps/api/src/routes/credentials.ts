@@ -195,13 +195,13 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
 
     // Best-effort restart of running dependents — rotation already succeeded above,
     // so failures here must not mask the successful update.
-    let runningBotIds: string[] = [];
+    let runningInstanceIds: string[] = [];
     let restartedIds: string[] = [];
     let restartError: string | undefined;
     let restartErrorCode: 'lookup_failed' | 'enqueue_failed' | undefined;
     try {
       const deps = await findCredentialDependents(db, id);
-      runningBotIds = deps.runningBotIds;
+      runningInstanceIds = deps.runningInstanceIds;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'unknown error';
       restartErrorCode = 'lookup_failed';
@@ -209,10 +209,10 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       app.log.error({ err, credentialId: id }, 'Failed to look up credential dependents after rotation');
     }
     try {
-      for (const instanceId of runningBotIds) {
+      for (const instanceId of runningInstanceIds) {
         await queue.add('restart-instance', {
           command: 'restart',
-          botId: instanceId,
+          tradingInstanceId: instanceId,
         });
         restartedIds.push(instanceId);
       }
@@ -220,14 +220,14 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       const msg = err instanceof Error ? err.message : 'unknown error';
       restartErrorCode = 'enqueue_failed';
       restartError = `Failed to enqueue all restart jobs: ${msg}`;
-      app.log.error({ err, credentialId: id, restartedIds, runningBotIds }, 'Failed to enqueue restart jobs after credential rotation');
+      app.log.error({ err, credentialId: id, restartedIds, runningInstanceIds }, 'Failed to enqueue restart jobs after credential rotation');
     }
 
     return reply.send({
       status: 'rotated',
       credentialId: id,
-      dependentBotIds: runningBotIds,
-      restartedBotIds: restartedIds,
+      dependentTradingInstanceIds: runningInstanceIds,
+      restartedTradingInstanceIds: restartedIds,
       ...(restartError ? { restartErrorCode, restartError } : {}),
     });
   });
@@ -242,13 +242,13 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     }
 
     // Check for dependents — block delete if any venue accounts still link to this credential
-    const { venueAccountIds, runningBotIds } = await findCredentialDependents(db, id);
+    const { venueAccountIds, runningInstanceIds } = await findCredentialDependents(db, id);
     if (venueAccountIds.length > 0) {
       return reply.status(409).send({
         error: 'credential_in_use',
         credentialId: id,
         blockingVenueAccountIds: venueAccountIds,
-        blockingBotIds: runningBotIds,
+        blockingTradingInstanceIds: runningInstanceIds,
       });
     }
 
@@ -263,7 +263,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
           error: 'credential_in_use',
           credentialId: id,
           blockingVenueAccountIds: deps.venueAccountIds,
-          blockingBotIds: deps.runningBotIds,
+          blockingTradingInstanceIds: deps.runningInstanceIds,
         });
       }
       throw err;

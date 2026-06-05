@@ -11,7 +11,7 @@ import { createDatabase } from '@herobids/db';
 import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
-import { instanceRoutes } from '../../routes/instances.js';
+import { botRoutes } from '../../routes/bots.js';
 import type { AuthConfig } from '@herobids/domain';
 import { Queue } from 'bullmq';
 
@@ -60,7 +60,7 @@ export async function buildApp() {
 
   await authRoutes(app, authConfig, db, redisClient, 'free');
   await agentRoutes(app, db);
-  await instanceRoutes(app, lifecycleQueue, db, { defaultPlanId: 'free', plans: {} } as any);
+  await botRoutes(app, lifecycleQueue, db, { defaultPlanId: 'free', plans: {} } as any);
   await app.ready();
 
   return { app, db, redisClient, lifecycleQueue };

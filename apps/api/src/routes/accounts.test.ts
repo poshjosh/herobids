@@ -10,6 +10,7 @@ import { venueAccountRoutes } from './accounts.js';
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
   and: vi.fn((...args) => ({ _and: args })),
+  sql: vi.fn().mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => ({ _sql: strings.join('') })),
 }));
 
 const TEST_USER_ID = 'user-1';

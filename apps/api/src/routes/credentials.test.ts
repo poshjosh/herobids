@@ -26,7 +26,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 const mockJournalAppend = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@herobids/db', () => {
-  const credentials = {
+  const userCredentials = {
     id: 'credentials.id',
     userId: 'credentials.user_id',
     venue: 'credentials.venue',
@@ -41,7 +41,7 @@ vi.mock('@herobids/db', () => {
     planId: 'users.plan_id',
   };
   return {
-    credentials,
+    userCredentials,
     users,
     PgJournal: vi.fn().mockImplementation(() => ({
       append: mockJournalAppend,

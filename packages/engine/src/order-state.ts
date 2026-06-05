@@ -9,6 +9,7 @@ import type { Price, Quantity } from '@herobids/domain';
 export interface ManagedOrder {
   id: OrderId;
   venueAccountId: string;
+  tradingInstanceId?: string;
   actorType: string;
   actorId: string;
   executionPlanId?: string;
@@ -52,6 +53,7 @@ export interface FillEvent {
   id: FillId;
   orderId: OrderId;
   venueAccountId: string;
+  tradingInstanceId?: string;
   actorType: string;
   actorId: string;
   venueRefId?: string;

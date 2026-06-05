@@ -6,6 +6,7 @@ export type AlertSeverity = 'info' | 'warn' | 'critical';
 /** A journal event row (from scanAfter) */
 export interface JournalEventRow {
   id: string;
+  tradingInstanceId?: string | null;
   actorId: string | null;
   type: string;
   payload: Record<string, unknown>;

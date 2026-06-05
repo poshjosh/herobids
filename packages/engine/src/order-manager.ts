@@ -20,6 +20,7 @@ export interface OrderManagerError extends DomainError {
 export interface CreateOrderParams {
   id: OrderId;
   venueAccountId: string;
+  tradingInstanceId?: string;
   actorType: string;
   actorId: string;
   executionPlanId?: string;
@@ -68,6 +69,7 @@ export class OrderManager {
     const order: ManagedOrder = {
       id: params.id,
       venueAccountId: params.venueAccountId,
+      tradingInstanceId: params.tradingInstanceId,
       actorType: params.actorType,
       actorId: params.actorId,
       executionPlanId: params.executionPlanId,
@@ -160,6 +162,7 @@ export class OrderManager {
       id: params.fillId,
       orderId: order.id,
       venueAccountId: order.venueAccountId,
+      tradingInstanceId: order.tradingInstanceId,
       actorType: order.actorType,
       actorId: order.actorId,
       venueRefId: params.venueRefId,

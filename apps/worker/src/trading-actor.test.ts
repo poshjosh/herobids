@@ -41,6 +41,7 @@ function stubRepo() {
     insert: vi.fn().mockResolvedValue(undefined),
     getLastReconciledAt: vi.fn().mockResolvedValue(null),
     getLastReconciledAtForInstance: vi.fn().mockResolvedValue(null),
+    getOpenByInstance: vi.fn().mockResolvedValue([]),
   };
 }
 

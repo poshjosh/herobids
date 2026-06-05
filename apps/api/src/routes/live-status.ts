@@ -32,7 +32,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
    * - recent live events
    */
   app.get<{ Params: { id: string }; Querystring: Record<string, string> }>(
-    '/bots/:id/live-status',
+    '/instances/:id/live-status',
     async (request, reply) => {
       const { id } = request.params;
       const parsed = LiveStatusQuerySchema.safeParse(request.query);
@@ -61,17 +61,17 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
         slippageAlerts,
         liveEvents,
       ] = await Promise.all([
-        reconRepo.getByVenueAccount(bot.venueAccountId, { limit: 1 }),
-        orderRepo.getOpenByActor('bot', id),
-        fillRepo.getRecentByActor('bot', id, since, limit),
+        reconRepo.getByInstance(id, { limit: 1 }),
+        orderRepo.getOpenByInstance(id),
+        fillRepo.getRecentByInstance(id, since, limit),
         journal.queryByTypes({
-          actorId: id,
+          tradingInstanceId: id,
           types: ['live.slippage_alert'],
           since,
           limit,
         }),
         journal.queryByTypes({
-          actorId: id,
+          tradingInstanceId: id,
           types: [...LIVE_EVENT_TYPES],
           since,
           limit,
@@ -81,7 +81,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       const lastRecon = recentRecon[0];
 
       return reply.send({
-        botId: id,
+        tradingInstanceId: id,
         executionMode,
         status: bot.status,
         startedAt: bot.startedAt?.toISOString() ?? null,
@@ -147,7 +147,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
    * (at which point the actor crashes and status becomes 'crashed').
    */
   app.get<{ Params: { id: string } }>(
-    '/bots/:id/live-readiness',
+    '/instances/:id/live-readiness',
     async (request, reply) => {
       const { id } = request.params;
 
@@ -163,12 +163,12 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       // Check for recent live_blocked or live_armed events
       const [blockedEvents, armedEvents] = await Promise.all([
         journal.queryByTypes({
-          actorId: id,
+          tradingInstanceId: id,
           types: ['instance.live_blocked'],
           limit: 1,
         }),
         journal.queryByTypes({
-          actorId: id,
+          tradingInstanceId: id,
           types: ['instance.live_armed'],
           limit: 1,
         }),
@@ -189,7 +189,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       }
 
       return reply.send({
-        botId: id,
+        tradingInstanceId: id,
         executionMode,
         status: bot.status,
         readinessState,

@@ -30,13 +30,15 @@ export class AgentDecisionHandler {
   ) {}
 
   async handleDecisionSubmit(envelope: MessageEnvelope, payload: DecisionSubmitPayload): Promise<void> {
-    const { agentId, botId, initiatorId, initiatorType } = envelope;
-    const resolveId = botId ?? agentId;
+    const { agentId, botId, initiatorId, initiatorType, tradingInstanceId } = envelope;
+    const effectiveAgentId = agentId ?? initiatorId;
+    const effectiveTradingInstanceId = tradingInstanceId ?? botId;
+    const resolveId = effectiveTradingInstanceId;
 
     // 1. Verify agent is not paused
-    const agent = await this.agentRepo.getAgent(agentId ?? initiatorId);
+    const agent = await this.agentRepo.getAgent(effectiveAgentId);
     if (!agent || agent.status === 'paused' || agent.status === 'stopped') {
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'agent_paused',
         message: `Agent is ${agent?.status ?? 'unknown'} — cannot accept decisions`,
@@ -46,9 +48,9 @@ export class AgentDecisionHandler {
     }
 
     // 2. Verify a running session exists
-    const session = await this.agentRepo.getActiveSession(agentId);
+    const session = await this.agentRepo.getSessionForAgentAndInstance(effectiveAgentId, effectiveTradingInstanceId);
     if (!session || session.status !== 'running') {
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'no_active_session',
         message: 'No running runtime session',
@@ -60,7 +62,7 @@ export class AgentDecisionHandler {
     // 3. Resolve execution deps from the running bot
     const intakeDeps = this.intakeResolver.getIntakeDeps(resolveId);
     if (!intakeDeps) {
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'instance_not_running',
         message: 'Bot is not currently active',
@@ -70,7 +72,7 @@ export class AgentDecisionHandler {
     }
 
     if (payload.instrumentId !== intakeDeps.symbol) {
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'instrument_mismatch',
         message: 'Decision instrument does not match the bot symbol',
@@ -85,7 +87,7 @@ export class AgentDecisionHandler {
 
     const context = this.intakeResolver.getDecisionContext(resolveId);
     if (!context) {
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'no_context',
         message: 'No decision context available — bot may still be initializing',
@@ -96,7 +98,7 @@ export class AgentDecisionHandler {
 
     const position = this.intakeResolver.getPosition(resolveId);
     if (!position) {
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'no_position_state',
         message: 'Position state not available',
@@ -130,7 +132,7 @@ export class AgentDecisionHandler {
 
       try {
         // 6. Emit accepted — deferred until hash and risk checks pass.
-        await this.eventPublisher.emitDecisionAccepted(agentId, {
+        await this.eventPublisher.emitDecisionAccepted(effectiveTradingInstanceId, {
           decisionId: payload.decisionId,
           acceptedAt: new Date().toISOString(),
           normalizedDecision: {
@@ -146,7 +148,7 @@ export class AgentDecisionHandler {
 
         // 7. Emit plan status
         if (result.plan) {
-          await this.eventPublisher.emitPlanStatus(agentId, {
+          await this.eventPublisher.emitPlanStatus(effectiveTradingInstanceId, {
             decisionId: payload.decisionId,
             planId: result.plan.id,
             status: result.plan.status as 'created' | 'executing' | 'completed' | 'failed',
@@ -159,14 +161,14 @@ export class AgentDecisionHandler {
 
         // 8. Emit execution result or guardrail
         if (result.riskRejected) {
-          await this.eventPublisher.emitGuardrailTriggered(agentId, {
+          await this.eventPublisher.emitGuardrailTriggered(effectiveTradingInstanceId, {
             scope: 'risk_gate',
             code: 'risk.rejected',
             message: 'Decision rejected by risk gate',
             decisionId: payload.decisionId,
           });
         } else if (result.executionFailed) {
-          await this.eventPublisher.emitExecutionResult(agentId, {
+          await this.eventPublisher.emitExecutionResult(effectiveTradingInstanceId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
             orders: [],
@@ -180,7 +182,7 @@ export class AgentDecisionHandler {
             completedAt: new Date().toISOString(),
           });
         } else if (result.executionResult) {
-          await this.eventPublisher.emitExecutionResult(agentId, {
+          await this.eventPublisher.emitExecutionResult(effectiveTradingInstanceId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
             orders: result.executionResult.orders.map((o) => ({
@@ -209,7 +211,7 @@ export class AgentDecisionHandler {
       }
     } catch (err) {
       if (err instanceof DecisionContextHashMismatchError) {
-        await this.eventPublisher.emitDecisionRejected(agentId, {
+        await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
           decisionId: payload.decisionId,
           code: 'context_hash_mismatch',
           message: 'Decision context hash does not match the server-resolved context',
@@ -223,7 +225,7 @@ export class AgentDecisionHandler {
       }
 
       logger.error({ decisionId: payload.decisionId, err }, 'Decision execution failed');
-      await this.eventPublisher.emitDecisionRejected(agentId, {
+      await this.eventPublisher.emitDecisionRejected(effectiveTradingInstanceId, {
         decisionId: payload.decisionId,
         code: 'execution_error',
         message: err instanceof Error ? err.message : 'Unknown execution error',

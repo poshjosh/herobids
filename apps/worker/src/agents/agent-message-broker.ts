@@ -92,6 +92,8 @@ export class AgentMessageBroker {
     }
 
     const envelope = envelopeResult.data as MessageEnvelope;
+    // Resolve effective agentId — may be absent when initiatorType is 'agent'
+    const effectiveAgentId = envelope.agentId ?? envelope.initiatorId;
 
     // 2. Validate payload against type-specific schema
     const payloadSchema = MESSAGE_PAYLOAD_SCHEMAS[envelope.type];
@@ -119,16 +121,16 @@ export class AgentMessageBroker {
     let policySessionId: string | undefined;
     let policyStartMs: number | undefined;
     if (capabilityName) {
-      const agent = await this.agentRepo.getAgent(envelope.agentId);
+      const agent = await this.agentRepo.getAgent(effectiveAgentId);
       const perAgentGrants = agent?.toolPolicy
         ? (Object.values(agent.toolPolicy) as CapabilityGrant[])
         : undefined;
-      const engine = this.getCapabilityEngine(envelope.agentId, perAgentGrants);
-      const activeSession = await this.agentRepo.getActiveSession(envelope.agentId);
-      const sessionId = activeSession?.id ?? envelope.agentId;
-      const denied = engine.checkAccess(capabilityName, envelope.agentId, sessionId);
+      const engine = this.getCapabilityEngine(effectiveAgentId, perAgentGrants);
+      const activeSession = await this.agentRepo.getActiveSession(effectiveAgentId);
+      const sessionId = activeSession?.id ?? effectiveAgentId;
+      const denied = engine.checkAccess(capabilityName, effectiveAgentId, sessionId);
       if (denied) {
-        logger.warn({ agentId: envelope.agentId, capability: capabilityName, reason: denied }, 'Capability policy denied');
+        logger.warn({ agentId: effectiveAgentId, capability: capabilityName, reason: denied }, 'Capability policy denied');
         return { accepted: false, error: `capability_denied:${denied}` };
       }
       engine.recordStart(capabilityName, sessionId);
@@ -145,7 +147,7 @@ export class AgentMessageBroker {
       if (policyEngine && capabilityName && policySessionId) {
         policyEngine.recordEnd(capabilityName, policySessionId, {
           capability: capabilityName,
-          agentId: envelope.agentId,
+          agentId: effectiveAgentId,
           sessionId: policySessionId,
           timestamp: new Date().toISOString(),
           durationMs: 0,
@@ -163,7 +165,8 @@ export class AgentMessageBroker {
       correlationId: envelope.correlationId,
       actorType: envelope.initiatorType,
       actorId: envelope.initiatorId,
-      agentId: envelope.agentId,
+      agentId: effectiveAgentId,
+      tradingInstanceId: envelope.tradingInstanceId,
       botId: envelope.botId,
       type: envelope.type,
       direction: 'inbound',
@@ -249,7 +252,7 @@ export class AgentMessageBroker {
       if (policyEngine && capabilityName && policySessionId) {
         policyEngine.recordEnd(capabilityName, policySessionId, {
           capability: capabilityName,
-          agentId: envelope.agentId,
+          agentId: effectiveAgentId,
           sessionId: policySessionId,
           timestamp: new Date().toISOString(),
           durationMs: Date.now() - (policyStartMs ?? Date.now()),

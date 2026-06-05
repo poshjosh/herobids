@@ -188,8 +188,10 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(409).send({ error: 'agent_not_stopped', message: 'Agent must be stopped before deletion' });
     }
 
-    // Delete the agent — child rows (sessions, artifacts, outbound messages) are
-    // cascade-deleted by the DB via ON DELETE CASCADE FKs.
+    // Delete the agent — explicitly cascade-delete child rows before the parent.
+    await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
+    await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
+    await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
     await db.delete(agents).where(eq(agents.id, id));
     return reply.status(204).send();
   });

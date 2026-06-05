@@ -313,7 +313,7 @@ export class TradingActor implements InstanceActor {
       await this.reconcileIncompletePlans();
 
       // 2. Rebuild position state from DB
-      const openPositions = await this.deps.positionRepo.getOpenByActor('bot', this.tradingInstanceId);
+      const openPositions = await this.deps.positionRepo.getOpenByInstance(this.tradingInstanceId);
       // Find the position matching this actor's symbol
       const match = openPositions.find((p) => p.symbol === this.deps.symbol && p.venue === this.deps.venue);
       if (match && match.side !== 'flat') {
@@ -456,6 +456,7 @@ export class TradingActor implements InstanceActor {
         };
 
         await this.deps.reconciliationRepo.insert({
+          tradingInstanceId: this.tradingInstanceId,
           venueAccountId: this.deps.venueAccountId,
           result: result.status,
           localState: serializedLocal,
@@ -630,11 +631,11 @@ export class TradingActor implements InstanceActor {
     const lastReconciledAt = await this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId);
 
     const [openPositions, recentFills, openOrders, balanceSnapshot] = await Promise.all([
-      this.deps.positionRepo.getOpenByActor('bot', this.tradingInstanceId),
+      this.deps.positionRepo.getOpenByInstance(this.tradingInstanceId),
       // Fetch fills across ALL instances sharing this venue account so that venue fills
       // from sibling/predecessor instances are matched and not flagged as unknown_fill drift.
       this.deps.fillRepo.getRecentByVenueAccount(this.deps.venueAccountId, lastReconciledAt ?? undefined),
-      this.deps.orderRepo.getOpenByActor('bot', this.tradingInstanceId),
+      this.deps.orderRepo.getOpenByInstance(this.tradingInstanceId),
       this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId, this.deps.venue),
     ]);
 
@@ -749,6 +750,7 @@ export class TradingActor implements InstanceActor {
           await this.deps.fillRepo.insertFill({
             venueAccountId: this.deps.venueAccountId,
             orderId: fill.orderId,
+            tradingInstanceId: this.tradingInstanceId,
             actorType: 'bot',
             actorId: this.tradingInstanceId,
             venue: this.deps.venue,
@@ -860,6 +862,7 @@ export class TradingActor implements InstanceActor {
       const cycleResult = await runTradingCycle(snapshot, this.position, {
         actorType: 'bot',
         actorId: this.tradingInstanceId,
+        tradingInstanceId: this.tradingInstanceId,
         venue: this.deps.venue,
         symbol: this.deps.symbol,
         venueAccountId: this.deps.venueAccountId,
@@ -884,7 +887,7 @@ export class TradingActor implements InstanceActor {
         // Limit/swap orders are rejected locally by LiveExecutor without calling submitOrder.
         const submittedCount = cycleResult.executionResult.orders.filter((o) => o.type === 'market').length;
         if (submittedCount > 0) {
-          this.deps.journal.append(credentialUsedEvent('bot', this.tradingInstanceId, {
+          this.deps.journal.append(credentialUsedEvent(this.tradingInstanceId, {
             credentialId: this.deps.credentialId,
             venue: this.deps.venue,
             venueAccountId: this.deps.venueAccountId,
@@ -1073,6 +1076,7 @@ export class TradingActor implements InstanceActor {
     await this.deps.fillRepo.insertFill({
       venueAccountId: this.deps.venueAccountId,
       orderId: fill.orderId,
+      tradingInstanceId: this.tradingInstanceId,
       actorType: 'bot',
       actorId: this.tradingInstanceId,
       venueRefId: fill.venueRefId,

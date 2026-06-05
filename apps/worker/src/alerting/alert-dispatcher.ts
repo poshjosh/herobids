@@ -226,8 +226,8 @@ export class AlertDispatcher {
   }
 
   /** Build a cooldown map key scoped to (tradingInstanceId, type). */
-  private cooldownKey(event: { actorId: string | null; type: string }): string {
-    return `${event.actorId ?? ''}:${event.type}`;
+  private cooldownKey(event: { tradingInstanceId?: string | null; actorId?: string | null; type: string }): string {
+    return `${event.tradingInstanceId ?? event.actorId ?? ''}:${event.type}`;
   }
 
   /** Collect all unique event prefixes from channel configs */

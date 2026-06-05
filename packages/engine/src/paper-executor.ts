@@ -37,6 +37,7 @@ export class PaperExecutor implements Executor {
       const order: ManagedOrder = {
         id: orderId,
         venueAccountId: plan.venueAccountId,
+        tradingInstanceId: plan.tradingInstanceId,
         actorType: plan.actorType,
         actorId: plan.actorId,
         executionPlanId: plan.id,
@@ -60,6 +61,7 @@ export class PaperExecutor implements Executor {
         id: fillId,
         orderId,
         venueAccountId: plan.venueAccountId,
+        tradingInstanceId: plan.tradingInstanceId,
         actorType: plan.actorType,
         actorId: plan.actorId,
         venueRefId: `paper-${fillId}`,

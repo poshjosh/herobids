@@ -51,6 +51,7 @@ export interface InsertPlanParams {
 export interface PersistFillParams {
   orderId: string;
   venueAccountId: string;
+  tradingInstanceId?: string;
   actorType?: string;
   actorId?: string;
   venue: string;
@@ -89,6 +90,7 @@ export interface PersistDecisionContextParams {
 
 export interface PersistPositionParams {
   venueAccountId: string;
+  tradingInstanceId?: string;
   actorType?: string;
   actorId?: string;
   venue: string;
@@ -103,6 +105,7 @@ export interface PersistPositionParams {
 export interface PersistOrderParams {
   id: string;
   venueAccountId: string;
+  tradingInstanceId?: string;
   actorType?: string;
   actorId?: string;
   executionPlanId?: string;
@@ -123,8 +126,9 @@ export interface PersistOrderParams {
  * Dependencies for a single trading cycle invocation.
  */
 export interface TradingCycleDeps {
-  actorType: string;
-  actorId: string;
+  actorType?: string;
+  actorId?: string;
+  tradingInstanceId?: string;
   venue: string;
   symbol: string;
   venueAccountId: string;
@@ -179,8 +183,8 @@ export async function runTradingCycle(
   if (!evalResult.ok) {
     // Surface strategy failures — journal them so they are observable
     await deps.journal.append({
-      actorType: deps.actorType,
-      actorId: deps.actorId,
+      actorType: deps.actorType ?? 'bot',
+      actorId: deps.actorId ?? deps.tradingInstanceId ?? '',
       type: 'strategy.error',
       payload: { code: evalResult.error.code, message: evalResult.error.message },
     });
@@ -224,14 +228,15 @@ export async function runTradingCycle(
     ...decision,
     venueAccountId: deps.venueAccountId as Decision['venueAccountId'],
     actorType: decision.actorType ?? deps.actorType as Decision['actorType'],
-    actorId: decision.actorId || deps.actorId,
+    actorId: decision.actorId || (deps.actorId ?? deps.tradingInstanceId ?? ''),
+    tradingInstanceId: deps.tradingInstanceId ?? decision.tradingInstanceId,
     contextHash,
   };
 
   // 2. Submit decision through the shared intake pipeline
   const intakeResult = await submitDecisionForExecution(stampedDecision, decisionContext, position, {
-    actorType: deps.actorType,
-    actorId: deps.actorId,
+    actorType: deps.actorType ?? 'bot',
+    actorId: deps.actorId ?? deps.tradingInstanceId ?? '',
     venue: deps.venue,
     symbol: deps.symbol,
     venueAccountId: deps.venueAccountId,

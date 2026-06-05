@@ -12,7 +12,8 @@ export type ActorType = 'agent' | 'bot' | 'user' | 'system';
  */
 export interface Decision {
   id: DecisionId;
-  // tradingInstanceId REMOVED — decisions are actor-scoped via actorType/actorId
+  /** The trading instance that produced this decision (explicit convenience field). */
+  tradingInstanceId?: string;
   /** Venue account the decision targets (execution context) */
   venueAccountId: VenueAccountId;
   instrumentId: InstrumentId;

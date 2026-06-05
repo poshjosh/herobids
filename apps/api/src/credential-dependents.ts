@@ -4,7 +4,7 @@ import { venueAccounts, bots } from '@herobids/db';
 
 export interface CredentialDependents {
   venueAccountIds: string[];
-  runningBotIds: string[];
+  runningInstanceIds: string[];
 }
 
 /**
@@ -21,7 +21,7 @@ export async function findCredentialDependents(db: Database, credentialId: strin
   const venueAccountIds = linkedAccounts.map((a) => a.id);
 
   if (venueAccountIds.length === 0) {
-    return { venueAccountIds: [], runningBotIds: [] };
+    return { venueAccountIds: [], runningInstanceIds: [] };
   }
 
   // Find running bots that use those venue accounts
@@ -33,7 +33,7 @@ export async function findCredentialDependents(db: Database, credentialId: strin
       inArray(bots.venueAccountId, venueAccountIds),
     ));
 
-  const runningBotIds = runningBots.map((b) => b.id);
+  const runningInstanceIds = runningBots.map((b) => b.id);
 
-  return { venueAccountIds, runningBotIds };
+  return { venueAccountIds, runningInstanceIds };
 }

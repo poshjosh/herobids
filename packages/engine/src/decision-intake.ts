@@ -192,6 +192,7 @@ export async function submitDecisionForExecution(
     await deps.persistence.persistFill({
       orderId: fill.orderId as string,
       venueAccountId: deps.venueAccountId,
+      tradingInstanceId: fill.tradingInstanceId ?? resolvedDecision.tradingInstanceId,
       actorType: deps.actorType,
       actorId: deps.actorId,
       venue: deps.venue,
@@ -208,6 +209,7 @@ export async function submitDecisionForExecution(
   // Persist position state
   await deps.persistence.persistPosition({
     venueAccountId: deps.venueAccountId,
+    tradingInstanceId: resolvedDecision.tradingInstanceId,
     actorType: deps.actorType,
     actorId: deps.actorId,
     venue: deps.venue,
@@ -231,6 +233,7 @@ export async function submitDecisionForExecution(
     await deps.persistence.persistOrder({
       id: order.id as string,
       venueAccountId: deps.venueAccountId,
+      tradingInstanceId: order.tradingInstanceId ?? resolvedDecision.tradingInstanceId,
       actorType: deps.actorType,
       actorId: deps.actorId,
       executionPlanId: order.executionPlanId,

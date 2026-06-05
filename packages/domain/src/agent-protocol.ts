@@ -17,8 +17,10 @@ export const MessageEnvelopeSchema = z.object({
   initiatorId: z.string().min(1),
   originType: ActorTypeSchema.optional(),
   originId: z.string().optional(),
-  /** Agent that owns this message stream (primary grouping key; was tradingInstanceId) */
-  agentId: z.string().min(1),
+  /** Agent that owns this message stream (primary grouping key). Optional for backwards compat. */
+  agentId: z.string().optional(),
+  /** Trading instance this message is scoped to */
+  tradingInstanceId: z.string().optional(),
   /** Bot this message is scoped to (nullable — null for agent-level messages) */
   botId: z.string().optional(),
   type: z.string().min(1),
