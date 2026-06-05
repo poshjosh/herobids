@@ -69,7 +69,6 @@ describe('agent routes lifecycle', () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, insertedValues, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      activeLinkRows: [{ tradingInstanceId: 'inst-1' }],
       txAgentRows: [{ id: 'agent-1' }],
     });
 
@@ -82,7 +81,7 @@ describe('agent routes lifecycle', () => {
     expect(res.statusCode).toBe(202);
     expect(res.json()).toEqual(expect.objectContaining({ status: 'starting', sessionId: expect.any(String) }));
     expect(updateSets).toContainEqual(expect.objectContaining({ status: 'starting', pauseState: null }));
-    expect(insertedValues).toContainEqual(expect.objectContaining({ agentId: 'agent-1', tradingInstanceId: 'inst-1', status: 'starting' }));
+    expect(insertedValues).toContainEqual(expect.objectContaining({ agentId: 'agent-1', status: 'starting' }));
   });
 
   it('rejects a second /start when the agent is already starting', async () => {
@@ -115,11 +114,10 @@ describe('agent routes lifecycle', () => {
     expect(res.json().error).toBe('not_found');
   });
 
-  it('returns 409 when the agent has no active trading link', async () => {
+  it('rejects start when agent is running (not stopped)', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      activeLinkRows: [],
+      agentRows: [{ id: 'agent-1', status: 'running', userId: TEST_USER_ID }],
     });
 
     const app = Fastify();
@@ -129,12 +127,12 @@ describe('agent routes lifecycle', () => {
     const res = await app.inject({ method: 'POST', url: '/agents/agent-1/start' });
 
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('no_active_link');
+    expect(res.json().error).toBe('not_stopped');
   });
 
   it('deletes outbound messages before deleting the agent', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const { agentOutboundMessages, agentArtifacts, agentRuntimeSessions, agentInstanceLinks, agents } = await import('@herobids/db');
+    const { agentOutboundMessages, agentArtifacts, agentRuntimeSessions, agents } = await import('@herobids/db');
     const { db, deletedTargets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
     });
@@ -150,7 +148,6 @@ describe('agent routes lifecycle', () => {
       agentOutboundMessages,
       agentArtifacts,
       agentRuntimeSessions,
-      agentInstanceLinks,
       agents,
     ]);
   });

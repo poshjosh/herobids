@@ -11,7 +11,7 @@ export const agentRuntimeSessions = pgTable('agent_runtime_sessions', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id),
   // tradingInstanceId REMOVED — sessions are agent-scoped; one container manages all agent bots
-  /** Runtime status: starting | running | unhealthy | stopped | crashed */
+  /** Runtime status: starting | launching | running | unhealthy | stopped | crashed */
   status: text('status').notNull().default('starting'),
   /** Last heartbeat timestamp */
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),

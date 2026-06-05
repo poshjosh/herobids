@@ -228,13 +228,13 @@ export class AgentRepository {
     return [];
   }
 
-  /** Retire all non-terminal sessions for an agent (starting/running/unhealthy → stopped). */
+  /** Retire all non-terminal sessions for an agent (starting/launching/running/unhealthy → stopped). */
   async retireActiveSessions(agentId: string): Promise<void> {
     await this.db.update(agentRuntimeSessions)
       .set({ status: 'stopped', stoppedAt: new Date() })
       .where(and(
         eq(agentRuntimeSessions.agentId, agentId),
-        inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
+        inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
       ));
   }
 
@@ -260,7 +260,7 @@ export class AgentRepository {
       stoppedAt,
     }).where(and(
       eq(agentRuntimeSessions.id, sessionId),
-      inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
+      inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
     )).returning({ id: agentRuntimeSessions.id });
 
     return updated.length > 0;

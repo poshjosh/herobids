@@ -115,11 +115,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Include active session (starting/running/unhealthy)
+    // Include active session (starting/launching/running/unhealthy)
     const [session] = await db.select().from(agentRuntimeSessions)
       .where(and(
         eq(agentRuntimeSessions.agentId, id),
-        inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
+        inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
       ))
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
@@ -283,7 +283,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
         .set({ status: 'stopped', stoppedAt: now })
         .where(and(
           eq(agentRuntimeSessions.agentId, id),
-          inArray(agentRuntimeSessions.status, ['starting', 'running', 'unhealthy']),
+          inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
         ));
 
       await tx.insert(agentRuntimeSessions).values({
