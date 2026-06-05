@@ -6,6 +6,7 @@ export {
   PublicStreamConfigSchema,
   MarkingConfigSchema,
   TradingInstanceConfigSchema,
+  BotConfigSchema,
   RiskConfigSchema,
   StrategyConfigSchema,
   ExecutionConfigSchema,
@@ -27,6 +28,7 @@ export {
 export type {
   AppConfig,
   TradingInstanceConfig,
+  BotConfig,
   RiskConfig,
   StrategyConfig,
   MomentumParams,

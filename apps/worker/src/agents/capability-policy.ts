@@ -66,8 +66,10 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 30, maxConcurrent: 5, timeoutMs: 30_000, maxResponseBytes: 5 * 1024 * 1024, maxTotalDownloadBytes: 50 * 1024 * 1024 },
   },
   {
+    // code_execute runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).
+    // It does not go through the broker, so tier is 'direct'.
     capability: 'code_execute',
-    tier: 'brokered',
+    tier: 'direct',
     enabled: true,
     limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 60_000, maxResponseBytes: 1024 * 1024 },
   },

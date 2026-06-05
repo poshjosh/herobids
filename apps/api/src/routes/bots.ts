@@ -12,7 +12,7 @@ import {
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import type { LifecycleJob } from '../types.js';
 
-export async function instanceRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
+export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create bot
   app.post('/bots', async (request, reply) => {
     const parsed = CreateInstanceSchema.safeParse(request.body);

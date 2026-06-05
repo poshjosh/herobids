@@ -425,7 +425,7 @@ export const ExecutionConfigSchema = z.object({
   slippageBps: z.number().min(0).optional(),
 });
 
-export const TradingInstanceConfigSchema = z.object({
+export const BotConfigSchema = z.object({
   strategy: StrategyConfigSchema,
   risk: RiskConfigSchema.default({}),
   execution: ExecutionConfigSchema.default({}),
@@ -459,7 +459,11 @@ export const TradingInstanceConfigSchema = z.object({
   { message: 'venue must match venueType: swap venues are [jupiter, 1inch], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
 );
 
-export type TradingInstanceConfig = z.infer<typeof TradingInstanceConfigSchema>;
+export type BotConfig = z.infer<typeof BotConfigSchema>;
+/** @deprecated Use BotConfigSchema */
+export const TradingInstanceConfigSchema = BotConfigSchema;
+/** @deprecated Use BotConfig */
+export type TradingInstanceConfig = BotConfig;
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;
 export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
 export type MomentumParams = z.infer<typeof MomentumParamsSchema>;

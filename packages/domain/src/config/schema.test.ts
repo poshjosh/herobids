@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TradingInstanceConfigSchema,
+  BotConfigSchema,
   PublicStreamConfigSchema,
   MarkingConfigSchema,
   StrategyConfigSchema,
@@ -8,7 +8,7 @@ import {
   LlmParamsSchema,
 } from './schema.js';
 
-describe('TradingInstanceConfigSchema', () => {
+describe('BotConfigSchema', () => {
   const validBase = {
     strategy: { type: 'momentum' },
     venue: 'hyperliquid',
@@ -16,7 +16,7 @@ describe('TradingInstanceConfigSchema', () => {
   };
 
   it('accepts valid config with swapAssets', () => {
-    const result = TradingInstanceConfigSchema.safeParse({
+    const result = BotConfigSchema.safeParse({
       ...validBase,
       venue: 'jupiter',
       venueType: 'swap',
@@ -30,7 +30,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('swapAssets is optional — defaults to undefined', () => {
-    const result = TradingInstanceConfigSchema.safeParse(validBase);
+    const result = BotConfigSchema.safeParse(validBase);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.swapAssets).toBeUndefined();
@@ -38,7 +38,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('rejects swapAssets with missing baseAsset', () => {
-    const result = TradingInstanceConfigSchema.safeParse({
+    const result = BotConfigSchema.safeParse({
       ...validBase,
       swapAssets: { quoteAsset: 'USDC' },
     });
@@ -46,7 +46,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('rejects swapAssets with missing quoteAsset', () => {
-    const result = TradingInstanceConfigSchema.safeParse({
+    const result = BotConfigSchema.safeParse({
       ...validBase,
       swapAssets: { baseAsset: 'SOL' },
     });
@@ -54,7 +54,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('defaults venueType to orderbook', () => {
-    const result = TradingInstanceConfigSchema.safeParse(validBase);
+    const result = BotConfigSchema.safeParse(validBase);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.venueType).toBe('orderbook');
@@ -62,7 +62,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('defaults shadowPollIntervalMs to 2000', () => {
-    const result = TradingInstanceConfigSchema.safeParse(validBase);
+    const result = BotConfigSchema.safeParse(validBase);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.shadowPollIntervalMs).toBe(2000);
@@ -70,7 +70,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('rejects shadowPollIntervalMs below 100', () => {
-    const result = TradingInstanceConfigSchema.safeParse({
+    const result = BotConfigSchema.safeParse({
       ...validBase,
       shadowPollIntervalMs: 50,
     });
@@ -78,7 +78,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('rejects venueType swap without swapAssets', () => {
-    const result = TradingInstanceConfigSchema.safeParse({
+    const result = BotConfigSchema.safeParse({
       ...validBase,
       venue: 'jupiter',
       venueType: 'swap',
@@ -91,7 +91,7 @@ describe('TradingInstanceConfigSchema', () => {
   });
 
   it('rejects venueType swap with paper mode', () => {
-    const result = TradingInstanceConfigSchema.safeParse({
+    const result = BotConfigSchema.safeParse({
       ...validBase,
       venue: 'jupiter',
       venueType: 'swap',

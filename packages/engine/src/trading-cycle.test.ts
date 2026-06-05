@@ -5,7 +5,7 @@ import { flatPosition } from './position-tracker.js';
 import { PaperExecutor } from './paper-executor.js';
 import { InMemoryJournal } from './journal-memory.js';
 import { ok, price, quantity } from '@herobids/domain';
-import type { OrderId, FillId, TradingInstanceId, DecisionId, InstrumentId, MarketSnapshot, Strategy, Decision } from '@herobids/domain';
+import type { OrderId, FillId, BotId, DecisionId, InstrumentId, MarketSnapshot, Strategy, Decision } from '@herobids/domain';
 import type { Executor } from './executor.js';
 import { computeDecisionContextHash } from './decision-context-hash.js';
 
@@ -60,7 +60,7 @@ function makePersistence(): TradingCyclePersistence & { calls: Record<string, un
 function makeDecision(): Decision {
   return {
     id: 'd-1' as DecisionId,
-    tradingInstanceId: '' as TradingInstanceId,
+    tradingInstanceId: '' as BotId,
     instrumentId: 'BTC/USD:USD' as InstrumentId,
     intent: 'go_long',
     targetSize: quantity('1'),
@@ -437,7 +437,7 @@ describe('runTradingCycle', () => {
     // Decision with larger target size to trigger multi-fill if planner supports it
     const decision: Decision = {
       id: 'd-multi' as DecisionId,
-      tradingInstanceId: '' as TradingInstanceId,
+      tradingInstanceId: '' as BotId,
       instrumentId: 'BTC/USD:USD' as InstrumentId,
       intent: 'go_long',
       targetSize: quantity('3'),

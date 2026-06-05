@@ -10,10 +10,17 @@
 
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
+import { writeFile, mkdir, rm, access } from 'node:fs/promises';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
 import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, INSTANCE_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
 import type { SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
+import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './agents/capability-policy.js';
+import type { CapabilityGrant } from './agents/capability-policy.js';
+
+const execFileAsync = promisify(execFileCb);
 
 const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
 
@@ -25,7 +32,9 @@ const AGENT_ID = process.env['AGENT_ID'];
 const SESSION_ID = process.env['SESSION_ID'];
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
-// TOOL_POLICY is enforced by the platform broker, not inside the container runtime
+// TOOL_POLICY is forwarded into the container and enforced here for direct-tier tools.
+// Brokered tools are also enforced by the broker, but the container adds a second gate.
+const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
 const LLM_MODEL = process.env['LLM_MODEL'] ?? 'claude-sonnet-4-5';
 const LLM_PROVIDER = LLM_MODEL.startsWith('claude') ? 'anthropic' : 'openai';
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
@@ -52,6 +61,52 @@ interface AgentConfig {
 }
 
 let agentConfig: AgentConfig;
+// Build capability engine from per-agent TOOL_POLICY overrides injected by the launcher.
+// Falls back to DEFAULT_CAPABILITY_GRANTS when no overrides are set.
+function buildCapabilityEngine(): CapabilityPolicyEngine {
+  try {
+    const overrides = JSON.parse(TOOL_POLICY_RAW) as Record<string, unknown>;
+    // TOOL_POLICY is a map of capability → partial CapabilityGrant
+    const perAgentGrants = Object.entries(overrides)
+      .map(([capability, grant]) => {
+        if (grant !== null && typeof grant === 'object') {
+          return { capability, ...grant } as CapabilityGrant;
+        }
+        return null;
+      })
+      .filter((g): g is CapabilityGrant => g !== null);
+    if (perAgentGrants.length === 0) return new CapabilityPolicyEngine();
+    // Deep-merge per-agent overrides onto defaults so partial overrides (e.g. just
+    // { limits: { maxPerMinute: 1 } }) don't lose inherited fields like tier/enabled.
+    const overrideMap = new Map(perAgentGrants.map((g) => [g.capability, g]));
+    const merged = DEFAULT_CAPABILITY_GRANTS.map((d) => {
+      const override = overrideMap.get(d.capability);
+      if (!override) return d;
+      return {
+        ...d,
+        ...override,
+        // Merge limits field one level deep so a partial limits override only
+        // changes the specified sub-fields and inherits the rest from defaults.
+        limits: override.limits !== undefined
+          ? { ...d.limits, ...override.limits }
+          : d.limits,
+      } as CapabilityGrant;
+    });
+    // Add any per-agent grants for capabilities not in defaults
+    for (const g of perAgentGrants) {
+      if (!DEFAULT_CAPABILITY_GRANTS.find((d) => d.capability === g.capability)) {
+        merged.push(g);
+      }
+    }
+    return new CapabilityPolicyEngine(merged);
+  } catch {
+    logger.warn('Failed to parse TOOL_POLICY — using defaults');
+    return new CapabilityPolicyEngine();
+  }
+}
+
+const capabilityEngine = buildCapabilityEngine();
+
 try {
   agentConfig = JSON.parse(AGENT_CONFIG_RAW) as AgentConfig;
 } catch {
@@ -82,9 +137,15 @@ const activeSkills = resolveSkills(skillIds);
 // Base skill is always injected at runtime
 const allActiveSkills = [BASE_SKILL, ...activeSkills];
 
+// The runtime-authorised tool set: only tools declared in the active skill profile
+// may be executed. This is enforced in executeTool() as a hard gate so the model
+// cannot invoke tools it was not told about (e.g. code_execute before the
+// programming skill is added to this agent's skillIds).
+const allowedTools = new Set<string>(allActiveSkills.flatMap((s) => s.requiredTools));
+
 function buildSystemPrompt(): string {
   const skillInstructions = allActiveSkills.map((s) => s.instructions).join('\n\n');
-  const toolList = [...new Set(allActiveSkills.flatMap((s) => s.requiredTools))].join(', ');
+  const toolList = [...allowedTools].join(', ');
 
   return `${skillInstructions}
 
@@ -286,6 +347,14 @@ function parseToolCalls(llmResponse: string): ToolCall[] {
 }
 
 async function executeTool(call: ToolCall): Promise<void> {
+  // Hard runtime gate: reject any tool not declared in the active skill set.
+  // The model was only told about allowed tools, but we enforce it here too so
+  // a jailbreak or prompt injection cannot invoke undeclared capabilities.
+  if (!allowedTools.has(call.tool)) {
+    logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
+    return;
+  }
+
   logger.info({ tool: call.tool, args: call.args }, 'Executing tool');
 
   switch (call.tool) {
@@ -330,6 +399,89 @@ async function executeTool(call: ToolCall): Promise<void> {
         config: call.args['config'] as Record<string, unknown> | undefined,
         rationale: call.args['rationale'] as string | undefined,
       });
+      break;
+    }
+
+    case 'code_execute': {
+      // Enforce capability policy before executing — rate limit, concurrency, and enable/disable.
+      const policyDenied = capabilityEngine.checkAccess('code_execute', AGENT_ID!, SESSION_ID!);
+      if (policyDenied) {
+        addToHistory('user', `code_execute denied by capability policy: ${policyDenied}`);
+        logger.warn({ agentId: AGENT_ID, reason: policyDenied }, 'code_execute denied by capability policy');
+        break;
+      }
+      capabilityEngine.recordStart('code_execute', SESSION_ID!);
+      const codeStartMs = Date.now();
+      let codeSuccess = false;
+
+      // Code execution runs locally inside this container — no broker round-trip needed.
+      // In Docker mode, sandbox-exec.sh provides network namespace isolation (blocks RFC 1918,
+      // allows public internet, uses public DNS). Falls back to direct node in stub/dev mode.
+      const code = call.args['code'] as string ?? '';
+      const description = call.args['description'] as string | undefined;
+      const SANDBOX_SCRIPT = '/usr/local/bin/sandbox-exec.sh';
+      const SANDBOX_DIR = '/tmp/agent-sandbox';
+      const scriptPath = `${SANDBOX_DIR}/script.js`;
+      // Read limits from the effective capability grant so operator/user policy changes
+      // govern execution timeout and output size, not just rate/concurrency.
+      const codeGrant = capabilityEngine.getGrant('code_execute');
+      const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? 60_000;
+      const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? (50 * 1024);
+
+      let stdout = '';
+      let stderr = '';
+      let success = false;
+
+      try {
+        await rm(SANDBOX_DIR, { recursive: true, force: true });
+        await mkdir(SANDBOX_DIR, { recursive: true });
+        await writeFile(scriptPath, code, 'utf8');
+
+        const hasSandbox = await access(SANDBOX_SCRIPT).then(() => true).catch(() => false);
+        let sandboxBin: string;
+        let sandboxArgs: string[];
+        if (hasSandbox) {
+          // sandbox-exec.sh passes $@ to `exec ip netns exec <ns> "$@"`,
+          // so args become the full command inside the namespace.
+          sandboxBin = SANDBOX_SCRIPT;
+          sandboxArgs = ['node', scriptPath];
+        } else {
+          sandboxBin = 'node';
+          sandboxArgs = [scriptPath];
+        }
+
+        const result = await execFileAsync(sandboxBin, sandboxArgs, {
+          timeout: TIMEOUT_MS,
+          maxBuffer: MAX_OUTPUT * 2,
+          env: hasSandbox
+            ? { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', TIMEOUT: String(Math.ceil(TIMEOUT_MS / 1000)) }
+            : process.env,
+        });
+        stdout = String(result.stdout || '').slice(0, MAX_OUTPUT);
+        success = true;
+        codeSuccess = true;
+      } catch (err) {
+        const execErr = err as { stdout?: string; stderr?: string; message?: string };
+        stdout = String(execErr.stdout || '').slice(0, MAX_OUTPUT);
+        stderr = String(execErr.stderr || execErr.message || 'execution failed').slice(0, 10 * 1024);
+      } finally {
+        capabilityEngine.recordEnd('code_execute', SESSION_ID!, {
+          capability: 'code_execute',
+          agentId: AGENT_ID!,
+          sessionId: SESSION_ID!,
+          timestamp: new Date().toISOString(),
+          durationMs: Date.now() - codeStartMs,
+          inputSummary: `${code.length} bytes`,
+          outputSummary: success ? `${stdout.length} bytes` : `error: ${stderr.slice(0, 100)}`,
+          success: codeSuccess,
+        });
+      }
+
+      const label = description ? ` (${description})` : '';
+      const resultContent = success
+        ? `code_execute${label} result:\n${stdout || '(no output)'}`
+        : `code_execute${label} failed:\nstderr: ${stderr}\nstdout: ${stdout || '(no output)'}`;
+      addToHistory('user', resultContent);
       break;
     }
 
@@ -381,6 +533,12 @@ function buildProgressContext(): string {
   const remainingMins = elapsedMins % 60;
   const elapsedStr = elapsedHours > 0 ? `${elapsedHours}h ${remainingMins}m` : `${elapsedMins}m`;
 
+  // Performance score: ratio of accepted to submitted decisions, scaled 0–10
+  const total = sessionMetrics.decisionsSubmitted;
+  const performanceScore = total > 0
+    ? Math.round((sessionMetrics.decisionsAccepted / total) * 10 * 10) / 10
+    : null;
+
   const lines: string[] = [
     `## Session Progress`,
     `Session elapsed: ${elapsedStr}`,
@@ -388,8 +546,12 @@ function buildProgressContext(): string {
     `Decisions this session: ${sessionMetrics.decisionsSubmitted} submitted, ${sessionMetrics.decisionsAccepted} accepted, ${sessionMetrics.decisionsRejected} rejected`,
   ];
 
+  if (performanceScore !== null) {
+    lines.push(`Performance score: ${performanceScore}/10 (decision acceptance rate)`);
+  }
+
   if (sessionMetrics.lastPnlSummary) {
-    lines.push(`P&L: ${sessionMetrics.lastPnlSummary}`);
+    lines.push(`Net P&L: ${sessionMetrics.lastPnlSummary}`);
   }
   if (sessionMetrics.lastPositionSide) {
     lines.push(`Current position: ${sessionMetrics.lastPositionSide}`);
@@ -433,11 +595,11 @@ async function runTick(): Promise<void> {
           const symbol = p['symbol'] ?? 'unknown';
           const price = p['price'] ?? 'unknown';
           const position = p['position'] as Record<string, unknown> | undefined;
-          // Extract P&L and position if platform injected them
-          const pnl = p['pnl'] as string | undefined;
+          // Extract P&L from explicit field or from position.realizedPnl
+          const pnl = (p['pnl'] as string | undefined) ?? (position?.['realizedPnl'] as string | undefined);
           if (pnl) sessionMetrics.lastPnlSummary = pnl;
           if (position?.['side']) sessionMetrics.lastPositionSide = String(position['side']);
-          return `Market: ${symbol} @ ${price}${position ? ` | position: ${position['side'] ?? 'flat'} ${position['size'] ?? ''}` : ''}`;
+          return `Market: ${symbol} @ ${price}${position ? ` | position: ${position['side'] ?? 'flat'} ${position['size'] ?? ''} | realizedPnl: ${position['realizedPnl'] ?? '0'}` : ''}`;
         }
         if (type === INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED) {
           sessionMetrics.decisionsAccepted++;

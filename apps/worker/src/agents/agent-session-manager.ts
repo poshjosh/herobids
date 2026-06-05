@@ -110,6 +110,13 @@ export class AgentSessionManager {
         });
       } catch (err) {
         logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to launch starting session');
+
+        this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.EXECUTION_CRITICAL_FAILURE, {
+          agentId: session.agentId,
+          sessionId: session.id,
+          message: 'Agent session launch failed — the runtime could not be started.',
+          detail: err instanceof Error ? err.message : String(err),
+        }).catch((alertErr: unknown) => logger.warn({ alertErr }, 'Failed to send critical_execution_failure alert'));
       }
     }
   }
@@ -199,6 +206,17 @@ export class AgentSessionManager {
     });
 
     logger.info({ agentId: agent.id, reason: payload.reason }, 'Agent paused');
+
+    // Only fire a platform safety alert when the pause was guardrail- or system-initiated.
+    // Agent self-pauses (requestedBy: 'agent') are normal workflow pauses, not safety events.
+    const requestedBy = payload.requestedBy ?? envelope.initiatorType;
+    const isGuardrailPause = requestedBy === 'guardrail' || requestedBy === 'system';
+    if (isGuardrailPause) {
+      this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.PAUSED_BY_GUARDRAIL, {
+        agentId: agent.id,
+        message: `Agent paused by guardrail: ${payload.reason ?? 'no reason given'}`,
+      }).catch((err: unknown) => logger.warn({ err }, 'Failed to send paused_by_guardrail alert'));
+    }
   }
 
   /** Handle stop request from agent */

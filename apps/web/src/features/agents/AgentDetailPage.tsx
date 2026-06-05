@@ -1,10 +1,11 @@
-import { useParams } from 'react-router';
+import { useParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type AgentDecision } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -46,6 +47,14 @@ export function AgentDetailPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => agentsApi.delete(id!),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['agents'] });
+      navigate('/agents');
+    },
+  });
+
   const activityQuery = useQuery({
     queryKey: ['agents', id, 'activity'],
     queryFn: () => agentsApi.activity(id!, 20),
@@ -82,7 +91,7 @@ export function AgentDetailPage() {
   const agent = query.data;
   if (!agent) return <PageShell><ErrorState message="Agent not found" /></PageShell>;
 
-  const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error;
+  const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
   const canStop = ['active', 'starting', 'paused', 'unhealthy'].includes(agent.status);
   const runtimeAlert = agent.status === 'crashed'
     ? 'Agent crashed. The runtime stopped unexpectedly. Review recent activity and messages below.'
@@ -115,6 +124,19 @@ export function AgentDetailPage() {
             {canStop && (
               <Button variant="danger" onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
                 {stopMutation.isPending ? 'Stopping...' : 'Stop'}
+              </Button>
+            )}
+            {(agent.status === 'stopped' || agent.status === 'crashed') && (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (confirm('Delete this agent? This cannot be undone. Any running session will be stopped.')) {
+                    deleteMutation.mutate();
+                  }
+                }}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
               </Button>
             )}
           </div>

@@ -8,8 +8,6 @@ type Brand<T, B extends string> = T & { readonly [__brand]: B };
 
 export type OrderId = Brand<string, 'OrderId'>;
 export type BotId = Brand<string, 'BotId'>;
-// TradingInstanceId kept as alias for backward compat during transition
-export type TradingInstanceId = BotId;
 // PortfolioId REMOVED — portfolios dropped from MVP
 export type VenueAccountId = Brand<string, 'VenueAccountId'>;
 export type InstrumentId = Brand<string, 'InstrumentId'>;

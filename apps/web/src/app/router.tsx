@@ -6,6 +6,7 @@ import { MissionControlPage } from '../features/mission-control/MissionControlPa
 import { ActivityFeedPage } from '../features/activity/ActivityFeedPage.js';
 import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
 import { ExposurePage } from '../features/exposure/ExposurePage.js';
+import { BotsPage } from '../features/bots/BotsPage.js';
 import { InstancesPage } from '../features/trading-instances/InstancesPage.js';
 import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailPage.js';
 import { CredentialsPage } from '../features/credentials/CredentialsPage.js';
@@ -33,7 +34,9 @@ export const router = createBrowserRouter([
       { path: 'activity', element: <ActivityFeedPage /> },
       { path: 'outcomes', element: <OutcomeBoardPage /> },
       { path: 'exposure', element: <ExposurePage /> },
-      { path: 'instances', element: <InstancesPage /> },
+      { path: 'bots', element: <BotsPage /> },
+      { path: 'bots/:id', element: <InstanceDetailPage /> },
+      { path: 'instances', element: <Navigate to="/bots" replace /> },
       { path: 'instances/:id', element: <InstanceDetailPage /> },
       { path: 'credentials', element: <CredentialsPage /> },
       { path: 'venue-accounts', element: <VenueAccountsPage /> },

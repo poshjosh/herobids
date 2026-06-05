@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { price, quantity, ok, err } from '@herobids/domain';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId, BotId } from '@herobids/domain';
 
 /**
  * Minimal stubs for TradingActor lifecycle tests.
@@ -189,7 +189,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-1',
-            tradingInstanceId: 'inst-6' as TradingInstanceId,
+            tradingInstanceId: 'inst-6' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -226,7 +226,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-agent',
-            tradingInstanceId: 'inst-agent' as TradingInstanceId,
+            tradingInstanceId: 'inst-agent' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -269,7 +269,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-context',
-            tradingInstanceId: 'inst-context' as TradingInstanceId,
+            tradingInstanceId: 'inst-context' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -325,7 +325,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-1',
-            tradingInstanceId: 'inst-swap-shadow' as TradingInstanceId,
+            tradingInstanceId: 'inst-swap-shadow' as BotId,
             instrumentId: 'SOL/USDC',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -358,7 +358,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-2',
-            tradingInstanceId: 'inst-paper-fallback' as TradingInstanceId,
+            tradingInstanceId: 'inst-paper-fallback' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -417,7 +417,7 @@ describe('TradingActor lifecycle', () => {
 
       const strategyEvaluate = vi.fn().mockResolvedValueOnce(ok({
         id: 'd-1',
-        tradingInstanceId: 'inst-swap-feed' as TradingInstanceId,
+        tradingInstanceId: 'inst-swap-feed' as BotId,
         instrumentId: 'SOL/USDC',
         intent: 'go_long',
         targetSize: quantity('1'),
@@ -455,7 +455,7 @@ describe('TradingActor lifecycle', () => {
     it('still returns early when fetchPrice is null and no market data feed exists (paper mode)', async () => {
       const strategyEvaluate = vi.fn().mockResolvedValue(ok({
         id: 'd-1',
-        tradingInstanceId: 'inst-no-feed' as TradingInstanceId,
+        tradingInstanceId: 'inst-no-feed' as BotId,
         instrumentId: 'BTC/USD:USD',
         intent: 'go_long',
         targetSize: quantity('1'),
@@ -561,7 +561,7 @@ describe('TradingActor lifecycle', () => {
 
       const strategyEvaluate = vi.fn().mockResolvedValue(ok({
         id: 'd-live',
-        tradingInstanceId: 'inst-live-overlap' as TradingInstanceId,
+        tradingInstanceId: 'inst-live-overlap' as BotId,
         instrumentId: 'BTC/USD:USD',
         intent: 'go_long',
         targetSize: quantity('1'),
@@ -697,7 +697,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValue(ok({
             id: 'd-cred',
-            tradingInstanceId: 'inst-cred-used' as TradingInstanceId,
+            tradingInstanceId: 'inst-cred-used' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('0.1'),
@@ -756,7 +756,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValue(ok({
             id: 'd-nocred',
-            tradingInstanceId: 'inst-nocred' as TradingInstanceId,
+            tradingInstanceId: 'inst-nocred' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('0.1'),

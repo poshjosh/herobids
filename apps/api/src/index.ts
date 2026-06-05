@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { createDatabase } from '@herobids/db';
-import { instanceRoutes } from './routes/instances.js';
+import { botRoutes } from './routes/bots.js';
 import { venueAccountRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
@@ -73,7 +73,7 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId);
 
 // Register route modules (all require auth)
-await instanceRoutes(app, lifecycleQueue, db, appConfig.plans);
+await botRoutes(app, lifecycleQueue, db, appConfig.plans);
 await venueAccountRoutes(app, db, appConfig.plans);
 await credentialRoutes(app, lifecycleQueue, db, appConfig.plans);
 await journalRoutes(app, db);

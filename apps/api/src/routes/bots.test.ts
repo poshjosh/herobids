@@ -50,10 +50,10 @@ const validConfig = {
   symbol: 'BTC-PERP',
 };
 
-describe('instance routes', () => {
-  describe('POST /instances — plan limit enforcement', () => {
+describe('bot routes', () => {
+  describe('POST /bots — plan limit enforcement', () => {
     it('returns 403 when trading instance limit is reached', async () => {
-      const { instanceRoutes } = await import('./instances.js');
+      const { botRoutes } = await import('./bots.js');
 
       const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -73,11 +73,11 @@ describe('instance routes', () => {
 
       const app = Fastify();
       decorateWithAuth(app, TEST_USER_ID, 'free');
-      await instanceRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+      await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
 
       const res = await app.inject({
         method: 'POST',
-        url: '/instances',
+        url: '/bots',
         payload: {
           portfolioId: 'port-1',
           venueAccountId: 'va-1',
@@ -94,9 +94,9 @@ describe('instance routes', () => {
     });
   });
 
-  describe('POST /instances/:id/start — live plan gate', () => {
+  describe('POST /bots/:id/start — live plan gate', () => {
     it('returns 403 when free plan tries to start in live mode', async () => {
-      const { instanceRoutes } = await import('./instances.js');
+      const { botRoutes } = await import('./bots.js');
 
       const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -155,11 +155,11 @@ describe('instance routes', () => {
 
       const app = Fastify();
       decorateWithAuth(app, TEST_USER_ID, 'free'); // free plan = no live
-      await instanceRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+      await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
 
       const res = await app.inject({
         method: 'POST',
-        url: '/instances/inst-1/start',
+        url: '/bots/inst-1/start',
       });
 
       expect(res.statusCode).toBe(403);
@@ -168,7 +168,7 @@ describe('instance routes', () => {
     });
 
     it('allows live start for pro plan', async () => {
-      const { instanceRoutes } = await import('./instances.js');
+      const { botRoutes } = await import('./bots.js');
 
       const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -210,17 +210,17 @@ describe('instance routes', () => {
 
       const app = Fastify();
       decorateWithAuth(app, TEST_USER_ID, 'pro'); // pro plan = live allowed
-      await instanceRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+      await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
 
       const res = await app.inject({
         method: 'POST',
-        url: '/instances/inst-1/start',
+        url: '/bots/inst-1/start',
       });
 
       expect(res.statusCode).toBe(200);
       expect(mockQueue.add).toHaveBeenCalledWith('start-instance', {
         command: 'start',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         config: expect.objectContaining({
           venueAccountId: 'va-1',
           userId: TEST_USER_ID,
@@ -229,7 +229,7 @@ describe('instance routes', () => {
     });
 
     it('returns 409 when the linked venue account has no credential', async () => {
-      const { instanceRoutes } = await import('./instances.js');
+      const { botRoutes } = await import('./bots.js');
 
       const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -264,9 +264,9 @@ describe('instance routes', () => {
 
       const app = Fastify();
       decorateWithAuth(app);
-      await instanceRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+      await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
 
-      const res = await app.inject({ method: 'POST', url: '/instances/inst-2/start' });
+      const res = await app.inject({ method: 'POST', url: '/bots/inst-2/start' });
 
       expect(res.statusCode).toBe(409);
       const body = JSON.parse(res.body);
@@ -277,7 +277,7 @@ describe('instance routes', () => {
 
   describe('ownership scoping', () => {
     it('returns 404 when instance belongs to different user', async () => {
-      const { instanceRoutes } = await import('./instances.js');
+      const { botRoutes } = await import('./bots.js');
       const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
       // DB returns empty (no match for userId)
@@ -291,9 +291,9 @@ describe('instance routes', () => {
 
       const app = Fastify();
       decorateWithAuth(app, 'user-attacker');
-      await instanceRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database);
+      await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database);
 
-      const res = await app.inject({ method: 'POST', url: '/instances/inst-victim/start' });
+      const res = await app.inject({ method: 'POST', url: '/bots/inst-victim/start' });
       expect(res.statusCode).toBe(404);
     });
   });

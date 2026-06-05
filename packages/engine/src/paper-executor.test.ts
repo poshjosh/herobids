@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PaperExecutor } from './paper-executor.js';
 import type { ExecutionPlan } from './planner.js';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId, BotId } from '@herobids/domain';
 import { price, quantity } from '@herobids/domain';
 import type { Clock } from './trading-cycle.js';
 
