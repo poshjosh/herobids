@@ -1,6 +1,8 @@
 /**
- * Internal LLM provider helper — non-exported, single concrete provider.
- * Not a plugin interface. Multi-provider support deferred per Section 21.2.
+ * Shared LLM provider client.
+ * Supports OpenAI-compatible API (OpenAI, local proxies) and native Anthropic API.
+ * Extracted from packages/strategy so both strategy backtesting and the agent
+ * runtime can import it without introducing a circular dependency.
  */
 
 export interface LlmProviderConfig {
@@ -37,7 +39,9 @@ export type LlmResult = { ok: true; data: LlmResponse } | { ok: false; error: Ll
 
 /**
  * Call the LLM provider (HTTP-based).
- * Supports OpenAI-compatible API and native Anthropic API.
+ * Supports:
+ *   - OpenAI-compatible: /chat/completions with Bearer token (openai, local proxies)
+ *   - Anthropic native: /messages endpoint with x-api-key header
  */
 export async function callLlmProvider(
   config: LlmProviderConfig,
@@ -99,8 +103,6 @@ async function callOpenAiCompatibleProvider(
     };
 
     const content = data.choices?.[0]?.message?.content ?? '';
-    const latencyMs = Date.now() - startMs;
-
     return {
       ok: true,
       data: {
@@ -108,7 +110,7 @@ async function callOpenAiCompatibleProvider(
         model: data.model ?? config.model,
         provider: config.provider,
         tokensUsed: data.usage?.total_tokens ?? 0,
-        latencyMs,
+        latencyMs: Date.now() - startMs,
         cached: false,
       },
     };
@@ -132,6 +134,7 @@ async function callAnthropicProvider(
   config: LlmProviderConfig,
   request: LlmRequest,
 ): Promise<LlmResult> {
+  // Anthropic native wire format: POST /messages, x-api-key header, max_tokens at top level.
   const apiKey = resolveApiKey('anthropic');
   if (!apiKey) {
     return { ok: false, error: { code: 'provider.no_credentials', message: 'No API key found for provider "anthropic"', retryable: false } };
@@ -142,6 +145,7 @@ async function callAnthropicProvider(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
+  // Anthropic requires system prompt to be a top-level field, not in messages.
   const systemMessage = request.messages.find((m) => m.role === 'system');
   const chatMessages = request.messages.filter((m) => m.role !== 'system');
 
@@ -182,7 +186,8 @@ async function callAnthropicProvider(
     };
 
     const content = data.content?.find((b) => b.type === 'text')?.text ?? '';
-    const tokensUsed = (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0);
+    const inputTokens = data.usage?.input_tokens ?? 0;
+    const outputTokens = data.usage?.output_tokens ?? 0;
 
     return {
       ok: true,
@@ -190,7 +195,7 @@ async function callAnthropicProvider(
         content,
         model: data.model ?? config.model,
         provider: 'anthropic',
-        tokensUsed,
+        tokensUsed: inputTokens + outputTokens,
         latencyMs: Date.now() - startMs,
         cached: false,
       },
@@ -214,7 +219,6 @@ async function callAnthropicProvider(
 function resolveBaseUrl(provider: string): string {
   switch (provider) {
     case 'openai': return 'https://api.openai.com/v1';
-    case 'anthropic': return 'https://api.anthropic.com/v1';
     default: return `https://api.${provider}.com/v1`;
   }
 }

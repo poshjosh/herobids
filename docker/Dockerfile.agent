@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# Agent runtime image — lean container for agent reasoning loop.
+# Built from monorepo root: docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
+# Does NOT include bot actor, BullMQ worker, or trading engine code.
+# Network sandboxing tools are included for sandbox-exec.sh.
+
+FROM node:22-alpine AS base
+RUN corepack enable
+
+# ── build: install all deps and compile TypeScript ───────────────────────────
+FROM base AS build
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+RUN pnpm --filter @herobids/domain run build && \
+    pnpm --filter @herobids/llm run build && \
+    pnpm --filter @herobids/db run build && \
+    pnpm --filter @herobids/worker run build
+
+# ── deploy: agent entry point only ───────────────────────────────────────────
+FROM build AS deploy
+RUN pnpm --filter @herobids/worker deploy --legacy --prod /deploy/agent
+
+# ── runtime image ─────────────────────────────────────────────────────────────
+# Installs network sandboxing tools required by scripts/sandbox-exec.sh.
+# CAP_NET_ADMIN is required at container run-time for namespace creation.
+FROM node:22-alpine AS runtime
+
+RUN apk add --no-cache iproute2 iptables ip6tables
+
+WORKDIR /app/apps/worker
+
+COPY --from=build /app/config /app/config
+COPY --from=deploy /deploy/agent ./
+# Copy the sandbox script so code_execute can call it inside the container
+COPY scripts/sandbox-exec.sh /usr/local/bin/sandbox-exec.sh
+RUN chmod +x /usr/local/bin/sandbox-exec.sh
+
+# Config is read via environment variables — no YAML file needed in agent container.
+# All sensitive values come from env (REDIS_URL, LLM_API_KEY, etc.).
+# The agent entry point reads AGENT_ID, SESSION_ID, AGENT_CONFIG from env.
+CMD ["node", "dist/agent.js"]

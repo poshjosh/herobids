@@ -15,6 +15,7 @@
     "@herobids/db": "workspace:*",
     "@herobids/domain": "workspace:*",
     "@herobids/engine": "workspace:*",
+    "@herobids/venues": "workspace:*",
     "bullmq": "^5.77.0",
     "drizzle-orm": "^0.44.7",
     "fastify": "^5.3.0",

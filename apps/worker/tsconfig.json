@@ -14,6 +14,7 @@
     { "path": "../../packages/db" },
     { "path": "../../packages/engine" },
     { "path": "../../packages/venues" },
+    { "path": "../../packages/llm" },
     { "path": "../../packages/strategy" },
     { "path": "../../packages/backtesting" }
   ]

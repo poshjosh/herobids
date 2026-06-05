@@ -136,3 +136,24 @@ export interface OrderbookVenuePort {
   /** Subscribe to public market data stream for given symbols */
   subscribePublic(symbols: string[], handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>>;
 }
+
+// ---------------------------------------------------------------------------
+// Venue auto-detection (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** The result of probing a venue account credential. */
+export interface VenueProfile {
+  /** Venue identifier: 'hyperliquid', 'bybit', 'jupiter', etc. */
+  venue: string;
+  /** Type: 'orderbook' for CEX perps/spot, 'swap' for DEX swaps. */
+  venueType: 'orderbook' | 'swap';
+  /** Tradeable symbols/instruments discovered at probe time. */
+  availableSymbols: string[];
+  /** Supported execution modes based on credential type. */
+  supportedExecutionModes: Array<'paper' | 'shadow' | 'live'>;
+  /** Whether the probe was authenticated (real credentials vs. public endpoint). */
+  authenticated: boolean;
+  /** Probe timestamp */
+  probedAt: string;
+}
+

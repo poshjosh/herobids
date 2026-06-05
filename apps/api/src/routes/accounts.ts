@@ -4,6 +4,8 @@ import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { venueAccounts, userCredentials } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import { HyperliquidAdapter } from '@herobids/venues';
+import { JupiterSwapAdapter } from '@herobids/venues';
 import { CreateVenueAccountSchema } from '../schemas.js';
 import { checkVenueAccountLimit } from '../plan-guards.js';
 
@@ -50,6 +52,22 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
     const id = crypto.randomUUID();
     const now = new Date();
 
+    // Best-effort venue probe — determines available symbols and execution modes.
+    // Runs unauthenticated (public API) since we don't decrypt credentials here.
+    let venueProfile = null;
+    try {
+      if (parsed.data.venue === 'hyperliquid') {
+        venueProfile = await HyperliquidAdapter.probe();
+        if (parsed.data.credentialId) {
+          venueProfile = { ...venueProfile, authenticated: true, supportedExecutionModes: ['paper', 'shadow', 'live'] as Array<'paper' | 'shadow' | 'live'> };
+        }
+      } else if (parsed.data.venue === 'jupiter') {
+        venueProfile = await JupiterSwapAdapter.probe(parsed.data.venueAccountRef ?? undefined);
+      }
+    } catch {
+      // Non-fatal — account is still created without a cached profile
+    }
+
     try {
       await db.insert(venueAccounts).values({
         id,
@@ -58,6 +76,7 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
         label: parsed.data.label,
         venueAccountRef: parsed.data.venueAccountRef ?? null,
         credentialId: parsed.data.credentialId ?? null,
+        venueProfile: venueProfile ?? undefined,
         createdAt: now,
         updatedAt: now,
       });

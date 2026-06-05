@@ -62,6 +62,19 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const agentId = crypto.randomUUID();
     const now = new Date();
 
+    // Auto-populate toolPolicy from skillIds so the broker enforces the right capability grants
+    // without requiring the caller to supply raw CapabilityGrant objects.
+    const basePolicy: Record<string, unknown> = { ...(parsed.data.toolPolicy ?? {}) };
+    if ((parsed.data.skillIds ?? []).includes('bot-management') && !basePolicy['manage_bot']) {
+      basePolicy['manage_bot'] = {
+        capability: 'manage_bot',
+        tier: 'brokered',
+        enabled: true,
+        limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
+      };
+    }
+    const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
+
     await db.insert(agents).values({
       id: agentId,
       userId: request.userId,
@@ -69,7 +82,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       prompt: parsed.data.prompt,
       skillIds: parsed.data.skillIds ?? [],
       status: 'stopped',
-      toolPolicy: parsed.data.toolPolicy ?? null,
+      toolPolicy: effectiveToolPolicy,
       modelPolicy: parsed.data.modelPolicy ?? null,
       telegramChatId: parsed.data.telegramChatId ?? null,
       executionMode: parsed.data.executionMode ?? null,
@@ -127,8 +140,33 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    // Re-derive toolPolicy from the effective skillIds — same logic as the create path —
+    // so that capability grants stay consistent whenever skills are added or removed via PATCH.
+    const mergedSkillIds = parsed.data.skillIds ?? agent.skillIds ?? [];
+    // If toolPolicy is explicitly provided in the PATCH body, replace the stored policy entirely
+    // (allow callers to remove overrides). If omitted, preserve the existing stored policy.
+    const basePolicy: Record<string, unknown> = parsed.data.toolPolicy !== undefined
+      ? { ...parsed.data.toolPolicy }
+      : { ...((agent.toolPolicy as Record<string, unknown> | null) ?? {}) };
+    if (mergedSkillIds.includes('bot-management') && !basePolicy['manage_bot']) {
+      basePolicy['manage_bot'] = {
+        capability: 'manage_bot',
+        tier: 'brokered',
+        enabled: true,
+        limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
+      };
+    } else if (
+      !mergedSkillIds.includes('bot-management') &&
+      // Only auto-remove if the caller did not explicitly supply a grant entry.
+      !(parsed.data.toolPolicy && 'manage_bot' in parsed.data.toolPolicy)
+    ) {
+      delete basePolicy['manage_bot'];
+    }
+    const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
+
     await db.update(agents).set({
       ...parsed.data,
+      toolPolicy: effectiveToolPolicy,
       updatedAt: new Date(),
     }).where(eq(agents.id, id));
 

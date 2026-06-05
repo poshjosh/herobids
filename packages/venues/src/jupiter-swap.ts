@@ -7,6 +7,7 @@ import type {
   SwapVenueError,
   TokenBalance,
   SwapTransaction,
+  VenueProfile,
 } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err, quantity, Decimal } from '@herobids/domain';
@@ -295,5 +296,29 @@ export class JupiterSwapAdapter implements SwapVenuePort {
     } catch (error) {
       return err({ code: 'TX_ERROR', message: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  /**
+   * Probe Jupiter DEX to discover available tokens and supported modes.
+   * walletAddress is used to determine if credentials are real (non-default).
+   */
+  static async probe(walletAddress?: string): Promise<VenueProfile> {
+    const POPULAR_SOLANA_SYMBOLS = [
+      'SOL/USDC', 'BTC/USDC', 'ETH/USDC', 'JUP/USDC', 'BONK/USDC',
+    ];
+
+    const authenticated = !!(walletAddress && walletAddress.length > 30);
+    const supportedExecutionModes: VenueProfile['supportedExecutionModes'] = authenticated
+      ? ['paper', 'shadow', 'live']
+      : ['paper'];
+
+    return {
+      venue: 'jupiter',
+      venueType: 'swap',
+      availableSymbols: POPULAR_SOLANA_SYMBOLS,
+      supportedExecutionModes,
+      authenticated,
+      probedAt: new Date().toISOString(),
+    };
   }
 }

@@ -1,6 +1,7 @@
-import { pgTable, text, timestamp, index, foreignKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, index, foreignKey } from 'drizzle-orm/pg-core';
 import { userCredentials } from './user-credentials.js';
 import { users } from './users.js';
+import type { VenueProfile } from '@herobids/domain';
 
 /**
  * Venue accounts — user's authenticated sessions on venues.
@@ -16,6 +17,8 @@ export const venueAccounts = pgTable('venue_accounts', {
   venueAccountRef: text('venue_account_ref'),
   /** Reference to credentials row — ON DELETE RESTRICT prevents dangling references */
   credentialId: text('credential_id'),
+  /** Cached result of probe() — instruments, execution modes, auth status. */
+  venueProfile: jsonb('venue_profile').$type<VenueProfile>(),
   /** Timestamp of last successful reconciliation pass (cursor) */
   lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -58,6 +58,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      EVENTS: 1
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      SWARM: 0
+      BUILD: 0
+
   worker:
     build:
       context: .
@@ -67,11 +83,19 @@ services:
       REDIS_URL: redis://redis:6379
       # Dev-only default — override with a real 64-hex-char key in production.
       CREDENTIAL_ENCRYPTION_KEY: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+      DOCKER_HOST: tcp://docker-proxy:2375
+      DOCKER_NETWORK: herobids_default
+      AGENT_IMAGE: herobids-agent:latest
+      # Set AGENT_RUNTIME_MODE=docker only after building the agent image:
+      # docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
+      AGENT_RUNTIME_MODE: stub
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      docker-proxy:
+        condition: service_started
     restart: unless-stopped
 
   web:

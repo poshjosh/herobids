@@ -1,0 +1,1 @@
+ALTER TABLE "venue_accounts" ADD COLUMN "venue_profile" jsonb;

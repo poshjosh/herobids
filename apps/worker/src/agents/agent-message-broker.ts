@@ -7,17 +7,20 @@ import type {
   PauseRequestPayload,
   StopRequestPayload,
   SendMessagePayload,
+  ManageBotPayload,
 } from '@herobids/domain';
 import {
   MessageEnvelopeSchema,
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
 } from '@herobids/domain';
-import type { AgentRepository } from '@herobids/db';
+import type { AgentRepository, BotRepository } from '@herobids/db';
 import type { TelegramClient } from '../alerting/telegram-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
+import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-policy.js';
+import type { CapabilityGrant } from './capability-policy.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-message-broker' });
@@ -28,6 +31,19 @@ const SEND_MESSAGE_MAX_PER_MINUTE = 10;
 const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 
 /**
+ * Callback the broker uses to enqueue a bot start job on the runtime queue.
+ * Decouples the broker from BullMQ — the caller wires this to queue.add().
+ */
+export type BotStartCallback = (botId: string, userId: string, config: Record<string, unknown>) => Promise<void>;
+
+/**
+ * Optional callback for enforcing a subscription-level bot cap before create.
+ * Should throw with a user-facing message if the limit is exceeded.
+ * Keeps the broker decoupled from plan config (which lives in the API layer).
+ */
+export type BotLimitCheckCallback = (userId: string) => Promise<void>;
+
+/**
  * AgentMessageBroker — validates envelopes, enforces capability grants,
  * handles dedupe and correlation, and routes messages to the appropriate handler.
  *
@@ -36,6 +52,8 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 export class AgentMessageBroker {
   /** Per-agent send_message rate tracking: agentId → { count, windowStart } */
   private readonly sendMessageCounters = new Map<string, { count: number; windowStart: number }>();
+  /** Per-agent capability policy engine. Instantiated on first use per agent. */
+  private readonly capabilityEngines = new Map<string, CapabilityPolicyEngine>();
 
   constructor(
     _redis: Redis,
@@ -44,11 +62,26 @@ export class AgentMessageBroker {
     private readonly sessionManager: AgentSessionManager,
     _eventPublisher: InstanceEventPublisher,
     private readonly telegram?: TelegramClient,
+    private readonly botRepo?: BotRepository,
+    private readonly botStart?: BotStartCallback,
+    private readonly botLimitCheck?: BotLimitCheckCallback,
   ) {}
+
+  private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[]): CapabilityPolicyEngine {
+    const existing = this.capabilityEngines.get(agentId);
+    if (existing) return existing;
+
+    const grants = perAgentGrants
+      ? [...DEFAULT_CAPABILITY_GRANTS, ...perAgentGrants]
+      : DEFAULT_CAPABILITY_GRANTS;
+    const engine = new CapabilityPolicyEngine(grants);
+    this.capabilityEngines.set(agentId, engine);
+    return engine;
+  }
 
   /**
    * Process a raw inbound message from the agent runtime.
-   * Validates envelope, deduplicates, and routes to the appropriate handler.
+   * Validates envelope, deduplicates, enforces capability policy, and routes.
    */
   async processInbound(raw: unknown): Promise<{ accepted: boolean; error?: string }> {
     // 1. Validate envelope
@@ -73,10 +106,54 @@ export class AgentMessageBroker {
       return { accepted: false, error: 'invalid_payload' };
     }
 
-    // 3. Deduplicate by messageId
+    // 3. Enforce capability policy for brokered tool calls
+    const capabilityByType: Record<string, string> = {
+      [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'decision_submit',
+      [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: 'artifact_publish',
+      [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
+      [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
+    };
+    const capabilityName = capabilityByType[envelope.type];
+    // Saved so recordEnd can be called in the finally block on every exit path.
+    let policyEngine: CapabilityPolicyEngine | undefined;
+    let policySessionId: string | undefined;
+    let policyStartMs: number | undefined;
+    if (capabilityName) {
+      const agent = await this.agentRepo.getAgent(envelope.agentId);
+      const perAgentGrants = agent?.toolPolicy
+        ? (Object.values(agent.toolPolicy) as CapabilityGrant[])
+        : undefined;
+      const engine = this.getCapabilityEngine(envelope.agentId, perAgentGrants);
+      const activeSession = await this.agentRepo.getActiveSession(envelope.agentId);
+      const sessionId = activeSession?.id ?? envelope.agentId;
+      const denied = engine.checkAccess(capabilityName, envelope.agentId, sessionId);
+      if (denied) {
+        logger.warn({ agentId: envelope.agentId, capability: capabilityName, reason: denied }, 'Capability policy denied');
+        return { accepted: false, error: `capability_denied:${denied}` };
+      }
+      engine.recordStart(capabilityName, sessionId);
+      policyEngine = engine;
+      policySessionId = sessionId;
+      policyStartMs = Date.now();
+    }
+
+    // 4. Deduplicate by messageId
     const isDuplicate = await this.agentRepo.isMessageDuplicate(envelope.messageId);
     if (isDuplicate) {
       logger.debug({ messageId: envelope.messageId }, 'Duplicate message — skipping');
+      // Release the concurrency slot acquired above so subsequent calls are not blocked.
+      if (policyEngine && capabilityName && policySessionId) {
+        policyEngine.recordEnd(capabilityName, policySessionId, {
+          capability: capabilityName,
+          agentId: envelope.agentId,
+          sessionId: policySessionId,
+          timestamp: new Date().toISOString(),
+          durationMs: 0,
+          inputSummary: 'duplicate',
+          outputSummary: '',
+          success: true,
+        });
+      }
       return { accepted: true }; // Idempotent success
     }
 
@@ -96,6 +173,7 @@ export class AgentMessageBroker {
     });
 
     // 5. Route to appropriate handler
+    let processingSuccess = false;
     try {
       switch (envelope.type) {
         case AGENT_MESSAGE_TYPES.DECISION_SUBMIT:
@@ -140,6 +218,13 @@ export class AgentMessageBroker {
           );
           break;
 
+        case AGENT_MESSAGE_TYPES.MANAGE_BOT:
+          await this.handleManageBot(
+            envelope,
+            envelope.payload as unknown as ManageBotPayload,
+          );
+          break;
+
         default:
           await this.agentRepo.markMessageProcessed(envelope.messageId, 'rejected', {
             code: 'unsupported_type',
@@ -149,6 +234,7 @@ export class AgentMessageBroker {
       }
 
       await this.agentRepo.markMessageProcessed(envelope.messageId, 'processed');
+      processingSuccess = true;
       return { accepted: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -158,6 +244,20 @@ export class AgentMessageBroker {
         message,
       });
       return { accepted: false, error: message };
+    } finally {
+      // Always release the concurrency slot — prevents capability lock-up after single use.
+      if (policyEngine && capabilityName && policySessionId) {
+        policyEngine.recordEnd(capabilityName, policySessionId, {
+          capability: capabilityName,
+          agentId: envelope.agentId,
+          sessionId: policySessionId,
+          timestamp: new Date().toISOString(),
+          durationMs: Date.now() - (policyStartMs ?? Date.now()),
+          inputSummary: '',
+          outputSummary: '',
+          success: processingSuccess,
+        });
+      }
     }
   }
 
@@ -265,6 +365,67 @@ export class AgentMessageBroker {
 
     await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId);
     logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered');
+  }
+
+  private async handleManageBot(envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
+    const agent = await this.agentRepo.getAgent(envelope.initiatorId);
+    if (!agent) throw new Error('Agent not found');
+
+    const activeSession = await this.agentRepo.getActiveSession(agent.id);
+    if (!activeSession || activeSession.status !== 'running') {
+      throw new Error('No running session for agent');
+    }
+
+    if (payload.action === 'create_and_start') {
+      if (!payload.venueAccountId) throw new Error('venueAccountId is required for create_and_start');
+      if (!payload.config) throw new Error('config is required for create_and_start');
+      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
+
+      // Security: verify the venue account belongs to the agent's own user before creating the bot.
+      const owned = await this.botRepo.isVenueAccountOwnedBy(payload.venueAccountId, agent.userId);
+      if (!owned) {
+        throw new Error(`Venue account ${payload.venueAccountId} not found or not owned by this agent's user`);
+      }
+
+      // Enforce subscription-wide plan bot cap (same limit the API enforces for direct bot creation).
+      if (this.botLimitCheck) {
+        await this.botLimitCheck(agent.userId);
+      }
+
+      // Enforce agent-level maxBots limit (additional per-agent guardrail on top of the plan cap).
+      const maxBots = agent.maxBots ?? 5;
+      const runningBots = await this.botRepo.countRunningBotsByCreator('agent', agent.id);
+      if (runningBots >= maxBots) {
+        throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
+      }
+
+      const botId = await this.botRepo.createBot({
+        userId: agent.userId,
+        venueAccountId: payload.venueAccountId,
+        config: payload.config,
+        creatorType: 'agent',
+        creatorId: agent.id,
+      });
+
+      logger.info({ agentId: agent.id, botId }, 'Agent created bot via manage_bot');
+
+      if (this.botStart) {
+        // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
+        await this.botRepo.markBotRunning(botId);
+        // Include venueAccountId in the job config so the worker can resolve credentials.
+        await this.botStart(botId, agent.userId, { ...payload.config, venueAccountId: payload.venueAccountId });
+        logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
+      }
+      return;
+    }
+
+    if (payload.action === 'stop') {
+      if (!payload.botId) throw new Error('botId is required for stop');
+      // Stopping is handled by the existing lifecycle queue — not implemented here yet
+      throw new Error('stop action for manage_bot is not yet implemented');
+    }
+
+    throw new Error(`Unknown manage_bot action: ${(payload as { action: string }).action}`);
   }
 }
 

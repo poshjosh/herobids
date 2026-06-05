@@ -70,15 +70,23 @@ describe('callLlmProvider', () => {
     expect(fetchCall[0]).toBe('http://localhost:8080/v1/chat/completions');
   });
 
-  it('rejects incompatible provider without baseUrl override', async () => {
+  it('routes anthropic provider to native Anthropic messages endpoint without baseUrl', async () => {
     vi.stubEnv('LLM_API_KEY_ANTHROPIC', 'sk-anthropic');
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: 'Hello from Claude' }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        model: 'claude-sonnet-4-5',
+      }),
+    }) as unknown as typeof fetch;
+
     const result = await callLlmProvider({ ...baseConfig, provider: 'anthropic' }, baseRequest);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('provider.unsupported_format');
-      expect(result.error.retryable).toBe(false);
-    }
+    expect(result.ok).toBe(true);
+    const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(fetchCall[0]).toContain('/messages');
+    expect(fetchCall[1].headers['x-api-key']).toBe('sk-anthropic');
   });
 
   it('allows incompatible provider when baseUrl is supplied', async () => {

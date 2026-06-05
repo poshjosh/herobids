@@ -177,6 +177,15 @@ export const credentials = {
 // Venue accounts
 // ---------------------------------------------------------------------------
 
+export interface VenueProfile {
+  venue: string;
+  venueType: 'orderbook' | 'swap';
+  availableSymbols: string[];
+  supportedExecutionModes: ('paper' | 'shadow' | 'live')[];
+  authenticated: boolean;
+  probedAt: string;
+}
+
 export interface VenueAccount {
   id: string;
   venue: string;
@@ -184,6 +193,7 @@ export interface VenueAccount {
   venueAccountRef: string | null;
   credentialId: string | null;
   userId: string;
+  venueProfile: VenueProfile | null;
   createdAt: string;
   updatedAt: string;
 }

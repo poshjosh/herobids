@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router';
 import Decimal from 'decimal.js';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { instances as instancesApi, journal, type ActivityEvent } from '../../../lib/api-client.js';
+import { bots as botsApi, journal, type ActivityEvent } from '../../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
 import { TimelineEvent } from '../../timeline/TimelineEvent.js';
 
@@ -11,8 +11,8 @@ export function InstanceDetailPage() {
   const qc = useQueryClient();
 
   const instanceQuery = useQuery({
-    queryKey: ['instances', id],
-    queryFn: () => instancesApi.get(id!),
+    queryKey: ['bots', id],
+    queryFn: () => botsApi.get(id!),
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const status = query.state.data?.status as string | undefined;
@@ -21,15 +21,15 @@ export function InstanceDetailPage() {
   });
 
   const positionsQuery = useQuery({
-    queryKey: ['instances', id, 'positions', 'open'],
-    queryFn: () => instancesApi.openPositions(id!),
+    queryKey: ['bots', id, 'positions', 'open'],
+    queryFn: () => botsApi.openPositions(id!),
     // Fetch regardless of status — a stopped or crashed agent may still hold open positions
     enabled: Boolean(id),
   });
 
   const liveStatusQuery = useQuery({
-    queryKey: ['instances', id, 'live-status'],
-    queryFn: () => instancesApi.liveStatus(id!),
+    queryKey: ['bots', id, 'live-status'],
+    queryFn: () => botsApi.liveStatus(id!),
     enabled: Boolean(id) && instanceQuery.data?.status === 'running',
     refetchInterval: 15_000,
   });
@@ -41,17 +41,17 @@ export function InstanceDetailPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () => instancesApi.start(id!),
+    mutationFn: () => botsApi.start(id!),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['instances'] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
       void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
     },
   });
 
   const stopMutation = useMutation({
-    mutationFn: () => instancesApi.stop(id!),
+    mutationFn: () => botsApi.stop(id!),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['instances'] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
       void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
     },
   });
@@ -83,6 +83,7 @@ export function InstanceDetailPage() {
   const execConfig = config['execution'] as Record<string, unknown> | undefined;
   const execMode = (execConfig?.['mode'] as string | undefined) ?? 'paper';
   const symbol = (config['symbol'] as string | undefined) ?? '';
+  const strategyType = ((config['strategy'] as Record<string, unknown> | undefined)?.['type'] as string | undefined) ?? '';
 
   // Map journal events to activity event shape for timeline display
   const timelineEvents: ActivityEvent[] = (journalQuery.data?.events ?? []).map((ev) => ({
@@ -100,8 +101,8 @@ export function InstanceDetailPage() {
   return (
     <PageShell>
       <PageHeader
-        title={`${symbol || inst.strategyId}`}
-        subtitle={inst.strategyId}
+        title={`${symbol || strategyType || 'Bot'}`}
+        subtitle={strategyType}
         action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Button variant="ghost" size="sm" onClick={() => navigate('/instances')}>← Back</Button>
@@ -169,10 +170,9 @@ export function InstanceDetailPage() {
           <Card>
             <SectionLabel>Configuration</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <KV label="Strategy" value={inst.strategyId} />
+              <KV label="Strategy" value={strategyType || '—'} />
               <KV label="Symbol" value={symbol || '—'} />
               <KV label="Execution mode" value={execMode} />
-              <KV label="Config version" value={inst.configVersion} />
             </div>
           </Card>
 

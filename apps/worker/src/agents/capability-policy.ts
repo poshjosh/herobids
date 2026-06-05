@@ -84,6 +84,13 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 10, maxConcurrent: 5, timeoutMs: 10_000, maxResponseBytes: 4096 },
   },
   {
+    // manage_bot is OFF by default — only enabled for agents with the 'trading' skill preset
+    capability: 'manage_bot',
+    tier: 'brokered',
+    enabled: false,
+    limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
+  },
+  {
     capability: 'venue_api',
     tier: 'never',
     enabled: false,

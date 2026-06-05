@@ -1,5 +1,9 @@
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
+import type { AgentRepository } from '@herobids/db';
+import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
+import { DockerAgentManager } from './docker-agent-manager.js';
+import type { DockerAgentManagerConfig } from './docker-agent-manager.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-runtime-launcher' });
@@ -7,6 +11,8 @@ const logger = pino({ name: 'agent-runtime-launcher' });
 export interface RuntimeLaunchConfig {
   agentId: string;
   sessionId: string;
+  agentConfig?: Record<string, unknown>;
+  toolPolicy?: Record<string, unknown>;
   /** Container image for the agent runtime */
   image?: string;
   /** Resource limits */
@@ -28,6 +34,12 @@ export interface RuntimeHandle {
 
 export interface AgentRuntimeLauncherConfig {
   /**
+   * Runtime mode — 'docker' uses DockerAgentManager (production),
+   * 'stub' keeps the in-memory fake (local dev without Docker).
+   * Reads AGENT_RUNTIME_MODE env var. Default: 'stub'.
+   */
+  mode?: 'docker' | 'stub';
+  /**
    * Redis client used by the stub to publish synthetic heartbeats.
    * When provided the stub acts as a minimal "always-ready" runtime.
    */
@@ -36,13 +48,17 @@ export interface AgentRuntimeLauncherConfig {
   streamKeyPrefix?: string;
   /** Interval between stub heartbeats in ms. Default: 5000 */
   heartbeatIntervalMs?: number;
+  /** Docker manager config (required when mode='docker') */
+  dockerConfig?: DockerAgentManagerConfig;
+  agentRepo?: AgentRepository;
+  platformAlerts?: PlatformAlertService;
 }
 
 /**
  * AgentRuntimeLauncher — launches, stops, and kills sandboxed agent runtimes.
  *
- * Hides whether the runtime is local Docker, ECS, or another sandbox.
- * V1 uses Docker containers (ADR 003: single container per agent runtime).
+ * Hides whether the runtime is Docker (production) or stub (local dev).
+ * Reads AGENT_RUNTIME_MODE env var: 'docker' or 'stub' (default).
  */
 export class AgentRuntimeLauncher {
   private readonly runtimes = new Map<string, RuntimeHandle>();
@@ -50,11 +66,52 @@ export class AgentRuntimeLauncher {
   private readonly redis?: Redis;
   private readonly streamKeyPrefix: string;
   private readonly heartbeatIntervalMs: number;
+  private readonly mode: 'docker' | 'stub';
+  private readonly dockerManager?: DockerAgentManager;
 
   constructor(config?: AgentRuntimeLauncherConfig) {
+    this.mode = config?.mode ?? (process.env['AGENT_RUNTIME_MODE'] as 'docker' | 'stub' | undefined) ?? 'stub';
     this.redis = config?.redis;
     this.streamKeyPrefix = config?.streamKeyPrefix ?? 'agent:inbound:';
     this.heartbeatIntervalMs = config?.heartbeatIntervalMs ?? 5_000;
+
+    if (this.mode === 'docker') {
+      if (!config?.dockerConfig) {
+        throw new Error('AgentRuntimeLauncher: dockerConfig is required when mode=docker');
+      }
+      if (!config.agentRepo) {
+        throw new Error('AgentRuntimeLauncher: agentRepo is required when mode=docker');
+      }
+      this.dockerManager = new DockerAgentManager(config.dockerConfig, config.agentRepo, config.platformAlerts);
+    }
+
+    logger.info({ mode: this.mode }, 'Agent runtime launcher initialized');
+  }
+
+  /**
+   * Start the Docker event stream (docker mode only).
+   * Call this after construction to begin crash detection.
+   */
+  async startEventStream(): Promise<void> {
+    if (this.mode === 'docker' && this.dockerManager) {
+      await this.dockerManager.startEventStream();
+    }
+  }
+
+  /** Stop the Docker event stream (docker mode only). */
+  stopEventStream(): void {
+    if (this.mode === 'docker' && this.dockerManager) {
+      this.dockerManager.stopEventStream();
+    }
+  }
+
+  /**
+   * Reconcile running containers against DB (docker mode only).
+   */
+  async reconcile(): Promise<void> {
+    if (this.mode === 'docker' && this.dockerManager) {
+      await this.dockerManager.reconcile();
+    }
   }
 
   /**
@@ -67,17 +124,34 @@ export class AgentRuntimeLauncher {
       return existing;
     }
 
-    // V1: In production this would shell out to Docker or call the ECS API.
-    // For now, we model the contract and track state in memory.
+    if (this.mode === 'docker' && this.dockerManager) {
+      const result = await this.dockerManager.start({
+        agentId: config.agentId,
+        sessionId: config.sessionId,
+        agentConfig: config.agentConfig ?? {},
+        toolPolicy: config.toolPolicy ?? {},
+      });
+
+      const handle: RuntimeHandle = {
+        containerId: result.containerId,
+        agentId: config.agentId,
+        sessionId: config.sessionId,
+        startedAt: new Date().toISOString(),
+      };
+      this.runtimes.set(config.sessionId, handle);
+      return handle;
+    }
+
+    // Stub mode: simulate a container launch in-memory
     const handle: RuntimeHandle = {
-      containerId: `agent-runtime-${config.sessionId}`,
+      containerId: `stub-${config.sessionId}`,
       agentId: config.agentId,
       sessionId: config.sessionId,
       startedAt: new Date().toISOString(),
     };
 
     this.runtimes.set(config.sessionId, handle);
-    logger.info({ ...handle }, 'Agent runtime launched');
+    logger.info({ ...handle, mode: 'stub' }, 'Agent runtime launched (stub)');
 
     if (this.redis) {
       this.startStubHeartbeats(handle);
@@ -127,7 +201,10 @@ export class AgentRuntimeLauncher {
       this.heartbeatTimers.delete(sessionId);
     }
 
-    // V1: Would send SIGTERM to the container and wait
+    if (this.mode === 'docker' && this.dockerManager) {
+      await this.dockerManager.stop(handle.agentId);
+    }
+
     this.runtimes.delete(sessionId);
     logger.info({ sessionId, containerId: handle.containerId }, 'Agent runtime stopped');
   }
@@ -140,7 +217,9 @@ export class AgentRuntimeLauncher {
   }
 
   /**
-   * Kill a runtime immediately (SIGKILL).
+   * Stop a runtime forcefully. Sends SIGTERM; Docker issues SIGKILL automatically
+   * after a 10-second grace period if the container has not exited by then.
+   * Behaves identically to stop() until a zero-grace hard-kill endpoint is needed.
    */
   async kill(sessionId: string): Promise<void> {
     const handle = this.runtimes.get(sessionId);
@@ -152,7 +231,10 @@ export class AgentRuntimeLauncher {
       this.heartbeatTimers.delete(sessionId);
     }
 
-    // V1: Would SIGKILL the container
+    if (this.mode === 'docker' && this.dockerManager) {
+      await this.dockerManager.stop(handle.agentId);
+    }
+
     this.runtimes.delete(sessionId);
     logger.warn({ sessionId, containerId: handle.containerId }, 'Agent runtime killed');
   }
@@ -172,3 +254,4 @@ export class AgentRuntimeLauncher {
     return [...this.runtimes.values()];
   }
 }
+

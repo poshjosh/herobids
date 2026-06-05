@@ -87,9 +87,26 @@ export class AgentSessionManager {
       }
 
       try {
+        // Fetch full agent so the container gets its prompt, skills, and policy.
+        const agent = await this.agentRepo.getAgent(session.agentId);
+        if (!agent) {
+          logger.error({ sessionId: session.id, agentId: session.agentId }, 'Agent not found during session launch — skipping');
+          continue;
+        }
+        const agentConfig: Record<string, unknown> = {
+          prompt: agent.prompt,
+          skillIds: agent.skillIds,
+          ...(agent.executionMode != null && { executionMode: agent.executionMode }),
+          ...(agent.dailyTokenBudget != null && { dailyTokenBudget: agent.dailyTokenBudget }),
+          ...(agent.dailyLossLimit != null && { dailyLossLimit: agent.dailyLossLimit }),
+          ...(agent.maxBots != null && { maxBots: agent.maxBots }),
+          ...(agent.maxSlippageBps != null && { maxSlippageBps: agent.maxSlippageBps }),
+        };
         await this.runtimeLauncher.launch({
           agentId: session.agentId,
           sessionId: session.id,
+          agentConfig,
+          toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
         });
       } catch (err) {
         logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to launch starting session');

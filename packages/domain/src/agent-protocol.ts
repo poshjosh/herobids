@@ -103,6 +103,21 @@ export const SendMessagePayloadSchema = z.object({
 
 export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;
 
+/** Brokered tool: agent requests creation (and optionally auto-start) of a bot. */
+export const ManageBotPayloadSchema = z.object({
+  action: z.enum(['create_and_start', 'stop']),
+  /** For create_and_start — the target venue account */
+  venueAccountId: z.string().min(1).optional(),
+  /** For create_and_start — full bot config (strategy, risk params, execution mode) */
+  config: z.record(z.unknown()).optional(),
+  /** For stop — the bot ID to stop */
+  botId: z.string().min(1).optional(),
+  /** Human-readable summary of why this action is being taken */
+  rationale: z.string().max(500).optional(),
+});
+
+export type ManageBotPayload = z.infer<typeof ManageBotPayloadSchema>;
+
 // --- Trading Instance → Agent Messages ---
 
 export const ContextSnapshotPayloadSchema = z.object({
@@ -210,6 +225,7 @@ export const AGENT_MESSAGE_TYPES = {
   RUNTIME_HEARTBEAT: 'agent.runtime.heartbeat',
   ARTIFACT_PUBLISH: 'agent.artifact.publish',
   SEND_MESSAGE: 'agent.message.send',
+  MANAGE_BOT: 'agent.manage_bot',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -231,6 +247,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.RUNTIME_HEARTBEAT]: HeartbeatPayloadSchema,
   [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: ArtifactPublishPayloadSchema,
   [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: SendMessagePayloadSchema,
+  [AGENT_MESSAGE_TYPES.MANAGE_BOT]: ManageBotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

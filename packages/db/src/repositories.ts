@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, isNull, desc, or, gte, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, bots, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
+import { fills, positions, bots, venueAccounts, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -503,6 +503,30 @@ export class DecisionRepository {
 export class BotRepository {
   constructor(private readonly db: Database) {}
 
+  /** Create a bot record. Returns the created bot's ID. */
+  async createBot(params: {
+    userId: string;
+    venueAccountId: string;
+    config: Record<string, unknown>;
+    creatorType: string;
+    creatorId: string;
+  }): Promise<string> {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await this.db.insert(bots).values({
+      id,
+      userId: params.userId,
+      venueAccountId: params.venueAccountId,
+      config: params.config,
+      status: 'stopped',
+      creatorType: params.creatorType,
+      creatorId: params.creatorId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return id;
+  }
+
   /** Get all bots created by an actor (agent, user, or system) */
   async getBotsByCreator(creatorType: string, creatorId: string) {
     return this.db
@@ -530,5 +554,28 @@ export class BotRepository {
         ),
       );
     return rows.length;
+  }
+
+  /**
+   * Mark a bot as running. Called just before the lifecycle start job is enqueued
+   * so that the DB status matches the API start-bot path behaviour.
+   */
+  async markBotRunning(botId: string): Promise<void> {
+    await this.db
+      .update(bots)
+      .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
+      .where(eq(bots.id, botId));
+  }
+
+  /**
+   * Confirm that a venue account exists and belongs to the given user.
+   * Used by the broker before creating a bot on behalf of an agent.
+   */
+  async isVenueAccountOwnedBy(venueAccountId: string, userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: venueAccounts.id })
+      .from(venueAccounts)
+      .where(and(eq(venueAccounts.id, venueAccountId), eq(venueAccounts.userId, userId)));
+    return !!row;
   }
 }

@@ -10,6 +10,7 @@ import type {
   VenueError,
   VenueOrder,
   VenueFill,
+  VenueProfile,
   Subscription,
   PrivateStreamHandlers,
   PublicStreamHandlers,
@@ -253,6 +254,51 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
     // Real implementation delegates to the worker-scoped PublicStreamPool.
     // The adapter does not own a public WebSocket — the pool manages shared connections.
     return err({ code: 'venue.not_implemented', message: 'subscribePublic requires a worker-scoped PublicStreamPool. Use the pool directly.' });
+  }
+
+  /**
+   * Probe the venue using the provided credentials.
+   * Returns a VenueProfile describing what instruments and modes are available.
+   * Unauthenticated probe (no real keys) uses the public Hyperliquid API.
+   */
+  static async probe(credentials?: HyperliquidCredentials): Promise<VenueProfile> {
+    const testnet = credentials?.testnet ?? true;
+    const baseUrl = testnet
+      ? 'https://api.hyperliquid-testnet.xyz'
+      : 'https://api.hyperliquid.xyz';
+
+    const availableSymbols: string[] = [];
+
+    try {
+      const res = await fetch(`${baseUrl}/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'meta' }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) {
+        const data = await res.json() as { universe?: Array<{ name: string }> };
+        for (const inst of data.universe ?? []) {
+          availableSymbols.push(`${inst.name}-PERP`);
+        }
+      }
+    } catch {
+      // Best-effort — return empty symbols if probe fails
+    }
+
+    const authenticated = !!(credentials?.apiKey && credentials.apiKey.length > 0);
+    const supportedExecutionModes: VenueProfile['supportedExecutionModes'] = authenticated
+      ? ['paper', 'shadow', 'live']
+      : ['paper'];
+
+    return {
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+      availableSymbols,
+      supportedExecutionModes,
+      authenticated,
+      probedAt: new Date().toISOString(),
+    };
   }
 
   /**

@@ -1,5 +1,6 @@
 import pino from 'pino';
 import Redis from 'ioredis';
+import { Queue } from 'bullmq';
 import { WorkerRuntime, QUEUE_NAME } from './runtime.js';
 import type { PersistedInstance } from './runtime.js';
 import { BacktestRuntime } from './backtest-runtime.js';
@@ -8,7 +9,7 @@ import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, bots, venueAccounts, userCredentials } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, bots, venueAccounts, userCredentials, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, HyperliquidPublicStream, BybitPublicStream, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
@@ -79,7 +80,24 @@ const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const actorRegistry = new Map<string, TradingActor>();
 const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
-const agentRuntimeLauncher = new AgentRuntimeLauncher({ redis: redisClient });
+
+const runtimeMode = (process.env['AGENT_RUNTIME_MODE'] ?? 'stub') as 'docker' | 'stub';
+logger.info({ mode: runtimeMode }, 'Agent runtime mode');
+
+const agentRuntimeLauncher = runtimeMode === 'docker'
+  ? new AgentRuntimeLauncher({
+      mode: 'docker',
+      agentRepo,
+      dockerConfig: {
+        dockerHost: process.env['DOCKER_HOST'] ?? 'tcp://docker-proxy:2375',
+        dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
+        agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
+        redisUrl: appConfig.redis.url,
+        llmModel: process.env['LLM_MODEL'],
+        llmBaseUrl: process.env['LLM_BASE_URL'],
+      },
+    })
+  : new AgentRuntimeLauncher({ redis: redisClient });
 
 const intakeResolver: DecisionIntakeResolver = {
   getIntakeDeps: (instanceId: string) => {
@@ -157,7 +175,34 @@ const workerTelegram = appConfig.alerts.telegram.botToken
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
 const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler, platformAlerts);
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram);
+
+// Queue used by the broker callback to enqueue bot start jobs
+const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
+
+const botRepo = new BotRepository(db);
+const botStartCallback = async (botId: string, userId: string, config: Record<string, unknown>) => {
+  await lifecycleQueue.add('start-instance', {
+    command: 'start',
+    tradingInstanceId: botId,
+    config: { ...config, userId },
+  });
+};
+
+// Enforce the subscription-level bot cap when an agent tries to create a bot.
+// Uses the user's actual planId so free-tier users can't create unlimited bots via agents.
+const botLimitCheckCallback = async (userId: string): Promise<void> => {
+  if (!appConfig.plans) return;
+  const userRows = await db.select({ planId: users.planId }).from(users).where(eq(users.id, userId)).limit(1);
+  const planId = userRows[0]?.planId ?? appConfig.plans.defaultPlanId;
+  const planLimits = appConfig.plans.plans[planId] ?? appConfig.plans.plans[appConfig.plans.defaultPlanId];
+  if (!planLimits) return;
+  const botRows = await db.select({ id: bots.id }).from(bots).where(eq(bots.userId, userId));
+  if (botRows.length >= planLimits.maxTradingInstances) {
+    throw new Error(`Bot limit reached (${planLimits.maxTradingInstances} on your plan). Stop or delete a bot before creating a new one.`);
+  }
+};
+
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
 
@@ -659,6 +704,7 @@ await alertDispatcher.start();
 // signal arrives during the async startup above.
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
+  agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
   await sessionManager.stop();
@@ -666,12 +712,14 @@ process.on('SIGTERM', async () => {
   await backtestRuntime.stop();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
+  await lifecycleQueue.close();
   await redisClient.quit();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
+  agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
   await sessionManager.stop();
@@ -679,11 +727,14 @@ process.on('SIGINT', async () => {
   await backtestRuntime.stop();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
+  await lifecycleQueue.close();
   await redisClient.quit();
   process.exit(0);
 });
 
 await agentStreamConsumer.start();
+// Start Docker event stream for crash detection (no-op in stub mode)
+await agentRuntimeLauncher.startEventStream();
 
 await runtime.start();
 sessionManager.start();

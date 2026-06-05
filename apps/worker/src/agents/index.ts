@@ -1,10 +1,13 @@
 export { AgentMessageBroker } from './agent-message-broker.js';
+export type { BotStartCallback, BotLimitCheckCallback } from './agent-message-broker.js';
 export { AgentDecisionHandler } from './agent-decision-handler.js';
 export type { DecisionIntakeResolver } from './agent-decision-handler.js';
 export { AgentSessionManager } from './agent-session-manager.js';
 export type { AgentSessionManagerConfig } from './agent-session-manager.js';
 export { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
-export type { RuntimeLaunchConfig, RuntimeHandle } from './agent-runtime-launcher.js';
+export type { RuntimeLaunchConfig, RuntimeHandle, AgentRuntimeLauncherConfig } from './agent-runtime-launcher.js';
+export { DockerAgentManager } from './docker-agent-manager.js';
+export type { DockerAgentManagerConfig, DockerContainerSpec } from './docker-agent-manager.js';
 export { InstanceEventPublisher } from './instance-event-publisher.js';
 export { AgentStreamConsumer } from './agent-stream-consumer.js';
 export type { AgentStreamConsumerConfig } from './agent-stream-consumer.js';

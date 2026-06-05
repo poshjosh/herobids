@@ -32,6 +32,9 @@ importers:
       '@herobids/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@herobids/venues':
+        specifier: workspace:*
+        version: link:../../packages/venues
       bullmq:
         specifier: ^5.77.0
         version: 5.77.0
@@ -142,6 +145,9 @@ importers:
       '@herobids/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@herobids/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@herobids/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
@@ -217,6 +223,12 @@ importers:
       '@herobids/domain':
         specifier: workspace:*
         version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+
+  packages/llm:
     devDependencies:
       '@types/node':
         specifier: ^25.9.1

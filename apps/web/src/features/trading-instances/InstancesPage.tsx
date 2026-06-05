@@ -2,14 +2,22 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  instances as instancesApi,
-  portfolios as portfoliosApi,
+  bots as botsApi,
   venueAccounts as venueAccountsApi,
 } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
+import type { VenueAccount } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 
-const SUPPORTED_STRATEGIES = ['momentum'];
+// ---------------------------------------------------------------------------
+// Strategy presets — plain-language labels per plan 003
+// ---------------------------------------------------------------------------
+const STRATEGY_PRESETS = [
+  { value: 'momentum', label: 'Follow the trend', description: 'Buys when markets are moving up, sells when they turn' },
+  { value: 'dca', label: 'Steady accumulation', description: 'Buys a fixed amount at regular intervals regardless of price' },
+  { value: 'range', label: 'Trade the range', description: 'Buys low and sells high within a price band' },
+] as const;
+
+type StrategyPresetValue = typeof STRATEGY_PRESETS[number]['value'];
 
 export function InstancesPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -17,34 +25,34 @@ export function InstancesPage() {
   const qc = useQueryClient();
 
   const query = useQuery({
-    queryKey: ['instances'],
-    queryFn: () => instancesApi.list(),
+    queryKey: ['bots'],
+    queryFn: () => botsApi.list(),
   });
 
   const startMutation = useMutation({
-    mutationFn: (id: string) => instancesApi.start(id),
+    mutationFn: (id: string) => botsApi.start(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['instances'] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
       void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
     },
   });
 
   const stopMutation = useMutation({
-    mutationFn: (id: string) => instancesApi.stop(id),
+    mutationFn: (id: string) => botsApi.stop(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['instances'] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
       void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
     },
   });
 
-  const items = query.data?.instances ?? [];
+  const items = query.data?.bots ?? [];
 
   return (
     <PageShell>
       <PageHeader
-        title="Agents"
-        subtitle="Create and manage your trading agents"
-        action={<Button variant="primary" onClick={() => setShowCreate(true)}>New agent</Button>}
+        title="Bots"
+        subtitle="Automated trading bots running strategies on your accounts"
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>New Bot</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
@@ -52,63 +60,68 @@ export function InstancesPage() {
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No agents yet"
-          message="Create your first trading agent. Each agent runs one strategy against one venue account."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Create agent</Button>}
+          title="No bots yet"
+          message="Create a bot to start automated trading on a venue account."
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Create Bot</Button>}
         />
       )}
 
       {query.isSuccess && items.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {items.map((inst) => (
-            <Card key={inst.id}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
-                <div
-                  style={{ flex: 1, cursor: 'pointer' }}
-                  onClick={() => navigate(`/instances/${inst.id}`)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                    <span style={{ fontWeight: '600', fontSize: '15px' }}>{inst.strategyId}</span>
-                    <StatusBadge status={inst.status} />
+          {items.map((bot) => {
+            const cfg = bot.config as Record<string, unknown> | null;
+            const strategyType = (cfg?.['strategy'] as Record<string, unknown> | undefined)?.['type'] as string | undefined;
+            const preset = STRATEGY_PRESETS.find((p) => p.value === strategyType);
+            return (
+              <Card key={bot.id}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+                  <div
+                    style={{ flex: 1, cursor: 'pointer' }}
+                    onClick={() => navigate(`/instances/${bot.id}`)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <span style={{ fontWeight: '600', fontSize: '15px' }}>{preset?.label ?? strategyType ?? 'Bot'}</span>
+                      <StatusBadge status={bot.status} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '24px' }}>
+                      <KV label="Created" value={<RelativeTime timestamp={bot.createdAt} />} />
+                      {bot.startedAt && <KV label="Started" value={<RelativeTime timestamp={bot.startedAt} />} />}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '24px' }}>
-                    <KV label="Created" value={<RelativeTime timestamp={inst.createdAt} />} />
-                    {inst.startedAt && <KV label="Started" value={<RelativeTime timestamp={inst.startedAt} />} />}
-                  </div>
-                </div>
 
-                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                  {inst.status === 'stopped' || inst.status === 'crashed' ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => startMutation.mutate(inst.id)}
-                      disabled={startMutation.isPending}
-                    >
-                      Start
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => stopMutation.mutate(inst.id)}
-                      disabled={stopMutation.isPending}
-                    >
-                      Stop
-                    </Button>
-                  )}
+                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    {bot.status === 'stopped' || bot.status === 'crashed' ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => startMutation.mutate(bot.id)}
+                        disabled={startMutation.isPending}
+                      >
+                        Start
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => stopMutation.mutate(bot.id)}
+                        disabled={stopMutation.isPending}
+                      >
+                        Stop
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 
       {showCreate && (
-        <CreateInstanceModal
+        <CreateBotModal
           onClose={() => setShowCreate(false)}
           onSuccess={(id) => {
-            void qc.invalidateQueries({ queryKey: ['instances'] });
+            void qc.invalidateQueries({ queryKey: ['bots'] });
             void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
             setShowCreate(false);
             navigate(`/instances/${id}`);
@@ -119,37 +132,48 @@ export function InstancesPage() {
   );
 }
 
-function CreateInstanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (id: string) => void }) {
-  const [portfolioId, setPortfolioId] = useState('');
+// ---------------------------------------------------------------------------
+// Create Bot modal — primary: strategy preset + venue account + execution mode
+//                   Advanced (collapsible): manual symbol entry
+// ---------------------------------------------------------------------------
+function CreateBotModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (id: string) => void }) {
   const [venueAccountId, setVenueAccountId] = useState('');
-  const [strategyId, setStrategyId] = useState(SUPPORTED_STRATEGIES[0]!);
-  const [symbol, setSymbol] = useState('');
+  const [strategyPreset, setStrategyPreset] = useState<StrategyPresetValue>('momentum');
   const [executionMode, setExecutionMode] = useState<'paper' | 'shadow' | 'live'>('paper');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [manualSymbol, setManualSymbol] = useState('');
+  const [selectedSymbol, setSelectedSymbol] = useState('');
 
-  const portfoliosQuery = useQuery({ queryKey: ['portfolios'], queryFn: () => portfoliosApi.list() });
   const venueAccountsQuery = useQuery({ queryKey: ['venue-accounts'], queryFn: () => venueAccountsApi.list() });
-
-  const portfolios = portfoliosQuery.data?.portfolios ?? [];
-  const venueAccounts = venueAccountsQuery.data?.venueAccounts ?? [];
+  const venueAccounts: VenueAccount[] = venueAccountsQuery.data?.venueAccounts ?? [];
 
   const selectedVA = venueAccounts.find((va) => va.id === venueAccountId);
+  const availableSymbols = selectedVA?.venueProfile?.availableSymbols ?? [];
+  const supportedModes = selectedVA?.venueProfile?.supportedExecutionModes ?? ['paper'];
+  const venueType = selectedVA?.venueProfile?.venueType ?? 'orderbook';
+  // Swap venues (e.g. Jupiter) require additional config (swapAssets, token decimals)
+  // that isn't yet available in this UI form. Block create and guide to API/agent flow.
+  const isSwapVenue = venueType === 'swap';
+
+  const symbol = showAdvanced && manualSymbol.trim() ? manualSymbol.trim() : selectedSymbol;
 
   const mutation = useMutation({
-    mutationFn: () =>
-      instancesApi.create({
-        portfolioId,
+    mutationFn: () => {
+      const symbolToUse = symbol || (availableSymbols[0] ?? '');
+      return botsApi.create({
         venueAccountId,
-        strategyId,
         venue: selectedVA?.venue ?? '',
-        symbol,
+        symbol: symbolToUse,
         config: {
-          strategy: { type: strategyId, params: {} },
+          strategy: { type: strategyPreset, params: {} },
           venue: selectedVA?.venue ?? '',
-          symbol,
+          symbol: symbolToUse,
+          venueType,
           execution: { mode: executionMode },
         },
-      }),
-    onSuccess: (inst) => onSuccess(inst.id),
+      });
+    },
+    onSuccess: (bot) => onSuccess(bot.id),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -157,58 +181,140 @@ function CreateInstanceModal({ onClose, onSuccess }: { onClose: () => void; onSu
     mutation.mutate();
   };
 
-  const isReady = portfolioId && venueAccountId && symbol.trim();
+  const isReady = !isSwapVenue && venueAccountId && (symbol || availableSymbols.length > 0);
 
   return (
-    <Modal title="Create agent" onClose={onClose}>
+    <Modal title="Create Bot" onClose={onClose}>
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Portfolio</FieldLabel>
-          <select value={portfolioId} onChange={(e) => setPortfolioId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-            <option value="">— Select portfolio —</option>
-            {portfolios.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          {portfolios.length === 0 && <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>Create a portfolio first.</div>}
-        </div>
-
-        <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Venue account</FieldLabel>
-          <select value={venueAccountId} onChange={(e) => setVenueAccountId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-            <option value="">— Select venue account —</option>
-            {venueAccounts.map((va) => <option key={va.id} value={va.id}>{va.label} ({va.venue})</option>)}
-          </select>
-        </div>
-
+        {/* Strategy preset */}
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>Strategy</FieldLabel>
-          <select value={strategyId} onChange={(e) => setStrategyId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-            {SUPPORTED_STRATEGIES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {STRATEGY_PRESETS.map((p) => (
+              <label
+                key={p.value}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  border: `1px solid ${strategyPreset === p.value ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  background: strategyPreset === p.value ? 'var(--color-accent-subtle, rgba(99,102,241,0.08))' : 'transparent',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="strategyPreset"
+                  value={p.value}
+                  checked={strategyPreset === p.value}
+                  onChange={() => setStrategyPreset(p.value)}
+                  style={{ marginTop: '2px', flexShrink: 0 }}
+                />
+                <div>
+                  <div style={{ fontWeight: '500', fontSize: '14px' }}>{p.label}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{p.description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
 
+        {/* Venue account */}
         <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Symbol</FieldLabel>
-          <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="e.g. BTC-USDC" style={inputStyle} />
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <FieldLabel>Execution mode</FieldLabel>
-          <select value={executionMode} onChange={(e) => setExecutionMode(e.target.value as typeof executionMode)} style={{ ...inputStyle, cursor: 'pointer' }}>
-            <option value="paper">Paper (simulated — no real orders)</option>
-            <option value="shadow">Shadow (real signals, no orders)</option>
-            <option value="live">Live (real orders)</option>
+          <FieldLabel>Venue account</FieldLabel>
+          <select
+            value={venueAccountId}
+            onChange={(e) => {
+              setVenueAccountId(e.target.value);
+              setSelectedSymbol('');
+            }}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">— Select venue account —</option>
+            {venueAccounts.map((va) => (
+              <option key={va.id} value={va.id}>{va.label} ({va.venue})</option>
+            ))}
           </select>
         </div>
+
+        {/* Instrument derived from venue profile */}
+        {!showAdvanced && venueAccountId && (
+          <div style={{ marginBottom: '16px' }}>
+            <FieldLabel>Instrument</FieldLabel>
+            {availableSymbols.length > 0 ? (
+              <select
+                value={selectedSymbol}
+                onChange={(e) => setSelectedSymbol(e.target.value)}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="">— Select instrument —</option>
+                {availableSymbols.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', padding: '8px 0' }}>
+                Instrument list unavailable. Enable Advanced to enter manually.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Execution mode */}
+        <div style={{ marginBottom: '16px' }}>
+          <FieldLabel>Execution mode</FieldLabel>
+          <select
+            value={executionMode}
+            onChange={(e) => setExecutionMode(e.target.value as typeof executionMode)}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            {supportedModes.includes('paper') && <option value="paper">Paper (simulated — no real orders)</option>}
+            {supportedModes.includes('shadow') && <option value="shadow">Shadow (real signals, no orders)</option>}
+            {supportedModes.includes('live') && <option value="live">Live (real orders)</option>}
+          </select>
+        </div>
+
+        {/* Advanced toggle */}
+        <div style={{ marginBottom: '16px' }}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: '12px', padding: 0 }}
+          >
+            {showAdvanced ? '▾ Hide advanced' : '▸ Advanced'}
+          </button>
+        </div>
+
+        {showAdvanced && (
+          <div style={{ marginBottom: '16px', padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px' }}>
+            <FieldLabel>Symbol (manual override)</FieldLabel>
+            <input
+              value={manualSymbol}
+              onChange={(e) => setManualSymbol(e.target.value)}
+              placeholder="e.g. BTC-PERP"
+              style={inputStyle}
+            />
+          </div>
+        )}
 
         {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
+
+        {isSwapVenue && (
+          <div style={{ padding: '10px 12px', background: 'var(--color-warning-subtle, rgba(245,158,11,0.1))', border: '1px solid var(--color-warning, #f59e0b)', borderRadius: '6px', fontSize: '13px', marginBottom: '16px' }}>
+            <strong>Swap venue</strong> — {selectedVA?.venue} bots require additional token configuration (swap assets and decimals) that isn't yet available in this form. Use an AI agent with the Trading preset, or create bots via the API.
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
           <Button variant="primary" type="submit" disabled={mutation.isPending || !isReady}>
-            {mutation.isPending ? 'Creating…' : 'Create agent'}
+            {mutation.isPending ? 'Creating…' : 'Create Bot'}
           </Button>
         </div>
       </form>
     </Modal>
   );
 }
+
+
+

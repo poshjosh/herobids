@@ -1,5 +1,11 @@
 # TODO
 
+Some of these may no longer be valid (they may have been done/implemented). 
+
+- [ ] agent permission updates are still stale after first use because the broker caches the capability engine by agent ID and never invalidates it. The cache is established in agent-message-broker.ts, while the API now updates and re-derives toolPolicy in agents.ts. After an agent has made one tool call, later PATCH changes to skillIds or toolPolicy can be stored successfully but remain unenforced until the worker restarts.
+
+- [ ] Sandbox enforcement on code execution has only been partially implemented. SandboxEnforcer and sandbox-exec.sh exist, and code_execute is in the capability grants, but no broker handler routes code_execute calls — the capability is defined but not wired on the production path
+
 - [ ] Make appropriate Foreign Keys `ON DELETE CASCADE` rather than manually deleting them e.g.
 ```
 // Delete FK-referencing child rows before removing the parent so PG doesn't reject.

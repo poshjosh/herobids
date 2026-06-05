@@ -399,6 +399,11 @@ export class AgentRepository {
       .limit(limit);
   }
 
+  /** List all agents currently in 'active' status. Used by DockerAgentManager reconciliation. */
+  async listActiveAgents() {
+    return this.db.select().from(agents).where(eq(agents.status, 'active'));
+  }
+
   // --- User Telegram ---
 
   /** Look up the Telegram chat ID for the user that owns the given agent. */
