@@ -44,21 +44,53 @@ export class AgentSessionManager {
 
   /** Start the launch reconciliation loop. */
   start(): void {
+    // Pre-register launcher handles for sessions that survived a worker restart so that
+    // stop() and health-monitor cleanup can reach those containers even if a stop request
+    // arrives before the container sends its first heartbeat to the new worker.
+    void this.registerSurvivedSessions().catch((err: unknown) => logger.error({ err }, 'Failed to register survived sessions on startup'));
     void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
     this.reconcileTimer = setInterval(() => {
       void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
     }, this.config.healthCheckIntervalMs);
   }
 
-  /** Stop the launch loop and any tracked runtimes. */
+  /**
+   * Pre-register launcher handles for sessions that are already running/launching/unhealthy
+   * in the DB but have no in-memory handle on this worker.
+   *
+   * Called at startup so that stop requests issued before the first post-restart heartbeat
+   * do not leave survived containers running outside platform control.
+   */
+  private async registerSurvivedSessions(): Promise<void> {
+    if (this.stopping) return;
+    const sessions = await this.agentRepo.getSessionsByStatuses(['running', 'launching', 'unhealthy']);
+    for (const session of sessions) {
+      if (!this.runtimeLauncher.hasRuntime(session.id)) {
+        this.runtimeLauncher.registerRecoveredRuntime(session.agentId, session.id);
+      }
+    }
+  }
+
+  /**
+   * Stop the reconciliation loop.
+   *
+   * ## Ownership contract: containers outlive the worker process.
+   *
+   * Agent runtime containers are intentionally NOT killed on worker shutdown.
+   * They continue running independently and reconnect to the next worker via
+   * the heartbeat recovery path in `handleHeartbeat`. This allows the worker
+   * to be redeployed, restarted, or crash without interrupting live agents.
+   *
+   * To explicitly stop a specific agent's container, call `stopSession()`.
+   * `AgentRuntimeLauncher.stopAll()` exists only for tests and emergency teardowns.
+   */
   async stop(): Promise<void> {
     this.stopping = true;
     if (this.reconcileTimer) {
       clearInterval(this.reconcileTimer);
       this.reconcileTimer = undefined;
     }
-
-    await this.runtimeLauncher.stopAll();
+    // Deliberately NOT calling runtimeLauncher.stopAll() — containers outlive the worker.
   }
 
   /** Start a new agent runtime session */
@@ -147,8 +179,13 @@ export class AgentSessionManager {
     }
 
 
-      // Also bootstrap if the session is already 'running' in the DB but the launcher has no
-      // in-memory handle — this happens when the worker restarts while a runtime was live.
+      // Bootstrap recovery covers two cases:
+      // 1. Normal startup: session is starting/launching/unhealthy and needs to become running.
+      // 2. Worker restart recovery: session is already 'running' in the DB but this worker has
+      //    no in-memory handle for it. Because containers outlive the worker (they are NOT
+      //    killed on shutdown), a restarted worker will see heartbeats from containers it did
+      //    not launch itself. Re-bootstrapping the reconnect handler here re-establishes the
+      //    live trading context (bots, positions, market subscriptions) for the recovered runtime.
       const shouldBootstrapRecovery = session.status === 'starting' || session.status === 'launching' || session.status === 'unhealthy'
         || (session.status === 'running' && !this.runtimeLauncher.hasRuntime(payload.sessionId));
 
@@ -171,6 +208,10 @@ export class AgentSessionManager {
 
     if (shouldBootstrapRecovery) {
       await this.agentRepo.updateAgent(session.agentId, { status: 'active' });
+      // Re-register the runtime handle so that stop() and health-monitor cleanup
+      // can find this container on the new worker after a restart. Without this,
+      // runtimeLauncher.stop(sessionId) is a no-op and the container escapes control.
+      this.runtimeLauncher.registerRecoveredRuntime(session.agentId, payload.sessionId);
     }
 
     // First successful connect and unhealthy recovery both bootstrap the runtime

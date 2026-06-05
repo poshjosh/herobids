@@ -15,6 +15,8 @@ describe('AgentSessionManager', () => {
       updateAgent: vi.fn().mockResolvedValue(undefined),
       getSessionForAgentAndInstance: vi.fn().mockResolvedValue(null),
       retireActiveSessions: vi.fn().mockResolvedValue(undefined),
+      getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', prompt: 'Test agent', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null }),
+      getSessionsByStatuses: vi.fn().mockResolvedValue([]),
     };
 
     const runtimeLauncher = {
@@ -22,6 +24,7 @@ describe('AgentSessionManager', () => {
       stop: vi.fn().mockResolvedValue(undefined),
       stopAll: vi.fn().mockResolvedValue(undefined),
       hasRuntime: vi.fn().mockReturnValue(false),
+      registerRecoveredRuntime: vi.fn(),
     };
 
     const reconnectHandler = {
@@ -51,8 +54,8 @@ describe('AgentSessionManager', () => {
 
     expect(agentRepo.claimStartingSession).toHaveBeenCalledTimes(2);
     expect(runtimeLauncher.launch).toHaveBeenCalledTimes(2);
-    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1', agentId: 'agent-1', tradingInstanceId: 'inst-1' }));
-    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-2', agentId: 'agent-2', tradingInstanceId: 'inst-2' }));
+    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1', agentId: 'agent-1' }));
+    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-2', agentId: 'agent-2' }));
   });
 
   it('skips a session whose claim fails (another worker already claimed it)', async () => {
@@ -114,7 +117,7 @@ describe('AgentSessionManager', () => {
 
     expect(agentRepo.markSessionRunning).toHaveBeenCalledWith('sess-1', expect.any(Date));
     expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'active' });
-    expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1', 'inst-1');
+    expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1');
   });
 
   it('stops the launcher handle when a session stops', async () => {
@@ -149,15 +152,13 @@ describe('AgentSessionManager', () => {
     expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'stopped' });
   });
 
-  it('ignores heartbeats from a revoked link', async () => {
+  it('ignores heartbeats for sessions in a terminal state', async () => {
     const { manager, agentRepo } = buildManager();
     (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'sess-1',
       agentId: 'agent-1',
-      tradingInstanceId: 'inst-1',
-      status: 'starting',
+      status: 'stopped',
     });
-    (agentRepo.getActiveLink as ReturnType<typeof vi.fn>).mockResolvedValue({ tradingInstanceId: 'other-inst' });
 
     await manager.handleHeartbeat(
       {
@@ -166,9 +167,8 @@ describe('AgentSessionManager', () => {
         correlationId: 'corr-2',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
         type: 'agent.runtime.heartbeat',
-        createdAt: '2026-06-03T00:00:00.000Z',
+        createdAt: '2026-06-06T00:00:00.000Z',
         payload: {},
       },
       {
@@ -211,6 +211,7 @@ describe('AgentSessionManager', () => {
 
     expect(agentRepo.markSessionRunning).toHaveBeenCalledWith('sess-1', expect.any(Date));
     expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'active' });
-    expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1', 'inst-1');
+    expect(runtimeLauncher.registerRecoveredRuntime).toHaveBeenCalledWith('agent-1', 'sess-1');
+    expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1');
   });
 });

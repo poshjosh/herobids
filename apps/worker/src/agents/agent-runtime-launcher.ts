@@ -209,7 +209,20 @@ export class AgentRuntimeLauncher {
     logger.info({ sessionId, containerId: handle.containerId }, 'Agent runtime stopped');
   }
 
-  /** Stop all tracked runtimes. */
+  /**
+   * Stop all in-memory tracked runtimes.
+   *
+   * **Do NOT call this on normal worker shutdown.** Agent containers are designed
+   * to outlive the worker process and reconnect to the next worker via heartbeats.
+   * Killing them on shutdown would interrupt live agents during routine restarts.
+   *
+   * This method exists for:
+   * - Tests that need a clean-room teardown.
+   * - Emergency/manual teardowns where all containers must be forcibly stopped.
+   *
+   * For stopping a specific agent's runtime, use `stop(sessionId)` or
+   * `AgentSessionManager.stopSession(sessionId)`.
+   */
   async stopAll(): Promise<void> {
     for (const sessionId of [...this.runtimes.keys()]) {
       await this.stop(sessionId);
@@ -247,6 +260,31 @@ export class AgentRuntimeLauncher {
   /** Check if a runtime is tracked. */
   hasRuntime(sessionId: string): boolean {
     return this.runtimes.has(sessionId);
+  }
+
+  /**
+   * Register a handle for a runtime that survived a worker restart.
+   *
+   * After a graceful worker shutdown, containers keep running and reconnect to
+   * the next worker via heartbeats. When the first heartbeat arrives for a
+   * session with no in-memory handle, `AgentSessionManager` calls this method
+   * to re-establish tracking so that subsequent `stop()` and health-monitor
+   * cleanup calls can reach the live container.
+   *
+   * The real Docker `containerId` is not available from the heartbeat payload;
+   * a placeholder is used because `dockerManager.stop()` works by `agentId`,
+   * not by container ID.
+   */
+  registerRecoveredRuntime(agentId: string, sessionId: string): void {
+    if (this.runtimes.has(sessionId)) return; // already tracked
+    const handle: RuntimeHandle = {
+      containerId: `recovered-${sessionId}`,
+      agentId,
+      sessionId,
+      startedAt: new Date().toISOString(),
+    };
+    this.runtimes.set(sessionId, handle);
+    logger.info({ sessionId, agentId }, 'Registered recovered runtime handle (container survived worker restart)');
   }
 
   /** Get all active runtime handles */

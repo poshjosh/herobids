@@ -712,12 +712,18 @@ await alertDispatcher.start();
 // Register graceful shutdown handlers after all services are fully initialized.
 // Placing them here guarantees no temporal-dead-zone reference errors if a
 // signal arrives during the async startup above.
+//
+// ## Agent container lifetime on shutdown
+// sessionManager.stop() stops the reconciliation loop only — it does NOT kill
+// agent containers. Containers are designed to outlive the worker process so that
+// a routine redeploy or crash does not interrupt live agents. The next worker
+// instance picks them up via the heartbeat recovery path in AgentSessionManager.
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
-  await sessionManager.stop();
+  await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await runtime.shutdown();
@@ -732,7 +738,7 @@ process.on('SIGINT', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
-  await sessionManager.stop();
+  await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
   await runtime.shutdown();
