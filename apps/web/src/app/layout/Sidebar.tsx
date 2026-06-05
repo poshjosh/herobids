@@ -16,7 +16,7 @@ const MANAGE_ITEMS = [
   { path: '/settings', label: 'Settings', icon: '⊙' },
 ];
 
-export function Sidebar() {
+export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const location = useLocation();
   const { user, logout } = useSession();
 
@@ -24,43 +24,55 @@ export function Sidebar() {
 
   return (
     <nav
-      style={{
-        width: '216px',
-        flexShrink: 0,
-        background: 'var(--color-surface-1)',
-        borderRight: '1px solid var(--color-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        overflowY: 'auto',
-      }}
+      className={`layout-sidebar${open ? ' sidebar-open' : ''}`}
     >
       {/* Brand */}
       <div
         style={{
           padding: '20px 16px 16px',
           borderBottom: '1px solid var(--color-border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
         }}
       >
         <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-brand)', letterSpacing: '-0.3px' }}>
           Herobids
         </div>
+        {onClose && (
+          // Only meaningful on mobile where the sidebar is an overlay.
+          // Hidden on desktop via .sidebar-close-btn (display:none at ≥769px).
+          <button
+            onClick={onClose}
+            aria-label="Close navigation"
+            className="sidebar-close-btn"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-muted)',
+              cursor: 'pointer',
+              fontSize: '18px',
+              lineHeight: 1,
+              padding: '2px 4px',
+            }}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Primary nav */}
       <div style={{ padding: '12px 8px 8px', flex: 1 }}>
         <NavGroup>
           {NAV_ITEMS.map((item) => (
-            <NavItem key={item.path} {...item} active={isActive(item.path)} />
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>
 
         <SectionLabel>Manage</SectionLabel>
         <NavGroup>
           {MANAGE_ITEMS.map((item) => (
-            <NavItem key={item.path} {...item} active={isActive(item.path)} />
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>
       </div>
@@ -166,10 +178,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function NavItem({ path, label, icon, active }: { path: string; label: string; icon: string; active: boolean }) {
+function NavItem({ path, label, icon, active, onNavigate }: { path: string; label: string; icon: string; active: boolean; onNavigate?: () => void }) {
   return (
     <Link
       to={path}
+      onClick={onNavigate}
       style={{
         display: 'flex',
         alignItems: 'center',

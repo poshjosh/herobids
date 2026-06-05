@@ -8,11 +8,8 @@ import type { CSSProperties, ReactNode } from 'react';
 export function PageShell({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
     <div
-      style={{
-        padding: '28px 32px',
-        maxWidth: '1200px',
-        ...style,
-      }}
+      className="page-shell-responsive"
+      style={style}
     >
       {children}
     </div>
@@ -21,7 +18,7 @@ export function PageShell({ children, style }: { children: ReactNode; style?: CS
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '28px' }}>
+    <div className="page-header-responsive">
       <div>
         <h1 style={{ margin: 0, fontSize: '22px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
           {title}

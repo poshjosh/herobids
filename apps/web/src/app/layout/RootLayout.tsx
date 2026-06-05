@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Outlet, Navigate } from 'react-router';
 import { useSession } from '../providers/SessionProvider.js';
 import { Sidebar } from './Sidebar.js';
 
 export function RootLayout() {
   const { authenticated, loading } = useSession();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -26,11 +28,34 @@ export function RootLayout() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-surface-0)' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
-        <Outlet />
-      </main>
+    <div className="layout-root">
+      {/* Backdrop — closes sidebar on mobile when tapping outside */}
+      <div
+        className={`layout-backdrop${sidebarOpen ? ' backdrop-open' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      <div className="layout-main" style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Mobile top bar with hamburger */}
+        <div className="layout-topbar">
+          <button
+            className="layout-hamburger"
+            aria-label="Open navigation"
+            onClick={() => setSidebarOpen(true)}
+          >
+            ☰
+          </button>
+          <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--color-brand)' }}>
+            Herobids
+          </span>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <Outlet />
+        </div>
+      </div>
     </div>
   );
 }

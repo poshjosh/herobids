@@ -42,7 +42,17 @@ class CredentialResolutionError extends Error {
   }
 }
 
-const logger = pino({ name: 'herobids-worker' });
+const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';
+const logger = pino(
+  isPrettyLog
+    ? {
+        transport: {
+          target: 'pino-pretty',
+          options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
+        },
+      }
+    : { name: 'herobids-worker' },
+);
 
 // Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides
 const appConfig = loadConfig();

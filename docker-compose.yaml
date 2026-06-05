@@ -45,12 +45,23 @@ services:
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
+      # PORT must stay in sync with the healthcheck below and app.port in config/default.yaml.
+      # Changing app.port without updating PORT here will leave the container permanently unhealthy.
+      PORT: '3000'
       # Dev-only defaults — override via .env or environment in production.
       AUTH_JWT_SECRET: docker-local-dev-secret-change-in-production!!
       AUTH_PUBLIC_BASE_URL: http://localhost:3000
       AUTH_FRONTEND_ORIGIN: http://localhost:5173
       # Dev-only default — override with a real 64-hex-char key in production.
       CREDENTIAL_ENCRYPTION_KEY: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+    healthcheck:
+      # Uses $${PORT:-3000} (double-$ so Compose does NOT expand it at parse time;
+      # the container shell resolves ${PORT:-3000} at runtime against the PORT env
+      # var set above, keeping the probe aligned with what the app actually binds to).
+      test: ['CMD-SHELL', 'node -e "fetch(\"http://localhost:$${PORT:-3000}/health\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -105,7 +116,8 @@ services:
     ports:
       - '5173:80'
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

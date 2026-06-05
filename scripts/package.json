@@ -6,9 +6,13 @@
   "scripts": {
     "fund-hyperliquid": "tsx ts/fund-hyperliquid.ts",
     "fund-hyperliquid:dry": "tsx ts/fund-hyperliquid.ts --dry-run",
-    "smoke-test": "tsx ts/rollout-smoke-test.ts"
+    "smoke-test": "tsx ts/rollout-smoke-test.ts",
+    "seed-admin": "tsx ts/seed-admin.ts",
+    "rate-limit-load-test": "tsx ts/rate-limit-load-test.ts"
   },
   "dependencies": {
+    "@herobids/db": "workspace:*",
+    "@herobids/domain": "workspace:*",
     "viem": "^2.28.0"
   },
   "devDependencies": {

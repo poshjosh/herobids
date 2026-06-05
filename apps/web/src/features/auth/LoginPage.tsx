@@ -48,19 +48,7 @@ export function LoginPage() {
         padding: '24px',
       }}
     >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '400px',
-          background: 'var(--color-surface-1)',
-          border: '1px solid var(--color-border)',
-          borderRadius: '12px',
-          padding: '40px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '32px',
-        }}
-      >
+      <div className="auth-card">
         {/* Brand */}
         <div style={{ textAlign: 'center' }}>
           <div

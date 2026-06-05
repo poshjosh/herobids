@@ -20,7 +20,17 @@ import type { LifecycleJob, BacktestJob } from './types.js';
 
 const appConfig = loadConfig();
 
-const app = Fastify({ logger: true });
+const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';
+const app = Fastify({
+  logger: isPrettyLog
+    ? {
+        transport: {
+          target: 'pino-pretty',
+          options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
+        },
+      }
+    : true,
+});
 
 const parsedRedisUrl = new URL(appConfig.redis.url);
 const redisConnection = {
