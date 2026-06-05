@@ -1,7 +1,7 @@
 # Plan 2: Real Agent Runtime
 
 **Phase:** 2
-**Status:** `not started`
+**Status:** `in progress`
 **Depends on:** [Phase 1 — Foundation Cleanup](./001-plan-foundation-cleanup.md)
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 
@@ -9,19 +9,19 @@
 
 | Step | Description | Status |
 |---|---|---|
-| 2.1 | `docker-socket-proxy` added to docker-compose.yaml | `not started` |
-| 2.2 | `Dockerfile.agent` created and builds successfully | `not started` |
-| 2.3 | `scripts/sandbox-exec.sh` ported from aitradingbot | `not started` |
-| 2.4 | `DockerAgentManager` implemented (start/stop/reconcile/crash) | `not started` |
-| 2.5 | Stub launcher replaced with `DockerAgentManager` | `not started` |
-| 2.6 | `CapabilityPolicyEngine` on production path | `not started` |
-| 2.7 | Sandbox enforcement on code execution | `not started` |
-| 2.8 | Docker event stream + crash → safety alert | `not started` |
-| 2.9 | `packages/llm/` extracted; Anthropic native support added | `not started` |
-| 2.10 | Agent entry point `apps/worker/src/agent.ts` created | `not started` |
-| 2.11 | Agent reasoning loop ported from aitradingbot | `not started` |
-| 2.12 | Skill system ported and wired to skill presets | `not started` |
-| 2.13 | `pnpm lint` passes, all tests pass | `not started` |
+| 2.1 | `docker-socket-proxy` added to docker-compose.yaml | `done` |
+| 2.2 | `Dockerfile.agent` created and builds successfully | `done` — `docker/Dockerfile.agent` exists |
+| 2.3 | `scripts/sandbox-exec.sh` ported from aitradingbot | `done` — `scripts/sandbox-exec.sh` exists |
+| 2.4 | `DockerAgentManager` implemented (start/stop/reconcile/crash) | `done` — `apps/worker/src/agents/docker-agent-manager.ts` |
+| 2.5 | Stub launcher replaced with `DockerAgentManager` | `partial` — `AGENT_RUNTIME_MODE` env var routes to Docker; BUT defaults to `'stub'`; `docker-compose.yaml` does not set `AGENT_RUNTIME_MODE=docker`, so production still uses stub |
+| 2.6 | `CapabilityPolicyEngine` on production path | `done` — instantiated per-agent in `agent-message-broker.ts` |
+| 2.7 | Sandbox enforcement on code execution | `partial` — `SandboxEnforcer` and `sandbox-exec.sh` exist; `SandboxEnforcer` is not imported or called in `agent-message-broker.ts` on the `code_execute` path |
+| 2.8 | Docker event stream + crash → safety alert | `done` — `DockerAgentManager` subscribes to event stream; `onContainerDie` updates DB status and fires `runtime_failed` alert |
+| 2.9 | `packages/llm/` extracted; Anthropic native support added | `done` — `packages/llm/src/llm-provider.ts` with Anthropic support |
+| 2.10 | Agent entry point `apps/worker/src/agent.ts` created | `done` — 580 lines; reads env, connects Redis Streams, runs reasoning loop |
+| 2.11 | Agent reasoning loop ported from aitradingbot | `done` — tick-based loop in `agent.ts`; builds prompt context, calls LLM, dispatches tool calls |
+| 2.12 | Skill system ported and wired to skill presets | `done` — skill constants (`BASE_SKILL`, `BOT_MANAGEMENT_SKILL`, `RISK_MONITORING_SKILL`) in domain; imported in `agent.ts` |
+| 2.13 | `pnpm lint` passes, all tests pass | `done` |
 
 ## Goal
 
@@ -234,3 +234,4 @@ Append-only. Record decisions made or changed during implementation, with date a
 | 2026-06-04 | No `BOT_ID` injected at agent container launch | Agents create their own bots; the agent is not bound to a single bot at launch |
 | 2026-06-04 | Add native Anthropic support; remove from `INCOMPATIBLE_PROVIDERS` | Claude is the best agent reasoning model; current OpenAI-only restriction is arbitrary |
 | 2026-06-04 | Extract `callLlmProvider` to `packages/llm/` | Both strategy backtesting and agent runtime need it; shared package avoids duplication |
+| 2026-06-05 | Catch-up audit: steps 2.1–2.4, 2.6–2.13 marked done/partial; 2.5 partial (AGENT_RUNTIME_MODE defaults to 'stub'); 2.7 partial (SandboxEnforcer not on code_execute path) | Plan was not updated during implementation; audit performed retroactively |

@@ -17,34 +17,42 @@ This is the canonical high-level roadmap for herobids from its current state to 
 
 | Phase | Status | Notes |
 |---|---|---|
-| Phase 1 — Foundation Cleanup | `not started` | Next up. Start with DB schema review. |
-| Phase 2 — Real Agent Runtime | `not started` | Blocked on Phase 1 |
-| Phase 3 — Agent-First Experience | `not started` | Blocked on Phase 1 + 2 |
-| Phase 4 — Platform Hardening | `not started` | Blocked on Phase 1 + 2 |
+| Phase 1 — Foundation Cleanup | `in progress` | Most done. Remaining: rename residue in domain/API/web, safety alert gaps, delete UI, /bots page. See [006-remaining-work.md](./006-remaining-work.md). |
+| Phase 2 — Real Agent Runtime | `in progress` | Mostly done. Remaining: AGENT_RUNTIME_MODE defaults to 'stub' in docker-compose, SandboxEnforcer not on code_execute path. See [006-remaining-work.md](./006-remaining-work.md). |
+| Phase 3 — Agent-First Experience | `in progress` | 3.1–3.3 and 3.6 done. 3.4 partial. 3.7–3.8 blocked on /bots page (Phase 1 gap). |
+| Phase 4 — Platform Hardening | `done` | Completed 2026-06-05. All steps done. |
 
 ---
 
 ## Current State (2026-06-05)
 
-A large portion of the MVP surface is implemented:
+Implementation ran significantly ahead of the plan docs without the plan docs being updated. After a catch-up audit on 2026-06-05, the actual state is:
 
-- Auth and per-user ownership
-- Agent CRUD, linking, runtime sessions, message ledger, and artifact metadata
+**Done across Phases 1–4:**
+- DB schema fully aligned: `bots` table (with `creatorType`/`creatorId`), `user_credentials`, `agent_credentials`, `skills` tables, no `trading_instances` or `agent_instance_links` in migrations
+- Agent CRUD, runtime sessions, message ledger, artifact metadata
 - Redis Streams agent protocol transport
-- Engine-owned decision intake reuse
-- Minimal agent UI: create, inspect, start, pause, resume, sessions, activity, artifacts
-- Outbound Telegram alerting infrastructure
+- `DockerAgentManager` implemented (start/stop/reconcile/crash detection, event stream)
+- `docker-socket-proxy` in docker-compose
+- `Dockerfile.agent` and `scripts/sandbox-exec.sh` exist
+- `CapabilityPolicyEngine` on production path in `agent-message-broker.ts`
+- `manage_bot` and `send_message` in `DEFAULT_CAPABILITY_GRANTS` and broker
+- `packages/llm/` extracted; `packages/strategy` uses it; `apps/worker/src/agent.ts` (580 lines) has the full reasoning loop
+- Skill presets (`trading`, `reminder`, `custom`) in domain, API, and web UI
+- Decisions card, Objective card in `AgentDetailPage`
+- Venue `probe()` on both Hyperliquid and Jupiter adapters
+- Venue auto-detection at credential registration (`accounts.ts`)
+- `create_bot` brokered tool implemented in `agent-message-broker.ts` (via `MANAGE_BOT` create action)
+- Full docker-compose stack, dev overrides, pino-pretty, seed script, functional/integration/E2E tests, responsive layout
 
-**What is not yet done** (from the preliminary report and this session's analysis):
-
-1. Agent runtime is a stub — no real container is launched
-2. Relink and delete missing from the UI
-3. Safety alerts only partially wired
-4. Capability and sandbox policy not enforced on production path
-5. Agent presets are trading strategy presets (wrong layer — belong on bots, not agents)
-6. `trading_instances` conceptually conflates config/spec with runtime/operational state
-7. Domain naming is inconsistent with the agreed model (`bot`, `blueprint`)
-8. UI exposes technical venue details that contradict the "no expertise required" vision
+**Still open (details in [006-remaining-work.md](./006-remaining-work.md)):**
+- Rename residue: `TradingInstanceId`/`TradingInstanceConfig*` in domain; `instances.ts` API route not renamed to `bots.ts`; no `/bots` web page
+- Safety alerts: `paused_by_guardrail` and `critical_execution_failure` not fired in `agent-session-manager.ts`
+- Delete control not wired in `AgentDetailPage`
+- `AGENT_RUNTIME_MODE` defaults to `'stub'` — docker-compose.yaml does not set it to `'docker'`
+- `SandboxEnforcer` not called on the `code_execute` production path in the broker
+- Goal-driven create flow is single-step (no 2-step intent + review)
+- `/bots` page and strategy preset UI not built
 
 ---
 

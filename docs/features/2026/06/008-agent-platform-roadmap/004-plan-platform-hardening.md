@@ -1,7 +1,7 @@
 # Plan 4: Platform Hardening
 
 **Phase:** 4
-**Status:** `not started`
+**Status:** `done`
 **Depends on:** [Phase 1 — Foundation Cleanup](./001-plan-foundation-cleanup.md), [Phase 2 — Real Agent Runtime](./002-plan-real-agent-runtime.md)
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 
@@ -9,16 +9,16 @@
 
 | Step | Description | Status |
 |---|---|---|
-| 4.1 | Full docker-compose stack (all services) | `not started` |
-| 4.2 | `docker-compose.dev.yaml` hot-reload overrides | `not started` |
-| 4.3 | First admin user seeding | `not started` |
-| 4.4 | Functional API tests (agents, bots, decisions, send_message) | `not started` |
-| 4.5 | Worker integration tests (session lifecycle) | `not started` |
-| 4.6 | E2e user-acceptance tests (6 key journeys) | `not started` |
-| 4.7 | Rate limiting load test script + report template | `not started` |
-| 4.8 | Dev pretty logs / prod JSON logs | `not started` |
-| 4.9 | Responsive layout (agents page, agent detail, bots page, auth) | `not started` |
-| 4.10 | `pnpm lint` passes, all tests pass in CI | `not started` |
+| 4.1 | Full docker-compose stack (all services) | `done` — api, worker, web, postgres, redis, docker-proxy, migrate, nginx all wired |
+| 4.2 | `docker-compose.dev.yaml` hot-reload overrides | `done` — bind mounts, tsx/vite dev, LOG_FORMAT=pretty |
+| 4.3 | First admin user seeding | `done` — `scripts/ts/seed-admin.ts`; ADMIN_EMAIL + ADMIN_PASSWORD + optional ADMIN_PLAN_ID |
+| 4.4 | Functional API tests (agents, bots, decisions, send_message) | `done` — `apps/api/src/__tests__/functional/` |
+| 4.5 | Worker integration tests (session lifecycle) | `done` — `apps/worker/src/__tests__/integration/` |
+| 4.6 | E2e user-acceptance tests (6 key journeys) | `done` — `tests/e2e/journeys/01–06` with Playwright |
+| 4.7 | Rate limiting load test script + report template | `done` — `scripts/ts/rate-limit-load-test.ts` |
+| 4.8 | Dev pretty logs / prod JSON logs | `done` — pino-pretty via LOG_FORMAT=pretty or NODE_ENV=development |
+| 4.9 | Responsive layout (agents page, agent detail, bots page, auth) | `done` — `.layout-root`, mobile sidebar, auth-card, page-shell-responsive |
+| 4.10 | `pnpm lint` passes, all tests pass in CI | `done` |
 
 ## Goal
 

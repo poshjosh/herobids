@@ -1,7 +1,7 @@
 # Plan 1: Foundation Cleanup
 
 **Phase:** 1
-**Status:** `not started`
+**Status:** `in progress`
 **Depends on:** Nothing — this is the baseline.
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 
@@ -10,18 +10,18 @@
 | Step | Description | Status |
 |---|---|---|
 | 1.1 | DB schema designed and reviewed | `done` |
-| 1.2 | Drizzle migrations wiped and regenerated | `not started` |
-| 1.3 | Rename propagated: domain types, DB, worker, API | `not started` |
-| 1.4 | Agent create form fields: API + UI | `not started` |
-| 1.5 | Agent skill presets replace strategy presets | `not started` |
-| 1.6 | Strategy presets added to bot create | `not started` |
-| 1.7 | Agent lifecycle authority: `manage_bot` capability | `not started` |
-| 1.8 | `send_message` in capability grants + broker policy | `not started` |
-| 1.9 | Safety alert wiring completed | `not started` |
-| 1.10 | Decisions card + Objective card in AgentDetailPage | `not started` |
-| 1.11 | Delete control wired in AgentDetailPage | `not started` |
-| 1.12 | `/bots` page renamed + UI naming fixed | `not started` |
-| 1.13 | `pnpm lint` passes, all tests pass | `not started` |
+| 1.2 | Drizzle migrations wiped and regenerated | `done` — `bots`, `user_credentials`, `agent_credentials`, `skills` in migrations; no `trading_instances` |
+| 1.3 | Rename propagated: domain types, DB, worker, API | `partial` — DB done; `TradingInstanceId`/`TradingInstanceConfig*` still in `packages/domain/src/`; `instances.ts` route not renamed to `bots.ts`; `/instances` → `/bots` web rename not done |
+| 1.4 | Agent create form fields: API + UI | `done` — `name`, `prompt`, `skillPreset`, `telegramChatId` collected |
+| 1.5 | Agent skill presets replace strategy presets | `done` — `trading` / `reminder` / `custom` presets in domain, API, and UI |
+| 1.6 | Strategy presets added to bot create | `not done` — no `/bots` route or web page exists yet |
+| 1.7 | Agent lifecycle authority: `manage_bot` capability | `done` — in `capability-policy.ts` and `agent-message-broker.ts` |
+| 1.8 | `send_message` in capability grants + broker policy | `done` — registered, rate-limited, persisted `toolPolicy` respected |
+| 1.9 | Safety alert wiring completed | `partial` — `runtime_failed` and `runtime_unhealthy` fire; `paused_by_guardrail` and `critical_execution_failure` not wired in `agent-session-manager.ts` |
+| 1.10 | Decisions card + Objective card in AgentDetailPage | `done` |
+| 1.11 | Delete control wired in AgentDetailPage | `not done` — delete API endpoint exists; UI button not wired |
+| 1.12 | `/bots` page renamed + UI naming fixed | `not done` — `/instances` page and `instances.ts` route still exist; no `/bots` web feature |
+| 1.13 | `pnpm lint` passes, all tests pass | `done` |
 
 ## Goal
 
@@ -381,3 +381,4 @@ Append-only. Record decisions made or changed during implementation, with date a
 | 2026-06-05 | `credentials` renamed to `user_credentials` (Q20) | Makes ownership model explicit alongside `agent_credentials`; removes ambiguity about which table is which |
 | 2026-06-05 | `agents.preset` → `skillIds text[]`; preset concept lives only in UI (Q5) | Skills are composable; preset is a UI convenience; storing a preset string in DB prevents composition |
 | 2026-06-05 | `skills` and `agent_credentials` tables created in Phase 1 (Q12) | Phase 2 runtime reads them at tick time; they must exist before any agent runtime code lands |
+| 2026-06-05 | Catch-up audit: steps 1.2–1.10, 1.13 marked done/partial after discovering implementation ran ahead of plan | Plan was not updated during implementation; audit performed retroactively per `000a-how-to-implement.md` Catch-up Audit procedure |

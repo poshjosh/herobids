@@ -41,6 +41,41 @@ Each plan file has the same structure:
 
 ---
 
+## Session Start Ritual
+
+**Every session that touches this codebase must begin here, before any code changes.**
+
+1. Open `000-roadmap.md`. Read the Overall Status table.
+2. Open the plan file for the phase you are about to work on.
+3. Read the Progress table. Compare each `done` step against the actual code — spot-check at least one file mentioned in the step description.
+4. If the plan says `not started` but the code is already implemented, run the **Catch-up Audit** below before touching anything.
+5. If the plan is accurate, proceed to the Workflow section.
+
+This ritual costs two minutes. Skipping it is how the plan and the code diverge.
+
+---
+
+## Catch-up Audit (For When Implementation Ran Ahead)
+
+When you discover that code was written without updating the plan:
+
+1. **Do not update the plan while also writing new code.** Stop the current work.
+2. For each step in the Progress table, verify the code state:
+   - Open the primary file(s) the step describes.
+   - Determine: `done`, `partial`, or `not started`.
+3. Mark each step with its true status. Add a row to the Decision Log:
+   ```
+   | YYYY-MM-DD | Catch-up audit: marked steps N.x–N.y done/partial after discovering code ran ahead of plan. | Plan was not updated during implementation. |
+   ```
+4. For `partial` steps, note in the Decision Log exactly what is done and what is missing. Add a sub-step if needed:
+   ```
+   | N.3a | <specific remaining piece> | not started |
+   ```
+5. Create (or update) the remaining-work document to describe the open items precisely, including file paths and what exactly needs to change.
+6. Only then resume implementing.
+
+---
+
 ## Workflow
 
 ### Before starting a phase

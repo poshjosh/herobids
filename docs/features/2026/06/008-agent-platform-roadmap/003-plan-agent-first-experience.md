@@ -1,7 +1,7 @@
 # Plan 3: Agent-First Experience
 
 **Phase:** 3
-**Status:** `not started`
+**Status:** `in progress`
 **Depends on:** [Phase 1 — Foundation Cleanup](./001-plan-foundation-cleanup.md), [Phase 2 — Real Agent Runtime](./002-plan-real-agent-runtime.md)
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 
@@ -9,15 +9,15 @@
 
 | Step | Description | Status |
 |---|---|---|
-| 3.1 | Venue adapters expose `probe(credential)` | `not started` |
-| 3.2 | Venue auto-detection at credential registration | `not started` |
-| 3.3 | `create_bot` brokered tool implemented | `not started` |
-| 3.4 | Goal-driven agent create flow (intent + review steps) | `not started` |
-| 3.5 | Progress context injected into agent prompt each tick | `not started` |
-| 3.6 | Skill preset UI on agent create | `not started` |
-| 3.7 | Strategy preset UI on bot create | `not started` |
-| 3.8 | No free-text symbol entry in default bot create | `not started` |
-| 3.9 | `pnpm lint` passes, all tests pass | `not started` |
+| 3.1 | Venue adapters expose `probe(credential)` | `done` — `HyperliquidAdapter.probe()` and `JupiterSwapAdapter.probe()` both exist |
+| 3.2 | Venue auto-detection at credential registration | `done` — `accounts.ts` calls `probe()` on registration; result stored as `venueProfile` on `venue_accounts` |
+| 3.3 | `create_bot` brokered tool implemented | `done` — `MANAGE_BOT` message type with `create` action in `agent-message-broker.ts` |
+| 3.4 | Goal-driven agent create flow (intent + review steps) | `partial` — form collects prompt + skill preset; no 2-step intent → review flow |
+| 3.5 | Progress context injected into agent prompt each tick | `partial` — needs verification; agent.ts builds prompt context but P&L / performance score injection unclear |
+| 3.6 | Skill preset UI on agent create | `done` — `SKILL_PRESETS` rendered in `AgentsPage.tsx` create form |
+| 3.7 | Strategy preset UI on bot create | `not done` — blocked on Phase 1 gap (no `/bots` page) |
+| 3.8 | No free-text symbol entry in default bot create | `not done` — blocked on Phase 1 gap (no `/bots` page) |
+| 3.9 | `pnpm lint` passes, all tests pass | `done` |
 
 ## Goal
 
@@ -171,5 +171,6 @@ Append-only. Record decisions made or changed during implementation, with date a
 
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-06-05 | Catch-up audit: steps 3.1–3.3 and 3.6 marked done; 3.4 and 3.5 partial; 3.7–3.8 not done (blocked on Phase 1 /bots page) | Plan was not updated during implementation; audit performed retroactively |
 | 2026-06-04 | Agents create and start bots autonomously — no user confirmation gate | Agent mode purity: agents have full lifecycle authority over their own bots |
 | 2026-06-04 | Agent infers venue from prompt/credentials; asks via send_message if ambiguous | Users should never need to know symbol formats or venue types |
