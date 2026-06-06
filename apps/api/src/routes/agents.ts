@@ -29,12 +29,13 @@ const UpdateAgentSchema = z.object({
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
-  telegramChatId: z.string().optional(),
-  executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
-  dailyTokenBudget: z.number().int().min(1).optional(),
-  dailyLossLimit: z.string().optional(),
-  maxBots: z.number().int().min(1).optional(),
-  maxSlippageBps: z.number().int().min(0).optional(),
+  telegramChatId: z.string().nullable().optional(),
+  // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
+  executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
+  dailyTokenBudget: z.number().int().min(1).nullable().optional(),
+  dailyLossLimit: z.string().nullable().optional(),
+  maxBots: z.number().int().min(1).nullable().optional(),
+  maxSlippageBps: z.number().int().min(0).nullable().optional(),
 });
 
 const PauseAgentSchema = z.object({
@@ -138,6 +139,16 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) {
       return reply.status(404).send({ error: 'not_found' });
+    }
+
+    // Config changes are only safe when the agent is not running.
+    // Mutating prompt, skills, or limits while a session is active would produce
+    // inconsistent behaviour — the running process has already loaded its config.
+    if (!['stopped', 'crashed'].includes(agent.status)) {
+      return reply.status(409).send({
+        error: 'agent_not_editable',
+        message: `Agent config can only be updated when stopped or crashed (current status: ${agent.status}).`,
+      });
     }
 
     // Re-derive toolPolicy from the effective skillIds — same logic as the create path —

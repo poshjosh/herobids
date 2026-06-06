@@ -374,10 +374,17 @@ export interface Agent {
   userId: string;
   name: string;
   prompt: string;
+  skillIds: string[];
   status: string;
   pauseState: Record<string, unknown> | null;
   toolPolicy: Record<string, unknown> | null;
   modelPolicy: Record<string, unknown> | null;
+  telegramChatId: string | null;
+  executionMode: string | null;
+  dailyTokenBudget: number | null;
+  dailyLossLimit: string | null;
+  maxBots: number | null;
+  maxSlippageBps: number | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
@@ -422,7 +429,19 @@ export const agents = {
   get: (id: string) => request<Agent>(`/agents/${id}`),
   create: (data: { name: string; prompt: string; skillIds?: string[]; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: { name?: string; prompt?: string; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+  update: (id: string, data: {
+    name?: string;
+    prompt?: string;
+    skillIds?: string[];
+    toolPolicy?: Record<string, unknown>;
+    modelPolicy?: Record<string, unknown>;
+    telegramChatId?: string | null;
+    executionMode?: string | null;
+    dailyTokenBudget?: number | null;
+    dailyLossLimit?: string | null;
+    maxBots?: number | null;
+    maxSlippageBps?: number | null;
+  }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
   start: (id: string) =>

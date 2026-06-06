@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type AgentDecision } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
+import { EditAgentModal } from './EditAgentModal.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const [isEditing, setIsEditing] = useState(false);
 
   const query = useQuery({
     queryKey: ['agents', id],
@@ -106,6 +110,11 @@ export function AgentDetailPage() {
         subtitle={agent.prompt}
         action={
           <div style={{ display: 'flex', gap: '8px' }}>
+            {(agent.status === 'stopped' || agent.status === 'crashed') && (
+              <Button variant="secondary" onClick={() => setIsEditing(true)}>
+                Edit config
+              </Button>
+            )}
             {agent.status === 'stopped' && (
               <Button variant="primary" onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
                 {startMutation.isPending ? 'Starting...' : 'Start'}
@@ -142,6 +151,14 @@ export function AgentDetailPage() {
           </div>
         }
       />
+
+      {isEditing && (
+        <EditAgentModal
+          agentId={id!}
+          onClose={() => setIsEditing(false)}
+          initialData={agent}
+        />
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {runtimeAlert && <ErrorBanner message={runtimeAlert} />}
