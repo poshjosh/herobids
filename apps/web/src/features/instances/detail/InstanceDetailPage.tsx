@@ -36,7 +36,7 @@ export function InstanceDetailPage() {
 
   const journalQuery = useQuery({
     queryKey: ['journal', id, { limit: 30 }],
-    queryFn: () => journal.query({ tradingInstanceId: id!, limit: 30 }),
+    queryFn: () => journal.query({ actorId: id!, limit: 30 }),
     enabled: Boolean(id),
   });
 
@@ -88,8 +88,8 @@ export function InstanceDetailPage() {
   // Map journal events to activity event shape for timeline display
   const timelineEvents: ActivityEvent[] = (journalQuery.data?.events ?? []).map((ev) => ({
     id: ev.id,
-    tradingInstanceId: ev.tradingInstanceId,
-    instanceLabel: null,
+    botId: ev.actorId,
+    actorId: ev.actorId,
     type: ev.type,
     category: inferCategory(ev.type),
     severity: inferSeverity(ev.type),

@@ -105,7 +105,7 @@ function AgentOutcomeRow({ instance }: { instance: { id: string; status: string;
             </span>
             <StatusBadge status={instance.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{instance.venueLabel || instance.venue}</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{instance.venue}</div>
         </div>
 
         <div style={{ display: 'flex', gap: '28px' }}>

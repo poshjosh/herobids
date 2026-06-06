@@ -58,14 +58,6 @@ export function ActivityItem({ event, isLast = false }: ActivityItemProps) {
           {event.message}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-          {event.instanceLabel && (
-            <>
-              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                {event.instanceLabel}
-              </span>
-              <span style={{ color: 'var(--color-border)', fontSize: '11px' }}>·</span>
-            </>
-          )}
           <RelativeTime timestamp={event.timestamp} />
         </div>
       </div>

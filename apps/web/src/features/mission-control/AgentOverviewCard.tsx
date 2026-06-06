@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router';
-import type { InstanceSummary } from '../../lib/api-client.js';
+import type { BotSummary } from '../../lib/api-client.js';
 import { StatusBadge, RelativeTime, Card, KV } from '../../lib/ui.js';
 
 interface AgentOverviewCardProps {
-  instance: InstanceSummary;
+  instance: BotSummary;
 }
 
 export function AgentOverviewCard({ instance }: AgentOverviewCardProps) {
@@ -31,7 +31,7 @@ export function AgentOverviewCard({ instance }: AgentOverviewCardProps) {
             {instance.venue} · {instance.symbol || '—'}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-            {instance.strategyId}
+            {instance.venueLabel || ''}
           </div>
         </div>
         <StatusBadge status={instance.status} />

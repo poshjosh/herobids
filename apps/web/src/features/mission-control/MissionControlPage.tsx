@@ -20,7 +20,7 @@ export function MissionControlPage() {
   });
 
   const overview = overviewQuery.data;
-  const hasInstances = (overview?.instances.length ?? 0) > 0;
+  const hasInstances = (overview?.bots.length ?? 0) > 0;
 
   return (
     <PageShell>
@@ -28,7 +28,7 @@ export function MissionControlPage() {
         title="Mission Control"
         subtitle={
           overview
-            ? `${overview.summary.runningInstances} of ${overview.summary.totalInstances} agent${overview.summary.totalInstances !== 1 ? 's' : ''} running`
+            ? `${overview.summary.runningBots} of ${overview.summary.totalBots} agent${overview.summary.totalBots !== 1 ? 's' : ''} running`
             : undefined
         }
         action={
@@ -39,7 +39,7 @@ export function MissionControlPage() {
       />
 
       {/* Health strip */}
-      {overview && <HealthStrip instances={overview.instances} />}
+      {overview && <HealthStrip instances={overview.bots} />}
 
       {/* Summary metrics */}
       {overview && (
@@ -51,7 +51,7 @@ export function MissionControlPage() {
             marginBottom: '32px',
           }}
         >
-          <MetricCard label="Active agents" value={overview.summary.runningInstances} total={overview.summary.totalInstances} />
+          <MetricCard label="Active agents" value={overview.summary.runningBots} total={overview.summary.totalBots} />
           <MetricCard label="Open positions" value={overview.summary.totalOpenPositions} />
           <MetricCard label="Plan" value={overview.user.planId} />
         </div>
@@ -83,7 +83,7 @@ export function MissionControlPage() {
           )}
           {overviewQuery.isSuccess && hasInstances && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {overview!.instances.map((inst) => (
+              {overview!.bots.map((inst) => (
                 <AgentOverviewCard key={inst.id} instance={inst} />
               ))}
             </div>

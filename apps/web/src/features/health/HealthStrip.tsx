@@ -1,7 +1,7 @@
-import type { InstanceSummary } from '../../lib/api-client.js';
+import type { BotSummary } from '../../lib/api-client.js';
 
 interface HealthStripProps {
-  instances: InstanceSummary[];
+  instances: BotSummary[];
 }
 
 export function HealthStrip({ instances }: HealthStripProps) {

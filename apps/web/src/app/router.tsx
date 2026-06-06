@@ -7,7 +7,6 @@ import { ActivityFeedPage } from '../features/activity/ActivityFeedPage.js';
 import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
 import { ExposurePage } from '../features/exposure/ExposurePage.js';
 import { BotsPage } from '../features/bots/BotsPage.js';
-import { InstancesPage } from '../features/trading-instances/InstancesPage.js';
 import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailPage.js';
 import { CredentialsPage } from '../features/credentials/CredentialsPage.js';
 import { VenueAccountsPage } from '../features/venue-accounts/VenueAccountsPage.js';
