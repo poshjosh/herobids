@@ -51,6 +51,12 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Alerts
   ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
+  // LLM runtime
+  LLM_PROVIDER: { path: 'llm.provider', type: 'string' },
+  LLM_MODEL: { path: 'llm.model', type: 'string' },
+  LLM_BASE_URL: { path: 'llm.baseUrl', type: 'string' },
+  LLM_MAX_TOKENS: { path: 'llm.maxTokens', type: 'number' },
+  LLM_TIMEOUT_MS: { path: 'llm.timeoutMs', type: 'number' },
   // Billing
   BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   // Auth
@@ -103,7 +109,9 @@ function coerceEnvValue(raw: string, type: EnvType): unknown {
 function applyEnvOverrides(merged: Record<string, unknown>): void {
   for (const [envVar, override] of Object.entries(ENV_OVERRIDES)) {
     const value = process.env[envVar];
-    if (value !== undefined) {
+    // Skip undefined and empty strings — empty string from docker-compose ${VAR:-} must not
+    // stomp defaults set in default.yaml.
+    if (value !== undefined && value !== '') {
       setNestedValue(merged, override.path, coerceEnvValue(value, override.type));
     }
   }

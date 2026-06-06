@@ -60,7 +60,8 @@ async function callOpenAiCompatibleProvider(
   const baseUrl = config.baseUrl ?? resolveBaseUrl(config.provider);
   const apiKey = resolveApiKey(config.provider);
 
-  if (!apiKey) {
+  // Local providers (e.g. Ollama) don't need an API key when baseUrl is explicitly set.
+  if (!apiKey && !config.baseUrl) {
     return { ok: false, error: { code: 'provider.no_credentials', message: `No API key found for provider "${config.provider}"`, retryable: false } };
   }
 
@@ -73,7 +74,7 @@ async function callOpenAiCompatibleProvider(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({
         model: config.model,
@@ -220,6 +221,7 @@ function resolveBaseUrl(provider: string): string {
   switch (provider) {
     case 'openai': return 'https://api.openai.com/v1';
     case 'openrouter': return 'https://openrouter.ai/api/v1';
+    case 'ollama': return 'http://localhost:11434/v1';
     default: return `https://api.${provider}.com/v1`;
   }
 }

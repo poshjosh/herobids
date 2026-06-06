@@ -82,6 +82,13 @@ marketDataRecording:
   captureTopOfBook: true
   captureCandles: true
 
+llm:
+  provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
+  model: qwen3-coder:30b.       # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
+  baseUrl: http://host.docker.internal:11434/v1  # leave unset to use provider default
+  maxTokens: 4096               # Max tokens per LLM call
+  timeoutMs: 60000              # LLM call timeout in ms
+
 llmValidation:
   requirePinnedModel: true
   minReplayContexts: 100
@@ -165,10 +172,8 @@ billing:
 #   AGENT_IMAGE             Agent container image (default: herobids-agent:latest)
 #
 # LLM (agent container):
-#   LLM_MODEL               Model name (default: claude-sonnet-4-5)
-#   LLM_BASE_URL            Provider base URL override; leave unset for provider default
-#   LLM_MAX_TOKENS          Max tokens per LLM call (default: 4096)
-#   LLM_TIMEOUT_MS          LLM call timeout in ms (default: 60000)
+#   LLM_MAX_TOKENS          Max tokens per LLM call (default: 4096)    — overrides llm.maxTokens
+#   LLM_TIMEOUT_MS          LLM call timeout in ms (default: 60000)    — overrides llm.timeoutMs
 #
 # Agent runtime timing (agent container):
 #   TICK_INTERVAL_MS        Think-loop interval in ms (default: 900000 = 15 min)

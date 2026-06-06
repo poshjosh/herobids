@@ -56,7 +56,8 @@ if (!LLM_PROVIDER) {
 const LLM_API_KEY_RESOLVED =
   process.env[`LLM_API_KEY_${LLM_PROVIDER.toUpperCase()}`] ||
   process.env['LLM_API_KEY'];
-if (!LLM_API_KEY_RESOLVED) {
+// Local providers (e.g. Ollama) don't need an API key when LLM_BASE_URL is set.
+if (!LLM_API_KEY_RESOLVED && !LLM_BASE_URL) {
   logger.fatal({ provider: LLM_PROVIDER }, 'No API key found for LLM provider — set LLM_API_KEY or LLM_API_KEY_<PROVIDER>');
   process.exit(1);
 }

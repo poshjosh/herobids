@@ -94,8 +94,8 @@ const eventPublisher = new InstanceEventPublisher(redisClient);
 const runtimeMode = (process.env['AGENT_RUNTIME_MODE'] ?? 'stub') as 'docker' | 'stub';
 logger.info({ mode: runtimeMode }, 'Agent runtime mode');
 
-if (runtimeMode === 'docker' && !process.env['LLM_PROVIDER']) {
-  logger.fatal('LLM_PROVIDER env var is required when AGENT_RUNTIME_MODE=docker');
+if (runtimeMode === 'docker' && !appConfig.llm.provider) {
+  logger.fatal('llm.provider config is required when AGENT_RUNTIME_MODE=docker');
   process.exit(1);
 }
 
@@ -108,9 +108,9 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
         dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
         agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
         redisUrl: appConfig.redis.url,
-        llmProvider: process.env['LLM_PROVIDER'],
-        llmModel: process.env['LLM_MODEL'],
-        llmBaseUrl: process.env['LLM_BASE_URL'],
+        llmProvider: appConfig.llm.provider,
+        llmModel: appConfig.llm.model,
+        llmBaseUrl: appConfig.llm.baseUrl,
       },
     })
   : new AgentRuntimeLauncher({ redis: redisClient });

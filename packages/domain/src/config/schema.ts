@@ -59,6 +59,15 @@ export const MarketDataRecordingConfigSchema = z.object({
   captureCandles: z.boolean().default(true),
 });
 
+export const LlmRuntimeConfigSchema = z.object({
+  provider: z.string().default('openrouter'),
+  model: z.string().default('anthropic/claude-sonnet-4-5'),
+  /** Base URL override — leave unset to use provider default (e.g. set to http://host.docker.internal:11434/v1 for Ollama) */
+  baseUrl: z.string().optional(),
+  maxTokens: z.number().int().min(1).default(4096),
+  timeoutMs: z.number().min(1000).default(60_000),
+});
+
 export const LlmValidationConfigSchema = z.object({
   requirePinnedModel: z.boolean().default(true),
   minReplayContexts: z.number().int().min(1).default(100),
@@ -269,6 +278,7 @@ export const AppConfigSchema = z.object({
   marking: MarkingConfigSchema.default({}),
   backtesting: BacktestingConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
+  llm: LlmRuntimeConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),
   alerts: AlertsConfigSchema.default({}),
@@ -392,6 +402,7 @@ export const AppConfigSchema = z.object({
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
+export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
