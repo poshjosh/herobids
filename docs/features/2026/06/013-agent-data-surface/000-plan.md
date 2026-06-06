@@ -1,7 +1,7 @@
 # 013 — Agent Data Surface
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Expose per-agent live trading state, managed bots, costs, and journal — the data surface agents need to show users what they own and what they have done.

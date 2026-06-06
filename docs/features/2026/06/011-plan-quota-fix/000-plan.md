@@ -1,7 +1,7 @@
 # 011 — Plan Quota TOCTOU Fix
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Prevent a user from exceeding their plan's `maxTradingInstances` limit under concurrent requests. The current `checkBotLimit → insert` in `POST /bots` is non-atomic.

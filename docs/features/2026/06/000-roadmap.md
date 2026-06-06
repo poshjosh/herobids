@@ -11,10 +11,10 @@
 | # | Feature | Priority | Status | Spec |
 |---|---|---|---|---|
 | 010 | Rename `tradingInstanceId` → `botId` | P0 | done | [010-rename-tradinginstanceid/000-plan.md](010-rename-tradinginstanceid/000-plan.md) |
-| 011 | Plan quota TOCTOU fix | P0 | todo | [011-plan-quota-fix/000-plan.md](011-plan-quota-fix/000-plan.md) |
-| 012 | Bot data surface (costs, sessions, events, journal) | P0 | todo | [012-bot-data-surface/000-plan.md](012-bot-data-surface/000-plan.md) |
-| 013 | Agent data surface (state, bots, costs, journal) | P0 | todo | [013-agent-data-surface/000-plan.md](013-agent-data-surface/000-plan.md) |
-| 014 | Billing ledger + sessions | P0 | todo | [014-billing-ledger-sessions/000-plan.md](014-billing-ledger-sessions/000-plan.md) |
+| 011 | Plan quota TOCTOU fix | P0 | done | [011-plan-quota-fix/000-plan.md](011-plan-quota-fix/000-plan.md) |
+| 012 | Bot data surface (costs, sessions, events, journal) | P0 | done | [012-bot-data-surface/000-plan.md](012-bot-data-surface/000-plan.md) |
+| 013 | Agent data surface (state, bots, costs, journal) | P0 | done | [013-agent-data-surface/000-plan.md](013-agent-data-surface/000-plan.md) |
+| 014 | Billing ledger + sessions | P0 | done | [014-billing-ledger-sessions/000-plan.md](014-billing-ledger-sessions/000-plan.md) |
 | 015 | Blueprints system | P1 | todo | [015-blueprints/000-plan.md](015-blueprints/000-plan.md) |
 | 016 | Agent interactivity (message, memory, prompt) | P2 | todo | [016-agent-interactivity/000-plan.md](016-agent-interactivity/000-plan.md) |
 | 017 | Analytics + AI endpoints + Skills | P3 | todo | [017-analytics-ai-skills/000-plan.md](017-analytics-ai-skills/000-plan.md) |

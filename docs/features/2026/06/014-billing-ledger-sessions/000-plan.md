@@ -1,7 +1,7 @@
 # 014 — Billing Ledger + Sessions
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Expose paginated cost records and actor sessions so users can audit spending and review historical bot/agent runs.

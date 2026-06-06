@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq, and, ne, sql, sum, asc, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, venueAccounts } from '@herobids/db';
+import { bots, venueAccounts, PgJournal, fills, journalEvents } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -20,35 +20,65 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    // Plan enforcement
-    if (plansConfig) {
-      const planCheck = await checkBotLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
-      if (!planCheck.ok) {
-        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
-      }
-    }
-
-    // Verify ownership of the venue account
-    const [venueAccount] = await db.select({ id: venueAccounts.id }).from(venueAccounts)
-      .where(and(eq(venueAccounts.id, parsed.data.venueAccountId), eq(venueAccounts.userId, request.userId)));
-    if (!venueAccount) {
-      return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
-    }
-
     const id = crypto.randomUUID();
     const now = new Date();
 
-    await db.insert(bots).values({
-      id,
-      userId: request.userId,
-      venueAccountId: parsed.data.venueAccountId,
-      config: parsed.data.config,
-      status: 'stopped',
-      creatorType: 'user',
-      creatorId: request.userId,
-      createdAt: now,
-      updatedAt: now,
-    });
+    if (plansConfig) {
+      const planId = request.userPlanId || 'free';
+      const result = await db.transaction(async (tx) => {
+        // Advisory lock: serialise concurrent bot creates for the same user.
+        // hashtext() returns int4; the two-argument form takes (int4, int4).
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(1, hashtext(${request.userId}))`);
+
+        // Verify venue account ownership inside the transaction.
+        const [venueAccount] = await tx.select({ id: venueAccounts.id }).from(venueAccounts)
+          .where(and(eq(venueAccounts.id, parsed.data.venueAccountId), eq(venueAccounts.userId, request.userId)));
+        if (!venueAccount) return { kind: 'not_found' as const };
+
+        // Atomic count-and-insert: re-check the limit inside the lock.
+        const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId);
+        if (!planCheck.ok) return { kind: 'limit' as const, error: planCheck.error };
+
+        await tx.insert(bots).values({
+          id,
+          userId: request.userId,
+          venueAccountId: parsed.data.venueAccountId,
+          config: parsed.data.config,
+          status: 'stopped',
+          creatorType: 'user',
+          creatorId: request.userId,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return { kind: 'ok' as const };
+      });
+
+      if (result.kind === 'not_found') {
+        return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+      }
+      if (result.kind === 'limit') {
+        return reply.status(403).send({ error: result.error.code, message: result.error.message });
+      }
+    } else {
+      // No plan config — verify venue account ownership then insert directly.
+      const [venueAccount] = await db.select({ id: venueAccounts.id }).from(venueAccounts)
+        .where(and(eq(venueAccounts.id, parsed.data.venueAccountId), eq(venueAccounts.userId, request.userId)));
+      if (!venueAccount) {
+        return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+      }
+
+      await db.insert(bots).values({
+        id,
+        userId: request.userId,
+        venueAccountId: parsed.data.venueAccountId,
+        config: parsed.data.config,
+        status: 'stopped',
+        creatorType: 'user',
+        creatorId: request.userId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
 
     const [bot] = await db.select().from(bots).where(eq(bots.id, id));
     return reply.status(201).send(bot);
@@ -196,5 +226,156 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(404).send({ error: 'not_found' });
     }
     return reply.send(bot);
+  });
+
+  // GET /bots/:id/costs — total fees from fills for this bot
+  app.get<{ Params: { id: string } }>('/bots/:id/costs', async (request, reply) => {
+    const { id } = request.params;
+    const [bot] = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) return reply.status(404).send({ error: 'not_found' });
+
+    // Group by feeCurrency to avoid summing across heterogeneous assets.
+    const feeRows = await db
+      .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
+      .from(fills)
+      .where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id)))
+      .groupBy(fills.feeCurrency);
+
+    const feesByCurrency: Record<string, string> = {};
+    for (const row of feeRows) {
+      feesByCurrency[row.feeCurrency ?? 'unknown'] = row.total ?? '0';
+    }
+
+    return reply.send({
+      botId: id,
+      feesByCurrency,
+    });
+  });
+
+  // GET /bots/:id/sessions — lifecycle sessions derived by pairing instance.started / instance.stopped events
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string } }>('/bots/:id/sessions', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
+    const offset = parseInt(request.query.offset ?? '0', 10);
+
+    const [bot] = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) return reply.status(404).send({ error: 'not_found' });
+
+    // Derive sessions by pairing instance.started / instance.stopped events.
+    // Fetch ascending so pairs can be built left-to-right, then reverse for newest-first output.
+    // (limit + offset) * 2 + 2 bounds the fetch to what's needed for a single page.
+    const maxEvents = (limit + offset) * 2 + 2;
+    const rawEvents = await db.select()
+      .from(journalEvents)
+      .where(and(
+        eq(journalEvents.actorId, id),
+        inArray(journalEvents.type, ['instance.started', 'instance.stopped']),
+      ))
+      .orderBy(asc(journalEvents.createdAt))
+      .limit(maxEvents);
+
+    type Session = {
+      startedAt: Date;
+      endedAt: Date | null;
+      durationMs: number | null;
+      startEventId: string;
+      endEventId: string | null;
+    };
+    const sessions: Session[] = [];
+    let pendingStart: (typeof journalEvents.$inferSelect) | null = null;
+    for (const event of rawEvents) {
+      if (event.type === 'instance.started') {
+        pendingStart = event;
+      } else if (event.type === 'instance.stopped' && pendingStart) {
+        const startedAt = pendingStart.createdAt;
+        const endedAt = event.createdAt;
+        sessions.push({
+          startedAt,
+          endedAt,
+          durationMs: endedAt.getTime() - startedAt.getTime(),
+          startEventId: pendingStart.id,
+          endEventId: event.id,
+        });
+        pendingStart = null;
+      }
+    }
+    // Include the currently-running session (started but not yet stopped).
+    if (pendingStart) {
+      sessions.push({
+        startedAt: pendingStart.createdAt,
+        endedAt: null,
+        durationMs: null,
+        startEventId: pendingStart.id,
+        endEventId: null,
+      });
+    }
+    sessions.reverse(); // newest first
+    const page = sessions.slice(offset, offset + limit);
+
+    return reply.send({ botId: id, sessions: page, limit, offset });
+  });
+
+  // GET /bots/:id/events — recent journal events for this bot
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/bots/:id/events', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 500);
+
+    const [bot] = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) return reply.status(404).send({ error: 'not_found' });
+
+    const journal = new PgJournal(db);
+    const events = await journal.query({ actorId: id, limit });
+
+    return reply.send({ botId: id, events });
+  });
+
+  // GET /bots/:id/journal — paginated journal events with optional type filter
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; type?: string } }>('/bots/:id/journal', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
+    const offset = parseInt(request.query.offset ?? '0', 10);
+
+    const [bot] = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) return reply.status(404).send({ error: 'not_found' });
+
+    const journal = new PgJournal(db);
+    const events = await journal.query({ actorId: id, type: request.query.type, limit, offset });
+
+    return reply.send({ botId: id, events, limit, offset });
+  });
+
+  // GET /bots/:id/journal/summary — aggregate stats from fills for this bot
+  app.get<{ Params: { id: string } }>('/bots/:id/journal/summary', async (request, reply) => {
+    const { id } = request.params;
+    const [bot] = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) return reply.status(404).send({ error: 'not_found' });
+
+    const [countResult] = await db
+      .select({ tradeCount: sql<number>`count(*)::int` })
+      .from(fills)
+      .where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id)));
+
+    // Group by feeCurrency — consistent with /costs; avoids summing across heterogeneous assets.
+    const feeRows = await db
+      .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
+      .from(fills)
+      .where(and(eq(fills.actorType, 'bot'), eq(fills.actorId, id)))
+      .groupBy(fills.feeCurrency);
+
+    const feesByCurrency: Record<string, string> = {};
+    for (const row of feeRows) {
+      feesByCurrency[row.feeCurrency ?? 'unknown'] = row.total ?? '0';
+    }
+
+    return reply.send({
+      botId: id,
+      tradeCount: countResult?.tradeCount ?? 0,
+      feesByCurrency,
+    });
   });
 }

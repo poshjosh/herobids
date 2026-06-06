@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { BillingConfig, BillingProvider, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { BillingRepository, users } from '@herobids/db';
-import { eq } from 'drizzle-orm';
+import { BillingRepository, users, fills, bots, agents } from '@herobids/db';
+import { eq, and, desc, gte, lte, inArray, or, type SQL } from 'drizzle-orm';
 import { createProviderManager } from '../billing/provider-manager.js';
 import { EntitlementSync } from '../billing/entitlement-sync.js';
 import { CreemSignatureError } from '../billing/creem-provider.js';
@@ -412,6 +412,82 @@ export async function billingRoutes(
       }
       return reply.status(200).send({ received: true });
     });
+  });
+
+  // GET /billing/ledger — paginated fill records as cost ledger
+  app.get<{ Querystring: { limit?: string; offset?: string; botId?: string; agentId?: string; from?: string; to?: string } }>('/billing/ledger', async (request, reply) => {
+    const userId = request.userId;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
+    const offset = parseInt(request.query.offset ?? '0', 10);
+
+    if (request.query.botId) {
+      const [bot] = await db.select({ id: bots.id }).from(bots)
+        .where(and(eq(bots.id, request.query.botId), eq(bots.userId, userId)));
+      if (!bot) return reply.status(404).send({ error: 'not_found', message: 'Bot not found' });
+    }
+
+    if (request.query.agentId) {
+      const [agent] = await db.select({ id: agents.id }).from(agents)
+        .where(and(eq(agents.id, request.query.agentId), eq(agents.userId, userId)));
+      if (!agent) return reply.status(404).send({ error: 'not_found', message: 'Agent not found' });
+    }
+
+    const conditions: SQL[] = [];
+
+    if (request.query.botId) {
+      conditions.push(and(eq(fills.actorType, 'bot'), eq(fills.actorId, request.query.botId))!);
+    } else if (request.query.agentId) {
+      // Fills are stored under bot actors — resolve bot IDs managed by this agent.
+      const agentBots = await db.select({ id: bots.id }).from(bots)
+        .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, request.query.agentId)));
+      const agentBotIds = agentBots.map((b) => b.id);
+      if (agentBotIds.length === 0) {
+        return reply.send({ records: [], limit, offset });
+      }
+      conditions.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds))!);
+    } else {
+      // No specific entity filter — scope to all fills owned by the authenticated user's
+      // bots and agents to prevent cross-user data exposure.
+      const [userBots, userAgents] = await Promise.all([
+        db.select({ id: bots.id }).from(bots).where(eq(bots.userId, userId)),
+        db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId)),
+      ]);
+      const botIds = userBots.map((b) => b.id);
+      const agentIds = userAgents.map((a) => a.id);
+
+      if (botIds.length === 0 && agentIds.length === 0) {
+        return reply.send({ records: [], limit, offset });
+      }
+
+      const ownershipConditions: SQL[] = [];
+      if (botIds.length > 0) {
+        ownershipConditions.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds))!);
+      }
+      if (agentIds.length > 0) {
+        ownershipConditions.push(and(eq(fills.actorType, 'agent'), inArray(fills.actorId, agentIds))!);
+      }
+      const ownerWhere = ownershipConditions.length === 1
+        ? ownershipConditions[0]!
+        : or(...ownershipConditions)!;
+      conditions.push(ownerWhere);
+    }
+
+    if (request.query.from) {
+      conditions.push(gte(fills.filledAt, new Date(request.query.from)));
+    }
+    if (request.query.to) {
+      conditions.push(lte(fills.filledAt, new Date(request.query.to)));
+    }
+
+    const where = and(...conditions);
+
+    const records = await db.select().from(fills)
+      .where(where)
+      .orderBy(desc(fills.filledAt))
+      .limit(limit)
+      .offset(offset);
+
+    return reply.send({ records, limit, offset });
   });
 }
 

@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, and, inArray, desc, sum, count, isNull } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, decisions } from '@herobids/db';
+import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, decisions, bots, PgJournal, FillRepository, fills, positions, journalEvents } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
 
@@ -456,5 +456,153 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       .limit(limit);
 
     return reply.send(rows);
+  });
+
+  // GET /agents/:id/state — aggregate open positions and realized P&L across all managed bots
+  app.get<{ Params: { id: string } }>('/agents/:id/state', async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    // Trading data is stored under bot actors (actorType='bot', actorId=botId).
+    // Resolve bot IDs created by this agent first.
+    const managedBots = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+    const botIds = managedBots.map((b) => b.id);
+
+    if (botIds.length === 0) {
+      return reply.send({ agentId: id, totalPnl: '0', openPositionCount: 0, updatedAt: new Date().toISOString() });
+    }
+
+    // totalPnl: realizedPnl accumulated across ALL positions (open + closed) so it
+    // reflects the agent's full trading history, not just current open exposure.
+    const [pnlResult] = await db
+      .select({ totalPnl: sum(positions.realizedPnl) })
+      .from(positions)
+      .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
+
+    // openPositionCount: rows that are still open (not yet closed/flat).
+    const [openResult] = await db
+      .select({ openCount: count(positions.id) })
+      .from(positions)
+      .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds), isNull(positions.closedAt)));
+
+    const totalPnl = parseFloat(pnlResult?.totalPnl ?? '0').toFixed(6);
+    const openPositionCount = openResult?.openCount ?? 0;
+
+    return reply.send({
+      agentId: id,
+      totalPnl,
+      openPositionCount,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  // GET /agents/:id/bots — bots created by this agent
+  app.get<{ Params: { id: string } }>('/agents/:id/bots', async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const agentBots = await db.select().from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+
+    return reply.send({ agentId: id, bots: agentBots });
+  });
+
+  // GET /agents/:id/costs — sum fees across all managed bots
+  app.get<{ Params: { id: string } }>('/agents/:id/costs', async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    // Trading data is stored under bot actors — resolve managed bot IDs first.
+    const managedBots = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+    const botIds = managedBots.map((b) => b.id);
+
+    if (botIds.length === 0) {
+      return reply.send({ agentId: id, feesByCurrency: {} });
+    }
+
+    // Group by feeCurrency to avoid summing across heterogeneous assets.
+    const feeRows = await db
+      .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
+      .from(fills)
+      .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)))
+      .groupBy(fills.feeCurrency);
+
+    const feesByCurrency: Record<string, string> = {};
+    for (const row of feeRows) {
+      feesByCurrency[row.feeCurrency ?? 'unknown'] = row.total ?? '0';
+    }
+
+    return reply.send({
+      agentId: id,
+      feesByCurrency,
+    });
+  });
+
+  // GET /agents/:id/journal — paginated journal events across all managed bots
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; type?: string } }>('/agents/:id/journal', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
+    const offset = parseInt(request.query.offset ?? '0', 10);
+
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    // Journal events are stored under bot actors — resolve managed bot IDs first.
+    const managedBots = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+    const botIds = managedBots.map((b) => b.id);
+
+    if (botIds.length === 0) {
+      return reply.send({ agentId: id, events: [], limit, offset });
+    }
+
+    // Query directly with inArray for correct cross-bot pagination at the DB level.
+    const baseConditions = [inArray(journalEvents.actorId, botIds)];
+    if (request.query.type) baseConditions.push(eq(journalEvents.type, request.query.type));
+    const events = await db.select().from(journalEvents)
+      .where(and(...baseConditions))
+      .orderBy(desc(journalEvents.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return reply.send({ agentId: id, events, limit, offset });
+  });
+
+  // GET /agents/:id/trades — fills across all managed bots
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string } }>('/agents/:id/trades', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
+    const offset = parseInt(request.query.offset ?? '0', 10);
+
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    // Fills are stored under bot actors — resolve managed bot IDs first.
+    const managedBots = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+    const botIds = managedBots.map((b) => b.id);
+
+    if (botIds.length === 0) {
+      return reply.send({ agentId: id, trades: [] });
+    }
+
+    // Query directly with inArray for correct cross-bot ordering and pagination.
+    const trades = await db.select().from(fills)
+      .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)))
+      .orderBy(desc(fills.filledAt))
+      .limit(limit)
+      .offset(offset);
+
+    return reply.send({ agentId: id, trades, limit, offset });
   });
 }

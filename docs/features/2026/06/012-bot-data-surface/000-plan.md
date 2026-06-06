@@ -1,7 +1,7 @@
 # 012 — Bot Data Surface
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Expose per-bot costs, sessions, events, and journal — the data surface users need to understand what their bots are doing and have done.

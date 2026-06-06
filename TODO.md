@@ -2,6 +2,12 @@
 
 Some of these may no longer be valid (they may have been done/implemented). 
 
+- [ ] bots.ts and bots.ts still break `/bots/:id/sessions` pagination. The route now builds session pairs correctly, but it fetches the first `maxEvents` lifecycle events in ascending order before pairing and reversing. Once a bot has more than `(limit + offset) * 2 + 2` lifecycle events, page 1 stops reflecting the newest sessions and instead returns the newest sessions from the oldest slice of history. This is a real data-loss bug for any bot with longer history. The current stub test at bots.test.ts only checks that `sessions` exists, so it would not catch this.
+
+- [ ] agents.ts and agents.ts return different response shapes for `/agents/:id/trades`. When an agent has no managed bots, the route returns `{ agentId, trades: [] }`; otherwise it returns `{ agentId, trades, limit, offset }`. That makes the contract data-dependent and forces clients to special-case the empty state. The matching test at agents.test.ts only asserts that `trades` is an array, so this drift is currently untested.
+
+- [ ] agents.ts still imports `PgJournal` and `FillRepository`, but neither is used anymore. It is not a runtime defect, but it obscures the actual dependencies in this route and makes the file look like it still relies on abstractions that were bypassed in the new implementation.
+
 - [ ] agent permission updates are still stale after first use because the broker caches the capability engine by agent ID and never invalidates it. The cache is established in agent-message-broker.ts, while the API now updates and re-derives toolPolicy in agents.ts. After an agent has made one tool call, later PATCH changes to skillIds or toolPolicy can be stored successfully but remain unenforced until the worker restarts.
 
 - [ ] Sandbox enforcement on code execution has only been partially implemented. SandboxEnforcer and sandbox-exec.sh exist, and code_execute is in the capability grants, but no broker handler routes code_execute calls — the capability is defined but not wired on the production path
