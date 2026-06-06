@@ -15,7 +15,7 @@ import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapte
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, TradingInstanceConfigSchema } from '@herobids/domain';
+import { quantity, price, BotConfigSchema } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
@@ -111,6 +111,10 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
         llmProvider: appConfig.llm.provider,
         llmModel: appConfig.llm.model,
         llmBaseUrl: appConfig.llm.baseUrl,
+        llmMaxTokens: appConfig.llm.maxTokens,
+        llmTimeoutMs: appConfig.llm.timeoutMs,
+        llmTickIntervalMs: appConfig.llm.tickIntervalMs,
+        llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
       },
     })
   : new AgentRuntimeLauncher({ redis: redisClient });
@@ -308,7 +312,7 @@ const runtime = new WorkerRuntime(
   },
   async (botId, rawConfig) => {
     // Validate instance config — fail fast on invalid config
-    const parseResult = TradingInstanceConfigSchema.safeParse(rawConfig);
+    const parseResult = BotConfigSchema.safeParse(rawConfig);
     if (!parseResult.success) {
       throw new Error(
         `Invalid config for bot ${botId}: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,

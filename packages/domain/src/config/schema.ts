@@ -66,6 +66,10 @@ export const LlmRuntimeConfigSchema = z.object({
   baseUrl: z.string().optional(),
   maxTokens: z.number().int().min(1).default(4096),
   timeoutMs: z.number().min(1000).default(60_000),
+  /** Agent reasoning loop interval in ms. How often the agent calls the LLM to reassess and act. */
+  tickIntervalMs: z.number().int().min(5_000).default(900_000),
+  /** Agent heartbeat cadence in ms. Must be well below the health-monitor stale threshold. */
+  heartbeatIntervalMs: z.number().int().min(1_000).default(5_000),
 });
 
 export const LlmValidationConfigSchema = z.object({

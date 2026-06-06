@@ -1,0 +1,12 @@
+# Operator configuration — self-documenting reference.
+# Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+
+llm:
+  provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
+  model: qwen3-coder:30b        # Model name passed to the provider 
+  baseUrl: http://host.docker.internal:11434/v1  # leave unset to use provider default
+  tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+
+# Alerting — dispatches journal events to Telegram channels.
+alerts:
+  enabled: true                   # master switch — override: ALERTS_ENABLED

@@ -57,6 +57,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   LLM_BASE_URL: { path: 'llm.baseUrl', type: 'string' },
   LLM_MAX_TOKENS: { path: 'llm.maxTokens', type: 'number' },
   LLM_TIMEOUT_MS: { path: 'llm.timeoutMs', type: 'number' },
+  LLM_TICK_INTERVAL_MS: { path: 'llm.tickIntervalMs', type: 'number' },
+  LLM_HEARTBEAT_INTERVAL_MS: { path: 'llm.heartbeatIntervalMs', type: 'number' },
   // Billing
   BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   // Auth

@@ -53,6 +53,11 @@ venues:
     writeFileSync(resolve(tmpDir, 'production.yaml'), `
 database:
   url: postgres://prod-host/herobids
+billing:
+  primaryProvider: stripe
+  stripe:
+    secretKey: sk_live_test_key
+    webhookSecret: whsec_test_secret
 `);
     process.env['NODE_ENV'] = 'production';
 
@@ -245,6 +250,33 @@ liveRollout:
   allowedVenues:
     - kraken
 `);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+  });
+
+  describe('LLM runtime env overrides', () => {
+    it('applies LLM_TICK_INTERVAL_MS env override', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+      process.env['LLM_TICK_INTERVAL_MS'] = '120000';
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.tickIntervalMs).toBe(120000);
+    });
+
+    it('applies LLM_HEARTBEAT_INTERVAL_MS env override', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+      process.env['LLM_HEARTBEAT_INTERVAL_MS'] = '10000';
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.heartbeatIntervalMs).toBe(10000);
+    });
+
+    it('rejects LLM_TICK_INTERVAL_MS below schema minimum (5000)', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+      process.env['LLM_TICK_INTERVAL_MS'] = '1000';
 
       expect(() => loadConfig(tmpDir)).toThrow();
     });

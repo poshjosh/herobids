@@ -1,0 +1,7 @@
+# Operator configuration — self-documenting reference.
+# Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+
+llm:
+  provider: openrouter                # LLM provider: openrouter | openai | anthropic | ollama
+  model: anthropic/claude-sonnet-4-5  # Model name passed to the provider e.g. 
+  tickIntervalMs: 900000              # Agent reasoning loop interval in ms (how often the agent calls the LLM)

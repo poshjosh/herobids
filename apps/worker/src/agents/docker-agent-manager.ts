@@ -20,6 +20,14 @@ export interface DockerAgentManagerConfig {
   llmBaseUrl?: string;
   /** LLM model injected into agent container env */
   llmModel?: string;
+  /** Max tokens per LLM call injected into agent container env */
+  llmMaxTokens?: number;
+  /** LLM call timeout in ms injected into agent container env */
+  llmTimeoutMs?: number;
+  /** Agent reasoning loop interval in ms injected into agent container env */
+  llmTickIntervalMs?: number;
+  /** Agent heartbeat cadence in ms injected into agent container env */
+  llmHeartbeatIntervalMs?: number;
   /** Memory limit per agent container in MB. Default: 512 */
   memoryLimitMb?: number;
   /** CPU shares per agent container. Default: 512 */
@@ -50,6 +58,10 @@ export class DockerAgentManager {
   private readonly llmProvider: string | undefined;
   private readonly llmBaseUrl: string | undefined;
   private readonly llmModel: string | undefined;
+  private readonly llmMaxTokens: number | undefined;
+  private readonly llmTimeoutMs: number | undefined;
+  private readonly llmTickIntervalMs: number | undefined;
+  private readonly llmHeartbeatIntervalMs: number | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
 
@@ -72,6 +84,10 @@ export class DockerAgentManager {
     this.llmProvider = _config.llmProvider;
     this.llmBaseUrl = _config.llmBaseUrl;
     this.llmModel = _config.llmModel;
+    this.llmMaxTokens = _config.llmMaxTokens;
+    this.llmTimeoutMs = _config.llmTimeoutMs;
+    this.llmTickIntervalMs = _config.llmTickIntervalMs;
+    this.llmHeartbeatIntervalMs = _config.llmHeartbeatIntervalMs;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
   }
@@ -98,6 +114,10 @@ export class DockerAgentManager {
       ...(this.llmProvider ? [`LLM_PROVIDER=${this.llmProvider}`] : []),
       ...(this.llmBaseUrl ? [`LLM_BASE_URL=${this.llmBaseUrl}`] : []),
       ...(this.llmModel ? [`LLM_MODEL=${this.llmModel}`] : []),
+      ...(this.llmMaxTokens != null ? [`LLM_MAX_TOKENS=${this.llmMaxTokens}`] : []),
+      ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
+      ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
+      ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
       // LLM API keys must be in the worker's environment and forwarded explicitly
       ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
       ...(process.env['LLM_API_KEY_OPENROUTER'] ? [`LLM_API_KEY_OPENROUTER=${process.env['LLM_API_KEY_OPENROUTER']}`] : []),

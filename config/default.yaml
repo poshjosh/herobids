@@ -84,10 +84,11 @@ marketDataRecording:
 
 llm:
   provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
-  model: qwen3-coder:30b.       # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
-  baseUrl: http://host.docker.internal:11434/v1  # leave unset to use provider default
+  model: qwen3-coder:30b        # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
   maxTokens: 4096               # Max tokens per LLM call
   timeoutMs: 60000              # LLM call timeout in ms
+  tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+  heartbeatIntervalMs: 5000     # Agent heartbeat cadence in ms
 
 llmValidation:
   requirePinnedModel: true
@@ -108,7 +109,7 @@ liveRollout:
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
-  enabled: false                    # master switch — override: ALERTS_ENABLED
+  enabled: false                    # controls whether the system dispatches journal events to Telegram channels — it doesn't affect agent-to-user communication via tools like send_message
   dispatchIntervalMs: 10000         # poll interval for new events
   defaultCooldownMs: 300000         # 5 min cooldown between duplicate alert types
   maxBatchSize: 20                  # max events per dispatch cycle
@@ -164,20 +165,14 @@ billing:
 # Env-only overrides — read directly from process.env, not part of AppConfigSchema
 # ---------------------------------------------------------------------------
 #
-# Agent runtime (worker):
-#   AGENT_RUNTIME_MODE      docker | stub (default: docker)
-#                           stub = heartbeat-only fake for local dev without Docker-in-Docker
-#   DOCKER_HOST             Docker socket URL (default: tcp://docker-proxy:2375)
-#   DOCKER_NETWORK          Container network name (default: herobids_default)
-#   AGENT_IMAGE             Agent container image (default: herobids-agent:latest)
-#
-# LLM (agent container):
-#   LLM_MAX_TOKENS          Max tokens per LLM call (default: 4096)    — overrides llm.maxTokens
-#   LLM_TIMEOUT_MS          LLM call timeout in ms (default: 60000)    — overrides llm.timeoutMs
-#
-# Agent runtime timing (agent container):
-#   TICK_INTERVAL_MS        Think-loop interval in ms (default: 900000 = 15 min)
-#   HEARTBEAT_INTERVAL_MS   Heartbeat cadence in ms (default: 5000)
+# Agent runtime (worker) — orchestration layer, not operator config:
+#   AGENT_RUNTIME_MODE          docker | stub (default: stub)
+#                               stub = heartbeat-only fake for local dev without Docker-in-Docker
+#   DOCKER_HOST                 Docker socket URL (default: tcp://docker-proxy:2375)
+#   DOCKER_NETWORK              Container network name (default: herobids_default)
+#   AGENT_IMAGE                 Agent container image tag (default: herobids-agent:latest)
+#   LLM_TICK_INTERVAL_MS        Agent reasoning loop interval in ms (override: llm.tickIntervalMs)
+#   LLM_HEARTBEAT_INTERVAL_MS   Agent heartbeat cadence in ms (override: llm.heartbeatIntervalMs)
 #
 # Logging:
 #   LOG_FORMAT              json | pretty (auto-set to pretty when NODE_ENV=development)
