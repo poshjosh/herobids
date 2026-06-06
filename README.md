@@ -67,6 +67,30 @@ docker compose -f docker-compose.yaml -f docker-compose.dev.yaml down
 
 ---
 
+## Agent image
+
+The agent runtime runs as a separate Docker image (`herobids-agent:latest`) that is **not** built by `docker compose up --build`. It must be built manually from the monorepo root whenever `apps/worker/src/agent.ts` or any of its dependencies change:
+
+```bash
+docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
+```
+
+After rebuilding, stop and restart any running agent from the UI so the worker spawns a fresh container from the updated image.
+
+### LLM configuration
+
+Agent containers require an LLM provider and API key. Set these in `.env` before starting the stack:
+
+```env
+LLM_PROVIDER=openrouter          # openrouter | openai | anthropic
+LLM_MODEL=anthropic/claude-sonnet-4-5
+LLM_API_KEY_OPENROUTER=sk-or-...  # key for the chosen provider
+```
+
+The worker reads these from `.env` and forwards them to each spawned agent container. If `LLM_PROVIDER` or its key are missing, the worker (in docker mode) and the agent container both exit immediately with a fatal log rather than failing silently on the first reasoning tick.
+
+---
+
 ## Building
 
 ```bash
