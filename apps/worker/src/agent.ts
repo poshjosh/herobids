@@ -19,6 +19,7 @@ import type { SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
 import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './agents/capability-policy.js';
 import type { CapabilityGrant } from './agents/capability-policy.js';
+import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -42,6 +43,9 @@ const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
 const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 10);
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
+// 0 = unlimited (the default). Set to a positive number of milliseconds to impose
+// a hard wall-clock cap on any single agent session.
+const SANDBOX_MAX_WALL_CLOCK_MS = parseInt(process.env['SANDBOX_MAX_WALL_CLOCK_MS'] ?? '0', 10);
 
 if (!AGENT_ID || !SESSION_ID) {
   logger.fatal({ AGENT_ID, SESSION_ID }, 'AGENT_ID and SESSION_ID env vars are required');
@@ -120,6 +124,11 @@ function buildCapabilityEngine(): CapabilityPolicyEngine {
 }
 
 const capabilityEngine = buildCapabilityEngine();
+
+// SandboxEnforcer enforces the session wall-clock limit in-process. All other
+// sandbox limits (network, download) require hooking the network layer inside
+// the container process and are enforced by the container runtime (cgroups/ulimits).
+const sandboxEnforcer = new SandboxEnforcer({ maxWallClockMs: SANDBOX_MAX_WALL_CLOCK_MS });
 
 try {
   agentConfig = JSON.parse(AGENT_CONFIG_RAW) as AgentConfig;
@@ -489,6 +498,10 @@ async function executeTool(call: ToolCall): Promise<void> {
           outputSummary: success ? `${stdout.length} bytes` : `error: ${stderr.slice(0, 100)}`,
           success: codeSuccess,
         });
+        // Per-execution stdout is already bounded by MAX_OUTPUT (derived from
+        // the capability grant's maxResponseBytes). Session-level download budget
+        // enforcement would require hooking the network layer inside the sandbox
+        // process — out of scope for the in-process SandboxEnforcer.
       }
 
       const label = description ? ` (${description})` : '';
@@ -538,6 +551,8 @@ const sessionMetrics = {
   /** Last P&L injected via CONTEXT_SNAPSHOT (string like "+2.3%") */
   lastPnlSummary: null as string | null,
   lastPositionSide: null as string | null,
+  /** Latest bot statuses injected via instance.status messages */
+  managedBots: null as Array<{ id: string; status: string; strategyPreset?: string; symbol?: string }> | null,
 };
 
 function buildProgressContext(): string {
@@ -570,6 +585,16 @@ function buildProgressContext(): string {
   if (sessionMetrics.lastPositionSide) {
     lines.push(`Current position: ${sessionMetrics.lastPositionSide}`);
   }
+  if (sessionMetrics.managedBots && sessionMetrics.managedBots.length > 0) {
+    const botLines = sessionMetrics.managedBots.map((b) => {
+      // Sanitize values sourced from stored bot config to prevent prompt injection via
+      // newlines or other control characters embedded in user-supplied config fields.
+      const preset = b.strategyPreset?.replace(/[\n\r\t\x00-\x1f]/g, ' ').trim();
+      const sym = b.symbol?.replace(/[\n\r\t\x00-\x1f]/g, ' ').trim();
+      return `  - ${b.id} [${b.status}]${preset ? ` strategy=${preset}` : ''}${sym ? ` symbol=${sym}` : ''}`;
+    });
+    lines.push(`Managed bots (${sessionMetrics.managedBots.length}):\n${botLines.join('\n')}`);
+  }
 
   return lines.join('\n');
 }
@@ -582,10 +607,33 @@ let running = true;
 let tickCount = 0;
 // Prevents concurrent tick execution when an LLM call takes longer than TICK_INTERVAL_MS.
 let tickInFlight = false;
+// Hoisted so both runTick() and the heartbeat interval can trigger a clean shutdown.
+let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+let tickTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * Unified shutdown path used by expiry, SIGTERM, and SIGINT.
+ * Idempotent: clears timers (safe to call even if never set), drains Redis, exits.
+ */
+async function shutdown(reason: string): Promise<void> {
+  logger.info({ reason }, 'Agent runtime shutting down');
+  running = false;
+  clearInterval(heartbeatTimer);
+  clearInterval(tickTimer);
+  await sendHeartbeat('starting').catch(() => { /* ignore */ }); // reuse 'starting' to signal transition
+  await redis.quit().catch(() => { /* ignore */ });
+  process.exit(0);
+}
 
 async function runTick(): Promise<void> {
   tickCount++;
   logger.info({ tickCount }, 'Agent tick starting');
+
+  // Check session wall-clock expiry before each tick.
+  if (sandboxEnforcer.isExpired(SESSION_ID!)) {
+    await shutdown('wall_clock_expired');
+    return; // unreachable — process.exit() called in shutdown()
+  }
 
   await sendHeartbeat('busy');
 
@@ -627,6 +675,12 @@ async function runTick(): Promise<void> {
         }
         if (type === INSTANCE_MESSAGE_TYPES.EXECUTION_RESULT) {
           return `Execution result received`;
+        }
+        if (type === INSTANCE_MESSAGE_TYPES.STATUS) {
+          const p = m['payload'] as Record<string, unknown> ?? {};
+          const bots = p['managedBots'] as typeof sessionMetrics.managedBots | undefined;
+          if (bots) sessionMetrics.managedBots = bots;
+          return `Platform status: ${p['reason'] ?? p['status'] ?? 'updated'}`;
         }
         return `Platform message: ${type}`;
       });
@@ -699,6 +753,9 @@ async function main(): Promise<void> {
   // Drain any entries left pending in the PEL by a previous container incarnation.
   await drainStalePendingEntries();
 
+  // Register session with the sandbox enforcer so wall-clock and budget tracking begins.
+  sandboxEnforcer.registerSession(SESSION_ID!);
+
   // Signal starting
   await sendHeartbeat('starting');
 
@@ -706,14 +763,20 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 1000));
   await sendHeartbeat('ready');
 
-  // Heartbeat interval — keep the session alive between ticks
-  const heartbeatTimer = setInterval(() => {
+  // Heartbeat interval — keep the session alive between ticks.
+  // Also checks wall-clock expiry so shutdown is timely even across long tick gaps.
+  heartbeatTimer = setInterval(() => {
+    if (sandboxEnforcer.isExpired(SESSION_ID!)) {
+      logger.warn({ sessionId: SESSION_ID }, 'Session wall-clock limit exceeded — shutting down');
+      void shutdown('wall_clock_expired');
+      return;
+    }
     void sendHeartbeat('ready').catch((err: unknown) => logger.warn({ err }, 'Heartbeat error'));
   }, HEARTBEAT_INTERVAL_MS);
 
   // Main reasoning loop — serialized: skip the interval fire if the previous tick
   // is still in flight (slow LLM response, long tool chain, etc.).
-  const tickTimer = setInterval(async () => {
+  tickTimer = setInterval(async () => {
     if (!running || tickInFlight) return;
     tickInFlight = true;
     try {
@@ -734,20 +797,8 @@ async function main(): Promise<void> {
     tickInFlight = false;
   }
 
-  // Graceful shutdown
-  const shutdown = async (): Promise<void> => {
-    logger.info('Shutdown signal received');
-    running = false;
-    clearInterval(heartbeatTimer);
-    clearInterval(tickTimer);
-    await sendHeartbeat('starting').catch(() => { /* ignore */ }); // reuse 'starting' to signal transition
-    await redis.quit();
-    logger.info('Agent runtime stopped');
-    process.exit(0);
-  };
-
-  process.on('SIGTERM', () => { void shutdown(); });
-  process.on('SIGINT', () => { void shutdown(); });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
 }
 
 main().catch((err: unknown) => {

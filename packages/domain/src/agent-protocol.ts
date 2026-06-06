@@ -19,7 +19,7 @@ export const MessageEnvelopeSchema = z.object({
   originId: z.string().optional(),
   /** Agent that owns this message stream (primary grouping key). Optional for backwards compat. */
   agentId: z.string().optional(),
-  /** Trading instance this message is scoped to */
+  /** @deprecated Use botId instead. Kept for backwards-compat with older envelope senders. */
   tradingInstanceId: z.string().optional(),
   /** Bot this message is scoped to (nullable — null for agent-level messages) */
   botId: z.string().optional(),
@@ -214,6 +214,13 @@ export const InstanceStatusPayloadSchema = z.object({
   reason: z.string().optional(),
   liveState: z.string().optional(),
   updatedAt: z.string().datetime(),
+  /** Bots managed by this agent — injected after lifecycle changes so the agent has current status. */
+  managedBots: z.array(z.object({
+    id: z.string(),
+    status: z.string(),
+    strategyPreset: z.string().optional(),
+    symbol: z.string().optional(),
+  })).optional(),
 });
 
 export type InstanceStatusPayload = z.infer<typeof InstanceStatusPayloadSchema>;

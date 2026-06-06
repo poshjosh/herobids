@@ -1,4 +1,4 @@
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-06
 - **Summary:** Two compounding bugs caused the agent to always call Anthropic's native API directly instead of OpenRouter, and fail with `provider.no_credentials` even when `LLM_PROVIDER=openrouter` and all API keys were set in `.env`.
@@ -81,6 +81,15 @@ The default is now `'openai'`, which is the correct choice: the OpenAI-compatibl
 
 - `docker-compose.yaml` — added LLM env var passthrough block to `worker` service
 - `apps/worker/src/agent.ts` — removed `startsWith('claude')` provider inference
+
+## Test Coverage
+
+Regression tests added in `apps/worker/src/agents/docker-agent-manager.test.ts` under **"DockerAgentManager — LLM env forwarding (bug #22)"**:
+- `LLM_PROVIDER` from config is included in container `Env` when set
+- `LLM_PROVIDER` is absent from container `Env` when not configured (agent will fail-fast on startup rather than silently infer wrong provider)
+- `LLM_API_KEY_OPENROUTER`, `LLM_API_KEY_ANTHROPIC`, `LLM_API_KEY_OPENAI`, and `LLM_API_KEY` are each forwarded from `process.env` when present
+- All API key vars are absent from container `Env` when not present in `process.env`
+- A Claude model name (`claude-sonnet-4-5`) paired with `llmProvider: 'openrouter'` produces `LLM_PROVIDER=openrouter` — model name does not override the configured provider
 
 ## Verification
 

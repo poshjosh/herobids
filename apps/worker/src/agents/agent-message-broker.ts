@@ -53,30 +53,35 @@ export type BotLimitCheckCallback = (userId: string) => Promise<void>;
 export class AgentMessageBroker {
   /** Per-agent send_message rate tracking: agentId → { count, windowStart } */
   private readonly sendMessageCounters = new Map<string, { count: number; windowStart: number }>();
-  /** Per-agent capability policy engine. Instantiated on first use per agent. */
-  private readonly capabilityEngines = new Map<string, CapabilityPolicyEngine>();
+  /**
+   * Per-agent capability policy cache: agentId → { engine, policySig }.
+   * policySig is the JSON fingerprint of the agent's toolPolicy at build time.
+   * When toolPolicy changes (e.g. PATCH /agents/:id updates skillIds), the sig
+   * differs and the engine is rebuilt so the new grants take effect immediately.
+   */
+  private readonly capabilityEngines = new Map<string, { engine: CapabilityPolicyEngine; policySig: string }>();
 
   constructor(
     _redis: Redis,
     private readonly agentRepo: AgentRepository,
     private readonly decisionHandler: AgentDecisionHandler,
     private readonly sessionManager: AgentSessionManager,
-    _eventPublisher: InstanceEventPublisher,
+    private readonly eventPublisher: InstanceEventPublisher,
     private readonly telegram?: TelegramClient,
     private readonly botRepo?: BotRepository,
     private readonly botStart?: BotStartCallback,
     private readonly botLimitCheck?: BotLimitCheckCallback,
   ) {}
 
-  private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[]): CapabilityPolicyEngine {
-    const existing = this.capabilityEngines.get(agentId);
-    if (existing) return existing;
+  private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
+    const cached = this.capabilityEngines.get(agentId);
+    if (cached && cached.policySig === policySig) return cached.engine;
 
     const grants = perAgentGrants
       ? [...DEFAULT_CAPABILITY_GRANTS, ...perAgentGrants]
       : DEFAULT_CAPABILITY_GRANTS;
     const engine = new CapabilityPolicyEngine(grants);
-    this.capabilityEngines.set(agentId, engine);
+    this.capabilityEngines.set(agentId, { engine, policySig });
     return engine;
   }
 
@@ -126,7 +131,9 @@ export class AgentMessageBroker {
       const perAgentGrants = agent?.toolPolicy
         ? (Object.values(agent.toolPolicy) as CapabilityGrant[])
         : undefined;
-      const engine = this.getCapabilityEngine(effectiveAgentId, perAgentGrants);
+      // Compute a policy fingerprint so the cache is invalidated when toolPolicy changes.
+      const policySig = agent?.toolPolicy ? JSON.stringify(agent.toolPolicy) : '';
+      const engine = this.getCapabilityEngine(effectiveAgentId, perAgentGrants, policySig);
       const activeSession = await this.agentRepo.getActiveSession(effectiveAgentId);
       const sessionId = activeSession?.id ?? effectiveAgentId;
       const denied = engine.checkAccess(capabilityName, effectiveAgentId, sessionId);
@@ -419,6 +426,20 @@ export class AgentMessageBroker {
         await this.botStart(botId, agent.userId, payload.venueAccountId, payload.config);
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }
+
+      // Notify the agent of the updated bot list so it can reflect current state in its next tick.
+      const agentBots = await this.botRepo!.getBotsByCreator('agent', agent.id);
+      await this.eventPublisher.emitInstanceStatus(agent.id, {
+        status: 'running',
+        reason: 'bot_created',
+        updatedAt: new Date().toISOString(),
+        managedBots: agentBots.map((b) => ({
+          id: b.id,
+          status: b.status,
+          strategyPreset: (b.config as Record<string, unknown>)?.['strategyPreset'] as string | undefined,
+          symbol: (b.config as Record<string, unknown>)?.['symbol'] as string | undefined,
+        })),
+      });
       return;
     }
 

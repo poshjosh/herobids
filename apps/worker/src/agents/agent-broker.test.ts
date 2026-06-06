@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentMessageBroker } from './agent-message-broker.js';
+import { CapabilityPolicyEngine } from './capability-policy.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -55,6 +56,7 @@ function mockEventPublisher() {
   return {
     emitDecisionAccepted: vi.fn().mockResolvedValue(undefined),
     emitDecisionRejected: vi.fn().mockResolvedValue(undefined),
+    emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
   } as unknown as InstanceEventPublisher;
 }
 
@@ -200,6 +202,329 @@ describe('AgentMessageBroker', () => {
         'failed',
         expect.objectContaining({ code: 'processing_error' }),
       );
+    });
+  });
+
+  describe('capability cache invalidation (CX.1)', () => {
+    function makeManageBotEnvelope(overrides: Record<string, unknown> = {}) {
+      return {
+        schemaVersion: 'v1',
+        messageId: `msg-${Math.random().toString(36).slice(2)}`,
+        correlationId: 'corr-001',
+        initiatorType: 'agent',
+        initiatorId: 'agent-123',
+        agentId: 'agent-123',
+        type: 'agent.manage_bot',
+        createdAt: new Date().toISOString(),
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-001',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+        },
+        ...overrides,
+      };
+    }
+
+    function makeBotRepo() {
+      return {
+        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-new-001'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+    }
+
+    // toolPolicy values must include the `capability` key so they key into the grant Map correctly
+    const MANAGE_BOT_ENABLED = { capability: 'manage_bot', tier: 'brokered', enabled: true, limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 } };
+    const MANAGE_BOT_DISABLED = { capability: 'manage_bot', tier: 'brokered', enabled: false, limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 } };
+
+    it('uses cached engine when toolPolicy is unchanged', async () => {
+      const policy = { manage_bot: MANAGE_BOT_ENABLED };
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        maxBots: 5,
+        toolPolicy: policy,
+      });
+      agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+      const botRepo = makeBotRepo();
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      const e1 = makeManageBotEnvelope();
+      const e2 = makeManageBotEnvelope();
+
+      await brokerWithBot.processInbound(e1);
+
+      // Capture the engine instance after the first request.
+      const capEngines = (brokerWithBot as any).capabilityEngines as Map<string, { engine: CapabilityPolicyEngine; policySig: string }>;
+      const engineAfterFirst = capEngines.get('agent-123')!.engine;
+
+      await brokerWithBot.processInbound(e2);
+
+      const engineAfterSecond = capEngines.get('agent-123')!.engine;
+
+      // Strict object identity proves reuse. If the engine were rebuilt and the map entry
+      // overwritten, this would be a different reference even though policySig looks identical.
+      expect(engineAfterSecond).toBe(engineAfterFirst);
+      // Both requests succeeded (createBot called twice confirms neither was denied)
+      expect(botRepo.createBot).toHaveBeenCalledTimes(2);
+    });
+
+    it('rebuilds engine when toolPolicy changes between calls', async () => {
+      const policyV1 = { manage_bot: MANAGE_BOT_ENABLED };
+      const policyV2 = { manage_bot: MANAGE_BOT_DISABLED };
+
+      agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+      const botRepo = makeBotRepo();
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      // First call: policy v1 — manage_bot enabled → should be accepted
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5, toolPolicy: policyV1,
+      });
+      const e1 = makeManageBotEnvelope();
+      const result1 = await brokerWithBot.processInbound(e1);
+      expect(result1.accepted).toBe(true);
+
+      // Second call: policy v2 — manage_bot disabled → should be denied
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5, toolPolicy: policyV2,
+      });
+      const e2 = makeManageBotEnvelope();
+      const result2 = await brokerWithBot.processInbound(e2);
+      expect(result2.accepted).toBe(false);
+      expect(result2.error).toMatch(/capability_denied/);
+    });
+
+    it('denies manage_bot when agent has no toolPolicy override (default is disabled)', async () => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5, toolPolicy: null,
+      });
+      agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+      const botRepo = makeBotRepo();
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      // manage_bot is disabled in DEFAULT_CAPABILITY_GRANTS — no override → denied
+      const e1 = makeManageBotEnvelope();
+      const result = await brokerWithBot.processInbound(e1);
+      expect(result.accepted).toBe(false);
+      expect(result.error).toMatch(/capability_denied/);
+      expect(botRepo.createBot).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('manage_bot emits instance status with bot list (R3.2)', () => {
+    function makeManageBotEnvelope() {
+      return {
+        schemaVersion: 'v1',
+        messageId: `msg-${Math.random().toString(36).slice(2)}`,
+        correlationId: 'corr-001',
+        initiatorType: 'agent',
+        initiatorId: 'agent-123',
+        agentId: 'agent-123',
+        type: 'agent.manage_bot',
+        createdAt: new Date().toISOString(),
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-001',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+        },
+      };
+    }
+
+    const MANAGE_BOT_ENABLED_GRANT = { capability: 'manage_bot', tier: 'brokered', enabled: true, limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 } };
+
+    beforeEach(() => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        maxBots: 5,
+        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+      });
+      agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+    });
+
+    it('emits instance status with bot list after create_and_start', async () => {
+      const botRepo = {
+        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-abc'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([
+          { id: 'bot-abc', status: 'running', config: { strategyPreset: 'momentum', symbol: 'BTC-USD' } },
+        ]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
+      expect(result.accepted).toBe(true);
+
+      expect((eventPublisher as any).emitInstanceStatus).toHaveBeenCalledWith(
+        'agent-123',
+        expect.objectContaining({
+          status: 'running',
+          reason: 'bot_created',
+          managedBots: [
+            expect.objectContaining({ id: 'bot-abc', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' }),
+          ],
+        }),
+      );
+    });
+
+    it('emits instance status with empty bot list when agent has no bots', async () => {
+      const botRepo = {
+        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-xyz'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      await brokerWithBot.processInbound(makeManageBotEnvelope());
+
+      expect((eventPublisher as any).emitInstanceStatus).toHaveBeenCalledWith(
+        'agent-123',
+        expect.objectContaining({ managedBots: [] }),
+      );
+    });
+
+    it('emits bot with undefined strategyPreset when config has none', async () => {
+      const botRepo = {
+        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-min'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([
+          { id: 'bot-min', status: 'stopped', config: {} },
+        ]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      await brokerWithBot.processInbound(makeManageBotEnvelope());
+
+      const call = (eventPublisher as any).emitInstanceStatus.mock.calls[0];
+      expect(call[1].managedBots[0].strategyPreset).toBeUndefined();
+      expect(call[1].managedBots[0].symbol).toBeUndefined();
+    });
+
+    it('rejects create_and_start when venue account not owned by agent user', async () => {
+      const botRepo = {
+        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(false),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-never'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
+      expect(result.accepted).toBe(false);
+      expect(botRepo.createBot).not.toHaveBeenCalled();
+      expect((eventPublisher as any).emitInstanceStatus).not.toHaveBeenCalled();
+    });
+
+    it('rejects create_and_start when agent has reached maxBots limit', async () => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 2,
+        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+      });
+
+      const botRepo = {
+        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(2), // at limit
+        createBot: vi.fn().mockResolvedValue('bot-over'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
+      expect(result.accepted).toBe(false);
+      expect(botRepo.createBot).not.toHaveBeenCalled();
     });
   });
 });

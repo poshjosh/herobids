@@ -1,4 +1,4 @@
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-06
 - **Summary:** Agent runtime containers fail to launch in Docker mode when `DOCKER_HOST` uses the `tcp://` scheme. Every Docker API call fails with `fetch failed: getaddrinfo ENOTFOUND tcp`, so agents time out in `starting` and are marked `stopped`.
@@ -87,3 +87,12 @@ After applying either fix:
 
 - `apps/worker/src/agents/docker-agent-manager.ts` (constructor URL normalization), or
 - `docker-compose.yaml` (`worker` service `DOCKER_HOST` env var)
+
+## Test Coverage
+
+Regression tests added in `apps/worker/src/agents/docker-agent-manager.test.ts` under **"DockerAgentManager — TCP URL normalization (bug #19)"**:
+- `tcp://host:port` is converted to `http://host:port`
+- `http://host:port` is passed through unchanged (no double-prefixing)
+- Bare `host:port` (no scheme) is prefixed with `http://`
+- `https://host:port` is passed through unchanged
+- The broken `http://tcp://...` form is never produced

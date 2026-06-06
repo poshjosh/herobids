@@ -490,10 +490,6 @@ export const BotConfigSchema = z.object({
 );
 
 export type BotConfig = z.infer<typeof BotConfigSchema>;
-/** @deprecated Use BotConfigSchema */
-export const TradingInstanceConfigSchema = BotConfigSchema;
-/** @deprecated Use BotConfig */
-export type TradingInstanceConfig = BotConfig;
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;
 export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
 export type MomentumParams = z.infer<typeof MomentumParamsSchema>;

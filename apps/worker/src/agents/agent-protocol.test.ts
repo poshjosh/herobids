@@ -268,6 +268,70 @@ describe('agent-protocol schema validation', () => {
       });
       expect(result.success).toBe(true);
     });
+
+    it('validates InstanceStatusPayload with managedBots', () => {
+      const result = InstanceStatusPayloadSchema.safeParse({
+        status: 'running',
+        reason: 'bot_created',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+        managedBots: [
+          { id: 'bot-1', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' },
+          { id: 'bot-2', status: 'stopped' },
+        ],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.managedBots).toHaveLength(2);
+        expect(result.data.managedBots![0]).toMatchObject({ id: 'bot-1', status: 'running' });
+        expect(result.data.managedBots![1]!.strategyPreset).toBeUndefined();
+      }
+    });
+
+    it('validates InstanceStatusPayload with empty managedBots array', () => {
+      const result = InstanceStatusPayloadSchema.safeParse({
+        status: 'running',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+        managedBots: [],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('validates InstanceStatusPayload without managedBots (field is optional)', () => {
+      const result = InstanceStatusPayloadSchema.safeParse({
+        status: 'paused',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.managedBots).toBeUndefined();
+      }
+    });
+
+    it('rejects InstanceStatusPayload with managedBots missing required id field', () => {
+      const result = InstanceStatusPayloadSchema.safeParse({
+        status: 'running',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+        managedBots: [{ status: 'running' }],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects InstanceStatusPayload with managedBots missing required status field', () => {
+      const result = InstanceStatusPayloadSchema.safeParse({
+        status: 'running',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+        managedBots: [{ id: 'bot-1' }],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects InstanceStatusPayload with invalid status value', () => {
+      const result = InstanceStatusPayloadSchema.safeParse({
+        status: 'on_fire',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('MESSAGE_PAYLOAD_SCHEMAS mapping', () => {
