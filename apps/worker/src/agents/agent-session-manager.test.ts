@@ -214,4 +214,84 @@ describe('AgentSessionManager', () => {
     expect(runtimeLauncher.registerRecoveredRuntime).toHaveBeenCalledWith('agent-1', 'sess-1');
     expect(reconnectHandler.handleReconnect).toHaveBeenCalledWith('agent-1', 'sess-1');
   });
+
+  // ---------------------------------------------------------------------------
+  // streamSubscribe regression — agent stuck in 'starting' then auto-stopped
+  //
+  // Before the fix, reconcileStartingSessions() never called streamSubscribe after
+  // launching a container.  Heartbeats published to agent:inbound:{agentId} had no
+  // consumer group subscribed, so they were never read, handleHeartbeat() was never
+  // invoked, the session never transitioned starting → running, and the health
+  // monitor's 30-second startup timeout fired and stopped the agent.
+  // ---------------------------------------------------------------------------
+
+  it('calls streamSubscribe for each agentId after a successful launch (regression)', async () => {
+    const streamSubscribe = vi.fn().mockResolvedValue(undefined);
+    const { agentRepo, runtimeLauncher } = buildManager();
+    const manager = new AgentSessionManager(
+      agentRepo as any,
+      {} as any,
+      runtimeLauncher as any,
+      { streamSubscribe },
+    );
+
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-a', agentId: 'agent-a', tradingInstanceId: 'inst-a' },
+      { id: 'sess-b', agentId: 'agent-b', tradingInstanceId: 'inst-b' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ id: 'agent-a', prompt: 'goal-a', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null })
+      .mockResolvedValueOnce({ id: 'agent-b', prompt: 'goal-b', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null });
+
+    await manager.reconcileStartingSessions();
+
+    expect(runtimeLauncher.launch).toHaveBeenCalledTimes(2);
+    // The stream must be subscribed for BOTH agents so their heartbeats are received
+    expect(streamSubscribe).toHaveBeenCalledTimes(2);
+    expect(streamSubscribe).toHaveBeenCalledWith('agent-a');
+    expect(streamSubscribe).toHaveBeenCalledWith('agent-b');
+  });
+
+  it('does not call streamSubscribe when launch throws (regression guard)', async () => {
+    const streamSubscribe = vi.fn().mockResolvedValue(undefined);
+    const { agentRepo, runtimeLauncher } = buildManager();
+    const manager = new AgentSessionManager(
+      agentRepo as any,
+      {} as any,
+      runtimeLauncher as any,
+      { streamSubscribe },
+    );
+
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-fail', agentId: 'agent-fail', tradingInstanceId: 'inst-fail' },
+    ]);
+    (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('container start error'));
+
+    await manager.reconcileStartingSessions();
+
+    expect(runtimeLauncher.launch).toHaveBeenCalledOnce();
+    // No stream subscription when launch fails — nothing will heartbeat to it
+    expect(streamSubscribe).not.toHaveBeenCalled();
+  });
+
+  it('does not call streamSubscribe when the session claim fails (regression guard)', async () => {
+    const streamSubscribe = vi.fn().mockResolvedValue(undefined);
+    const { agentRepo, runtimeLauncher } = buildManager();
+    const manager = new AgentSessionManager(
+      agentRepo as any,
+      {} as any,
+      runtimeLauncher as any,
+      { streamSubscribe },
+    );
+
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-race', agentId: 'agent-race', tradingInstanceId: 'inst-race' },
+    ]);
+    (agentRepo.claimStartingSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+
+    await manager.reconcileStartingSessions();
+
+    expect(runtimeLauncher.launch).not.toHaveBeenCalled();
+    expect(streamSubscribe).not.toHaveBeenCalled();
+  });
 });
