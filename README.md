@@ -32,6 +32,20 @@ Config lives in `config/default.yaml`. Environment variables override any value 
 
 ## Running the stack
 
+### Quick Start
+
+Tests
+
+```bash
+scripts/shell/tests/run-all-tests.sh --e2e
+```
+
+Build and run
+
+```bash
+scripts/shell/run/build-and-run.sh
+```
+
 ### Production (pre-built images)
 
 Web UI is served on **http://localhost:5173**, API on **http://localhost:3000**.
