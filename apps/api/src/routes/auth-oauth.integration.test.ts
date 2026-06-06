@@ -5,6 +5,7 @@ import { createDatabase, users, oauthIdentities, sessions } from '@herobids/db';
 import type { AuthConfig } from '@herobids/domain';
 import { authPlugin } from '../plugins/auth.js';
 import { authRoutes } from './auth.js';
+import Redis from 'ioredis';
 
 const SKIP = !process.env['DATABASE_URL'];
 
@@ -13,8 +14,10 @@ const TEST_JWT_SECRET = 'test-secret-for-integration-tests-32ch!!';
 function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
   return {
     publicBaseUrl: 'http://localhost:3000',
+    frontendOrigin: 'http://localhost:5173',
     jwtSecret: TEST_JWT_SECRET,
     jwtTtlSecs: 86_400,
+    exchangeCodeTtlSecs: 60,
     googleClientId: 'google-client-id',
     googleClientSecret: 'google-client-secret',
     secureCookie: false,
@@ -66,22 +69,35 @@ function extractStateCookie(setCookieHeader: string | string[] | undefined): str
   return match[1]!;
 }
 
+function parseRedisUrl(url: string) {
+  const u = new URL(url);
+  return {
+    host: u.hostname || 'localhost',
+    port: parseInt(u.port || '6379', 10),
+    ...(u.password && { password: decodeURIComponent(u.password) }),
+  };
+}
+
 describe.skipIf(SKIP)('authRoutes OAuth callback (integration)', () => {
   let db: ReturnType<typeof createDatabase>;
   let app: ReturnType<typeof Fastify>;
+  let redis: Redis;
   const config = makeAuthConfig();
 
   beforeAll(async () => {
     db = createDatabase(process.env['DATABASE_URL']!);
+    const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+    redis = new Redis(parseRedisUrl(redisUrl));
 
     app = Fastify({ logger: false });
     await authPlugin(app, { config, db });
-    await authRoutes(app, config, db, 'free');
+    await authRoutes(app, config, db, redis, 'free');
     await app.ready();
   }, 30_000);
 
   afterAll(async () => {
     await app.close();
+    await redis.quit();
   });
 
   beforeEach(async () => {
@@ -101,15 +117,28 @@ describe.skipIf(SKIP)('authRoutes OAuth callback (integration)', () => {
     // Step 2: mock Google APIs
     mockGoogle();
 
-    // Step 3: simulate the OAuth callback
-    const res = await app.inject({
+    // Step 3: simulate the OAuth callback — now redirects with exchange code
+    const callbackRes = await app.inject({
       method: 'GET',
       url: `/auth/google/callback?code=auth-code-123&state=${encodeURIComponent(state)}`,
       headers: { cookie: `oauth_state=${state}` },
     });
 
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body) as { token: string; expiresAt: string };
+    expect(callbackRes.statusCode).toBe(302);
+    const location = callbackRes.headers['location'] as string;
+    expect(location).toBeTruthy();
+    const exchangeCode = new URL(location).searchParams.get('code')!;
+    expect(exchangeCode).toBeTruthy();
+
+    // Step 4: exchange the one-time code for the JWT
+    const exchangeRes = await app.inject({
+      method: 'POST',
+      url: '/auth/exchange',
+      payload: { code: exchangeCode },
+    });
+
+    expect(exchangeRes.statusCode).toBe(200);
+    const body = JSON.parse(exchangeRes.body) as { token: string };
     expect(typeof body.token).toBe('string');
     expect(body.token.split('.').length).toBe(3); // valid JWT shape
 
@@ -132,10 +161,18 @@ describe.skipIf(SKIP)('authRoutes OAuth callback (integration)', () => {
       const googleRedirect = await app.inject({ method: 'GET', url: '/auth/google' });
       const state = extractStateCookie(googleRedirect.headers['set-cookie']);
       mockGoogle();
-      return app.inject({
+      const callbackRes = await app.inject({
         method: 'GET',
         url: `/auth/google/callback?code=code&state=${encodeURIComponent(state)}`,
         headers: { cookie: `oauth_state=${state}` },
+      });
+      expect(callbackRes.statusCode).toBe(302);
+      const location = callbackRes.headers['location'] as string;
+      const exchangeCode = new URL(location).searchParams.get('code')!;
+      return app.inject({
+        method: 'POST',
+        url: '/auth/exchange',
+        payload: { code: exchangeCode },
       });
     };
 

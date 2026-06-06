@@ -32,7 +32,7 @@ export class AgentDecisionHandler {
   async handleDecisionSubmit(envelope: MessageEnvelope, payload: DecisionSubmitPayload): Promise<void> {
     const { agentId, botId, initiatorId, initiatorType, tradingInstanceId } = envelope;
     const effectiveAgentId = agentId ?? initiatorId;
-    const effectiveTradingInstanceId = tradingInstanceId ?? botId;
+    const effectiveTradingInstanceId = tradingInstanceId ?? botId ?? effectiveAgentId;
     const resolveId = effectiveTradingInstanceId;
 
     // 1. Verify agent is not paused

@@ -68,6 +68,8 @@ export interface InsertAgentMessage {
   actorType: string;
   actorId: string;
   agentId: string;    // was tradingInstanceId — primary grouping key
+  /** Accepted for call-site compatibility; not stored (no DB column) */
+  tradingInstanceId?: string;
   botId?: string;     // nullable — set when message is bot-scoped
   type: string;
   direction: 'inbound' | 'outbound';

@@ -61,13 +61,13 @@ describe.skipIf(SKIP)('Auth functional', () => {
       await ctx.app.inject({
         method: 'POST',
         url: '/auth/register',
-        payload: { email: 'bob@test.com', password: 'hunter2', displayName: 'Bob' },
+        payload: { email: 'bob@test.com', password: 'hunter2!', displayName: 'Bob' },
       });
 
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/auth/login',
-        payload: { email: 'bob@test.com', password: 'hunter2' },
+        payload: { email: 'bob@test.com', password: 'hunter2!' },
       });
 
       expect(res.statusCode).toBe(200);

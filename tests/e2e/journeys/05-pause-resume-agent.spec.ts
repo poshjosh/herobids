@@ -50,7 +50,7 @@ test.describe('Journey 5: Agent start / stop lifecycle', () => {
     await page.getByRole('button', { name: /^start$/i }).click();
 
     // Status should transition to 'starting'
-    await expect(page.getByText(/starting/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/starting/i).first()).toBeVisible({ timeout: 10_000 });
 
     // The Stop button should now be visible (canStop includes 'starting')
     await expect(page.getByRole('button', { name: /^stop$/i })).toBeVisible({ timeout: 5000 });

@@ -176,25 +176,23 @@ describe.skipIf(SKIP)('Worker: session lifecycle (stub runtime)', () => {
     await sessionManager.reconcileStartingSessions();
 
     // Feed a synthetic heartbeat (as the stream consumer would)
-    const heartbeatPayload = {
+    const envelope = {
       schemaVersion: 'v1' as const,
       messageId: crypto.randomUUID(),
-      senderId: agentId,
-      senderType: 'agent' as const,
-      recipientId: 'platform',
-      recipientType: 'platform' as const,
-      kind: 'heartbeat' as const,
-      sentAt: new Date().toISOString(),
-      payload: {
-        sessionId,
-        agentId,
-        status: 'running' as const,
-        uptimeMs: 100,
-        activeTasks: 0,
-      },
+      correlationId: crypto.randomUUID(),
+      initiatorType: 'agent' as const,
+      initiatorId: agentId,
+      tradingInstanceId: sessionId,
+      type: 'agent.runtime.heartbeat',
+      createdAt: new Date().toISOString(),
+      payload: {},
+    };
+    const heartbeatPayload = {
+      sessionId,
+      status: 'ready' as const,
     };
 
-    await sessionManager.handleHeartbeat(heartbeatPayload);
+    await sessionManager.handleHeartbeat(envelope, heartbeatPayload);
 
     const [updatedSession] = await db.select().from(agentRuntimeSessions).where(
       eq(agentRuntimeSessions.id, sessionId),

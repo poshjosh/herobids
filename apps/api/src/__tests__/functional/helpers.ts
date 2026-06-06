@@ -24,8 +24,10 @@ export const TEST_JWT_SECRET = 'test-functional-secret-at-least-32-chars!!';
 export function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
   return {
     publicBaseUrl: 'http://localhost:3000',
+    frontendOrigin: 'http://localhost:5173',
     jwtSecret: TEST_JWT_SECRET,
     jwtTtlSecs: 3600,
+    exchangeCodeTtlSecs: 60,
     googleClientId: 'test-google-client-id',
     googleClientSecret: 'test-google-client-secret',
     secureCookie: false,
@@ -102,6 +104,6 @@ export async function registerUser(
     throw new Error(`register failed: ${res.statusCode} ${res.body}`);
   }
 
-  const body = res.json<{ token: string }>();
+  const body = res.json() as { token: string };
   return body.token;
 }

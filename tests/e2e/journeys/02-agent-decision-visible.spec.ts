@@ -25,7 +25,7 @@ test.describe('Journey 2: Recent Decisions section renders on agent detail page'
     }
     await page.getByLabel(/email/i).fill(EMAIL);
     await page.getByLabel(/password/i).fill(PASSWORD);
-    const submitBtn = page.getByRole('button', { name: /create account|sign in|log in/i });
+    const submitBtn = page.getByRole('button', { name: /create account|sign in|log in/i }).first();
     await submitBtn.click();
     await page.waitForURL('**/mission-control', { timeout: 15_000 });
   });

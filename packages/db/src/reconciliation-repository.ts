@@ -5,6 +5,8 @@ import { reconciliationEvents } from './schema/index.js';
 import { venueAccounts } from './schema/index.js';
 
 export interface InsertReconciliationEvent {
+  /** Accepted for call-site compatibility; not stored (reconciliation is venue-account-scoped) */
+  tradingInstanceId?: string;
   venueAccountId: string;
   result: 'match' | 'drift_detected' | 'drift_within_threshold' | 'repaired';
   localState: Record<string, unknown>;

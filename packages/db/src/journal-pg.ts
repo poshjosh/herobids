@@ -85,14 +85,17 @@ export class PgJournal implements JournalPort {
 
   /** Query journal events matching multiple types for an actor */
   async queryByTypes(filters: {
-    actorId: string;
+    actorId?: string;
+    tradingInstanceId?: string;
     types: string[];
     since?: Date;
     limit?: number;
   }): Promise<Array<typeof journalEvents.$inferSelect>> {
-    const conditions: SQL[] = [
-      eq(journalEvents.actorId, filters.actorId),
-    ];
+    const effectiveActorId = filters.actorId ?? filters.tradingInstanceId;
+    const conditions: SQL[] = [];
+    if (effectiveActorId) {
+      conditions.push(eq(journalEvents.actorId, effectiveActorId));
+    }
     if (filters.types.length > 0) {
       conditions.push(inArray(journalEvents.type, filters.types));
     }

@@ -31,10 +31,10 @@ test.describe('Journey 1: Sign up → create agent → start → heartbeat', () 
 
     // Navigate to agents
     await page.goto('/agents');
-    await expect(page.getByText(/agents|AI agents/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /AI Agents/i })).toBeVisible();
 
     // Create agent
-    await page.getByRole('button', { name: /new agent|create agent/i }).click();
+    await page.getByRole('button', { name: /new agent|create agent/i }).first().click();
 
     // Fill in the goal
     const goalInput = page.getByPlaceholder(/what do you want|describe/i).or(page.locator('textarea').first());
@@ -70,6 +70,6 @@ test.describe('Journey 1: Sign up → create agent → start → heartbeat', () 
     // The agent created in the first test should appear
     await expect(page.locator('[data-testid="agent-card"], .agent-card').or(
       page.getByText(/Alert me when BTC drops 5/i),
-    )).toBeVisible({ timeout: 5000 });
+    ).first()).toBeVisible({ timeout: 5000 });
   });
 });

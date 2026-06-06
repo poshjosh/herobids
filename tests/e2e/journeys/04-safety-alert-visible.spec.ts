@@ -57,8 +57,8 @@ test.describe('Journey 4: Runtime health card visible in UI', () => {
 
     // The Runtime Health card is rendered whenever there is an active session
     // (status: starting | running | unhealthy).
-    await expect(page.getByText(/Runtime Health/i)).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/starting/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Runtime Health', exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/starting/i).first()).toBeVisible({ timeout: 10_000 });
 
     // Clean up — stop the agent so it does not linger as 'starting'
     await request.post(`/api/agents/${agentId}/stop`, {

@@ -51,7 +51,7 @@ export async function createAgent(
   skipVenueStep = true,
 ): Promise<string> {
   await page.goto('/agents');
-  await page.getByRole('button', { name: /new agent|create agent/i }).click();
+  await page.getByRole('button', { name: /new agent|create agent/i }).first().click();
 
   await page.getByPlaceholder(/what do you want/i).fill(goal);
 

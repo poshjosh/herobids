@@ -68,10 +68,12 @@ export function LoginPage() {
         </div>
 
         {/* Tab switcher */}
-        <div style={{ display: 'flex', gap: '4px', background: 'var(--color-surface-0)', borderRadius: '8px', padding: '4px' }}>
+        <div role="tablist" style={{ display: 'flex', gap: '4px', background: 'var(--color-surface-0)', borderRadius: '8px', padding: '4px' }}>
           {(['google', 'email'] as const).map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => { setTab(t); setError(null); }}
               style={{
                 flex: 1,
@@ -124,8 +126,9 @@ export function LoginPage() {
           <form onSubmit={(e) => { void handleEmailSubmit(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {emailMode === 'register' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Name</label>
+                <label htmlFor="login-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Name</label>
                 <input
+                  id="login-name"
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
@@ -137,8 +140,9 @@ export function LoginPage() {
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Email</label>
+              <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Email</label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -149,8 +153,9 @@ export function LoginPage() {
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Password</label>
+              <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Password</label>
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
