@@ -152,3 +152,98 @@ describe('agent routes lifecycle', () => {
     ]);
   });
 });
+
+describe('agent routes config update (PATCH /agents/:id)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['active'],
+    ['starting'],
+    ['paused'],
+    ['unhealthy'],
+  ])('rejects PATCH with 409 when agent status is %s', async (status) => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status, userId: TEST_USER_ID, skillIds: [] }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { name: 'new name' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('agent_not_editable');
+  });
+
+  it.each([
+    ['stopped'],
+    ['crashed'],
+  ])('allows PATCH and persists changes when agent status is %s', async (status) => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = { id: 'agent-1', userId: TEST_USER_ID, status, skillIds: [], name: 'new name', prompt: 'p' };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status, userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { name: 'new name' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ name: 'new name' }));
+  });
+
+  it('returns 404 when the agent does not exist or belongs to another user', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({ agentRows: [] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { name: 'new name' },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('not_found');
+  });
+
+  it('returns 400 for an invalid payload', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [] }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      // name must be min(1) — empty string should fail validation
+      payload: { name: '' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+});
