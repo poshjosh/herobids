@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
-import { eq, and, ne, sql, sum, asc, inArray } from 'drizzle-orm';
+import { eq, and, ne, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, venueAccounts, PgJournal, fills, journalEvents } from '@herobids/db';
+import { bots, venueAccounts, blueprints, PgJournal, fills, journalEvents } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -18,6 +18,43 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     const parsed = CreateInstanceSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    // Resolve config source: blueprint reference takes precedence over inline config.
+    let resolvedConfig: Record<string, unknown>;
+    let blueprintId: string | null = null;
+    let configSnapshot: Record<string, unknown> | null = null;
+    const usingDeprecatedInlineConfig = !parsed.data.blueprintId;
+
+    if (parsed.data.blueprintId) {
+      // Look up the blueprint; accepts owner's private or any public blueprint.
+      const [bp] = await db
+        .select({ id: blueprints.id, configData: blueprints.configData })
+        .from(blueprints)
+        .where(and(
+          eq(blueprints.id, parsed.data.blueprintId),
+          or(eq(blueprints.userId, request.userId), eq(blueprints.visibility, 'public')),
+        ));
+      if (!bp) {
+        return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
+      }
+      const base = bp.configData as Record<string, unknown>;
+      const overrides = (parsed.data.configOverrides ?? {}) as Record<string, unknown>;
+      // Section-level merge: for each top-level key, if both sides are plain objects,
+      // merge them one level deep so that e.g. { strategy: { lookbackPeriod: 21 } }
+      // adds/overrides that one field without discarding sibling fields like type.
+      resolvedConfig = { ...base };
+      for (const [k, v] of Object.entries(overrides)) {
+        const existing = resolvedConfig[k];
+        resolvedConfig[k] = (
+          existing !== null && typeof existing === 'object' && !Array.isArray(existing) &&
+          v !== null && typeof v === 'object' && !Array.isArray(v)
+        ) ? { ...(existing as Record<string, unknown>), ...(v as Record<string, unknown>) } : v;
+      }
+      configSnapshot = resolvedConfig;
+      blueprintId = parsed.data.blueprintId;
+    } else {
+      resolvedConfig = parsed.data.config as Record<string, unknown>;
     }
 
     const id = crypto.randomUUID();
@@ -39,22 +76,35 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId);
         if (!planCheck.ok) return { kind: 'limit' as const, error: planCheck.error };
 
-        await tx.insert(bots).values({
-          id,
-          userId: request.userId,
-          venueAccountId: parsed.data.venueAccountId,
-          config: parsed.data.config,
-          status: 'stopped',
-          creatorType: 'user',
-          creatorId: request.userId,
-          createdAt: now,
-          updatedAt: now,
-        });
+        try {
+          await tx.insert(bots).values({
+            id,
+            userId: request.userId,
+            venueAccountId: parsed.data.venueAccountId,
+            config: resolvedConfig,
+            blueprintId,
+            configSnapshot,
+            status: 'stopped',
+            creatorType: 'user',
+            creatorId: request.userId,
+            createdAt: now,
+            updatedAt: now,
+          });
+        } catch (err: unknown) {
+          // Blueprint was deleted between the pre-transaction lookup and the insert.
+          if ((err as { code?: string }).code === '23503') {
+            return { kind: 'blueprint_deleted' as const };
+          }
+          throw err;
+        }
         return { kind: 'ok' as const };
       });
 
       if (result.kind === 'not_found') {
         return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+      }
+      if (result.kind === 'blueprint_deleted') {
+        return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
       }
       if (result.kind === 'limit') {
         return reply.status(403).send({ error: result.error.code, message: result.error.message });
@@ -67,20 +117,35 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
       }
 
-      await db.insert(bots).values({
-        id,
-        userId: request.userId,
-        venueAccountId: parsed.data.venueAccountId,
-        config: parsed.data.config,
-        status: 'stopped',
-        creatorType: 'user',
-        creatorId: request.userId,
-        createdAt: now,
-        updatedAt: now,
-      });
+      try {
+        await db.insert(bots).values({
+          id,
+          userId: request.userId,
+          venueAccountId: parsed.data.venueAccountId,
+          config: resolvedConfig,
+          blueprintId,
+          configSnapshot,
+          status: 'stopped',
+          creatorType: 'user',
+          creatorId: request.userId,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (err: unknown) {
+        // Blueprint was deleted between the pre-transaction lookup and the insert.
+        if ((err as { code?: string }).code === '23503') {
+          return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
+        }
+        throw err;
+      }
     }
 
     const [bot] = await db.select().from(bots).where(eq(bots.id, id));
+    // Notify callers using the deprecated inline config field to migrate to blueprintId.
+    if (usingDeprecatedInlineConfig) {
+      void reply.header('Deprecation', 'true');
+      void reply.header('Link', '</blueprints>; rel="deprecation"; title="Use blueprintId instead of config"');
+    }
     return reply.status(201).send(bot);
   });
 

@@ -15,6 +15,7 @@ import { dashboardRoutes } from './routes/dashboard.js';
 import { billingRoutes } from './routes/billing.js';
 import { agentRoutes } from './routes/agents.js';
 import { sessionRoutes } from './routes/sessions.js';
+import { blueprintRoutes } from './routes/blueprints.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -89,6 +90,7 @@ await agentRoutes(app, db, appConfig.plans);
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db);
 await sessionRoutes(app, db);
+await blueprintRoutes(app, db);
 
 const port = appConfig.app.port;
 

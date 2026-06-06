@@ -2,6 +2,7 @@ export { instruments } from './instruments.js';
 export { venueAccounts } from './venue-accounts.js';
 export { userCredentials } from './user-credentials.js';
 // portfolios REMOVED — no MVP benefit; user thinks in wallets/accounts
+export { blueprints } from './blueprints.js';
 export { bots } from './bots.js';
 export { decisions } from './decisions.js';
 export { executionPlans } from './execution-plans.js';

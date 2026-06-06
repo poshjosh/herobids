@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { venueAccounts } from './venue-accounts.js';
+import { blueprints } from './blueprints.js';
 
 /**
  * Bots — the core execution unit.
@@ -18,6 +19,10 @@ export const bots = pgTable('bots', {
   /** Bot configuration: strategy params, risk overrides, execution mode.
    *  config.strategy.type is the strategy discriminator. */
   config: jsonb('config').notNull().$type<Record<string, unknown>>(),
+  /** Optional reference to the blueprint this bot was instantiated from */
+  blueprintId: text('blueprint_id').references(() => blueprints.id, { onDelete: 'set null' }),
+  /** Snapshot of the blueprint configData (merged with any overrides) at bot creation time */
+  configSnapshot: jsonb('config_snapshot').$type<Record<string, unknown>>(),
   /** Current status: stopped | running | crashed */
   status: text('status').notNull().default('stopped'),
   // configVersion REMOVED — no consumer; use updatedAt as ETag

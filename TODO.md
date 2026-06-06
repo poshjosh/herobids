@@ -2,6 +2,38 @@
 
 Some of these may no longer be valid (they may have been done/implemented). 
 
+I’m checking the latest unstaged blueprint and bot changes for remaining behavioral issues, especially places where the new locking and validation logic may still leave edge-case failures or contract gaps.
+
+Ran terminal command:  git status --short && git --no-pager diff -- apps/api/src/index.ts apps/api/src/routes/blueprints.ts apps/api/src/routes/blueprints.test.ts apps/api/src/routes/bots.ts apps/api/src/schemas.ts packages/db/src/schema/blueprints.ts packages/db/src/schema/bots.ts packages/db/drizzle/0003_wonderful_inhumans.sql
+
+Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/blueprints.ts#220-220), lines 220 to 340
+
+Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/bots.ts#1-1), lines 1 to 140
+
+Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/schemas.ts#1-1), lines 1 to 30
+
+Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/blueprints.test.ts#288-288), lines 288 to 760
+
+I’ve confirmed the current code shape after the last fixes. I’m checking one more slice around the bot test coverage and the blueprint mutation endpoints to separate real defects from test-only gaps.
+
+Read [](file:///Users/chinomso.ikwuagwu/dev_ai/herobids/apps/api/src/routes/blueprints.test.ts#760-760), lines 760 to 835
+
+Searched for regex `app.post\('/blueprints'|app.post\('/blueprints/from-preset'|app.post<\{ Params: \{ id: string \} \}>\('/blueprints/:id/(publish|unpublish)'|app.delete<\{ Params: \{ id: string \} \}>\('/blueprints/:id'` (`**/apps/api/src/routes/blueprints.ts`), 3 results
+
+Searched for regex `resolveBlueprintForWrite\(|resolveBlueprintForRead\(` (`**/apps/api/src/routes/blueprints.ts`), 8 results
+
+I’ve isolated two realistic remaining issues: one mutation race the new advisory lock doesn’t fully close, and one still-ambiguous `POST /bots` request shape. I’m pulling exact lines for both so the findings map cleanly to the current code.
+
+Searched for regex ``app.put<\{ Params: \{ id: string \}; Body: unknown \}>\('/blueprints/:id'|await tx.execute\(sql`SELECT pg_advisory_xact_lock\(2, hashtext\(\$\{request.params.id\}\)\)`\)|await tx.update\(blueprints\)\.set\(updateFields\)\.where\(eq\(blueprints.id, request.params.id\)\)|app.delete<\{ Params: \{ id: string \} \}>\('/blueprints/:id'|app.post<\{ Params: \{ id: string \} \}>\('/blueprints/:id/publish'|app.post<\{ Params: \{ id: string \} \}>\('/blueprints/:id/unpublish'`` (`**/apps/api/src/routes/blueprints.ts`), 6 results
+
+Searched for regex `blueprintId: z.string\(\)\.min\(1\)\.optional\(\)|config: z.record\(z.unknown\(\)\)\.optional\(\)|configOverrides requires blueprintId` (`**/apps/api/src/schemas.ts`), 3 results
+
+Searched for regex `if \(parsed.data.blueprintId\) \{|const usingDeprecatedInlineConfig = !parsed.data.blueprintId;` (`**/apps/api/src/routes/bots.ts`), 2 results
+
+- [ ] blueprints.ts:226, blueprints.ts:235, blueprints.ts:266, blueprints.ts:277, blueprints.ts:321, and blueprints.ts:333 still leave blueprint mutations only partially serialized. PUT /blueprints/:id now takes an advisory lock, but DELETE, publish, and unpublish do not participate in that same lock. So a concurrent delete or visibility change can still interleave with the locked update path, and PUT can return 200 with an empty body or stale post-update assumptions if the row disappears or changes mid-transaction. If the intent is “one blueprint mutation at a time,” every mutating endpoint for the same blueprint id needs to use the same lock key.
+
+- [ ] schemas.ts:8, schemas.ts:12, bots.ts:27, and bots.ts:29 still accept an ambiguous POST /bots body containing both blueprintId and legacy inline config. The route silently prefers blueprintId and ignores config, which is better than the old configOverrides hole, but it is still a silent conflict in the public contract. This should be rejected at validation time so callers do not think their inline config was applied when it was discarded.
+
 - [ ] bots.ts and bots.ts still break `/bots/:id/sessions` pagination. The route now builds session pairs correctly, but it fetches the first `maxEvents` lifecycle events in ascending order before pairing and reversing. Once a bot has more than `(limit + offset) * 2 + 2` lifecycle events, page 1 stops reflecting the newest sessions and instead returns the newest sessions from the oldest slice of history. This is a real data-loss bug for any bot with longer history. The current stub test at bots.test.ts only checks that `sessions` exists, so it would not catch this.
 
 - [ ] agents.ts and agents.ts return different response shapes for `/agents/:id/trades`. When an agent has no managed bots, the route returns `{ agentId, trades: [] }`; otherwise it returns `{ agentId, trades, limit, offset }`. That makes the contract data-dependent and forces clients to special-case the empty state. The matching test at agents.test.ts only asserts that `trades` is an array, so this drift is currently untested.

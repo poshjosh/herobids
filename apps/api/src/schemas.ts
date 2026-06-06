@@ -4,7 +4,28 @@ export const CreateInstanceSchema = z.object({
   venueAccountId: z.string().min(1),
   venue: z.string().min(1),
   symbol: z.string().min(1),
-  config: z.record(z.unknown()),
+  /** Reference an existing blueprint as the config source. */
+  blueprintId: z.string().min(1).optional(),
+  /** Field-level overrides applied on top of the blueprint's configData. */
+  configOverrides: z.record(z.unknown()).optional(),
+  /** Inline config — deprecated; use blueprintId instead. */
+  config: z.record(z.unknown()).optional(),
+}).superRefine((d, ctx) => {
+  if (d.blueprintId === undefined && d.config === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Either blueprintId or config is required',
+      path: ['blueprintId'],
+    });
+  }
+
+  if (d.configOverrides !== undefined && d.blueprintId === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'configOverrides requires blueprintId',
+      path: ['configOverrides'],
+    });
+  }
 });
 
 export const UpdateInstanceConfigSchema = z.object({

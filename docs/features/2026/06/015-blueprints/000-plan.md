@@ -1,7 +1,7 @@
 # 015 — Blueprints System
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Build the `blueprints` table and CRUD API that the domain model specifies. Migrate `bots.config` to reference blueprints. This is the largest structural gap.
