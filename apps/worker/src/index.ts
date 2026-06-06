@@ -184,7 +184,14 @@ const workerTelegram = appConfig.alerts.telegram.botToken
   : undefined;
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
-const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, undefined, agentReconnectHandler, platformAlerts);
+// Late-bound subscribe callback: set once agentStreamConsumer is constructed below.
+// sessionManager.reconcileStartingSessions() only runs after sessionManager.start()
+// (line ~749), by which point agentStreamConsumer is fully initialized.
+let agentStreamSubscribeFn: ((agentId: string) => Promise<void>) | undefined;
+
+const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, {
+  streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
+}, agentReconnectHandler, platformAlerts);
 
 // Queue used by the broker callback to enqueue bot start jobs
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
@@ -214,6 +221,7 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
 
 const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
+agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
 
 // Strategy factory keyed by config.strategy.type

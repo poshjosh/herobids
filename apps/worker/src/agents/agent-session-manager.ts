@@ -14,6 +14,15 @@ export interface AgentSessionManagerConfig {
   heartbeatTimeoutMs: number;
   /** Interval in ms to check for stale sessions. Default: 10000 */
   healthCheckIntervalMs: number;
+  /**
+   * Called after a session's container is successfully launched.
+   * Used to subscribe the agent's inbound Redis stream so that heartbeats
+   * published by the runtime (or stub) are actually consumed by this worker.
+   * Without this, heartbeats are written to Redis but never read, so the
+   * session never transitions from 'starting' → 'running' and the health
+   * monitor's startup timeout fires and stops the agent.
+   */
+  streamSubscribe?: (agentId: string) => Promise<void>;
 }
 
 const DEFAULT_CONFIG: AgentSessionManagerConfig = {
@@ -140,6 +149,10 @@ export class AgentSessionManager {
           agentConfig,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
         });
+
+        if (this.config.streamSubscribe) {
+          await this.config.streamSubscribe(session.agentId);
+        }
       } catch (err) {
         logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to launch starting session');
 
