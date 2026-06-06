@@ -2,17 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { BillingConfigSchema, AppConfigSchema } from '@herobids/domain';
 
 describe('BillingConfigSchema', () => {
-  it('parses disabled billing with defaults', () => {
+  it('parses mock billing with defaults (local dev)', () => {
     const result = BillingConfigSchema.parse({});
-    expect(result.enabled).toBe(false);
     expect(result.stripe.secretKey).toBe('');
     expect(result.creem.apiKey).toBe('');
-    expect(result.primaryProvider).toBe('creem');
+    expect(result.primaryProvider).toBe('mock');
   });
 
   it('parses enabled billing with Creem as primary', () => {
     const result = BillingConfigSchema.parse({
-      enabled: true,
       primaryProvider: 'creem',
       checkoutSuccessUrl: 'https://app.example.com/billing?session=success',
       checkoutCancelUrl: 'https://app.example.com/billing?session=cancelled',
@@ -24,14 +22,12 @@ describe('BillingConfigSchema', () => {
         },
       },
     });
-    expect(result.enabled).toBe(true);
     expect(result.primaryProvider).toBe('creem');
     expect(result.creem.planProducts['pro']).toHaveLength(1);
   });
 
   it('parses enabled billing with Stripe as primary', () => {
     const result = BillingConfigSchema.parse({
-      enabled: true,
       primaryProvider: 'stripe',
       checkoutSuccessUrl: 'https://app.example.com/billing?session=success',
       checkoutCancelUrl: 'https://app.example.com/billing?session=cancelled',
@@ -43,7 +39,6 @@ describe('BillingConfigSchema', () => {
         },
       },
     });
-    expect(result.enabled).toBe(true);
     expect(result.primaryProvider).toBe('stripe');
     expect(result.stripe.planPrices['pro']).toHaveLength(1);
   });
@@ -90,43 +85,55 @@ describe('AppConfigSchema billing cross-validation', () => {
     risk: { globalMaxDrawdownPct: 20, maxOpenPositions: 10, maxPositionSizePct: 25 },
   };
 
-  it('rejects enabled billing with Stripe primary but no Stripe secretKey', () => {
+  it('rejects Stripe primary with no secretKey', () => {
     const result = AppConfigSchema.safeParse({
       ...baseConfig,
-      billing: { enabled: true, primaryProvider: 'stripe', stripe: { webhookSecret: 'whsec_test' } },
+      billing: { primaryProvider: 'stripe', stripe: { webhookSecret: 'whsec_test' } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects enabled billing with Stripe primary but no Stripe webhookSecret', () => {
+  it('rejects Stripe primary with no webhookSecret', () => {
     const result = AppConfigSchema.safeParse({
       ...baseConfig,
-      billing: { enabled: true, primaryProvider: 'stripe', stripe: { secretKey: 'sk_test_xxx' } },
+      billing: { primaryProvider: 'stripe', stripe: { secretKey: 'sk_test_xxx' } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects enabled billing with Creem primary but no Creem apiKey', () => {
+  it('rejects Creem primary with no apiKey', () => {
     const result = AppConfigSchema.safeParse({
       ...baseConfig,
-      billing: { enabled: true, primaryProvider: 'creem', creem: { webhookSecret: 'whsec_test' } },
+      billing: { primaryProvider: 'creem', creem: { webhookSecret: 'whsec_test' } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects enabled billing with Creem primary but no Creem webhookSecret', () => {
+  it('rejects Creem primary with no webhookSecret', () => {
     const result = AppConfigSchema.safeParse({
       ...baseConfig,
-      billing: { enabled: true, primaryProvider: 'creem', creem: { apiKey: 'creem_test_xxx' } },
+      billing: { primaryProvider: 'creem', creem: { apiKey: 'creem_test_xxx' } },
     });
     expect(result.success).toBe(false);
   });
 
-  it('allows disabled billing with no secrets', () => {
+  it('allows mock provider with no credentials', () => {
+    const result = AppConfigSchema.safeParse({
+      ...baseConfig,
+      billing: { primaryProvider: 'mock' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects config that still carries the removed billing.enabled key', () => {
     const result = AppConfigSchema.safeParse({
       ...baseConfig,
       billing: { enabled: false },
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join('.'));
+      expect(paths).toContain('billing.enabled');
+    }
   });
 });

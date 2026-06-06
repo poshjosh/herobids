@@ -30,6 +30,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
   // Billing
+  BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   STRIPE_SECRET_KEY: { path: 'billing.stripe.secretKey', type: 'string' },
   STRIPE_WEBHOOK_SECRET: { path: 'billing.stripe.webhookSecret', type: 'string' },
   CREEM_API_KEY: { path: 'billing.creem.apiKey', type: 'string' },
@@ -104,5 +105,14 @@ export function loadConfig(configDir?: string): AppConfig {
   const merged = deepMerge(base, envOverlay);
   applyEnvOverrides(merged);
 
-  return AppConfigSchema.parse(merged);
+  const config = AppConfigSchema.parse(merged);
+
+  if (env === 'production' && config.billing.primaryProvider === 'mock') {
+    throw new Error(
+      "billing.primaryProvider is 'mock' in a production environment — " +
+      "set BILLING_PRIMARY_PROVIDER=creem (or stripe) or add billing.primaryProvider to config/production.yaml",
+    );
+  }
+
+  return config;
 }

@@ -6,18 +6,6 @@ Some of these may no longer be valid (they may have been done/implemented).
 
 - [ ] Sandbox enforcement on code execution has only been partially implemented. SandboxEnforcer and sandbox-exec.sh exist, and code_execute is in the capability grants, but no broker handler routes code_execute calls — the capability is defined but not wired on the production path
 
-- [x] Make appropriate Foreign Keys `ON DELETE CASCADE` rather than manually deleting them e.g.
-```
-// Delete FK-referencing child rows before removing the parent so PG doesn't reject.
-// Order matters: outbound messages → artifacts → sessions → links → agent
-await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
-await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
-await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
-await db.delete(agentInstanceLinks).where(eq(agentInstanceLinks.agentId, id));
-
-await db.delete(agents).where(eq(agents.id, id));
-```
-
 - [ ] Plan quota TOCTOU - Plan quotas are still bypassable under concurrency because every new limit check is a read-then-write sequence with no atomicity. The new guards in plan-guards.ts, plan-guards.ts, plan-guards.ts, plan-guards.ts, and plan-guards.ts run before inserts in endpoints like accounts.ts, credentials.ts, instances.ts, and backtests.ts. Two parallel requests can both observe “under limit” and both insert, so users can exceed every new plan cap. This needs a transactional counter/locking strategy or DB-enforced quota model; the current application-side checks are advisory only. WE SKIPPED EARLIER BECAUSE: the read-then-insert pattern in each create route is advisory-only under concurrency. Fixing it correctly requires wrapping every `checkXxxLimit` + `db.insert(...)` in a shared transaction with per-user serialization (advisory lock or `FOR UPDATE`), which is a cross-cutting change across 6 routes and all guard function signatures. This is a known limitation; for a soft billing limit the business impact of one extra row under a rare race is low.
 
 - [ ] Checkout failover still has one unscoped cross-provider lookup. In billing.ts, the route derives the selected interval with resolveIntervalFromPriceId before handing off to the provider manager, but the helper in billing.ts searches Stripe first and then Creem without taking the owning provider. If two providers ever reuse the same ID string for the same plan but different intervals, the fallback path can preserve the wrong interval and create the wrong subscription variant. This should be scoped the same way as the other provider-aware helpers.

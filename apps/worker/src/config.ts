@@ -51,6 +51,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Alerts
   ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
+  // Billing
+  BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   // Auth
   AUTH_PUBLIC_BASE_URL: { path: 'auth.publicBaseUrl', type: 'string' },
   AUTH_JWT_SECRET: { path: 'auth.jwtSecret', type: 'string' },
@@ -126,5 +128,14 @@ export function loadConfig(configDir?: string): AppConfig {
   const merged = deepMerge(base, envOverlay);
   applyEnvOverrides(merged);
 
-  return AppConfigSchema.parse(merged);
+  const config = AppConfigSchema.parse(merged);
+
+  if (env === 'production' && config.billing.primaryProvider === 'mock') {
+    throw new Error(
+      "billing.primaryProvider is 'mock' in a production environment — " +
+      "set BILLING_PRIMARY_PROVIDER=creem (or stripe) or add billing.primaryProvider to config/production.yaml",
+    );
+  }
+
+  return config;
 }

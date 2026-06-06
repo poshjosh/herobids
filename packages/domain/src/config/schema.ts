@@ -195,10 +195,13 @@ export const CreemConfigSchema = z.object({
 });
 
 export const BillingConfigSchema = z.object({
-  /** Master switch — set true once a provider is configured */
-  enabled: z.boolean().default(false),
-  /** Primary payment provider */
-  primaryProvider: BillingProviderSchema.default('creem'),
+  /**
+   * @deprecated — removed. Use primaryProvider: 'mock' for dev/CI instead.
+   * Presence of this key will cause a startup validation error.
+   */
+  enabled: z.boolean().optional(),
+  /** Primary payment provider — use 'mock' for local dev/CI (no credentials needed) */
+  primaryProvider: BillingProviderSchema.default('mock'),
   /** Fallback payment provider (optional) */
   fallbackProvider: BillingProviderSchema.optional(),
   /** URL the browser lands on after successful checkout */
@@ -209,6 +212,14 @@ export const BillingConfigSchema = z.object({
   stripe: StripeConfigSchema.default({}),
   /** Creem configuration */
   creem: CreemConfigSchema.default({}),
+}).superRefine((data, ctx) => {
+  if (data.enabled !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "billing.enabled is no longer supported — remove it and use primaryProvider: 'mock' for dev/CI, or 'creem'/'stripe' for production",
+      path: ['enabled'],
+    });
+  }
 });
 
 export const LiveRolloutConfigSchema = z.object({
@@ -272,8 +283,9 @@ export const AppConfigSchema = z.object({
       path: ['plans', 'defaultPlanId'],
     });
   }
-  // If billing is enabled, validate provider credentials and plan mappings
-  if (data.billing.enabled) {
+  // When a real provider is configured, validate its credentials and plan mappings
+  const isRealProvider = (p: string | undefined) => p === 'stripe' || p === 'creem';
+  if (isRealProvider(data.billing.primaryProvider) || isRealProvider(data.billing.fallbackProvider)) {
     const { primaryProvider, fallbackProvider, stripe, creem } = data.billing;
 
     // Validate primary provider credentials

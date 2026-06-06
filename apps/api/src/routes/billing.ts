@@ -30,11 +30,7 @@ export async function billingRoutes(
   db: Database,
 ) {
   const billingRepo = new BillingRepository(db);
-  // Only create the provider manager when billing is active — routes check for null
-  // before calling it, so the summary endpoint works even when billing is disabled.
-  const providerManager = billingConfig.enabled
-    ? createProviderManager(billingConfig, billingRepo)
-    : null;
+  const providerManager = createProviderManager(billingConfig, billingRepo);
   const entitlementSync = new EntitlementSync(billingRepo, billingConfig, plansConfig.defaultPlanId);
 
   // -------------------------------------------------------------------------
@@ -115,7 +111,6 @@ export async function billingRoutes(
             trialEnd: subscription.trialEnd?.toISOString() ?? null,
           }
         : null,
-      billingEnabled: billingConfig.enabled,
       availablePlans,
     });
   });
@@ -124,9 +119,6 @@ export async function billingRoutes(
   // POST /billing/checkout-session — create a checkout session via provider manager
   // -------------------------------------------------------------------------
   app.post<{ Body: { planId: string; priceId?: string } }>('/billing/checkout-session', async (request, reply) => {
-    if (!providerManager) {
-      return reply.status(503).send({ error: 'Billing is not enabled' });
-    }
     const userId = request.userId;
     const { planId: targetPlanId, priceId: targetPriceId } = request.body as { planId?: string; priceId?: string };
 
@@ -186,9 +178,6 @@ export async function billingRoutes(
   // POST /billing/customer-portal — redirect to provider's customer portal
   // -------------------------------------------------------------------------
   app.post('/billing/customer-portal', async (request, reply) => {
-    if (!providerManager) {
-      return reply.status(503).send({ error: 'Billing is not enabled' });
-    }
     const userId = request.userId;
 
     // Use the subscription's provider to find the right customer record.
@@ -216,9 +205,6 @@ export async function billingRoutes(
   // POST /billing/cancel-subscription — cancel user's active subscription
   // -------------------------------------------------------------------------
   app.post('/billing/cancel-subscription', async (request, reply) => {
-    if (!providerManager) {
-      return reply.status(503).send({ error: 'Billing is not enabled' });
-    }
     const userId = request.userId;
 
     const subscription = await billingRepo.findSubscriptionByUserId(userId);
@@ -258,9 +244,6 @@ export async function billingRoutes(
   // POST /billing/upgrade-subscription — upgrade/downgrade user's plan
   // -------------------------------------------------------------------------
   app.post<{ Body: { planId: string; priceId?: string } }>('/billing/upgrade-subscription', async (request, reply) => {
-    if (!providerManager) {
-      return reply.status(503).send({ error: 'Billing is not enabled' });
-    }
     const userId = request.userId;
     const { planId: newPlanId, priceId: newPriceId } = request.body as { planId?: string; priceId?: string };
 
@@ -399,8 +382,8 @@ export async function billingRoutes(
 
     // POST /billing/webhook — alias for primary provider
     sub.post('/billing/webhook', async (request, reply) => {
-      if (!providerManager) {
-        return reply.status(503).send({ error: 'Billing is not enabled' });
+      if (providerManager.primaryProvider.name === 'mock') {
+        return reply.status(404).send({ error: 'No external webhook endpoint when using mock provider' });
       }
       const rawBody = request.body;
       if (!rawBody || typeof rawBody !== 'string') {

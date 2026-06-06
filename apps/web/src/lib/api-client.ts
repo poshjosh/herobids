@@ -346,7 +346,6 @@ export interface BillingSummary {
   hasPaymentCustomer: boolean;
   provider: 'creem' | 'stripe' | 'mock';
   subscription: BillingSubscriptionSummary | null;
-  billingEnabled: boolean;
   availablePlans: AvailablePlan[];
 }
 

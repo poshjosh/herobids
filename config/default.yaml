@@ -134,12 +134,12 @@ plans:
       maxAgents: 5
       liveEnabled: false
 
-# Billing — multi-provider subscription billing (Creem primary, Stripe fallback).
-# Billing is disabled by default; set enabled: true once providers are configured.
+# Billing — multi-provider subscription billing.
+# Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
+# Switch to 'creem' or 'stripe' in production once provider credentials are set.
 billing:
-  enabled: false
-  primaryProvider: creem                      # 'creem' | 'stripe' | 'mock' (dev: auto-fulfills without payment)
-  # fallbackProvider: stripe                  # optional — uncomment to enable failover
+  primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
+  # fallbackProvider: creem                   # optional — uncomment to enable failover
   checkoutSuccessUrl: http://localhost:5173/billing?session=success
   checkoutCancelUrl: http://localhost:5173/billing?session=cancelled
   stripe:

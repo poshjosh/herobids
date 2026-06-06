@@ -374,7 +374,7 @@ I agree
 
 **Q14: Should the `billing_customers`, `billing_subscriptions`, and `billing_webhook_events` tables stay for MVP?**
 
-They're fully implemented with a `billing-repository.ts`, routes, and Creem/Stripe webhook handling. Billing is disabled by default (`billing.enabled: false` in config) but the infrastructure is wired. The plan limits (`maxBots`, `maxAgents`, etc.) are enforced regardless of whether billing is enabled.
+They're fully implemented with a `billing-repository.ts`, routes, and Creem/Stripe webhook handling. Billing always runs; in local dev/CI the `mock` provider auto-fulfills checkout without external calls. In production, set `BILLING_PRIMARY_PROVIDER=creem` (or `stripe`) alongside the provider credentials. The plan limits (`maxBots`, `maxAgents`, etc.) are enforced regardless of which provider is active.
 
 Removing billing from the schema would require removing a significant amount of already-working code that doesn't affect correctness. It's off by default and doesn't block any agent feature.
 

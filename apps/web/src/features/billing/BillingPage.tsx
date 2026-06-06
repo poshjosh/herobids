@@ -73,15 +73,7 @@ export function BillingPage() {
         />
       )}
 
-      {summary && !summary.billingEnabled && (
-        <Card style={{ padding: '24px' }}>
-          <p style={{ color: 'var(--color-text-muted)' }}>
-            Billing is not currently enabled. You are on the <strong>{summary.planLabel}</strong> plan.
-          </p>
-        </Card>
-      )}
-
-      {summary && summary.billingEnabled && (
+      {summary && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Current Plan */}
           <Card style={{ padding: '20px' }}>
