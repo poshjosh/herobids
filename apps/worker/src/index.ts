@@ -197,11 +197,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
 
 const botRepo = new BotRepository(db);
-const botStartCallback = async (botId: string, userId: string, config: Record<string, unknown>) => {
+const botStartCallback = async (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('start-instance', {
     command: 'start',
     tradingInstanceId: botId,
-    config: { ...config, userId },
+    config: { ...config, venueAccountId, userId },
   });
 };
 
@@ -312,23 +312,21 @@ const runtime = new WorkerRuntime(
 
     const strategy = createStrategy(config.strategy);
 
-    // Resolve credentials: try DB lookup via venueAccountId, fall back to venue-specific env vars
-    const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string ?? 'default';
+    const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string;
+    if (!venueAccountId) {
+      throw new Error(`Bot ${botId} has no venueAccountId in job config — refusing to start`);
+    }
     const instanceUserId = rawConfig['userId'] as string | undefined;
-    let apiKey = config.venue === 'bybit'
-      ? process.env['BYBIT_API_KEY'] ?? ''
-      : process.env['HYPERLIQUID_API_KEY'] ?? '';
-    let secret = config.venue === 'bybit'
-      ? process.env['BYBIT_SECRET'] ?? ''
-      : process.env['HYPERLIQUID_SECRET'] ?? '';
-    let walletAddress = process.env['HYPERLIQUID_ACCOUNT_ADDRESS'] ?? '';
-    let testnet = true;
+    let apiKey = '';
+    let secret = '';
+    let walletAddress = '';
+    let testnet = false;
     let credentialsFromDb = false;
     let resolvedCredentialId: string | undefined;
 
     // Credential resolution is only needed for orderbook venues (exchange API keys).
     // Swap venues are wallet-only — they resolve their address from venueAccountRef later.
-    if (venueAccountId !== 'default' && config.venueType !== 'swap') {
+    if (config.venueType !== 'swap') {
       let pendingCredentialId: string | undefined;
       try {
         const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
@@ -441,66 +439,60 @@ const runtime = new WorkerRuntime(
           };
 
           if (config.venue === '1inch') {
-            // 1inch requires a private key and API key — resolve from DB credential or env (default account only)
+            // 1inch requires a private key and API key — resolved from DB credential
             let privateKey: string | undefined;
             let oneInchApiKey: string | undefined;
-            if (venueAccountId !== 'default') {
-              const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
-              if (account?.credentialId) {
-                const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
-                const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
-                if (cred && encryptionKey) {
-                  try {
-                    const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string; apiKey: string };
-                    privateKey = decrypted.privateKey;
-                    oneInchApiKey = decrypted.apiKey;
-                    journal.append(credentialDecryptedEvent({
-                      credentialId: account.credentialId,
-                      venue: config.venue,
-                      venueAccountId,
-                      tradingInstanceId: botId,
-                      outcome: 'success',
-                    })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-                  } catch (decryptErr) {
-                    journal.append(credentialDecryptedEvent({
-                      credentialId: account.credentialId,
-                      venue: config.venue,
-                      venueAccountId,
-                      tradingInstanceId: botId,
-                      outcome: 'failure',
-                      error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
-                    })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-                    throw new CredentialResolutionError(`Failed to decrypt 1inch credentials for venueAccount ${venueAccountId}: ${decryptErr instanceof Error ? decryptErr.message : String(decryptErr)}`);
-                  }
-                } else if (!encryptionKey && cred) {
+            const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
+            if (account?.credentialId) {
+              const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
+              const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
+              if (cred && encryptionKey) {
+                try {
+                  const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string; apiKey: string };
+                  privateKey = decrypted.privateKey;
+                  oneInchApiKey = decrypted.apiKey;
+                  journal.append(credentialDecryptedEvent({
+                    credentialId: account.credentialId,
+                    venue: config.venue,
+                    venueAccountId,
+                    tradingInstanceId: botId,
+                    outcome: 'success',
+                  })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+                } catch (decryptErr) {
                   journal.append(credentialDecryptedEvent({
                     credentialId: account.credentialId,
                     venue: config.venue,
                     venueAccountId,
                     tradingInstanceId: botId,
                     outcome: 'failure',
-                    error: 'CREDENTIAL_ENCRYPTION_KEY not set',
+                    error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
                   })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-                  throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt 1inch credentials for venueAccount ${venueAccountId}`);
-                } else {
-                  throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
+                  throw new CredentialResolutionError(`Failed to decrypt 1inch credentials for venueAccount ${venueAccountId}: ${decryptErr instanceof Error ? decryptErr.message : String(decryptErr)}`);
                 }
+              } else if (!encryptionKey && cred) {
+                journal.append(credentialDecryptedEvent({
+                  credentialId: account.credentialId,
+                  venue: config.venue,
+                  venueAccountId,
+                  tradingInstanceId: botId,
+                  outcome: 'failure',
+                  error: 'CREDENTIAL_ENCRYPTION_KEY not set',
+                })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+                throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt 1inch credentials for venueAccount ${venueAccountId}`);
               } else {
-                throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential — cannot resolve 1inch secrets`);
+                throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
               }
             } else {
-              // Default account: env var fallback is acceptable
-              privateKey = process.env['ONEINCH_PRIVATE_KEY'];
-              oneInchApiKey = process.env['ONEINCH_API_KEY'];
+              throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential — cannot resolve 1inch secrets`);
             }
             if (!privateKey) {
               throw new CredentialResolutionError(
-                `privateKey required for 1inch venue bot ${botId}. Store in DB credential or set ONEINCH_PRIVATE_KEY env var.`,
+                `privateKey required for 1inch venue bot ${botId}. Store in DB credential.`,
               );
             }
             if (!oneInchApiKey) {
               throw new CredentialResolutionError(
-                `apiKey required for 1inch venue bot ${botId}. Store in DB credential or set ONEINCH_API_KEY env var.`,
+                `apiKey required for 1inch venue bot ${botId}. Store in DB credential.`,
               );
             }
             const oneInchConfig = appConfig.venues['1inch'];
@@ -519,24 +511,14 @@ const runtime = new WorkerRuntime(
             });
           }
 
-          // Non-1inch swap venues (Jupiter) require a wallet address
-          let walletAddress: string | undefined;
-          if (venueAccountId !== 'default') {
-            const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
-            if (!account?.venueAccountRef) {
-              throw new CredentialResolutionError(
-                `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue bot ${botId}`,
-              );
-            }
-            walletAddress = account.venueAccountRef;
-          } else {
-            walletAddress = process.env['SWAP_WALLET_ADDRESS'];
-          }
-          if (!walletAddress) {
+          // Non-1inch swap venues (Jupiter) require a wallet address on the venue account
+          const [swapAccount] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
+          if (!swapAccount?.venueAccountRef) {
             throw new CredentialResolutionError(
-              `Wallet address required for swap venue bot ${botId}. Set venueAccountRef on the venue account or SWAP_WALLET_ADDRESS env var.`,
+              `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue bot ${botId}`,
             );
           }
+          const walletAddress = swapAccount.venueAccountRef;
 
           return new JupiterSwapAdapter({
             walletAddress,

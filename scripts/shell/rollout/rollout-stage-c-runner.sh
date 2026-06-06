@@ -93,9 +93,15 @@ command -v curl >/dev/null 2>&1 || die "curl is required but not installed"
 # --- Load environment ---
 if [[ -f "$ROOT_DIR/.env" ]]; then
   set -a
+  # shellcheck source=/dev/null
   source "$ROOT_DIR/.env"
   set +a
-  log "Loaded environment from .env"
+fi
+if [[ -f "$ROOT_DIR/scripts/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT_DIR/scripts/.env"
+  set +a
 fi
 
 echo ""

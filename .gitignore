@@ -15,6 +15,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.test.example
 
 # Config (contains credentials)
 config.yaml

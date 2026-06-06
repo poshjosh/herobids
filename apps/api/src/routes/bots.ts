@@ -83,7 +83,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     const venueType = (botConfig?.['venueType'] as string | undefined) ?? 'orderbook';
     const executionMode = (botConfig?.['execution'] as Record<string, unknown> | undefined)?.['mode'];
 
-    if (bot.venueAccountId !== 'default' && venueType !== 'swap' && executionMode !== 'paper') {
+    if (venueType !== 'swap' && executionMode !== 'paper') {
       const [venueAccount] = await db.select({ credentialId: venueAccounts.credentialId })
         .from(venueAccounts)
         .where(and(eq(venueAccounts.id, bot.venueAccountId), eq(venueAccounts.userId, request.userId)));

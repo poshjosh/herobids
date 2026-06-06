@@ -29,11 +29,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT_DIR"
 
-ENV_FILE="$SCRIPT_DIR/../../.env"
-if [[ -f "$ENV_FILE" ]]; then
+# Load root .env (infrastructure vars), then scripts/.env (operator credentials)
+if [[ -f "$ROOT_DIR/.env" ]]; then
   set -a
   # shellcheck source=/dev/null
-  source "$ENV_FILE"
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+if [[ -f "$ROOT_DIR/scripts/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT_DIR/scripts/.env"
   set +a
 fi
 

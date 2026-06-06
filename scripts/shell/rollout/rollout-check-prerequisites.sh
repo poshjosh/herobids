@@ -4,11 +4,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../../.env"
-if [[ -f "$ENV_FILE" ]]; then
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# Load root .env (infrastructure vars), then scripts/.env (operator credentials)
+if [[ -f "$ROOT_DIR/.env" ]]; then
   set -a
   # shellcheck source=/dev/null
-  source "$ENV_FILE"
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+if [[ -f "$ROOT_DIR/scripts/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT_DIR/scripts/.env"
   set +a
 fi
 

@@ -33,8 +33,9 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 /**
  * Callback the broker uses to enqueue a bot start job on the runtime queue.
  * Decouples the broker from BullMQ — the caller wires this to queue.add().
+ * venueAccountId is explicit so the type system enforces it is always present.
  */
-export type BotStartCallback = (botId: string, userId: string, config: Record<string, unknown>) => Promise<void>;
+export type BotStartCallback = (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => Promise<void>;
 
 /**
  * Optional callback for enforcing a subscription-level bot cap before create.
@@ -415,8 +416,7 @@ export class AgentMessageBroker {
       if (this.botStart) {
         // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
         await this.botRepo.markBotRunning(botId);
-        // Include venueAccountId in the job config so the worker can resolve credentials.
-        await this.botStart(botId, agent.userId, { ...payload.config, venueAccountId: payload.venueAccountId });
+        await this.botStart(botId, agent.userId, payload.venueAccountId, payload.config);
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }
       return;
