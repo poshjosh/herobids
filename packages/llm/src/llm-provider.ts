@@ -219,6 +219,7 @@ async function callAnthropicProvider(
 function resolveBaseUrl(provider: string): string {
   switch (provider) {
     case 'openai': return 'https://api.openai.com/v1';
+    case 'openrouter': return 'https://openrouter.ai/api/v1';
     default: return `https://api.${provider}.com/v1`;
   }
 }

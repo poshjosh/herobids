@@ -14,6 +14,8 @@ export interface DockerAgentManagerConfig {
   agentImage: string;
   /** Redis URL injected into agent container env */
   redisUrl: string;
+  /** LLM provider name injected into agent container env (e.g. 'openrouter', 'anthropic') */
+  llmProvider?: string;
   /** LLM base URL injected into agent container env */
   llmBaseUrl?: string;
   /** LLM model injected into agent container env */
@@ -45,6 +47,7 @@ export class DockerAgentManager {
   private readonly network: string;
   private readonly image: string;
   private readonly redisUrl: string;
+  private readonly llmProvider: string | undefined;
   private readonly llmBaseUrl: string | undefined;
   private readonly llmModel: string | undefined;
   private readonly memoryBytes: number;
@@ -63,6 +66,7 @@ export class DockerAgentManager {
     this.network = _config.dockerNetwork;
     this.image = _config.agentImage;
     this.redisUrl = _config.redisUrl;
+    this.llmProvider = _config.llmProvider;
     this.llmBaseUrl = _config.llmBaseUrl;
     this.llmModel = _config.llmModel;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
@@ -88,10 +92,12 @@ export class DockerAgentManager {
       `SESSION_ID=${spec.sessionId}`,
       `AGENT_CONFIG=${agentConfigJson}`,
       `TOOL_POLICY=${toolPolicyJson}`,
+      ...(this.llmProvider ? [`LLM_PROVIDER=${this.llmProvider}`] : []),
       ...(this.llmBaseUrl ? [`LLM_BASE_URL=${this.llmBaseUrl}`] : []),
       ...(this.llmModel ? [`LLM_MODEL=${this.llmModel}`] : []),
-      // LLM_API_KEY must be in the worker's environment and forwarded explicitly
+      // LLM API keys must be in the worker's environment and forwarded explicitly
       ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
+      ...(process.env['LLM_API_KEY_OPENROUTER'] ? [`LLM_API_KEY_OPENROUTER=${process.env['LLM_API_KEY_OPENROUTER']}`] : []),
       ...(process.env['LLM_API_KEY_ANTHROPIC'] ? [`LLM_API_KEY_ANTHROPIC=${process.env['LLM_API_KEY_ANTHROPIC']}`] : []),
       ...(process.env['LLM_API_KEY_OPENAI'] ? [`LLM_API_KEY_OPENAI=${process.env['LLM_API_KEY_OPENAI']}`] : []),
     ];
