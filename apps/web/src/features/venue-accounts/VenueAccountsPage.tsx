@@ -4,7 +4,10 @@ import { venueAccounts as venueAccountsApi, credentials as credentialsApi } from
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 
-const SUPPORTED_VENUES = ['hyperliquid', 'bybit', '1inch'];
+const SUPPORTED_VENUES = ['hyperliquid', 'bybit', 'jupiter', '1inch'];
+// Source of truth: SWAP_VENUES / ORDERBOOK_VENUES in @herobids/domain — not imported here to keep domain out of the browser bundle
+const JUPITER_VENUES = ['jupiter'];  // resolved via venueAccountRef (wallet address)
+const ONEINCH_VENUES = ['1inch'];    // resolved via DB credential (privateKey + apiKey)
 
 export function VenueAccountsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -44,7 +47,7 @@ export function VenueAccountsPage() {
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{va.label}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                    {va.venue}{va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
+                    {va.venue}{JUPITER_VENUES.includes(va.venue) && va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
                   </div>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
@@ -105,7 +108,7 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
           <FieldLabel>Venue</FieldLabel>
           <select
             value={venue}
-            onChange={(e) => { setVenue(e.target.value); setCredentialId(''); }}
+            onChange={(e) => { setVenue(e.target.value); setCredentialId(''); setVenueAccountRef(''); }}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
             {SUPPORTED_VENUES.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -117,13 +120,15 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Main BTC account" style={inputStyle} />
         </div>
 
-        <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Account reference (optional)</FieldLabel>
-          <input value={venueAccountRef} onChange={(e) => setVenueAccountRef(e.target.value)} placeholder="Sub-account ID or wallet address" style={inputStyle} />
-        </div>
+        {JUPITER_VENUES.includes(venue) && (
+          <div style={{ marginBottom: '16px' }}>
+            <FieldLabel>Solana wallet address (required)</FieldLabel>
+            <input value={venueAccountRef} onChange={(e) => setVenueAccountRef(e.target.value)} placeholder="e.g. 7EcDhSYGxX…" style={inputStyle} />
+          </div>
+        )}
 
         <div style={{ marginBottom: '20px' }}>
-          <FieldLabel>Credentials (optional)</FieldLabel>
+          <FieldLabel>Credentials{ONEINCH_VENUES.includes(venue) ? ' (required)' : ' (optional)'}</FieldLabel>
           <select
             value={credentialId}
             onChange={(e) => setCredentialId(e.target.value)}
@@ -138,7 +143,12 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
-          <Button variant="primary" type="submit" disabled={mutation.isPending || !label.trim()}>
+          <Button variant="primary" type="submit" disabled={
+            mutation.isPending
+            || !label.trim()
+            || (JUPITER_VENUES.includes(venue) && !venueAccountRef.trim())
+            || (ONEINCH_VENUES.includes(venue) && !credentialId)
+          }>
             {mutation.isPending ? 'Creating…' : 'Create'}
           </Button>
         </div>

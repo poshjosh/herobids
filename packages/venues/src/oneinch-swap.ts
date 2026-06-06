@@ -7,6 +7,7 @@ import type {
   SwapVenueError,
   TokenBalance,
   SwapTransaction,
+  VenueProfile,
 } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err, quantity, Decimal } from '@herobids/domain';
@@ -630,5 +631,25 @@ export class OneInchSwapAdapter implements SwapVenuePort {
     } catch (error) {
       return err({ code: 'TX_ERROR', message: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  /**
+   * Probe 1inch to return a static VenueProfile.
+   * Authenticated is determined by whether a linked credential is present;
+   * the caller signals this via the `hasCredential` flag.
+   *
+   * Note: availableSymbols is intentionally empty because 1inch supports any
+   * EVM token pair and the specific chain is only known from the credential/config
+   * at runtime. Instrument selection must be done manually (Advanced mode).
+   */
+  static probe(hasCredential = false): VenueProfile {
+    return {
+      venue: '1inch',
+      venueType: 'swap',
+      availableSymbols: [],
+      supportedExecutionModes: hasCredential ? ['shadow', 'live'] : ['shadow'],
+      authenticated: hasCredential,
+      probedAt: new Date().toISOString(),
+    };
   }
 }

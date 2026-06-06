@@ -4,6 +4,11 @@ import { z } from 'zod';
 export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit'] as const;
 export type SupportedLiveVenue = typeof SUPPORTED_LIVE_VENUES[number];
 
+export const SWAP_VENUES = ['jupiter', '1inch'] as const;
+export const ORDERBOOK_VENUES = ['hyperliquid', 'bybit'] as const;
+export type SwapVenue = typeof SWAP_VENUES[number];
+export type OrderbookVenue = typeof ORDERBOOK_VENUES[number];
+
 // --- Operator Config (loaded from YAML + env at startup) ---
 
 export const VenueConfigSchema = z.object({
@@ -451,10 +456,8 @@ export const BotConfigSchema = z.object({
 ).refine(
   (data) => {
     // Enforce venue string matches venueType to prevent config/adapter mismatch
-    const swapVenues = ['jupiter', '1inch'];
-    const orderbookVenues = ['hyperliquid', 'bybit'];
-    if (data.venueType === 'swap') return swapVenues.includes(data.venue);
-    return orderbookVenues.includes(data.venue);
+    if (data.venueType === 'swap') return (SWAP_VENUES as readonly string[]).includes(data.venue);
+    return (ORDERBOOK_VENUES as readonly string[]).includes(data.venue);
   },
   { message: 'venue must match venueType: swap venues are [jupiter, 1inch], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
 );

@@ -1,4 +1,6 @@
 export {
+  SWAP_VENUES,
+  ORDERBOOK_VENUES,
   AppConfigSchema,
   VenueConfigSchema,
   ReconciliationConfigSchema,
@@ -26,6 +28,8 @@ export {
 } from './schema.js';
 
 export type {
+  SwapVenue,
+  OrderbookVenue,
   AppConfig,
   TradingInstanceConfig,
   BotConfig,

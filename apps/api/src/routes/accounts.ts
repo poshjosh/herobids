@@ -5,9 +5,34 @@ import type { Database } from '@herobids/db';
 import { venueAccounts, userCredentials } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { HyperliquidAdapter } from '@herobids/venues';
-import { JupiterSwapAdapter } from '@herobids/venues';
+import { JupiterSwapAdapter, OneInchSwapAdapter } from '@herobids/venues';
 import { CreateVenueAccountSchema } from '../schemas.js';
 import { checkVenueAccountLimit } from '../plan-guards.js';
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+/**
+ * Validate a Solana public key by base58-decoding and checking the byte length is exactly 32.
+ * No dependency required — base58 decoding is a trivial big-integer conversion.
+ */
+function isValidSolanaAddress(address: string): boolean {
+  let value = 0n;
+  for (const char of address) {
+    const idx = BASE58_ALPHABET.indexOf(char);
+    if (idx < 0) return false; // character not in base58 alphabet
+    value = value * 58n + BigInt(idx);
+  }
+  // Leading '1' characters each encode a leading zero byte
+  let leadingZeros = 0;
+  for (const char of address) {
+    if (char !== '1') break;
+    leadingZeros++;
+  }
+  const bytes: number[] = [];
+  let v = value;
+  while (v > 0n) { bytes.unshift(Number(v & 0xffn)); v >>= 8n; }
+  return leadingZeros + bytes.length === 32;
+}
 
 export async function venueAccountRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create venue account
@@ -49,6 +74,34 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
       }
     }
 
+    // Venue-specific required field enforcement
+    // Normalise early so the trimmed value is used for validation, probe and persistence.
+    if (parsed.data.venueAccountRef != null) {
+      parsed.data.venueAccountRef = parsed.data.venueAccountRef.trim();
+    }
+    if (parsed.data.venue === 'jupiter') {
+      const ref = parsed.data.venueAccountRef ?? '';
+      if (!ref) {
+        return reply.status(400).send({
+          error: 'validation_error',
+          message: 'venueAccountRef (Solana wallet address) is required for Jupiter venue accounts',
+        });
+      }
+      // Decode base58 and verify the result is exactly 32 bytes (Ed25519 public key)
+      if (!isValidSolanaAddress(ref)) {
+        return reply.status(400).send({
+          error: 'validation_error',
+          message: 'venueAccountRef must be a valid Solana wallet address (32-byte base58-encoded public key)',
+        });
+      }
+    }
+    if (parsed.data.venue === '1inch' && !parsed.data.credentialId) {
+      return reply.status(400).send({
+        error: 'validation_error',
+        message: 'credentialId is required for 1inch venue accounts',
+      });
+    }
+
     const id = crypto.randomUUID();
     const now = new Date();
 
@@ -62,7 +115,9 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
           venueProfile = { ...venueProfile, authenticated: true, supportedExecutionModes: ['paper', 'shadow', 'live'] as Array<'paper' | 'shadow' | 'live'> };
         }
       } else if (parsed.data.venue === 'jupiter') {
-        venueProfile = await JupiterSwapAdapter.probe(parsed.data.venueAccountRef ?? undefined);
+        venueProfile = await JupiterSwapAdapter.probe(parsed.data.venueAccountRef);
+      } else if (parsed.data.venue === '1inch') {
+        venueProfile = OneInchSwapAdapter.probe(!!parsed.data.credentialId);
       }
     } catch {
       // Non-fatal — account is still created without a cached profile

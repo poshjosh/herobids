@@ -149,7 +149,44 @@ describe('POST /venue-accounts credential validation', () => {
     expect(res.statusCode).toBe(201);
   });
 
-  it('succeeds when no credentialId is provided (wallet-only)', async () => {
+  it('succeeds when no credentialId is provided (wallet-only, non-swap venue)', async () => {
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: {
+        venue: 'hyperliquid',
+        label: 'My Account',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('succeeds when jupiter account provides a valid Solana wallet address', async () => {
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: {
+        venue: 'jupiter',
+        label: 'Swap Wallet',
+        venueAccountRef: '7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects jupiter account without a wallet address', async () => {
     const app = Fastify();
     const db = buildMockDb();
     decorateWithAuth(app);
@@ -164,7 +201,79 @@ describe('POST /venue-accounts credential validation', () => {
       },
     });
 
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('validation_error');
+    expect(body.message).toContain('Solana wallet address');
+  });
+
+  it('rejects jupiter account with an address that is not a valid 32-byte Solana public key', async () => {
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    // 'tooshort' decodes to fewer than 32 bytes — not a valid Ed25519 public key
+    const resShort = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: { venue: 'jupiter', label: 'Swap Wallet', venueAccountRef: 'tooshort' },
+    });
+    expect(resShort.statusCode).toBe(400);
+    expect(JSON.parse(resShort.body).error).toBe('validation_error');
+
+    // '0x...' contains '0' and 'x' which are not in the base58 alphabet
+    const resHex = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: { venue: 'jupiter', label: 'Swap Wallet', venueAccountRef: '0x3419aabbccdd112233445566778899aabb112233' },
+    });
+    expect(resHex.statusCode).toBe(400);
+    expect(JSON.parse(resHex.body).error).toBe('validation_error');
+  });
+
+  it('rejects 1inch account without a credential', async () => {
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: {
+        venue: '1inch',
+        label: 'My 1inch Account',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('validation_error');
+    expect(body.message).toContain('credentialId');
+  });
+
+  it('creates 1inch account with venueProfile set to swap/authenticated when credential is linked', async () => {
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: '1inch' }];
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: {
+        venue: '1inch',
+        label: 'My 1inch Account',
+        credentialId: 'cred-1',
+      },
+    });
+
     expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.venueProfile?.venueType).toBe('swap');
+    expect(body.venueProfile?.authenticated).toBe(true);
   });
 
   it('returns 400 when credential is deleted between validation and insert (FK race)', async () => {
