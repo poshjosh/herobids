@@ -152,3 +152,29 @@ billing:
     webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
     apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
     planProducts: {}                          # map of planId → [{creemProductId, interval, displayLabel, amountCents}]
+
+# ---------------------------------------------------------------------------
+# Env-only overrides — read directly from process.env, not part of AppConfigSchema
+# ---------------------------------------------------------------------------
+#
+# Agent runtime (worker):
+#   AGENT_RUNTIME_MODE      docker | stub (default: docker)
+#                           stub = heartbeat-only fake for local dev without Docker-in-Docker
+#   DOCKER_HOST             Docker socket URL (default: tcp://docker-proxy:2375)
+#   DOCKER_NETWORK          Container network name (default: herobids_default)
+#   AGENT_IMAGE             Agent container image (default: herobids-agent:latest)
+#
+# LLM (agent container):
+#   LLM_MODEL               Model name (default: claude-sonnet-4-5)
+#   LLM_BASE_URL            Provider base URL override; leave unset for provider default
+#   LLM_MAX_TOKENS          Max tokens per LLM call (default: 4096)
+#   LLM_TIMEOUT_MS          LLM call timeout in ms (default: 60000)
+#
+# Agent runtime timing (agent container):
+#   TICK_INTERVAL_MS        Think-loop interval in ms (default: 900000 = 15 min)
+#   HEARTBEAT_INTERVAL_MS   Heartbeat cadence in ms (default: 5000)
+#
+# Logging:
+#   LOG_FORMAT              json | pretty (auto-set to pretty when NODE_ENV=development)
+#   LOG_LEVEL               debug | info | warn | error — agent container only
+#                           (API/worker use app.logLevel above)

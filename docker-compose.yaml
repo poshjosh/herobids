@@ -97,10 +97,10 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       DOCKER_NETWORK: herobids_default
       AGENT_IMAGE: herobids-agent:latest
-      # Use docker mode only after building the agent image:
+      # Requires the agent image to be built first:
       # docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
-      # Then override: AGENT_RUNTIME_MODE=docker docker compose up
-      AGENT_RUNTIME_MODE: stub
+      # For local dev without Docker-in-Docker, override: AGENT_RUNTIME_MODE=stub docker compose up
+      AGENT_RUNTIME_MODE: docker
     depends_on:
       migrate:
         condition: service_completed_successfully
