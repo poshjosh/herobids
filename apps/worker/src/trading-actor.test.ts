@@ -190,7 +190,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-1',
-            tradingInstanceId: 'inst-6' as BotId,
+            botId: 'inst-6' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -209,7 +209,7 @@ describe('TradingActor lifecycle', () => {
       expect(orderRepo.upsertByVenueRefId).toHaveBeenCalled();
       const persistedOrder = orderRepo.upsertByVenueRefId.mock.calls[0]![0];
       expect(persistedOrder.executionPlanId).toBeDefined();
-      expect(persistedOrder.tradingInstanceId).toBe('inst-6');
+      expect(persistedOrder.botId).toBe('inst-6');
       expect(persistedOrder.venue).toBe('hyperliquid');
       expect(persistedOrder.symbol).toBe('BTC/USD:USD');
 
@@ -227,7 +227,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-agent',
-            tradingInstanceId: 'inst-agent' as BotId,
+            botId: 'inst-agent' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -270,7 +270,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-context',
-            tradingInstanceId: 'inst-context' as BotId,
+            botId: 'inst-context' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -326,7 +326,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-1',
-            tradingInstanceId: 'inst-swap-shadow' as BotId,
+            botId: 'inst-swap-shadow' as BotId,
             instrumentId: 'SOL/USDC',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -359,7 +359,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValueOnce(ok({
             id: 'd-2',
-            tradingInstanceId: 'inst-paper-fallback' as BotId,
+            botId: 'inst-paper-fallback' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('1'),
@@ -418,7 +418,7 @@ describe('TradingActor lifecycle', () => {
 
       const strategyEvaluate = vi.fn().mockResolvedValueOnce(ok({
         id: 'd-1',
-        tradingInstanceId: 'inst-swap-feed' as BotId,
+        botId: 'inst-swap-feed' as BotId,
         instrumentId: 'SOL/USDC',
         intent: 'go_long',
         targetSize: quantity('1'),
@@ -456,7 +456,7 @@ describe('TradingActor lifecycle', () => {
     it('still returns early when fetchPrice is null and no market data feed exists (paper mode)', async () => {
       const strategyEvaluate = vi.fn().mockResolvedValue(ok({
         id: 'd-1',
-        tradingInstanceId: 'inst-no-feed' as BotId,
+        botId: 'inst-no-feed' as BotId,
         instrumentId: 'BTC/USD:USD',
         intent: 'go_long',
         targetSize: quantity('1'),
@@ -562,7 +562,7 @@ describe('TradingActor lifecycle', () => {
 
       const strategyEvaluate = vi.fn().mockResolvedValue(ok({
         id: 'd-live',
-        tradingInstanceId: 'inst-live-overlap' as BotId,
+        botId: 'inst-live-overlap' as BotId,
         instrumentId: 'BTC/USD:USD',
         intent: 'go_long',
         targetSize: quantity('1'),
@@ -698,7 +698,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValue(ok({
             id: 'd-cred',
-            tradingInstanceId: 'inst-cred-used' as BotId,
+            botId: 'inst-cred-used' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('0.1'),
@@ -757,7 +757,7 @@ describe('TradingActor lifecycle', () => {
         strategy: {
           evaluate: vi.fn().mockResolvedValue(ok({
             id: 'd-nocred',
-            tradingInstanceId: 'inst-nocred' as BotId,
+            botId: 'inst-nocred' as BotId,
             instrumentId: 'BTC/USD:USD',
             intent: 'go_long',
             targetSize: quantity('0.1'),

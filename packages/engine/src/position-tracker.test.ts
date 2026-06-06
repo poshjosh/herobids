@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { flatPosition, applyFill } from './position-tracker.js';
 import type { FillEvent } from './order-state.js';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId, BotId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
 
 function makeFill(overrides: Partial<FillEvent> = {}): FillEvent {
   return {
     id: 'fill-1' as FillId,
     orderId: 'ord-1' as OrderId,
-    tradingInstanceId: 'ti-1' as TradingInstanceId,
+    botId: 'ti-1' as BotId,
     venue: 'hyperliquid',
     symbol: 'BTC/USD:USD',
     side: 'buy',

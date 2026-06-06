@@ -12,7 +12,7 @@ function makeEnvelope(overrides: Record<string, unknown> = {}) {
     correlationId: 'corr-001',
     initiatorType: 'agent',
     initiatorId: 'agent-123',
-    tradingInstanceId: 'ti-456',
+    botId: 'ti-456',
     type: 'agent.decision.submit',
     createdAt: '2026-06-01T00:00:00.000Z',
     payload: {
@@ -34,7 +34,7 @@ function mockAgentRepo() {
     getAgent: vi.fn().mockResolvedValue({ id: 'agent-123', status: 'active' }),
     getActiveSession: vi.fn().mockResolvedValue({ id: 'sess-001' }),
     insertArtifact: vi.fn().mockResolvedValue('art-id'),
-    getActiveLink: vi.fn().mockResolvedValue({ tradingInstanceId: 'ti-456' }),
+    getActiveLink: vi.fn().mockResolvedValue({ botId: 'ti-456' }),
   };
 }
 
@@ -178,7 +178,7 @@ describe('AgentMessageBroker', () => {
           correlationId: 'corr-001',
           actorType: 'agent',
           actorId: 'agent-123',
-          tradingInstanceId: 'ti-456',
+          botId: 'ti-456',
           type: 'agent.decision.submit',
           direction: 'inbound',
           schemaVersion: 'v1',

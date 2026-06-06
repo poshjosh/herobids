@@ -174,7 +174,6 @@ export class AgentMessageBroker {
       actorType: envelope.initiatorType,
       actorId: envelope.initiatorId,
       agentId: effectiveAgentId,
-      tradingInstanceId: envelope.tradingInstanceId,
       botId: envelope.botId,
       type: envelope.type,
       direction: 'inbound',

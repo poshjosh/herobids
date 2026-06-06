@@ -9,7 +9,7 @@ function makePlan(overrides: Partial<ExecutionPlan> = {}): ExecutionPlan {
   return {
     id: 'plan-1',
     decisionId: 'dec-1',
-    tradingInstanceId: 'ti-1',
+    botId: 'ti-1',
     venue: 'hyperliquid',
     symbol: 'BTC/USD:USD',
     action: 'open_long',

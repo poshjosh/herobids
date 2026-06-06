@@ -12,8 +12,6 @@ export type ActorType = 'agent' | 'bot' | 'user' | 'system';
  */
 export interface Decision {
   id: DecisionId;
-  /** @deprecated Use botId instead — this field predates the bot/blueprint model. */
-  tradingInstanceId?: string;
   /** Venue account the decision targets (execution context) */
   venueAccountId: VenueAccountId;
   instrumentId: InstrumentId;

@@ -10,7 +10,7 @@
 
 | # | Feature | Priority | Status | Spec |
 |---|---|---|---|---|
-| 010 | Rename `tradingInstanceId` → `botId` | P0 | todo | [010-rename-tradinginstanceid/000-plan.md](010-rename-tradinginstanceid/000-plan.md) |
+| 010 | Rename `tradingInstanceId` → `botId` | P0 | done | [010-rename-tradinginstanceid/000-plan.md](010-rename-tradinginstanceid/000-plan.md) |
 | 011 | Plan quota TOCTOU fix | P0 | todo | [011-plan-quota-fix/000-plan.md](011-plan-quota-fix/000-plan.md) |
 | 012 | Bot data surface (costs, sessions, events, journal) | P0 | todo | [012-bot-data-surface/000-plan.md](012-bot-data-surface/000-plan.md) |
 | 013 | Agent data surface (state, bots, costs, journal) | P0 | todo | [013-agent-data-surface/000-plan.md](013-agent-data-surface/000-plan.md) |

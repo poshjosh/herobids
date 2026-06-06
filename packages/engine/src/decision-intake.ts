@@ -79,7 +79,7 @@ export interface DecisionIntakeResult {
  *
  * The caller is responsible for:
  * - validating the decision (schema, authorization, staleness)
- * - stamping `tradingInstanceId` and `contextHash`
+ * - stamping `botId` and `contextHash`
  * - providing the decision context snapshot
  */
 export async function submitDecisionForExecution(
@@ -192,7 +192,7 @@ export async function submitDecisionForExecution(
     await deps.persistence.persistFill({
       orderId: fill.orderId as string,
       venueAccountId: deps.venueAccountId,
-      tradingInstanceId: fill.tradingInstanceId ?? resolvedDecision.tradingInstanceId,
+      botId: fill.botId ?? resolvedDecision.botId,
       actorType: deps.actorType,
       actorId: deps.actorId,
       venue: deps.venue,
@@ -209,7 +209,7 @@ export async function submitDecisionForExecution(
   // Persist position state
   await deps.persistence.persistPosition({
     venueAccountId: deps.venueAccountId,
-    tradingInstanceId: resolvedDecision.tradingInstanceId,
+    botId: resolvedDecision.botId,
     actorType: deps.actorType,
     actorId: deps.actorId,
     venue: deps.venue,
@@ -233,7 +233,7 @@ export async function submitDecisionForExecution(
     await deps.persistence.persistOrder({
       id: order.id as string,
       venueAccountId: deps.venueAccountId,
-      tradingInstanceId: order.tradingInstanceId ?? resolvedDecision.tradingInstanceId,
+      botId: order.botId ?? resolvedDecision.botId,
       actorType: deps.actorType,
       actorId: deps.actorId,
       executionPlanId: order.executionPlanId,

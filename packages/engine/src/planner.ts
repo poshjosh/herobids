@@ -12,7 +12,7 @@ export interface ExecutionPlan {
   id: string;
   decisionId: string;
   venueAccountId: string;
-  tradingInstanceId?: string;
+  botId?: string;
   actorType: string;
   actorId: string;
   venue: string;
@@ -212,7 +212,7 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
     id: '',
     decisionId: decision.id,
     venueAccountId: decision.venueAccountId,
-    tradingInstanceId: decision.tradingInstanceId,
+    botId: decision.botId,
     actorType: decision.actorType,
     actorId: decision.actorId,
     venue,

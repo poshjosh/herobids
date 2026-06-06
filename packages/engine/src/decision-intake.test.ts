@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { quantity, price } from '@herobids/domain';
-import type { Decision, DecisionId, InstrumentId, TradingInstanceId } from '@herobids/domain';
+import type { Decision, DecisionId, InstrumentId, BotId } from '@herobids/domain';
 import { flatPosition } from './position-tracker.js';
 import { PaperExecutor } from './paper-executor.js';
 import { computeDecisionContextHash, DecisionContextHashMismatchError } from './decision-context-hash.js';
@@ -70,7 +70,7 @@ function makeContext(): DecisionContext {
 function makeDecision(contextHash?: string): Decision {
   return {
     id: 'decision-1' as DecisionId,
-    tradingInstanceId: 'inst-1' as TradingInstanceId,
+    botId: 'inst-1' as BotId,
     instrumentId: 'BTC/USD:USD' as InstrumentId,
     intent: 'go_long',
     targetSize: quantity('1'),
@@ -89,7 +89,7 @@ describe('submitDecisionForExecution', () => {
       context,
       flatPosition('hyperliquid', 'BTC/USD:USD'),
       {
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         venue: 'hyperliquid',
         symbol: 'BTC/USD:USD',
         venueAccountId: 'venue-account-1',
@@ -121,7 +121,7 @@ describe('submitDecisionForExecution', () => {
       context,
       flatPosition('hyperliquid', 'BTC/USD:USD'),
       {
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         venue: 'hyperliquid',
         symbol: 'BTC/USD:USD',
         venueAccountId: 'venue-account-1',
@@ -149,7 +149,7 @@ describe('submitDecisionForExecution', () => {
         context,
         flatPosition('hyperliquid', 'BTC/USD:USD'),
         {
-          tradingInstanceId: 'inst-1',
+          botId: 'inst-1',
           venue: 'hyperliquid',
           symbol: 'BTC/USD:USD',
           venueAccountId: 'venue-account-1',

@@ -1,7 +1,7 @@
 # 010 — Rename `tradingInstanceId` → `botId`
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Align internal field names with the published domain language. `tradingInstanceId` is an implementation detail that leaked into domain interfaces. The canonical user-facing term is `botId`.

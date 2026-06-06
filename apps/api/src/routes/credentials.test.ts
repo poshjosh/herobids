@@ -399,17 +399,17 @@ describe('credential audit events', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.status).toBe('rotated');
-      expect(body.dependentTradingInstanceIds).toEqual(['inst-1', 'inst-2']);
-      expect(body.restartedTradingInstanceIds).toEqual(['inst-1', 'inst-2']);
+      expect(body.dependentBotIds).toEqual(['inst-1', 'inst-2']);
+      expect(body.restartedBotIds).toEqual(['inst-1', 'inst-2']);
 
       expect(mockQueueAdd).toHaveBeenCalledTimes(2);
       expect(mockQueueAdd).toHaveBeenCalledWith('restart-instance', {
         command: 'restart',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
       });
       expect(mockQueueAdd).toHaveBeenCalledWith('restart-instance', {
         command: 'restart',
-        tradingInstanceId: 'inst-2',
+        botId: 'inst-2',
       });
     });
 
@@ -434,8 +434,8 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
-      expect(body.dependentTradingInstanceIds).toEqual([]);
-      expect(body.restartedTradingInstanceIds).toEqual([]);
+      expect(body.dependentBotIds).toEqual([]);
+      expect(body.restartedBotIds).toEqual([]);
       expect(mockQueueAdd).not.toHaveBeenCalled();
     });
 
@@ -529,7 +529,7 @@ describe('credential audit events', () => {
       expect(body.error).toBe('credential_in_use');
       expect(body.credentialId).toBe('cred-3');
       expect(body.blockingVenueAccountIds).toEqual(['va-1', 'va-2']);
-      expect(body.blockingTradingInstanceIds).toEqual(['inst-1']);
+      expect(body.blockingBotIds).toEqual(['inst-1']);
 
       // Must not delete the row
       expect(deleteWasCalled).toBe(false);
@@ -618,9 +618,9 @@ describe('credential audit events', () => {
       const body = JSON.parse(res.body);
       expect(body.status).toBe('rotated');
       // Full dependent set is always visible
-      expect(body.dependentTradingInstanceIds).toEqual(['inst-1', 'inst-2']);
+      expect(body.dependentBotIds).toEqual(['inst-1', 'inst-2']);
       // Only the first instance was successfully queued
-      expect(body.restartedTradingInstanceIds).toEqual(['inst-1']);
+      expect(body.restartedBotIds).toEqual(['inst-1']);
       // Error is surfaced to the caller
       expect(body.restartErrorCode).toBe('enqueue_failed');
       expect(body.restartError).toContain('Failed to enqueue all restart jobs');
@@ -646,8 +646,8 @@ describe('credential audit events', () => {
       const body = JSON.parse(res.body);
       expect(body.status).toBe('rotated');
       // Dependent set is unknown — reported as empty
-      expect(body.dependentTradingInstanceIds).toEqual([]);
-      expect(body.restartedTradingInstanceIds).toEqual([]);
+      expect(body.dependentBotIds).toEqual([]);
+      expect(body.restartedBotIds).toEqual([]);
       // Error is surfaced so operator knows lookup failed
       expect(body.restartErrorCode).toBe('lookup_failed');
       expect(body.restartError).toContain('Failed to determine dependent instances');

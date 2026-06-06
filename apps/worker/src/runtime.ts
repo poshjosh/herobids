@@ -9,7 +9,7 @@ export type LifecycleCommand = 'start' | 'stop' | 'restart';
 
 export interface LifecycleJob {
   command: LifecycleCommand;
-  tradingInstanceId: string;
+  botId: string;
   config?: Record<string, unknown>;
 }
 
@@ -22,9 +22,9 @@ export interface WorkerRuntimeConfig {
   /** Interval in ms between reclaim sweeps for orphaned instances. Default: 15000 (half of lease TTL) */
   reclaimIntervalMs?: number;
   /** Called when an instance fails to start (factory or actor.start threw). Use to persist status. */
-  onStartFailed?: (tradingInstanceId: string, error: Error) => Promise<void>;
+  onStartFailed?: (botId: string, error: Error) => Promise<void>;
   /** Called after an instance actor is stopped (both graceful stop and shutdown). Use to clean up external state. */
-  onStopped?: (tradingInstanceId: string) => void | Promise<void>;
+  onStopped?: (botId: string) => void | Promise<void>;
 }
 
 /** Persisted instance record needed for rehydration */
@@ -38,12 +38,12 @@ export interface PersistedInstance {
  * Owns the scan loop, heartbeat, and graceful stop.
  */
 export interface InstanceActor {
-  tradingInstanceId: string;
+  botId: string;
   start(): void | Promise<void>;
   stop(): Promise<void>;
 }
 
-export type ActorFactory = (tradingInstanceId: string, config: Record<string, unknown>) => InstanceActor | Promise<InstanceActor>;
+export type ActorFactory = (botId: string, config: Record<string, unknown>) => InstanceActor | Promise<InstanceActor>;
 
 /** Function that loads all instances marked 'running' from the DB */
 export type InstanceLoader = () => Promise<PersistedInstance[]>;
@@ -67,8 +67,8 @@ export class WorkerRuntime {
   /** IDs for which a stop was requested while the factory was still in-flight */
   private readonly pendingStops = new Set<string>();
 
-  private readonly onStartFailed?: (tradingInstanceId: string, error: Error) => Promise<void>;
-  private readonly onStopped?: (tradingInstanceId: string) => void;
+  private readonly onStartFailed?: (botId: string, error: Error) => Promise<void>;
+  private readonly onStopped?: (botId: string) => void;
 
   constructor(
     config: WorkerRuntimeConfig,
@@ -146,7 +146,7 @@ export class WorkerRuntime {
     if (this.lease) {
       await this.lease.release(id);
     }
-    this.logger.warn({ tradingInstanceId: id }, 'Actor crash handled — removed from runtime');
+    this.logger.warn({ botId: id }, 'Actor crash handled — removed from runtime');
   }
 
   /**
@@ -167,7 +167,7 @@ export class WorkerRuntime {
           const started = await this.startInstance(instance.id, instance.config);
           if (started) claimed++;
         } catch (err) {
-          this.logger.error({ err, tradingInstanceId: instance.id }, 'Failed to reclaim instance');
+          this.logger.error({ err, botId: instance.id }, 'Failed to reclaim instance');
           if (this.onStartFailed) {
             await this.onStartFailed(instance.id, err instanceof Error ? err : new Error(String(err)));
           }
@@ -182,42 +182,42 @@ export class WorkerRuntime {
   }
 
   private async processJob(job: Job<LifecycleJob>): Promise<void> {
-    const { command, tradingInstanceId, config } = job.data;
-    this.logger.info({ command, tradingInstanceId }, 'Processing lifecycle command');
+    const { command, botId, config } = job.data;
+    this.logger.info({ command, botId }, 'Processing lifecycle command');
 
     switch (command) {
       case 'start':
         try {
-          await this.startInstance(tradingInstanceId, config ?? {});
+          await this.startInstance(botId, config ?? {});
         } catch (err) {
           if (this.onStartFailed) {
-            await this.onStartFailed(tradingInstanceId, err instanceof Error ? err : new Error(String(err)));
+            await this.onStartFailed(botId, err instanceof Error ? err : new Error(String(err)));
           }
           throw err;
         }
         break;
       case 'stop':
-        await this.stopInstance(tradingInstanceId);
+        await this.stopInstance(botId);
         break;
       case 'restart':
-        await this.stopInstance(tradingInstanceId);
+        await this.stopInstance(botId);
         try {
           let restartConfig = config;
           if (!restartConfig || Object.keys(restartConfig).length === 0) {
             // Config not in job payload (e.g. rotation-triggered restart) — load from DB
             if (this.instanceLoader) {
               const instances = await this.instanceLoader();
-              const found = instances.find(i => i.id === tradingInstanceId);
+              const found = instances.find(i => i.id === botId);
               restartConfig = found?.config;
             }
             if (!restartConfig || Object.keys(restartConfig).length === 0) {
-              throw new Error(`No config available for restart of instance ${tradingInstanceId}`);
+              throw new Error(`No config available for restart of instance ${botId}`);
             }
           }
-          await this.startInstance(tradingInstanceId, restartConfig);
+          await this.startInstance(botId, restartConfig);
         } catch (err) {
           if (this.onStartFailed) {
-            await this.onStartFailed(tradingInstanceId, err instanceof Error ? err : new Error(String(err)));
+            await this.onStartFailed(botId, err instanceof Error ? err : new Error(String(err)));
           }
           throw err;
         }
@@ -227,7 +227,7 @@ export class WorkerRuntime {
 
   private async startInstance(id: string, config: Record<string, unknown>): Promise<boolean> {
     if (this.actors.has(id)) {
-      this.logger.warn({ tradingInstanceId: id }, 'Instance already running, skipping start');
+      this.logger.warn({ botId: id }, 'Instance already running, skipping start');
       return false;
     }
 
@@ -235,7 +235,7 @@ export class WorkerRuntime {
     if (this.lease) {
       const acquired = await this.lease.acquire(id);
       if (!acquired) {
-        this.logger.info({ tradingInstanceId: id }, 'Lease held by another worker, skipping');
+        this.logger.info({ botId: id }, 'Lease held by another worker, skipping');
         return false;
       }
     }
@@ -258,7 +258,7 @@ export class WorkerRuntime {
     // If a stop was requested while the factory was in-flight, abort before starting
     if (this.pendingStops.has(id)) {
       this.pendingStops.delete(id);
-      this.logger.info({ tradingInstanceId: id }, 'Stop requested during factory — aborting start');
+      this.logger.info({ botId: id }, 'Stop requested during factory — aborting start');
       if (this.lease) {
         await this.lease.release(id);
       }
@@ -269,14 +269,14 @@ export class WorkerRuntime {
     this.actors.set(id, actor);
     try {
       await actor.start();
-      this.logger.info({ tradingInstanceId: id }, 'Instance started');
+      this.logger.info({ botId: id }, 'Instance started');
       return true;
     } catch (err) {
       this.actors.delete(id);
       try {
         await actor.stop();
       } catch (stopErr) {
-        this.logger.error({ err: stopErr, tradingInstanceId: id }, 'Failed to clean up actor after startup error');
+        this.logger.error({ err: stopErr, botId: id }, 'Failed to clean up actor after startup error');
       }
 
       if (this.lease) {
@@ -294,9 +294,9 @@ export class WorkerRuntime {
       // Without this guard, a stale stop (e.g. duplicate command) would poison the next start.
       if (this.startingInstances.has(id)) {
         this.pendingStops.add(id);
-        this.logger.warn({ tradingInstanceId: id }, 'Instance starting — queued pending stop');
+        this.logger.warn({ botId: id }, 'Instance starting — queued pending stop');
       } else {
-        this.logger.warn({ tradingInstanceId: id }, 'Instance not running, skipping stop');
+        this.logger.warn({ botId: id }, 'Instance not running, skipping stop');
       }
       return;
     }
@@ -309,7 +309,7 @@ export class WorkerRuntime {
       await this.lease.release(id);
     }
 
-    this.logger.info({ tradingInstanceId: id }, 'Instance stopped');
+    this.logger.info({ botId: id }, 'Instance stopped');
   }
 }
 

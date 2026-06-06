@@ -18,7 +18,7 @@ function makePlan(overrides?: Partial<ExecutionPlan>): ExecutionPlan {
   return {
     id: 'plan-1',
     decisionId: 'dec-1',
-    tradingInstanceId: 'inst-1' as unknown as string,
+    botId: 'inst-1' as unknown as string,
     venue: 'hyperliquid',
     symbol: 'BTC/USD:USD',
     action: 'open_long',
@@ -147,16 +147,16 @@ describe('PaperExecutor', () => {
     expect(new Set(fillIds).size).toBe(2);
   });
 
-  it('propagates tradingInstanceId and executionPlanId to orders', async () => {
+  it('propagates botId and executionPlanId to orders', async () => {
     const idGen = makeIdGen();
     const executor = new PaperExecutor(idGen);
-    const plan = makePlan({ tradingInstanceId: 'my-inst-42' });
+    const plan = makePlan({ botId: 'my-inst-42' });
 
     const result = await executor.execute(plan, price('10000'));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.data.orders[0]!.tradingInstanceId).toBe('my-inst-42');
+    expect(result.data.orders[0]!.botId).toBe('my-inst-42');
     expect(result.data.orders[0]!.executionPlanId).toBe('plan-1');
   });
 });

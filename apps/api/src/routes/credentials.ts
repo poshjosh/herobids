@@ -212,7 +212,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       for (const instanceId of runningInstanceIds) {
         await queue.add('restart-instance', {
           command: 'restart',
-          tradingInstanceId: instanceId,
+          botId: instanceId,
         });
         restartedIds.push(instanceId);
       }
@@ -226,8 +226,8 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     return reply.send({
       status: 'rotated',
       credentialId: id,
-      dependentTradingInstanceIds: runningInstanceIds,
-      restartedTradingInstanceIds: restartedIds,
+      dependentBotIds: runningInstanceIds,
+      restartedBotIds: restartedIds,
       ...(restartError ? { restartErrorCode, restartError } : {}),
     });
   });
@@ -248,7 +248,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
         error: 'credential_in_use',
         credentialId: id,
         blockingVenueAccountIds: venueAccountIds,
-        blockingTradingInstanceIds: runningInstanceIds,
+        blockingBotIds: runningInstanceIds,
       });
     }
 
@@ -263,7 +263,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
           error: 'credential_in_use',
           credentialId: id,
           blockingVenueAccountIds: deps.venueAccountIds,
-          blockingTradingInstanceIds: deps.runningInstanceIds,
+          blockingBotIds: deps.runningInstanceIds,
         });
       }
       throw err;

@@ -115,7 +115,7 @@ describe('GET /instances/:id/live-status', () => {
     expect(res.statusCode).toBe(200);
 
     const body = res.json();
-    expect(body.tradingInstanceId).toBe('inst-1');
+    expect(body.botId).toBe('inst-1');
     expect(body.executionMode).toBe('live');
     expect(body.status).toBe('running');
     expect(body.startedAt).toBe('2026-05-28T10:00:00.000Z');
@@ -163,7 +163,7 @@ describe('GET /instances/:id/live-status', () => {
 
     // Verify journal was called with the parsed since/limit
     expect(mockJournal.queryByTypes).toHaveBeenCalledWith(expect.objectContaining({
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       types: ['live.slippage_alert'],
       since: new Date('2026-05-28T00:00:00Z'),
       limit: 5,

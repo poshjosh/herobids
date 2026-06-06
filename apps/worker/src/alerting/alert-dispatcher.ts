@@ -200,7 +200,7 @@ export class AlertDispatcher {
    * is advanced in attemptDelivery only after a confirmed successful send, so that
    * a Telegram failure does not silently suppress future alerts of the same type.
    *
-   * The cooldown key is scoped to (tradingInstanceId, type) so that the same event
+   * The cooldown key is scoped to (botId, type) so that the same event
    * type on different instances each get their own independent cooldown.
    */
   private applyCooldowns(events: JournalEventRow[]): JournalEventRow[] {
@@ -225,9 +225,9 @@ export class AlertDispatcher {
     return result;
   }
 
-  /** Build a cooldown map key scoped to (tradingInstanceId, type). */
-  private cooldownKey(event: { tradingInstanceId?: string | null; actorId?: string | null; type: string }): string {
-    return `${event.tradingInstanceId ?? event.actorId ?? ''}:${event.type}`;
+  /** Build a cooldown map key scoped to (botId, type). */
+  private cooldownKey(event: { botId?: string | null; actorId?: string | null; type: string }): string {
+    return `${event.botId ?? event.actorId ?? ''}:${event.type}`;
   }
 
   /** Collect all unique event prefixes from channel configs */

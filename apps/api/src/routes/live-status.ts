@@ -65,13 +65,13 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
         orderRepo.getOpenByInstance(id),
         fillRepo.getRecentByInstance(id, since, limit),
         journal.queryByTypes({
-          tradingInstanceId: id,
+          botId: id,
           types: ['live.slippage_alert'],
           since,
           limit,
         }),
         journal.queryByTypes({
-          tradingInstanceId: id,
+          botId: id,
           types: [...LIVE_EVENT_TYPES],
           since,
           limit,
@@ -81,7 +81,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       const lastRecon = recentRecon[0];
 
       return reply.send({
-        tradingInstanceId: id,
+        botId: id,
         executionMode,
         status: bot.status,
         startedAt: bot.startedAt?.toISOString() ?? null,
@@ -163,12 +163,12 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       // Check for recent live_blocked or live_armed events
       const [blockedEvents, armedEvents] = await Promise.all([
         journal.queryByTypes({
-          tradingInstanceId: id,
+          botId: id,
           types: ['instance.live_blocked'],
           limit: 1,
         }),
         journal.queryByTypes({
-          tradingInstanceId: id,
+          botId: id,
           types: ['instance.live_armed'],
           limit: 1,
         }),
@@ -189,7 +189,7 @@ export async function liveStatusRoutes(app: FastifyInstance, db: Database): Prom
       }
 
       return reply.send({
-        tradingInstanceId: id,
+        botId: id,
         executionMode,
         status: bot.status,
         readinessState,

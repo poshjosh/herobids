@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { ShadowExecutor } from './shadow-executor.js';
 import type { MarketDataFeed, TickerSnapshot, TradeHandler } from './market-data-feed.js';
 import type { ExecutionPlan } from './planner.js';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId } from '@herobids/domain';
 import { price, quantity } from '@herobids/domain';
 
 // Minimal market data feed stub
@@ -49,7 +49,7 @@ function makePlan(overrides?: Partial<ExecutionPlan>): ExecutionPlan {
   return {
     id: 'plan-1',
     decisionId: 'dec-1',
-    tradingInstanceId: 'inst-1' as string,
+    botId: 'inst-1' as string,
     venue: 'hyperliquid',
     symbol: 'BTC/USD:USD',
     action: 'open_long',

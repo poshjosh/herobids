@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { price, quantity, ok, err } from '@herobids/domain';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId, BotId } from '@herobids/domain';
 import { InMemoryJournal } from '@herobids/engine';
 import type { JournalEventType } from '@herobids/engine';
 
@@ -55,7 +55,7 @@ function makeOrderbookDeps(journal: InMemoryJournal): TradingActorDeps {
       evaluate: vi.fn()
         .mockResolvedValueOnce(ok({
           id: 'd-ob-1',
-          tradingInstanceId: 'inst-orderbook' as TradingInstanceId,
+          botId: 'inst-orderbook' as BotId,
           instrumentId: 'BTC/USD:USD',
           intent: 'go_long',
           targetSize: quantity('1'),
@@ -117,7 +117,7 @@ function makeSwapDeps(journal: InMemoryJournal): TradingActorDeps {
       evaluate: vi.fn()
         .mockResolvedValueOnce(ok({
           id: 'd-sw-1',
-          tradingInstanceId: 'inst-swap' as TradingInstanceId,
+          botId: 'inst-swap' as BotId,
           instrumentId: 'SOL/USDC',
           intent: 'go_long',
           targetSize: quantity('1'),
@@ -219,7 +219,7 @@ describe('Cross-venue unified lifecycle (Phase 2c §4)', () => {
     const swFill = swFillCalls[0][0];
 
     // Same schema fields present on both
-    const requiredFields = ['orderId', 'tradingInstanceId', 'venue', 'symbol', 'side', 'quantity', 'price', 'filledAt'];
+    const requiredFields = ['orderId', 'botId', 'venue', 'symbol', 'side', 'quantity', 'price', 'filledAt'];
     for (const field of requiredFields) {
       expect(obFill).toHaveProperty(field);
       expect(swFill).toHaveProperty(field);
@@ -258,7 +258,7 @@ describe('Cross-venue unified lifecycle (Phase 2c §4)', () => {
     const swPos = swPosCalls[0][0];
 
     // Same schema fields
-    const requiredFields = ['tradingInstanceId', 'venueAccountId', 'venue', 'symbol', 'side', 'size', 'entryPrice', 'realizedPnl'];
+    const requiredFields = ['actorId', 'venueAccountId', 'venue', 'symbol', 'side', 'size', 'entryPrice', 'realizedPnl'];
     for (const field of requiredFields) {
       expect(obPos).toHaveProperty(field);
       expect(swPos).toHaveProperty(field);
@@ -377,7 +377,7 @@ describe('Cross-venue unified lifecycle (Phase 2c §4)', () => {
     const swRecon = swReconCalls[0][0];
 
     // Same top-level schema
-    const requiredFields = ['tradingInstanceId', 'venueAccountId', 'result', 'localState', 'venueState', 'diff'];
+    const requiredFields = ['botId', 'venueAccountId', 'result', 'localState', 'venueState', 'diff'];
     for (const field of requiredFields) {
       expect(obRecon).toHaveProperty(field);
       expect(swRecon).toHaveProperty(field);

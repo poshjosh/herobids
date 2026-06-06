@@ -22,7 +22,7 @@ describe('AgentDecisionHandler', () => {
     };
 
     const agentRepo = {
-      getActiveLink: vi.fn().mockResolvedValue({ tradingInstanceId: 'inst-1' }),
+      getActiveLink: vi.fn().mockResolvedValue({ botId: 'inst-1' }),
       getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', status: 'active' }),
       getSessionForAgentAndInstance: vi.fn().mockResolvedValue({ id: 'sess-1', status: 'running' }),
     };
@@ -66,7 +66,7 @@ describe('AgentDecisionHandler', () => {
         correlationId: 'corr-1',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.decision.submit',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},
@@ -107,7 +107,7 @@ describe('AgentDecisionHandler', () => {
         correlationId: 'corr-1',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.decision.submit',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},
@@ -147,7 +147,7 @@ describe('AgentDecisionHandler', () => {
         correlationId: 'corr-2',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.decision.submit',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},
@@ -176,7 +176,7 @@ describe('AgentDecisionHandler', () => {
     vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
       decision: {
         id: 'dec-4',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         instrumentId: 'BTC/USD:USD',
         intent: 'go_long',
         targetSize: { toString: () => '1' },
@@ -202,7 +202,7 @@ describe('AgentDecisionHandler', () => {
         correlationId: 'corr-4',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.decision.submit',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},
@@ -225,7 +225,7 @@ describe('AgentDecisionHandler', () => {
     vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
       decision: {
         id: 'dec-3',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         instrumentId: 'BTC/USD:USD',
         intent: 'go_long',
         targetSize: { toString: () => '1' },
@@ -249,7 +249,7 @@ describe('AgentDecisionHandler', () => {
         correlationId: 'corr-3',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.decision.submit',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},

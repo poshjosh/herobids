@@ -210,7 +210,7 @@ const botRepo = new BotRepository(db);
 const botStartCallback = async (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('start-instance', {
     command: 'start',
-    tradingInstanceId: botId,
+    botId,
     config: { ...config, venueAccountId, userId },
   });
 };
@@ -357,7 +357,7 @@ const runtime = new WorkerRuntime(
                 credentialId: account.credentialId,
                 venue: config.venue,
                 venueAccountId,
-                tradingInstanceId: botId,
+                botId,
                 outcome: 'success',
               })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
             } else {
@@ -365,7 +365,7 @@ const runtime = new WorkerRuntime(
                 credentialId: account.credentialId,
                 venue: config.venue,
                 venueAccountId,
-                tradingInstanceId: botId,
+                botId,
                 outcome: 'failure',
                 error: 'CREDENTIAL_ENCRYPTION_KEY not set',
               })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -376,7 +376,7 @@ const runtime = new WorkerRuntime(
               credentialId: account.credentialId,
               venue: config.venue,
               venueAccountId,
-              tradingInstanceId: botId,
+              botId,
               outcome: 'failure',
               error: 'Credential record not found (dangling reference)',
             })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -395,7 +395,7 @@ const runtime = new WorkerRuntime(
             credentialId: pendingCredentialId,
             venue: config.venue,
             venueAccountId,
-            tradingInstanceId: botId,
+            botId,
             outcome: 'failure',
             error: err instanceof Error ? err.message : String(err),
           })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: pendingCredentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -465,7 +465,7 @@ const runtime = new WorkerRuntime(
                     credentialId: account.credentialId,
                     venue: config.venue,
                     venueAccountId,
-                    tradingInstanceId: botId,
+                    botId,
                     outcome: 'success',
                   })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
                 } catch (decryptErr) {
@@ -473,7 +473,7 @@ const runtime = new WorkerRuntime(
                     credentialId: account.credentialId,
                     venue: config.venue,
                     venueAccountId,
-                    tradingInstanceId: botId,
+                    botId,
                     outcome: 'failure',
                     error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
                   })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
@@ -484,7 +484,7 @@ const runtime = new WorkerRuntime(
                   credentialId: account.credentialId,
                   venue: config.venue,
                   venueAccountId,
-                  tradingInstanceId: botId,
+                  botId,
                   outcome: 'failure',
                   error: 'CREDENTIAL_ENCRYPTION_KEY not set',
                 })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });

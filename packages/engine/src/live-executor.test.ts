@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LiveExecutor } from './live-executor.js';
 import { quantity } from '@herobids/domain';
-import type { OrderId, FillId, TradingInstanceId } from '@herobids/domain';
+import type { OrderId, FillId } from '@herobids/domain';
 import type { OrderbookVenuePort, OrderCommand, OrderReceipt, VenueError } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import type { ExecutionPlan } from './planner.js';
@@ -18,7 +18,7 @@ function makePlan(overrides?: Partial<ExecutionPlan>): ExecutionPlan {
   return {
     id: 'plan-1',
     decisionId: 'dec-1',
-    tradingInstanceId: 'inst-1' as unknown as string,
+    botId: 'inst-1' as unknown as string,
     venue: 'hyperliquid',
     symbol: 'ETH/USD:USD',
     action: 'open_long',

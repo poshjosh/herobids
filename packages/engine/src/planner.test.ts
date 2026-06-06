@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { planDecision } from './planner.js';
 import type { Decision } from '@herobids/domain';
-import type { DecisionId, InstrumentId, TradingInstanceId } from '@herobids/domain';
+import type { DecisionId, InstrumentId, BotId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
 
 function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     id: 'dec-1' as DecisionId,
-    tradingInstanceId: 'ti-1' as TradingInstanceId,
+    botId: 'ti-1' as BotId,
     instrumentId: 'ins-1' as InstrumentId,
     intent: 'go_long',
     targetSize: quantity('10'),

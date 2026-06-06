@@ -5,7 +5,7 @@ describe('AgentSessionManager', () => {
   function buildManager(overrides: Record<string, unknown> = {}) {
     const agentRepo = {
       getSession: vi.fn(),
-      getActiveLink: vi.fn().mockResolvedValue({ tradingInstanceId: 'inst-1' }),
+      getActiveLink: vi.fn().mockResolvedValue({ botId: 'inst-1' }),
       getLaunchableStartingSessions: vi.fn().mockResolvedValue([]),
       claimStartingSession: vi.fn().mockResolvedValue(true),
       markSessionRunning: vi.fn().mockResolvedValue(true),
@@ -46,8 +46,8 @@ describe('AgentSessionManager', () => {
   it('launches each eligible starting session exactly once', async () => {
     const { manager, agentRepo, runtimeLauncher } = buildManager();
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'sess-1', agentId: 'agent-1', tradingInstanceId: 'inst-1' },
-      { id: 'sess-2', agentId: 'agent-2', tradingInstanceId: 'inst-2' },
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+      { id: 'sess-2', agentId: 'agent-2', botId: 'inst-2' },
     ]);
 
     await manager.reconcileStartingSessions();
@@ -61,7 +61,7 @@ describe('AgentSessionManager', () => {
   it('skips a session whose claim fails (another worker already claimed it)', async () => {
     const { manager, agentRepo, runtimeLauncher } = buildManager();
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'sess-1', agentId: 'agent-1', tradingInstanceId: 'inst-1' },
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
     ]);
     (agentRepo.claimStartingSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
 
@@ -74,8 +74,8 @@ describe('AgentSessionManager', () => {
   it('continues reconciling later sessions if one launch fails', async () => {
     const { manager, agentRepo, runtimeLauncher } = buildManager();
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'sess-1', agentId: 'agent-1', tradingInstanceId: 'inst-1' },
-      { id: 'sess-2', agentId: 'agent-2', tradingInstanceId: 'inst-2' },
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+      { id: 'sess-2', agentId: 'agent-2', botId: 'inst-2' },
     ]);
     (runtimeLauncher.launch as ReturnType<typeof vi.fn>)
       .mockRejectedValueOnce(new Error('launch failed'))
@@ -93,7 +93,7 @@ describe('AgentSessionManager', () => {
     (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'sess-1',
       agentId: 'agent-1',
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       status: 'starting',
     });
 
@@ -104,7 +104,7 @@ describe('AgentSessionManager', () => {
         correlationId: 'corr-1',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.runtime.heartbeat',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},
@@ -125,7 +125,7 @@ describe('AgentSessionManager', () => {
     (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'sess-1',
       agentId: 'agent-1',
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       status: 'running',
     });
 
@@ -141,7 +141,7 @@ describe('AgentSessionManager', () => {
     (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'sess-1',
       agentId: 'agent-1',
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       status: 'starting',
     });
 
@@ -186,7 +186,7 @@ describe('AgentSessionManager', () => {
     (agentRepo.getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'sess-1',
       agentId: 'agent-1',
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       status: 'running',
     });
     (runtimeLauncher.hasRuntime as ReturnType<typeof vi.fn>).mockReturnValue(false);
@@ -198,7 +198,7 @@ describe('AgentSessionManager', () => {
         correlationId: 'corr-restart',
         initiatorType: 'agent',
         initiatorId: 'agent-1',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         type: 'agent.runtime.heartbeat',
         createdAt: '2026-06-03T00:00:00.000Z',
         payload: {},
@@ -236,8 +236,8 @@ describe('AgentSessionManager', () => {
     );
 
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'sess-a', agentId: 'agent-a', tradingInstanceId: 'inst-a' },
-      { id: 'sess-b', agentId: 'agent-b', tradingInstanceId: 'inst-b' },
+      { id: 'sess-a', agentId: 'agent-a', botId: 'inst-a' },
+      { id: 'sess-b', agentId: 'agent-b', botId: 'inst-b' },
     ]);
     (agentRepo.getAgent as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ id: 'agent-a', prompt: 'goal-a', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null })
@@ -263,7 +263,7 @@ describe('AgentSessionManager', () => {
     );
 
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'sess-fail', agentId: 'agent-fail', tradingInstanceId: 'inst-fail' },
+      { id: 'sess-fail', agentId: 'agent-fail', botId: 'inst-fail' },
     ]);
     (runtimeLauncher.launch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('container start error'));
 
@@ -285,7 +285,7 @@ describe('AgentSessionManager', () => {
     );
 
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'sess-race', agentId: 'agent-race', tradingInstanceId: 'inst-race' },
+      { id: 'sess-race', agentId: 'agent-race', botId: 'inst-race' },
     ]);
     (agentRepo.claimStartingSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
 

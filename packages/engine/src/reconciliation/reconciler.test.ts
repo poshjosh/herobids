@@ -34,7 +34,7 @@ function makeDeps(overrides?: Partial<ReconcilerDeps>): ReconcilerDeps {
     persistResult: vi.fn().mockResolvedValue(undefined),
     journal: { append: vi.fn().mockResolvedValue(undefined) } as any,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as any,
-    tradingInstanceId: 'inst-1',
+    actorId: 'inst-1',
     venueAccountId: 'va-1',
     ...overrides,
   };

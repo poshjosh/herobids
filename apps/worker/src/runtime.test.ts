@@ -21,7 +21,7 @@ describe('WorkerRuntime startup cleanup', () => {
 
   it('releases the lease and does not retain the actor when actor.start fails', async () => {
     const actor = {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       start: vi.fn().mockRejectedValue(new Error('startup failed')),
       stop: vi.fn().mockResolvedValue(undefined),
     };

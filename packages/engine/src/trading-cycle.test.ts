@@ -60,7 +60,7 @@ function makePersistence(): TradingCyclePersistence & { calls: Record<string, un
 function makeDecision(): Decision {
   return {
     id: 'd-1' as DecisionId,
-    tradingInstanceId: '' as BotId,
+    botId: '' as BotId,
     instrumentId: 'BTC/USD:USD' as InstrumentId,
     intent: 'go_long',
     targetSize: quantity('1'),
@@ -81,7 +81,7 @@ describe('runTradingCycle', () => {
     const idGen = makeIdGen();
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -106,7 +106,7 @@ describe('runTradingCycle', () => {
     const idGen = makeIdGen();
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -154,7 +154,7 @@ describe('runTradingCycle', () => {
       const persistence = makePersistence();
       const idGen = makeIdGen();
       return runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         venue: 'hyperliquid',
         symbol: 'BTC/USD:USD',
         venueAccountId: 'va-1',
@@ -187,7 +187,7 @@ describe('runTradingCycle', () => {
 
     // Very small maxPositionSize to trigger rejection
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -219,7 +219,7 @@ describe('runTradingCycle', () => {
     };
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -252,7 +252,7 @@ describe('runTradingCycle', () => {
     };
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -276,13 +276,13 @@ describe('runTradingCycle', () => {
     expect(persistence.calls['persistFill']!.length).toBe(0);
   });
 
-  it('stamps tradingInstanceId onto the decision', async () => {
+  it('stamps botId onto the decision', async () => {
     const journal = new InMemoryJournal();
     const persistence = makePersistence();
     const idGen = makeIdGen();
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'my-instance-99',
+      botId: 'my-instance-99',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -296,7 +296,7 @@ describe('runTradingCycle', () => {
       clock: realClock,
     });
 
-    expect(result.decision!.tradingInstanceId).toBe('my-instance-99');
+    expect(result.decision!.botId).toBe('my-instance-99');
   });
 
   it('computes a replayable context hash when the strategy does not provide one', async () => {
@@ -305,7 +305,7 @@ describe('runTradingCycle', () => {
     const idGen = makeIdGen();
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-hash',
+      botId: 'inst-hash',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -352,7 +352,7 @@ describe('runTradingCycle', () => {
     // Risk check with a mark at 60000 will compute notional as quantity(1) * 60000 = 60000
     // With maxOrderNotional unset & maxPositionSize = 100, should pass
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -383,7 +383,7 @@ describe('runTradingCycle', () => {
 
     // Stale mark (price=1) should be ignored, snapshot price=50000 used for risk check
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -410,7 +410,7 @@ describe('runTradingCycle', () => {
     const clock: Clock = { now: () => '2025-03-15T08:00:00.000Z' };
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',
@@ -437,7 +437,7 @@ describe('runTradingCycle', () => {
     // Decision with larger target size to trigger multi-fill if planner supports it
     const decision: Decision = {
       id: 'd-multi' as DecisionId,
-      tradingInstanceId: '' as BotId,
+      botId: '' as BotId,
       instrumentId: 'BTC/USD:USD' as InstrumentId,
       intent: 'go_long',
       targetSize: quantity('3'),
@@ -445,7 +445,7 @@ describe('runTradingCycle', () => {
     };
 
     const result = await runTradingCycle(snapshot, flatPosition('hyperliquid', 'BTC/USD:USD'), {
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       venue: 'hyperliquid',
       symbol: 'BTC/USD:USD',
       venueAccountId: 'va-1',

@@ -182,7 +182,7 @@ describe.skipIf(SKIP)('Worker: session lifecycle (stub runtime)', () => {
       correlationId: crypto.randomUUID(),
       initiatorType: 'agent' as const,
       initiatorId: agentId,
-      tradingInstanceId: sessionId,
+      botId: sessionId,
       type: 'agent.runtime.heartbeat',
       createdAt: new Date().toISOString(),
       payload: {},

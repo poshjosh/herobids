@@ -68,8 +68,6 @@ export interface InsertAgentMessage {
   actorType: string;
   actorId: string;
   agentId: string;    // was tradingInstanceId — primary grouping key
-  /** Accepted for call-site compatibility; not stored (no DB column) */
-  tradingInstanceId?: string;
   botId?: string;     // nullable — set when message is bot-scoped
   type: string;
   direction: 'inbound' | 'outbound';
@@ -181,12 +179,12 @@ export class AgentRepository {
     return rows[0] ?? null;
   }
 
-  async getSessionForAgentAndInstance(agentId: string, _tradingInstanceId: string) {
+  async getSessionForAgentAndInstance(agentId: string, _botId: string) {
     // tradingInstanceId no longer stored on sessions — use getActiveSession(agentId) instead.
     return this.getActiveSession(agentId);
   }
 
-  async getActiveSessionByInstance(_tradingInstanceId: string) {
+  async getActiveSessionByInstance(_botId: string) {
     // tradingInstanceId no longer stored on sessions. Returns null; callers should migrate.
     return null;
   }
@@ -224,7 +222,7 @@ export class AgentRepository {
       .orderBy(desc(agentRuntimeSessions.startedAt));
   }
 
-  async getActiveSessionsByInstance(_tradingInstanceId: string) {
+  async getActiveSessionsByInstance(_botId: string) {
     // tradingInstanceId no longer stored on sessions. Callers should migrate to getActiveSession(agentId).
     // This stub preserves the call site signature during the transition period.
     return [];

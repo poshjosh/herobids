@@ -25,7 +25,7 @@ describe('live journal event helpers', () => {
       venueAccountId: 'va-1',
     });
     expect(entry.type).toBe('instance.live_blocked' satisfies JournalEventType);
-    expect(entry.tradingInstanceId).toBe('inst-1');
+    expect(entry.botId).toBe('inst-1');
     expect(entry.payload).toMatchObject({ reason: 'Live mode disabled', code: 'live_rollout.disabled' });
   });
 
@@ -151,7 +151,7 @@ describe('credential audit event helpers', () => {
       label: 'prod-key',
     });
     expect(entry.type).toBe('credential.created');
-    expect(entry.tradingInstanceId).toBeUndefined();
+    expect(entry.botId).toBeUndefined();
     expect(entry.payload).toMatchObject({
       credentialId: 'cred-1',
       venue: 'hyperliquid',
@@ -180,16 +180,16 @@ describe('credential audit event helpers', () => {
     expect(entry.payload.credentialId).toBe('cred-3');
   });
 
-  it('credentialDecryptedEvent includes tradingInstanceId and outcome', () => {
+  it('credentialDecryptedEvent includes botId and outcome', () => {
     const entry = credentialDecryptedEvent({
       credentialId: 'cred-4',
       venue: 'hyperliquid',
       venueAccountId: 'va-1',
-      tradingInstanceId: 'inst-1',
+      botId: 'inst-1',
       outcome: 'success',
     });
     expect(entry.type).toBe('credential.decrypted');
-    expect(entry.tradingInstanceId).toBe('inst-1');
+    expect(entry.botId).toBe('inst-1');
     expect(entry.payload.outcome).toBe('success');
     expect(entry.payload.error).toBeUndefined();
   });
@@ -199,7 +199,7 @@ describe('credential audit event helpers', () => {
       credentialId: 'cred-5',
       venue: 'hyperliquid',
       venueAccountId: 'va-2',
-      tradingInstanceId: 'inst-2',
+      botId: 'inst-2',
       outcome: 'failure',
       error: 'Key not set',
     });
@@ -217,7 +217,7 @@ describe('credential audit event helpers', () => {
       ordersSubmitted: 2,
     });
     expect(entry.type).toBe('credential.used');
-    expect(entry.tradingInstanceId).toBe('inst-3');
+    expect(entry.botId).toBe('inst-3');
     expect(entry.payload.ordersSubmitted).toBe(2);
     expect(entry.payload.action).toBe('live_order_submit');
   });

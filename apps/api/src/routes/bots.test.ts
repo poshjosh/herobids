@@ -216,7 +216,7 @@ describe('bot routes', () => {
       expect(res.statusCode).toBe(200);
       expect(mockQueue.add).toHaveBeenCalledWith('start-instance', {
         command: 'start',
-        tradingInstanceId: 'inst-1',
+        botId: 'inst-1',
         config: expect.objectContaining({
           venueAccountId: 'va-1',
           userId: TEST_USER_ID,

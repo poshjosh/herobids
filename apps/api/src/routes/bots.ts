@@ -116,7 +116,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
 
     await queue.add('start-instance', {
       command: 'start',
-      tradingInstanceId: id,
+      botId: id,
       config: { ...bot.config, venueAccountId: bot.venueAccountId, userId: bot.userId },
     });
     return reply.send({ status: 'starting', botId: id });
@@ -137,7 +137,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
 
     await queue.add('stop-instance', {
       command: 'stop',
-      tradingInstanceId: id,
+      botId: id,
     });
     return reply.send({ status: 'stopping', botId: id });
   });
@@ -174,7 +174,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     if (existing.status === 'running') {
       await queue.add('restart-instance', {
         command: 'restart',
-        tradingInstanceId: id,
+        botId: id,
         config: { ...parsed.data.config, venueAccountId: existing.venueAccountId, userId: existing.userId },
       });
     }

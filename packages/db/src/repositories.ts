@@ -7,7 +7,7 @@ export interface InsertFill {
   orderId: string;
   venueAccountId: string;
   /** Convenience alias — stored as actorId for bot actors */
-  tradingInstanceId?: string;
+  botId?: string;
   actorType?: string;
   actorId?: string;
   venueRefId?: string;
@@ -47,7 +47,7 @@ export class FillRepository {
       orderId: fill.orderId,
       venueAccountId: fill.venueAccountId,
       actorType: fill.actorType ?? 'system',
-      actorId: fill.actorId ?? fill.tradingInstanceId ?? null,
+      actorId: fill.actorId ?? fill.botId ?? null,
       venueRefId: fill.venueRefId ?? null,
       venue: fill.venue,
       symbol: fill.symbol,
@@ -82,8 +82,8 @@ export class FillRepository {
   }
 
   /** Get recent fills for a trading instance (bot actor) */
-  async getRecentByInstance(tradingInstanceId: string, since?: Date, limit?: number) {
-    return this.getRecentByActor('bot', tradingInstanceId, since, limit);
+  async getRecentByInstance(botId: string, since?: Date, limit?: number) {
+    return this.getRecentByActor('bot', botId, since, limit);
   }
 
   /** Get recent fills for a venue account (all actors). Used by reconciliation. */
@@ -198,8 +198,8 @@ export class PositionRepository {
   }
 
   /** Get open positions for a trading instance (bot actor) */
-  async getOpenByInstance(tradingInstanceId: string) {
-    return this.getOpenByActor('bot', tradingInstanceId);
+  async getOpenByInstance(botId: string) {
+    return this.getOpenByActor('bot', botId);
   }
 
   /** Get all positions for an actor (including closed) */
@@ -355,8 +355,8 @@ export class OrderRepository {
   }
 
   /** Get open orders for a trading instance (bot actor) */
-  async getOpenByInstance(tradingInstanceId: string) {
-    return this.getOpenByActor('bot', tradingInstanceId);
+  async getOpenByInstance(botId: string) {
+    return this.getOpenByActor('bot', botId);
   }
 
   /** Get all orders belonging to a specific execution plan */
