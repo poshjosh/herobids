@@ -157,7 +157,9 @@ Stored in Postgres, loaded by the trading instance at startup:
 
 6. **`config/default.yaml` is the documentation.** Inline comments explain every value. No separate docs file to drift out of sync.
 
-7. **Secrets never in YAML or env vars passed to containers.** Use secrets manager references. Decrypt just-in-time in the process that needs them.
+7. **In production, secrets go through a secrets manager — not env vars.** Use secrets manager references (e.g. AWS Secrets Manager, Vault). Decrypt just-in-time in the process that needs them. For local dev, `.env` passthrough via `${VAR:-}` in the service's `environment:` block is acceptable — but keep inline comments on their own line; Docker Compose does not strip inline comments and will pass the `#` text as the value.
+
+8. **Required env vars must fail fast at process startup.** Any env var without a safe default must be validated at the top of the entry point and exit with a clear fatal log if absent — not discovered later on the first operation that needs it. Follow the pattern already used for `AGENT_ID` and `SESSION_ID` in the agent runtime.
 
 ---
 
@@ -182,4 +184,16 @@ Stored in Postgres, loaded by the trading instance at startup:
 - **Mixing operator and user config.** Don't merge deploy-time settings with per-instance parameters into one blob.
 - **Over-configuring internals.** Not every constant needs config. Internal buffer sizes and log format strings stay as code constants unless there's a clear user need.
 - **Passing full operator config to containers.** Agent containers get only what they need via the message contract.
+- **Inferring config from data.** Never derive a provider, mode, or policy from data values (e.g. model name → LLM provider). Configuration must be explicit. If `LLM_PROVIDER` is absent, fail fast — do not guess.
+- **Assuming `.env` values reach container processes.** Docker Compose reads `.env` for YAML variable substitution only. A value does not enter a container's environment unless it is declared in the service's `environment:` block (or `env_file:`). Use `${VAR:-}` passthrough entries for operator-supplied secrets that must reach spawned containers:
+
+  ```yaml
+  # docker-compose.yaml — worker service
+  environment:
+    LLM_PROVIDER: ${LLM_PROVIDER:-}
+    LLM_API_KEY_OPENROUTER: ${LLM_API_KEY_OPENROUTER:-}
+    # ...
+  ```
+
+  The `:-` syntax makes the entry optional (empty string if unset), which is falsy and safely skipped by conditional forwarding code.
 - **Applying bot blueprint risk defaults as agent constraints.** When an agent is the actor, risk config fields in the bot blueprint are data the agent reasons over, not platform-enforced constraints. Never silently enforce a default stop-loss, position cap, or portfolio stop over an agent's decisions unless the user's goal explicitly specifies it. See [Agent Mode Purity](../tech/agents/runtime-boundary-and-message-contract.md#agent-mode-purity).

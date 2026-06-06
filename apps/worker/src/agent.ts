@@ -36,7 +36,7 @@ const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
 // Brokered tools are also enforced by the broker, but the container adds a second gate.
 const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
 const LLM_MODEL = process.env['LLM_MODEL'] ?? 'claude-sonnet-4-5';
-const LLM_PROVIDER = process.env['LLM_PROVIDER'] ?? (LLM_MODEL.startsWith('claude') ? 'anthropic' : 'openai');
+const LLM_PROVIDER = process.env['LLM_PROVIDER'];
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
 const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
 const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
@@ -45,6 +45,19 @@ const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '
 
 if (!AGENT_ID || !SESSION_ID) {
   logger.fatal({ AGENT_ID, SESSION_ID }, 'AGENT_ID and SESSION_ID env vars are required');
+  process.exit(1);
+}
+
+if (!LLM_PROVIDER) {
+  logger.fatal('LLM_PROVIDER env var is required');
+  process.exit(1);
+}
+
+const LLM_API_KEY_RESOLVED =
+  process.env[`LLM_API_KEY_${LLM_PROVIDER.toUpperCase()}`] ||
+  process.env['LLM_API_KEY'];
+if (!LLM_API_KEY_RESOLVED) {
+  logger.fatal({ provider: LLM_PROVIDER }, 'No API key found for LLM provider — set LLM_API_KEY or LLM_API_KEY_<PROVIDER>');
   process.exit(1);
 }
 
@@ -635,7 +648,7 @@ async function runTick(): Promise<void> {
     // Call the LLM
     const llmResult = await callLlmProvider(
       {
-        provider: LLM_PROVIDER,
+        provider: LLM_PROVIDER!,
         model: LLM_MODEL,
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,

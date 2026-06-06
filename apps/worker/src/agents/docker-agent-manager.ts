@@ -60,9 +60,12 @@ export class DockerAgentManager {
     private readonly agentRepo: AgentRepository,
     private readonly platformAlerts?: PlatformAlertService,
   ) {
-    this.dockerApiBase = _config.dockerHost.startsWith('http')
-      ? _config.dockerHost
-      : `http://${_config.dockerHost}`;
+    const rawHost = _config.dockerHost;
+    this.dockerApiBase = rawHost.startsWith('http')
+      ? rawHost
+      : rawHost.startsWith('tcp://')
+        ? rawHost.replace(/^tcp:\/\//, 'http://')
+        : `http://${rawHost}`;
     this.network = _config.dockerNetwork;
     this.image = _config.agentImage;
     this.redisUrl = _config.redisUrl;

@@ -101,6 +101,14 @@ services:
       # docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
       # For local dev without Docker-in-Docker, override: AGENT_RUNTIME_MODE=stub docker compose up
       AGENT_RUNTIME_MODE: docker
+      # LLM configuration — values come from .env (or host environment)
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_KEY_ANTHROPIC: ${LLM_API_KEY_ANTHROPIC:-}
+      LLM_API_KEY_OPENROUTER: ${LLM_API_KEY_OPENROUTER:-}
+      LLM_API_KEY_OPENAI: ${LLM_API_KEY_OPENAI:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

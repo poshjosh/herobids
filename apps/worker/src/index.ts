@@ -94,6 +94,11 @@ const eventPublisher = new InstanceEventPublisher(redisClient);
 const runtimeMode = (process.env['AGENT_RUNTIME_MODE'] ?? 'stub') as 'docker' | 'stub';
 logger.info({ mode: runtimeMode }, 'Agent runtime mode');
 
+if (runtimeMode === 'docker' && !process.env['LLM_PROVIDER']) {
+  logger.fatal('LLM_PROVIDER env var is required when AGENT_RUNTIME_MODE=docker');
+  process.exit(1);
+}
+
 const agentRuntimeLauncher = runtimeMode === 'docker'
   ? new AgentRuntimeLauncher({
       mode: 'docker',
