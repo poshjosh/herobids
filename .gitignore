@@ -40,6 +40,8 @@ logs/
 
 # Testing
 coverage/
+docs/test-reports/e2e-report/
+tests/e2e/test-results/
 
 # Redis & Postgres local data
 .data/

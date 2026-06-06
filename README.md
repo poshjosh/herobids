@@ -1,5 +1,11 @@
 # herobids
 
+Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea/intention in, outcomes out.
+
+We are foremost an agentic platform. We offer agents as a service. We use skills to give agents expertise to work for users. Our first and core skill is crypto trading.
+
+We offer LLMs and compute/server as a service for agentic use
+
 AI-first algorithmic trading system. Supports multiple venues (Hyperliquid perpetuals, Bybit, Jupiter/1inch DEX swaps) with paper/shadow/live execution modes, real-time WebSocket market data, and configurable trading strategies.
 
 ## Prerequisites
