@@ -464,15 +464,18 @@ describe('PUT /blueprints/:id', () => {
 
 describe('DELETE /blueprints/:id', () => {
   it('returns 204 when no running bot references the blueprint', async () => {
-    // select call 1: resolve ownership → returns stubBlueprint
-    // select call 2: running bot check → returns [] (no running bots)
     let selectCallCount = 0;
-    const db = {
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
       select: vi.fn().mockImplementation(() => {
         selectCallCount++;
+        // call 1: ownership check → found; call 2: running bot check → none
         return makeChain(selectCallCount === 1 ? [stubBlueprint] : []);
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    };
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
     } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
@@ -484,12 +487,16 @@ describe('DELETE /blueprints/:id', () => {
 
   it('returns 409 when a running bot references the blueprint', async () => {
     let selectCallCount = 0;
-    const db = {
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
       select: vi.fn().mockImplementation(() => {
         selectCallCount++;
         // call 1: ownership check → found; call 2: running bot → found
         return makeChain(selectCallCount === 1 ? [stubBlueprint] : [{ id: 'bot-1' }]);
       }),
+    };
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
     } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
@@ -501,7 +508,13 @@ describe('DELETE /blueprints/:id', () => {
   });
 
   it('returns 404 for blueprint not owned by the user', async () => {
-    const db = buildDb([]);
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    };
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db);
@@ -549,11 +562,15 @@ describe('POST /blueprints/:id/clone', () => {
 
 describe('POST /blueprints/:id/publish and /unpublish', () => {
   it('publish returns 200 with visibility=public', async () => {
-    const db = {
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
       select: vi.fn().mockImplementation(() => makeChain([stubBlueprint])),
       update: vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       }),
+    };
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
     } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
@@ -565,11 +582,15 @@ describe('POST /blueprints/:id/publish and /unpublish', () => {
   });
 
   it('unpublish returns 200 with visibility=private', async () => {
-    const db = {
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
       select: vi.fn().mockImplementation(() => makeChain([{ ...stubBlueprint, visibility: 'public' }])),
       update: vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       }),
+    };
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
     } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
@@ -581,7 +602,13 @@ describe('POST /blueprints/:id/publish and /unpublish', () => {
   });
 
   it('publish returns 404 for blueprint not owned by the user', async () => {
-    const db = buildDb([]);
+    const tx = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    };
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (innerTx: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
     await blueprintRoutes(app, db);

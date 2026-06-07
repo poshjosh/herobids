@@ -389,6 +389,16 @@ async function executeTool(call: ToolCall): Promise<void> {
       break;
     }
 
+    case 'set_memory': {
+      const key = call.args['key'];
+      const value = call.args['value'];
+      if (typeof key === 'string' && key.length > 0 && value !== undefined) {
+        await redis.hset(`agent:memory:${AGENT_ID}`, key, JSON.stringify(value));
+        logger.debug({ key }, 'Memory entry set');
+      }
+      break;
+    }
+
     case 'artifact_publish': {
       await publishToInbound(AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH, {
         artifactId: crypto.randomUUID(),
@@ -695,6 +705,10 @@ async function runTick(): Promise<void> {
 
     // Build the prompt
     const systemPrompt = buildSystemPrompt();
+    // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
+    redis.set(`agent:prompt:${AGENT_ID}`, systemPrompt, 'EX', 3600).catch((err: unknown) => {
+      logger.warn({ err }, 'Failed to persist system prompt to Redis');
+    });
     const messages: ConversationMessage[] = [
       { role: 'system', content: systemPrompt },
       ...conversationHistory,

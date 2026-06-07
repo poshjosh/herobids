@@ -1,7 +1,7 @@
 # 017 — Analytics, AI Endpoints, and Skills
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Cross-bot/agent analytics, AI-powered config generation and portfolio analysis, and user-managed skills.
@@ -45,13 +45,13 @@ Analytics aggregates from `journal_events` and `positions`. No separate analytic
 | `GET` | `/datasets` | List available datasets |
 | `GET` | `/datasets/:id` | Dataset detail |
 | `POST` | `/datasets/fetch` | Fetch OHLCV data. Rate-limited: 1/min |
-| `POST` | `/datasets/upload` | Upload CSV/ZIP. Rate-limited: 1/30s |
+| `POST` | `/datasets/upload` | Upload CSV. Rate-limited: 1/30s. (v1: CSV body only; ZIP not yet supported) |
 
 ## Notes
 
 - AI endpoints require at least one LLM provider key configured. All AI endpoints return 503 with `{ error: 'no_ai_provider' }` when none is configured.
 - `/ai/available-models` lists only providers with active API keys — do not leak unconfigured provider names.
-- Skills schema: `id`, `userId` (null for built-in), `name`, `instructions`, `description`, `visibility` (`private` | `public` | `built-in`), `requiredTools`, `tags`, `createdAt`, `updatedAt`.
+- Skills schema: `id`, `authorId` (null for built-in/system skills), `name`, `instructions`, `description`, `visibility` (`private` | `public` | `built-in`), `requiredTools`, `tags`, `createdAt`, `updatedAt`. The field is named `authorId` in the DB schema (not `userId`) to distinguish skill authorship from general user ownership. System/built-in skills have `authorId = null`; user-created skills carry the owner's `userId`. The `visibility` field on user-created skills accepts `private` or `public` only — `built-in` is reserved for system-seeded rows.
 - Datasets storage: store metadata in Postgres, large bodies on disk or object storage. v1 can use local filesystem.
 
 ## Acceptance criteria

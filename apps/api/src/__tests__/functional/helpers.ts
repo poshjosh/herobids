@@ -12,6 +12,11 @@ import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
 import { botRoutes } from '../../routes/bots.js';
+import { agentInteractivityRoutes, telegramWebhookHandler } from '../../routes/agent-interactivity.js';
+import { analyticsRoutes } from '../../routes/analytics.js';
+import { aiRoutes } from '../../routes/ai.js';
+import { skillsRoutes } from '../../routes/skills.js';
+import { datasetRoutes } from '../../routes/datasets.js';
 import type { AuthConfig } from '@herobids/domain';
 import { Queue } from 'bullmq';
 
@@ -63,6 +68,27 @@ export async function buildApp() {
   await authRoutes(app, authConfig, db, redisClient, 'free');
   await agentRoutes(app, db);
   await botRoutes(app, lifecycleQueue, db, { defaultPlanId: 'free', plans: {} } as any);
+
+  // Telegram webhook (unauthenticated, no token in test → returns 501)
+  await telegramWebhookHandler(app);
+  await agentInteractivityRoutes(app, db, redisClient);
+
+  await analyticsRoutes(app, db);
+
+  const stubLlmConfig = {
+    provider: 'openai',
+    model: 'gpt-4o',
+    baseUrl: undefined,
+    maxTokens: 4096,
+    timeoutMs: 60_000,
+    tickIntervalMs: 900_000,
+    heartbeatIntervalMs: 5_000,
+  };
+  await aiRoutes(app, db, stubLlmConfig, redisClient);
+
+  await skillsRoutes(app, db);
+  await datasetRoutes(app, db, redisClient);
+
   await app.ready();
 
   return { app, db, redisClient, lifecycleQueue };
@@ -79,6 +105,8 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       decisions,
       agents,
       sessions,
+      skills,
+      datasets,
       local_identities,
       oauth_identities,
       user_plans,

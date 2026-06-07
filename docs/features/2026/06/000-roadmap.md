@@ -16,8 +16,8 @@
 | 013 | Agent data surface (state, bots, costs, journal) | P0 | done | [013-agent-data-surface/000-plan.md](013-agent-data-surface/000-plan.md) |
 | 014 | Billing ledger + sessions | P0 | done | [014-billing-ledger-sessions/000-plan.md](014-billing-ledger-sessions/000-plan.md) |
 | 015 | Blueprints system | P1 | done | [015-blueprints/000-plan.md](015-blueprints/000-plan.md) |
-| 016 | Agent interactivity (message, memory, prompt) | P2 | todo | [016-agent-interactivity/000-plan.md](016-agent-interactivity/000-plan.md) |
-| 017 | Analytics + AI endpoints + Skills | P3 | todo | [017-analytics-ai-skills/000-plan.md](017-analytics-ai-skills/000-plan.md) |
+| 016 | Agent interactivity (message, memory, prompt) | P2 | done | [016-agent-interactivity/000-plan.md](016-agent-interactivity/000-plan.md) |
+| 017 | Analytics + AI endpoints + Skills | P3 | done | [017-analytics-ai-skills/000-plan.md](017-analytics-ai-skills/000-plan.md) |
 | 018 | Bot + account exports | P3 | todo | [018-exports/000-plan.md](018-exports/000-plan.md) |
 | 019 | Admin + WebSocket event stream | P4 | todo | [019-admin-websocket/000-plan.md](019-admin-websocket/000-plan.md) |
 | 020 | Frontend completeness | P4 | todo | [020-frontend/000-plan.md](020-frontend/000-plan.md) |

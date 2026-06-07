@@ -26,6 +26,14 @@ export const CreateInstanceSchema = z.object({
       path: ['configOverrides'],
     });
   }
+
+  if (d.blueprintId !== undefined && d.config !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'blueprintId and config are mutually exclusive; use blueprintId with optional configOverrides',
+      path: ['config'],
+    });
+  }
 });
 
 export const UpdateInstanceConfigSchema = z.object({

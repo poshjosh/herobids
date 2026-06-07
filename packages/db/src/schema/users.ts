@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
 
 /**
  * Users — authenticated user accounts.
@@ -16,6 +16,8 @@ export const users = pgTable('users', {
   planId: text('plan_id').notNull().default('free'),
   /** Telegram chat ID for direct user messaging (optional, user-provided) */
   telegramChatId: text('telegram_chat_id'),
+  /** AI model preference chain: { primary, fallback1, fallback2 } each { provider, model } */
+  aiModelConfig: jsonb('ai_model_config').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

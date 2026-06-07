@@ -16,6 +16,11 @@ import { billingRoutes } from './routes/billing.js';
 import { agentRoutes } from './routes/agents.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { blueprintRoutes } from './routes/blueprints.js';
+import { agentInteractivityRoutes, telegramWebhookHandler } from './routes/agent-interactivity.js';
+import { analyticsRoutes } from './routes/analytics.js';
+import { aiRoutes } from './routes/ai.js';
+import { skillsRoutes } from './routes/skills.js';
+import { datasetRoutes } from './routes/datasets.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -71,6 +76,9 @@ await app.register(cors, {
 // Health endpoint (public — no auth required)
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
+// Telegram webhook — public (unauthenticated), token-validated
+await telegramWebhookHandler(app, appConfig.alerts);
+
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId);
 
@@ -91,6 +99,11 @@ await agentRoutes(app, db, appConfig.plans);
 await billingRoutes(app, appConfig.billing, appConfig.plans, db);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts);
+await analyticsRoutes(app, db);
+await aiRoutes(app, db, appConfig.llm, redisClient);
+await skillsRoutes(app, db);
+await datasetRoutes(app, db, redisClient);
 
 const port = appConfig.app.port;
 

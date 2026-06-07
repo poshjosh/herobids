@@ -275,20 +275,28 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
 
   // DELETE /blueprints/:id — delete blueprint (blocked if referenced by any running bot)
   app.delete<{ Params: { id: string } }>('/blueprints/:id', async (request, reply) => {
-    const bp = await resolveBlueprintForWrite(db, request.params.id, request.userId);
-    if (!bp) return reply.status(404).send({ error: 'not_found' });
+    const blueprintId = request.params.id;
+    const deleted = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(2, hashtext(${blueprintId}))`);
 
-    // Block deletion if any running bot references this blueprint.
-    const [runningBot] = await db.select({ id: bots.id }).from(bots)
-      .where(and(eq(bots.blueprintId, request.params.id), eq(bots.status, 'running')));
-    if (runningBot) {
+      const bp = await resolveBlueprintForWrite(tx as unknown as Database, blueprintId, request.userId);
+      if (!bp) return 'not_found' as const;
+
+      const [runningBot] = await tx.select({ id: bots.id }).from(bots)
+        .where(and(eq(bots.blueprintId, blueprintId), eq(bots.status, 'running')));
+      if (runningBot) return 'in_use' as const;
+
+      await tx.delete(blueprints).where(eq(blueprints.id, blueprintId));
+      return 'deleted' as const;
+    });
+
+    if (deleted === 'not_found') return reply.status(404).send({ error: 'not_found' });
+    if (deleted === 'in_use') {
       return reply.status(409).send({
         error: 'blueprint_in_use',
         message: 'Cannot delete a blueprint referenced by a running bot. Stop all running bots first.',
       });
     }
-
-    await db.delete(blueprints).where(eq(blueprints.id, request.params.id));
     return reply.status(204).send();
   });
 
@@ -319,25 +327,29 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
 
   // POST /blueprints/:id/publish — set visibility to public
   app.post<{ Params: { id: string } }>('/blueprints/:id/publish', async (request, reply) => {
-    const bp = await resolveBlueprintForWrite(db, request.params.id, request.userId);
-    if (!bp) return reply.status(404).send({ error: 'not_found' });
-
-    await db.update(blueprints)
-      .set({ visibility: 'public', updatedAt: new Date() })
-      .where(eq(blueprints.id, request.params.id));
-
-    return reply.send({ blueprintId: request.params.id, visibility: 'public' });
+    const blueprintId = request.params.id;
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(2, hashtext(${blueprintId}))`);
+      const bp = await resolveBlueprintForWrite(tx as unknown as Database, blueprintId, request.userId);
+      if (!bp) return 'not_found' as const;
+      await tx.update(blueprints).set({ visibility: 'public', updatedAt: new Date() }).where(eq(blueprints.id, blueprintId));
+      return 'ok' as const;
+    });
+    if (result === 'not_found') return reply.status(404).send({ error: 'not_found' });
+    return reply.send({ blueprintId, visibility: 'public' });
   });
 
   // POST /blueprints/:id/unpublish — set visibility to private
   app.post<{ Params: { id: string } }>('/blueprints/:id/unpublish', async (request, reply) => {
-    const bp = await resolveBlueprintForWrite(db, request.params.id, request.userId);
-    if (!bp) return reply.status(404).send({ error: 'not_found' });
-
-    await db.update(blueprints)
-      .set({ visibility: 'private', updatedAt: new Date() })
-      .where(eq(blueprints.id, request.params.id));
-
-    return reply.send({ blueprintId: request.params.id, visibility: 'private' });
+    const blueprintId = request.params.id;
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(2, hashtext(${blueprintId}))`);
+      const bp = await resolveBlueprintForWrite(tx as unknown as Database, blueprintId, request.userId);
+      if (!bp) return 'not_found' as const;
+      await tx.update(blueprints).set({ visibility: 'private', updatedAt: new Date() }).where(eq(blueprints.id, blueprintId));
+      return 'ok' as const;
+    });
+    if (result === 'not_found') return reply.status(404).send({ error: 'not_found' });
+    return reply.send({ blueprintId, visibility: 'private' });
   });
 }

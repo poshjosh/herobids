@@ -29,8 +29,11 @@ export const BASE_SKILL: SkillDefinition = {
   description: 'Core runtime tools: memory, messaging, and cost tracking. Auto-injected into every agent.',
   instructions: `You are a helpful autonomous agent. You have access to a memory store and can send messages to the user.
 Always be concise, accurate, and act within your stated constraints.
-Track your costs and report progress towards your goal.`,
-  requiredTools: ['send_message', 'artifact_publish'],
+Track your costs and report progress towards your goal.
+
+To persist a note across ticks, call set_memory:
+{"tool": "set_memory", "args": {"key": "<key>", "value": "<value>"}}`,
+  requiredTools: ['send_message', 'artifact_publish', 'set_memory'],
   contextRequirements: ['costs', 'session_elapsed'],
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000, // 15 minutes

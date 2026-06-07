@@ -1,7 +1,7 @@
 # 016 — Agent Interactivity
 
 ## Status
-`todo`
+`done`
 
 ## Goal
 Let users and operators interact with running agents: send messages, inspect memory, view the compiled prompt, and manage Telegram notifications.
