@@ -16,7 +16,7 @@
 | 21.1 | Introduce platform primitives: connections, grants, shared readiness/event contracts | `done` |
 | 21.2 | Redesign capability-family API namespace and agent-scoped capability routes | `done` |
 | 21.3 | Reframe trading resources onto capability bindings and optional bots | `done` |
-| 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `not started` |
+| 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `done` |
 | 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `not started` |
 | 21.6 | Replace old tests with capability-model integration and UAT coverage | `not started` |
 
@@ -217,6 +217,7 @@ The existing shared roadmap and implementation guide remain the source of proces
 
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-06-07 | Step 21.4 will forward a capability-aware runtime descriptor through the existing worker launch payload rather than introducing a second Redis/DB descriptor source. | Keep launch-time truth in one place for the first cut and avoid split-brain config between launcher and runtime. |
 | 2026-06-07 | Use the existing [Feature Roadmap](../000-roadmap.md) and existing [Implementation Guide](../008-agent-platform-roadmap/000a-how-to-implement.md) rather than creating new meta docs for this redesign | The redesign is a new feature plan within the current process, not a separate planning framework |
 | 2026-06-07 | Public noun for capability-scoped access tokens is **bindings** (not grants) | "Grants" is an internal mechanism; "bindings" is the user-facing term that reflects the capability-specific execution target |
 | 2026-06-07 | Aggregate readiness lives in `capabilities/index.ts` not `capabilities/trading.ts` | It spans all families by definition; trading.ts only knows about its own family |

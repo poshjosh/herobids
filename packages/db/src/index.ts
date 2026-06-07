@@ -23,3 +23,5 @@ export { BillingRepository } from './billing-repository.js';
 export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';
 export { AgentRepository } from './agent-repository.js';
 export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';
+export { resolveRuntimeCapabilityDescriptor, buildRuntimeDescriptor } from './agent-runtime-descriptor.js';
+export type { RuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';

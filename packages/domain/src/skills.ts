@@ -12,7 +12,14 @@ export interface SkillDefinition {
   description: string;
   instructions: string;
   requiredTools: string[];
+  capabilityFamilies: string[];
+  bindingRequirements: Record<string, {
+    minBindings: number;
+    requireReady: boolean;
+  }>;
   contextRequirements: string[];
+  requiredContextBlocks: string[];
+  promptRendererHints: string[];
   requiredGuardrails: string[];
   suggestedTickIntervalMs: number;
   visibility: 'public' | 'private';
@@ -34,7 +41,11 @@ Track your costs and report progress towards your goal.
 To persist a note across ticks, call set_memory:
 {"tool": "set_memory", "args": {"key": "<key>", "value": "<value>"}}`,
   requiredTools: ['send_message', 'artifact_publish', 'set_memory'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000, // 15 minutes
   visibility: 'public',
@@ -53,7 +64,16 @@ When the user wants to trade, use create_bot to set up a bot with appropriate st
 Always start bots in paper mode first unless the user has explicitly requested live trading.
 Never expose technical venue details (symbols like BTC-PERP) to the user — use plain language.`,
   requiredTools: ['create_bot', 'decision_submit', 'send_message'],
+  capabilityFamilies: ['trading'],
+  bindingRequirements: {
+    trading: {
+      minBindings: 1,
+      requireReady: true,
+    },
+  },
   contextRequirements: ['bot_statuses', 'positions', 'costs'],
+  requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
+  promptRendererHints: ['readiness-summary', 'trading'],
   requiredGuardrails: ['token-budget', 'daily-loss', 'bot-limit'],
   suggestedTickIntervalMs: 900_000, // 15 minutes
   visibility: 'public',
@@ -72,7 +92,16 @@ Alert the user via send_message when:
 - A position has been open longer than the user's stated time horizon
 - Market volatility spikes significantly`,
   requiredTools: ['send_message', 'artifact_publish'],
+  capabilityFamilies: ['trading'],
+  bindingRequirements: {
+    trading: {
+      minBindings: 1,
+      requireReady: true,
+    },
+  },
   contextRequirements: ['positions', 'fills', 'analytics'],
+  requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
+  promptRendererHints: ['readiness-summary', 'trading'],
   requiredGuardrails: ['token-budget', 'daily-loss'],
   suggestedTickIntervalMs: 300_000, // 5 minutes
   visibility: 'public',

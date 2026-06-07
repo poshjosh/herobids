@@ -272,4 +272,47 @@ describe('DELETE /connections/:id', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: string }>().error).toBe('connection.already_revoked');
   });
+
+  it('publishes a runtime refresh after revoking a connection with active trading grants', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const redisClient = { xadd: vi.fn().mockResolvedValue('msg-1') };
+    const selectSequence: unknown[][] = [
+      [{ id: CONNECTION_ROW.id, status: CONNECTION_ROW.status }],
+      [{ agentId: 'agent-1' }],
+      [{
+        id: 'agent-1',
+        prompt: 'Trade carefully',
+        skillIds: [],
+        toolPolicy: null,
+        executionMode: 'paper',
+        dailyTokenBudget: null,
+        dailyLossLimit: null,
+        maxBots: null,
+        maxSlippageBps: null,
+      }],
+      [],
+    ];
+    let callIdx = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        const chain: Record<string, unknown> = {};
+        chain.from = vi.fn().mockImplementation(() => chain);
+        chain.innerJoin = vi.fn().mockImplementation(() => chain);
+        chain.where = vi.fn().mockImplementation(() => Promise.resolve(selectSequence[callIdx++] ?? []));
+        return chain;
+      }),
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      }),
+    };
+
+    await connectionRoutes(app, db, redisClient as any);
+
+    const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+
+    expect(res.statusCode).toBe(204);
+    expect(redisClient.xadd).toHaveBeenCalled();
+  });
 });

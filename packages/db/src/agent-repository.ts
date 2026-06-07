@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, users } from './schema/index.js';
+import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
 
 // --- Agent ---
 
@@ -107,6 +108,10 @@ export interface InsertAgentOutboundMessage {
  */
 export class AgentRepository {
   constructor(private readonly db: Database) {}
+
+  async getRuntimeCapabilityDescriptor(agentId: string, skillIds: string[]) {
+    return resolveRuntimeCapabilityDescriptor(this.db, agentId, skillIds);
+  }
 
   // --- Agents ---
 

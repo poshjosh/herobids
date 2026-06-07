@@ -48,6 +48,49 @@ export interface ToolInvocationRecord {
   errorCode?: string;
 }
 
+export function buildCapabilityGrants(toolPolicy?: Record<string, unknown> | null): CapabilityGrant[] {
+  const overrides = toolPolicy && typeof toolPolicy === 'object' ? toolPolicy : {};
+
+  const perAgentGrants = Object.entries(overrides)
+    .map(([capability, grant]) => {
+      if (grant !== null && typeof grant === 'object') {
+        return { capability, ...grant } as CapabilityGrant;
+      }
+      return null;
+    })
+    .filter((grant): grant is CapabilityGrant => grant !== null);
+
+  if (perAgentGrants.length === 0) {
+    return DEFAULT_CAPABILITY_GRANTS;
+  }
+
+  // Deep-merge per-agent overrides onto defaults so partial overrides (e.g. just
+  // { limits: { maxPerMinute: 1 } }) don't lose inherited fields like tier/enabled.
+  const overrideMap = new Map(perAgentGrants.map((grant) => [grant.capability, grant]));
+  const merged = DEFAULT_CAPABILITY_GRANTS.map((defaultGrant) => {
+    const override = overrideMap.get(defaultGrant.capability);
+    if (!override) return defaultGrant;
+    return {
+      ...defaultGrant,
+      ...override,
+      // Merge limits field one level deep so a partial limits override only
+      // changes the specified sub-fields and inherits the rest from defaults.
+      limits: override.limits !== undefined
+        ? { ...defaultGrant.limits, ...override.limits }
+        : defaultGrant.limits,
+    } as CapabilityGrant;
+  });
+
+  // Add any per-agent grants for capabilities not in defaults.
+  for (const grant of perAgentGrants) {
+    if (!DEFAULT_CAPABILITY_GRANTS.find((defaultGrant) => defaultGrant.capability === grant.capability)) {
+      merged.push(grant);
+    }
+  }
+
+  return merged;
+}
+
 /**
  * Default v1 capability policy — conservative defaults.
  * Operator can override per-agent via tool_policy in the agents table.
@@ -114,6 +157,15 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
   },
 ];
 
+export function buildCapabilityPolicyEngine(toolPolicy?: Record<string, unknown> | null): CapabilityPolicyEngine {
+  try {
+    return new CapabilityPolicyEngine(buildCapabilityGrants(toolPolicy));
+  } catch {
+    logger.warn('Failed to parse TOOL_POLICY — using defaults');
+    return new CapabilityPolicyEngine();
+  }
+}
+
 /**
  * CapabilityPolicyEngine — enforces capability grants at the platform level.
  *
@@ -129,6 +181,15 @@ export class CapabilityPolicyEngine {
   constructor(grants?: CapabilityGrant[]) {
     const effectiveGrants = grants ?? DEFAULT_CAPABILITY_GRANTS;
     this.grants = new Map(effectiveGrants.map((g) => [g.capability, g]));
+  }
+
+  /** Replace the active grant set without resetting session-scoped enforcement state. */
+  replaceGrants(grants?: CapabilityGrant[]): void {
+    const effectiveGrants = grants ?? DEFAULT_CAPABILITY_GRANTS;
+    this.grants.clear();
+    for (const grant of effectiveGrants) {
+      this.grants.set(grant.capability, grant);
+    }
   }
 
   /**

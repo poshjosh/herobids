@@ -14,12 +14,18 @@ import { writeFile, mkdir, rm, access } from 'node:fs/promises';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, INSTANCE_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
-import type { SkillDefinition } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
+import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
-import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './agents/capability-policy.js';
-import type { CapabilityGrant } from './agents/capability-policy.js';
+import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
+import {
+  buildSystemPrompt as composeSystemPrompt,
+  buildTickUserContext,
+  createRuntimeCompositionState,
+  getVisibleToolNames,
+  type RuntimeCompositionState,
+} from './runtime-composition.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -76,54 +82,21 @@ interface AgentConfig {
   maxBots?: number;
   maxSlippageBps?: number;
   telegramChatId?: string;
+  runtimeDescriptor?: RuntimeDescriptor;
 }
 
 let agentConfig: AgentConfig;
-// Build capability engine from per-agent TOOL_POLICY overrides injected by the launcher.
-// Falls back to DEFAULT_CAPABILITY_GRANTS when no overrides are set.
-function buildCapabilityEngine(): CapabilityPolicyEngine {
+function parseToolPolicy(rawPolicy: string): Record<string, unknown> {
   try {
-    const overrides = JSON.parse(TOOL_POLICY_RAW) as Record<string, unknown>;
-    // TOOL_POLICY is a map of capability → partial CapabilityGrant
-    const perAgentGrants = Object.entries(overrides)
-      .map(([capability, grant]) => {
-        if (grant !== null && typeof grant === 'object') {
-          return { capability, ...grant } as CapabilityGrant;
-        }
-        return null;
-      })
-      .filter((g): g is CapabilityGrant => g !== null);
-    if (perAgentGrants.length === 0) return new CapabilityPolicyEngine();
-    // Deep-merge per-agent overrides onto defaults so partial overrides (e.g. just
-    // { limits: { maxPerMinute: 1 } }) don't lose inherited fields like tier/enabled.
-    const overrideMap = new Map(perAgentGrants.map((g) => [g.capability, g]));
-    const merged = DEFAULT_CAPABILITY_GRANTS.map((d) => {
-      const override = overrideMap.get(d.capability);
-      if (!override) return d;
-      return {
-        ...d,
-        ...override,
-        // Merge limits field one level deep so a partial limits override only
-        // changes the specified sub-fields and inherits the rest from defaults.
-        limits: override.limits !== undefined
-          ? { ...d.limits, ...override.limits }
-          : d.limits,
-      } as CapabilityGrant;
-    });
-    // Add any per-agent grants for capabilities not in defaults
-    for (const g of perAgentGrants) {
-      if (!DEFAULT_CAPABILITY_GRANTS.find((d) => d.capability === g.capability)) {
-        merged.push(g);
-      }
+    const parsed = JSON.parse(rawPolicy) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
     }
-    return new CapabilityPolicyEngine(merged);
   } catch {
     logger.warn('Failed to parse TOOL_POLICY — using defaults');
-    return new CapabilityPolicyEngine();
   }
+  return {};
 }
-
-const capabilityEngine = buildCapabilityEngine();
 
 // SandboxEnforcer enforces the session wall-clock limit in-process. All other
 // sandbox limits (network, download) require hooking the network layer inside
@@ -139,6 +112,7 @@ try {
 
 const agentGoal = agentConfig.prompt ?? agentConfig.goal ?? 'No goal provided';
 const skillIds = agentConfig.skillIds ?? [];
+const initialToolPolicy = agentConfig.runtimeDescriptor?.toolPolicy ?? parseToolPolicy(TOOL_POLICY_RAW);
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -160,36 +134,60 @@ const activeSkills = resolveSkills(skillIds);
 // Base skill is always injected at runtime
 const allActiveSkills = [BASE_SKILL, ...activeSkills];
 
-// The runtime-authorised tool set: only tools declared in the active skill profile
-// may be executed. This is enforced in executeTool() as a hard gate so the model
-// cannot invoke tools it was not told about (e.g. code_execute before the
-// programming skill is added to this agent's skillIds).
-const allowedTools = new Set<string>(allActiveSkills.flatMap((s) => s.requiredTools));
+function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
+  const resolvedSkills = allActiveSkills.map((skill) => ({
+    ...skill,
+    capabilityFamilies: skill.id === 'bot-management' || skill.id === 'risk-monitoring' ? ['trading'] : [],
+    bindingRequirements: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+      ? { trading: { minBindings: 1, requireReady: true } }
+      : {},
+    requiredContextBlocks: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+      ? ['corePlatformContext', 'tradingContext']
+      : ['corePlatformContext'],
+    promptRendererHints: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+      ? ['readiness-summary', 'trading']
+      : ['core-system'],
+  }));
 
-function buildSystemPrompt(): string {
-  const skillInstructions = allActiveSkills.map((s) => s.instructions).join('\n\n');
-  const toolList = [...allowedTools].join(', ');
+  return {
+    schemaVersion: 'v1',
+    agentId: AGENT_ID!,
+    goal: agentGoal,
+    executionMode: agentConfig.executionMode ?? 'paper',
+    resolvedSkills,
+    grantedBindingsByFamily: {},
+    defaultBindingByFamily: {},
+    readinessByFamily: {},
+    toolPolicy: initialToolPolicy,
+    guardrails: {
+      dailyTokenBudget: agentConfig.dailyTokenBudget ?? null,
+      dailyLossLimit: agentConfig.dailyLossLimit ?? null,
+      maxBots: agentConfig.maxBots ?? null,
+      maxSlippageBps: agentConfig.maxSlippageBps ?? null,
+    },
+    budgets: {
+      maxHistoryMessages: 20,
+      maxRecentToolMessages: 6,
+      maxToolResultChars: 4_000,
+      maxVisibleToolSchemas: 16,
+      maxContextBlockChars: 4_000,
+    },
+  };
+}
 
-  return `${skillInstructions}
+const runtimeDescriptor = agentConfig.runtimeDescriptor ?? buildFallbackRuntimeDescriptor();
+const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor);
+const sessionMetrics = runtimeState.metrics;
+let capabilityEngine = buildCapabilityPolicyEngine(runtimeState.runtimeDescriptor.toolPolicy);
 
-## Your Goal
-${agentGoal}
+// The runtime-authorised tool set is derived from the active runtime descriptor.
+// It is re-evaluated on each tick so refresh messages can tighten or expand access.
+function allowedTools(): Set<string> {
+  return new Set(getVisibleToolNames(runtimeState));
+}
 
-## Available Tools
-You can call the following tools: ${toolList || 'none'}.
-
-To call a tool, output a JSON object in your response with this format:
-{"tool": "<tool_name>", "args": {...}}
-
-## Agent Identity
-Agent ID: ${AGENT_ID}
-Session ID: ${SESSION_ID}
-Execution mode: ${agentConfig.executionMode ?? 'paper'}
-
-## Guard Rails
-- Daily token budget: ${agentConfig.dailyTokenBudget ?? 'unlimited'} tokens
-- Daily loss limit: ${agentConfig.dailyLossLimit ?? 'none'}
-- Max concurrent bots: ${agentConfig.maxBots ?? 5}`;
+function refreshCapabilityPolicy(): void {
+  capabilityEngine.replaceGrants(buildCapabilityGrants(runtimeState.runtimeDescriptor.toolPolicy));
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +371,7 @@ async function executeTool(call: ToolCall): Promise<void> {
   // Hard runtime gate: reject any tool not declared in the active skill set.
   // The model was only told about allowed tools, but we enforce it here too so
   // a jailbreak or prompt injection cannot invoke undeclared capabilities.
-  if (!allowedTools.has(call.tool)) {
+  if (!allowedTools().has(call.tool)) {
     logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
     return;
   }
@@ -537,76 +535,13 @@ interface ConversationMessage {
 }
 
 const conversationHistory: ConversationMessage[] = [];
-const MAX_HISTORY_MESSAGES = 20;
 
 function addToHistory(role: 'user' | 'assistant', content: string): void {
   conversationHistory.push({ role, content });
   // Keep only the most recent messages
-  while (conversationHistory.length > MAX_HISTORY_MESSAGES) {
+  while (conversationHistory.length > runtimeState.runtimeDescriptor.budgets.maxHistoryMessages) {
     conversationHistory.shift();
   }
-}
-
-// ---------------------------------------------------------------------------
-// Progress context
-// ---------------------------------------------------------------------------
-
-let sessionStartMs = Date.now();
-
-/** Simple session metrics accumulated across ticks */
-const sessionMetrics = {
-  decisionsSubmitted: 0,
-  decisionsAccepted: 0,
-  decisionsRejected: 0,
-  /** Last P&L injected via CONTEXT_SNAPSHOT (string like "+2.3%") */
-  lastPnlSummary: null as string | null,
-  lastPositionSide: null as string | null,
-  /** Latest bot statuses injected via instance.status messages */
-  managedBots: null as Array<{ id: string; status: string; strategyPreset?: string; symbol?: string }> | null,
-};
-
-function buildProgressContext(): string {
-  const elapsedMs = Date.now() - sessionStartMs;
-  const elapsedMins = Math.round(elapsedMs / 60_000);
-  const elapsedHours = Math.floor(elapsedMins / 60);
-  const remainingMins = elapsedMins % 60;
-  const elapsedStr = elapsedHours > 0 ? `${elapsedHours}h ${remainingMins}m` : `${elapsedMins}m`;
-
-  // Performance score: ratio of accepted to submitted decisions, scaled 0–10
-  const total = sessionMetrics.decisionsSubmitted;
-  const performanceScore = total > 0
-    ? Math.round((sessionMetrics.decisionsAccepted / total) * 10 * 10) / 10
-    : null;
-
-  const lines: string[] = [
-    `## Session Progress`,
-    `Session elapsed: ${elapsedStr}`,
-    `Goal: ${agentGoal}`,
-    `Decisions this session: ${sessionMetrics.decisionsSubmitted} submitted, ${sessionMetrics.decisionsAccepted} accepted, ${sessionMetrics.decisionsRejected} rejected`,
-  ];
-
-  if (performanceScore !== null) {
-    lines.push(`Performance score: ${performanceScore}/10 (decision acceptance rate)`);
-  }
-
-  if (sessionMetrics.lastPnlSummary) {
-    lines.push(`Net P&L: ${sessionMetrics.lastPnlSummary}`);
-  }
-  if (sessionMetrics.lastPositionSide) {
-    lines.push(`Current position: ${sessionMetrics.lastPositionSide}`);
-  }
-  if (sessionMetrics.managedBots && sessionMetrics.managedBots.length > 0) {
-    const botLines = sessionMetrics.managedBots.map((b) => {
-      // Sanitize values sourced from stored bot config to prevent prompt injection via
-      // newlines or other control characters embedded in user-supplied config fields.
-      const preset = b.strategyPreset?.replace(/[\n\r\t\x00-\x1f]/g, ' ').trim();
-      const sym = b.symbol?.replace(/[\n\r\t\x00-\x1f]/g, ' ').trim();
-      return `  - ${b.id} [${b.status}]${preset ? ` strategy=${preset}` : ''}${sym ? ` symbol=${sym}` : ''}`;
-    });
-    lines.push(`Managed bots (${sessionMetrics.managedBots.length}):\n${botLines.join('\n')}`);
-  }
-
-  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -654,49 +589,9 @@ async function runTick(): Promise<void> {
       new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), 2000)),
     ]);
 
-    // Build context for this tick
-    const progressContext = buildProgressContext();
-
-    // Format incoming platform messages as user context
-    let userContext = progressContext;
-    if (incomingMessages.length > 0) {
-      const msgSummaries = incomingMessages.map((m) => {
-        const type = m['type'] as string ?? 'unknown';
-        if (type === INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT) {
-          const p = m['payload'] as Record<string, unknown> ?? {};
-          const symbol = p['symbol'] ?? 'unknown';
-          const price = p['price'] ?? 'unknown';
-          const position = p['position'] as Record<string, unknown> | undefined;
-          // Extract P&L from explicit field or from position.realizedPnl
-          const pnl = (p['pnl'] as string | undefined) ?? (position?.['realizedPnl'] as string | undefined);
-          if (pnl) sessionMetrics.lastPnlSummary = pnl;
-          if (position?.['side']) sessionMetrics.lastPositionSide = String(position['side']);
-          return `Market: ${symbol} @ ${price}${position ? ` | position: ${position['side'] ?? 'flat'} ${position['size'] ?? ''} | realizedPnl: ${position['realizedPnl'] ?? '0'}` : ''}`;
-        }
-        if (type === INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED) {
-          sessionMetrics.decisionsAccepted++;
-          const p = m['payload'] as Record<string, unknown> ?? {};
-          return `Decision accepted: ${p['decisionId'] ?? 'unknown'}`;
-        }
-        if (type === INSTANCE_MESSAGE_TYPES.DECISION_REJECTED) {
-          sessionMetrics.decisionsRejected++;
-          const p = m['payload'] as Record<string, unknown> ?? {};
-          return `Decision rejected: ${p['message'] ?? 'unknown'}`;
-        }
-        if (type === INSTANCE_MESSAGE_TYPES.EXECUTION_RESULT) {
-          return `Execution result received`;
-        }
-        if (type === INSTANCE_MESSAGE_TYPES.STATUS) {
-          const p = m['payload'] as Record<string, unknown> ?? {};
-          const bots = p['managedBots'] as typeof sessionMetrics.managedBots | undefined;
-          if (bots) sessionMetrics.managedBots = bots;
-          return `Platform status: ${p['reason'] ?? p['status'] ?? 'updated'}`;
-        }
-        return `Platform message: ${type}`;
-      });
-      userContext += '\n\n' + msgSummaries.join('\n');
-    }
-
+    // Build context for this tick.
+    let userContext = buildTickUserContext(runtimeState, incomingMessages);
+    refreshCapabilityPolicy();
     if (tickCount === 1) {
       userContext += '\n\nThis is your first tick. Start working towards your goal.';
     }
@@ -704,7 +599,7 @@ async function runTick(): Promise<void> {
     addToHistory('user', userContext);
 
     // Build the prompt
-    const systemPrompt = buildSystemPrompt();
+    const systemPrompt = composeSystemPrompt(runtimeState);
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(`agent:prompt:${AGENT_ID}`, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
@@ -757,8 +652,8 @@ async function runTick(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID, model: LLM_MODEL, skillIds }, 'Agent runtime starting');
-  sessionStartMs = Date.now();
+  logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID, model: LLM_MODEL, skillIds: runtimeDescriptor.resolvedSkills.map((skill) => skill.id).filter((id) => id !== 'base') }, 'Agent runtime starting');
+  runtimeState.sessionStartMs = Date.now();
 
   // Connect to Redis
   await redis.ping();

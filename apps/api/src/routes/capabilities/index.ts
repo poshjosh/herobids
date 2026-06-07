@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, and, desc } from 'drizzle-orm';
+import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import { agents, connections, tradingBindings, capabilityGrants } from '@herobids/db';
 import type { CapabilityReadiness, ReadinessState, PlansConfig } from '@herobids/domain';
@@ -36,6 +37,7 @@ export async function capabilityRoutes(
   app: FastifyInstance,
   db: Database,
   plansConfig?: PlansConfig,
+  redisClient?: Redis,
 ): Promise<void> {
   const knownFamilies = ['trading'] as const;
 
@@ -164,5 +166,5 @@ export async function capabilityRoutes(
     },
   );
 
-  await tradingCapabilityRoutes(app, db, plansConfig);
+  await tradingCapabilityRoutes(app, db, plansConfig, redisClient);
 }

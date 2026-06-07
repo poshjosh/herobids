@@ -1,4 +1,5 @@
 import pino from 'pino';
+import type { RuntimeDescriptor } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
@@ -38,6 +39,7 @@ export interface DockerContainerSpec {
   agentId: string;
   sessionId: string;
   agentConfig: Record<string, unknown>;
+  runtimeDescriptor?: RuntimeDescriptor;
   toolPolicy: Record<string, unknown>;
 }
 
@@ -102,7 +104,10 @@ export class DockerAgentManager {
     // Remove any stopped container with the same name to allow restart
     await this.removeStoppedContainer(name);
 
-    const agentConfigJson = JSON.stringify(spec.agentConfig);
+    const agentConfigJson = JSON.stringify({
+      ...spec.agentConfig,
+      ...(spec.runtimeDescriptor ? { runtimeDescriptor: spec.runtimeDescriptor } : {}),
+    });
     const toolPolicyJson = JSON.stringify(spec.toolPolicy);
 
     const env: string[] = [

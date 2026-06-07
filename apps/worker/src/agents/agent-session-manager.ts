@@ -1,4 +1,5 @@
 import type { MessageEnvelope, HeartbeatPayload, PauseRequestPayload, StopRequestPayload } from '@herobids/domain';
+import { buildRuntimeDescriptor } from '@herobids/db';
 import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { AgentReconnectHandler } from './agent-reconnect-handler.js';
@@ -139,6 +140,18 @@ export class AgentSessionManager {
           logger.error({ sessionId: session.id, agentId: session.agentId }, 'Agent not found during session launch — skipping');
           continue;
         }
+        const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id, agent.skillIds ?? []);
+        const runtimeDescriptor = buildRuntimeDescriptor({
+          agentId: agent.id,
+          goal: agent.prompt,
+          executionMode: agent.executionMode,
+          toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
+          dailyTokenBudget: agent.dailyTokenBudget,
+          dailyLossLimit: agent.dailyLossLimit,
+          maxBots: agent.maxBots,
+          maxSlippageBps: agent.maxSlippageBps,
+          capabilityDescriptor,
+        });
         const agentConfig: Record<string, unknown> = {
           prompt: agent.prompt,
           skillIds: agent.skillIds,
@@ -147,11 +160,13 @@ export class AgentSessionManager {
           ...(agent.dailyLossLimit != null && { dailyLossLimit: agent.dailyLossLimit }),
           ...(agent.maxBots != null && { maxBots: agent.maxBots }),
           ...(agent.maxSlippageBps != null && { maxSlippageBps: agent.maxSlippageBps }),
+          runtimeDescriptor,
         };
         await this.runtimeLauncher.launch({
           agentId: session.agentId,
           sessionId: session.id,
           agentConfig,
+          runtimeDescriptor,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
         });
 

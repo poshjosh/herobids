@@ -1,11 +1,67 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
+import type { Redis } from 'ioredis';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { connections, userCredentials } from '@herobids/db';
+import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, userCredentials, agents } from '@herobids/db';
 import { CreateConnectionSchema } from '../schemas.js';
 
-export async function connectionRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function connectionRoutes(app: FastifyInstance, db: Database, redisClient?: Redis): Promise<void> {
+  async function publishRuntimeRefresh(agentId: string): Promise<void> {
+    if (!redisClient) {
+      return;
+    }
+
+    const [agentRow] = await db
+      .select({
+        id: agents.id,
+        prompt: agents.prompt,
+        skillIds: agents.skillIds,
+        toolPolicy: agents.toolPolicy,
+        executionMode: agents.executionMode,
+        dailyTokenBudget: agents.dailyTokenBudget,
+        dailyLossLimit: agents.dailyLossLimit,
+        maxBots: agents.maxBots,
+        maxSlippageBps: agents.maxSlippageBps,
+      })
+      .from(agents)
+      .where(eq(agents.id, agentId));
+
+    if (!agentRow) {
+      return;
+    }
+
+    const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId, agentRow.skillIds ?? []);
+    const runtimeDescriptor = buildRuntimeDescriptor({
+      agentId,
+      goal: agentRow.prompt,
+      executionMode: agentRow.executionMode,
+      toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
+      dailyTokenBudget: agentRow.dailyTokenBudget,
+      dailyLossLimit: agentRow.dailyLossLimit,
+      maxBots: agentRow.maxBots,
+      maxSlippageBps: agentRow.maxSlippageBps,
+      capabilityDescriptor,
+    });
+
+    await redisClient.xadd(
+      `agent:outbound:${agentId}`,
+      '*',
+      'envelope',
+      JSON.stringify({
+        schemaVersion: 'v1',
+        messageId: crypto.randomUUID(),
+        correlationId: agentId,
+        initiatorType: 'system',
+        initiatorId: agentId,
+        agentId,
+        type: 'agent.runtime.config_update',
+        createdAt: new Date().toISOString(),
+        payload: { reason: 'readiness_changed', runtimeDescriptor },
+      }),
+    );
+  }
+
   // POST /connections — create a platform connection
   app.post('/connections', async (request, reply) => {
     const parsed = CreateConnectionSchema.safeParse(request.body);
@@ -115,6 +171,20 @@ export async function connectionRoutes(app: FastifyInstance, db: Database): Prom
       .update(connections)
       .set({ status: 'revoked', updatedAt: new Date() })
       .where(eq(connections.id, id));
+
+    if (redisClient) {
+      const affectedAgents = await db
+        .select({ agentId: capabilityGrants.agentId })
+        .from(capabilityGrants)
+        .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
+        .where(and(eq(tradingBindings.connectionId, id), eq(capabilityGrants.status, 'active')));
+
+      for (const row of affectedAgents) {
+        await publishRuntimeRefresh(row.agentId).catch((err: unknown) => {
+          app.log.warn({ err, agentId: row.agentId, connectionId: id }, 'Failed to publish runtime refresh after connection revoke');
+        });
+      }
+    }
 
     // TODO(21.3): cascade-revoke active grants that reference this connection and write
     // audit entries for each. For now, readiness.ts derives the correct "revoked" state

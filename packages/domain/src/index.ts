@@ -7,3 +7,4 @@ export * from './config/index.js';
 export * from './agent-protocol.js';
 export * from './skills.js';
 export * from './platform.js';
+export * from './runtime-composition.js';

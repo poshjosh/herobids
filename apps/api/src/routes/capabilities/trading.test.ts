@@ -194,6 +194,32 @@ describe('trading capability routes', () => {
     expect(res.json().bindingId).toBe(TEST_BINDING_ID);
   });
 
+  it('publishes a runtime refresh envelope after binding a trading connection', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const redisClient = { xadd: vi.fn().mockResolvedValue('msg-1') };
+    const db = buildDb([[AGENT_ROW], [], [AGENT_ROW]]);
+    await tradingCapabilityRoutes(app, db, undefined, redisClient as any);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
+      payload: { bindingId: TEST_BINDING_ID },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(redisClient.xadd).toHaveBeenCalledWith(
+      `agent:outbound:${TEST_AGENT_ID}`,
+      '*',
+      'envelope',
+      expect.any(String),
+    );
+
+    const envelope = JSON.parse((redisClient.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string) as { type: string; payload: { reason: string } };
+    expect(envelope.type).toBe('agent.runtime.config_update');
+    expect(envelope.payload.reason).toBe('grant_changed');
+  });
+
   it('keeps historical trading state available after a grant is revoked', async () => {
     const app = Fastify();
     decorateWithAuth(app);

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import type { AgentRepository } from '@herobids/db';
+import type { RuntimeDescriptor } from '@herobids/domain';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { DockerAgentManager } from './docker-agent-manager.js';
 import type { DockerAgentManagerConfig } from './docker-agent-manager.js';
@@ -12,6 +13,7 @@ export interface RuntimeLaunchConfig {
   agentId: string;
   sessionId: string;
   agentConfig?: Record<string, unknown>;
+  runtimeDescriptor?: RuntimeDescriptor;
   toolPolicy?: Record<string, unknown>;
   /** Container image for the agent runtime */
   image?: string;
@@ -129,6 +131,7 @@ export class AgentRuntimeLauncher {
         agentId: config.agentId,
         sessionId: config.sessionId,
         agentConfig: config.agentConfig ?? {},
+        runtimeDescriptor: config.runtimeDescriptor,
         toolPolicy: config.toolPolicy ?? {},
       });
 

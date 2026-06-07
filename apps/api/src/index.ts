@@ -87,10 +87,10 @@ await telegramWebhookHandler(app, appConfig.alerts);
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId);
 
 // ── Capability routes (primary public surface) ────────────────────────────
-await capabilityRoutes(app, db, appConfig.plans);
+await capabilityRoutes(app, db, appConfig.plans, redisClient);
 
 // ── Platform primitives ───────────────────────────────────────────────────
-await connectionRoutes(app, db);
+await connectionRoutes(app, db, redisClient);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
 await agentRoutes(app, db, appConfig.plans);

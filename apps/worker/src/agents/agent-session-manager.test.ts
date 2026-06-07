@@ -3,6 +3,41 @@ import { AgentSessionManager } from './agent-session-manager.js';
 
 describe('AgentSessionManager', () => {
   function buildManager(overrides: Record<string, unknown> = {}) {
+    const runtimeDescriptor = {
+      schemaVersion: 'v1' as const,
+      agentId: 'agent-1',
+      goal: 'Test agent',
+      executionMode: 'paper',
+      resolvedSkills: [{ id: 'base', capabilityFamilies: [], requiredTools: ['send_message', 'artifact_publish', 'set_memory'] }],
+      grantedBindingsByFamily: {},
+      readinessByFamily: {},
+      defaultBindingByFamily: {},
+      toolPolicy: {},
+      guardrails: {
+        dailyTokenBudget: null,
+        dailyLossLimit: null,
+        maxBots: null,
+        maxSlippageBps: null,
+      },
+      budgets: {
+        maxHistoryMessages: 20,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4000,
+        maxVisibleToolSchemas: 16,
+        maxContextBlockChars: 4000,
+      },
+    };
+    const makeAgent = (agentId: string) => ({
+      id: agentId,
+      prompt: 'Test agent',
+      skillIds: [],
+      toolPolicy: null,
+      executionMode: null,
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+    });
     const agentRepo = {
       getSession: vi.fn(),
       getActiveLink: vi.fn().mockResolvedValue({ botId: 'inst-1' }),
@@ -15,8 +50,12 @@ describe('AgentSessionManager', () => {
       updateAgent: vi.fn().mockResolvedValue(undefined),
       getSessionForAgentAndInstance: vi.fn().mockResolvedValue(null),
       retireActiveSessions: vi.fn().mockResolvedValue(undefined),
-      getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', prompt: 'Test agent', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null }),
+      getAgent: vi.fn().mockImplementation(async (agentId: string) => makeAgent(agentId)),
       getSessionsByStatuses: vi.fn().mockResolvedValue([]),
+      getRuntimeCapabilityDescriptor: vi.fn().mockImplementation(async (agentId: string) => ({
+        ...runtimeDescriptor,
+        agentId,
+      })),
     };
 
     const runtimeLauncher = {
@@ -54,8 +93,106 @@ describe('AgentSessionManager', () => {
 
     expect(agentRepo.claimStartingSession).toHaveBeenCalledTimes(2);
     expect(runtimeLauncher.launch).toHaveBeenCalledTimes(2);
-    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1', agentId: 'agent-1' }));
-    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-2', agentId: 'agent-2' }));
+    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'sess-1',
+      agentId: 'agent-1',
+      agentConfig: expect.objectContaining({
+        prompt: 'Test agent',
+        skillIds: [],
+      }),
+      runtimeDescriptor: expect.objectContaining({
+        agentId: 'agent-1',
+        goal: 'Test agent',
+        resolvedSkills: expect.any(Array),
+        readinessByFamily: expect.any(Object),
+        grantedBindingsByFamily: expect.any(Object),
+      }),
+    }));
+    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'sess-2',
+      agentId: 'agent-2',
+      runtimeDescriptor: expect.objectContaining({
+        agentId: 'agent-2',
+        goal: 'Test agent',
+      }),
+    }));
+  });
+
+  it('builds a trading-ready runtime descriptor when the agent has an active binding grant', async () => {
+    const { manager, agentRepo, runtimeLauncher } = buildManager();
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'agent-1',
+      prompt: 'Trade BTC conservatively',
+      skillIds: ['bot-management'],
+      toolPolicy: { manage_bot: { capability: 'manage_bot', tier: 'brokered', enabled: true } },
+      executionMode: 'paper',
+      dailyTokenBudget: 1000,
+      dailyLossLimit: '50',
+      maxBots: 2,
+      maxSlippageBps: 25,
+    });
+    (agentRepo.getRuntimeCapabilityDescriptor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      grantedBindingsByFamily: {
+        trading: [
+          {
+            family: 'trading',
+            bindingId: 'binding-1',
+            connectionId: 'conn-1',
+            provider: 'hyperliquid',
+            label: 'Primary HL binding',
+            bindingRef: 'acct-1',
+            bindingProfile: { venue: 'hyperliquid' },
+            sourceVenueAccountId: 'va-1',
+            readiness: {
+              family: 'trading',
+              state: 'ready',
+              bindingReadiness: 'ready',
+              agentEligibility: 'eligible',
+              effectiveReady: true,
+              bindingId: 'binding-1',
+              reasons: [],
+            },
+            isDefault: true,
+          },
+        ],
+      },
+      readinessByFamily: {
+        trading: {
+          family: 'trading',
+          state: 'ready',
+          bindingReadiness: 'ready',
+          agentEligibility: 'eligible',
+          effectiveReady: true,
+          bindingId: 'binding-1',
+          reasons: [],
+        },
+      },
+      defaultBindingByFamily: { trading: 'binding-1' },
+    });
+
+    await manager.reconcileStartingSessions();
+
+    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
+      agentConfig: expect.objectContaining({
+        prompt: 'Trade BTC conservatively',
+        skillIds: ['bot-management'],
+      }),
+      runtimeDescriptor: expect.objectContaining({
+        agentId: 'agent-1',
+        goal: 'Trade BTC conservatively',
+        executionMode: 'paper',
+        defaultBindingByFamily: { trading: 'binding-1' },
+        readinessByFamily: {
+          trading: expect.objectContaining({ effectiveReady: true, bindingId: 'binding-1' }),
+        },
+        grantedBindingsByFamily: {
+          trading: [expect.objectContaining({ provider: 'hyperliquid', isDefault: true })],
+        },
+      }),
+    }));
   });
 
   it('skips a session whose claim fails (another worker already claimed it)', async () => {

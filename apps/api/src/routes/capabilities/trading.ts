@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
+import type { Redis } from 'ioredis';
 import { eq, and, desc, inArray, isNull, sum, count } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
+import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from '@herobids/db';
 import {
   agents,
   connections,
@@ -141,7 +143,63 @@ export async function tradingCapabilityRoutes(
   app: FastifyInstance,
   db: Database,
   _plansConfig?: PlansConfig,
+  redisClient?: Redis,
 ): Promise<void> {
+  async function publishRuntimeRefresh(agentId: string, userId: string, reason: 'grant_changed' | 'binding_changed' | 'readiness_changed'): Promise<void> {
+    if (!redisClient) {
+      return;
+    }
+
+    const [agentRow] = await db
+      .select({
+        id: agents.id,
+        prompt: agents.prompt,
+        skillIds: agents.skillIds,
+        toolPolicy: agents.toolPolicy,
+        executionMode: agents.executionMode,
+        dailyTokenBudget: agents.dailyTokenBudget,
+        dailyLossLimit: agents.dailyLossLimit,
+        maxBots: agents.maxBots,
+        maxSlippageBps: agents.maxSlippageBps,
+      })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
+
+    if (!agentRow) {
+      return;
+    }
+
+    const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId, agentRow.skillIds ?? []);
+    const runtimeDescriptor = buildRuntimeDescriptor({
+      agentId,
+      goal: agentRow.prompt,
+      executionMode: agentRow.executionMode,
+      toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
+      dailyTokenBudget: agentRow.dailyTokenBudget,
+      dailyLossLimit: agentRow.dailyLossLimit,
+      maxBots: agentRow.maxBots,
+      maxSlippageBps: agentRow.maxSlippageBps,
+      capabilityDescriptor,
+    });
+
+    await redisClient.xadd(
+      `agent:outbound:${agentId}`,
+      '*',
+      'envelope',
+      JSON.stringify({
+        schemaVersion: 'v1',
+        messageId: crypto.randomUUID(),
+        correlationId: agentId,
+        initiatorType: 'system',
+        initiatorId: agentId,
+        agentId,
+        type: 'agent.runtime.config_update',
+        createdAt: new Date().toISOString(),
+        payload: { reason, runtimeDescriptor },
+      }),
+    );
+  }
+
   app.get('/capabilities/trading', async (_request, reply) => {
     return reply.send({
       family: 'trading',
@@ -760,6 +818,10 @@ export async function tradingCapabilityRoutes(
           grantedBy: request.userId,
         });
 
+        await publishRuntimeRefresh(agentId, request.userId, 'grant_changed').catch((err: unknown) => {
+          app.log.warn({ err, agentId }, 'Failed to publish runtime refresh after bind');
+        });
+
         return reply.status(201).send({
           action: 'bind',
           agentId,
@@ -790,6 +852,10 @@ export async function tradingCapabilityRoutes(
         if (!revoked) {
           return reply.status(409).send({ error: 'binding.already_revoked' });
         }
+
+        await publishRuntimeRefresh(agentId, request.userId, 'grant_changed').catch((err: unknown) => {
+          app.log.warn({ err, agentId }, 'Failed to publish runtime refresh after unbind');
+        });
 
         return reply.send({
           action: 'unbind',
