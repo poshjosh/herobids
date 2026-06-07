@@ -3,7 +3,7 @@ import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, venueAccounts, blueprints, PgJournal, fills, journalEvents } from '@herobids/db';
+import { bots, tradingBindings, blueprints, PgJournal, fills, journalEvents } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -25,6 +25,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     let blueprintId: string | null = null;
     let configSnapshot: Record<string, unknown> | null = null;
     const usingDeprecatedInlineConfig = !parsed.data.blueprintId;
+    const tradingBindingId = parsed.data.tradingBindingId;
 
     if (parsed.data.blueprintId) {
       // Look up the blueprint; accepts owner's private or any public blueprint.
@@ -67,10 +68,11 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         // hashtext() returns int4; the two-argument form takes (int4, int4).
         await tx.execute(sql`SELECT pg_advisory_xact_lock(1, hashtext(${request.userId}))`);
 
-        // Verify venue account ownership inside the transaction.
-        const [venueAccount] = await tx.select({ id: venueAccounts.id }).from(venueAccounts)
-          .where(and(eq(venueAccounts.id, parsed.data.venueAccountId), eq(venueAccounts.userId, request.userId)));
-        if (!venueAccount) return { kind: 'not_found' as const };
+        // Verify trading binding ownership inside the transaction.
+        const [binding] = await tx.select({ id: tradingBindings.id, sourceVenueAccountId: tradingBindings.sourceVenueAccountId }).from(tradingBindings)
+          .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, request.userId)));
+        if (!binding) return { kind: 'not_found' as const };
+        if (!binding.sourceVenueAccountId) return { kind: 'missing_source_venue_account' as const };
 
         // Atomic count-and-insert: re-check the limit inside the lock.
         const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId);
@@ -80,7 +82,8 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
           await tx.insert(bots).values({
             id,
             userId: request.userId,
-            venueAccountId: parsed.data.venueAccountId,
+            venueAccountId: binding.sourceVenueAccountId,
+            tradingBindingId,
             config: resolvedConfig,
             blueprintId,
             configSnapshot,
@@ -101,7 +104,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       });
 
       if (result.kind === 'not_found') {
-        return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+        return reply.status(404).send({ error: 'not_found', message: 'Trading binding not found' });
+      }
+      if (result.kind === 'missing_source_venue_account') {
+        return reply.status(400).send({ error: 'binding.missing_venue_account', message: 'Trading binding does not have a source venue account for bot creation' });
       }
       if (result.kind === 'blueprint_deleted') {
         return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
@@ -110,18 +116,22 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         return reply.status(403).send({ error: result.error.code, message: result.error.message });
       }
     } else {
-      // No plan config — verify venue account ownership then insert directly.
-      const [venueAccount] = await db.select({ id: venueAccounts.id }).from(venueAccounts)
-        .where(and(eq(venueAccounts.id, parsed.data.venueAccountId), eq(venueAccounts.userId, request.userId)));
-      if (!venueAccount) {
-        return reply.status(404).send({ error: 'not_found', message: 'Venue account not found' });
+      // No plan config — verify trading binding ownership then insert directly.
+      const [binding] = await db.select({ id: tradingBindings.id, sourceVenueAccountId: tradingBindings.sourceVenueAccountId }).from(tradingBindings)
+        .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, request.userId)));
+      if (!binding) {
+        return reply.status(404).send({ error: 'not_found', message: 'Trading binding not found' });
+      }
+      if (!binding.sourceVenueAccountId) {
+        return reply.status(400).send({ error: 'binding.missing_venue_account', message: 'Trading binding does not have a source venue account for bot creation' });
       }
 
       try {
         await db.insert(bots).values({
           id,
           userId: request.userId,
-          venueAccountId: parsed.data.venueAccountId,
+          venueAccountId: binding.sourceVenueAccountId,
+          tradingBindingId,
           config: resolvedConfig,
           blueprintId,
           configSnapshot,
@@ -182,7 +192,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       await queue.add('restart-instance', {
         command: 'restart',
         botId: id,
-        config: { ...parsed.data.config, venueAccountId: existing.venueAccountId, userId: existing.userId },
+        config: { ...parsed.data.config, tradingBindingId: existing.tradingBindingId, venueAccountId: existing.venueAccountId, userId: existing.userId },
       });
     }
 

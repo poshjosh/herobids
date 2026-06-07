@@ -15,7 +15,7 @@
 |---|---|---|
 | 21.1 | Introduce platform primitives: connections, grants, shared readiness/event contracts | `done` |
 | 21.2 | Redesign capability-family API namespace and agent-scoped capability routes | `done` |
-| 21.3 | Reframe trading resources onto capability bindings and optional bots | `not started` |
+| 21.3 | Reframe trading resources onto capability bindings and optional bots | `done` |
 | 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `not started` |
 | 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `not started` |
 | 21.6 | Replace old tests with capability-model integration and UAT coverage | `not started` |
@@ -232,3 +232,5 @@ The existing shared roadmap and implementation guide remain the source of proces
 | 2026-06-07 | Step 21.1 (second pass): `UserEventPublisher` now wraps every event in `PlatformEventEnvelope` before publishing to Redis — the WebSocket transport forwards the envelope unchanged | Single canonical shape across all capability families; old raw-event shape is embedded inside the payload field |
 | 2026-06-07 | Step 21.1 (second pass): Connections exposed under `/connections` (list, create, get, revoke); grants under `/agents/:id/grants` (CRUD + audit) — wired into `apps/api/src/index.ts` | Matches the route map in 021-capability-platform-api-architecture.md |
 | 2026-06-07 | Step 21.1 (second pass): Sidebar restructured — Connections and Credentials moved to primary Manage group; Bots and Venues demoted to an Advanced group | Connections are the new platform primitive; trading-specific infrastructure nodes should not dominate the primary nav |
+| 2026-06-07 | Step 21.3: initial trading bindings are one-per-connection and are reused across agent grants; multiple bindings per connection are deferred until a provider actually needs them | Keeps the first migration concrete while preserving the capability-binding model |
+| 2026-06-07 | Step 21.3: default trading binding is derived deterministically from the newest active grant for the agent/family pair | Avoids adding another mutable default-binding column before the model stabilizes |

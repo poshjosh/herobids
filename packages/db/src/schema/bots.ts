@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { venueAccounts } from './venue-accounts.js';
+import { tradingBindings } from './trading-bindings.js';
 import { blueprints } from './blueprints.js';
 
 /**
@@ -15,6 +16,8 @@ export const bots = pgTable('bots', {
   // portfolioId REMOVED — no MVP benefit; user thinks in wallets/accounts
   venueAccountId: text('venue_account_id').notNull()
     .references(() => venueAccounts.id, { onDelete: 'restrict' }),
+  tradingBindingId: text('trading_binding_id').notNull()
+    .references(() => tradingBindings.id, { onDelete: 'restrict' }),
   // strategyId REMOVED — redundant with config.strategy.type
   /** Bot configuration: strategy params, risk overrides, execution mode.
    *  config.strategy.type is the strategy discriminator. */
@@ -39,6 +42,7 @@ export const bots = pgTable('bots', {
   index('idx_bots_status').on(t.status),
   index('idx_bots_creator_id').on(t.creatorId),
   index('idx_bots_venue_account_id').on(t.venueAccountId),
+  index('idx_bots_trading_binding_id').on(t.tradingBindingId),
   // uq_trading_instances_active_venue_account REMOVED
   // Replaced by runtime broker check: agents.maxBotsPerVenueAccount (operator config)
 ]);

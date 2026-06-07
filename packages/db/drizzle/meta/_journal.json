@@ -50,6 +50,13 @@
       "when": 1780839597115,
       "tag": "0006_flippant_quicksilver",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780841600000,
+      "tag": "0007_trading_bindings",
+      "breakpoints": true
     }
   ]
 }

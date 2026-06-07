@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, isNull, desc, or, gte, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, bots, venueAccounts, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
+import { fills, positions, bots, tradingBindings, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -523,7 +523,8 @@ export class BotRepository {
   /** Create a bot record. Returns the created bot's ID. */
   async createBot(params: {
     userId: string;
-    venueAccountId: string;
+    tradingBindingId?: string;
+    venueAccountId?: string;
     config: Record<string, unknown>;
     creatorType: string;
     creatorId: string;
@@ -533,7 +534,8 @@ export class BotRepository {
     await this.db.insert(bots).values({
       id,
       userId: params.userId,
-      venueAccountId: params.venueAccountId,
+      venueAccountId: params.venueAccountId ?? params.tradingBindingId ?? '',
+      tradingBindingId: params.tradingBindingId ?? params.venueAccountId ?? '',
       config: params.config,
       status: 'stopped',
       creatorType: params.creatorType,
@@ -585,14 +587,14 @@ export class BotRepository {
   }
 
   /**
-   * Confirm that a venue account exists and belongs to the given user.
+   * Confirm that a trading binding exists and belongs to the given user.
    * Used by the broker before creating a bot on behalf of an agent.
    */
-  async isVenueAccountOwnedBy(venueAccountId: string, userId: string): Promise<boolean> {
+  async isTradingBindingOwnedBy(tradingBindingId: string, userId: string): Promise<boolean> {
     const [row] = await this.db
-      .select({ id: venueAccounts.id })
-      .from(venueAccounts)
-      .where(and(eq(venueAccounts.id, venueAccountId), eq(venueAccounts.userId, userId)));
+      .select({ id: tradingBindings.id })
+      .from(tradingBindings)
+      .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, userId)));
     return !!row;
   }
 }

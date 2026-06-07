@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const CreateInstanceSchema = z.object({
-  venueAccountId: z.string().min(1),
+  tradingBindingId: z.string().min(1),
   venue: z.string().min(1),
   symbol: z.string().min(1),
   /** Reference an existing blueprint as the config source. */
@@ -10,7 +10,7 @@ export const CreateInstanceSchema = z.object({
   configOverrides: z.record(z.unknown()).optional(),
   /** Inline config — deprecated; use blueprintId instead. */
   config: z.record(z.unknown()).optional(),
-}).superRefine((d, ctx) => {
+}).strict().superRefine((d, ctx) => {
   if (d.blueprintId === undefined && d.config === undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -118,8 +118,8 @@ export const CreateConnectionSchema = z.object({
 });
 
 export const CreateGrantSchema = z.object({
-  /** Connection to grant access to */
-  connectionId: z.string().min(1),
+  /** Trading binding to grant access to */
+  bindingId: z.string().min(1),
   /** Capability family this grant covers: "trading", "automation", etc. */
   capabilityFamily: z.string().min(1),
 });
