@@ -7,6 +7,33 @@ const TEST_USER_ID = 'user-1';
 const TEST_AGENT_ID = 'agent-1';
 const TEST_BINDING_ID = 'binding-1';
 
+const DEFAULT_ACTIVE_BINDING = {
+  id: 'binding-1',
+  userId: 'user-1',
+  connectionId: 'conn-1',
+  provider: 'hyperliquid',
+  label: 'HL binding',
+  bindingRef: 'acct-1',
+  status: 'active',
+  bindingProfile: { venue: 'hyperliquid' },
+  sourceVenueAccountId: 'va-1',
+  createdAt: new Date('2026-01-01'),
+  updatedAt: new Date('2026-01-01'),
+  connection: {
+    id: 'conn-1',
+    userId: 'user-1',
+    credentialId: null,
+    provider: 'hyperliquid',
+    label: 'HL connection',
+    status: 'active',
+    meta: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+  },
+};
+
+const mockAssertBindingOwnership = vi.fn().mockResolvedValue(DEFAULT_ACTIVE_BINDING);
+
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
   app.decorateRequest('userId', '');
   app.decorateRequest('userPlanId', '');
@@ -31,30 +58,7 @@ vi.mock('../../grant-service.js', () => ({
   createGrant: vi.fn().mockResolvedValue('grant-1'),
   revokeGrant: vi.fn().mockResolvedValue(true),
   getBindingAudit: vi.fn().mockResolvedValue([]),
-  assertBindingOwnership: vi.fn().mockResolvedValue({
-    id: 'binding-1',
-    userId: 'user-1',
-    connectionId: 'conn-1',
-    provider: 'hyperliquid',
-    label: 'HL binding',
-    bindingRef: 'acct-1',
-    status: 'active',
-    bindingProfile: { venue: 'hyperliquid' },
-    sourceVenueAccountId: 'va-1',
-    createdAt: new Date('2026-01-01'),
-    updatedAt: new Date('2026-01-01'),
-    connection: {
-      id: 'conn-1',
-      userId: 'user-1',
-      credentialId: null,
-      provider: 'hyperliquid',
-      label: 'HL connection',
-      status: 'active',
-      meta: null,
-      createdAt: new Date('2026-01-01'),
-      updatedAt: new Date('2026-01-01'),
-    },
-  }),
+  assertBindingOwnership: (...args: unknown[]) => mockAssertBindingOwnership(...args),
 }));
 
 const AGENT_ROW = {
@@ -192,6 +196,31 @@ describe('trading capability routes', () => {
 
     expect(res.statusCode).toBe(201);
     expect(res.json().bindingId).toBe(TEST_BINDING_ID);
+  });
+
+  it('rejects binding a trading connection that is no longer effectively ready', async () => {
+    mockAssertBindingOwnership.mockResolvedValueOnce({
+      ...DEFAULT_ACTIVE_BINDING,
+      status: 'revoked',
+      connection: {
+        ...DEFAULT_ACTIVE_BINDING.connection,
+        status: 'revoked',
+      },
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([[AGENT_ROW]]);
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
+      payload: { bindingId: TEST_BINDING_ID },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('binding.not_ready');
   });
 
   it('publishes a runtime refresh envelope after binding a trading connection', async () => {

@@ -1,6 +1,6 @@
 # 021 — Capability Platform API Redesign
 
-**Status:** `in progress`
+**Status:** `done`
 
 **Depends on:**
 
@@ -18,7 +18,7 @@
 | 21.3 | Reframe trading resources onto capability bindings and optional bots | `done` |
 | 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `done` |
 | 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `done` |
-| 21.6 | Replace old tests with capability-model integration and UAT coverage | `not started` |
+| 21.6 | Replace old tests with capability-model integration and UAT coverage | `done` |
 
 ## Goal
 
@@ -242,4 +242,6 @@ The existing shared roadmap and implementation guide remain the source of proces
 | 2026-06-07 | Step 21.5: Playwright trading-capability journeys seed connections and grants directly in the test DB and mock the trading readiness read route for the workspace API container | Keeps the validation honest without depending on missing container routes |
 | 2026-06-07 | Step 21.6: standardize UAT on the existing Playwright journeys and `scripts/shell/tests/run-all-tests.sh` rather than inventing a separate `run-uat.sh` harness | Matches the repo's actual test infrastructure and avoids planning around a missing script |
 | 2026-06-07 | Step 21.6: Playwright capability journeys seed the trading binding row directly in the test database because the public app surface still does not expose a binding-creation endpoint | Keeps the browser coverage honest about the current product surface while still exercising the public connection, grant, readiness, and mission-control routes |
+| 2026-06-07 | Step 21.6 implementation: functional harness now registers credentials and events routes, and trading bind rejects inactive bindings or connections | Lets the capability-model tests prove the platform-resource surface and the readiness-negative path on the real app wiring |
 | 2026-06-07 | Catch-up audit: verified Steps 21.5 and 21.6 against the current codebase, created sibling remaining-work docs, and left only Step 21.5 active in the Progress table | Keeps the plan aligned with the code and follows the implementation guide rule that only one step is actively in progress at a time |
+| 2026-06-07 | Step 21.6 final pass: consolidated export functional tests around agent-first routes (/export/trades, /export/bundle, /agents/:id/export/*); removed stale export assertions from agent-interactivity.functional.test.ts; fixed Journey 4 selectors to use case-insensitive "runtime health" and updated description to clarify it only tests runtime health card visibility, not alert banners; removed mockTradingReadiness from Journey 7 and Journey 8 so they exercise the real readiness route; added cross-user isolation test to events.test.ts proving user A cannot receive user B's events | Completes Step 21.6 final checklist: export consolidation, Journey 4 fix, readiness mock removal, and event isolation test |

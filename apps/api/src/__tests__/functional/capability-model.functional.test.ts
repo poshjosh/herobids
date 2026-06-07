@@ -74,6 +74,26 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     return res.json<{ id: string; provider: string; label: string }>();
   }
 
+  async function createCredential() {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/credentials',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        venue: 'hyperliquid',
+        label: 'Primary Hyperliquid credential',
+        secrets: {
+          apiKey: 'test-api-key',
+          secret: 'test-secret',
+          walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    return res.json<{ id: string; venue: string; label: string }>();
+  }
+
   async function seedTradingBinding(connectionId: string) {
     const bindingId = crypto.randomUUID();
     await ctx.db.insert(tradingBindings).values({
@@ -99,6 +119,13 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
     const catalog = await ctx.app.inject({ method: 'GET', url: '/capabilities', headers: { Authorization: `Bearer ${token}` } });
     expect(catalog.statusCode).toBe(200);
+
+    const credential = await createCredential();
+    const credentialList = await ctx.app.inject({ method: 'GET', url: '/credentials', headers: { Authorization: `Bearer ${token}` } });
+    expect(credentialList.statusCode).toBe(200);
+    expect(credentialList.json<{ credentials: Array<{ id: string; venue: string }> }>().credentials).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: credential.id, venue: 'hyperliquid' })]),
+    );
 
     const connection = await createConnection();
     const connectionList = await ctx.app.inject({ method: 'GET', url: '/connections', headers: { Authorization: `Bearer ${token}` } });
@@ -202,6 +229,18 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(revokedBody.state).toBe('revoked');
     expect(revokedBody.effectiveReady).toBe(false);
     expect(revokedBody.reasons.join(' ')).toContain('revoked');
+    const revokedAggregate = await ctx.app.inject({
+      method: 'GET',
+      url: `/agents/${agentId}/capabilities/readiness`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(revokedAggregate.statusCode).toBe(200);
+    const revokedAggregateBody = revokedAggregate.json<{ capabilities: Array<{ family: string; state: string; agentEligibility: string; effectiveReady: boolean }> }>();
+    expect(revokedAggregateBody.capabilities.find((capability) => capability.family === 'trading')).toMatchObject({
+      state: 'revoked',
+      agentEligibility: 'ineligible',
+      effectiveReady: false,
+    });
 
     const auditAfterUnbind = await ctx.app.inject({
       method: 'GET',
@@ -241,5 +280,40 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(body.state).toBe('revoked');
     expect(body.effectiveReady).toBe(false);
     expect(body.reasons.join(' ')).toContain('connection');
+
+    const aggregate = await ctx.app.inject({
+      method: 'GET',
+      url: `/agents/${agentId}/capabilities/readiness`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(aggregate.statusCode).toBe(200);
+    const aggregateBody = aggregate.json<{ capabilities: Array<{ family: string; state: string; agentEligibility: string; effectiveReady: boolean }> }>();
+    expect(aggregateBody.capabilities.find((capability) => capability.family === 'trading')).toMatchObject({
+      state: 'revoked',
+      agentEligibility: 'ineligible',
+      effectiveReady: false,
+    });
+  });
+
+  it('rejects binding a trading capability when the underlying connection is no longer ready', async () => {
+    const connection = await createConnection();
+    const bindingId = await seedTradingBinding(connection.id);
+
+    const revokeConnection = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/connections/${connection.id}`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(revokeConnection.statusCode).toBe(204);
+
+    const bindRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/agents/${agentId}/capabilities/trading/actions/bind`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { bindingId },
+    });
+
+    expect(bindRes.statusCode).toBe(409);
+    expect(bindRes.json<{ error: string }>().error).toBe('binding.not_ready');
   });
 });

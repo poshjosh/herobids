@@ -2,124 +2,40 @@
 
 ## Overview
 
-An agentic platform which offers AI agents as a service (AaaS). Also uses skills to give agents expertise. Users describe what they want to accomplish; AI agents handle execution continuously within defined constraints.
+Herobids is an agentic platform: users describe an outcome, the system runs agents continuously, and the platform handles execution, infrastructure, and persistence.
 
 ```mermaid
 graph TB
-    subgraph Clients["External Clients"]
-        UI["Web UI\n(React/Vite)"]
-        AGENT["AI Agent\n(Docker container)"]
-    end
-
-    subgraph Apps["Apps"]
-        API["apps/api\n(Fastify HTTP)\nbots · accounts · credentials\njournals · positions · billing\nagent routes · auth"]
-        WORKER["apps/worker\n(Long-running process)\nWorkerRuntime · TradingActor\nBacktestRuntime · AgentRuntime"]
-    end
-
-    subgraph Infra["Infrastructure"]
-        PG[("PostgreSQL\n(source of truth)")]
-        REDIS[("Redis\nBullMQ queues\npub/sub")]
-    end
-
-    subgraph Engine["packages/engine"]
-        CYCLE["TradingCycle"]
-        PLANNER["Planner\n(Decision → Plan)"]
-        RISK["RiskGate"]
-        EXEC["Executors\npaper / shadow / live"]
-        POSTRACK["PositionTracker"]
-        RECON["Reconciler"]
-        JOURNAL["Journal"]
-        MDS["MarketDataFeed\n(polling / stream)"]
-    end
-
-    subgraph VenuePkg["packages/venues"]
-        HL["HyperliquidAdapter\n(OrderbookVenuePort)"]
-        BY["BybitAdapter\n(OrderbookVenuePort)"]
-        JUP["JupiterSwapAdapter\n(SwapVenuePort)"]
-        INCH["OneInchSwapAdapter\n(SwapVenuePort)"]
-        POOL["PublicStreamPool\n(WebSocket fan-out)"]
-        MARK["MarkSource\n(Oracle / LastFill)"]
-    end
-
-    subgraph Strategy["packages/strategy"]
-        STRAT["Strategy impl\n(e.g. Momentum)"]
-    end
-
-    subgraph LLM["packages/llm"]
-        LLMCLIENT["LLM Client\n(agent decisions)"]
-    end
-
-    subgraph Domain["packages/domain (zero deps)"]
-        PORTS["Ports\n(OrderbookVenuePort\nSwapVenuePort)"]
-        TYPES["Types / Value objects\n(Price, Quantity, Decision)"]
-    end
-
-    subgraph DB["packages/db"]
-        DRIZZLE["Drizzle ORM\nschemas · repos · migrations"]
-    end
-
-    subgraph External["External Venues"]
-        HLNET["Hyperliquid API\n(perps)"]
-        BYNET["Bybit API\n(perps)"]
-        JUPNET["Jupiter API\n(Solana DEX)"]
-        ONENET["1inch API\n(EVM DEX)"]
-    end
-
-    UI -->|"HTTPS"| API
-    AGENT -->|"agent protocol\n(AgentMessageBroker)"| WORKER
-
-    API -->|"reads/writes"| PG
-    API -->|"enqueues lifecycle\n& backtest jobs"| REDIS
-
-    WORKER -->|"dequeues jobs"| REDIS
-    WORKER -->|"reads/writes"| PG
-
-    WORKER --> CYCLE
-    WORKER --> POOL
-    CYCLE --> PLANNER
-    CYCLE --> RISK
-    CYCLE --> EXEC
-    CYCLE --> POSTRACK
-    CYCLE --> RECON
-    CYCLE --> JOURNAL
-    CYCLE --> MDS
-    STRAT -->|"Decision"| CYCLE
-    MDS --> POOL
-
-    JOURNAL -->|"append events"| DRIZZLE
-    DRIZZLE --> PG
-
-    EXEC --> HL & BY & JUP & INCH
-    RECON --> HL & BY & JUP & INCH
-    POOL --> HL & BY
-
-    HL --> HLNET
-    BY --> BYNET
-    JUP --> JUPNET
-    INCH --> ONENET
-
-    PORTS -.->|"implemented by"| HL & BY & JUP & INCH
-    TYPES -.->|"used by"| Engine & Strategy & VenuePkg
-
-    LLMCLIENT -->|"generates decisions"| WORKER
-
-    CFG["config/default.yaml\n(operator config)"]
-    CFG --> API & WORKER
+    User["User / Web UI"] --> API["API"]
+    API --> PG[("PostgreSQL")]
+    API --> REDIS[("Redis / queues")]
+    REDIS --> WORKER["Worker"]
+    WORKER --> PG
+    WORKER --> VENUES["External venues / providers"]
+    WORKER --> LLM["LLM provider"]
+    WORKER --> AGENT["Agent runtime container"]
+    AGENT --> WORKER
 ```
 
-## Package Layers
+## Main Pieces
 
-| Layer | Package | Role |
-|---|---|---|
-| Domain | `packages/domain` | Zero-dep types, ports, value objects — the shared language |
-| Engine | `packages/engine` | Pure business logic — trading cycle, risk gate, executors, reconciler |
-| Venues | `packages/venues` | Venue adapters, WebSocket stream pool, mark sources |
-| Strategy | `packages/strategy` | Strategy implementations emitting `Decision` objects |
-| DB | `packages/db` | Drizzle ORM — schema, repos, migrations |
-| Worker | `apps/worker` | Long-running runtime: actors, agent runtime, backtest runtime |
-| API | `apps/api` | HTTP surface — CRUD, auth, billing; enqueues BullMQ lifecycle jobs |
-| Web | `apps/web` | React/Vite frontend |
+| Layer | Role |
+|---|---|
+| Web | User-facing UI for creating, monitoring, and managing agents |
+| API | HTTP surface for auth, CRUD, billing, and orchestration requests |
+| Worker | Long-running runtime that executes agents, backtests, and lifecycle jobs |
+| Domain / Engine | Shared types and core execution logic |
+| Venues / Strategy / LLM | Integrations that provide market access, decision-making, and execution support |
+| DB / Redis | Persistence, queues, and event transport |
 
-**Dependency rule:** `domain` ← `engine` ← `strategy` / `venues` / `db` ← `apps/*`
+## How It Fits Together
 
-Nothing in `engine` imports from `venues` or `db`; all cross-boundary communication goes through ports defined in `domain`.
+1. The Web app talks to the API over HTTP.
+2. The API reads and writes PostgreSQL, and places asynchronous work onto Redis-backed queues.
+3. The Worker consumes queued jobs, loads state from PostgreSQL, and runs the relevant runtime.
+4. The Worker uses domain logic plus venue, strategy, and LLM integrations to produce actions.
+5. Agent runtimes communicate back to the Worker so the platform can observe and manage them.
+
+## Detail Lives Elsewhere
+
+This page is intentionally high level. Deeper runtime boundaries, agent messaging, and transport details belong in the specialized docs under [docs/tech/agents/](../agents) and the ADRs under [docs/tech/adrs/](../adrs).

@@ -13,7 +13,6 @@ import {
   createConnection,
   seedTradingBinding,
   bindTradingCapability,
-  mockTradingReadiness,
 } from '../helpers.js';
 
 const EMPTY_STATE_EMAIL = `j7-empty-${Date.now()}@e2e.local`;
@@ -44,8 +43,6 @@ test.describe('Journey 7: Capability setup and readiness', () => {
       { skillIds: ['bot-management'] },
     );
 
-    const readiness = await mockTradingReadiness(page, agentId);
-
     const userId = await getAuthenticatedUserId(page, request);
     const connection = await createConnection(page, request, {
       provider: 'hyperliquid',
@@ -69,7 +66,6 @@ test.describe('Journey 7: Capability setup and readiness', () => {
     await expect(initialReadiness.getByText(/^Binding readiness$/).locator('xpath=following-sibling::span')).toHaveText('Unconfigured', { timeout: 5_000 });
 
     await bindTradingCapability(page, request, agentId, bindingId);
-    readiness.setReady(bindingId);
     await page.reload();
 
     const readyReadiness = readinessCard(page);

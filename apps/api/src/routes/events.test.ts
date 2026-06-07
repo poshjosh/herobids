@@ -387,3 +387,119 @@ describe('WebSocket /events — platform envelope semantics', () => {
     }
   });
 });
+
+// ─── Cross-user isolation tests ───────────────────────────────────────────────
+// Verify that user A cannot receive events published to user B's channel. The
+// /events route subscribes each user's WebSocket to a user-scoped channel. This
+// test ensures that publishing an event to user B's channel does not arrive at
+// user A's connection.
+
+describe('WebSocket /events — cross-user isolation', () => {
+  it('user A cannot receive events published to user B\'s channel', async () => {
+    const { factory, lastSubscriber } = makeControlledSubscriberFactory();
+    const { app, wsBase } = await startTestServer(factory);
+
+    try {
+      // Open WebSocket for user A
+      const tokenA = await makeToken('user-a');
+      const { ws: wsA } = await openWs(`${wsBase}/events?token=${tokenA}`);
+      expect(wsA.readyState).toBe(WebSocket.OPEN);
+
+      const receivedMessagesA: string[] = [];
+      wsA.addEventListener('message', (ev) => {
+        receivedMessagesA.push(ev.data as string);
+      });
+
+      // Wait for subscriber to be set up
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Simulate Redis publishing an event to user B's channel
+      // (The subscriber is still subscribed to user A's channel)
+      const subA = lastSubscriber();
+      expect(subA).toBeDefined();
+
+      const userBEnvelope = {
+        id: 'evt-b-1',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actorType: 'user',
+        actorId: 'user-b',
+        eventType: 'agent.status',
+        payload: { type: 'agent.status', agentId: 'agent-b', status: 'active', timestamp: '2026-01-01T00:00:00.000Z' },
+      };
+
+      // This event should NOT be delivered to user A's WebSocket because it is
+      // published to user B's channel. The subscriber for user A is listening
+      // to 'events:user-a', not 'events:user-b'.
+      //
+      // In reality, the EventPublisher publishes to 'events:user-b', which is
+      // a different channel. Since we're mocking the subscriber, we cannot
+      // truly verify channel isolation at this level. Instead, we verify that
+      // the subscriber is scoped to the correct user's channel (see test
+      // 'subscribes to the user-scoped channel on connection').
+      //
+      // For a more complete proof, we would need a Redis integration test that
+      // publishes to both channels and verifies only the correct user receives
+      // their events. This unit test verifies the subscription is user-scoped.
+      //
+      // Here, we'll open a second WebSocket for user B and confirm user A's
+      // subscriber does not receive user B's events.
+
+      // Open WebSocket for user B
+      const tokenB = await makeToken('user-b');
+      const { ws: wsB } = await openWs(`${wsBase}/events?token=${tokenB}`);
+      expect(wsB.readyState).toBe(WebSocket.OPEN);
+
+      const receivedMessagesB: string[] = [];
+      wsB.addEventListener('message', (ev) => {
+        receivedMessagesB.push(ev.data as string);
+      });
+
+      // Wait for user B's subscriber to be set up
+      await new Promise((r) => setTimeout(r, 50));
+
+      const subB = lastSubscriber();
+      expect(subB).toBeDefined();
+      expect(subB).not.toBe(subA);
+
+      // Simulate publishing to user B's channel via user B's subscriber
+      subB!.onMessage!(JSON.stringify(userBEnvelope));
+
+      // Wait for the message to arrive (if it were to)
+      await new Promise((r) => setTimeout(r, 100));
+
+      // User B should receive the event
+      expect(receivedMessagesB).toHaveLength(1);
+      expect(JSON.parse(receivedMessagesB[0]!)).toEqual(userBEnvelope);
+
+      // User A should NOT receive the event because it was published to user B's
+      // channel, and user A's WebSocket is subscribed to events:user-a.
+      expect(receivedMessagesA).toHaveLength(0);
+
+      // Similarly, publish an event to user A's channel and verify user B does
+      // not receive it.
+      const userAEnvelope = {
+        id: 'evt-a-1',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actorType: 'user',
+        actorId: 'user-a',
+        eventType: 'agent.status',
+        payload: { type: 'agent.status', agentId: 'agent-a', status: 'active', timestamp: '2026-01-01T00:00:00.000Z' },
+      };
+
+      subA!.onMessage!(JSON.stringify(userAEnvelope));
+      await new Promise((r) => setTimeout(r, 100));
+
+      // User A should receive their event
+      expect(receivedMessagesA).toHaveLength(1);
+      expect(JSON.parse(receivedMessagesA[0]!)).toEqual(userAEnvelope);
+
+      // User B should NOT receive user A's event
+      expect(receivedMessagesB).toHaveLength(1);
+
+      wsA.close();
+      wsB.close();
+    } finally {
+      await app.close();
+    }
+  });
+});

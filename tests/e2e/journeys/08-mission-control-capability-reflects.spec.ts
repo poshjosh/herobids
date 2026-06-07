@@ -11,7 +11,6 @@ import {
   createConnection,
   seedTradingBinding,
   bindTradingCapability,
-  mockTradingReadiness,
 } from '../helpers.js';
 
 const EMAIL = `j8-${Date.now()}@e2e.local`;
@@ -35,8 +34,6 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
       { skillIds: ['bot-management'] },
     );
 
-    const readiness = await mockTradingReadiness(page, agentId);
-
     const userId = await getAuthenticatedUserId(page, request);
     const connection = await createConnection(page, request, {
       provider: 'hyperliquid',
@@ -52,7 +49,6 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
     });
 
     await bindTradingCapability(page, request, agentId, bindingId);
-    readiness.setReady(bindingId);
 
     await page.goto('/mission-control');
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });

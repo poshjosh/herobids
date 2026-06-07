@@ -12,8 +12,10 @@ import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
 import { botRoutes } from '../../routes/bots.js';
+import { credentialRoutes } from '../../routes/credentials.js';
 import { connectionRoutes } from '../../routes/connections.js';
 import { capabilityRoutes } from '../../routes/capabilities/index.js';
+import { eventsRoutes } from '../../routes/events.js';
 import { agentInteractivityRoutes, telegramWebhookHandler } from '../../routes/agent-interactivity.js';
 import { analyticsRoutes } from '../../routes/analytics.js';
 import { aiRoutes } from '../../routes/ai.js';
@@ -68,6 +70,27 @@ export async function buildApp() {
   // Import Redis client lazily to avoid import side effects
   const { Redis } = await import('ioredis');
   const redisClient = new Redis(redisConn);
+
+  await eventsRoutes(app, authConfig, () => {
+    const subscriber = new Redis(redisConn);
+    subscriber.on('error', (err: Error) => app.log.error({ err }, 'Events subscriber error'));
+    return {
+      subscribe: async (channel: string, callback: (message: string) => void) => {
+        subscriber.on('message', (_channel: string, message: string) => {
+          if (_channel === channel) {
+            callback(message);
+          }
+        });
+        await subscriber.subscribe(channel);
+      },
+      unsubscribe: async (channel: string) => {
+        await subscriber.unsubscribe(channel);
+        subscriber.disconnect();
+      },
+    };
+  });
+
+  await credentialRoutes(app, lifecycleQueue, db);
 
   await authRoutes(app, authConfig, db, redisClient, 'free');
   await agentRoutes(app, db);

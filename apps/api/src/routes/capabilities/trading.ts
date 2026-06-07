@@ -798,6 +798,13 @@ export async function tradingCapabilityRoutes(
           return reply.status(404).send({ error: 'binding.not_found' });
         }
 
+        if (binding.status !== 'active' || binding.connection.status !== 'active') {
+          return reply.status(409).send({
+            error: 'binding.not_ready',
+            message: 'Binding is not effectively ready',
+          });
+        }
+
         const existingGrant = (await selectAgentTradingGrantRows(db, agentId)).find(
           (row) => row.bindingId === parsed.data.bindingId && row.grantStatus === 'active',
         );
