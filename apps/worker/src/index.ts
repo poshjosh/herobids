@@ -34,6 +34,7 @@ import {
   InstanceEventPublisher,
 } from './agents/index.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
+import { UserEventPublisher } from './user-event-publisher.js';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -88,8 +89,11 @@ const alertDeliveryRepo = new AlertDeliveryRepository(db);
 // Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
 // actor factory can subscribe streams and register actors on creation.
 const actorRegistry = new Map<string, TradingActor>();
+/** Maps botId → userId so the onStarted/onStartFailed callbacks can publish events. */
+const instanceUserIds = new Map<string, string>();
 const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
+const userEventPublisher = new UserEventPublisher(redisClient);
 
 const runtimeMode = (process.env['AGENT_RUNTIME_MODE'] ?? 'stub') as 'docker' | 'stub';
 logger.info({ mode: runtimeMode }, 'Agent runtime mode');
@@ -201,6 +205,11 @@ let agentStreamSubscribeFn: ((agentId: string) => Promise<void>) | undefined;
 
 const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, {
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
+  onAgentStatusChange: (agentId, userId, status) => {
+    userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {
+      logger.error({ err, agentId }, 'Failed to publish agent status event');
+    });
+  },
 }, agentReconnectHandler, platformAlerts);
 
 // Queue used by the broker callback to enqueue bot start jobs
@@ -303,11 +312,39 @@ const runtime = new WorkerRuntime(
       await db.update(bots)
         .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
         .where(eq(bots.id, botId));
+      // Publish real-time crash event (best-effort)
+      try {
+        const userId = instanceUserIds.get(botId)
+          ?? (await db.select({ userId: bots.userId }).from(bots).where(eq(bots.id, botId)).limit(1))[0]?.userId;
+        if (userId) {
+          await userEventPublisher.publishBotStatus(userId, botId, 'crashed');
+        }
+      } catch { /* best-effort */ }
+      instanceUserIds.delete(botId);
     },
     onStopped: async (instanceId: string) => {
       actorRegistry.delete(instanceId);
       agentStreamConsumer.unsubscribe(instanceId);
       // Sessions are agent-scoped, not instance-scoped; stop session via agentRepo.getActiveSession if needed
+      // Publish real-time stopped event (best-effort)
+      try {
+        const userId = instanceUserIds.get(instanceId)
+          ?? (await db.select({ userId: bots.userId }).from(bots).where(eq(bots.id, instanceId)).limit(1))[0]?.userId;
+        if (userId) {
+          await userEventPublisher.publishBotStatus(userId, instanceId, 'stopped');
+        }
+      } catch { /* best-effort */ }
+      instanceUserIds.delete(instanceId);
+    },
+    onStarted: (botId) => {
+      // Publish running event after actor.start() has completed successfully.
+      // instanceUserId was stored by the factory into instanceUserIds.
+      const userId = instanceUserIds.get(botId);
+      if (userId) {
+        userEventPublisher.publishBotStatus(userId, botId, 'running').catch((err) => {
+          logger.error({ err, botId }, 'Failed to publish bot running event');
+        });
+      }
     },
   },
   async (botId, rawConfig) => {
@@ -652,21 +689,32 @@ const runtime = new WorkerRuntime(
       recordReferenceMark,
       shadowPollIntervalMs: config.shadowPollIntervalMs,
       credentialId: resolvedCredentialId,
-      onCrashed: async (instanceId: string) => {          actorRegistry.delete(instanceId);
-          agentStreamConsumer.unsubscribe(instanceId);        await db.update(bots)
-          .set({ status: 'crashed', stoppedAt: new Date() })
-          .where(eq(bots.id, instanceId));
-        // Remove from runtime map and release lease
-        await runtime.handleActorCrash(instanceId);
-        logger.error({ botId: instanceId }, 'Bot marked as crashed in DB');
-      },
+      onCrashed: async (instanceId: string) => {
+          actorRegistry.delete(instanceId);
+          agentStreamConsumer.unsubscribe(instanceId);
+          await db.update(bots)
+            .set({ status: 'crashed', stoppedAt: new Date() })
+            .where(eq(bots.id, instanceId));
+          // Remove from runtime map and release lease
+          await runtime.handleActorCrash(instanceId);
+          logger.error({ botId: instanceId }, 'Bot marked as crashed in DB');
+          // Publish real-time status event (best-effort — do not fail the crash handler)
+          if (instanceUserId) {
+            userEventPublisher.publishBotStatus(instanceUserId, instanceId, 'crashed').catch((err) => {
+              logger.error({ err, botId: instanceId }, 'Failed to publish bot crash event');
+            });
+          }
+        },
     };
     const actor = new TradingActor(botId, config.strategy.params as Record<string, unknown>, deps);
     actorRegistry.set(botId, actor);
+    // Record userId so onStarted / onStartFailed / onStopped callbacks can publish events.
+    if (instanceUserId) instanceUserIds.set(botId, instanceUserId);
     try {
       await agentStreamConsumer.subscribe(botId);
     } catch (err: unknown) {
       actorRegistry.delete(botId);
+      instanceUserIds.delete(botId);
       throw err;
     }
     return actor;

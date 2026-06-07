@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents, bots, fills, journalEvents, agentRuntimeSessions } from '@herobids/db';
+import { agents } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
 
 // --- Schemas ---
@@ -30,30 +30,6 @@ const UpdateAgentSchema = z.object({
   maxBots: z.number().int().min(1).nullable().optional(),
   maxSlippageBps: z.number().int().min(0).nullable().optional(),
 });
-
-// --- Helpers ---
-
-function rowsToCsv(rows: Record<string, unknown>[]): string {
-  if (rows.length === 0) return '';
-  const keys = Object.keys(rows[0]!);
-  const header = keys.join(',');
-  const lines = rows.map((row) =>
-    keys.map((k) => {
-      const v = row[k];
-      if (v === null || v === undefined) return '';
-      const str = typeof v === 'object' ? JSON.stringify(v) : String(v);
-      return str.includes(',') || str.includes('"') || str.includes('\n')
-        ? `"${str.replace(/"/g, '""')}"` : str;
-    }).join(','),
-  );
-  return [header, ...lines].join('\n');
-}
-
-async function resolveAgentBotIds(db: Database, agentId: string): Promise<string[]> {
-  const managed = await db.select({ id: bots.id }).from(bots)
-    .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, agentId)));
-  return managed.map((b) => b.id);
-}
 
 // --- Route module ---
 
@@ -248,132 +224,6 @@ export async function agentInteractivityRoutes(
     }
 
     return reply.send({ verified: true, chatId });
-  });
-
-  // --- Export endpoints ---
-
-  // GET /agents/:id/export/trades — CSV of fills across managed bots
-  app.get<{ Params: { id: string } }>('/agents/:id/export/trades', async (request, reply) => {
-    const { id } = request.params;
-    const [agent] = await db.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    const botIds = await resolveAgentBotIds(db, id);
-    const rows = botIds.length > 0
-      ? await db.select().from(fills)
-          .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)))
-          .orderBy(desc(fills.filledAt))
-      : [];
-
-    const csv = rowsToCsv(rows as Record<string, unknown>[]);
-    void reply.header('Content-Type', 'text/csv');
-    void reply.header('Content-Disposition', `attachment; filename="agent-${id}-trades.csv"`);
-    return reply.send(csv);
-  });
-
-  // GET /agents/:id/export/journal — CSV of journal events across managed bots
-  app.get<{ Params: { id: string } }>('/agents/:id/export/journal', async (request, reply) => {
-    const { id } = request.params;
-    const [agent] = await db.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    const botIds = await resolveAgentBotIds(db, id);
-    const rows = botIds.length > 0
-      ? await db.select().from(journalEvents)
-          .where(inArray(journalEvents.actorId, botIds))
-          .orderBy(desc(journalEvents.createdAt))
-      : [];
-
-    const csv = rowsToCsv(rows as Record<string, unknown>[]);
-    void reply.header('Content-Type', 'text/csv');
-    void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.csv"`);
-    return reply.send(csv);
-  });
-
-  // GET /agents/:id/export/costs — CSV cost summary by currency
-  app.get<{ Params: { id: string } }>('/agents/:id/export/costs', async (request, reply) => {
-    const { id } = request.params;
-    const [agent] = await db.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    const botIds = await resolveAgentBotIds(db, id);
-    let rows: Record<string, unknown>[] = [];
-    if (botIds.length > 0) {
-      const feeRows = await db.select({ feeCurrency: fills.feeCurrency, fee: fills.fee })
-        .from(fills)
-        .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)));
-      // Aggregate by currency
-      const byCurrency: Record<string, number> = {};
-      for (const row of feeRows) {
-        const cur = row.feeCurrency ?? 'unknown';
-        byCurrency[cur] = (byCurrency[cur] ?? 0) + parseFloat(row.fee ?? '0');
-      }
-      rows = Object.entries(byCurrency).map(([currency, total]) => ({ currency, total: total.toFixed(8) }));
-    }
-
-    const csv = rowsToCsv(rows);
-    void reply.header('Content-Type', 'text/csv');
-    void reply.header('Content-Disposition', `attachment; filename="agent-${id}-costs.csv"`);
-    return reply.send(csv);
-  });
-
-  // GET /agents/:id/export/sessions — CSV of runtime sessions
-  app.get<{ Params: { id: string } }>('/agents/:id/export/sessions', async (request, reply) => {
-    const { id } = request.params;
-    const [agent] = await db.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    const rows = await db.select().from(agentRuntimeSessions)
-      .where(eq(agentRuntimeSessions.agentId, id))
-      .orderBy(desc(agentRuntimeSessions.startedAt));
-
-    const csv = rowsToCsv(rows as Record<string, unknown>[]);
-    void reply.header('Content-Type', 'text/csv');
-    void reply.header('Content-Disposition', `attachment; filename="agent-${id}-sessions.csv"`);
-    return reply.send(csv);
-  });
-
-  // GET /agents/:id/export/config — JSON agent config
-  app.get<{ Params: { id: string } }>('/agents/:id/export/config', async (request, reply) => {
-    const { id } = request.params;
-    const [agent] = await db.select().from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    void reply.header('Content-Disposition', `attachment; filename="agent-${id}-config.json"`);
-    return reply.send(agent);
-  });
-
-  // GET /agents/:id/export/bundle — JSON bundle of all agent data
-  app.get<{ Params: { id: string } }>('/agents/:id/export/bundle', async (request, reply) => {
-    const { id } = request.params;
-    const [agent] = await db.select().from(agents)
-      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
-    if (!agent) return reply.status(404).send({ error: 'not_found' });
-
-    const botIds = await resolveAgentBotIds(db, id);
-    const [trades, journal, sessions] = await Promise.all([
-      botIds.length > 0
-        ? db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds))).orderBy(desc(fills.filledAt))
-        : Promise.resolve([]),
-      botIds.length > 0
-        ? db.select().from(journalEvents).where(inArray(journalEvents.actorId, botIds)).orderBy(desc(journalEvents.createdAt))
-        : Promise.resolve([]),
-      db.select().from(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id)).orderBy(desc(agentRuntimeSessions.startedAt)),
-    ]);
-
-    void reply.header('Content-Disposition', `attachment; filename="agent-${id}-bundle.json"`);
-    return reply.send({
-      agent,
-      trades,
-      journal,
-      sessions,
-      exportedAt: new Date().toISOString(),
-    });
   });
 }
 

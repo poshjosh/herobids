@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type AgentDecision } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
+import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -12,11 +13,23 @@ export function AgentDetailPage() {
 
   const [isEditing, setIsEditing] = useState(false);
 
+  // Invalidate agent data when a real-time status event arrives for this agent
+  const handleEvent = useCallback((event: UserEvent) => {
+    if (event.type === 'agent.status' && event.agentId === id) {
+      void qc.invalidateQueries({ queryKey: ['agents', id] });
+      void qc.invalidateQueries({ queryKey: ['agents'] });
+    } else if (event.type === 'bot.status') {
+      // A bot under this agent changed status — refresh activity
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
+    }
+  }, [id, qc]);
+  useEventStream(handleEvent);
+
   const query = useQuery({
     queryKey: ['agents', id],
     queryFn: () => agentsApi.get(id!),
     enabled: !!id,
-    refetchInterval: 5000,
+    refetchInterval: 30_000, // reduced from 5 s — WebSocket handles real-time updates
   });
 
   const startMutation = useMutation({

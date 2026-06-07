@@ -1,14 +1,28 @@
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, useCallback } from 'react-router';
 import Decimal from 'decimal.js';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bots as botsApi, journal, type ActivityEvent } from '../../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
 import { TimelineEvent } from '../../timeline/TimelineEvent.js';
+import { useEventStream, type UserEvent } from '../../../lib/useEventStream.js';
 
 export function InstanceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
+  // Invalidate bot data when a real-time status event arrives for this bot
+  const handleEvent = useCallback((event: UserEvent) => {
+    if (event.type === 'bot.status' && event.botId === id) {
+      void qc.invalidateQueries({ queryKey: ['bots', id] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
+    } else if (event.type === 'order.filled' && event.botId === id) {
+      void qc.invalidateQueries({ queryKey: ['bots', id, 'positions', 'open'] });
+      void qc.invalidateQueries({ queryKey: ['journal', id] });
+    }
+  }, [id, qc]);
+  useEventStream(handleEvent);
 
   const instanceQuery = useQuery({
     queryKey: ['bots', id],
@@ -16,7 +30,8 @@ export function InstanceDetailPage() {
     enabled: Boolean(id),
     refetchInterval: (query) => {
       const status = query.state.data?.status as string | undefined;
-      return status === 'running' || status === 'starting' ? 5000 : false;
+      // Keep a slow fallback poll for running/starting bots; WebSocket handles real-time updates
+      return status === 'running' || status === 'starting' ? 30_000 : false;
     },
   });
 

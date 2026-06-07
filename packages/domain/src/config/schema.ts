@@ -133,6 +133,8 @@ export const AuthConfigSchema = z.object({
   googleClientSecret: z.string().default(''),
   /** Use Secure flag on session cookies (should be true in production / HTTPS) */
   secureCookie: z.boolean().default(false),
+  /** User IDs that have admin access to /admin/* routes. Override: AUTH_ADMIN_USER_IDS (comma-separated). */
+  adminUserIds: z.array(z.string()).default([]),
 });
 
 export const PlansConfigSchema = z.object({

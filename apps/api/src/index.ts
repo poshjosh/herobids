@@ -21,6 +21,9 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { aiRoutes } from './routes/ai.js';
 import { skillsRoutes } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
+import { exportRoutes } from './routes/exports.js';
+import { adminRoutes } from './routes/admin.js';
+import { eventsRoutes } from './routes/events.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -104,6 +107,26 @@ await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient);
 await skillsRoutes(app, db);
 await datasetRoutes(app, db, redisClient);
+await exportRoutes(app, db);
+await adminRoutes(app, db, redisClient, appConfig.auth);
+
+// WebSocket event stream — uses a fresh Redis subscriber per connection.
+// ioredis enters subscriber mode on the first subscribe call so each connection
+// needs its own client instance.
+await eventsRoutes(app, appConfig.auth, () => {
+  const sub = new Redis(redisConnection);
+  sub.on('error', (err: Error) => app.log.error({ err }, 'Events subscriber error'));
+  return {
+    subscribe: async (channel: string, callback: (msg: string) => void) => {
+      sub.on('message', (_ch: string, message: string) => callback(message));
+      await sub.subscribe(channel);
+    },
+    unsubscribe: async (channel: string) => {
+      await sub.unsubscribe(channel);
+      sub.disconnect();
+    },
+  };
+});
 
 const port = appConfig.app.port;
 

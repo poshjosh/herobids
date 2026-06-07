@@ -23,6 +23,11 @@ export interface AgentSessionManagerConfig {
    * monitor's startup timeout fires and stops the agent.
    */
   streamSubscribe?: (agentId: string) => Promise<void>;
+  /**
+   * Called when an agent's status changes (best-effort, non-blocking).
+   * Used to publish real-time UI events to the user's event channel.
+   */
+  onAgentStatusChange?: (agentId: string, userId: string, status: string) => void;
 }
 
 const DEFAULT_CONFIG: AgentSessionManagerConfig = {
@@ -181,6 +186,13 @@ export class AgentSessionManager {
     // Update agent status
     await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
     logger.info({ sessionId, agentId: session.agentId }, 'Agent session stopped');
+    // Notify real-time event stream (best-effort)
+    if (this.config.onAgentStatusChange) {
+      const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
+      if (agent) {
+        this.config.onAgentStatusChange(session.agentId, agent.userId, 'stopped');
+      }
+    }
   }
 
   /** Handle heartbeat from agent runtime */
@@ -225,6 +237,13 @@ export class AgentSessionManager {
       // can find this container on the new worker after a restart. Without this,
       // runtimeLauncher.stop(sessionId) is a no-op and the container escapes control.
       this.runtimeLauncher.registerRecoveredRuntime(session.agentId, payload.sessionId);
+      // Notify real-time event stream (best-effort)
+      if (this.config.onAgentStatusChange) {
+        const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
+        if (agent) {
+          this.config.onAgentStatusChange(session.agentId, agent.userId, 'active');
+        }
+      }
     }
 
     // First successful connect and unhealthy recovery both bootstrap the runtime
@@ -288,6 +307,10 @@ export class AgentSessionManager {
       await this.stopSession(session.id);
     } else {
       await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
+      // No active session: notify real-time stream directly (best-effort)
+      if (this.config.onAgentStatusChange) {
+        this.config.onAgentStatusChange(agent.id, agent.userId, 'stopped');
+      }
     }
 
     logger.info({ agentId: agent.id, reason: payload.reason }, 'Agent stop requested');
@@ -308,6 +331,14 @@ export class AgentSessionManager {
     await this.runtimeLauncher.stop(sessionId);
     await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' });
     logger.warn({ sessionId, agentId: session.agentId }, 'Agent session start timed out');
+    // Notify real-time event stream (best-effort)
+    if (this.config.onAgentStatusChange) {
+      const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
+      if (agent) {
+        // Start-timeout persists 'stopped' in the DB; emit the same status so UI is consistent.
+        this.config.onAgentStatusChange(session.agentId, agent.userId, 'stopped');
+      }
+    }
 
     this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, {
       agentId: session.agentId,

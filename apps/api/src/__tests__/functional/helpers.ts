@@ -17,6 +17,7 @@ import { analyticsRoutes } from '../../routes/analytics.js';
 import { aiRoutes } from '../../routes/ai.js';
 import { skillsRoutes } from '../../routes/skills.js';
 import { datasetRoutes } from '../../routes/datasets.js';
+import { exportRoutes } from '../../routes/exports.js';
 import type { AuthConfig } from '@herobids/domain';
 import { Queue } from 'bullmq';
 
@@ -36,6 +37,7 @@ export function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig 
     googleClientId: 'test-google-client-id',
     googleClientSecret: 'test-google-client-secret',
     secureCookie: false,
+    adminUserIds: [],
     ...overrides,
   };
 }
@@ -88,6 +90,7 @@ export async function buildApp() {
 
   await skillsRoutes(app, db);
   await datasetRoutes(app, db, redisClient);
+  await exportRoutes(app, db);
 
   await app.ready();
 

@@ -9,7 +9,7 @@ import type { AppConfig } from '@herobids/domain';
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../config');
 
-type EnvType = 'string' | 'number' | 'boolean';
+type EnvType = 'string' | 'number' | 'boolean' | 'string-array';
 
 interface EnvOverride {
   path: string;
@@ -29,6 +29,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   AUTH_EXCHANGE_CODE_TTL_SECS: { path: 'auth.exchangeCodeTtlSecs', type: 'number' },
   GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
+  // Admin
+  AUTH_ADMIN_USER_IDS: { path: 'auth.adminUserIds', type: 'string-array' },
   // Billing
   BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   STRIPE_SECRET_KEY: { path: 'billing.stripe.secretKey', type: 'string' },
@@ -73,6 +75,8 @@ function coerceEnvValue(raw: string, type: EnvType): unknown {
       if (raw === 'false' || raw === '0') return false;
       throw new Error(`Invalid boolean env value: "${raw}" — must be true, false, 1, or 0`);
     }
+    case 'string-array':
+      return raw.split(',').map((s) => s.trim()).filter(Boolean);
     default: return raw;
   }
 }
