@@ -3,9 +3,9 @@ import { useSession } from '../providers/SessionProvider.js';
 
 const NAV_ITEMS = [
   { path: '/mission-control', label: 'Mission Control', icon: '◈' },
+  { path: '/skills', label: 'Skills', icon: '✦' },
   { path: '/activity', label: 'Activity', icon: '◎' },
   { path: '/outcomes', label: 'Outcomes', icon: '▦' },
-  { path: '/exposure', label: 'Exposure', icon: '◑' },
 ];
 
 const MANAGE_ITEMS = [
@@ -18,7 +18,8 @@ const MANAGE_ITEMS = [
 
 const ADVANCED_ITEMS = [
   { path: '/bots', label: 'Bots', icon: '⊞' },
-  { path: '/venue-accounts', label: 'Venues', icon: '⬡' },
+  { path: '/venue-accounts', label: 'Trading setup', icon: '⬡' },
+  { path: '/exposure', label: 'Exposure', icon: '◑' },
 ];
 
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {

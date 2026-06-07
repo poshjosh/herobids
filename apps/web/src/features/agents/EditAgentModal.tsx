@@ -2,17 +2,13 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agents as agentsApi, type Agent } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
+import { AGENT_SKILL_PRESETS, formatExecutionMode } from './agent-display.js';
 
-const SKILL_PRESETS = [
-  { value: 'trading', label: 'Trading Agent', skillIds: ['bot-management'] },
-  { value: 'reminder', label: 'Reminder Agent', skillIds: [] },
-] as const;
-
-type SkillPresetValue = typeof SKILL_PRESETS[number]['value'];
+type SkillPresetValue = typeof AGENT_SKILL_PRESETS[number]['value'];
 
 function skillIdsToPreset(skillIds: string[]): SkillPresetValue {
   if (skillIds.includes('bot-management')) return 'trading';
-  return 'reminder';
+  return 'general';
 }
 
 interface EditAgentModalProps {
@@ -57,7 +53,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
 
   const mutation = useMutation({
     mutationFn: () => {
-      const preset = SKILL_PRESETS.find((p) => p.value === form.skillPreset)!;
+      const preset = AGENT_SKILL_PRESETS.find((p) => p.value === form.skillPreset)!;
       return agentsApi.update(agentId, {
         name: form.name.trim(),
         prompt: form.prompt.trim(),
@@ -88,7 +84,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' };
 
   return (
-    <Modal title="Edit Agent Configuration" onClose={onClose}>
+    <Modal title="Edit agent" onClose={onClose}>
       <div
         style={{
           maxHeight: 'min(560px, 70vh)',
@@ -104,7 +100,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Objective / Prompt</FieldLabel>
+            <FieldLabel>Objective / prompt</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
               value={form.prompt}
@@ -115,9 +111,9 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Agent type</FieldLabel>
+            <FieldLabel>Skill preset</FieldLabel>
             <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.skillPreset} onChange={set('skillPreset')}>
-              {SKILL_PRESETS.map((p) => (
+              {AGENT_SKILL_PRESETS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </select>
@@ -126,11 +122,12 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           <div style={fieldGap}>
             <FieldLabel>Execution mode</FieldLabel>
             <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={set('executionMode')}>
-              <option value="">— Not set —</option>
+              <option value="">Not set — inherit or decide later</option>
               <option value="paper">Paper — simulated, no real money</option>
               <option value="shadow">Shadow — tracks prices, no orders</option>
               <option value="live">Live — real order placement</option>
             </select>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatExecutionMode(form.executionMode)} is the runtime mode visible to operators.</div>
           </div>
 
           <div style={fieldGap}>

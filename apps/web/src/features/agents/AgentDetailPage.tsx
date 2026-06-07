@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useCallback, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
+import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
+import { extractAgentObjective, extractAgentOperatorContext, formatCapabilityFamily, formatCapabilityState, formatExecutionMode } from './agent-display.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -13,14 +14,19 @@ export function AgentDetailPage() {
 
   const [isEditing, setIsEditing] = useState(false);
 
-  // Invalidate agent data when a real-time status event arrives for this agent
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status' && event.agentId === id) {
       void qc.invalidateQueries({ queryKey: ['agents', id] });
       void qc.invalidateQueries({ queryKey: ['agents'] });
-    } else if (event.type === 'bot.status' && event.botId === id) {
-      // A bot under this agent changed status — refresh activity
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'artifacts'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'sessions'] });
+    } else if ((event.type === 'decision.accepted' || event.type === 'decision.rejected') && event.agentId === id) {
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'artifacts'] });
     }
   }, [id, qc]);
   useEventStream(handleEvent);
@@ -29,7 +35,16 @@ export function AgentDetailPage() {
     queryKey: ['agents', id],
     queryFn: () => agentsApi.get(id!),
     enabled: !!id,
-    refetchInterval: 30_000, // reduced from 5 s — WebSocket handles real-time updates
+    refetchInterval: 30_000,
+  });
+
+  const shouldPollRuntimePanels = Boolean(query.data?.activeSession)
+    || ['active', 'starting', 'paused', 'unhealthy'].includes(query.data?.status ?? '');
+
+  const capabilityQuery = useQuery({
+    queryKey: ['agents', id, 'capability-readiness'],
+    queryFn: async () => agentsApi.capabilityReadiness(id!) as Promise<{ agentId: string; capabilities: CapabilityReadiness[] }>,
+    enabled: !!id,
   });
 
   const startMutation = useMutation({
@@ -76,24 +91,28 @@ export function AgentDetailPage() {
     queryKey: ['agents', id, 'activity'],
     queryFn: () => agentsApi.activity(id!, 20),
     enabled: !!id,
+    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
   const messagesQuery = useQuery({
     queryKey: ['agents', id, 'messages'],
     queryFn: () => agentsApi.messages(id!, 20),
     enabled: !!id,
+    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
   const artifactsQuery = useQuery({
     queryKey: ['agents', id, 'artifacts'],
     queryFn: () => agentsApi.artifacts(id!, 10),
     enabled: !!id,
+    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
   const sessionsQuery = useQuery({
     queryKey: ['agents', id, 'sessions'],
     queryFn: () => agentsApi.sessions(id!),
     enabled: !!id,
+    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
   if (query.isLoading) return <PageShell><LoadingRows count={5} /></PageShell>;
@@ -102,10 +121,13 @@ export function AgentDetailPage() {
   const agent = query.data;
   if (!agent) return <PageShell><ErrorState message="Agent not found" /></PageShell>;
 
+  const capabilitySummary = capabilityQuery.data?.capabilities ?? [];
+  const objective = extractAgentObjective(agent.prompt);
+  const operatorContext = extractAgentOperatorContext(agent.prompt);
   const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
   const canStop = ['active', 'starting', 'paused', 'unhealthy'].includes(agent.status);
   const runtimeAlert = agent.status === 'crashed'
-    ? 'Agent crashed. The runtime stopped unexpectedly. Review recent activity and messages below.'
+    ? 'Agent crashed. The runtime stopped unexpectedly. Review recent activity and capability readiness below.'
     : agent.activeSession?.status === 'unhealthy'
       ? 'Agent runtime is unhealthy. Heartbeats are missing and the worker is recovering.'
       : null;
@@ -114,9 +136,9 @@ export function AgentDetailPage() {
     <PageShell>
       <PageHeader
         title={agent.name}
-        subtitle={agent.prompt}
+        subtitle={objective}
         action={
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
               <Button variant="secondary" onClick={() => setIsEditing(true)}>
                 Edit config
@@ -172,33 +194,83 @@ export function AgentDetailPage() {
         {lifecycleError && <ErrorBanner message={(lifecycleError as Error).message} />}
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Status</h3>
+          <SectionLabel>Agent status</SectionLabel>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label="Status" value={<StatusBadge status={agent.status} />} />
+            <KV label="Execution mode" value={formatExecutionMode(agent.executionMode)} />
             <KV label="Created" value={<RelativeTime timestamp={agent.createdAt} />} />
             <KV label="Updated" value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>
         </Card>
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Objective</h3>
-          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{agent.prompt}</p>
+          <SectionLabel>Objective</SectionLabel>
+          <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{objective}</p>
+          {operatorContext.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+              {operatorContext.map((item) => (
+                <span
+                  key={item}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '20px',
+                    background: 'var(--color-surface-2)',
+                    fontSize: '12px',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             {agent.activeSession?.startedAt && (
               <KV label="Active since" value={<RelativeTime timestamp={agent.activeSession.startedAt} />} />
             )}
             {sessionsQuery.isSuccess && (
-              <KV
-                label="Sessions run"
-                value={String((sessionsQuery.data as unknown[]).length)}
-              />
+              <KV label="Sessions run" value={String((sessionsQuery.data as unknown[]).length)} />
             )}
           </div>
         </Card>
 
+        <Card>
+          <SectionLabel>Capabilities</SectionLabel>
+          {capabilityQuery.isLoading && <LoadingRows count={2} />}
+          {capabilityQuery.isError && <ErrorState message={(capabilityQuery.error as Error).message} />}
+          {capabilityQuery.isSuccess && capabilitySummary.length === 0 && (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No capability setup required.</div>
+          )}
+          {capabilityQuery.isSuccess && capabilitySummary.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              {capabilitySummary.map((capability) => (
+                <div key={capability.family} style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(capability.family)}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(capability.state)}</div>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={() => navigate(`/agents/${agent.id}/capabilities/${capability.family}`)}>
+                      Open
+                    </Button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                    <div>Binding readiness: {formatCapabilityState(capability.bindingReadiness)}</div>
+                    <div>Agent eligibility: {capability.agentEligibility}</div>
+                    <div>Effective ready: {capability.effectiveReady ? 'Yes' : 'No'}</div>
+                    {capability.reasons.length > 0 && (
+                      <div>Reasons: {capability.reasons.join('; ')}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
         {agent.activeSession && (
           <Card>
-            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Runtime Health</h3>
+            <SectionLabel>Runtime health</SectionLabel>
             <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
               <KV label="Session" value={agent.activeSession.id.slice(0, 8)} />
               <KV label="Status" value={<StatusBadge status={agent.activeSession.status} />} />
@@ -206,8 +278,9 @@ export function AgentDetailPage() {
             </div>
           </Card>
         )}
+
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Messages to User</h3>
+          <SectionLabel>Messages to user</SectionLabel>
           {messagesQuery.isLoading && <LoadingRows count={3} />}
           {messagesQuery.isSuccess && messagesQuery.data.length === 0 && (
             <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No messages sent yet.</p>
@@ -234,7 +307,7 @@ export function AgentDetailPage() {
         </Card>
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Protocol Activity</h3>
+          <SectionLabel>Protocol activity</SectionLabel>
           {activityQuery.isLoading && <LoadingRows count={3} />}
           {activityQuery.isSuccess && (activityQuery.data as unknown[]).length === 0 && (
             <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No protocol messages yet.</p>
@@ -252,7 +325,7 @@ export function AgentDetailPage() {
         </Card>
 
         <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Artifacts</h3>
+          <SectionLabel>Artifacts</SectionLabel>
           {artifactsQuery.isLoading && <LoadingRows count={3} />}
           {artifactsQuery.isSuccess && artifactsQuery.data.length === 0 && (
             <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No artifacts published yet.</p>

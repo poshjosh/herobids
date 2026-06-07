@@ -140,11 +140,12 @@ export function SeverityDot({ severity }: { severity: 'info' | 'warn' | 'critica
 
 interface ButtonProps {
   children: ReactNode;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   size?: 'sm' | 'md';
   disabled?: boolean;
   type?: 'button' | 'submit';
+  form?: string;
   style?: CSSProperties;
 }
 
@@ -178,11 +179,13 @@ export function Button({
   size = 'md',
   disabled,
   type = 'button',
+  form,
   style,
 }: ButtonProps) {
   return (
     <button
       type={type}
+      form={form}
       onClick={onClick}
       disabled={disabled}
       style={{

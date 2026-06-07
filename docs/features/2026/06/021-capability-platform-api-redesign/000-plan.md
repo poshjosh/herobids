@@ -17,7 +17,7 @@
 | 21.2 | Redesign capability-family API namespace and agent-scoped capability routes | `done` |
 | 21.3 | Reframe trading resources onto capability bindings and optional bots | `done` |
 | 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `done` |
-| 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `not started` |
+| 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `in progress` |
 | 21.6 | Replace old tests with capability-model integration and UAT coverage | `not started` |
 
 ## Goal
@@ -235,3 +235,7 @@ The existing shared roadmap and implementation guide remain the source of proces
 | 2026-06-07 | Step 21.1 (second pass): Sidebar restructured — Connections and Credentials moved to primary Manage group; Bots and Venues demoted to an Advanced group | Connections are the new platform primitive; trading-specific infrastructure nodes should not dominate the primary nav |
 | 2026-06-07 | Step 21.3: initial trading bindings are one-per-connection and are reused across agent grants; multiple bindings per connection are deferred until a provider actually needs them | Keeps the first migration concrete while preserving the capability-binding model |
 | 2026-06-07 | Step 21.3: default trading binding is derived deterministically from the newest active grant for the agent/family pair | Avoids adding another mutable default-binding column before the model stabilizes |
+| 2026-06-07 | Step 21.5: frontend platform-resource copy uses `provider` as the default noun for credential/connection setup; `venue` stays confined to advanced trading surfaces | Keeps the public shell platform-first and avoids overloading `Platform` with the product name |
+| 2026-06-07 | Step 21.5: mission control and the primary agent shell must use agent-first read models rather than `dashboard.overview().bots` summaries | Prevents legacy bot counts from leaking into the new top-level dashboard truth |
+| 2026-06-07 | Step 21.5: trading infrastructure pages remain available only behind progressive disclosure, with legacy `venue-accounts` treated as advanced trading setup rather than primary navigation | Allows the UI to shift to agent-first flows without promising a full bindings rewrite in this step |
+| 2026-06-07 | Step 21.5: execution mode is visible in create, list, detail, and review surfaces for agents | Ensures users can interpret what the agent is configured to do at every core decision point |

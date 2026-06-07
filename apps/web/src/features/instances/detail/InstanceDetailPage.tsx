@@ -97,7 +97,7 @@ export function InstanceDetailPage() {
         subtitle={strategyType}
         action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/instances')}>← Back</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back</Button>
           </div>
         }
       />

@@ -1,115 +1,114 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { dashboard } from '../../lib/api-client.js';
+import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
-import { AgentOverviewCard } from './AgentOverviewCard.js';
+import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
 import { ActivityItem } from '../activity/ActivityItem.js';
-import { HealthStrip } from '../health/HealthStrip.js';
 
 export function MissionControlPage() {
   const navigate = useNavigate();
 
-  const overviewQuery = useQuery({
-    queryKey: ['dashboard', 'overview'],
-    queryFn: () => dashboard.overview(),
+  const agentsQuery = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => agentsApi.list(),
   });
 
-  const activityQuery = useQuery({
+  const overviewQuery = useQuery({
     queryKey: ['dashboard', 'activity', { limit: 8 }],
     queryFn: () => dashboard.activity({ limit: 8 }),
   });
 
-  const overview = overviewQuery.data;
-  const hasInstances = (overview?.bots.length ?? 0) > 0;
+  const agents = agentsQuery.data ?? [];
+  const counts = {
+    active: agents.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
+    paused: agents.filter((agent) => agent.status === 'paused').length,
+    unhealthy: agents.filter((agent) => agent.status === 'crashed' || agent.status === 'unhealthy').length,
+    stopped: agents.filter((agent) => agent.status === 'stopped').length,
+  };
 
   return (
     <PageShell>
       <PageHeader
         title="Mission Control"
         subtitle={
-          overview
-            ? `${overview.summary.runningBots} of ${overview.summary.totalBots} agent${overview.summary.totalBots !== 1 ? 's' : ''} running`
+          agentsQuery.data
+            ? `${counts.active} active agent${counts.active !== 1 ? 's' : ''} across ${agents.length} total`
             : undefined
         }
         action={
-          <Button variant="primary" onClick={() => navigate('/instances')}>
-            Manage agents
+          <Button variant="primary" onClick={() => navigate('/agents?create=1')}>
+            Create agent
           </Button>
         }
       />
 
-      {/* Health strip */}
-      {overview && <HealthStrip instances={overview.bots} />}
-
       {/* Summary metrics */}
-      {overview && (
+      {agentsQuery.data && (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(4, 1fr)',
             gap: '12px',
             marginBottom: '32px',
           }}
         >
-          <MetricCard label="Active agents" value={overview.summary.runningBots} total={overview.summary.totalBots} />
-          <MetricCard label="Open positions" value={overview.summary.totalOpenPositions} />
-          <MetricCard label="Plan" value={overview.user.planId} />
+          <MetricCard label="Active" value={counts.active} total={agents.length} />
+          <MetricCard label="Paused" value={counts.paused} />
+          <MetricCard label="Unhealthy" value={counts.unhealthy} />
+          <MetricCard label="Stopped" value={counts.stopped} />
         </div>
       )}
 
-      {/* Two-column layout: agents on left, activity on right */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', alignItems: 'start' }}>
-        {/* Agent overview cards */}
         <div>
           <SectionLabel>Your agents</SectionLabel>
 
-          {overviewQuery.isLoading && <LoadingRows count={3} />}
-          {overviewQuery.isError && (
+          {agentsQuery.isLoading && <LoadingRows count={3} />}
+          {agentsQuery.isError && (
             <ErrorState
-              message={(overviewQuery.error as Error).message}
-              onRetry={() => void overviewQuery.refetch()}
+              message={(agentsQuery.error as Error).message}
+              onRetry={() => void agentsQuery.refetch()}
             />
           )}
-          {overviewQuery.isSuccess && !hasInstances && (
+          {agentsQuery.isSuccess && agents.length === 0 && (
             <EmptyState
               title="No agents yet"
-              message="Create your first trading agent to get started."
+              message="Create an agent from a goal, then attach capabilities only when you need them."
               action={
-                <Button variant="primary" onClick={() => navigate('/instances')}>
+                <Button variant="primary" onClick={() => navigate('/agents?create=1')}>
                   Create agent
                 </Button>
               }
             />
           )}
-          {overviewQuery.isSuccess && hasInstances && (
+          {agentsQuery.isSuccess && agents.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {overview!.bots.map((inst) => (
-                <AgentOverviewCard key={inst.id} instance={inst} />
+              {agents.map((agent) => (
+                <AgentSummaryCard key={agent.id} agent={agent} />
               ))}
             </div>
           )}
         </div>
 
-        {/* Recent activity */}
         <div>
           <SectionLabel>Recent activity</SectionLabel>
 
           <Card style={{ padding: '0' }}>
-            {activityQuery.isLoading && (
+            {overviewQuery.isLoading && (
               <div style={{ padding: '20px' }}>
                 <LoadingRows count={4} />
               </div>
             )}
-            {activityQuery.isSuccess && (activityQuery.data?.events.length ?? 0) === 0 && (
-              <EmptyState title="No activity yet" message="Events will appear here once your agents start trading." />
+            {overviewQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) === 0 && (
+              <EmptyState title="No activity yet" message="Events appear here once agents start taking actions." />
             )}
-            {activityQuery.isSuccess && (activityQuery.data?.events.length ?? 0) > 0 && (
+            {overviewQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) > 0 && (
               <div>
-                {activityQuery.data!.events.map((event, i) => (
+                {overviewQuery.data!.events.map((event, i) => (
                   <ActivityItem
                     key={event.id}
                     event={event}
-                    isLast={i === activityQuery.data!.events.length - 1}
+                    isLast={i === overviewQuery.data!.events.length - 1}
                   />
                 ))}
                 <div style={{ padding: '12px 20px', borderTop: '1px solid var(--color-border-subtle)' }}>

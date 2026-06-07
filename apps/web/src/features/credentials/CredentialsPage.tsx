@@ -1,16 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { credentials as credentialsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 
-const SUPPORTED_VENUES = ['hyperliquid', 'bybit', '1inch'];
+const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'telegram', 'zapier', 'custom'];
 
-const VENUE_SECRET_FIELDS: Record<string, string[]> = {
+const SECRET_TEMPLATES: Record<string, string[]> = {
+  custom: ['secret'],
   hyperliquid: ['apiKey', 'secret', 'walletAddress'],
   bybit: ['apiKey', 'secret'],
+  jupiter: ['walletAddress'],
   '1inch': ['privateKey', 'apiKey'],
+  telegram: ['botToken'],
+  zapier: ['webhookUrl'],
 };
+
+interface SecretEntry {
+  key: string;
+  value: string;
+}
 
 export function CredentialsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -21,18 +30,19 @@ export function CredentialsPage() {
     queryFn: () => credentialsApi.list(),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => credentialsApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credentials'] }),
+  });
+
   const items = query.data?.credentials ?? [];
 
   return (
     <PageShell>
       <PageHeader
         title="Credentials"
-        subtitle="Venue API keys and wallet secrets"
-        action={
-          <Button variant="primary" onClick={() => setShowCreate(true)}>
-            Add credentials
-          </Button>
-        }
+        subtitle="Reusable provider secrets for agents and capability bindings"
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add credentials</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
@@ -41,22 +51,37 @@ export function CredentialsPage() {
       {query.isSuccess && items.length === 0 && (
         <EmptyState
           title="No credentials yet"
-          message="Add your venue API keys or wallet credentials to enable trading."
+          message="Add provider credentials once and reuse them across agents and capability families."
           action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add credentials</Button>}
         />
       )}
 
       {query.isSuccess && items.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {items.map((c) => (
-            <Card key={c.id} style={{ padding: '14px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {items.map((credential) => (
+            <Card key={credential.id} style={{ padding: '14px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                 <div>
-                  <div style={{ fontWeight: '500', marginBottom: '2px' }}>{c.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{c.venue}</div>
+                  <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>{credential.venue}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>ID: {credential.id}</div>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  Added {new Date(c.createdAt).toLocaleDateString()}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    Added {new Date(credential.createdAt).toLocaleDateString()}
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Delete credential "${credential.label}"?`)) {
+                        deleteMutation.mutate(credential.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </div>
             </Card>
@@ -78,34 +103,76 @@ export function CredentialsPage() {
 }
 
 function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [venue, setVenue] = useState(SUPPORTED_VENUES[0]!);
+  const [provider, setProvider] = useState('hyperliquid');
+  const [template, setTemplate] = useState<keyof typeof SECRET_TEMPLATES>('hyperliquid');
   const [label, setLabel] = useState('');
-  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([{ key: 'apiKey', value: '' }]);
+
+  useEffect(() => {
+    const templateKeys = SECRET_TEMPLATES[template] ?? ['secret'];
+    setSecretEntries(templateKeys.map((key) => ({ key, value: '' })));
+  }, [template]);
+
+  const secrets = useMemo(() => {
+    return Object.fromEntries(
+      secretEntries
+        .map(({ key, value }) => [key.trim(), value.trim()] as const)
+        .filter(([key, value]) => key.length > 0 && value.length > 0),
+    );
+  }, [secretEntries]);
 
   const mutation = useMutation({
-    mutationFn: () => credentialsApi.create({ venue, label, secrets }),
+    mutationFn: () => credentialsApi.create({ venue: provider.trim(), label: label.trim(), secrets }),
     onSuccess,
   });
 
-  const secretFields = VENUE_SECRET_FIELDS[venue] ?? [];
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     mutation.mutate();
   };
+
+  const updateEntry = (index: number, field: keyof SecretEntry, value: string) => {
+    setSecretEntries((entries) => entries.map((entry, currentIndex) => currentIndex === index ? { ...entry, [field]: value } : entry));
+  };
+
+  const addEntry = () => {
+    setSecretEntries((entries) => [...entries, { key: '', value: '' }]);
+  };
+
+  const removeEntry = (index: number) => {
+    setSecretEntries((entries) => entries.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const hasCompleteSecret = secretEntries.some((entry) => entry.key.trim() && entry.value.trim());
 
   return (
     <Modal title="Add credentials" onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Venue</FieldLabel>
+          <FieldLabel>Provider</FieldLabel>
+          <input
+            list="provider-suggestions"
+            value={provider}
+            onChange={(event) => setProvider(event.target.value)}
+            placeholder="e.g. hyperliquid, telegram, zapier"
+            style={inputStyle}
+          />
+          <datalist id="provider-suggestions">
+            {PROVIDER_SUGGESTIONS.map((suggestion) => (
+              <option key={suggestion} value={suggestion} />
+            ))}
+          </datalist>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <FieldLabel>Secret template</FieldLabel>
           <select
-            value={venue}
-            onChange={(e) => { setVenue(e.target.value); setSecrets({}); }}
+            value={template}
+            onChange={(event) => setTemplate(event.target.value as keyof typeof SECRET_TEMPLATES)}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            {SUPPORTED_VENUES.map((v) => (
-              <option key={v} value={v}>{v}</option>
+            {Object.keys(SECRET_TEMPLATES).map((key) => (
+              <option key={key} value={key}>{key}</option>
             ))}
           </select>
         </div>
@@ -114,25 +181,41 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
           <FieldLabel>Label</FieldLabel>
           <input
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. My Hyperliquid account"
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="e.g. Primary trading secret"
             style={inputStyle}
           />
         </div>
 
-        {secretFields.map((field) => (
-          <div key={field} style={{ marginBottom: '16px' }}>
-            <FieldLabel>{field}</FieldLabel>
-            <input
-              type="password"
-              value={secrets[field] ?? ''}
-              onChange={(e) => setSecrets((prev) => ({ ...prev, [field]: e.target.value }))}
-              placeholder={`Enter ${field}`}
-              style={inputStyle}
-              autoComplete="new-password"
-            />
+        <div style={{ marginBottom: '12px' }}>
+          <FieldLabel>Secrets</FieldLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {secretEntries.map((entry, index) => (
+              <div key={`${entry.key}-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}>
+                <input
+                  value={entry.key}
+                  onChange={(event) => updateEntry(index, 'key', event.target.value)}
+                  placeholder="Secret name"
+                  style={inputStyle}
+                />
+                <input
+                  type="password"
+                  value={entry.value}
+                  onChange={(event) => updateEntry(index, 'value', event.target.value)}
+                  placeholder="Secret value"
+                  style={inputStyle}
+                  autoComplete="new-password"
+                />
+                <Button variant="ghost" size="sm" onClick={() => removeEntry(index)} disabled={secretEntries.length === 1}>
+                  Remove
+                </Button>
+              </div>
+            ))}
           </div>
-        ))}
+          <div style={{ marginTop: '8px' }}>
+            <Button variant="secondary" size="sm" onClick={addEntry}>Add secret</Button>
+          </div>
+        </div>
 
         {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
 
@@ -141,7 +224,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
           <Button
             variant="primary"
             type="submit"
-            disabled={mutation.isPending || !label.trim() || secretFields.some((f) => !secrets[f]?.trim())}
+            disabled={mutation.isPending || !provider.trim() || !label.trim() || !hasCompleteSecret}
           >
             {mutation.isPending ? 'Saving…' : 'Save credentials'}
           </Button>

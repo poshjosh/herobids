@@ -14,6 +14,8 @@ import { ConnectionsPage } from '../features/connections/ConnectionsPage.js';
 import { BillingPage } from '../features/billing/BillingPage.js';
 import { AgentsPage } from '../features/agents/AgentsPage.js';
 import { AgentDetailPage } from '../features/agents/AgentDetailPage.js';
+import { AgentCapabilityPage } from '../features/agents/AgentCapabilityPage.js';
+import { SkillsPage } from '../features/skills/SkillsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
 
 export const router = createBrowserRouter([
@@ -31,18 +33,18 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/mission-control" replace /> },
       { path: 'mission-control', element: <MissionControlPage /> },
+      { path: 'skills', element: <SkillsPage /> },
       { path: 'activity', element: <ActivityFeedPage /> },
       { path: 'outcomes', element: <OutcomeBoardPage /> },
-      { path: 'exposure', element: <ExposurePage /> },
       { path: 'bots', element: <BotsPage /> },
       { path: 'bots/:id', element: <InstanceDetailPage /> },
-      { path: 'instances', element: <Navigate to="/bots" replace /> },
-      { path: 'instances/:id', element: <InstanceDetailPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'credentials', element: <CredentialsPage /> },
       { path: 'venue-accounts', element: <VenueAccountsPage /> },
       { path: 'agents', element: <AgentsPage /> },
       { path: 'agents/:id', element: <AgentDetailPage /> },
+      { path: 'agents/:agentId/capabilities/:family', element: <AgentCapabilityPage /> },
+      { path: 'exposure', element: <ExposurePage /> },
       { path: 'billing', element: <BillingPage /> },
       { path: 'settings', element: <SettingsPage /> },
     ],

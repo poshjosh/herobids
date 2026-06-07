@@ -23,9 +23,9 @@ export function VenueAccountsPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Venue Accounts"
-        subtitle="Exchange sub-accounts and wallets connected to your agents"
-        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add venue account</Button>}
+        title="Trading setup"
+        subtitle="Advanced venue accounts and wallets used by trading capability bindings"
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add trading account</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
@@ -33,9 +33,9 @@ export function VenueAccountsPage() {
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No venue accounts yet"
-          message="Add a venue account to link your exchange sub-account or wallet to an agent."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add venue account</Button>}
+          title="No trading accounts yet"
+          message="Add one if you need a legacy venue account for an advanced trading binding."
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add trading account</Button>}
         />
       )}
 
@@ -102,7 +102,7 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
   };
 
   return (
-    <Modal title="Add venue account" onClose={onClose}>
+    <Modal title="Add trading account" onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>Venue</FieldLabel>

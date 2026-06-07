@@ -1,41 +1,48 @@
+import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import Decimal from 'decimal.js';
-import { dashboard, bots as botsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, KV, StatusBadge, SectionLabel } from '../../lib/ui.js';
+import { agents as agentsApi, type Agent, type AgentArtifact, type AgentOutboundMessage } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
+import { formatExecutionMode } from '../agents/agent-display.js';
 
 export function OutcomeBoardPage() {
-  const overviewQuery = useQuery({
-    queryKey: ['dashboard', 'overview'],
-    queryFn: () => dashboard.overview(),
+  const navigate = useNavigate();
+  const query = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => agentsApi.list(),
   });
 
-  const overview = overviewQuery.data;
+  const agents = query.data ?? [];
+  const counts = {
+    total: agents.length,
+    active: agents.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
+    attention: agents.filter((agent) => agent.status === 'crashed' || agent.status === 'unhealthy').length,
+    updatedToday: agents.filter((agent) => Date.now() - new Date(agent.updatedAt).getTime() < 24 * 60 * 60 * 1000).length,
+  };
 
   return (
     <PageShell>
       <PageHeader
         title="Outcome Board"
-        subtitle="Whether your agents are succeeding"
+        subtitle="How each agent is progressing"
       />
 
-      {overviewQuery.isLoading && <LoadingRows count={3} />}
-      {overviewQuery.isError && (
+      {query.isLoading && <LoadingRows count={3} />}
+      {query.isError && (
         <ErrorState
-          message={(overviewQuery.error as Error).message}
-          onRetry={() => void overviewQuery.refetch()}
+          message={(query.error as Error).message}
+          onRetry={() => void query.refetch()}
         />
       )}
 
-      {overview && overview.bots.length === 0 && (
+      {query.isSuccess && agents.length === 0 && (
         <EmptyState
           title="No agents yet"
-          message="Create a trading agent to see outcome metrics here."
+          message="Create an agent to start tracking published outputs, user-facing summaries, and recent progress."
         />
       )}
 
-      {overview && overview.bots.length > 0 && (
+      {query.isSuccess && agents.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Summary scorecard */}
           <div
             style={{
               display: 'grid',
@@ -43,17 +50,16 @@ export function OutcomeBoardPage() {
               gap: '12px',
             }}
           >
-            <ScoreCard label="Total agents" value={overview.summary.totalBots} />
-            <ScoreCard label="Running" value={overview.summary.runningBots} highlight />
-            <ScoreCard label="Open positions" value={overview.summary.totalOpenPositions} />
-            <ScoreCard label="Plan" value={overview.user.planId} />
+            <ScoreCard label="Total agents" value={counts.total} />
+            <ScoreCard label="Active now" value={counts.active} highlight />
+            <ScoreCard label="Need attention" value={counts.attention} />
+            <ScoreCard label="Updated today" value={counts.updatedToday} />
           </div>
 
-          {/* Per-agent outcomes */}
-          <SectionLabel>Per-agent results</SectionLabel>
+          <SectionLabel>Recent published outcomes</SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {overview.bots.map((inst) => (
-              <AgentOutcomeRow key={inst.id} instance={inst} />
+            {agents.map((agent) => (
+              <OutcomeAgentCard key={agent.id} agent={agent} onOpen={() => navigate(`/agents/${agent.id}`)} />
             ))}
           </div>
         </div>
@@ -81,54 +87,116 @@ function ScoreCard({ label, value, highlight }: { label: string; value: string |
   );
 }
 
-function AgentOutcomeRow({ instance }: { instance: { id: string; status: string; venue: string; symbol: string; openPositionsCount: number; startedAt: string | null } }) {
-  const positionsQuery = useQuery({
-    queryKey: ['bots', instance.id, 'positions', 'open'],
-    queryFn: () => botsApi.openPositions(instance.id),
-    // Fetch for all statuses — stopped/crashed agents may still hold open positions
-    enabled: instance.openPositionsCount > 0,
+function OutcomeAgentCard({ agent, onOpen }: { agent: Agent; onOpen: () => void }) {
+  const artifactsQuery = useQuery({
+    queryKey: ['agents', agent.id, 'artifacts', 'outcome-board'],
+    queryFn: () => agentsApi.artifacts(agent.id, 1),
   });
 
-  const positions = positionsQuery.data?.positions ?? [];
-  // Use Decimal to avoid IEEE-754 accumulation errors when summing P&L across positions
-  const totalRealizedPnl = positions.reduce((sum, p) => sum.plus(p.realizedPnl || '0'), new Decimal(0));
-  const pnlSign = totalRealizedPnl.gte(0);
-  const pnlDisplay = totalRealizedPnl.toFixed(2);
+  const messagesQuery = useQuery({
+    queryKey: ['agents', agent.id, 'messages', 'outcome-board'],
+    queryFn: () => agentsApi.messages(agent.id, 1, 'agent'),
+  });
+
+  const latestArtifact = artifactsQuery.data?.[0] ?? null;
+  const latestMessage = messagesQuery.data?.[0] ?? null;
 
   return (
     <Card>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '15px', fontWeight: '600' }}>
-              {instance.venue} · {instance.symbol || '—'}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+            <span style={{ fontSize: '15px', fontWeight: '600' }}>{agent.name}</span>
+            <StatusBadge status={agent.status} />
+            <span style={{ padding: '3px 8px', borderRadius: '20px', background: 'var(--color-surface-2)', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+              {formatExecutionMode(agent.executionMode)} mode
             </span>
-            <StatusBadge status={instance.status} />
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{instance.venue}</div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
+            <OutcomeBlock
+              label="Latest artifact"
+              loading={artifactsQuery.isLoading}
+              emptyMessage="No published artifact yet."
+              timestamp={latestArtifact?.createdAt ?? null}
+              content={latestArtifact ? formatArtifactSummary(latestArtifact) : null}
+            />
+            <OutcomeBlock
+              label="Latest user summary"
+              loading={messagesQuery.isLoading}
+              emptyMessage="No agent-authored summary yet."
+              timestamp={latestMessage?.createdAt ?? null}
+              content={latestMessage ? formatMessageSummary(latestMessage) : null}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginTop: '16px' }}>
+            <KV label="Updated" value={<RelativeTime timestamp={agent.updatedAt} />} />
+            {agent.activeSession?.startedAt && <KV label="Active since" value={<RelativeTime timestamp={agent.activeSession.startedAt} />} />}
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '28px' }}>
-          <KV label="Open positions" value={instance.openPositionsCount} />
-          {positionsQuery.isSuccess && positions.length > 0 && (
-            <KV
-              label="Realized P&L"
-              value={
-                <span style={{ color: pnlSign ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                  {pnlSign ? '+' : ''}
-                  {pnlDisplay}
-                </span>
-              }
-            />
-          )}
-          {instance.startedAt && (
-            <KV
-              label="Running since"
-              value={new Date(instance.startedAt).toLocaleDateString()}
-            />
-          )}
-        </div>
+        <Button variant="secondary" onClick={() => onOpen()}>Open agent</Button>
       </div>
     </Card>
   );
+}
+
+function OutcomeBlock({
+  label,
+  loading,
+  emptyMessage,
+  content,
+  timestamp,
+}: {
+  label: string;
+  loading: boolean;
+  emptyMessage: string;
+  content: string | null;
+  timestamp: string | null;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+        {label}
+      </div>
+      {loading && <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading…</div>}
+      {!loading && !content && <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{emptyMessage}</div>}
+      {!loading && content && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>{content}</div>
+          {timestamp && <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}><RelativeTime timestamp={timestamp} /></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatArtifactSummary(artifact: AgentArtifact): string {
+  const summary = artifact.summary.trim();
+  if (summary.length > 0) {
+    return summary;
+  }
+
+  return `${artifact.artifactType} · ${artifact.contentType}`;
+}
+
+function formatMessageSummary(message: AgentOutboundMessage): string {
+  const subject = message.subject?.trim();
+  const body = message.body.trim();
+  if (subject && body.length > 0) {
+    return `${subject}: ${truncate(body, 140)}`;
+  }
+  if (body.length > 0) {
+    return truncate(body, 160);
+  }
+  return 'Empty message body';
+}
+
+function truncate(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}…`;
 }

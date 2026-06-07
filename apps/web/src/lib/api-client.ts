@@ -141,6 +141,30 @@ export interface ActivityFeedResponse {
   hasMore: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+export interface Skill {
+  id: string;
+  authorId: string | null;
+  name: string;
+  description: string;
+  instructions: string;
+  requiredTools: string[];
+  contextRequirements: string[];
+  requiredGuardrails: string[];
+  visibility: 'private' | 'public' | 'built-in';
+  tags: string[];
+  forkOf: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const skills = {
+  list: () => request<{ skills: Skill[] }>('/skills'),
+};
+
 export const dashboard = {
   overview: () => request<DashboardOverview>('/dashboard/overview'),
   activity: (params?: { limit?: number; before?: string; beforeId?: string }) => {
@@ -399,7 +423,7 @@ export interface AgentOutboundMessage {
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
-  create: (data: { name: string; prompt: string; skillIds?: string[]; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown> }) =>
+  create: (data: { name: string; prompt: string; skillIds?: string[]; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown>; executionMode?: string | null }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
     name?: string;

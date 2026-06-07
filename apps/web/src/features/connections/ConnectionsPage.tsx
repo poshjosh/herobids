@@ -30,7 +30,10 @@ export function ConnectionsPage() {
       {query.isLoading && <LoadingRows />}
       {query.isError && <ErrorState message="Failed to load connections" />}
       {!query.isLoading && items.length === 0 && (
-        <EmptyState message="No connections yet. Create one to enable capability families for your agents." />
+        <EmptyState
+          title="No connections yet"
+          message="Create one to enable capability families for your agents."
+        />
       )}
       {items.map((conn) => (
         <Card key={conn.id}>
