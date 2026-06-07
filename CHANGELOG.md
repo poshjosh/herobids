@@ -9,6 +9,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Feature 016 — Agent interactivity:
+  - `PUT /agents/:id` — reconfigure a stopped agent (replaces config in-place)
+  - `POST /agents/:id/message` — send a freeform message into an agent's inbound Redis stream
+  - `GET /agents/:id/memory` — read agent memory from Redis hash (`agent:memory:{id}`); values JSON-parsed on read
+  - `GET /agents/:id/prompt` — read the compiled system prompt cached in Redis (`agent:prompt:{id}`)
+  - `GET /agents/telegram-bot` — return the operator's Telegram bot username (if configured)
+  - `POST /agents/verify-telegram` — verify a Telegram chat link token and bind `telegramChatId` to user
+  - `POST /api/telegram/webhook` — public Telegram webhook handler; validates `x-telegram-bot-api-secret-token`
+  - Export endpoints: `GET /agents/:id/exports/trades`, `/exports/journal`, `/exports/costs`, `/exports/sessions` (CSV), `/exports/config`, `/exports/bundle` (JSON)
+  - Worker: `set_memory` tool added to `BASE_SKILL.requiredTools`; worker stores memory via `JSON.stringify`; compiled system prompt persisted to Redis with 1 h TTL on each tick
+- Feature 017 — Analytics, AI endpoints, Skills, and Datasets:
+  - `GET /analytics` — aggregated portfolio analytics (PnL by day/week/month, win rate, drawdown, Sharpe); filters: agentId, botId, venue, symbol, sessionId, date range
+  - `GET /ai/available-models` — list providers enabled by operator config; respects generic `LLM_API_KEY` + `llm.provider` deployment pattern without advertising all 8 providers
+  - `POST /ai/generate-config` — generate blueprint `configData` from freeform text via LLM; rate-limited 10/min per user
+  - `POST /ai/analyze-portfolio` — AI narrative summary of open/closed positions and P&L
+  - `POST /ai/explain-signal` — AI explanation of a trade signal with optional candle context
+  - `PATCH /settings/ai-model` — save per-user `primary`/`fallback1`/`fallback2` model preferences; preferences only applied when the provider has its own dedicated API key
+  - `GET /skills`, `POST /skills`, `GET /skills/:id`, `PUT /skills/:id`, `DELETE /skills/:id`, `POST /skills/:id/fork` — skill CRUD and fork; visibility: `private`/`public`/`built-in`
+  - `GET /datasets`, `POST /datasets/upload` (CSV/plain), `POST /datasets/fetch`, `DELETE /datasets/:id` — dataset management
+  - DB: `users.ai_model_config` JSONB column; `datasets` table with FK cascade and status enum
+  - Migration: `0004_features_016_017.sql`
+- Blueprints: DELETE, publish, and unpublish wrapped in `pg_advisory_xact_lock` transactions to prevent concurrent mutation
+- Schemas: `blueprintId` and `config` are mutually exclusive in `CreateInstanceSchema`
+
 - API/worker: pino-pretty dev logging (LOG_FORMAT=pretty or NODE_ENV=development)
 - docker-compose: API healthcheck; web depends on api:service_healthy
 - docker-compose.dev: LOG_FORMAT=pretty for dev services

@@ -1,7 +1,7 @@
 # Remaining Work
 
 **Created:** 2026-06-05 (catch-up audit)
-**Last verified:** 2026-06-06 (session — R1.1 item 1 done; R2.2 closed won't-fix; R3.2 done; CX.1 done)
+**Last verified:** 2026-06-07 (session — features 016 + 017 landed; no change to R1.1 scope; still the only open item)
 **Roadmap:** [000-roadmap.md](./000-roadmap.md)
 
 This document tracks everything that is not yet `done` across all phases. Each item is scoped to the exact file(s) that need to change and describes precisely what needs to happen. Items are ordered by dependency — work items that unblock others come first.
