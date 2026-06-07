@@ -12,6 +12,8 @@ import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
 import { botRoutes } from '../../routes/bots.js';
+import { connectionRoutes } from '../../routes/connections.js';
+import { capabilityRoutes } from '../../routes/capabilities/index.js';
 import { agentInteractivityRoutes, telegramWebhookHandler } from '../../routes/agent-interactivity.js';
 import { analyticsRoutes } from '../../routes/analytics.js';
 import { aiRoutes } from '../../routes/ai.js';
@@ -69,6 +71,8 @@ export async function buildApp() {
 
   await authRoutes(app, authConfig, db, redisClient, 'free');
   await agentRoutes(app, db);
+  await connectionRoutes(app, db, redisClient);
+  await capabilityRoutes(app, db, { defaultPlanId: 'free', plans: {} } as any, redisClient);
   await botRoutes(app, lifecycleQueue, db, { defaultPlanId: 'free', plans: {} } as any);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)
@@ -101,6 +105,14 @@ export async function buildApp() {
 export async function truncateAll(db: ReturnType<typeof createDatabase>) {
   await db.execute(sql`
     TRUNCATE
+      capability_grant_audit,
+      capability_grants,
+      trading_bindings,
+      connections,
+      user_credentials,
+      venue_accounts,
+      agent_credentials,
+      bots,
       agent_runtime_sessions,
       agent_messages,
       agent_artifacts,

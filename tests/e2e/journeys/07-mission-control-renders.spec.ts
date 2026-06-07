@@ -1,93 +1,77 @@
 /**
- * Journey 7: Mission Control page renders without crashing
+ * Journey 7: Capability setup and readiness page
  *
- * Regression test for bug 2026-06-06-17: after registration the Mission Control
- * page threw `TypeError: Cannot read properties of undefined (reading 'length')`
- * because MissionControlPage read `overview.instances` but the API returns
- * `overview.bots`.  The component crashed before the React tree finished
- * rendering, showing the router-level error boundary instead of the page.
- *
- * This journey verifies:
- *   1. After registration the user lands on /mission-control with no error.
- *   2. The page heading "Mission Control" is visible (component did not crash).
- *   3. The subtitle using summary.runningBots / summary.totalBots is rendered.
- *   4. The "Your agents" section renders (driven by overview.bots array).
- *   5. The empty-state card is shown when there are no bots (overview.bots=[]).
- *   6. The router-level error boundary text is NOT present.
+ * Verifies the agent-scoped capability page shows the unconfigured state first
+ * and transitions to ready after a real binding is granted.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import {
+  registerUser,
+  createAgent,
+  getAuthenticatedUserId,
+  createConnection,
+  seedTradingBinding,
+  bindTradingCapability,
+} from '../helpers.js';
 
-const EMAIL = `j7-${Date.now()}@e2e.local`;
+const EMPTY_STATE_EMAIL = `j7-empty-${Date.now()}@e2e.local`;
+const READY_STATE_EMAIL = `j7-ready-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword7!';
 
-test.describe('Journey 7: Mission Control page renders without crashing', () => {
-  test('new user lands on Mission Control with correct page content and no crash', async ({ page }) => {
-    // Register a new user — post-registration redirect lands on /mission-control
-    await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
-    await page.getByText(/sign up|don't have an account/i).click();
-    await page.getByLabel(/name/i).fill('E2E User J7');
-    await page.getByLabel(/email/i).fill(EMAIL);
-    await page.getByLabel(/password/i).fill(PASSWORD);
-    await page.getByRole('button', { name: /create account|register|sign up/i }).click();
-    await page.waitForURL('**/mission-control', { timeout: 15_000 });
+function readinessCard(page: Page) {
+  return page.locator('div').filter({ has: page.getByText(/^Readiness$/) }).filter({ has: page.getByText(/^Binding readiness$/) }).first();
+}
 
-    // The regression caused a crash before any content rendered, showing the
-    // router error boundary with "Unexpected Application Error!" instead.
-    await expect(page.getByText(/Unexpected Application Error/i)).not.toBeVisible();
+test.describe('Journey 7: Capability setup and readiness', () => {
+  test('new user lands on Mission Control with the empty state instead of a crash', async ({ page }) => {
+    await registerUser(page, EMPTY_STATE_EMAIL, PASSWORD, 'E2E User J7 Empty');
 
-    // The heading must be visible — confirms the component tree rendered.
-    await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5000 });
-
-    // The subtitle is built from overview.summary.runningBots / totalBots.
-    // If the wrong field names were used, the component would have crashed
-    // before reaching this element.
-    await expect(page.getByText(/of \d+ agent/i)).toBeVisible({ timeout: 5000 });
-
-    // The "Your agents" section is rendered by iterating overview.bots.
-    // Accessing overview.instances (undefined) would throw before this renders.
-    await expect(page.getByText('Your agents', { exact: true })).toBeVisible({ timeout: 5000 });
-
-    // A new user has no bots — the empty state must be shown, not a crash.
-    await expect(page.getByText(/No agents yet/i)).toBeVisible({ timeout: 5000 });
+    await expect(page).toHaveURL(/\/mission-control/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Your agents/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/No agents yet/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Create an agent from a goal, then attach capabilities only when you need them\./i)).toBeVisible({ timeout: 5_000 });
   });
 
-  test('Mission Control page renders correctly when bots exist', async ({ page, request }) => {
-    // Register
-    await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
-    await page.getByText(/sign up|don't have an account/i).click();
-    await page.getByLabel(/name/i).fill('E2E User J7b');
-    await page.getByLabel(/email/i).fill(`j7b-${Date.now()}@e2e.local`);
-    await page.getByLabel(/password/i).fill(PASSWORD);
-    await page.getByRole('button', { name: /create account|register|sign up/i }).click();
-    await page.waitForURL('**/mission-control', { timeout: 15_000 });
+  test('agent capability readiness moves from unconfigured to ready', async ({ page, request }) => {
+    await registerUser(page, READY_STATE_EMAIL, PASSWORD, 'E2E User J7');
 
-    const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
-    if (!token) {
-      test.skip(true, 'Auth token not accessible from storage (hb_session_token)');
-      return;
-    }
+    const agentId = await createAgent(
+      page,
+      'Track markets and surface the capability setup path.',
+      { preset: 'trading' },
+    );
 
-    // Create an agent so overview.bots is non-empty
-    const agentRes = await request.post('/api/agents', {
-      headers: { Authorization: `Bearer ${token}` },
-      data: { name: 'MC Render Agent', prompt: 'Test mission control rendering.' },
+    const userId = await getAuthenticatedUserId(page, request);
+    const connection = await createConnection(page, request, {
+      provider: 'hyperliquid',
+      label: 'Primary Hyperliquid connection',
     });
-    if (!agentRes.ok()) {
-      test.skip(true, 'Failed to create agent via API');
-      return;
-    }
+    const bindingId = await seedTradingBinding({
+      userId,
+      connectionId: connection.id,
+      provider: 'hyperliquid',
+      label: 'Primary Hyperliquid binding',
+      bindingRef: 'acct-1',
+      bindingProfile: { venue: 'hyperliquid' },
+    });
 
-    // Reload mission control to pick up the new agent
-    await page.goto('/mission-control');
+    await page.goto(`/agents/${agentId}/capabilities/trading`);
+    await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });
+    const initialReadiness = readinessCard(page);
+    await expect(initialReadiness.getByText(/^State$/)).toBeVisible({ timeout: 5_000 });
+    await expect(initialReadiness.getByText('Unconfigured', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(initialReadiness.getByText(/^Binding readiness$/)).toBeVisible({ timeout: 5_000 });
+    await expect(initialReadiness.getByText('Not assigned', { exact: true })).toBeVisible({ timeout: 5_000 });
 
-    await expect(page.getByText(/Unexpected Application Error/i)).not.toBeVisible();
-    await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5000 });
+    await bindTradingCapability(page, request, agentId, bindingId);
+    await page.reload();
 
-    // With at least one agent, the health strip and agent overview cards render.
-    // AgentOverviewCard iterates overview.bots — wrong field would crash here.
-    await expect(page.getByText('Your agents', { exact: true })).toBeVisible({ timeout: 5000 });
+    const readyReadiness = readinessCard(page);
+    await expect(readyReadiness.getByText('Ready', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(readyReadiness.getByText(/^Effective ready$/)).toBeVisible({ timeout: 5_000 });
+    await expect(readyReadiness.getByText('Yes', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(readyReadiness.getByText(bindingId, { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 });

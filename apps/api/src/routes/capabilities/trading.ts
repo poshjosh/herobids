@@ -22,7 +22,7 @@ import {
   revokeGrant,
   getBindingAudit,
   assertBindingOwnership,
-} from '../grant-service.js';
+} from '../../grant-service.js';
 
 const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume', 'bind', 'unbind'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];

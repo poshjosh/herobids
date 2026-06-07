@@ -18,7 +18,7 @@
 | 21.3 | Reframe trading resources onto capability bindings and optional bots | `done` |
 | 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `done` |
 | 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `in progress` |
-| 21.6 | Replace old tests with capability-model integration and UAT coverage | `not started` |
+| 21.6 | Replace old tests with capability-model integration and UAT coverage | `in progress` |
 
 ## Goal
 
@@ -239,3 +239,5 @@ The existing shared roadmap and implementation guide remain the source of proces
 | 2026-06-07 | Step 21.5: mission control and the primary agent shell must use agent-first read models rather than `dashboard.overview().bots` summaries | Prevents legacy bot counts from leaking into the new top-level dashboard truth |
 | 2026-06-07 | Step 21.5: trading infrastructure pages remain available only behind progressive disclosure, with legacy `venue-accounts` treated as advanced trading setup rather than primary navigation | Allows the UI to shift to agent-first flows without promising a full bindings rewrite in this step |
 | 2026-06-07 | Step 21.5: execution mode is visible in create, list, detail, and review surfaces for agents | Ensures users can interpret what the agent is configured to do at every core decision point |
+| 2026-06-07 | Step 21.6: standardize UAT on the existing Playwright journeys and `scripts/shell/tests/run-all-tests.sh` rather than inventing a separate `run-uat.sh` harness | Matches the repo's actual test infrastructure and avoids planning around a missing script |
+| 2026-06-07 | Step 21.6: Playwright capability journeys seed the trading binding row directly in the test database because the public app surface still does not expose a binding-creation endpoint | Keeps the browser coverage honest about the current product surface while still exercising the public connection, grant, readiness, and mission-control routes |

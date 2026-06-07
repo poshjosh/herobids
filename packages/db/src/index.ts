@@ -4,9 +4,17 @@ import * as schema from './schema/index.js';
 
 export type Database = ReturnType<typeof createDatabase>;
 
+interface ClosableDatabaseClient {
+  end(options?: { timeout?: number }): Promise<void>;
+}
+
 export function createDatabase(connectionString: string) {
   const client = postgres(connectionString);
   return drizzle(client, { schema });
+}
+
+export async function closeDatabase(db: Database): Promise<void> {
+  await (db as Database & { $client: ClosableDatabaseClient }).$client.end();
 }
 
 export * from './schema/index.js';

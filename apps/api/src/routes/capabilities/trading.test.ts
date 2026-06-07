@@ -27,7 +27,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn().mockImplementation((strings: TemplateStringsArray) => ({ _sql: strings.join('') })),
 }));
 
-vi.mock('../grant-service.js', () => ({
+vi.mock('../../grant-service.js', () => ({
   createGrant: vi.fn().mockResolvedValue('grant-1'),
   revokeGrant: vi.fn().mockResolvedValue(true),
   getBindingAudit: vi.fn().mockResolvedValue([]),

@@ -5,7 +5,9 @@
  * to key pages.
  */
 
-import type { Page } from '@playwright/test';
+import crypto from 'node:crypto';
+import type { APIRequestContext, Page } from '@playwright/test';
+import { closeDatabase, createDatabase, tradingBindings } from '@herobids/db';
 
 export const TEST_EMAIL = `e2e-${Date.now()}@test.local`;
 export const TEST_PASSWORD = 'TestPassword123!';
@@ -43,37 +45,134 @@ export async function loginUser(
   await page.waitForURL('**/mission-control', { timeout: 15_000 });
 }
 
-/** Create an agent and return its name. */
+export async function getAuthToken(page: Page): Promise<string> {
+  const token = await page.evaluate(() => localStorage.getItem('hb_session_token'));
+  if (!token) {
+    throw new Error('Expected hb_session_token to be present after authentication');
+  }
+
+  return token;
+}
+
+export async function getAuthenticatedUserId(page: Page, request: APIRequestContext): Promise<string> {
+  const token = await getAuthToken(page);
+  const response = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to load authenticated user: ${response.status()} ${await response.text()}`);
+  }
+
+  const body = await response.json() as { id: string };
+  return body.id;
+}
+
+/** Create an agent from the agent-first flow and return its id. */
 export async function createAgent(
   page: Page,
-  name: string,
   goal: string,
-  skipVenueStep = true,
+  options: { preset?: 'general' | 'trading' } = {},
 ): Promise<string> {
   await page.goto('/agents');
   await page.getByRole('button', { name: /new agent|create agent/i }).first().click();
 
-  await page.getByPlaceholder(/what do you want/i).fill(goal);
+  const goalField = page.locator('textarea').first();
+  await goalField.fill(goal);
 
-  if (!skipVenueStep) {
-    // The intent step may show venue account selection — skip it if optional
-    const venueSelect = page.locator('select, [role="combobox"]').first();
-    if (await venueSelect.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // Leave default
-    }
+  if (options.preset === 'trading') {
+    await page.getByRole('radio', { name: /trading-capable agent/i }).check();
   }
 
-  // Click Next / Review
-  const nextBtn = page.getByRole('button', { name: /next|review/i });
-  if (await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await nextBtn.click();
+  await page.getByRole('button', { name: /review/i }).click();
+
+  await page.getByRole('button', { name: /create agent/i }).click();
+
+  await page.waitForURL(/\/(agents)\/[^/?#]+$/, { timeout: 15_000 });
+
+  const match = page.url().match(/\/agents\/([^/?#]+)$/);
+  if (!match?.[1]) {
+    throw new Error(`Could not determine agent id from URL: ${page.url()}`);
   }
 
-  // Confirm / Create
-  await page.getByRole('button', { name: /create|confirm|start agent/i }).click();
+  return match[1];
+}
 
-  // Should navigate to agent detail page
-  await page.waitForURL('**/agents/**', { timeout: 15_000 });
+/** Open the agent detail page directly. */
+export async function openAgentDetail(page: Page, agentId: string): Promise<void> {
+  await page.goto(`/agents/${agentId}`);
+  await page.waitForURL(new RegExp(`/agents/${agentId}$`), { timeout: 15_000 });
+}
 
-  return name;
+export async function createConnection(
+  page: Page,
+  request: APIRequestContext,
+  data: { provider: string; label: string; credentialId?: string },
+): Promise<{ id: string; provider: string; label: string }> {
+  const token = await getAuthToken(page);
+  const response = await request.post('/api/connections', {
+    headers: { Authorization: `Bearer ${token}` },
+    data,
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to create connection: ${response.status()} ${await response.text()}`);
+  }
+
+  return response.json() as Promise<{ id: string; provider: string; label: string }>;
+}
+
+export async function bindTradingCapability(
+  page: Page,
+  request: APIRequestContext,
+  agentId: string,
+  bindingId: string,
+): Promise<{ status: string; bindingId: string }> {
+  const token = await getAuthToken(page);
+  const response = await request.post(`/api/agents/${agentId}/capabilities/trading/actions/bind`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { bindingId },
+  });
+
+  if (![200, 201].includes(response.status())) {
+    throw new Error(`Failed to bind trading capability: ${response.status()} ${await response.text()}`);
+  }
+
+  return response.json() as Promise<{ status: string; bindingId: string }>;
+}
+
+export async function seedTradingBinding(params: {
+  userId: string;
+  connectionId: string;
+  provider: string;
+  label: string;
+  bindingRef?: string | null;
+  sourceVenueAccountId?: string | null;
+  bindingProfile?: Record<string, unknown> | null;
+}): Promise<string> {
+  const databaseUrl = process.env['DATABASE_URL'];
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required to seed trading bindings for E2E tests');
+  }
+
+  const db = createDatabase(databaseUrl);
+  const bindingId = crypto.randomUUID();
+  try {
+    await db.insert(tradingBindings).values({
+      id: bindingId,
+      userId: params.userId,
+      connectionId: params.connectionId,
+      provider: params.provider,
+      label: params.label,
+      bindingRef: params.bindingRef ?? null,
+      status: 'active',
+      bindingProfile: params.bindingProfile ?? null,
+      sourceVenueAccountId: params.sourceVenueAccountId ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return bindingId;
+  } finally {
+    await closeDatabase(db);
+  }
 }

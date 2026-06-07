@@ -9,6 +9,7 @@
     "test:ui": "playwright test --ui"
   },
   "devDependencies": {
+    "@herobids/db": "workspace:*",
     "@playwright/test": "^1.49.0",
     "@types/node": "^25.9.1"
   }
