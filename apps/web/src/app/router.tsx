@@ -10,6 +10,7 @@ import { BotsPage } from '../features/bots/BotsPage.js';
 import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailPage.js';
 import { CredentialsPage } from '../features/credentials/CredentialsPage.js';
 import { VenueAccountsPage } from '../features/venue-accounts/VenueAccountsPage.js';
+import { ConnectionsPage } from '../features/connections/ConnectionsPage.js';
 import { BillingPage } from '../features/billing/BillingPage.js';
 import { AgentsPage } from '../features/agents/AgentsPage.js';
 import { AgentDetailPage } from '../features/agents/AgentDetailPage.js';
@@ -37,6 +38,7 @@ export const router = createBrowserRouter([
       { path: 'bots/:id', element: <InstanceDetailPage /> },
       { path: 'instances', element: <Navigate to="/bots" replace /> },
       { path: 'instances/:id', element: <InstanceDetailPage /> },
+      { path: 'connections', element: <ConnectionsPage /> },
       { path: 'credentials', element: <CredentialsPage /> },
       { path: 'venue-accounts', element: <VenueAccountsPage /> },
       { path: 'agents', element: <AgentsPage /> },

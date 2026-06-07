@@ -65,7 +65,16 @@ export function useEventStream(onEvent: (event: UserEvent) => void): void {
 
       ws.addEventListener('message', (ev) => {
         try {
-          const event = JSON.parse(ev.data as string) as UserEvent;
+          const parsed = JSON.parse(ev.data as string) as Record<string, unknown>;
+          // Unwrap PlatformEventEnvelope — payload holds the typed event.
+          // Falls back to treating the message as a raw UserEvent for resilience.
+          const event: UserEvent = (
+            typeof parsed['eventType'] === 'string' &&
+            typeof parsed['payload'] === 'object' &&
+            parsed['payload'] !== null
+          )
+            ? (parsed['payload'] as UserEvent)
+            : (parsed as UserEvent);
           handlerRef.current(event);
         } catch {
           // Ignore malformed messages

@@ -461,4 +461,98 @@ export const agents = {
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
   messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
     request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
+  grants: (id: string) => request<{ grants: CapabilityGrant[] }>(`/agents/${id}/grants`),
+  createGrant: (id: string, data: { connectionId: string; capabilityFamily: string }) =>
+    request<CapabilityGrant>(`/agents/${id}/grants`, { method: 'POST', body: JSON.stringify(data) }),
+  revokeGrant: (id: string, grantId: string, reason?: string) =>
+    request<void>(`/agents/${id}/grants/${grantId}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  grantAudit: (id: string, grantId: string) =>
+    request<{ audit: GrantAuditEntry[] }>(`/agents/${id}/grants/${grantId}/audit`),
+  capabilityReadiness: (id: string, family?: string) =>
+    family
+      ? request<CapabilityReadiness>(`/agents/${id}/capabilities/${family}/readiness`)
+      : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`),
 };
+
+// ---------------------------------------------------------------------------
+// Platform: Connections
+// ---------------------------------------------------------------------------
+
+export interface Connection {
+  id: string;
+  userId: string;
+  credentialId: string | null;
+  provider: string;
+  label: string;
+  status: 'active' | 'revoked';
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const connections = {
+  list: () => request<{ connections: Connection[] }>('/connections'),
+  get: (id: string) => request<Connection>(`/connections/${id}`),
+  create: (data: { provider: string; label: string; credentialId?: string }) =>
+    request<Connection>('/connections', { method: 'POST', body: JSON.stringify(data) }),
+  revoke: (id: string) => request<void>(`/connections/${id}`, { method: 'DELETE' }),
+};
+
+// ---------------------------------------------------------------------------
+// Platform: Capability Grants
+// ---------------------------------------------------------------------------
+
+export interface CapabilityGrant {
+  id: string;
+  agentId: string;
+  connectionId: string;
+  capabilityFamily: string;
+  status: 'active' | 'revoked';
+  grantedBy: string;
+  grantedAt: string;
+  revokedAt: string | null;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GrantAuditEntry {
+  id: string;
+  grantId: string;
+  action: string;
+  actorType: 'user' | 'agent' | 'platform';
+  actorId: string;
+  reason: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Platform: Readiness
+// ---------------------------------------------------------------------------
+
+export interface CapabilityReadiness {
+  family: string;
+  state: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
+  bindingReadiness: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
+  agentEligibility: 'eligible' | 'ineligible';
+  effectiveReady: boolean;
+  bindingId?: string;
+  reasons: string[];
+  detail?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Platform: WebSocket event envelope
+// ---------------------------------------------------------------------------
+
+export interface PlatformEventEnvelope {
+  id: string;
+  timestamp: string;
+  actorType: 'user' | 'agent' | 'platform';
+  actorId: string;
+  capabilityFamily?: string;
+  bindingId?: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+}

@@ -103,3 +103,31 @@ export type JournalQueryInput = z.infer<typeof JournalQuerySchema>;
 export type ReconciliationEventQueryInput = z.infer<typeof ReconciliationEventQuerySchema>;
 export type LiveStatusQueryInput = z.infer<typeof LiveStatusQuerySchema>;
 export type DashboardActivityQueryInput = z.infer<typeof DashboardActivityQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Platform primitives — connections and grants (capability model)
+// ---------------------------------------------------------------------------
+
+export const CreateConnectionSchema = z.object({
+  /** Provider identifier: "hyperliquid", "bybit", "telegram", "twitter", etc. */
+  provider: z.string().min(1),
+  /** Human-readable label for this connection */
+  label: z.string().min(1),
+  /** Optional reference to an existing credential (for secret-based providers) */
+  credentialId: z.string().optional(),
+});
+
+export const CreateGrantSchema = z.object({
+  /** Connection to grant access to */
+  connectionId: z.string().min(1),
+  /** Capability family this grant covers: "trading", "automation", etc. */
+  capabilityFamily: z.string().min(1),
+});
+
+export const RevokeGrantSchema = z.object({
+  reason: z.string().min(1).optional(),
+});
+
+export type CreateConnectionInput = z.infer<typeof CreateConnectionSchema>;
+export type CreateGrantInput = z.infer<typeof CreateGrantSchema>;
+export type RevokeGrantInput = z.infer<typeof RevokeGrantSchema>;

@@ -24,6 +24,9 @@ import { datasetRoutes } from './routes/datasets.js';
 import { exportRoutes } from './routes/exports.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
+import { connectionRoutes } from './routes/connections.js';
+import { grantRoutes } from './routes/grants.js';
+import { readinessRoutes } from './routes/readiness.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -109,6 +112,9 @@ await skillsRoutes(app, db);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
 await adminRoutes(app, db, redisClient, appConfig.auth);
+await connectionRoutes(app, db);
+await grantRoutes(app, db);
+await readinessRoutes(app, db);
 
 // WebSocket event stream — uses a fresh Redis subscriber per connection.
 // ioredis enters subscriber mode on the first subscribe call so each connection

@@ -241,14 +241,16 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Check for dependents — block delete if any venue accounts still link to this credential
-    const { venueAccountIds, runningInstanceIds } = await findCredentialDependents(db, id);
-    if (venueAccountIds.length > 0) {
+    // Check for dependents — block delete if active venue accounts or active connections link to this credential.
+    // Revoked connections are handled by ON DELETE SET NULL; only active ones block deletion.
+    const { venueAccountIds, runningInstanceIds, activeConnectionIds } = await findCredentialDependents(db, id);
+    if (venueAccountIds.length > 0 || activeConnectionIds.length > 0) {
       return reply.status(409).send({
         error: 'credential_in_use',
         credentialId: id,
         blockingVenueAccountIds: venueAccountIds,
         blockingBotIds: runningInstanceIds,
+        blockingConnectionIds: activeConnectionIds,
       });
     }
 
@@ -264,6 +266,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
           credentialId: id,
           blockingVenueAccountIds: deps.venueAccountIds,
           blockingBotIds: deps.runningInstanceIds,
+          blockingConnectionIds: deps.activeConnectionIds,
         });
       }
       throw err;

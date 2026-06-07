@@ -18,6 +18,7 @@
 | 015 | Blueprints system | P1 | done | [015-blueprints/000-plan.md](015-blueprints/000-plan.md) |
 | 016 | Agent interactivity (message, memory, prompt) | P2 | done | [016-agent-interactivity/000-plan.md](016-agent-interactivity/000-plan.md) |
 | 017 | Analytics + AI endpoints + Skills | P3 | done | [017-analytics-ai-skills/000-plan.md](017-analytics-ai-skills/000-plan.md) |
+| 021 | Capability platform API redesign | P0 | todo | [021-capability-platform-api-redesign/000-plan.md](021-capability-platform-api-redesign/000-plan.md) |
 | 018 | Bot + account exports | P3 | todo | [018-exports/000-plan.md](018-exports/000-plan.md) |
 | 019 | Admin + WebSocket event stream | P4 | todo | [019-admin-websocket/000-plan.md](019-admin-websocket/000-plan.md) |
 | 020 | Frontend completeness | P4 | todo | [020-frontend/000-plan.md](020-frontend/000-plan.md) |

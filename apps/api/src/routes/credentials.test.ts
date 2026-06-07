@@ -68,7 +68,7 @@ vi.mock('@herobids/engine', () => ({
   credentialDeletedEvent: vi.fn((payload) => ({ type: 'credential.deleted', payload })),
 }));
 
-const mockFindCredentialDependents = vi.fn().mockResolvedValue({ venueAccountIds: [], runningInstanceIds: [] });
+const mockFindCredentialDependents = vi.fn().mockResolvedValue({ venueAccountIds: [], runningInstanceIds: [], activeConnectionIds: [] });
 
 vi.mock('../credential-dependents.js', () => ({
   findCredentialDependents: (...args: unknown[]) => mockFindCredentialDependents(...args),
@@ -382,6 +382,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1', 'inst-2'],
+        activeConnectionIds: [],
       });
 
       const app = Fastify();
@@ -418,6 +419,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1'],
         runningInstanceIds: [],
+        activeConnectionIds: [],
       });
 
       const app = Fastify();
@@ -484,6 +486,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: [],
         runningInstanceIds: [],
+        activeConnectionIds: [],
       });
 
       const app = Fastify();
@@ -512,6 +515,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1'],
+        activeConnectionIds: [],
       });
 
       const app = Fastify();
@@ -559,6 +563,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: [],
         runningInstanceIds: [],
+        activeConnectionIds: [],
       });
 
       const app = Fastify();
@@ -573,6 +578,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-raced'],
         runningInstanceIds: [],
+        activeConnectionIds: [],
       });
       decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
@@ -596,6 +602,7 @@ describe('credential audit events', () => {
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1'],
         runningInstanceIds: ['inst-1', 'inst-2'],
+        activeConnectionIds: [],
       });
 
       const app = Fastify();

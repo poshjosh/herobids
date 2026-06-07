@@ -1,5 +1,7 @@
 import type { Redis } from 'ioredis';
+import crypto from 'node:crypto';
 import pino from 'pino';
+import type { PlatformEventEnvelope } from '@herobids/domain';
 
 const logger = pino({ name: 'user-event-publisher' });
 
@@ -7,6 +9,9 @@ const logger = pino({ name: 'user-event-publisher' });
  * UserEventPublisher — publishes real-time UI events to per-user Redis pub/sub channels.
  *
  * Channel naming: `events:<userId>`
+ *
+ * Every event is wrapped in the shared PlatformEventEnvelope so the WebSocket
+ * stream has one canonical message shape across all capability families.
  *
  * This is explicitly NOT the canonical agent protocol path (which uses Redis Streams
  * at `agent:outbound:<agentId>`). These events are low-value, non-durable, and
@@ -17,7 +22,15 @@ export class UserEventPublisher {
 
   async publish(userId: string, event: UserEvent): Promise<void> {
     const channel = `events:${userId}`;
-    const message = JSON.stringify(event);
+    const envelope: PlatformEventEnvelope = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      actorType: 'platform',
+      actorId: userId,
+      eventType: event.type,
+      payload: event as unknown as Record<string, unknown>,
+    };
+    const message = JSON.stringify(envelope);
     try {
       await this.redis.publish(channel, message);
     } catch (err) {

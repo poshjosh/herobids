@@ -6,3 +6,4 @@ export * from './ports/index.js';
 export * from './config/index.js';
 export * from './agent-protocol.js';
 export * from './skills.js';
+export * from './platform.js';

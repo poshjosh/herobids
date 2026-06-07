@@ -10,11 +10,15 @@ const NAV_ITEMS = [
 
 const MANAGE_ITEMS = [
   { path: '/agents', label: 'Agents', icon: '⊡' },
-  { path: '/bots', label: 'Bots', icon: '⊞' },
-  { path: '/venue-accounts', label: 'Venues', icon: '⬡' },
+  { path: '/connections', label: 'Connections', icon: '⊟' },
   { path: '/credentials', label: 'Credentials', icon: '⊛' },
   { path: '/billing', label: 'Billing', icon: '⊘' },
   { path: '/settings', label: 'Settings', icon: '⊙' },
+];
+
+const ADVANCED_ITEMS = [
+  { path: '/bots', label: 'Bots', icon: '⊞' },
+  { path: '/venue-accounts', label: 'Venues', icon: '⬡' },
 ];
 
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
@@ -73,6 +77,13 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
         <SectionLabel>Manage</SectionLabel>
         <NavGroup>
           {MANAGE_ITEMS.map((item) => (
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
+          ))}
+        </NavGroup>
+
+        <SectionLabel>Advanced</SectionLabel>
+        <NavGroup>
+          {ADVANCED_ITEMS.map((item) => (
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>

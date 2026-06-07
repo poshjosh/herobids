@@ -291,3 +291,99 @@ describe('WebSocket /events — real connection integration', () => {
     }
   });
 });
+
+// ─── Platform envelope assertions ─────────────────────────────────────────────
+// Verify that messages forwarded over the WebSocket conform to the shared
+// PlatformEventEnvelope shape. The events route is a transport — it forwards
+// whatever the publisher puts on Redis. These tests confirm the consumer
+// receives the full envelope, not a stripped inner payload.
+
+describe('WebSocket /events — platform envelope semantics', () => {
+  it('forwards a platform envelope message with all canonical fields', async () => {
+    const { factory, lastSubscriber } = makeControlledSubscriberFactory();
+    const { app, wsBase } = await startTestServer(factory);
+    try {
+      const token = await makeToken('user-envelope');
+      const { ws } = await openWs(`${wsBase}/events?token=${token}`);
+
+      const receivedMessages: string[] = [];
+      ws.addEventListener('message', (ev) => {
+        receivedMessages.push(ev.data as string);
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Simulate what UserEventPublisher now publishes: the full platform envelope
+      const envelope = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actorType: 'platform',
+        actorId: 'user-envelope',
+        eventType: 'agent.status',
+        payload: { type: 'agent.status', agentId: 'agent-1', status: 'active', timestamp: '2026-01-01T00:00:00.000Z' },
+      };
+      const envelopeStr = JSON.stringify(envelope);
+      const sub = lastSubscriber();
+      sub!.onMessage!(envelopeStr);
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(receivedMessages).toContain(envelopeStr);
+
+      // Parse and assert the shape matches the PlatformEventEnvelope contract
+      const received = JSON.parse(receivedMessages[0]!) as Record<string, unknown>;
+      expect(typeof received['id']).toBe('string');
+      expect(typeof received['timestamp']).toBe('string');
+      expect(['user', 'agent', 'platform']).toContain(received['actorType']);
+      expect(typeof received['actorId']).toBe('string');
+      expect(typeof received['eventType']).toBe('string');
+      expect(typeof received['payload']).toBe('object');
+
+      ws.close();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('forwards envelope intact without modifying fields', async () => {
+    const { factory, lastSubscriber } = makeControlledSubscriberFactory();
+    const { app, wsBase } = await startTestServer(factory);
+    try {
+      const token = await makeToken('user-fidelity');
+      const { ws } = await openWs(`${wsBase}/events?token=${token}`);
+
+      const receivedMessages: string[] = [];
+      ws.addEventListener('message', (ev) => {
+        receivedMessages.push(ev.data as string);
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const envelope = {
+        id: 'test-id-123',
+        timestamp: '2026-06-07T12:00:00.000Z',
+        actorType: 'agent',
+        actorId: 'agent-99',
+        capabilityFamily: 'trading',
+        bindingId: 'grant-42',
+        eventType: 'trading.order.submitted',
+        payload: { orderId: 'ord-1', symbol: 'BTC-PERP' },
+      };
+
+      const sub = lastSubscriber();
+      sub!.onMessage!(JSON.stringify(envelope));
+
+      await new Promise((r) => setTimeout(r, 50));
+      expect(receivedMessages).toHaveLength(1);
+
+      const received = JSON.parse(receivedMessages[0]!) as typeof envelope;
+      expect(received.id).toBe(envelope.id);
+      expect(received.capabilityFamily).toBe('trading');
+      expect(received.bindingId).toBe('grant-42');
+
+      ws.close();
+    } finally {
+      await app.close();
+    }
+  });
+});
