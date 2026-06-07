@@ -17,7 +17,7 @@ handoffs:
     agent: Contemplator
     prompt: "Implementation hit an open question that requires deeper analysis before proceeding. Think through the tradeoffs and recommend a direction."
     send: true
-    model: Claude Sonnet 4.6
+    model: GPT-5.4
 ---
 You are an implementation agent. Your task is to write clean, secure, production-ready code according to a provided plan or task.
 

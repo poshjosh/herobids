@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type AgentDecision } from '../../lib/api-client.js';
+import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
@@ -18,7 +18,7 @@ export function AgentDetailPage() {
     if (event.type === 'agent.status' && event.agentId === id) {
       void qc.invalidateQueries({ queryKey: ['agents', id] });
       void qc.invalidateQueries({ queryKey: ['agents'] });
-    } else if (event.type === 'bot.status') {
+    } else if (event.type === 'bot.status' && event.botId === id) {
       // A bot under this agent changed status — refresh activity
       void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
     }
@@ -87,12 +87,6 @@ export function AgentDetailPage() {
   const artifactsQuery = useQuery({
     queryKey: ['agents', id, 'artifacts'],
     queryFn: () => agentsApi.artifacts(id!, 10),
-    enabled: !!id,
-  });
-
-  const decisionsQuery = useQuery({
-    queryKey: ['agents', id, 'decisions'],
-    queryFn: () => agentsApi.decisions(id!, 10),
     enabled: !!id,
   });
 
@@ -212,31 +206,6 @@ export function AgentDetailPage() {
             </div>
           </Card>
         )}
-
-        <Card>
-          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Recent Decisions</h3>
-          {decisionsQuery.isLoading && <LoadingRows count={3} />}
-          {decisionsQuery.isSuccess && decisionsQuery.data.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No decisions submitted yet.</p>
-          )}
-          {decisionsQuery.isSuccess && decisionsQuery.data.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
-              {decisionsQuery.data.map((d: AgentDecision) => (
-                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
-                  <span>
-                    <span style={{ fontWeight: '500' }}>{d.intent}</span>
-                    {' · '}
-                    <span style={{ color: 'var(--color-text-muted)' }}>{d.instrumentId}</span>
-                    {' · '}
-                    <span>{d.targetSize}</span>
-                  </span>
-                  <RelativeTime timestamp={d.createdAt} />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
         <Card>
           <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>Messages to User</h3>
           {messagesQuery.isLoading && <LoadingRows count={3} />}

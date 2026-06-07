@@ -9,7 +9,6 @@ import { credentialRoutes } from './routes/credentials.js';
 import { journalRoutes, positionRoutes } from './routes/views.js';
 import { reconciliationRoutes } from './routes/reconciliation.js';
 import { backtestRoutes, BACKTEST_QUEUE_NAME } from './routes/backtests.js';
-import { liveStatusRoutes } from './routes/live-status.js';
 import { authRoutes } from './routes/auth.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { billingRoutes } from './routes/billing.js';
@@ -25,8 +24,7 @@ import { exportRoutes } from './routes/exports.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
 import { connectionRoutes } from './routes/connections.js';
-import { grantRoutes } from './routes/grants.js';
-import { readinessRoutes } from './routes/readiness.js';
+import { capabilityRoutes } from './routes/capabilities/index.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -88,7 +86,18 @@ await telegramWebhookHandler(app, appConfig.alerts);
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId);
 
-// Register route modules (all require auth)
+// ── Capability routes (primary public surface) ────────────────────────────
+await capabilityRoutes(app, db, appConfig.plans);
+
+// ── Platform primitives ───────────────────────────────────────────────────
+await connectionRoutes(app, db);
+
+// ── Agent-first platform routes ───────────────────────────────────────────
+await agentRoutes(app, db, appConfig.plans);
+
+// ── Advanced/secondary trading constructs ─────────────────────────────────
+// These are retained as optional advanced paths. Step 21.3 will migrate
+// venue_accounts to trading bindings and further reframe bots as internals.
 await botRoutes(app, lifecycleQueue, db, appConfig.plans);
 await venueAccountRoutes(app, db, appConfig.plans);
 await credentialRoutes(app, lifecycleQueue, db, appConfig.plans);
@@ -96,10 +105,9 @@ await journalRoutes(app, db);
 await positionRoutes(app, db);
 await reconciliationRoutes(app, db);
 await backtestRoutes(app, backtestQueue, db, appConfig.plans);
-await liveStatusRoutes(app, db);
 await dashboardRoutes(app, db, appConfig.plans);
-await agentRoutes(app, db, appConfig.plans);
 
+// ── Core platform services ─────────────────────────────────────────────────
 // Billing routes — always registered; the summary endpoint is needed even when
 // billing is disabled so the web UI can render the "not enabled" state.
 await billingRoutes(app, appConfig.billing, appConfig.plans, db);
@@ -112,9 +120,6 @@ await skillsRoutes(app, db);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
 await adminRoutes(app, db, redisClient, appConfig.auth);
-await connectionRoutes(app, db);
-await grantRoutes(app, db);
-await readinessRoutes(app, db);
 
 // WebSocket event stream — uses a fresh Redis subscriber per connection.
 // ioredis enters subscriber mode on the first subscribe call so each connection

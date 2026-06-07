@@ -14,7 +14,7 @@
 | Step | Description | Status |
 |---|---|---|
 | 21.1 | Introduce platform primitives: connections, grants, shared readiness/event contracts | `done` |
-| 21.2 | Redesign capability-family API namespace and agent-scoped capability routes | `not started` |
+| 21.2 | Redesign capability-family API namespace and agent-scoped capability routes | `done` |
 | 21.3 | Reframe trading resources onto capability bindings and optional bots | `not started` |
 | 21.4 | Rework worker/runtime composition around skills, bindings, context providers, and prompt renderers | `not started` |
 | 21.5 | Rework frontend navigation and primary pages to be agent-first rather than trading-first | `not started` |
@@ -218,6 +218,10 @@ The existing shared roadmap and implementation guide remain the source of proces
 | Date | Decision | Reason |
 |---|---|---|
 | 2026-06-07 | Use the existing [Feature Roadmap](../000-roadmap.md) and existing [Implementation Guide](../008-agent-platform-roadmap/000a-how-to-implement.md) rather than creating new meta docs for this redesign | The redesign is a new feature plan within the current process, not a separate planning framework |
+| 2026-06-07 | Public noun for capability-scoped access tokens is **bindings** (not grants) | "Grants" is an internal mechanism; "bindings" is the user-facing term that reflects the capability-specific execution target |
+| 2026-06-07 | Aggregate readiness lives in `capabilities/index.ts` not `capabilities/trading.ts` | It spans all families by definition; trading.ts only knows about its own family |
+| 2026-06-07 | Trading action names: `start`, `stop`, `pause`, `resume`, `bind`, `unbind` | Lifecycle actions map to agent state transitions; bind/unbind map to grant create/revoke |
+| 2026-06-07 | `start`/`stop`/`pause`/`resume` in trading capability are honest wrappers around agent lifecycle | Per Step 21.2 plan — the agent is the product surface; the capability route owns the UX entry point |
 | 2026-06-07 | No backward compatibility is required at API, UI, or schema level | The project is not yet live, so redesign complexity should not be increased by transitional shims |
 | 2026-06-07 | Step 21.1: `user_credentials` table reused as-is for platform credentials — already capability-agnostic | Existing table already fits the platform credential role; no schema changes required |
 | 2026-06-07 | Step 21.1: `agent_credentials` table left in place — will be superseded by `capability_grants` once step 21.3 completes the trading reframe | Removing it now would break existing trading flows before the replacement is wired |

@@ -242,13 +242,10 @@ export const bots = {
     symbol: string;
     config: Record<string, unknown>;
   }) => request<Bot>('/bots', { method: 'POST', body: JSON.stringify(data) }),
-  start: (id: string) => request<{ status: string; botId: string }>(`/bots/${id}/start`, { method: 'POST' }),
-  stop: (id: string) => request<{ status: string; botId: string }>(`/bots/${id}/stop`, { method: 'POST' }),
   updateConfig: (id: string, config: Record<string, unknown>) =>
     request<{ status: string; botId: string }>(`/bots/${id}/config`, { method: 'PATCH', body: JSON.stringify({ config }) }),
   positions: (id: string) => request<{ botId: string; positions: Position[] }>(`/bots/${id}/positions`),
   openPositions: (id: string) => request<{ botId: string; positions: Position[] }>(`/bots/${id}/positions/open`),
-  liveStatus: (id: string) => request<LiveStatus>(`/bots/${id}/live-status`),
 };
 
 // ---------------------------------------------------------------------------
@@ -271,22 +268,6 @@ export interface Position {
   openedAt: string;
   closedAt: string | null;
   updatedAt: string;
-}
-
-// ---------------------------------------------------------------------------
-// Live status
-// ---------------------------------------------------------------------------
-
-export interface LiveStatus {
-  botId: string;
-  executionMode: string;
-  status: string;
-  startedAt: string | null;
-  lastReconciliation: { result: string; timestamp: string; diffCount: number } | null;
-  openOrders: unknown[];
-  recentFills: unknown[];
-  slippageAlerts: unknown[];
-  recentLiveEvents: unknown[];
 }
 
 // ---------------------------------------------------------------------------
@@ -400,15 +381,6 @@ export interface AgentArtifact {
   createdAt: string;
 }
 
-export interface AgentDecision {
-  id: string;
-  intent: string;
-  instrumentId: string;
-  targetSize: string;
-  limitPrice: string | null;
-  createdAt: string;
-}
-
 export interface AgentOutboundMessage {
   id: string;
   agentId: string;
@@ -456,18 +428,9 @@ export const agents = {
     request<unknown[]>(`/agents/${id}/activity${limit ? `?limit=${limit}` : ''}`),
   artifacts: (id: string, limit?: number) =>
     request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
-  decisions: (id: string, limit?: number) =>
-    request<AgentDecision[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
   messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
     request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
-  grants: (id: string) => request<{ grants: CapabilityGrant[] }>(`/agents/${id}/grants`),
-  createGrant: (id: string, data: { connectionId: string; capabilityFamily: string }) =>
-    request<CapabilityGrant>(`/agents/${id}/grants`, { method: 'POST', body: JSON.stringify(data) }),
-  revokeGrant: (id: string, grantId: string, reason?: string) =>
-    request<void>(`/agents/${id}/grants/${grantId}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
-  grantAudit: (id: string, grantId: string) =>
-    request<{ audit: GrantAuditEntry[] }>(`/agents/${id}/grants/${grantId}/audit`),
   capabilityReadiness: (id: string, family?: string) =>
     family
       ? request<CapabilityReadiness>(`/agents/${id}/capabilities/${family}/readiness`)
@@ -501,31 +464,6 @@ export const connections = {
 // ---------------------------------------------------------------------------
 // Platform: Capability Grants
 // ---------------------------------------------------------------------------
-
-export interface CapabilityGrant {
-  id: string;
-  agentId: string;
-  connectionId: string;
-  capabilityFamily: string;
-  status: 'active' | 'revoked';
-  grantedBy: string;
-  grantedAt: string;
-  revokedAt: string | null;
-  meta: Record<string, unknown> | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface GrantAuditEntry {
-  id: string;
-  grantId: string;
-  action: string;
-  actorType: 'user' | 'agent' | 'platform';
-  actorId: string;
-  reason: string | null;
-  detail: Record<string, unknown> | null;
-  createdAt: string;
-}
 
 // ---------------------------------------------------------------------------
 // Platform: Readiness

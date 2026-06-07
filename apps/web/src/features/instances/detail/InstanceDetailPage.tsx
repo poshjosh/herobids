@@ -1,6 +1,7 @@
-import { useParams, useNavigate, useCallback } from 'react-router';
+import { useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import Decimal from 'decimal.js';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { bots as botsApi, journal, type ActivityEvent } from '../../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
 import { TimelineEvent } from '../../timeline/TimelineEvent.js';
@@ -42,37 +43,13 @@ export function InstanceDetailPage() {
     enabled: Boolean(id),
   });
 
-  const liveStatusQuery = useQuery({
-    queryKey: ['bots', id, 'live-status'],
-    queryFn: () => botsApi.liveStatus(id!),
-    enabled: Boolean(id) && instanceQuery.data?.status === 'running',
-    refetchInterval: 15_000,
-  });
-
   const journalQuery = useQuery({
     queryKey: ['journal', id, { limit: 30 }],
     queryFn: () => journal.query({ actorId: id!, limit: 30 }),
     enabled: Boolean(id),
   });
 
-  const startMutation = useMutation({
-    mutationFn: () => botsApi.start(id!),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['bots'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
-    },
-  });
-
-  const stopMutation = useMutation({
-    mutationFn: () => botsApi.stop(id!),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['bots'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard', 'overview'] });
-    },
-  });
-
   const inst = instanceQuery.data;
-  const lifecycleError = startMutation.error ?? stopMutation.error;
 
   if (instanceQuery.isLoading) {
     return <PageShell><LoadingRows count={4} /></PageShell>;
@@ -121,15 +98,6 @@ export function InstanceDetailPage() {
         action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Button variant="ghost" size="sm" onClick={() => navigate('/instances')}>← Back</Button>
-            {inst.status === 'stopped' || inst.status === 'crashed' ? (
-              <Button variant="primary" size="sm" onClick={() => startMutation.mutate()} disabled={startMutation.isPending}>
-                {startMutation.isPending ? 'Starting…' : 'Start'}
-              </Button>
-            ) : (
-              <Button variant="secondary" size="sm" onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
-                {stopMutation.isPending ? 'Stopping…' : 'Stop'}
-              </Button>
-            )}
           </div>
         }
       />
@@ -153,12 +121,6 @@ export function InstanceDetailPage() {
       {inst.status === 'crashed' && (
         <div style={{ marginBottom: '16px' }}>
           <ErrorBanner message="This instance crashed during startup. Check the latest journal events and verify the linked venue account and credential before retrying." />
-        </div>
-      )}
-
-      {lifecycleError && (
-        <div style={{ marginBottom: '16px' }}>
-          <ErrorBanner message={(lifecycleError as Error).message} />
         </div>
       )}
 
@@ -219,26 +181,6 @@ export function InstanceDetailPage() {
                 </div>
               )}
             </Card>
-
-          {/* Live status */}
-          {inst.status === 'running' && liveStatusQuery.data && (
-            <Card>
-              <SectionLabel>Live status</SectionLabel>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {liveStatusQuery.data.lastReconciliation && (
-                  <KV
-                    label="Last reconciliation"
-                    value={
-                      <span style={{ color: liveStatusQuery.data.lastReconciliation.result === 'match' ? 'var(--color-success)' : 'var(--color-warning)' }}>
-                        {liveStatusQuery.data.lastReconciliation.result}
-                      </span>
-                    }
-                  />
-                )}
-                <KV label="Open orders" value={liveStatusQuery.data.openOrders.length} />
-              </div>
-            </Card>
-          )}
         </div>
       </div>
     </PageShell>
