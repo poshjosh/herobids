@@ -53,7 +53,7 @@ export function SkillsPage() {
   );
 }
 
-function SkillCard({ skill }: { skill: { name: string; description: string; instructions: string; requiredTools: string[]; contextRequirements: string[]; requiredGuardrails: string[]; visibility: string; tags: string[] } }) {
+function SkillCard({ skill }: { skill: { name: string; description: string; visibility: string; capabilityFamilies: string[] } }) {
   return (
     <Card style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div>
@@ -67,29 +67,11 @@ function SkillCard({ skill }: { skill: { name: string; description: string; inst
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        {skill.tags.map((tag) => (
-          <span key={tag} style={pillStyle}>{tag}</span>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
-        <MetaList label="Tools" items={skill.requiredTools} />
-        <MetaList label="Context" items={skill.contextRequirements} />
-        <MetaList label="Guardrails" items={skill.requiredGuardrails} />
-        <MetaList label="Instructions" items={[skill.instructions.slice(0, 120) + (skill.instructions.length > 120 ? '…' : '')]} />
+        {skill.capabilityFamilies.length > 0 ? skill.capabilityFamilies.map((family) => (
+          <span key={family} style={pillStyle}>{family}</span>
+        )) : <span style={pillStyle}>base</span>}
       </div>
     </Card>
-  );
-}
-
-function MetaList({ label, items }: { label: string; items: string[] }) {
-  return (
-    <div>
-      <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', marginBottom: '6px' }}>{label}</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-        {items.length > 0 ? items.map((item) => <span key={item} style={pillStyle}>{item}</span>) : <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>None</span>}
-      </div>
-    </div>
   );
 }
 

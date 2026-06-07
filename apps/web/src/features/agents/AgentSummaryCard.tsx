@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { agents as agentsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Card, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState } from './agent-display.js';
+import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 interface AgentSummaryCardProps {
   agent: Agent;
@@ -13,13 +13,19 @@ interface AgentSummaryCardProps {
 export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSummaryCardProps) {
   const navigate = useNavigate();
   const objective = extractAgentObjective(agent.prompt);
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list(),
+  });
+  const selectedSkills = resolveSelectedSkills(agent.skillIds, skillsQuery.data?.skills ?? []);
+  const hasTradingCapability = hasCapabilityFamily(selectedSkills, 'trading');
   const readinessQuery = useQuery({
-    queryKey: ['agents', agent.id, 'capability-readiness'],
-    queryFn: async () => agentsApi.capabilityReadiness(agent.id) as Promise<{ agentId: string; capabilities: CapabilityReadiness[] }>,
+    queryKey: ['agents', agent.id, 'capability-readiness', 'trading'],
+    queryFn: async () => agentsApi.capabilityReadiness(agent.id, 'trading') as Promise<CapabilityReadiness>,
+    enabled: hasTradingCapability,
   });
 
-  const capabilities = readinessQuery.data?.capabilities ?? [];
-  const primaryCapability = capabilities.find((capability) => !capability.effectiveReady) ?? capabilities[0];
+  const primaryCapability = readinessQuery.data;
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
   const openCapability = (family: string) => {
     if (onOpenCapability) {
@@ -55,9 +61,9 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
         </div>
 
         {primaryCapability && (
-          <div style={{ minWidth: '180px', textAlign: 'right' }}>
+          <section aria-label={`${formatCapabilityFamily(primaryCapability.family)} capability readiness`} style={{ minWidth: '180px', textAlign: 'right' }}>
             <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
-              Capability
+              Capability readiness
             </div>
             <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
               {formatCapabilityFamily(primaryCapability.family)}
@@ -65,31 +71,36 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
               {formatCapabilityState(primaryCapability.state)}
             </div>
-          </div>
+          </section>
         )}
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {readinessQuery.isLoading && (
+        {skillsQuery.isLoading && (
+          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Loading skills...</span>
+        )}
+        {skillsQuery.isError && (
+          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Capability information unavailable</span>
+        )}
+        {!skillsQuery.isLoading && !skillsQuery.isError && readinessQuery.isLoading && (
           <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Checking capability readiness...</span>
         )}
-        {!readinessQuery.isLoading && capabilities.length === 0 && (
+        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && !hasTradingCapability && (
           <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>No capability setup required</span>
         )}
-        {!readinessQuery.isLoading && capabilities.map((capability) => (
+        {!skillsQuery.isLoading && !skillsQuery.isError && !readinessQuery.isLoading && primaryCapability && (
           <span
-            key={capability.family}
             style={{
               padding: '3px 8px',
               borderRadius: '20px',
-              background: capability.effectiveReady ? 'var(--color-success-subtle)' : 'var(--color-warning-subtle)',
-              color: capability.effectiveReady ? 'var(--color-success)' : 'var(--color-warning)',
+              background: primaryCapability.effectiveReady ? 'var(--color-success-subtle)' : 'var(--color-warning-subtle)',
+              color: primaryCapability.effectiveReady ? 'var(--color-success)' : 'var(--color-warning)',
               fontSize: '12px',
             }}
           >
-            {formatCapabilityFamily(capability.family)}: {formatCapabilityState(capability.state)}
+            {formatCapabilityFamily(primaryCapability.family)}: {formatCapabilityState(primaryCapability.state)}
           </span>
-        ))}
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
@@ -106,8 +117,8 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
             onClick={() => openCapability(primaryCapability.family)}
           >
             {primaryCapability.effectiveReady
-              ? `Open ${formatCapabilityFamily(primaryCapability.family).toLowerCase()}`
-              : `Configure ${formatCapabilityFamily(primaryCapability.family).toLowerCase()}`}
+              ? `Open ${formatCapabilityFamily(primaryCapability.family).toLowerCase()} capability`
+              : `Configure ${formatCapabilityFamily(primaryCapability.family).toLowerCase()} capability`}
           </Button>
         )}
       </div>

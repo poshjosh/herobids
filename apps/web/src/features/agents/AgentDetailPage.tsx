@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, extractAgentOperatorContext, formatCapabilityFamily, formatCapabilityState, formatExecutionMode } from './agent-display.js';
+import { extractAgentObjective, extractAgentOperatorContext, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,7 +18,7 @@ export function AgentDetailPage() {
     if (event.type === 'agent.status' && event.agentId === id) {
       void qc.invalidateQueries({ queryKey: ['agents', id] });
       void qc.invalidateQueries({ queryKey: ['agents'] });
-      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness', 'trading'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'artifacts'] });
@@ -41,11 +41,23 @@ export function AgentDetailPage() {
   const shouldPollRuntimePanels = Boolean(query.data?.activeSession)
     || ['active', 'starting', 'paused', 'unhealthy'].includes(query.data?.status ?? '');
 
-  const capabilityQuery = useQuery({
-    queryKey: ['agents', id, 'capability-readiness'],
-    queryFn: async () => agentsApi.capabilityReadiness(id!) as Promise<{ agentId: string; capabilities: CapabilityReadiness[] }>,
-    enabled: !!id,
+  const agent = query.data;
+
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list(),
   });
+
+  const selectedSkills = resolveSelectedSkills(agent?.skillIds ?? [], skillsQuery.data?.skills ?? []);
+
+  const hasTradingCapability = hasCapabilityFamily(selectedSkills, 'trading');
+
+  const capabilityQuery = useQuery({
+    queryKey: ['agents', id, 'capability-readiness', 'trading'],
+    queryFn: async () => agentsApi.capabilityReadiness(id!, 'trading') as Promise<CapabilityReadiness>,
+    enabled: !!id && hasTradingCapability,
+  });
+  const tradingCapability = capabilityQuery.data;
 
   const startMutation = useMutation({
     mutationFn: () => agentsApi.start(id!),
@@ -118,10 +130,8 @@ export function AgentDetailPage() {
   if (query.isLoading) return <PageShell><LoadingRows count={5} /></PageShell>;
   if (query.isError) return <PageShell><ErrorState message={(query.error as Error).message} onRetry={() => void query.refetch()} /></PageShell>;
 
-  const agent = query.data;
   if (!agent) return <PageShell><ErrorState message="Agent not found" /></PageShell>;
 
-  const capabilitySummary = capabilityQuery.data?.capabilities ?? [];
   const objective = extractAgentObjective(agent.prompt);
   const operatorContext = extractAgentOperatorContext(agent.prompt);
   const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
@@ -234,39 +244,49 @@ export function AgentDetailPage() {
           </div>
         </Card>
 
-        <Card>
-          <SectionLabel>Capabilities</SectionLabel>
-          {capabilityQuery.isLoading && <LoadingRows count={2} />}
-          {capabilityQuery.isError && <ErrorState message={(capabilityQuery.error as Error).message} />}
-          {capabilityQuery.isSuccess && capabilitySummary.length === 0 && (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No capability setup required.</div>
-          )}
-          {capabilityQuery.isSuccess && capabilitySummary.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
-              {capabilitySummary.map((capability) => (
-                <div key={capability.family} style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(capability.family)}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(capability.state)}</div>
-                    </div>
-                    <Button variant="secondary" size="sm" onClick={() => navigate(`/agents/${agent.id}/capabilities/${capability.family}`)}>
-                      Open
-                    </Button>
+        <section aria-label="Capabilities">
+          <Card>
+            <SectionLabel>Capabilities</SectionLabel>
+            {skillsQuery.isLoading && <LoadingRows count={2} />}
+            {skillsQuery.isError && <ErrorState message={(skillsQuery.error as Error).message} />}
+            {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
+            {capabilityQuery.isError && <ErrorState message={(capabilityQuery.error as Error).message} />}
+            {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No capability setup required.</div>
+            )}
+            {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
+              <section
+                aria-label="Trading capability readiness"
+                style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family)}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state)}</div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                    <div>Binding readiness: {formatCapabilityState(capability.bindingReadiness)}</div>
-                    <div>Agent eligibility: {capability.agentEligibility}</div>
-                    <div>Effective ready: {capability.effectiveReady ? 'Yes' : 'No'}</div>
-                    {capability.reasons.length > 0 && (
-                      <div>Reasons: {capability.reasons.join('; ')}</div>
-                    )}
-                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate(`/agents/${agent.id}/capabilities/${tradingCapability.family}`)}
+                  >
+                    {tradingCapability.effectiveReady
+                      ? `Open ${formatCapabilityFamily(tradingCapability.family).toLowerCase()} capability`
+                      : `Configure ${formatCapabilityFamily(tradingCapability.family).toLowerCase()} capability`}
+                  </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                  <div>Binding readiness: {formatCapabilityState(tradingCapability.bindingReadiness)}</div>
+                  <div>Agent eligibility: {tradingCapability.agentEligibility}</div>
+                  <div>Effective ready: {tradingCapability.effectiveReady ? 'Yes' : 'No'}</div>
+                  <div>Binding: {tradingCapability.bindingId ?? 'Not assigned'}</div>
+                  {tradingCapability.reasons.length > 0 && (
+                    <div>Reasons: {tradingCapability.reasons.join('; ')}</div>
+                  )}
+                </div>
+              </section>
+            )}
+          </Card>
+        </section>
 
         {agent.activeSession && (
           <Card>

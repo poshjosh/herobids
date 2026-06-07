@@ -23,9 +23,7 @@ test.describe('Journey 1: Sign up → create agent → land on detail', () => {
 
     await openAgentDetail(page, agentId);
     await expect(page.getByRole('heading', { name: /Capability Agent|Alert me when BTC drops/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Capabilities/i)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Binding readiness: Unconfigured/i)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Agent eligibility: ineligible/i)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Effective ready: No/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/No capability setup required\./i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/Execution mode/i)).toBeVisible({ timeout: 5_000 });
   });
 });

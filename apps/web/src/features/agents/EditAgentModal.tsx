@@ -1,15 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, type Agent } from '../../lib/api-client.js';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { agents as agentsApi, skills as skillsApi, type Agent, type Skill } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { AGENT_SKILL_PRESETS, formatExecutionMode } from './agent-display.js';
-
-type SkillPresetValue = typeof AGENT_SKILL_PRESETS[number]['value'];
-
-function skillIdsToPreset(skillIds: string[]): SkillPresetValue {
-  if (skillIds.includes('bot-management')) return 'trading';
-  return 'general';
-}
+import { formatExecutionMode, formatSkillSelection, listSelectableSkills } from './agent-display.js';
+import { SkillPicker } from './SkillPicker.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -20,7 +14,7 @@ interface EditAgentModalProps {
 interface FormState {
   name: string;
   prompt: string;
-  skillPreset: SkillPresetValue;
+  skillIds: string[];
   executionMode: string;
   telegramChatId: string;
   dailyTokenBudget: string;
@@ -31,15 +25,18 @@ interface FormState {
 
 export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModalProps) {
   const qc = useQueryClient();
-  // Capture the preset at mount time so we can detect whether the user changed it.
-  // If unchanged, we omit skillIds from the PATCH body to avoid silently dropping
-  // any non-preset skills the agent may carry.
-  const initialSkillPreset = skillIdsToPreset(initialData.skillIds ?? []);
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list(),
+  });
+  const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
+  const selectableSkillIds = new Set(selectableSkills.map((skill) => skill.id));
+  const preservedSkillIds = (initialData.skillIds ?? []).filter((skillId) => !selectableSkillIds.has(skillId));
 
   const [form, setForm] = useState<FormState>({
     name: initialData.name,
     prompt: initialData.prompt,
-    skillPreset: skillIdsToPreset(initialData.skillIds ?? []),
+    skillIds: initialData.skillIds ?? [],
     executionMode: initialData.executionMode ?? '',
     telegramChatId: initialData.telegramChatId ?? '',
     dailyTokenBudget: initialData.dailyTokenBudget != null ? String(initialData.dailyTokenBudget) : '',
@@ -53,13 +50,11 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
 
   const mutation = useMutation({
     mutationFn: () => {
-      const preset = AGENT_SKILL_PRESETS.find((p) => p.value === form.skillPreset)!;
+      const skillIds = Array.from(new Set([...preservedSkillIds, ...form.skillIds.filter((skillId) => selectableSkillIds.has(skillId))]));
       return agentsApi.update(agentId, {
         name: form.name.trim(),
         prompt: form.prompt.trim(),
-        // Only overwrite skillIds when the user explicitly changed the preset type;
-        // preserves any non-preset skills the agent may have.
-        ...(form.skillPreset !== initialSkillPreset ? { skillIds: [...preset.skillIds] } : {}),
+        skillIds,
         executionMode: form.executionMode || null,
         telegramChatId: form.telegramChatId.trim() || null,
         dailyTokenBudget: form.dailyTokenBudget ? parseInt(form.dailyTokenBudget, 10) : null,
@@ -111,12 +106,20 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Skill preset</FieldLabel>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.skillPreset} onChange={set('skillPreset')}>
-              {AGENT_SKILL_PRESETS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+            <FieldLabel>Skills</FieldLabel>
+            <SkillPicker
+              skills={selectableSkills}
+              selectedSkillIds={form.skillIds}
+              onChange={(skillIds) => setForm((prev) => ({ ...prev, skillIds }))}
+              loading={skillsQuery.isLoading}
+              errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
+            />
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              Base is included automatically. Select the skills this agent should keep using.
+              {preservedSkillIds.length > 0 && (
+                <span> Existing hidden skills will be preserved unless you replace them.</span>
+              )}
+            </div>
           </div>
 
           <div style={fieldGap}>
@@ -128,6 +131,13 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               <option value="live">Live — real order placement</option>
             </select>
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatExecutionMode(form.executionMode)} is the runtime mode visible to operators.</div>
+          </div>
+
+          <div style={fieldGap}>
+            <FieldLabel>Selected skills</FieldLabel>
+            <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>
+              {formatSkillSelection(selectableSkills.filter((skill) => form.skillIds.includes(skill.id)))}
+            </div>
           </div>
 
           <div style={fieldGap}>

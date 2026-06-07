@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { AGENT_SKILL_PRESETS, type AgentSkillPreset, formatExecutionMode, formatCapabilityFamily } from './agent-display.js';
+import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
+import { SkillPicker } from './SkillPicker.js';
 
 const RISK_TOLERANCES = [
   { value: 'conservative', label: 'Conservative', description: 'Smaller positions, lower drawdown tolerance' },
@@ -13,12 +14,11 @@ const RISK_TOLERANCES = [
 ] as const;
 
 type RiskToleranceValue = typeof RISK_TOLERANCES[number]['value'];
-type SkillPresetValue = AgentSkillPreset['value'];
 type CreateStep = 'intent' | 'review';
 
 interface IntentState {
   goal: string;
-  skillPreset: SkillPresetValue;
+  skillIds: string[];
   executionMode: 'paper' | 'shadow' | 'live';
   providerHint: string;
   riskTolerance: RiskToleranceValue;
@@ -42,7 +42,13 @@ export function AgentsPage() {
     queryFn: () => agentsApi.list(),
   });
 
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list(),
+  });
+
   const items = query.data ?? [];
+  const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
 
   const openCreate = () => {
     setShowCreate(true);
@@ -83,6 +89,9 @@ export function AgentsPage() {
 
       {showCreate && (
         <CreateAgentFlow
+          skills={selectableSkills}
+          skillsLoading={skillsQuery.isLoading}
+          skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
           onClose={closeCreate}
           onCreated={(id) => {
             setShowCreate(false);
@@ -95,26 +104,38 @@ export function AgentsPage() {
   );
 }
 
-function CreateAgentFlow({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+function CreateAgentFlow({
+  skills,
+  skillsLoading,
+  skillsError,
+  onClose,
+  onCreated,
+}: {
+  skills: Skill[];
+  skillsLoading: boolean;
+  skillsError: string | null;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
   const [step, setStep] = useState<CreateStep>('intent');
   const [intent, setIntent] = useState<IntentState>({
     goal: '',
-    skillPreset: 'general',
+    skillIds: [],
     executionMode: 'paper',
     providerHint: '',
     riskTolerance: 'moderate',
   });
 
-  const selectedPreset = AGENT_SKILL_PRESETS.find((preset) => preset.value === intent.skillPreset) ?? AGENT_SKILL_PRESETS[0]!;
-  const requiresTradingSetup = selectedPreset.capabilityFamilies.includes('trading');
+  const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
+  const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
 
   const mutation = useMutation({
     mutationFn: () => {
       const name = intent.goal.length > 60 ? `${intent.goal.slice(0, 57)}…` : intent.goal;
       return agentsApi.create({
         name,
-        prompt: buildPrompt(intent, selectedPreset),
-        skillIds: [...selectedPreset.skillIds],
+        prompt: buildPrompt(intent, selectedSkills),
+        skillIds: [...intent.skillIds],
         executionMode: intent.executionMode,
       });
     },
@@ -137,36 +158,16 @@ function CreateAgentFlow({ onClose, onCreated }: { onClose: () => void; onCreate
           </div>
 
           <div>
-            <FieldLabel>Agent type</FieldLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {AGENT_SKILL_PRESETS.map((preset) => (
-                <label
-                  key={preset.value}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '10px',
-                    padding: '10px 12px',
-                    border: `1px solid ${intent.skillPreset === preset.value ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    background: intent.skillPreset === preset.value ? 'var(--color-accent-subtle, rgba(99,102,241,0.08))' : 'transparent',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="skillPreset"
-                    value={preset.value}
-                    checked={intent.skillPreset === preset.value}
-                    onChange={() => setIntent((state) => ({ ...state, skillPreset: preset.value }))}
-                    style={{ marginTop: '2px', flexShrink: 0 }}
-                  />
-                  <div>
-                    <div style={{ fontWeight: '500', fontSize: '14px' }}>{preset.label}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{preset.description}</div>
-                  </div>
-                </label>
-              ))}
+            <FieldLabel>Skills</FieldLabel>
+            <SkillPicker
+              skills={skills}
+              selectedSkillIds={intent.skillIds}
+              onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds }))}
+              loading={skillsLoading}
+              errorMessage={skillsError}
+            />
+            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              Base is included automatically. Select any additional skills the agent should have after creation.
             </div>
           </div>
 
@@ -186,7 +187,7 @@ function CreateAgentFlow({ onClose, onCreated }: { onClose: () => void; onCreate
           {requiresTradingSetup && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{formatCapabilityFamily('trading')} setup</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{formatCapabilityFamily('trading')} capability setup</div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                   Keep the agent creation flow light. You can finish trading setup from the agent page after creation.
                 </div>
@@ -239,9 +240,8 @@ function CreateAgentFlow({ onClose, onCreated }: { onClose: () => void; onCreate
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
-            <ReviewRow label="Agent type" value={selectedPreset.label} />
             <ReviewRow label="Execution mode" value={formatExecutionMode(intent.executionMode)} />
-            <ReviewRow label="Skills" value={selectedPreset.skillIds.length > 0 ? selectedPreset.skillIds.join(', ') : 'Base only'} />
+            <ReviewRow label="Skills" value={formatSkillSelection(selectedSkills)} />
             <ReviewRow label="Capability setup" value={requiresTradingSetup ? 'Trading setup can be completed after creation' : 'No capability-specific setup required'} />
             {requiresTradingSetup && intent.providerHint.trim() && (
               <ReviewRow label="Provider hint" value={intent.providerHint.trim()} />
@@ -274,11 +274,15 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function buildPrompt(intent: IntentState, preset: AgentSkillPreset): string {
+function buildPrompt(intent: IntentState, selectedSkills: Skill[]): string {
   const goal = intent.goal.trim();
   const operatorContext: string[] = [];
 
-  if (preset.capabilityFamilies.includes('trading')) {
+  if (selectedSkills.length > 0) {
+    operatorContext.push(`Selected skills: ${formatSkillSelection(selectedSkills)}.`);
+  }
+
+  if (hasCapabilityFamily(selectedSkills, 'trading')) {
     operatorContext.push(`Trading capability selected${intent.providerHint.trim() ? ` with provider hint ${intent.providerHint.trim()}` : ''}.`);
     operatorContext.push(`Risk tolerance: ${intent.riskTolerance}.`);
   }

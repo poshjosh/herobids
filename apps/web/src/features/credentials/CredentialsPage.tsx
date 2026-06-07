@@ -1,20 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { credentials as credentialsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 
 const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'telegram', 'zapier', 'custom'];
-
-const SECRET_TEMPLATES: Record<string, string[]> = {
-  custom: ['secret'],
-  hyperliquid: ['apiKey', 'secret', 'walletAddress'],
-  bybit: ['apiKey', 'secret'],
-  jupiter: ['walletAddress'],
-  '1inch': ['privateKey', 'apiKey'],
-  telegram: ['botToken'],
-  zapier: ['webhookUrl'],
-};
 
 interface SecretEntry {
   key: string;
@@ -42,7 +32,7 @@ export function CredentialsPage() {
       <PageHeader
         title="Credentials"
         subtitle="Reusable provider secrets for agents and capability bindings"
-        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add credentials</Button>}
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add provider credential</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
@@ -52,7 +42,7 @@ export function CredentialsPage() {
         <EmptyState
           title="No credentials yet"
           message="Add provider credentials once and reuse them across agents and capability families."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add credentials</Button>}
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add provider credential</Button>}
         />
       )}
 
@@ -60,10 +50,16 @@ export function CredentialsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {items.map((credential) => (
             <Card key={credential.id} style={{ padding: '14px 20px' }}>
+              {(() => {
+                const provider = credential.venue;
+
+                return (
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>{credential.venue}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                    Provider: {provider}
+                  </div>
                   <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>ID: {credential.id}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -84,6 +80,8 @@ export function CredentialsPage() {
                   </Button>
                 </div>
               </div>
+                );
+              })()}
             </Card>
           ))}
         </div>
@@ -103,26 +101,20 @@ export function CredentialsPage() {
 }
 
 function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [provider, setProvider] = useState('hyperliquid');
-  const [template, setTemplate] = useState<keyof typeof SECRET_TEMPLATES>('hyperliquid');
+  const [provider, setProvider] = useState('');
   const [label, setLabel] = useState('');
-  const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([{ key: 'apiKey', value: '' }]);
-
-  useEffect(() => {
-    const templateKeys = SECRET_TEMPLATES[template] ?? ['secret'];
-    setSecretEntries(templateKeys.map((key) => ({ key, value: '' })));
-  }, [template]);
-
-  const secrets = useMemo(() => {
-    return Object.fromEntries(
-      secretEntries
-        .map(({ key, value }) => [key.trim(), value.trim()] as const)
-        .filter(([key, value]) => key.length > 0 && value.length > 0),
-    );
-  }, [secretEntries]);
+  const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([{ key: '', value: '' }]);
 
   const mutation = useMutation({
-    mutationFn: () => credentialsApi.create({ venue: provider.trim(), label: label.trim(), secrets }),
+    mutationFn: () => credentialsApi.create({
+      provider: provider.trim(),
+      label: label.trim(),
+      secrets: Object.fromEntries(
+        secretEntries
+          .map(({ key, value }) => [key.trim(), value.trim()] as const)
+          .filter(([key, value]) => key.length > 0 && value.length > 0),
+      ),
+    }),
     onSuccess,
   });
 
@@ -146,7 +138,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
   const hasCompleteSecret = secretEntries.some((entry) => entry.key.trim() && entry.value.trim());
 
   return (
-    <Modal title="Add credentials" onClose={onClose}>
+    <Modal title="Add provider credential" onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>Provider</FieldLabel>
@@ -165,24 +157,11 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Secret template</FieldLabel>
-          <select
-            value={template}
-            onChange={(event) => setTemplate(event.target.value as keyof typeof SECRET_TEMPLATES)}
-            style={{ ...inputStyle, cursor: 'pointer' }}
-          >
-            {Object.keys(SECRET_TEMPLATES).map((key) => (
-              <option key={key} value={key}>{key}</option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ marginBottom: '16px' }}>
           <FieldLabel>Label</FieldLabel>
           <input
             value={label}
             onChange={(event) => setLabel(event.target.value)}
-            placeholder="e.g. Primary trading secret"
+            placeholder="e.g. Primary provider credential"
             style={inputStyle}
           />
         </div>
@@ -226,7 +205,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
             type="submit"
             disabled={mutation.isPending || !provider.trim() || !label.trim() || !hasCompleteSecret}
           >
-            {mutation.isPending ? 'Saving…' : 'Save credentials'}
+            {mutation.isPending ? 'Saving…' : 'Save provider credential'}
           </Button>
         </div>
       </form>

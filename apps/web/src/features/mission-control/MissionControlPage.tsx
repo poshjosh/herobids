@@ -60,7 +60,7 @@ export function MissionControlPage() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', alignItems: 'start' }}>
-        <div>
+        <section aria-label="Your agents">
           <SectionLabel>Your agents</SectionLabel>
 
           {agentsQuery.isLoading && <LoadingRows count={3} />}
@@ -88,9 +88,9 @@ export function MissionControlPage() {
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        <div>
+        <section aria-label="Recent activity">
           <SectionLabel>Recent activity</SectionLabel>
 
           <Card style={{ padding: '0' }}>
@@ -124,7 +124,7 @@ export function MissionControlPage() {
               </div>
             )}
           </Card>
-        </div>
+        </section>
       </div>
     </PageShell>
   );

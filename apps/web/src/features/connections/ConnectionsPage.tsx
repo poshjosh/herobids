@@ -24,7 +24,7 @@ export function ConnectionsPage() {
     <PageShell>
       <PageHeader
         title="Connections"
-        subtitle="Platform connections to external providers"
+        subtitle="Platform connections to reusable providers"
         action={<Button onClick={() => setShowCreate(true)}>New connection</Button>}
       />
       {query.isLoading && <LoadingRows />}
@@ -41,7 +41,7 @@ export function ConnectionsPage() {
             <div>
               <div style={{ fontWeight: 600 }}>{conn.label}</div>
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                {conn.provider} · {conn.status}
+                Provider: {conn.provider} · {conn.status}
               </div>
             </div>
             {conn.status === 'active' && (
@@ -108,7 +108,7 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
         value={label}
         onChange={(e) => setLabel(e.target.value)}
       />
-      <FieldLabel>Credential (optional)</FieldLabel>
+      <FieldLabel>Provider credential (optional)</FieldLabel>
       <select
         style={inputStyle}
         value={credentialId}
@@ -116,9 +116,7 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
       >
         <option value="">— none —</option>
         {(credQuery.data?.credentials ?? []).map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.label} ({c.venue})
-          </option>
+          <option key={c.id} value={c.id}>{c.label} ({c.provider})</option>
         ))}
       </select>
       <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

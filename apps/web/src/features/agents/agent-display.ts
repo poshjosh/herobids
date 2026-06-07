@@ -1,12 +1,4 @@
-import type { CapabilityReadiness } from '../../lib/api-client.js';
-
-export interface AgentSkillPreset {
-  value: string;
-  label: string;
-  description: string;
-  skillIds: string[];
-  capabilityFamilies: string[];
-}
+import type { CapabilityReadiness, Skill } from '../../lib/api-client.js';
 
 const OPERATOR_CONTEXT_MARKER = '\n\nOperator context:\n';
 const LEGACY_PROMPT_CONTEXT = /\sExecution mode: (paper|shadow|live)\.(?:\sTrading capability selected(?: with provider hint (.+?))?\.)?(?:\sRisk tolerance: (conservative|moderate|aggressive)\.)?\s*$/;
@@ -21,22 +13,46 @@ export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
 };
 
-export const AGENT_SKILL_PRESETS: AgentSkillPreset[] = [
-  {
-    value: 'trading',
-    label: 'Trading-capable agent',
-    description: 'Can use the trading capability after creation and continue setup from the agent page.',
-    skillIds: ['bot-management'],
-    capabilityFamilies: ['trading'],
-  },
-  {
-    value: 'general',
-    label: 'General-purpose agent',
-    description: 'No trading capability selected. The agent can still operate on platform tasks and other skills.',
-    skillIds: [],
-    capabilityFamilies: [],
-  },
-];
+export function listSelectableSkills(skills: Skill[]): Skill[] {
+  return skills
+    .filter((skill) => skill.id !== 'base')
+    .slice()
+    .sort((left, right) => {
+      const visibilityOrder: Record<Skill['visibility'], number> = {
+        'built-in': 0,
+        public: 1,
+        private: 2,
+      };
+
+      const visibilityDelta = visibilityOrder[left.visibility] - visibilityOrder[right.visibility];
+      if (visibilityDelta !== 0) {
+        return visibilityDelta;
+      }
+
+      const nameDelta = left.name.localeCompare(right.name);
+      if (nameDelta !== 0) {
+        return nameDelta;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
+}
+
+export function formatSkillSelection(skills: Array<{ name: string }>): string {
+  return skills.length > 0 ? skills.map((skill) => skill.name).join(', ') : 'Base only';
+}
+
+export function hasCapabilityFamily(skills: Array<{ capabilityFamilies: string[] }>, family: string): boolean {
+  return skills.some((skill) => skill.capabilityFamilies.includes(family));
+}
+
+export function resolveSelectedSkills(skillIds: string[], skills: Skill[]): Skill[] {
+  const skillsById = new Map(skills.map((skill) => [skill.id, skill] as const));
+
+  return skillIds
+    .map((skillId) => skillsById.get(skillId))
+    .filter((skill): skill is Skill => skill !== undefined);
+}
 
 export function formatExecutionMode(executionMode: string | null | undefined): string {
   if (!executionMode) {

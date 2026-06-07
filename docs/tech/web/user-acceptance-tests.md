@@ -40,7 +40,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | A-07 | Post-logout cache cleared | Log out; log back in as same user; navigate to Mission Control | Fresh data loaded from the API | — | |
 | A-08 | Session expiry — server 401 | Invalidate JWT in Redis; attempt any navigation | Redirected to `/login`; no stale data | — | |
 | A-09 | Re-login same tab clears cache | Let session expire; log in again in same tab | Fresh data loaded; no cross-session leak | — | |
-| A-10 | Direct navigation to protected route unauthenticated | Paste `/instances` in URL bar without token | Redirected to `/login` | — | |
+| A-10 | Direct navigation to protected route unauthenticated | Paste `/agents` in URL bar without token | Redirected to `/login` | — | |
 | A-11 | Token persisted across page reload | Log in; hard-reload (`Cmd+Shift+R`) | Stays authenticated; no redirect to login | — | |
 
 ---
@@ -49,7 +49,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, Activity, Outcomes, Exposure. Under "Manage": Agents, Portfolios, Venues, Credentials, Billing, Settings | ✅ | "Venues" links to `/venue-accounts`. No separate "Instances" nav link — trading instances accessed via "Manage agents" on Mission Control. |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, Skills, Activity, Outcomes. Under "Manage": Agents, Connections, Credentials, Billing, Settings. Under "Advanced": Bots, Trading setup, Exposure | ✅ | "Trading setup" links to `/venue-accounts`. |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | |
 | N-03 | Root redirect | Navigate to `/` | Redirected to `/mission-control` | ✅ | |
 | N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | Shows React Router dev error page — no custom 404 page yet (see bug 2026-06-04-007) |
@@ -61,71 +61,67 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| MC-01 | Summary metrics render | Open Mission Control | Shows "Active Agents X / Y", "Open Positions", "Plan" metric cards | ✅ | |
-| MC-02 | Health strip renders | Open Mission Control | Health strip row shown; "0 Running / No agents configured" for fresh account | ✅ | |
-| MC-03 | Agent overview cards | Open Mission Control with instances | One card per trading instance under "Your Agents"; shows strategy ID, status, created/started dates | — | Requires existing instances |
+| MC-01 | Summary metrics render | Open Mission Control | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped | ✅ | |
+| MC-02 | Header CTA renders | Open Mission Control | "Create agent" button shown in the page header | ✅ | |
+| MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, capability readiness, and actions | — | Requires existing agents |
 | MC-04 | Recent activity feed | Open Mission Control | "Recent Activity" section on right; empty state if no events | ✅ | |
-| MC-05 | Empty state — no instances | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | |
-| MC-06 | "Manage agents" button navigates | Click "Manage agents" | Navigates to `/instances` | ✅ | |
-| MC-07 | Clicking an agent card navigates | Click an agent card | Navigates to `/instances/:id` | — | Requires existing instances |
-| MC-08 | Data staleness | Leave page for >30 s; return | Data refetches (TanStack Query staleTime 30 s) | — | |
-| MC-09 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
-| MC-10 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
+| MC-05 | Empty state — no agents | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | |
+| MC-06 | "Create agent" button navigates | Click "Create agent" | Navigates to `/agents?create=1` or opens the create flow from the agents page | ✅ | |
+| MC-07 | Clicking an agent action navigates | Click "Open agent" on an agent card | Navigates to `/agents/:id` | — | Requires existing agents |
+| MC-08 | Capability CTA opens agent capability page | Click "Open trading" or "Configure trading" on an agent card | Navigates to `/agents/:id/capabilities/trading` | — | Requires agent with trading capability |
+| MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
+| MC-10 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
+| MC-11 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
 
 ---
 
-## 4. Trading Instances (Agents List)
+## 4. Bots (Advanced)
 
-Route: `/instances` — lists trading instances, referred to as "Agents" in the page title.
+Route: `/bots` — lists advanced trading bots created by a user or by an agent.
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| I-01 | Instances list renders | Navigate to `/instances` | Page titled "Agents"; subtitle "Create and manage your trading agents"; list with status badges | ✅ | |
-| I-02 | Empty state | Open with no instances | "No agents yet" empty state; "Create agent" CTA | ✅ | |
-| I-03 | Create agent — happy path | Click "New agent"; fill all required fields; submit | Agent appears in list with `stopped` status | — | |
-| I-04 | Create agent — validation error | Submit form with missing required fields | Field-level or banner error shown; form not dismissed | — | |
-| I-05 | Create agent — API error | Submit with valid data while API returns 4xx | Human-readable error message shown | — | |
-| I-06 | Start agent | Click "Start" on a stopped agent | Status changes to `running`; Mission Control summary updates | — | Requires `CREDENTIAL_ENCRYPTION_KEY` set in worker |
-| I-07 | Stop agent | Click "Stop" on a running agent | Status changes to `stopped`; Mission Control summary updates | — | |
-| I-08 | Start/stop updates list | Start or stop an agent | Instances list query refreshes; no stale status shown | — | |
-| I-09 | Navigate to detail | Click agent name or row | Navigates to `/instances/:id` | — | |
+| I-01 | Bots list renders | Navigate to `/bots` | Page titled "Bots"; subtitle "Trading bots created by you or your agents"; list shows status badges | ✅ | |
+| I-02 | Empty state | Open with no bots | "No bots yet" empty state; "Create Bot" CTA | ✅ | |
+| I-03 | Create bot — happy path | Click "Create Bot"; fill required fields; submit | Bot appears in list | — | Requires at least one venue account |
+| I-04 | Create bot — validation error | Submit form with missing required fields | Field-level or banner error shown; form not dismissed | — | |
+| I-05 | Create bot — API error | Submit with valid data while API returns 4xx | Human-readable error message shown | — | |
+| I-06 | Navigate to detail | Click a bot card | Navigates to `/bots/:id` | — | |
 
 ---
 
-## 5. Instance Detail
+## 5. Bot Detail
 
-Route: `/instances/:id`
+Route: `/bots/:id`
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| D-01 | Detail page renders | Navigate to `/instances/:id` for a valid agent | Page loads with symbol/strategy title, status badge, execution mode pill, two-column layout (timeline + sidebar) | — | |
-| D-02 | Unknown instance ID | Navigate to `/instances/nonexistent-id` | "Agent not found" empty state; does not crash | — | |
+| D-01 | Detail page renders | Navigate to `/bots/:id` for a valid bot | Page loads with symbol/strategy title, status badge, execution mode pill, two-column layout (timeline + sidebar) | — | |
+| D-02 | Unknown bot ID | Navigate to `/bots/nonexistent-id` | "Agent not found" empty state; does not crash | — | Current empty-state copy still says "Agent not found" |
 | D-03 | Open positions sidebar card | Open detail for agent with open positions | "Open positions" card shows symbol, size (4 dp), entry price (2 dp), realized P&L (sign-colored) | — | |
 | D-04 | Decimal precision — size | Inspect a position size value | Displayed to exactly 4 decimal places (e.g. `1.2500`) | — | |
 | D-05 | Decimal precision — entry price | Inspect a position entry price | Displayed to exactly 2 decimal places | — | |
 | D-06 | P&L color coding | Inspect positive and negative realized P&L values | Positive → green; negative → red | — | |
 | D-07 | No open positions | Open detail for agent with no positions | "No open positions" text in the sidebar card | — | |
-| D-08 | Timeline section | Open instance detail | Left column shows "Timeline" section with journal events | — | |
-| D-09 | Configuration sidebar card | Open instance detail | "Configuration" card shows Strategy, Symbol, Execution mode, Config version | — | |
-| D-10 | Start from detail | Click "Start" on stopped/crashed agent | Status updates on this page; polling continues; list page reflects new status | — | |
-| D-11 | Stop from detail | Click "Stop" on running agent | Status updates on this page; list page reflects new status | — | |
-| D-12 | Crashed state banner | Open detail for crashed instance | Error banner: "This instance crashed during startup. Check the latest journal events and verify the linked venue account and credential before retrying." | — | |
-| D-13 | Back button | Click "← Back" in header | Navigates back to `/instances` list | — | |
+| D-08 | Timeline section | Open bot detail | Left column shows "Timeline" section with journal events | — | |
+| D-09 | Configuration sidebar card | Open bot detail | "Configuration" card shows Strategy, Symbol, and Execution mode | — | |
+| D-10 | Crashed state banner | Open detail for crashed bot | Error banner explains startup crash and asks the operator to verify the linked venue account and credential before retrying | — | |
+| D-11 | Back button | Click "← Back" in header | Navigates back to `/bots` list | — | |
 
 ---
 
-## 6. AI Agents
+## 6. Agents
 
-Route: `/agents` — autonomous AI agents linked to trading instances (distinct from trading instances).
+Route: `/agents` — goal-driven platform agents with explicit skills and execution modes.
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| AG-01 | AI Agents list renders | Navigate to `/agents` | Page titled "AI Agents"; subtitle "Autonomous trading agents linked to your instances" | ✅ | |
-| AG-02 | Empty state | Open with no AI agents | "No agents yet" empty state; "Create Agent" CTA | ✅ | |
-| AG-03 | Create AI agent — happy path | Click "New Agent"; fill name, goal, preset, trading instance; submit | Agent appears in list with `stopped` status | — | Requires ≥1 trading instance |
-| AG-04 | Create AI agent — validation | Submit with missing required fields | Error banner shown; form not dismissed | — | |
-| AG-05 | Start AI agent | Open agent detail; click "Start" | Status transitions `stopped` → `starting` → `active`; worker picks up within ~2 s | — | Requires runtime heartbeat |
-| AG-06 | Agent detail page renders | Click agent name | Navigates to `/agents/:id`; shows Status, Objective, Linked Instance, Runtime Health (if active), Recent Decisions, Messages to User, Protocol Activity, Artifacts | — | |
+| AG-01 | Agents list renders | Navigate to `/agents` | Page titled "Agents"; subtitle "Goal-driven agents with explicit skills and execution modes" | ✅ | |
+| AG-02 | Empty state | Open with no agents | "No agents yet" empty state; "Create agent" CTA | ✅ | |
+| AG-03 | Create agent — happy path | Click "New agent"; fill goal, preset, and execution mode; submit | Agent detail page opens for the new agent | — | No trading setup required for general agents |
+| AG-04 | Create agent — validation | Submit with missing required fields | Error banner shown; form not dismissed | — | |
+| AG-05 | Start agent | Open agent detail; click "Start" | Status transitions `stopped` → `starting` → `active`; worker picks up within ~2 s | — | Requires runtime heartbeat |
+| AG-06 | Agent detail page renders | Click agent name | Navigates to `/agents/:id`; shows Status, Execution mode, Objective, Capabilities, Runtime Health (if active), Messages to User, Protocol Activity, and Artifacts | — | |
 | AG-07 | Start button when stopped | Open agent detail for stopped agent | "Start" button shown in header | — | |
 | AG-08 | Pause/Resume buttons | Open detail for active agent | "Pause" shown when active; "Resume" when paused | — | |
 | AG-09 | Stop button visibility | Open detail for active/starting/paused/unhealthy agent | "Stop" button shown | — | |
@@ -133,7 +129,7 @@ Route: `/agents` — autonomous AI agents linked to trading instances (distinct 
 | AG-11 | Unhealthy alert banner | Open detail for agent with unhealthy session | Warning banner about missing heartbeats | — | |
 | AG-12 | Start delay | Click "Start" on stopped agent | `starting` phase lasts ≤2 s (worker reconcile interval) before transitioning | — | Fixed: worker healthCheckIntervalMs reduced to 2 s |
 | AG-13 | Sessions run count | Open agent detail | "Sessions run" KV shows correct count | — | |
-| AG-14 | Recent Decisions section | Open detail for agent with decisions | Intent, instrument, target size, timestamp shown per decision | — | |
+| AG-14 | Capability section | Open detail for agent with capabilities | Capability cards show readiness, binding readiness, agent eligibility, reasons, and an "Open" action | — | |
 | AG-15 | Messages to User section | Open detail for agent with messages | Messages listed with subject, body, delivery status, timestamp; safety alerts styled distinctly | — | |
 | AG-16 | Protocol Activity section | Open detail for agent with activity | Activity entries listed with type and timestamp | — | |
 | AG-17 | Artifacts section | Open detail for agent with artifacts | Artifacts listed with type, content type, optional summary, timestamp | — | |
@@ -150,7 +146,7 @@ Route: `/agents` — autonomous AI agents linked to trading instances (distinct 
 | O-03 | Total P&L sign coloring | Inspect positive vs negative total P&L | Green for profit, red for loss | — | |
 | O-04 | Total P&L 2 decimal places | Inspect total P&L display | Always shows exactly 2 decimal places | — | |
 | O-05 | No positions | View agent with no open positions | Positions section hidden or empty state shown | — | |
-| O-06 | Empty state — no instances | Open with fresh account | Empty state shown, not a crash | — | |
+| O-06 | Empty state — no agents or positions | Open with fresh account | Empty state shown, not a crash | — | |
 
 ---
 
@@ -178,14 +174,15 @@ Route: `/agents` — autonomous AI agents linked to trading instances (distinct 
 
 ---
 
-## 10. Portfolios
+## 10. Connections
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| P-01 | Portfolios list renders | Navigate to `/portfolios` | List of portfolios with name and created date | — | |
-| P-02 | Create portfolio — happy path | Click "New portfolio"; enter a name; submit | Portfolio appears in list | — | |
-| P-03 | Create portfolio — empty name | Submit with blank name | Error shown; portfolio not created | — | |
-| P-04 | Empty state | Open with no portfolios | Empty state and "Create portfolio" CTA | — | |
+| CN-01 | Connections list renders | Navigate to `/connections` | Page titled "Connections" with subtitle "Platform connections to external providers" | — | |
+| CN-02 | Empty state | Open with no connections | Empty state shown with copy about enabling capability families | — | |
+| CN-03 | Create connection — happy path | Click "New connection"; fill provider and label; optionally choose a credential; submit | Connection appears in the list with provider and status | — | |
+| CN-04 | Create connection — validation | Submit with missing provider or label | Create action disabled or error shown; connection not created | — | |
+| CN-05 | Revoke active connection | Click "Revoke" on an active connection | Status updates and the revoke button disappears | — | |
 
 ---
 
@@ -194,23 +191,23 @@ Route: `/agents` — autonomous AI agents linked to trading instances (distinct 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
 | C-01 | Credentials list renders | Navigate to `/credentials` | Page titled "Credentials"; empty state with "Add credentials" CTA | ✅ | |
-| C-02 | Add credentials — happy path | Click "Add credentials"; select venue; fill secrets; submit | Credential appears in list | — | Requires `CREDENTIAL_ENCRYPTION_KEY` set in API |
-| C-03 | Secret fields by venue | Change venue in create form | Secret fields update to match venue schema | — | |
+| C-02 | Add credentials — happy path | Click "Add credentials"; enter provider, label, and one or more secrets; submit | Credential appears in list | — | Requires `CREDENTIAL_ENCRYPTION_KEY` set in API |
+| C-03 | Secret template by provider | Change the secret template in the create form | Secret fields update to match the selected template | — | |
 | C-04 | Add credentials — validation error | Submit with a required field blank | Error shown; modal stays open | — | |
 | C-05 | Empty state | Open with no credentials | Empty state and "Add credentials" CTA | ✅ | |
 
 ---
 
-## 12. Venue Accounts
+## 12. Trading Setup
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| VA-01 | Venue accounts list renders | Navigate to `/venue-accounts` (sidebar label "Venues") | Page titled "Venue Accounts"; empty state with "Add venue account" CTA | ✅ | Sidebar label is "Venues"; page title is "Venue Accounts" |
-| VA-02 | Add venue account — happy path | Click "Add venue account"; fill fields; submit | Account appears in list | — | |
-| VA-03 | Credential dropdown in form | Open create form | Dropdown populated from existing credentials | — | |
-| VA-04 | Venue account ref shown | Create account with `venueAccountRef` | Ref shown in list alongside venue name | — | |
+| VA-01 | Trading setup list renders | Navigate to `/venue-accounts` (sidebar label "Trading setup") | Page titled "Trading setup"; empty state with "Add trading account" CTA | ✅ | Advanced surface only |
+| VA-02 | Add trading account — happy path | Click "Add trading account"; fill fields; submit | Account appears in list | — | |
+| VA-03 | Credential dropdown in form | Open create form | Dropdown populated from existing credentials filtered to the selected venue where applicable | — | |
+| VA-04 | Venue account ref shown | Create account with `venueAccountRef` | Ref shown in list alongside venue name when the venue uses it | — | |
 | VA-05 | "No credentials" label | Create account without linking a credential | "No credentials" shown in list | — | |
-| VA-06 | Empty state | Open with no venue accounts | Empty state and "Add venue account" CTA | ✅ | |
+| VA-06 | Empty state | Open with no trading accounts | Empty state and "Add trading account" CTA | ✅ | |
 
 ---
 

@@ -192,8 +192,11 @@ export interface Credential {
 
 export const credentials = {
   list: () => request<{ credentials: Credential[] }>('/credentials'),
-  create: (data: { venue: string; label: string; secrets: Record<string, string> }) =>
-    request<Credential>('/credentials', { method: 'POST', body: JSON.stringify(data) }),
+  create: (data: { provider: string; label: string; secrets: Record<string, string> }) =>
+    request<Credential>('/credentials', {
+      method: 'POST',
+      body: JSON.stringify({ venue: data.provider, label: data.label, secrets: data.secrets }),
+    }),
   delete: (id: string) => request<void>(`/credentials/${id}`, { method: 'DELETE' }),
 };
 

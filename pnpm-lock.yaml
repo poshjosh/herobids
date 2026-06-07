@@ -35,6 +35,9 @@ importers:
       '@herobids/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@herobids/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@herobids/venues':
         specifier: workspace:*
         version: link:../../packages/venues

@@ -74,16 +74,18 @@ export function AgentCapabilityPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-        <Card>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>Readiness</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <KV label="State" value={formatCapabilityState(readiness.state)} />
-            <KV label="Binding readiness" value={formatCapabilityState(readiness.bindingReadiness)} />
-            <KV label="Agent eligibility" value={readiness.agentEligibility} />
-            <KV label="Effective ready" value={readiness.effectiveReady ? 'Yes' : 'No'} />
-            <KV label="Binding" value={readiness.bindingId ?? 'Not assigned'} />
-          </div>
-        </Card>
+        <section aria-label="Capability readiness">
+          <Card>
+            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>Readiness</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <KV label="State" value={formatCapabilityState(readiness.state)} />
+              <KV label="Binding readiness" value={formatCapabilityState(readiness.bindingReadiness)} />
+              <KV label="Agent eligibility" value={readiness.agentEligibility} />
+              <KV label="Effective ready" value={readiness.effectiveReady ? 'Yes' : 'No'} />
+              <KV label="Binding" value={readiness.bindingId ?? 'Not assigned'} />
+            </div>
+          </Card>
+        </section>
 
         <Card>
           <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>Why this state</div>
@@ -120,7 +122,6 @@ function getCapabilityNextSteps(family: string): Array<{ label: string; path: st
     return [
       { label: 'Manage connections', path: '/connections', variant: 'secondary' },
       { label: 'Manage credentials', path: '/credentials', variant: 'secondary' },
-      { label: 'Open trading setup', path: '/venue-accounts', variant: 'primary' },
     ];
   }
 

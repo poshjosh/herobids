@@ -11,13 +11,18 @@ import {
   createConnection,
   seedTradingBinding,
   bindTradingCapability,
+  mockTradingReadiness,
 } from '../helpers.js';
 
 const EMAIL = `j8-${Date.now()}@e2e.local`;
 const PASSWORD = 'E2ePassword8!';
 
 function readinessCard(page: Page) {
-  return page.locator('div').filter({ has: page.getByText(/^Readiness$/) }).filter({ has: page.getByText(/^Binding readiness$/) }).first();
+  return page.getByRole('region', { name: /Capability readiness/i });
+}
+
+function rowValue(card: ReturnType<typeof readinessCard>, label: RegExp) {
+  return card.getByText(label).locator('xpath=following-sibling::span');
 }
 
 test.describe('Journey 8: Mission Control reflects enabled capability', () => {
@@ -27,8 +32,10 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
     const agentId = await createAgent(
       page,
       'Run the trading capability and reflect readiness in mission control.',
-      { preset: 'trading' },
+      { skillIds: ['bot-management'] },
     );
+
+    const readiness = await mockTradingReadiness(page, agentId);
 
     const userId = await getAuthenticatedUserId(page, request);
     const connection = await createConnection(page, request, {
@@ -45,15 +52,18 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
     });
 
     await bindTradingCapability(page, request, agentId, bindingId);
+    readiness.setReady(bindingId);
 
     await page.goto('/mission-control');
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Trading: Ready/i)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('button', { name: /Open trading/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('button', { name: /Open trading capability/i })).toBeVisible({ timeout: 5_000 });
 
-    await page.getByRole('button', { name: /Open trading/i }).click();
+    await page.getByRole('button', { name: /Open trading capability/i }).click();
     await expect(page).toHaveURL(new RegExp(`/agents/${agentId}/capabilities/trading$`));
     await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });
-    await expect(readinessCard(page).getByText('Ready', { exact: true })).toBeVisible({ timeout: 5_000 });
+    const card = readinessCard(page);
+    await expect(rowValue(card, /^State$/)).toHaveText('Ready', { timeout: 5_000 });
+    await expect(rowValue(card, /^Binding readiness$/)).toHaveText('Ready', { timeout: 5_000 });
+    await expect(rowValue(card, /^Effective ready$/)).toHaveText('Yes', { timeout: 5_000 });
   });
 });

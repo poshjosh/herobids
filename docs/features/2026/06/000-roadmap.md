@@ -2,7 +2,7 @@
 
 **Goal:** Reach feature parity with aitradingbot while preserving herobids architecture principles.
 
-**Methodology:** stub-first + integration tests. Each feature is scaffolded as 501 stubs with failing integration tests before any implementation begins. A feature is done when its integration tests pass and the UAT script covers it.
+**Methodology:** stub-first + integration tests. Each feature is scaffolded as 501 stubs with failing integration tests before any implementation begins. A feature is done when its integration tests pass and the current UAT journeys for its scope pass.
 
 ---
 
@@ -18,7 +18,7 @@
 | 015 | Blueprints system | P1 | done | [015-blueprints/000-plan.md](015-blueprints/000-plan.md) |
 | 016 | Agent interactivity (message, memory, prompt) | P2 | done | [016-agent-interactivity/000-plan.md](016-agent-interactivity/000-plan.md) |
 | 017 | Analytics + AI endpoints + Skills | P3 | done | [017-analytics-ai-skills/000-plan.md](017-analytics-ai-skills/000-plan.md) |
-| 021 | Capability platform API redesign | P0 | todo | [021-capability-platform-api-redesign/000-plan.md](021-capability-platform-api-redesign/000-plan.md) |
+| 021 | Capability platform API redesign | P0 | in-progress | [021-capability-platform-api-redesign/000-plan.md](021-capability-platform-api-redesign/000-plan.md) |
 | 018 | Bot + account exports | P3 | todo | [018-exports/000-plan.md](018-exports/000-plan.md) |
 | 019 | Admin + WebSocket event stream | P4 | todo | [019-admin-websocket/000-plan.md](019-admin-websocket/000-plan.md) |
 | 020 | Frontend completeness | P4 | todo | [020-frontend/000-plan.md](020-frontend/000-plan.md) |
@@ -42,7 +42,7 @@
 A feature moves to `done` when:
 
 1. All integration tests in `apps/api/src/routes/*.test.ts` or `apps/api/src/__tests__/functional/` pass
-2. The `shell/tests/run-uat.sh` script passes for all cases in that feature's scope
+2. The relevant Playwright UAT journeys pass, typically via `scripts/shell/tests/run-all-tests.sh --e2e`
 3. `pnpm lint` passes
 
 Not when: the checklist is ticked, or the code looks right on inspection.
@@ -52,5 +52,5 @@ Not when: the checklist is ticked, or the code looks right on inspection.
 ## Test infrastructure
 
 - **Unit/integration:** `apps/api/src/routes/*.test.ts` and `apps/api/src/__tests__/functional/*.test.ts`
-- **UAT shell script:** `shell/tests/run-uat.sh` (to be created as part of feature 012 milestone)
+- **UAT journeys:** `tests/e2e/journeys/*.spec.ts`, typically run via `scripts/shell/tests/run-all-tests.sh --e2e`
 - **Vitest config:** `vitest.config.ts` (workspace root)
