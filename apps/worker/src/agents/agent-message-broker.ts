@@ -14,7 +14,6 @@ import {
   MessageEnvelopeSchema,
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
-  INSTANCE_MESSAGE_TYPES,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import type { TelegramClient } from '../alerting/telegram-client.js';
@@ -711,7 +710,7 @@ export class AgentMessageBroker {
           size: position.size,
           entryPrice: position.entryPrice,
           realizedPnl: position.realizedPnl,
-          updatedAt: position.updatedAt?.toISOString?.() ?? undefined,
+          updatedAt: position.updatedAt instanceof Date ? position.updatedAt.toISOString() : undefined,
         })),
       });
       return;
