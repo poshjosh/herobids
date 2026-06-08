@@ -208,6 +208,44 @@ export function applyRuntimeMessage(
     return `Platform status: ${payload['reason'] ?? payload['status'] ?? 'updated'}`;
   }
 
+  if (type === 'instance.tool.result') {
+    const tool = typeof payload['tool'] === 'string' ? payload['tool'] : 'tool';
+    const data = payload['data'] as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
+
+    if (tool === 'list_bots' && Array.isArray(data)) {
+      state.metrics.managedBots = data.map((bot) => ({
+        id: String(bot['id'] ?? 'unknown'),
+        status: String(bot['status'] ?? 'unknown'),
+        strategyPreset: typeof bot['strategyPreset'] === 'string' ? bot['strategyPreset'] : undefined,
+        symbol: typeof bot['symbol'] === 'string' ? bot['symbol'] : undefined,
+      }));
+      return `Bot list updated: ${data.length} bot(s)`;
+    }
+
+    if (tool === 'get_bot_status' && data && !Array.isArray(data)) {
+      const status = typeof data['status'] === 'string' ? data['status'] : 'unknown';
+      const botId = typeof data['id'] === 'string' ? data['id'] : 'unknown';
+      return `Bot status: ${botId} [${status}]`;
+    }
+
+    if (tool === 'get_analytics' && data && !Array.isArray(data)) {
+      const realizedPnlUsd = typeof data['realizedPnlUsd'] === 'string' ? data['realizedPnlUsd'] : '0';
+      const openPositions = typeof data['openPositions'] === 'number' ? data['openPositions'] : 0;
+      state.metrics.lastPnlSummary = realizedPnlUsd;
+      return `Bot analytics: P&L ${realizedPnlUsd}, open positions ${openPositions}`;
+    }
+
+    if (tool === 'list_positions' && Array.isArray(data)) {
+      const first = data[0];
+      if (first && typeof first['side'] === 'string') {
+        state.metrics.lastPositionSide = String(first['side']);
+      }
+      return `Open positions: ${data.length}`;
+    }
+
+    return typeof payload['message'] === 'string' ? String(payload['message']) : 'Tool result received';
+  }
+
   return `Platform message: ${type}`;
 }
 

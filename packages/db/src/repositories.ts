@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, isNull, desc, or, gte, notInArray } from 'drizzle-orm';
+import { eq, and, isNull, desc, or, gte, inArray, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { fills, positions, bots, tradingBindings, executionPlans, orders, balanceSnapshots, decisions, venueAccounts } from './schema/index.js';
 
@@ -520,6 +520,12 @@ export class DecisionRepository {
 export class BotRepository {
   constructor(private readonly db: Database) {}
 
+  /** Get a single bot by ID. */
+  async getBotById(botId: string) {
+    const [row] = await this.db.select().from(bots).where(eq(bots.id, botId)).limit(1);
+    return row ?? null;
+  }
+
   /** Create a bot record. Returns the created bot's ID. */
   async createBot(params: {
     userId: string;
@@ -547,16 +553,16 @@ export class BotRepository {
   }
 
   /** Get all bots created by an actor (agent, user, or system) */
-  async getBotsByCreator(creatorType: string, creatorId: string) {
+  async getBotsByCreator(creatorType: string, creatorId: string, since?: Date) {
+    const conditions = [eq(bots.creatorType, creatorType), eq(bots.creatorId, creatorId)];
+    if (since) {
+      conditions.push(gte(bots.createdAt, since));
+    }
+
     return this.db
       .select()
       .from(bots)
-      .where(
-        and(
-          eq(bots.creatorType, creatorType),
-          eq(bots.creatorId, creatorId),
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(desc(bots.createdAt));
   }
 
@@ -575,6 +581,38 @@ export class BotRepository {
     return rows.length;
   }
 
+  /** Update bot config JSON in place. */
+  async updateBotConfig(botId: string, config: Record<string, unknown>): Promise<void> {
+    await this.db
+      .update(bots)
+      .set({ config, updatedAt: new Date() })
+      .where(eq(bots.id, botId));
+  }
+
+  /** Restore a bot config snapshot after a failed follow-up side effect. */
+  async restoreBotConfig(botId: string, config: Record<string, unknown>): Promise<void> {
+    await this.db
+      .update(bots)
+      .set({ config, updatedAt: new Date() })
+      .where(eq(bots.id, botId));
+  }
+
+  /** Mark a bot as stopped. */
+  async markBotStopped(botId: string): Promise<void> {
+    await this.db
+      .update(bots)
+      .set({ status: 'stopped', stoppedAt: new Date(), updatedAt: new Date() })
+      .where(eq(bots.id, botId));
+  }
+
+  /** Mark a bot as crashed. */
+  async markBotCrashed(botId: string): Promise<void> {
+    await this.db
+      .update(bots)
+      .set({ status: 'crashed', stoppedAt: new Date(), updatedAt: new Date() })
+      .where(eq(bots.id, botId));
+  }
+
   /**
    * Mark a bot as running. Called just before the lifecycle start job is enqueued
    * so that the DB status matches the API start-bot path behaviour.
@@ -584,6 +622,24 @@ export class BotRepository {
       .update(bots)
       .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
       .where(eq(bots.id, botId));
+  }
+
+  /** Restore the prior runtime fields after a failed lifecycle enqueue. */
+  async restoreBotRuntimeState(params: {
+    botId: string;
+    status: string;
+    startedAt?: Date | null;
+    stoppedAt?: Date | null;
+  }): Promise<void> {
+    await this.db
+      .update(bots)
+      .set({
+        status: params.status,
+        startedAt: params.startedAt ?? null,
+        stoppedAt: params.stoppedAt ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(bots.id, params.botId));
   }
 
   /**
@@ -608,5 +664,87 @@ export class BotRepository {
       .from(venueAccounts)
       .where(and(eq(venueAccounts.id, venueAccountId), eq(venueAccounts.userId, userId)));
     return !!row;
+  }
+
+  /** Open positions for all bots created by the given actor. */
+  async getOpenPositionsByCreator(creatorType: string, creatorId: string, botId?: string) {
+    const botRows = await this.getBotsForQuery(creatorType, creatorId, undefined, botId);
+    const botIds = botRows.map((row) => row.id);
+    if (botIds.length === 0) return [];
+
+    return this.db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds), isNull(positions.closedAt)))
+      .orderBy(desc(positions.updatedAt));
+  }
+
+  /** Recent fills for all bots created by the given actor. */
+  async getRecentFillsByCreator(creatorType: string, creatorId: string, since?: Date, botId?: string) {
+    const botRows = await this.getBotsForQuery(creatorType, creatorId, since, botId);
+    const botIds = botRows.map((row) => row.id);
+    if (botIds.length === 0) return [];
+
+    const conditions = [eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)];
+    if (since) {
+      conditions.push(gte(fills.filledAt, since));
+    }
+
+    return this.db
+      .select()
+      .from(fills)
+      .where(and(...conditions))
+      .orderBy(desc(fills.filledAt));
+  }
+
+  /** Compute lightweight bot analytics for all bots created by the given actor. */
+  async getAnalyticsByCreator(creatorType: string, creatorId: string, since?: Date, botId?: string) {
+    const botRows = await this.getBotsForQuery(creatorType, creatorId, since, botId);
+    const botIds = botRows.map((row) => row.id);
+    if (botIds.length === 0) {
+      return {
+        botCount: 0,
+        openPositions: 0,
+        closedPositions: 0,
+        winningPositions: 0,
+        realizedPnlUsd: '0',
+        totalFeesUsd: '0',
+        recentFills: 0,
+      };
+    }
+
+    const positionRows = await this.db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
+
+    const fillRows = await this.getRecentFillsByCreator(creatorType, creatorId, since, botId);
+    const openPositions = positionRows.filter((row) => row.closedAt == null);
+    const closedPositions = positionRows.filter((row) => row.closedAt != null);
+    const winningPositions = closedPositions.filter((row) => Number(row.realizedPnl ?? 0) > 0).length;
+    const realizedPnlUsd = positionRows.reduce((sum, row) => sum + Number(row.realizedPnl ?? 0), 0);
+    const totalFeesUsd = fillRows.reduce((sum, row) => sum + Number(row.fee ?? 0), 0);
+
+    return {
+      botCount: botRows.length,
+      openPositions: openPositions.length,
+      closedPositions: closedPositions.length,
+      winningPositions,
+      realizedPnlUsd: realizedPnlUsd.toFixed(2),
+      totalFeesUsd: totalFeesUsd.toFixed(2),
+      recentFills: fillRows.length,
+    };
+  }
+
+  private async getBotsForQuery(creatorType: string, creatorId: string, since?: Date, botId?: string) {
+    if (botId) {
+      const bot = await this.getBotById(botId);
+      if (!bot || bot.creatorType !== creatorType || bot.creatorId !== creatorId) {
+        throw new Error(`Bot ${botId} not found or does not belong to ${creatorType}:${creatorId}`);
+      }
+      return [bot];
+    }
+
+    return this.getBotsByCreator(creatorType, creatorId, since);
   }
 }

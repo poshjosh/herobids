@@ -79,6 +79,10 @@ export const LlmValidationConfigSchema = z.object({
   maxPnlRegressionPct: z.number().min(0).max(100).default(10),
 });
 
+export const ApiConfigSchema = z.object({
+  publicBaseUrl: z.string().url().default('http://api:3000'),
+});
+
 export const StreamConfigSchema = z.object({
   private: z.object({
     reconnectBaseMs: z.number().min(100).default(1_000),
@@ -260,6 +264,7 @@ export const AppConfigSchema = z.object({
     port: z.number().default(3000),
     logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   }),
+  api: ApiConfigSchema.default({}),
   database: z.object({
     url: z.string(),
     poolMin: z.number().default(2),

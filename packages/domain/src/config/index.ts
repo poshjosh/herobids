@@ -2,6 +2,7 @@ export {
   SWAP_VENUES,
   ORDERBOOK_VENUES,
   AppConfigSchema,
+  ApiConfigSchema,
   VenueConfigSchema,
   ReconciliationConfigSchema,
   StreamConfigSchema,

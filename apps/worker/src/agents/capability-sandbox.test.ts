@@ -6,7 +6,7 @@ describe('CapabilityPolicyEngine', () => {
   describe('checkAccess', () => {
     it('allows brokered capabilities that are enabled', () => {
       const engine = new CapabilityPolicyEngine();
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBeUndefined();
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBeUndefined();
     });
 
     it('allows direct capabilities that are enabled', () => {
@@ -37,7 +37,7 @@ describe('CapabilityPolicyEngine', () => {
     it('denies all access after kill switch', () => {
       const engine = new CapabilityPolicyEngine();
       engine.activateKillSwitch();
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBe('kill_switch_active');
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('kill_switch_active');
       expect(engine.checkAccess('web_fetch', 'agent-1', 'sess-1')).toBe('kill_switch_active');
     });
 
@@ -45,44 +45,44 @@ describe('CapabilityPolicyEngine', () => {
       const engine = new CapabilityPolicyEngine();
       engine.activateKillSwitch();
       engine.deactivateKillSwitch();
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBeUndefined();
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBeUndefined();
     });
   });
 
   describe('rate limiting', () => {
     it('denies after exceeding rate limit', () => {
       const engine = new CapabilityPolicyEngine();
-      // decision_submit has maxPerMinute: 10
+      // submit_decision has maxPerMinute: 10
       for (let i = 0; i < 10; i++) {
-        engine.recordStart('decision_submit', 'sess-1');
+        engine.recordStart('submit_decision', 'sess-1');
       }
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBe('rate_limit_exceeded');
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('rate_limit_exceeded');
     });
 
     it('allows after rate window resets', () => {
       const engine = new CapabilityPolicyEngine();
       // Fill up rate limit
       for (let i = 0; i < 10; i++) {
-        engine.recordStart('decision_submit', 'sess-1');
+        engine.recordStart('submit_decision', 'sess-1');
       }
       // This should be denied
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBe('rate_limit_exceeded');
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('rate_limit_exceeded');
     });
   });
 
   describe('concurrency limiting', () => {
     it('denies when max concurrent exceeded', () => {
       const engine = new CapabilityPolicyEngine();
-      // decision_submit has maxConcurrent: 1
-      engine.recordStart('decision_submit', 'sess-1');
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBe('max_concurrent_exceeded');
+      // submit_decision has maxConcurrent: 1
+      engine.recordStart('submit_decision', 'sess-1');
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBe('max_concurrent_exceeded');
     });
 
     it('allows after concurrent call ends', () => {
       const engine = new CapabilityPolicyEngine();
-      engine.recordStart('decision_submit', 'sess-1');
-      engine.recordEnd('decision_submit', 'sess-1', {
-        capability: 'decision_submit',
+      engine.recordStart('submit_decision', 'sess-1');
+      engine.recordEnd('submit_decision', 'sess-1', {
+        capability: 'submit_decision',
         agentId: 'agent-1',
         sessionId: 'sess-1',
         timestamp: new Date().toISOString(),
@@ -92,8 +92,8 @@ describe('CapabilityPolicyEngine', () => {
         success: true,
       });
       // Rate counter was already incremented by recordStart, but concurrency is back to 0
-      // Since decision_submit maxPerMinute is 10 and we only did 1, it should be allowed
-      expect(engine.checkAccess('decision_submit', 'agent-1', 'sess-1')).toBeUndefined();
+      // Since submit_decision maxPerMinute is 10 and we only did 1, it should be allowed
+      expect(engine.checkAccess('submit_decision', 'agent-1', 'sess-1')).toBeUndefined();
     });
   });
 
@@ -119,7 +119,8 @@ describe('CapabilityPolicyEngine', () => {
     it('has correct tier assignments', () => {
       const byCapability = new Map(DEFAULT_CAPABILITY_GRANTS.map(g => [g.capability, g]));
 
-      expect(byCapability.get('decision_submit')?.tier).toBe('brokered');
+      expect(byCapability.get('submit_decision')?.tier).toBe('brokered');
+      expect(byCapability.get('bot_query')?.tier).toBe('brokered');
       expect(byCapability.get('web_fetch')?.tier).toBe('direct');
       expect(byCapability.get('code_execute')?.tier).toBe('direct');
       expect(byCapability.get('artifact_publish')?.tier).toBe('brokered');

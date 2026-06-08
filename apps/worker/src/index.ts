@@ -223,6 +223,19 @@ const botStartCallback = async (botId: string, userId: string, venueAccountId: s
     config: { ...config, venueAccountId, userId },
   });
 };
+const botStopCallback = async (botId: string) => {
+  await lifecycleQueue.add('stop-instance', {
+    command: 'stop',
+    botId,
+  });
+};
+const botRestartCallback = async (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => {
+  await lifecycleQueue.add('restart-instance', {
+    command: 'restart',
+    botId,
+    config: { ...config, venueAccountId, userId },
+  });
+};
 
 // Enforce the subscription-level bot cap when an agent tries to create a bot.
 // Uses the user's actual planId so free-tier users can't create unlimited bots via agents.
@@ -238,7 +251,7 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback);
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);

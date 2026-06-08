@@ -74,6 +74,7 @@ function mockEventPublisher() {
     emitDecisionAccepted: vi.fn().mockResolvedValue(undefined),
     emitDecisionRejected: vi.fn().mockResolvedValue(undefined),
     emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
+    emitToolResult: vi.fn().mockResolvedValue(undefined),
   } as unknown as InstanceEventPublisher;
 }
 
@@ -382,6 +383,128 @@ describe('AgentMessageBroker', () => {
       };
     }
 
+    describe('bot_query emits tool results', () => {
+      it('emits a bot list result', async () => {
+        const botRepo = {
+          getBotsByCreator: vi.fn().mockResolvedValue([
+            { id: 'bot-a', status: 'running', config: { strategyPreset: 'momentum', symbol: 'BTC-USD' } },
+            { id: 'bot-b', status: 'stopped', config: { strategyPreset: 'mean-reversion', symbol: 'ETH-USD' } },
+          ]),
+        };
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+        );
+
+        const result = await brokerWithBot.processInbound({
+          schemaVersion: 'v1',
+          messageId: 'msg-query-1',
+          correlationId: 'corr-query-1',
+          initiatorType: 'agent',
+          initiatorId: 'agent-123',
+          agentId: 'agent-123',
+          type: 'agent.bot.query',
+          createdAt: new Date().toISOString(),
+          payload: { action: 'list_bots' },
+        });
+
+        expect(result.accepted).toBe(true);
+        expect((eventPublisher as any).emitToolResult).toHaveBeenCalledWith(
+          'agent-123',
+          expect.objectContaining({
+            tool: 'list_bots',
+            status: 'ok',
+            message: 'Found 2 bot(s)',
+            data: [
+              expect.objectContaining({ id: 'bot-a', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' }),
+              expect.objectContaining({ id: 'bot-b', status: 'stopped', strategyPreset: 'mean-reversion', symbol: 'ETH-USD' }),
+            ],
+          }),
+        );
+      });
+
+      it('passes the time filter through for list_bots', async () => {
+        const botRepo = {
+          getBotsByCreator: vi.fn().mockResolvedValue([]),
+        };
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+        );
+
+        await brokerWithBot.processInbound({
+          schemaVersion: 'v1',
+          messageId: 'msg-query-2',
+          correlationId: 'corr-query-2',
+          initiatorType: 'agent',
+          initiatorId: 'agent-123',
+          agentId: 'agent-123',
+          type: 'agent.bot.query',
+          createdAt: new Date().toISOString(),
+          payload: { action: 'list_bots', days: 7 },
+        });
+
+        expect(botRepo.getBotsByCreator).toHaveBeenCalledWith('agent', 'agent-123', expect.any(Date));
+      });
+
+      it('emits an error result when get_bot_status botId is not owned', async () => {
+        const botRepo = {
+          getBotById: vi.fn().mockResolvedValue({
+            id: 'bot-private',
+            userId: 'user-2',
+            status: 'running',
+            venueAccountId: 'va-001',
+            config: {},
+          }),
+        };
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+        );
+
+        const result = await brokerWithBot.processInbound({
+          schemaVersion: 'v1',
+          messageId: 'msg-query-3',
+          correlationId: 'corr-query-3',
+          initiatorType: 'agent',
+          initiatorId: 'agent-123',
+          agentId: 'agent-123',
+          type: 'agent.bot.query',
+          createdAt: new Date().toISOString(),
+          payload: { action: 'get_bot_status', botId: 'bot-private' },
+        });
+
+        expect(result.accepted).toBe(true);
+        expect((eventPublisher as any).emitToolResult).toHaveBeenCalledWith(
+          'agent-123',
+          expect.objectContaining({
+            tool: 'get_bot_status',
+            status: 'error',
+            message: expect.stringContaining('not owned by this agent'),
+            botId: 'bot-private',
+          }),
+        );
+      });
+    });
+
     const MANAGE_BOT_ENABLED_GRANT = { capability: 'manage_bot', tier: 'brokered', enabled: true, limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 } };
 
     beforeEach(() => {
@@ -651,6 +774,364 @@ describe('AgentMessageBroker', () => {
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
       expect(result.accepted).toBe(false);
       expect(botRepo.createBot).not.toHaveBeenCalled();
+    });
+
+    it('enqueues a stop job for stop_bot', async () => {
+      const botRepo = {
+        getBotById: vi.fn().mockResolvedValue({
+          id: 'bot-stop',
+          userId: 'user-1',
+          venueAccountId: 'va-001',
+          status: 'running',
+          config: {},
+          creatorType: 'agent',
+          creatorId: 'agent-123',
+        }),
+      };
+      const botStop = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+        undefined,
+        botStop,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: { action: 'stop', botId: 'bot-stop' },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botStop).toHaveBeenCalledWith('bot-stop', 'user-1');
+    });
+
+    it('restores prior runtime state when start enqueue fails', async () => {
+      const botRepo = {
+        getBotById: vi.fn().mockResolvedValue({
+          id: 'bot-start',
+          userId: 'user-1',
+          venueAccountId: 'va-001',
+          status: 'stopped',
+          startedAt: null,
+          stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
+          config: {},
+          creatorType: 'agent',
+          creatorId: 'agent-123',
+        }),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
+      };
+      const botStart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: { action: 'start', botId: 'bot-start' },
+      }));
+
+      expect(result.accepted).toBe(false);
+      expect(botRepo.markBotRunning).toHaveBeenCalledWith('bot-start');
+      expect(botRepo.restoreBotRuntimeState).toHaveBeenCalledWith({
+        botId: 'bot-start',
+        status: 'stopped',
+        startedAt: null,
+        stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
+      });
+    });
+
+    it('still fails gracefully when start enqueue AND rollback both fail', async () => {
+      const botRepo = {
+        getBotById: vi.fn().mockResolvedValue({
+          id: 'bot-start',
+          userId: 'user-1',
+          venueAccountId: 'va-001',
+          status: 'stopped',
+          startedAt: null,
+          stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
+          config: {},
+          creatorType: 'agent',
+          creatorId: 'agent-123',
+        }),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        restoreBotRuntimeState: vi.fn().mockRejectedValue(new Error('DB also down')),
+      };
+      const botStart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: { action: 'start', botId: 'bot-start' },
+      }));
+
+      expect(result.accepted).toBe(false);
+      expect(botRepo.restoreBotRuntimeState).toHaveBeenCalled();
+    });
+
+    it('merges config and restarts a running bot for adjust_bot_config', async () => {
+      const botRepo = {
+        getBotById: vi.fn().mockResolvedValue({
+          id: 'bot-run',
+          userId: 'user-1',
+          venueAccountId: 'va-001',
+          status: 'running',
+          config: {
+            strategy: { type: 'momentum', threshold: 2 },
+            risk: { maxDrawdownPct: 10 },
+          },
+          creatorType: 'agent',
+          creatorId: 'agent-123',
+        }),
+        updateBotConfig: vi.fn().mockResolvedValue(undefined),
+      };
+      const botRestart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+        undefined,
+        undefined,
+        botRestart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'adjust_config',
+          botId: 'bot-run',
+          config: { strategy: { threshold: 5 }, executionMode: 'shadow' },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', {
+        strategy: { type: 'momentum', threshold: 5 },
+        risk: { maxDrawdownPct: 10 },
+        executionMode: 'shadow',
+      });
+      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', {
+        strategy: { type: 'momentum', threshold: 5 },
+        risk: { maxDrawdownPct: 10 },
+        executionMode: 'shadow',
+      });
+    });
+
+    describe('adjust_config rollback', () => {
+      it('restores the prior config when restart enqueue fails', async () => {
+        const botRepo = {
+          getBotById: vi.fn().mockResolvedValue({
+            id: 'bot-run',
+            userId: 'user-1',
+            venueAccountId: 'va-001',
+            status: 'running',
+            config: {
+              strategy: { type: 'momentum', threshold: 2 },
+              risk: { maxDrawdownPct: 10 },
+            },
+            creatorType: 'agent',
+            creatorId: 'agent-123',
+          }),
+          updateBotConfig: vi.fn().mockResolvedValue(undefined),
+          restoreBotConfig: vi.fn().mockResolvedValue(undefined),
+        };
+        const botRestart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+          vi.fn().mockResolvedValue(undefined),
+          undefined,
+          undefined,
+          botRestart,
+        );
+
+        const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+          payload: {
+            action: 'adjust_config',
+            botId: 'bot-run',
+            config: { strategy: { threshold: 5 } },
+          },
+        }));
+
+        expect(result.accepted).toBe(false);
+        expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', {
+          strategy: { type: 'momentum', threshold: 5 },
+          risk: { maxDrawdownPct: 10 },
+        });
+        expect(botRepo.restoreBotConfig).toHaveBeenCalledWith('bot-run', {
+          strategy: { type: 'momentum', threshold: 2 },
+          risk: { maxDrawdownPct: 10 },
+        });
+      });
+
+      it('still fails gracefully when restart enqueue AND config rollback both fail', async () => {
+        const botRepo = {
+          getBotById: vi.fn().mockResolvedValue({
+            id: 'bot-run',
+            userId: 'user-1',
+            venueAccountId: 'va-001',
+            status: 'running',
+            config: {
+              strategy: { type: 'momentum', threshold: 2 },
+              risk: { maxDrawdownPct: 10 },
+            },
+            creatorType: 'agent',
+            creatorId: 'agent-123',
+          }),
+          updateBotConfig: vi.fn().mockResolvedValue(undefined),
+          restoreBotConfig: vi.fn().mockRejectedValue(new Error('DB also down')),
+        };
+        const botRestart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+          vi.fn().mockResolvedValue(undefined),
+          undefined,
+          undefined,
+          botRestart,
+        );
+
+        const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+          payload: {
+            action: 'adjust_config',
+            botId: 'bot-run',
+            config: { strategy: { threshold: 5 } },
+          },
+        }));
+
+        expect(result.accepted).toBe(false);
+        expect(botRepo.restoreBotConfig).toHaveBeenCalled();
+      });
+
+      it('fails without enqueue when the DB update fails', async () => {
+        const botRepo = {
+          getBotById: vi.fn().mockResolvedValue({
+            id: 'bot-run',
+            userId: 'user-1',
+            venueAccountId: 'va-001',
+            status: 'running',
+            config: {
+              strategy: { type: 'momentum', threshold: 2 },
+              risk: { maxDrawdownPct: 10 },
+            },
+            creatorType: 'agent',
+            creatorId: 'agent-123',
+          }),
+          updateBotConfig: vi.fn().mockRejectedValue(new Error('DB connection lost')),
+          restoreBotConfig: vi.fn().mockResolvedValue(undefined),
+        };
+        const botRestart = vi.fn().mockResolvedValue(undefined);
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+          vi.fn().mockResolvedValue(undefined),
+          undefined,
+          undefined,
+          botRestart,
+        );
+
+        const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+          payload: {
+            action: 'adjust_config',
+            botId: 'bot-run',
+            config: { strategy: { threshold: 5 } },
+          },
+        }));
+
+        expect(result.accepted).toBe(false);
+        expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.any(Object));
+        expect(botRestart).not.toHaveBeenCalled();
+        expect(botRepo.restoreBotConfig).not.toHaveBeenCalled();
+      });
+
+      it('does NOT enqueue restart when bot is not running', async () => {
+        const botRepo = {
+          getBotById: vi.fn().mockResolvedValue({
+            id: 'bot-stopped',
+            userId: 'user-1',
+            venueAccountId: 'va-001',
+            status: 'stopped',
+            config: {
+              strategy: { type: 'momentum', threshold: 2 },
+            },
+            creatorType: 'agent',
+            creatorId: 'agent-123',
+          }),
+          updateBotConfig: vi.fn().mockResolvedValue(undefined),
+        };
+        const botRestart = vi.fn().mockResolvedValue(undefined);
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+          vi.fn().mockResolvedValue(undefined),
+          undefined,
+          undefined,
+          botRestart,
+        );
+
+        const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+          payload: {
+            action: 'adjust_config',
+            botId: 'bot-stopped',
+            config: { strategy: { threshold: 5 } },
+          },
+        }));
+
+        expect(result.accepted).toBe(true);
+        expect(botRestart).not.toHaveBeenCalled();
+        expect(botRepo.updateBotConfig).toHaveBeenCalled();
+      });
     });
   });
 });

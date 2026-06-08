@@ -8,11 +8,13 @@ import type {
   StopRequestPayload,
   SendMessagePayload,
   ManageBotPayload,
+  BotQueryPayload,
 } from '@herobids/domain';
 import {
   MessageEnvelopeSchema,
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
+  INSTANCE_MESSAGE_TYPES,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import type { TelegramClient } from '../alerting/telegram-client.js';
@@ -36,6 +38,12 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
  * venueAccountId is explicit so the type system enforces it is always present.
  */
 export type BotStartCallback = (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => Promise<void>;
+
+/** Callback used to enqueue a bot stop job on the runtime queue. */
+export type BotStopCallback = (botId: string, userId: string) => Promise<void>;
+
+/** Callback used to enqueue a bot restart job on the runtime queue. */
+export type BotRestartCallback = (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => Promise<void>;
 
 /**
  * Optional callback for enforcing a subscription-level bot cap before create.
@@ -71,6 +79,8 @@ export class AgentMessageBroker {
     private readonly botRepo?: BotRepository,
     private readonly botStart?: BotStartCallback,
     private readonly botLimitCheck?: BotLimitCheckCallback,
+    private readonly botStop?: BotStopCallback,
+    private readonly botRestart?: BotRestartCallback,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -116,10 +126,11 @@ export class AgentMessageBroker {
 
     // 3. Enforce capability policy for brokered tool calls
     const capabilityByType: Record<string, string> = {
-      [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'decision_submit',
+      [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'submit_decision',
       [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: 'artifact_publish',
       [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
       [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
+      [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
     };
     const capabilityName = capabilityByType[envelope.type];
     // Saved so recordEnd can be called in the finally block on every exit path.
@@ -232,6 +243,13 @@ export class AgentMessageBroker {
           await this.handleManageBot(
             envelope,
             envelope.payload as unknown as ManageBotPayload,
+          );
+          break;
+
+        case AGENT_MESSAGE_TYPES.BOT_QUERY:
+          await this.handleBotQuery(
+            envelope,
+            envelope.payload as unknown as BotQueryPayload,
           );
           break;
 
@@ -466,14 +484,260 @@ export class AgentMessageBroker {
       return;
     }
 
+    if (payload.action === 'start') {
+      if (!payload.botId) throw new Error('botId is required for start');
+      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
+
+      const bot = await this.botRepo.getBotById(payload.botId);
+      if (!bot || bot.userId !== agent.userId) {
+        throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
+      }
+
+      // Consistency model: we mark the bot running in DB then enqueue the
+      // lifecycle start job.  If the process crashes between these two steps
+      // the bot will be marked 'running' with no active actor — the worker's
+      // periodic reclaim sweep (WorkerRuntime.reclaimOrphans) detects this and
+      // re-starts the actor, converging DB and runtime without manual intervention.
+      if (this.botStart) {
+        await this.botRepo.markBotRunning(payload.botId);
+        try {
+          await this.botStart(payload.botId, agent.userId, bot.venueAccountId, bot.config as Record<string, unknown>);
+        } catch (err) {
+          logger.error({ botId: payload.botId, err }, 'Failed to enqueue start job during start action');
+          try {
+            await this.botRepo.restoreBotRuntimeState({
+              botId: payload.botId,
+              status: bot.status,
+              startedAt: bot.startedAt,
+              stoppedAt: bot.stoppedAt,
+            });
+          } catch (rollbackErr) {
+            logger.error({ botId: payload.botId, rollbackErr }, 'CRITICAL: rollback after start enqueue failure also failed — bot may be marked running without an actor until reclaim sweep');
+          }
+          throw new Error('Bot start failed: unable to enqueue lifecycle start. Please try again.');
+        }
+      } else {
+        await this.botRepo.markBotRunning(payload.botId);
+      }
+
+      const agentBots = await this.botRepo.getBotsByCreator('agent', agent.id);
+      await this.eventPublisher.emitInstanceStatus(agent.id, {
+        status: 'running',
+        reason: 'bot_started',
+        updatedAt: new Date().toISOString(),
+        managedBots: agentBots.map((b) => ({
+          id: b.id,
+          status: b.status,
+          strategyPreset: (b.config as Record<string, unknown>)?.['strategyPreset'] as string | undefined,
+          symbol: (b.config as Record<string, unknown>)?.['symbol'] as string | undefined,
+        })),
+      });
+      return;
+    }
+
     if (payload.action === 'stop') {
       if (!payload.botId) throw new Error('botId is required for stop');
-      // Stopping is handled by the existing lifecycle queue — not implemented here yet
-      throw new Error('stop action for manage_bot is not yet implemented');
+      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
+
+      const bot = await this.botRepo.getBotById(payload.botId);
+      if (!bot || bot.userId !== agent.userId) {
+        throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
+      }
+
+      if (this.botStop) {
+        await this.botStop(payload.botId, agent.userId);
+      } else {
+        await this.botRepo.markBotStopped(payload.botId);
+      }
+      return;
+    }
+
+    if (payload.action === 'adjust_config') {
+      if (!payload.botId) throw new Error('botId is required for adjust_config');
+      if (!payload.config) throw new Error('config is required for adjust_config');
+      if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
+
+      const bot = await this.botRepo.getBotById(payload.botId);
+      if (!bot || bot.userId !== agent.userId) {
+        throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
+      }
+
+      const mergedConfig = mergeBotConfig(bot.config as Record<string, unknown>, payload.config);
+
+      // Consistency model: we persist the merged config then enqueue a restart.
+      // If the process crashes between these steps the bot keeps running with
+      // the old in-memory config while DB holds the new config.  On the next
+      // restart (manual, crash recovery, or deploy) the new config is picked up
+      // from DB, converging without manual intervention.
+      await this.botRepo.updateBotConfig(payload.botId, mergedConfig);
+
+      if (bot.status === 'running' && this.botRestart) {
+        try {
+          await this.botRestart(payload.botId, agent.userId, bot.venueAccountId, mergedConfig);
+        } catch (err) {
+          logger.error(
+            { botId: payload.botId, err },
+            'Failed to enqueue restart job during adjust_config',
+          );
+          try {
+            await this.botRepo.restoreBotConfig(payload.botId, bot.config as Record<string, unknown>);
+          } catch (rollbackErr) {
+            logger.error({ botId: payload.botId, rollbackErr }, 'CRITICAL: config rollback after restart enqueue failure also failed — DB holds new config but running actor has old config until next restart');
+          }
+          throw new Error(
+            'Config adjustment failed: unable to enqueue restart. Please try again.',
+          );
+        }
+      }
+
+      return;
     }
 
     throw new Error(`Unknown manage_bot action: ${(payload as { action: string }).action}`);
   }
+
+  private async handleBotQuery(envelope: MessageEnvelope, payload: BotQueryPayload): Promise<void> {
+    const agent = await this.agentRepo.getAgent(envelope.initiatorId);
+    if (!agent) throw new Error('Agent not found');
+
+    const activeSession = await this.agentRepo.getActiveSession(agent.id);
+    if (!activeSession || activeSession.status !== 'running') {
+      throw new Error('No running session for agent');
+    }
+
+    if (!this.botRepo) throw new Error('BotRepository not wired — bot query unavailable');
+
+    if (payload.action === 'list_bots') {
+      const since = payload.days ? new Date(Date.now() - payload.days * 24 * 60 * 60 * 1000) : undefined;
+      const bots = await this.botRepo.getBotsByCreator('agent', agent.id, since);
+      await this.eventPublisher.emitToolResult(agent.id, {
+        tool: 'list_bots',
+        status: 'ok',
+        message: `Found ${bots.length} bot(s)`,
+        data: bots.map((bot) => ({
+          id: bot.id,
+          status: bot.status,
+          strategyPreset: (bot.config as Record<string, unknown>)?.['strategyPreset'] as string | undefined,
+          symbol: (bot.config as Record<string, unknown>)?.['symbol'] as string | undefined,
+        })),
+      });
+      return;
+    }
+
+    if (payload.action === 'get_bot_status') {
+      if (!payload.botId) {
+        await this.eventPublisher.emitToolResult(agent.id, {
+          tool: 'get_bot_status',
+          status: 'error',
+          message: 'botId is required for get_bot_status',
+        });
+        return;
+      }
+
+      const bot = await this.botRepo.getBotById(payload.botId);
+      if (!bot || bot.userId !== agent.userId) {
+        await this.eventPublisher.emitToolResult(agent.id, {
+          tool: 'get_bot_status',
+          status: 'error',
+          message: `Bot ${payload.botId} not found or not owned by this agent's user`,
+          botId: payload.botId,
+        });
+        return;
+      }
+
+      await this.eventPublisher.emitToolResult(agent.id, {
+        tool: 'get_bot_status',
+        status: 'ok',
+        message: `Bot ${bot.id} is ${bot.status}`,
+        botId: bot.id,
+        data: {
+          id: bot.id,
+          status: bot.status,
+          venueAccountId: bot.venueAccountId,
+          config: bot.config,
+          createdAt: bot.createdAt?.toISOString?.() ?? undefined,
+          updatedAt: bot.updatedAt?.toISOString?.() ?? undefined,
+        },
+      });
+      return;
+    }
+
+    if (payload.action === 'get_analytics') {
+      const since = payload.days ? new Date(Date.now() - payload.days * 24 * 60 * 60 * 1000) : undefined;
+      let analytics: unknown;
+      try {
+        analytics = await this.botRepo.getAnalyticsByCreator('agent', agent.id, since, payload.botId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error fetching analytics';
+        await this.eventPublisher.emitToolResult(agent.id, {
+          tool: 'get_analytics',
+          status: 'error',
+          message: msg,
+          botId: payload.botId,
+        });
+        return;
+      }
+      await this.eventPublisher.emitToolResult(agent.id, {
+        tool: 'get_analytics',
+        status: 'ok',
+        message: 'Analytics summary ready',
+        data: analytics,
+      });
+      return;
+    }
+
+    if (payload.action === 'list_positions') {
+      let positions: readonly unknown[];
+      try {
+        positions = await this.botRepo.getOpenPositionsByCreator('agent', agent.id, payload.botId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error fetching positions';
+        await this.eventPublisher.emitToolResult(agent.id, {
+          tool: 'list_positions',
+          status: 'error',
+          message: msg,
+          botId: payload.botId,
+        });
+        return;
+      }
+      await this.eventPublisher.emitToolResult(agent.id, {
+        tool: 'list_positions',
+        status: 'ok',
+        message: `Found ${positions.length} open position(s)`,
+        data: (positions as Array<Record<string, unknown>>).map((position) => ({
+          id: position.id,
+          symbol: position.symbol,
+          side: position.side,
+          size: position.size,
+          entryPrice: position.entryPrice,
+          realizedPnl: position.realizedPnl,
+          updatedAt: position.updatedAt?.toISOString?.() ?? undefined,
+        })),
+      });
+      return;
+    }
+
+    throw new Error(`Unknown bot query action: ${(payload as { action: string }).action}`);
+  }
+}
+
+function mergeBotConfig(baseConfig: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...baseConfig };
+
+  for (const [key, value] of Object.entries(patch)) {
+    const current = merged[key];
+    if (isPlainObject(current) && isPlainObject(value)) {
+      merged[key] = mergeBotConfig(current, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+
+  return merged;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function formatAgentMessage(agentName: string, subject: string | undefined, body: string): string {

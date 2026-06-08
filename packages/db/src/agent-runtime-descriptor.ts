@@ -6,6 +6,7 @@ import {
   BOT_MANAGEMENT_SKILL,
   DEFAULT_RUNTIME_BUDGETS,
   RISK_MONITORING_SKILL,
+  TRADING_SKILL,
 } from '@herobids/domain';
 import type {
   CapabilityReadiness,
@@ -17,6 +18,7 @@ import type {
 const SYSTEM_SKILLS_BY_ID: Record<string, SkillDefinition> = {
   [BASE_SKILL.id]: BASE_SKILL,
   [BOT_MANAGEMENT_SKILL.id]: BOT_MANAGEMENT_SKILL,
+  [TRADING_SKILL.id]: TRADING_SKILL,
   [RISK_MONITORING_SKILL.id]: RISK_MONITORING_SKILL,
 };
 
@@ -108,7 +110,11 @@ function inferSkillFromRow(row: typeof skills.$inferSelect): SkillDefinition {
   }
 
   const requiresTrading = row.requiredTools.includes('create_bot')
-    || row.requiredTools.includes('decision_submit')
+    || row.requiredTools.includes('submit_decision')
+    || row.requiredTools.includes('manage_bot')
+    || row.requiredTools.includes('bot_query')
+    || row.requiredTools.includes('list_positions')
+    || row.requiredTools.includes('get_analytics')
     || row.contextRequirements.some((requirement) => ['bot_statuses', 'positions', 'fills', 'analytics'].includes(requirement));
 
   const capabilityFamilies = requiresTrading ? ['trading'] : [];

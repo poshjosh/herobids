@@ -63,7 +63,7 @@ export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
 When the user wants to trade, use create_bot to set up a bot with appropriate strategy and risk parameters.
 Always start bots in paper mode first unless the user has explicitly requested live trading.
 Never expose technical venue details (symbols like BTC-PERP) to the user — use plain language.`,
-  requiredTools: ['create_bot', 'decision_submit', 'send_message'],
+  requiredTools: ['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'send_message'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {
@@ -80,6 +80,32 @@ Never expose technical venue details (symbols like BTC-PERP) to the user — use
 };
 
 /**
+ * `trading` skill — used for direct trade decisions and state inspection.
+ */
+export const TRADING_SKILL: SkillDefinition = {
+  id: 'trading',
+  name: 'Trading',
+  description: 'Submit direct trade decisions and inspect trading state.',
+  instructions: `You can submit direct trade decisions when a venue binding is ready.
+Use submit_decision for specific instruments and use list_positions or get_analytics to inspect the current trading state before making new decisions.
+Keep decisions aligned with the user goal and the current market context.`,
+  requiredTools: ['submit_decision', 'list_positions', 'get_analytics'],
+  capabilityFamilies: ['trading'],
+  bindingRequirements: {
+    trading: {
+      minBindings: 1,
+      requireReady: true,
+    },
+  },
+  contextRequirements: ['positions', 'fills', 'analytics', 'costs'],
+  requiredContextBlocks: ['corePlatformContext', 'tradingContext'],
+  promptRendererHints: ['readiness-summary', 'trading'],
+  requiredGuardrails: ['token-budget', 'daily-loss'],
+  suggestedTickIntervalMs: 300_000,
+  visibility: 'public',
+};
+
+/**
  * `risk-monitoring` skill — watches positions and alerts on drawdowns.
  */
 export const RISK_MONITORING_SKILL: SkillDefinition = {
@@ -91,7 +117,7 @@ Alert the user via send_message when:
 - Unrealized loss exceeds 5% of allocated capital
 - A position has been open longer than the user's stated time horizon
 - Market volatility spikes significantly`,
-  requiredTools: ['send_message', 'artifact_publish'],
+  requiredTools: ['send_message', 'artifact_publish', 'list_positions', 'get_analytics'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {
@@ -112,7 +138,7 @@ Alert the user via send_message when:
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
-  trading: ['bot-management'],
+  trading: ['bot-management', 'trading'],
   reminder: [],     // base only — sends scheduled alerts
   custom: [],       // user configures skills manually
 };
@@ -120,5 +146,6 @@ export const SKILL_PRESET_MAP: Record<string, string[]> = {
 /** All seeded system skills (excluding base which is auto-injected). */
 export const SYSTEM_SKILLS: SkillDefinition[] = [
   BOT_MANAGEMENT_SKILL,
+  TRADING_SKILL,
   RISK_MONITORING_SKILL,
 ];

@@ -11,7 +11,7 @@ const logger = pino({ name: 'capability-policy' });
 export type CapabilityTier = 'brokered' | 'direct' | 'never';
 
 export interface CapabilityGrant {
-  /** Capability identifier (e.g. 'web_fetch', 'code_execute', 'decision_submit') */
+  /** Capability identifier (e.g. 'web_fetch', 'code_execute', 'submit_decision') */
   capability: string;
   /** Access tier */
   tier: CapabilityTier;
@@ -97,7 +97,7 @@ export function buildCapabilityGrants(toolPolicy?: Record<string, unknown> | nul
  */
 export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
   {
-    capability: 'decision_submit',
+    capability: 'submit_decision',
     tier: 'brokered',
     enabled: true,
     limits: { maxPerMinute: 10, maxConcurrent: 1, timeoutMs: 30_000 },
@@ -134,6 +134,12 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     tier: 'brokered',
     enabled: false,
     limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 },
+  },
+  {
+    capability: 'bot_query',
+    tier: 'brokered',
+    enabled: true,
+    limits: { maxPerMinute: 20, maxConcurrent: 2, timeoutMs: 30_000 },
   },
   {
     capability: 'venue_api',

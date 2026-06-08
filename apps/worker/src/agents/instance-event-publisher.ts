@@ -8,6 +8,7 @@ import type {
   ReconciliationNoticePayload,
   InstanceStatusPayload,
   ContextSnapshotPayload,
+  ToolResultPayload,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
@@ -54,6 +55,10 @@ export class InstanceEventPublisher {
 
   async emitInstanceStatus(agentId: string, payload: InstanceStatusPayload): Promise<void> {
     await this.publish(agentId, INSTANCE_MESSAGE_TYPES.STATUS, payload);
+  }
+
+  async emitToolResult(agentId: string, payload: ToolResultPayload): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.TOOL_RESULT, payload);
   }
 
   /**

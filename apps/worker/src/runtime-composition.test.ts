@@ -27,7 +27,7 @@ const baseDescriptor = {
       name: 'Bot Management',
       description: 'Trading bots',
       instructions: 'Manage trading bots.',
-      requiredTools: ['create_bot', 'decision_submit', 'send_message'],
+      requiredTools: ['create_bot', 'submit_decision', 'send_message'],
       capabilityFamilies: ['trading'],
       bindingRequirements: { trading: { minBindings: 1, requireReady: true } },
       contextRequirements: ['bot_statuses'],

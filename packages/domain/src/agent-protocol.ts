@@ -107,7 +107,7 @@ export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;
 
 /** Brokered tool: agent requests creation (and optionally auto-start) of a bot. */
 export const ManageBotPayloadSchema = z.object({
-  action: z.enum(['create_and_start', 'stop']),
+  action: z.enum(['create_and_start', 'stop', 'start', 'adjust_config']),
   /** For create_and_start — the target venue account */
   venueAccountId: z.string().min(1).optional(),
   /** For create_and_start — full bot config (strategy, risk params, execution mode) */
@@ -119,6 +119,15 @@ export const ManageBotPayloadSchema = z.object({
 });
 
 export type ManageBotPayload = z.infer<typeof ManageBotPayloadSchema>;
+
+/** Brokered bot query payload used to fetch read-only data from the platform. */
+export const BotQueryPayloadSchema = z.object({
+  action: z.enum(['list_bots', 'get_bot_status', 'get_analytics', 'list_positions']),
+  botId: z.string().min(1).optional(),
+  days: z.number().int().min(1).max(365).optional(),
+});
+
+export type BotQueryPayload = z.infer<typeof BotQueryPayloadSchema>;
 
 // --- Trading Instance → Agent Messages ---
 
@@ -225,6 +234,17 @@ export const InstanceStatusPayloadSchema = z.object({
 
 export type InstanceStatusPayload = z.infer<typeof InstanceStatusPayloadSchema>;
 
+/** Tool-result message emitted by the platform back to an agent. */
+export const ToolResultPayloadSchema = z.object({
+  tool: z.string().min(1),
+  status: z.enum(['ok', 'error']),
+  message: z.string().min(1),
+  botId: z.string().optional(),
+  data: z.unknown().optional(),
+});
+
+export type ToolResultPayload = z.infer<typeof ToolResultPayloadSchema>;
+
 // --- Message Type Constants ---
 
 export const AGENT_MESSAGE_TYPES = {
@@ -235,6 +255,7 @@ export const AGENT_MESSAGE_TYPES = {
   ARTIFACT_PUBLISH: 'agent.artifact.publish',
   SEND_MESSAGE: 'agent.message.send',
   MANAGE_BOT: 'agent.manage_bot',
+  BOT_QUERY: 'agent.bot.query',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -246,6 +267,7 @@ export const INSTANCE_MESSAGE_TYPES = {
   GUARDRAIL_TRIGGERED: 'instance.guardrail.triggered',
   RECONCILIATION_NOTICE: 'instance.reconciliation.notice',
   STATUS: 'instance.status',
+  TOOL_RESULT: 'instance.tool.result',
 } as const;
 
 /** Map message type to its payload schema for validation */
@@ -257,6 +279,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: ArtifactPublishPayloadSchema,
   [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: SendMessagePayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_BOT]: ManageBotPayloadSchema,
+  [AGENT_MESSAGE_TYPES.BOT_QUERY]: BotQueryPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,
@@ -265,6 +288,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED]: GuardrailTriggeredPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.RECONCILIATION_NOTICE]: ReconciliationNoticePayloadSchema,
   [INSTANCE_MESSAGE_TYPES.STATUS]: InstanceStatusPayloadSchema,
+  [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: ToolResultPayloadSchema,
 };
 
 /**

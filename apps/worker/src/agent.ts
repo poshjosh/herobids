@@ -14,7 +14,7 @@ import { writeFile, mkdir, rm, access } from 'node:fs/promises';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL } from '@herobids/domain';
 import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
@@ -122,6 +122,7 @@ const initialToolPolicy = agentConfig.runtimeDescriptor?.toolPolicy ?? parseTool
 const ALL_SKILLS_BY_ID: Record<string, SkillDefinition> = {
   base: BASE_SKILL,
   'bot-management': BOT_MANAGEMENT_SKILL,
+  trading: TRADING_SKILL,
   'risk-monitoring': RISK_MONITORING_SKILL,
 };
 
@@ -136,16 +137,17 @@ const activeSkills = resolveSkills(skillIds);
 const allActiveSkills = [BASE_SKILL, ...activeSkills];
 
 function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
+  const isTradingSkill = (skillId: string) => skillId === 'bot-management' || skillId === 'risk-monitoring' || skillId === 'trading';
   const resolvedSkills = allActiveSkills.map((skill) => ({
     ...skill,
-    capabilityFamilies: skill.id === 'bot-management' || skill.id === 'risk-monitoring' ? ['trading'] : [],
-    bindingRequirements: (skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+    capabilityFamilies: isTradingSkill(skill.id) ? ['trading'] : [],
+    bindingRequirements: (isTradingSkill(skill.id)
       ? { trading: { minBindings: 1, requireReady: true } }
       : {}) as Record<string, { minBindings: number; requireReady: boolean }>,
-    requiredContextBlocks: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+    requiredContextBlocks: isTradingSkill(skill.id)
       ? ['corePlatformContext', 'tradingContext']
       : ['corePlatformContext'],
-    promptRendererHints: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+    promptRendererHints: isTradingSkill(skill.id)
       ? ['readiness-summary', 'trading']
       : ['core-system'],
   })) as SkillDefinition[];
@@ -339,13 +341,13 @@ function parseToolCalls(llmResponse: string): ToolCall[] {
   return calls;
 }
 
-async function executeTool(call: ToolCall): Promise<void> {
+async function executeTool(call: ToolCall): Promise<string | null> {
   // Hard runtime gate: reject any tool not declared in the active skill set.
   // The model was only told about allowed tools, but we enforce it here too so
   // a jailbreak or prompt injection cannot invoke undeclared capabilities.
   if (!allowedTools().has(call.tool)) {
     logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
-    return;
+    return `tool rejected: ${call.tool} is not available in the current skill set`;
   }
 
   logger.info({ tool: call.tool, args: call.args }, 'Executing tool');
@@ -356,7 +358,7 @@ async function executeTool(call: ToolCall): Promise<void> {
         body: call.args['body'] as string ?? 'No message body',
         subject: call.args['subject'] as string | undefined,
       });
-      break;
+      return 'send_message queued for platform delivery';
     }
 
     case 'set_memory': {
@@ -365,8 +367,9 @@ async function executeTool(call: ToolCall): Promise<void> {
       if (typeof key === 'string' && key.length > 0 && value !== undefined) {
         await redis.hset(`agent:memory:${AGENT_ID}`, key, JSON.stringify(value));
         logger.debug({ key }, 'Memory entry set');
+        return `memory updated: ${key}`;
       }
-      break;
+      return 'memory update skipped';
     }
 
     case 'artifact_publish': {
@@ -378,10 +381,10 @@ async function executeTool(call: ToolCall): Promise<void> {
         location: call.args['location'],
         metadata: call.args['metadata'],
       });
-      break;
+      return 'artifact publish queued for platform handling';
     }
 
-    case 'decision_submit': {
+    case 'submit_decision': {
       sessionMetrics.decisionsSubmitted++;
       await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
         decisionId: crypto.randomUUID(),
@@ -392,7 +395,7 @@ async function executeTool(call: ToolCall): Promise<void> {
         rationaleSummary: call.args['rationaleSummary'] as string ?? 'Agent decision',
         confidence: call.args['confidence'] as number | undefined,
       });
-      break;
+      return 'decision submitted to platform';
     }
 
     case 'create_bot': {
@@ -402,7 +405,68 @@ async function executeTool(call: ToolCall): Promise<void> {
         config: call.args['config'] as Record<string, unknown> | undefined,
         rationale: call.args['rationale'] as string | undefined,
       });
-      break;
+      return 'bot creation requested';
+    }
+
+    case 'start_bot': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+        action: 'start',
+        botId: call.args['botId'] as string | undefined,
+        rationale: call.args['rationale'] as string | undefined,
+      });
+      return 'bot start requested';
+    }
+
+    case 'stop_bot': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+        action: 'stop',
+        botId: call.args['botId'] as string | undefined,
+        rationale: call.args['rationale'] as string | undefined,
+      });
+      return 'bot stop requested';
+    }
+
+    case 'adjust_bot_config': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+        action: 'adjust_config',
+        botId: call.args['botId'] as string | undefined,
+        config: call.args['config'] as Record<string, unknown> | undefined,
+        rationale: call.args['rationale'] as string | undefined,
+      });
+      return 'bot config update requested';
+    }
+
+    case 'list_bots': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
+        action: 'list_bots',
+        days: call.args['days'] as number | undefined,
+      });
+      return 'bot list requested from platform';
+    }
+
+    case 'get_bot_status': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
+        action: 'get_bot_status',
+        botId: call.args['botId'] as string | undefined,
+      });
+      return 'bot status requested from platform';
+    }
+
+    case 'get_analytics': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
+        action: 'get_analytics',
+        botId: call.args['botId'] as string | undefined,
+        days: call.args['days'] as number | undefined,
+      });
+      return 'analytics requested from platform';
+    }
+
+    case 'list_positions': {
+      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
+        action: 'list_positions',
+        botId: call.args['botId'] as string | undefined,
+      });
+      return 'positions requested from platform';
     }
 
     case 'code_execute': {
@@ -488,13 +552,15 @@ async function executeTool(call: ToolCall): Promise<void> {
       const resultContent = success
         ? `code_execute${label} result:\n${stdout || '(no output)'}`
         : `code_execute${label} failed:\nstderr: ${stderr}\nstdout: ${stdout || '(no output)'}`;
-      addToHistory('user', resultContent);
-      break;
+      return resultContent;
     }
 
     default:
       logger.warn({ tool: call.tool }, 'Unknown tool — ignoring');
+      return `unknown tool: ${call.tool}`;
   }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -613,7 +679,10 @@ async function runTick(): Promise<void> {
     // Parse and execute tool calls
     const toolCalls = parseToolCalls(assistantResponse);
     for (const call of toolCalls) {
-      await executeTool(call);
+      const toolResult = await executeTool(call);
+      if (toolResult) {
+        addToHistory('user', toolResult);
+      }
     }
 
     await sendHeartbeat('ready');
