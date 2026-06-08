@@ -125,6 +125,7 @@ Key principles:
 - [General lessons](./docs/lessons/lessons-from-previous-project.md) — critical bugs from previous project
 - [Rate limiting guide](./docs/lessons/rate-limiting-guide.md) — venue rate limit architecture
 - [Configuration management](./docs/best-practices/configuration.md) — config layers and loading
+ - [Skill authoring guide](./docs/tech/agents/skill-authoring.md) — conventions for writing skills and a JSON template for `POST /skills`
 
 ## Rules
 
