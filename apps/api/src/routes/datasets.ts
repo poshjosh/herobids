@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
-import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { eq, and, desc } from 'drizzle-orm';

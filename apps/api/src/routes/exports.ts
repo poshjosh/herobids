@@ -45,7 +45,7 @@ const TradesQuerySchema = z.object({
 });
 
 const JournalQuerySchema = z.object({
-  format: z.enum(['md', 'json']).default('json'),
+  format: z.enum(['md', 'json', 'csv']).default('csv'),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
 });
@@ -609,9 +609,14 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
           void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.md"`);
           return reply.send(eventsToMarkdown([]));
         }
-        void reply.header('Content-Type', 'application/json');
-        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.json"`);
-        return reply.send([]);
+        if (parsed.data.format === 'json') {
+          void reply.header('Content-Type', 'application/json');
+          void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.json"`);
+          return reply.send([]);
+        }
+        void reply.header('Content-Type', 'text/csv');
+        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.csv"`);
+        return reply.send('id,actor_type,actor_id,type,created_at\n');
       }
 
       const conditions = [inArray(journalEvents.actorId, agentBotIds)];
@@ -624,6 +629,16 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         void reply.header('Content-Type', 'text/markdown');
         void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.md"`);
         return reply.send(eventsToMarkdown(rows));
+      }
+
+      if (parsed.data.format === 'csv') {
+        const header = 'id,actor_type,actor_id,type,created_at\n';
+        const csvRows = rows.map((r) =>
+          [r.id, r.actorType ?? '', r.actorId ?? '', r.type, r.createdAt.toISOString()].join(','),
+        ).join('\n');
+        void reply.header('Content-Type', 'text/csv');
+        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.csv"`);
+        return reply.send(header + csvRows);
       }
 
       void reply.header('Content-Type', 'application/json');
@@ -647,9 +662,9 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
       const agentBotIds = agentBots.map((b) => b.id);
 
       if (agentBotIds.length === 0) {
-        void reply.header('Content-Type', 'application/json');
-        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-costs.json"`);
-        return reply.send({ agentId: id, feesByCurrency: {} });
+        void reply.header('Content-Type', 'text/csv');
+        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-costs.csv"`);
+        return reply.send('currency,total_fees\n');
       }
 
       const fillRows = await db.select().from(fills)
@@ -661,9 +676,11 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         feesByCurrency[currency] = (feesByCurrency[currency] ?? 0) + parseFloat(row.fee ?? '0');
       }
 
-      void reply.header('Content-Type', 'application/json');
-      void reply.header('Content-Disposition', `attachment; filename="agent-${id}-costs.json"`);
-      return reply.send({ agentId: id, feesByCurrency });
+      const csvHeader = 'currency,total_fees\n';
+      const csvRows = Object.entries(feesByCurrency).map(([c, f]) => `${c},${f}`).join('\n');
+      void reply.header('Content-Type', 'text/csv');
+      void reply.header('Content-Disposition', `attachment; filename="agent-${id}-costs.csv"`);
+      return reply.send(csvHeader + csvRows);
     },
   );
 
@@ -772,18 +789,17 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         feesByCurrency[currency] = (feesByCurrency[currency] ?? 0) + parseFloat(row.fee ?? '0');
       }
 
-      const zip = buildZip([
-        { name: 'trades.csv', data: Buffer.from(fillsToCsv(allFills)) },
-        { name: 'journal.md', data: Buffer.from(eventsToMarkdown(journalRows)) },
-        { name: 'costs.json', data: Buffer.from(JSON.stringify({ agentId: id, feesByCurrency }, null, 2)) },
-        { name: 'sessions.json', data: Buffer.from(JSON.stringify(sessions, null, 2)) },
-        { name: 'config.yaml', data: Buffer.from(stringifyYaml(agentConfig)) },
-        { name: 'report.json', data: Buffer.from(JSON.stringify(report, null, 2)) },
-      ]);
-
-      void reply.header('Content-Type', 'application/zip');
-      void reply.header('Content-Disposition', `attachment; filename="agent-${id}-bundle.zip"`);
-      return reply.send(zip);
+      void reply.header('Content-Type', 'application/json');
+      void reply.header('Content-Disposition', `attachment; filename="agent-${id}-bundle.json"`);
+      return reply.send({
+        agent: agentConfig,
+        trades: allFills,
+        journal: journalRows,
+        sessions,
+        costs: { agentId: id, feesByCurrency },
+        report,
+        exportedAt: new Date().toISOString(),
+      });
     },
   );
 }

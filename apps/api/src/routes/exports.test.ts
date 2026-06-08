@@ -502,7 +502,7 @@ describe('GET /agents/:id/export/config', () => {
 });
 
 describe('GET /agents/:id/export/bundle', () => {
-  it('returns a ZIP bundle', async () => {
+  it('returns a JSON bundle', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     // agent lookup + agentBots + Promise.all([fills, positions]) + Promise.all([journal, sessions])
     const db = buildDb([
@@ -519,10 +519,10 @@ describe('GET /agents/:id/export/bundle', () => {
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toMatch(/application\/zip/);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
   });
 
-  it('agent bundle ZIP contains expected files', async () => {
+  it('agent bundle JSON contains expected keys', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     const db = buildDb([
       [agentRow],
@@ -538,13 +538,11 @@ describe('GET /agents/:id/export/bundle', () => {
 
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
     expect(res.statusCode).toBe(200);
-    const zipBuf = Buffer.from(res.rawPayload);
-    const names = readZipFilenames(zipBuf);
-    expect(names).toContain('trades.csv');
-    expect(names).toContain('journal.md');
-    expect(names).toContain('costs.json');
-    expect(names).toContain('sessions.json');
-    expect(names).toContain('config.yaml');
-    expect(names).toContain('report.json');
+    const body = res.json<Record<string, unknown>>();
+    expect(body).toHaveProperty('agent');
+    expect(body).toHaveProperty('trades');
+    expect(body).toHaveProperty('journal');
+    expect(body).toHaveProperty('sessions');
+    expect(body).toHaveProperty('exportedAt');
   });
 });

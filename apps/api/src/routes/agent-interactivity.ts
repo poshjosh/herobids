@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents } from '@herobids/db';
+import { agents, bots, fills } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
 
 // --- Schemas ---
@@ -173,6 +173,28 @@ export async function agentInteractivityRoutes(
     }
 
     return reply.send({ agentId: id, prompt });
+  });
+
+  // GET /agents/:id/trades — fills (trades) attributed to bots owned by this agent
+  app.get<{ Params: { id: string } }>('/agents/:id/trades', async (request, reply) => {
+    const { id } = request.params;
+
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const agentBots = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+    const agentBotIds = agentBots.map((b) => b.id);
+
+    if (agentBotIds.length === 0) {
+      return reply.send({ agentId: id, trades: [] });
+    }
+
+    const trades = await db.select().from(fills)
+      .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)));
+
+    return reply.send({ agentId: id, trades });
   });
 
   // GET /agents/telegram-bot — platform Telegram bot username (501 if not configured)

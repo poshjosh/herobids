@@ -21,6 +21,8 @@ export const skills = pgTable('skills', {
   contextRequirements: text('context_requirements').array().notNull().default(sql`'{}'::text[]`),
   /** Guardrail IDs this skill requires: token-budget, daily-loss, bot-limit */
   requiredGuardrails: text('required_guardrails').array().notNull().default(sql`'{}'::text[]`),
+  /** Capability families this skill belongs to: trading, etc. */
+  capabilityFamilies: text('capability_families').array().notNull().default(sql`'{}'::text[]`),
   /** Suggested tick interval in ms (0 = no suggestion). Null = use agent default. */
   suggestedTickIntervalMs: integer('suggested_tick_interval_ms').default(900_000),
   /** public | private */

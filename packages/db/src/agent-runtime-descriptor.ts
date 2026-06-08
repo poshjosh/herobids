@@ -121,9 +121,9 @@ function inferSkillFromRow(row: typeof skills.$inferSelect): SkillDefinition {
     instructions: row.instructions,
     requiredTools: row.requiredTools,
     capabilityFamilies,
-    bindingRequirements: requiresTrading
+    bindingRequirements: (requiresTrading
       ? { trading: { minBindings: 1, requireReady: true } }
-      : {},
+      : {}) as Record<string, { minBindings: number; requireReady: boolean }>,
     contextRequirements: row.contextRequirements,
     requiredContextBlocks,
     promptRendererHints: requiresTrading ? ['readiness-summary', 'trading'] : ['core-system'],

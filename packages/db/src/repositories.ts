@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, isNull, desc, or, gte, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, bots, tradingBindings, executionPlans, orders, balanceSnapshots, decisions } from './schema/index.js';
+import { fills, positions, bots, tradingBindings, executionPlans, orders, balanceSnapshots, decisions, venueAccounts } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -595,6 +595,18 @@ export class BotRepository {
       .select({ id: tradingBindings.id })
       .from(tradingBindings)
       .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, userId)));
+    return !!row;
+  }
+
+  /**
+   * Confirm that a venue account exists and belongs to the given user.
+   * Used by the broker before creating a bot on behalf of an agent.
+   */
+  async isVenueAccountOwnedBy(venueAccountId: string, userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: venueAccounts.id })
+      .from(venueAccounts)
+      .where(and(eq(venueAccounts.id, venueAccountId), eq(venueAccounts.userId, userId)));
     return !!row;
   }
 }

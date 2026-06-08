@@ -138,16 +138,16 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
   const resolvedSkills = allActiveSkills.map((skill) => ({
     ...skill,
     capabilityFamilies: skill.id === 'bot-management' || skill.id === 'risk-monitoring' ? ['trading'] : [],
-    bindingRequirements: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
+    bindingRequirements: (skill.id === 'bot-management' || skill.id === 'risk-monitoring'
       ? { trading: { minBindings: 1, requireReady: true } }
-      : {},
+      : {}) as Record<string, { minBindings: number; requireReady: boolean }>,
     requiredContextBlocks: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
       ? ['corePlatformContext', 'tradingContext']
       : ['corePlatformContext'],
     promptRendererHints: skill.id === 'bot-management' || skill.id === 'risk-monitoring'
       ? ['readiness-summary', 'trading']
       : ['core-system'],
-  }));
+  })) as SkillDefinition[];
 
   return {
     schemaVersion: 'v1',

@@ -1,4 +1,4 @@
-import type { CapabilityReadiness, RuntimeDescriptor, RuntimeFamilyBindingDescriptor, RuntimeDescriptorUpdatePayload } from '@herobids/domain';
+import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload } from '@herobids/domain';
 
 export interface RuntimeSessionMetrics {
   decisionsSubmitted: number;

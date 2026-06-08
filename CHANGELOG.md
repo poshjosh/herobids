@@ -30,6 +30,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `GET /datasets`, `POST /datasets/upload` (CSV/plain), `POST /datasets/fetch`, `DELETE /datasets/:id` — dataset management
   - DB: `users.ai_model_config` JSONB column; `datasets` table with FK cascade and status enum
   - Migration: `0004_features_016_017.sql`
+- Feature 5a — Bybit and 1inch venue support
+- Feature 5b — Telegram alerting
+- Feature 5c — broader auth coverage
+- Feature 5d — autonomous agent tooling
+- Feature 5e — frontend dashboard
+- Feature 5f — billing
+- UI simplification
+- Full-stack Docker Compose
+- Rename `tradingInstanceId`
+- Plan quota fix
+- Bot data surface
+- Agent data surface
+- Billing ledger sessions
+- Exports
+- Admin websocket
+- Frontend refresh
+- Capability-platform API redesign
 - Blueprints: DELETE, publish, and unpublish wrapped in `pg_advisory_xact_lock` transactions to prevent concurrent mutation
 - Schemas: `blueprintId` and `config` are mutually exclusive in `CreateInstanceSchema`
 

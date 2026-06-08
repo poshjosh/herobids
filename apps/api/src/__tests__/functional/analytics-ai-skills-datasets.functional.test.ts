@@ -206,10 +206,13 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
   // ─── Skills ───────────────────────────────────────────────────────────────
 
   describe('GET /skills', () => {
-    it('returns an empty list for a new user', async () => {
+    it('returns only system skills for a new user (no user-created skills)', async () => {
       const res = await ctx.app.inject({ method: 'GET', url: '/skills', headers: authHeader() });
       expect(res.statusCode).toBe(200);
-      expect(res.json<{ skills: unknown[] }>().skills).toEqual([]);
+      const { skills: returnedSkills } = res.json<{ skills: Array<{ id: string; authorId: string | null }> }>();
+      // System skills (authorId=null) are always visible; new users have no own skills
+      const userCreatedSkills = returnedSkills.filter((s) => s.authorId !== null);
+      expect(userCreatedSkills).toEqual([]);
     });
 
     it('returns 401 without auth', async () => {

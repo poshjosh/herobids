@@ -25,10 +25,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${config.apiBaseUrl}${path}`, { ...init, headers });
 
   if (res.status === 401) {
-    clearToken();
-    // Soft redirect to login — avoid hard reload when the router handles this
-    window.location.href = '/login';
-    throw new ApiError(401, 'unauthorized', 'Session expired');
+    // Don't force-redirect on auth endpoints — let the caller handle the error
+    const isAuthEndpoint = path.startsWith('/auth/login') || path.startsWith('/auth/register') || path.startsWith('/auth/exchange');
+    if (!isAuthEndpoint) {
+      clearToken();
+      // Soft redirect to login — avoid hard reload when the router handles this
+      window.location.href = '/login';
+      throw new ApiError(401, 'unauthorized', 'Session expired');
+    }
+    // For auth endpoints, fall through to the generic error handler below
   }
 
   if (!res.ok) {
@@ -154,6 +159,7 @@ export interface Skill {
   requiredTools: string[];
   contextRequirements: string[];
   requiredGuardrails: string[];
+  capabilityFamilies: string[];
   visibility: 'private' | 'public' | 'built-in';
   tags: string[];
   forkOf: string | null;
@@ -456,6 +462,8 @@ export const agents = {
   artifacts: (id: string, limit?: number) =>
     request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
+  decisions: (id: string, limit?: number) =>
+    request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
   messages: (id: string, limit?: number, authoredBy?: 'agent' | 'platform') =>
     request<AgentOutboundMessage[]>(`/agents/${id}/messages${buildQuery({ limit, authoredBy })}`),
   capabilityReadiness: (id: string, family?: string) =>

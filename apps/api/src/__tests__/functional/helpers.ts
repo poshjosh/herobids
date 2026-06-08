@@ -144,12 +144,42 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       agents,
       sessions,
       skills,
-      datasets,
       local_identities,
       oauth_identities,
       user_plans,
       users
     CASCADE
+  `);
+
+  // Re-seed system skills after truncation (authorId = null = platform-owned)
+  await db.execute(sql`
+    INSERT INTO "skills" (
+      "id", "author_id", "name", "description", "instructions",
+      "required_tools", "context_requirements", "required_guardrails",
+      "capability_families", "suggested_tick_interval_ms", "visibility", "tags",
+      "created_at", "updated_at"
+    ) VALUES
+      (
+        'bot-management', NULL,
+        'Bot Management',
+        'Create, start, stop, and monitor trading bots.',
+        'You can create trading bots on behalf of the user.',
+        ARRAY['create_bot', 'decision_submit', 'send_message'],
+        ARRAY['bot_statuses', 'positions', 'costs'],
+        ARRAY['token-budget', 'daily-loss', 'bot-limit'],
+        ARRAY['trading']::text[], 900000, 'public', ARRAY[]::text[], now(), now()
+      ),
+      (
+        'risk-monitoring', NULL,
+        'Risk Monitoring',
+        'Watch open positions and alert the user when risk thresholds are approaching.',
+        'Monitor open positions and P&L continuously.',
+        ARRAY['send_message', 'artifact_publish'],
+        ARRAY['positions', 'fills', 'analytics'],
+        ARRAY['token-budget', 'daily-loss'],
+        ARRAY['trading']::text[], 300000, 'public', ARRAY[]::text[], now(), now()
+      )
+    ON CONFLICT ("id") DO NOTHING
   `);
 }
 

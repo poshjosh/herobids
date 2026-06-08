@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages } from '@herobids/db';
+import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, bots, decisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
 
@@ -370,6 +370,31 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       .orderBy(agentRuntimeSessions.startedAt);
 
     return reply.send(sessions);
+  });
+
+  // Get recent decisions from bots owned by this agent
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/agents/:id/decisions', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
+
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const agentBots = await db.select({ id: bots.id }).from(bots)
+      .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
+    const agentBotIds = agentBots.map((b) => b.id);
+
+    if (agentBotIds.length === 0) {
+      return reply.send([]);
+    }
+
+    const agentDecisions = await db.select().from(decisions)
+      .where(and(eq(decisions.actorType, 'bot'), inArray(decisions.actorId, agentBotIds)))
+      .orderBy(desc(decisions.createdAt))
+      .limit(limit);
+
+    return reply.send(agentDecisions);
   });
 
   // Stop agent (active/paused/starting → stopped).

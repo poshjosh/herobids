@@ -186,6 +186,12 @@ DATABASE_URL="postgres://herobids:herobids@localhost:5432/herobids"
 REDIS_URL="redis://localhost:6379"
 export DATABASE_URL REDIS_URL
 
+# Load CREDENTIAL_ENCRYPTION_KEY from .env if not already set in the environment
+if [[ -z "${CREDENTIAL_ENCRYPTION_KEY:-}" && -f "${ROOT}/.env" ]]; then
+  CREDENTIAL_ENCRYPTION_KEY="$(grep -E '^CREDENTIAL_ENCRYPTION_KEY=' "${ROOT}/.env" | cut -d= -f2- | tr -d '[:space:]')"
+fi
+export CREDENTIAL_ENCRYPTION_KEY
+
 # ─── Step 3: Integration tests ───────────────────────────────────────────────
 
 run_tier "Integration tests" \
@@ -195,6 +201,40 @@ run_tier "Integration tests" \
 
 run_tier "Functional tests" \
   bash -c "cd '${ROOT}' && pnpm test:functional"
+
+# Re-seed system skills after functional tests (they truncate the skills table)
+if [[ "${RUN_E2E}" == "true" ]]; then
+  log "Re-seeding system skills for E2E…"
+  docker compose -f "${ROOT}/docker-compose.yaml" exec -T postgres psql -U herobids -d herobids <<'PSQL' 2>/dev/null || log "WARN: skill reseed failed (non-fatal)"
+INSERT INTO "skills" (
+  "id", "author_id", "name", "description", "instructions",
+  "required_tools", "context_requirements", "required_guardrails",
+  "capability_families", "suggested_tick_interval_ms", "visibility", "tags",
+  "created_at", "updated_at"
+) VALUES
+  (
+    'bot-management', NULL,
+    'Bot Management',
+    'Create, start, stop, and monitor trading bots.',
+    'You can create trading bots on behalf of the user.',
+    ARRAY['create_bot', 'decision_submit', 'send_message'],
+    ARRAY['bot_statuses', 'positions', 'costs'],
+    ARRAY['token-budget', 'daily-loss', 'bot-limit'],
+    ARRAY['trading'], 900000, 'public', ARRAY[]::text[], now(), now()
+  ),
+  (
+    'risk-monitoring', NULL,
+    'Risk Monitoring',
+    'Watch open positions and alert the user when risk thresholds are approaching.',
+    'Monitor open positions and P&L continuously.',
+    ARRAY['send_message', 'artifact_publish'],
+    ARRAY['positions', 'fills', 'analytics'],
+    ARRAY['token-budget', 'daily-loss'],
+    ARRAY['trading'], 300000, 'public', ARRAY[]::text[], now(), now()
+  )
+ON CONFLICT ("id") DO NOTHING;
+PSQL
+fi
 
 # ─── Step 5: E2E tests (opt-in) ──────────────────────────────────────────────
 

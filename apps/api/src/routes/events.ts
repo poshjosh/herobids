@@ -58,6 +58,7 @@ export async function eventsRoutes(
     async function setup(): Promise<void> {
       let userId: string;
       try {
+        if (!token) throw new Error('Token is null');
         const { payload } = await jose.jwtVerify(token, secret, { algorithms: ['HS256'] });
         if (!payload.sub) throw new Error('No sub claim');
         userId = payload.sub;

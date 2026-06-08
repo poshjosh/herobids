@@ -199,8 +199,8 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(bindings.statusCode).toBe(200);
-    expect(bindings.json<{ bindings: Array<{ bindingId: string; status: string }> }>().bindings).toEqual(
-      expect.arrayContaining([expect.objectContaining({ bindingId, status: 'active' })]),
+    expect(bindings.json<{ bindings: Array<{ bindingId: string; grantStatus: string }> }>().bindings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ bindingId, grantStatus: 'active' })]),
     );
 
     const auditBeforeUnbind = await ctx.app.inject({

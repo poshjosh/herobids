@@ -128,6 +128,9 @@ function isPublicRoute(url: string, method: string): boolean {
   if (path === '/billing/webhook/stripe') return true;
   if (path === '/billing/webhook/creem') return true;
 
+  // Telegram webhook — verified by secret-token header inside the handler, not by JWT
+  if (path === '/api/telegram/webhook') return true;
+
   return false;
 }
 

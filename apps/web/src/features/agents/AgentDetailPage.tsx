@@ -127,6 +127,13 @@ export function AgentDetailPage() {
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
+  const decisionsQuery = useQuery({
+    queryKey: ['agents', id, 'decisions'],
+    queryFn: () => agentsApi.decisions(id!, 20),
+    enabled: !!id,
+    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
+  });
+
   if (query.isLoading) return <PageShell><LoadingRows count={5} /></PageShell>;
   if (query.isError) return <PageShell><ErrorState message={(query.error as Error).message} onRetry={() => void query.refetch()} /></PageShell>;
 
@@ -320,6 +327,24 @@ export function AgentDetailPage() {
                   </div>
                   {msg.subject && <div style={{ fontWeight: '600', marginBottom: '2px' }}>{msg.subject}</div>}
                   <div style={{ color: 'var(--color-text-muted)' }}>{msg.body}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <SectionLabel>Recent Decisions</SectionLabel>
+          {decisionsQuery.isLoading && <LoadingRows count={3} />}
+          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length === 0 && (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>No decisions submitted yet.</p>
+          )}
+          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+              {(decisionsQuery.data as Array<{ id: string; intent: string; createdAt: string }>).map((d) => (
+                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
+                  <span>{d.intent}</span>
+                  <RelativeTime timestamp={d.createdAt} />
                 </div>
               ))}
             </div>

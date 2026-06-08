@@ -115,6 +115,8 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
         email,
         avatarUrl: null,
         planId: defaultPlanId,
+        telegramChatId: null,
+        aiModelConfig: null,
         createdAt: now,
         updatedAt: now,
       });
@@ -429,6 +431,8 @@ async function findOrCreateUser(db: Database, googleUser: GoogleUserInfo, defaul
       email: googleUser.email,
       avatarUrl: googleUser.picture ?? null,
       planId: defaultPlanId,
+      telegramChatId: null,
+      aiModelConfig: null,
       createdAt: now,
       updatedAt: now,
     }).onConflictDoNothing();

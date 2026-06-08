@@ -291,12 +291,6 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       expect(res.json<{ error: string }>().error).toBe('not_configured');
     });
   });
-});
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['content-type']).toContain('text/csv');
-      expect(res.headers['content-disposition']).toContain('attachment');
-    });
-  });
 
   describe('GET /agents/:id/export/bundle', () => {
     it('returns a JSON bundle with required top-level keys', async () => {
