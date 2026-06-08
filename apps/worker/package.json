@@ -15,6 +15,7 @@
     "@herobids/domain": "workspace:*",
     "@herobids/engine": "workspace:*",
     "@herobids/llm": "workspace:*",
+    "@herobids/market-data": "workspace:*",
     "@herobids/strategy": "workspace:*",
     "@herobids/venues": "workspace:*",
     "bullmq": "^5.34.0",

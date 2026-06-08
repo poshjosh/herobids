@@ -103,6 +103,26 @@ reconciliation:
     expect(config.streams.private.reconnectBaseMs).toBe(1000);
     expect(config.streams.public.reconnectBaseMs).toBe(1000);
     expect(config.marking.stalenessThresholdMs).toBe(300000);
+    expect(config.marketData).toBeUndefined();
+  });
+
+  it('loads marketData when explicitly configured', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  dexscreener:
+    baseUrl: https://api.dexscreener.com
+    requestsPerMinute: 60
+  binance:
+    baseUrl: https://api.binance.com
+    requestsPerMinute: 200
+  timeoutMs: 5000
+`);
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.dexscreener.baseUrl).toBe('https://api.dexscreener.com');
+    expect(config.marketData?.binance.requestsPerMinute).toBe(200);
+    expect(config.marketData?.timeoutMs).toBe(5000);
   });
 
   it('ignores missing NODE_ENV overlay file gracefully', () => {

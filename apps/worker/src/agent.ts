@@ -18,6 +18,16 @@ import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
+import {
+  TokenBucketRateLimiter,
+  searchTokens,
+  evaluateRegime,
+  getRequiredRegimeCandleCount,
+  fetchBinanceCandles,
+  type DexScreenerConfig,
+  type BinanceCandlesConfig,
+  type RegimeParams,
+} from '@herobids/market-data';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
@@ -222,6 +232,43 @@ const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
 const botRepo = db ? new BotRepository(db) : null;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
+}
+
+// ---------------------------------------------------------------------------
+// Market data (optional — enables search_tokens and check_regime tools)
+// ---------------------------------------------------------------------------
+
+const MARKET_DATA_CONFIGURED = process.env['MARKET_DATA_CONFIGURED'] === '1';
+
+let dexscreenerConfig: DexScreenerConfig | null = null;
+let binanceConfig: BinanceCandlesConfig | null = null;
+
+if (MARKET_DATA_CONFIGURED) {
+  const MARKET_DATA_TIMEOUT_MS = parseInt(process.env['MARKET_DATA_TIMEOUT_MS'] ?? '5000', 10);
+  const DEXSCREENER_BASE_URL = process.env['DEXSCREENER_BASE_URL'] ?? 'https://api.dexscreener.com';
+  const DEXSCREENER_RPM = parseInt(process.env['DEXSCREENER_RPM'] ?? '60', 10);
+  const BINANCE_BASE_URL = process.env['BINANCE_BASE_URL'] ?? 'https://api.binance.com';
+  const BINANCE_RPM = parseInt(process.env['BINANCE_RPM'] ?? '200', 10);
+
+  dexscreenerConfig = {
+    baseUrl: DEXSCREENER_BASE_URL,
+    rateLimiter: new TokenBucketRateLimiter({ requestsPerMinute: DEXSCREENER_RPM }),
+    timeoutMs: MARKET_DATA_TIMEOUT_MS,
+  };
+
+  binanceConfig = {
+    baseUrl: BINANCE_BASE_URL,
+    rateLimiter: new TokenBucketRateLimiter({ requestsPerMinute: BINANCE_RPM }),
+    timeoutMs: MARKET_DATA_TIMEOUT_MS,
+  };
+} else {
+  logger.warn('MARKET_DATA_CONFIGURED not set — search_tokens and check_regime tools will be unavailable');
+  // Remove market-data tools from the runtime descriptor so the model never
+  // sees or plans around tools that are guaranteed to return "not configured".
+  const MARKET_DATA_TOOLS = new Set(['check_regime', 'search_tokens']);
+  for (const skill of runtimeState.runtimeDescriptor.resolvedSkills) {
+    skill.requiredTools = skill.requiredTools.filter((t) => !MARKET_DATA_TOOLS.has(t));
+  }
 }
 
 async function publishToInbound(type: string, payload: Record<string, unknown>): Promise<void> {
@@ -690,6 +737,49 @@ async function executeTool(call: ToolCall): Promise<string | null> {
         ? `code_execute${label} result:\n${stdout || '(no output)'}`
         : `code_execute${label} failed:\nstderr: ${stderr}\nstdout: ${stdout || '(no output)'}`;
       return resultContent;
+    }
+
+    case 'search_tokens': {
+      if (!dexscreenerConfig) {
+        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
+      }
+      const query = call.args['query'] as string | undefined;
+      if (!query) return JSON.stringify({ ok: false, error: 'query is required' });
+      try {
+        const results = await searchTokens(query, dexscreenerConfig, {
+          network: call.args['network'] as string | undefined,
+          minLiquidityUsd: call.args['minLiquidityUsd'] as number | undefined,
+        });
+        return JSON.stringify({ ok: true, tokens: results });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'unknown error';
+        if (message.includes('Rate limit exceeded')) {
+          return JSON.stringify({ ok: false, error: 'rate_limit', note: 'Try again in a moment.' });
+        }
+        logger.warn({ err, tool: 'search_tokens' }, 'search_tokens failed');
+        return JSON.stringify({ ok: false, error: message });
+      }
+    }
+
+    case 'check_regime': {
+      if (!binanceConfig) {
+        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
+      }
+      const params = call.args as RegimeParams;
+      try {
+        const candleLimit = getRequiredRegimeCandleCount(params);
+        const result = await evaluateRegime(params, (symbol) =>
+          fetchBinanceCandles(symbol, binanceConfig, { interval: '1h', limit: candleLimit }),
+        );
+        return JSON.stringify({ ok: true, ...result });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'unknown error';
+        if (message.includes('Rate limit exceeded')) {
+          return JSON.stringify({ ok: false, error: 'rate_limit', note: 'Try again in a moment.' });
+        }
+        logger.warn({ err, tool: 'check_regime' }, 'check_regime failed');
+        return JSON.stringify({ ok: false, error: message });
+      }
     }
 
     default:

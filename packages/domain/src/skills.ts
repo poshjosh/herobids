@@ -86,10 +86,14 @@ export const TRADING_SKILL: SkillDefinition = {
   id: 'trading',
   name: 'Trading',
   description: 'Submit direct trade decisions and inspect trading state.',
-  instructions: `You can submit direct trade decisions when a venue binding is ready.
-Use submit_decision for specific instruments and use list_positions or get_analytics to inspect the current trading state before making new decisions.
-Keep decisions aligned with the user goal and the current market context.`,
-  requiredTools: ['submit_decision', 'list_positions', 'get_analytics'],
+  instructions: `You have access to direct trading tools.
+- Use \`submit_decision\` to submit a trade intent for a specific instrument.
+- Use \`check_regime\` to assess whether market conditions are favorable before trading.
+  BTC is the default benchmark; other symbols can be specified.
+- Use \`list_positions\` to check current open positions.
+- Use \`search_tokens\` to find a token by name or symbol when you need its on-chain address.
+  This is primarily used when preparing Jupiter DEX trades.`,
+  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {

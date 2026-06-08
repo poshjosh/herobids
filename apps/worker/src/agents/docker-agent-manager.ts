@@ -29,6 +29,16 @@ export interface DockerAgentManagerConfig {
   llmTickIntervalMs?: number;
   /** Agent heartbeat cadence in ms injected into agent container env */
   llmHeartbeatIntervalMs?: number;
+  /** Market data: DexScreener base URL */
+  marketDataDexscreenerBaseUrl?: string;
+  /** Market data: DexScreener requests per minute */
+  marketDataDexscreenerRpm?: number;
+  /** Market data: Binance base URL */
+  marketDataBinanceBaseUrl?: string;
+  /** Market data: Binance requests per minute */
+  marketDataBinanceRpm?: number;
+  /** Market data: request timeout ms */
+  marketDataTimeoutMs?: number;
   /** Memory limit per agent container in MB. Default: 512 */
   memoryLimitMb?: number;
   /** CPU shares per agent container. Default: 512 */
@@ -64,6 +74,11 @@ export class DockerAgentManager {
   private readonly llmTimeoutMs: number | undefined;
   private readonly llmTickIntervalMs: number | undefined;
   private readonly llmHeartbeatIntervalMs: number | undefined;
+  private readonly marketDataDexscreenerBaseUrl: string | undefined;
+  private readonly marketDataDexscreenerRpm: number | undefined;
+  private readonly marketDataBinanceBaseUrl: string | undefined;
+  private readonly marketDataBinanceRpm: number | undefined;
+  private readonly marketDataTimeoutMs: number | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
 
@@ -90,6 +105,11 @@ export class DockerAgentManager {
     this.llmTimeoutMs = _config.llmTimeoutMs;
     this.llmTickIntervalMs = _config.llmTickIntervalMs;
     this.llmHeartbeatIntervalMs = _config.llmHeartbeatIntervalMs;
+    this.marketDataDexscreenerBaseUrl = _config.marketDataDexscreenerBaseUrl;
+    this.marketDataDexscreenerRpm = _config.marketDataDexscreenerRpm;
+    this.marketDataBinanceBaseUrl = _config.marketDataBinanceBaseUrl;
+    this.marketDataBinanceRpm = _config.marketDataBinanceRpm;
+    this.marketDataTimeoutMs = _config.marketDataTimeoutMs;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
   }
@@ -123,6 +143,14 @@ export class DockerAgentManager {
       ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
       ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
       ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
+      // Market data config forwarded so agent tools use operator-controlled values
+      // Both providers must be present — check_regime needs Binance, search_tokens needs DexScreener.
+      ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),
+      ...(this.marketDataDexscreenerBaseUrl ? [`DEXSCREENER_BASE_URL=${this.marketDataDexscreenerBaseUrl}`] : []),
+      ...(this.marketDataDexscreenerRpm != null ? [`DEXSCREENER_RPM=${this.marketDataDexscreenerRpm}`] : []),
+      ...(this.marketDataBinanceBaseUrl ? [`BINANCE_BASE_URL=${this.marketDataBinanceBaseUrl}`] : []),
+      ...(this.marketDataBinanceRpm != null ? [`BINANCE_RPM=${this.marketDataBinanceRpm}`] : []),
+      ...(this.marketDataTimeoutMs != null ? [`MARKET_DATA_TIMEOUT_MS=${this.marketDataTimeoutMs}`] : []),
       // Database URL forwarded so the agent container can make direct DB calls
       ...(process.env['DATABASE_URL'] ? [`DATABASE_URL=${process.env['DATABASE_URL']}`] : []),
       // LLM API keys must be in the worker's environment and forwarded explicitly

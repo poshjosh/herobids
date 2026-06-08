@@ -241,6 +241,18 @@ export const BillingConfigSchema = z.object({
   }
 });
 
+export const MarketDataConfigSchema = z.object({
+  dexscreener: z.object({
+    baseUrl: z.string().url().default('https://api.dexscreener.com'),
+    requestsPerMinute: z.number().min(1).default(60),
+  }).default({}),
+  binance: z.object({
+    baseUrl: z.string().url().default('https://api.binance.com'),
+    requestsPerMinute: z.number().min(1).default(200),
+  }).default({}),
+  timeoutMs: z.number().min(1000).default(5000),
+});
+
 export const LiveRolloutConfigSchema = z.object({
   /** Master switch — must be true for any instance to run in live mode */
   enabled: z.boolean().default(false),
@@ -289,6 +301,7 @@ export const AppConfigSchema = z.object({
   marking: MarkingConfigSchema.default({}),
   backtesting: BacktestingConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
+  marketData: MarketDataConfigSchema.optional(),
   llm: LlmRuntimeConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),
@@ -416,6 +429,7 @@ export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfig
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
+export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;

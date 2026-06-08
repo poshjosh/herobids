@@ -157,6 +157,9 @@ importers:
       '@herobids/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@herobids/market-data':
+        specifier: workspace:*
+        version: link:../../packages/market-data
       '@herobids/strategy':
         specifier: workspace:*
         version: link:../../packages/strategy
@@ -245,6 +248,8 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
+
+  packages/market-data: {}
 
   packages/strategy:
     dependencies:

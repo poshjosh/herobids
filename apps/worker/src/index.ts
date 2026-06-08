@@ -120,6 +120,15 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
         llmTimeoutMs: appConfig.llm.timeoutMs,
         llmTickIntervalMs: appConfig.llm.tickIntervalMs,
         llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
+        ...(appConfig.marketData
+          ? {
+              marketDataDexscreenerBaseUrl: appConfig.marketData.dexscreener.baseUrl,
+              marketDataDexscreenerRpm: appConfig.marketData.dexscreener.requestsPerMinute,
+              marketDataBinanceBaseUrl: appConfig.marketData.binance.baseUrl,
+              marketDataBinanceRpm: appConfig.marketData.binance.requestsPerMinute,
+              marketDataTimeoutMs: appConfig.marketData.timeoutMs,
+            }
+          : {}),
       },
     })
   : new AgentRuntimeLauncher({ redis: redisClient });

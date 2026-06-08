@@ -82,6 +82,15 @@ marketDataRecording:
   captureTopOfBook: true
   captureCandles: true
 
+marketData:
+  dexscreener:
+    baseUrl: "https://api.dexscreener.com"
+    requestsPerMinute: 60
+  binance:
+    baseUrl: "https://api.binance.com"
+    requestsPerMinute: 200
+  timeoutMs: 5000
+
 llm:
   provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
   model: qwen3-coder:30b        # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5

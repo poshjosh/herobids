@@ -15,6 +15,7 @@
     { "path": "../../packages/engine" },
     { "path": "../../packages/venues" },
     { "path": "../../packages/llm" },
+    { "path": "../../packages/market-data" },
     { "path": "../../packages/strategy" },
     { "path": "../../packages/backtesting" }
   ]
