@@ -387,14 +387,37 @@ export class AgentMessageBroker {
     }
 
     if (payload.action === 'create_and_start') {
-      if (!payload.venueAccountId) throw new Error('venueAccountId is required for create_and_start');
       if (!payload.config) throw new Error('config is required for create_and_start');
       if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
 
-      // Security: verify the venue account belongs to the agent's own user before creating the bot.
-      const owned = await this.botRepo.isVenueAccountOwnedBy(payload.venueAccountId, agent.userId);
+      // Resolve the binding using the same runtime descriptor the agent sees in its prompt.
+      // Preserve explicit venue-account targeting when the agent selected one.
+      const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id, agent.skillIds ?? []);
+      const grantedTradingBindings = capabilityDescriptor.grantedBindingsByFamily['trading'] ?? [];
+      const requestedBindings = payload.venueAccountId
+        ? grantedTradingBindings.filter((candidate) => candidate.sourceVenueAccountId === payload.venueAccountId)
+        : [];
+      const defaultBindingId = capabilityDescriptor.defaultBindingByFamily['trading'];
+      const binding = requestedBindings[0]
+        ?? grantedTradingBindings.find((candidate) => candidate.bindingId === defaultBindingId);
+
+      if (payload.venueAccountId && requestedBindings.length === 0) {
+        throw new Error(`No trading capability binding found for venue account ${payload.venueAccountId}`);
+      }
+      if (requestedBindings.length > 1) {
+        throw new Error(`Multiple trading capability bindings found for venue account ${payload.venueAccountId}`);
+      }
+      if (!binding || !binding.readiness.effectiveReady) {
+        throw new Error('No ready trading capability binding found for this agent — cannot create bot');
+      }
+      if (!binding.sourceVenueAccountId) {
+        throw new Error(`Trading binding ${binding.bindingId} is missing sourceVenueAccountId — cannot create bot until the binding migration is completed`);
+      }
+
+      // Security: verify the binding belongs to the agent's own user before creating the bot.
+      const owned = await this.botRepo.isTradingBindingOwnedBy(binding.bindingId, agent.userId);
       if (!owned) {
-        throw new Error(`Venue account ${payload.venueAccountId} not found or not owned by this agent's user`);
+        throw new Error(`Trading binding ${binding.bindingId} not found or not owned by this agent's user`);
       }
 
       // Enforce subscription-wide plan bot cap (same limit the API enforces for direct bot creation).
@@ -411,7 +434,8 @@ export class AgentMessageBroker {
 
       const botId = await this.botRepo.createBot({
         userId: agent.userId,
-        venueAccountId: payload.venueAccountId,
+        tradingBindingId: binding.bindingId,
+        venueAccountId: binding.sourceVenueAccountId,
         config: payload.config,
         creatorType: 'agent',
         creatorId: agent.id,
@@ -422,7 +446,7 @@ export class AgentMessageBroker {
       if (this.botStart) {
         // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
         await this.botRepo.markBotRunning(botId);
-        await this.botStart(botId, agent.userId, payload.venueAccountId, payload.config);
+        await this.botStart(botId, agent.userId, binding.sourceVenueAccountId, payload.config);
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }
 

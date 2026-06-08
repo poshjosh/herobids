@@ -523,8 +523,8 @@ export class BotRepository {
   /** Create a bot record. Returns the created bot's ID. */
   async createBot(params: {
     userId: string;
-    tradingBindingId?: string;
-    venueAccountId?: string;
+    tradingBindingId: string;
+    venueAccountId: string;
     config: Record<string, unknown>;
     creatorType: string;
     creatorId: string;
@@ -534,8 +534,8 @@ export class BotRepository {
     await this.db.insert(bots).values({
       id,
       userId: params.userId,
-      venueAccountId: params.venueAccountId ?? params.tradingBindingId ?? '',
-      tradingBindingId: params.tradingBindingId ?? params.venueAccountId ?? '',
+      venueAccountId: params.venueAccountId,
+      tradingBindingId: params.tradingBindingId,
       config: params.config,
       status: 'stopped',
       creatorType: params.creatorType,

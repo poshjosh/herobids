@@ -19,6 +19,7 @@ import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
+import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
 import {
   buildSystemPrompt as composeSystemPrompt,
   buildTickUserContext,
@@ -274,42 +275,13 @@ async function drainStalePendingEntries(): Promise<void> {
 
 // Read pending messages from the outbound stream (platform → agent)
 async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
-  try {
-    // Create group if not exists. Use '0' (oldest message) so any messages the platform
-    // published before the container's first read (e.g. initial context snapshot) are not lost.
-    await redis.xgroup('CREATE', OUTBOUND_STREAM, CONSUMER_GROUP, '0', 'MKSTREAM').catch((err: unknown) => {
-      if (err instanceof Error && !err.message.includes('BUSYGROUP')) throw err;
-    });
-
-    const result = await redis.xreadgroup(
-      'GROUP', CONSUMER_GROUP, CONSUMER_NAME,
-      'COUNT', '10',
-      'BLOCK', '0',
-      'STREAMS', OUTBOUND_STREAM, '>',
-    ) as Array<[string, Array<[string, string[]]>]> | null;
-
-    if (!result) return [];
-
-    const messages: Array<Record<string, unknown>> = [];
-    for (const [, entries] of result) {
-      for (const [msgId, fields] of entries) {
-        const envelopeIdx = fields.indexOf('envelope');
-        if (envelopeIdx >= 0 && fields[envelopeIdx + 1]) {
-          try {
-            const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
-            messages.push(envelope);
-          } catch {
-            // Skip malformed
-          }
-        }
-        // Acknowledge the message
-        await redis.xack(OUTBOUND_STREAM, CONSUMER_GROUP, msgId).catch(() => { /* ignore */ });
-      }
-    }
-    return messages;
-  } catch {
-    return [];
-  }
+  return readAgentOutboundMessages(redis, {
+    outboundStream: OUTBOUND_STREAM,
+    consumerGroup: CONSUMER_GROUP,
+    consumerName: CONSUMER_NAME,
+    blockMs: OUTBOUND_READ_BLOCK_MS,
+    count: 10,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -586,7 +558,7 @@ async function runTick(): Promise<void> {
     // Read incoming platform messages (context snapshots, decisions, etc.)
     const incomingMessages = await Promise.race([
       readOutboundMessages(),
-      new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), 2000)),
+      new Promise<Array<Record<string, unknown>>>((resolve) => setTimeout(() => resolve([]), OUTBOUND_READ_TIMEOUT_MS)),
     ]);
 
     // Build context for this tick.

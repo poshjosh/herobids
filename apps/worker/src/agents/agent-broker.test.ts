@@ -33,8 +33,25 @@ function mockAgentRepo() {
     markMessageProcessed: vi.fn().mockResolvedValue(undefined),
     getAgent: vi.fn().mockResolvedValue({ id: 'agent-123', status: 'active' }),
     getActiveSession: vi.fn().mockResolvedValue({ id: 'sess-001' }),
+    getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue(makeTradingCapabilityDescriptor()),
     insertArtifact: vi.fn().mockResolvedValue('art-id'),
     getActiveLink: vi.fn().mockResolvedValue({ botId: 'ti-456' }),
+  };
+}
+
+function makeTradingCapabilityDescriptor(overrides: Record<string, unknown> = {}) {
+  return {
+    grantedBindingsByFamily: {
+      trading: [
+        {
+          bindingId: 'binding-1',
+          sourceVenueAccountId: 'va-001',
+          readiness: { effectiveReady: true },
+        },
+      ],
+    },
+    defaultBindingByFamily: { trading: 'binding-1' },
+    ...overrides,
   };
 }
 
@@ -227,7 +244,7 @@ describe('AgentMessageBroker', () => {
 
     function makeBotRepo() {
       return {
-        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-new-001'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
@@ -346,7 +363,7 @@ describe('AgentMessageBroker', () => {
   });
 
   describe('manage_bot emits instance status with bot list (R3.2)', () => {
-    function makeManageBotEnvelope() {
+    function makeManageBotEnvelope(overrides: Record<string, unknown> = {}) {
       return {
         schemaVersion: 'v1',
         messageId: `msg-${Math.random().toString(36).slice(2)}`,
@@ -361,6 +378,7 @@ describe('AgentMessageBroker', () => {
           venueAccountId: 'va-001',
           config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
         },
+        ...overrides,
       };
     }
 
@@ -375,11 +393,12 @@ describe('AgentMessageBroker', () => {
         toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
       });
       agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+      agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor());
     });
 
     it('emits instance status with bot list after create_and_start', async () => {
       const botRepo = {
-        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-abc'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
@@ -416,7 +435,7 @@ describe('AgentMessageBroker', () => {
 
     it('emits instance status with empty bot list when agent has no bots', async () => {
       const botRepo = {
-        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-xyz'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
@@ -444,7 +463,7 @@ describe('AgentMessageBroker', () => {
 
     it('emits bot with undefined strategyPreset when config has none', async () => {
       const botRepo = {
-        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-min'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
@@ -471,9 +490,116 @@ describe('AgentMessageBroker', () => {
       expect(call[1].managedBots[0].symbol).toBeUndefined();
     });
 
-    it('rejects create_and_start when venue account not owned by agent user', async () => {
+    it('uses the requested venue account binding when provided', async () => {
+      agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
+        grantedBindingsByFamily: {
+          trading: [
+            {
+              bindingId: 'binding-1',
+              sourceVenueAccountId: 'va-001',
+              readiness: { effectiveReady: true },
+            },
+            {
+              bindingId: 'binding-2',
+              sourceVenueAccountId: 'va-002',
+              readiness: { effectiveReady: true },
+            },
+          ],
+        },
+        defaultBindingByFamily: { trading: 'binding-1' },
+      }));
+
       const botRepo = {
-        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(false),
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-targeted'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+      const botStart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-002',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.isTradingBindingOwnedBy).toHaveBeenCalledWith('binding-2', 'user-1');
+      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+        tradingBindingId: 'binding-2',
+        venueAccountId: 'va-002',
+      }));
+      expect(botStart).toHaveBeenCalledWith('bot-targeted', 'user-1', 'va-002', expect.any(Object));
+    });
+
+    it('rejects create_and_start when the requested venue account maps to multiple bindings', async () => {
+      agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
+        grantedBindingsByFamily: {
+          trading: [
+            {
+              bindingId: 'binding-1',
+              sourceVenueAccountId: 'va-002',
+              readiness: { effectiveReady: true },
+            },
+            {
+              bindingId: 'binding-2',
+              sourceVenueAccountId: 'va-002',
+              readiness: { effectiveReady: true },
+            },
+          ],
+        },
+        defaultBindingByFamily: { trading: 'binding-1' },
+      }));
+
+      const botRepo = {
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-ambiguous'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-002',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+        },
+      }));
+
+      expect(result.accepted).toBe(false);
+      expect(result.error).toMatch(/multiple trading capability bindings/i);
+      expect(botRepo.createBot).not.toHaveBeenCalled();
+    });
+
+    it('rejects create_and_start when resolved binding is not owned by agent user', async () => {
+      const botRepo = {
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(false),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-never'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
@@ -504,7 +630,7 @@ describe('AgentMessageBroker', () => {
       });
 
       const botRepo = {
-        isVenueAccountOwnedBy: vi.fn().mockResolvedValue(true),
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(2), // at limit
         createBot: vi.fn().mockResolvedValue('bot-over'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
