@@ -15,6 +15,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL } from '@herobids/domain';
+import { createDatabase, BotRepository } from '@herobids/db';
 import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { callLlmProvider } from '@herobids/llm';
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
@@ -212,6 +213,17 @@ const OUTBOUND_STREAM = `agent:outbound:${AGENT_ID}`;
 const CONSUMER_GROUP = 'agent-runtime';
 const CONSUMER_NAME = `agent-${AGENT_ID}-${process.pid}`;
 
+// ---------------------------------------------------------------------------
+// Database (optional — enables direct bot tool access)
+// ---------------------------------------------------------------------------
+
+const DATABASE_URL = process.env['DATABASE_URL'];
+const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
+const botRepo = db ? new BotRepository(db) : null;
+if (!DATABASE_URL) {
+  logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
+}
+
 async function publishToInbound(type: string, payload: Record<string, unknown>): Promise<void> {
   const envelope = {
     schemaVersion: 'v1',
@@ -341,6 +353,23 @@ function parseToolCalls(llmResponse: string): ToolCall[] {
   return calls;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function deepMergeConfig(base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    const current = merged[key];
+    if (isPlainObject(current) && isPlainObject(value)) {
+      merged[key] = deepMergeConfig(current, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 async function executeTool(call: ToolCall): Promise<string | null> {
   // Hard runtime gate: reject any tool not declared in the active skill set.
   // The model was only told about allowed tools, but we enforce it here too so
@@ -358,7 +387,7 @@ async function executeTool(call: ToolCall): Promise<string | null> {
         body: call.args['body'] as string ?? 'No message body',
         subject: call.args['subject'] as string | undefined,
       });
-      return 'send_message queued for platform delivery';
+      return JSON.stringify({ ok: true, note: 'message queued for delivery' });
     }
 
     case 'set_memory': {
@@ -367,27 +396,29 @@ async function executeTool(call: ToolCall): Promise<string | null> {
       if (typeof key === 'string' && key.length > 0 && value !== undefined) {
         await redis.hset(`agent:memory:${AGENT_ID}`, key, JSON.stringify(value));
         logger.debug({ key }, 'Memory entry set');
-        return `memory updated: ${key}`;
+        return JSON.stringify({ ok: true, key });
       }
-      return 'memory update skipped';
+      return JSON.stringify({ ok: false, note: 'key or value missing' });
     }
 
     case 'artifact_publish': {
+      const artifactId = crypto.randomUUID();
       await publishToInbound(AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH, {
-        artifactId: crypto.randomUUID(),
+        artifactId,
         artifactType: call.args['artifactType'] as string ?? 'text',
         contentType: call.args['contentType'] as string ?? 'text/plain',
         summary: call.args['summary'] as string ?? '',
         location: call.args['location'],
         metadata: call.args['metadata'],
       });
-      return 'artifact publish queued for platform handling';
+      return JSON.stringify({ ok: true, artifactId });
     }
 
     case 'submit_decision': {
       sessionMetrics.decisionsSubmitted++;
+      const decisionId = crypto.randomUUID();
       await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
-        decisionId: crypto.randomUUID(),
+        decisionId,
         instrumentId: call.args['instrumentId'] as string ?? '',
         intent: call.args['intent'] as string ?? 'go_flat',
         targetSize: call.args['targetSize'] as string ?? '0',
@@ -395,7 +426,7 @@ async function executeTool(call: ToolCall): Promise<string | null> {
         rationaleSummary: call.args['rationaleSummary'] as string ?? 'Agent decision',
         confidence: call.args['confidence'] as number | undefined,
       });
-      return 'decision submitted to platform';
+      return JSON.stringify({ ok: true, decisionId, note: 'decision submitted to engine' });
     }
 
     case 'create_bot': {
@@ -405,68 +436,174 @@ async function executeTool(call: ToolCall): Promise<string | null> {
         config: call.args['config'] as Record<string, unknown> | undefined,
         rationale: call.args['rationale'] as string | undefined,
       });
-      return 'bot creation requested';
-    }
-
-    case 'start_bot': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
-        action: 'start',
-        botId: call.args['botId'] as string | undefined,
-        rationale: call.args['rationale'] as string | undefined,
-      });
-      return 'bot start requested';
-    }
-
-    case 'stop_bot': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
-        action: 'stop',
-        botId: call.args['botId'] as string | undefined,
-        rationale: call.args['rationale'] as string | undefined,
-      });
-      return 'bot stop requested';
-    }
-
-    case 'adjust_bot_config': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
-        action: 'adjust_config',
-        botId: call.args['botId'] as string | undefined,
-        config: call.args['config'] as Record<string, unknown> | undefined,
-        rationale: call.args['rationale'] as string | undefined,
-      });
-      return 'bot config update requested';
+      return JSON.stringify({ ok: true, note: 'bot creation submitted — you will see it in the bot list on the next tick' });
     }
 
     case 'list_bots': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
-        action: 'list_bots',
-        days: call.args['days'] as number | undefined,
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const daysFilter = typeof call.args['days'] === 'number' ? call.args['days'] : undefined;
+      const since = daysFilter ? new Date(Date.now() - daysFilter * 24 * 60 * 60 * 1000) : undefined;
+      const botRows = await botRepo.getBotsByCreator('agent', AGENT_ID!, since);
+      return JSON.stringify({
+        ok: true,
+        bots: botRows.map((b) => ({
+          id: b.id,
+          status: b.status,
+          strategyPreset: (b.config as Record<string, unknown>)?.['strategyPreset'] ?? null,
+          symbol: (b.config as Record<string, unknown>)?.['symbol'] ?? null,
+          createdAt: b.createdAt.toISOString(),
+        })),
       });
-      return 'bot list requested from platform';
     }
 
     case 'get_bot_status': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
-        action: 'get_bot_status',
-        botId: call.args['botId'] as string | undefined,
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const targetBotId = call.args['botId'] as string | undefined;
+      if (!targetBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
+      const bot = await botRepo.getBotById(targetBotId);
+      if (!bot || bot.creatorType !== 'agent' || bot.creatorId !== AGENT_ID) {
+        return JSON.stringify({ ok: false, note: `bot ${targetBotId} not found or not owned by this agent` });
+      }
+      return JSON.stringify({
+        ok: true,
+        id: bot.id,
+        status: bot.status,
+        strategyPreset: (bot.config as Record<string, unknown>)?.['strategyPreset'] ?? null,
+        symbol: (bot.config as Record<string, unknown>)?.['symbol'] ?? null,
+        config: bot.config,
+        startedAt: bot.startedAt?.toISOString() ?? null,
+        stoppedAt: bot.stoppedAt?.toISOString() ?? null,
       });
-      return 'bot status requested from platform';
+    }
+
+    case 'stop_bot': {
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const stopBotId = call.args['botId'] as string | undefined;
+      if (!stopBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
+      const stopTarget = await botRepo.getBotById(stopBotId);
+      if (!stopTarget || stopTarget.creatorType !== 'agent' || stopTarget.creatorId !== AGENT_ID) {
+        return JSON.stringify({ ok: false, note: `bot ${stopBotId} not found or not owned by this agent` });
+      }
+      const previousStatus = stopTarget.status;
+
+      if (previousStatus !== 'running') {
+        await botRepo.markBotStopped(stopBotId);
+        return JSON.stringify({ ok: true, botId: stopBotId, previousStatus, note: 'bot was not running' });
+      }
+
+      await botRepo.markBotStopped(stopBotId);
+      try {
+        // Signal the running job to self-terminate without polling.
+        await redis.publish(`bot:stop:${stopBotId}`, '1');
+      } catch (err) {
+        logger.error({ err, botId: stopBotId }, 'Failed to publish bot:stop signal — restoring previous runtime state');
+        try {
+          await botRepo.restoreBotRuntimeState({
+            botId: stopBotId,
+            status: stopTarget.status,
+            startedAt: stopTarget.startedAt,
+            stoppedAt: stopTarget.stoppedAt,
+          });
+        } catch (rollbackErr) {
+          logger.error({ rollbackErr, botId: stopBotId }, 'CRITICAL: failed to restore bot state after stop signal failure');
+        }
+        return JSON.stringify({ ok: false, botId: stopBotId, previousStatus, note: 'failed to signal bot stop' });
+      }
+
+      return JSON.stringify({ ok: true, botId: stopBotId, previousStatus, note: 'bot stopped' });
+    }
+
+    case 'start_bot': {
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const startBotId = call.args['botId'] as string | undefined;
+      if (!startBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
+      const startTarget = await botRepo.getBotById(startBotId);
+      if (!startTarget || startTarget.creatorType !== 'agent' || startTarget.creatorId !== AGENT_ID) {
+        return JSON.stringify({ ok: false, note: `bot ${startBotId} not found or not owned by this agent` });
+      }
+      if (startTarget.status === 'running') {
+        return JSON.stringify({ ok: false, note: `bot ${startBotId} is already running` });
+      }
+      await botRepo.markBotRunning(startBotId);
+      try {
+        // Enqueue BullMQ start job via broker (agent container does not have direct BullMQ access)
+        await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+          action: 'start',
+          botId: startBotId,
+          rationale: call.args['rationale'] as string | undefined,
+        });
+      } catch (err) {
+        logger.error({ err, botId: startBotId }, 'Failed to enqueue direct bot start — restoring previous runtime state');
+        try {
+          await botRepo.restoreBotRuntimeState({
+            botId: startBotId,
+            status: startTarget.status,
+            startedAt: startTarget.startedAt,
+            stoppedAt: startTarget.stoppedAt,
+          });
+        } catch (rollbackErr) {
+          logger.error({ rollbackErr, botId: startBotId }, 'CRITICAL: failed to restore bot state after start enqueue failure');
+        }
+        return JSON.stringify({ ok: false, botId: startBotId, note: 'failed to submit bot start' });
+      }
+
+      return JSON.stringify({ ok: true, botId: startBotId, status: 'running', note: 'bot start submitted' });
+    }
+
+    case 'adjust_bot_config': {
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const configBotId = call.args['botId'] as string | undefined;
+      const configOverride = call.args['config'] as Record<string, unknown> | undefined;
+      if (!configBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
+      if (!configOverride || typeof configOverride !== 'object') return JSON.stringify({ ok: false, note: 'config is required' });
+      const configTarget = await botRepo.getBotById(configBotId);
+      if (!configTarget || configTarget.creatorType !== 'agent' || configTarget.creatorId !== AGENT_ID) {
+        return JSON.stringify({ ok: false, note: `bot ${configBotId} not found or not owned by this agent` });
+      }
+      const merged = deepMergeConfig(configTarget.config as Record<string, unknown>, configOverride);
+      await botRepo.updateBotConfig(configBotId, merged);
+      return JSON.stringify({ ok: true, botId: configBotId, note: 'config updated — takes effect on next bot tick' });
     }
 
     case 'get_analytics': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
-        action: 'get_analytics',
-        botId: call.args['botId'] as string | undefined,
-        days: call.args['days'] as number | undefined,
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const analyticsBotId = call.args['botId'] as string | undefined;
+      const analyticsDays = typeof call.args['days'] === 'number' ? Math.min(call.args['days'], 90) : 7;
+      const analyticsSince = new Date(Date.now() - analyticsDays * 24 * 60 * 60 * 1000);
+      const analytics = await botRepo.getAnalyticsByCreator('agent', AGENT_ID!, analyticsSince, analyticsBotId);
+      const winRate = analytics.closedPositions > 0
+        ? (analytics.winningPositions / analytics.closedPositions)
+        : 0;
+      return JSON.stringify({
+        ok: true,
+        totalTrades: analytics.recentFills,
+        winRate: Math.round(winRate * 100) / 100,
+        totalPnlUsd: analytics.realizedPnlUsd,
+        totalFeesUsd: analytics.totalFeesUsd,
+        openPositions: analytics.openPositions,
+        botCount: analytics.botCount,
+        avgHoldTimeHours: analytics.avgHoldTimeHours,
+        byBot: analytics.byBot,
+        days: analyticsDays,
       });
-      return 'analytics requested from platform';
     }
 
     case 'list_positions': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.BOT_QUERY, {
-        action: 'list_positions',
-        botId: call.args['botId'] as string | undefined,
+      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
+      const positionsBotId = call.args['botId'] as string | undefined;
+      const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!, positionsBotId);
+      return JSON.stringify({
+        ok: true,
+        note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
+        positions: openPositions.map((p) => ({
+          botId: p.actorId,
+          instrumentId: p.symbol,
+          side: p.side,
+          size: p.size,
+          entryPrice: p.entryPrice,
+          openedAt: p.openedAt.toISOString(),
+        })),
       });
-      return 'positions requested from platform';
     }
 
     case 'code_execute': {

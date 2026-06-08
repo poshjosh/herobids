@@ -123,6 +123,8 @@ export class DockerAgentManager {
       ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
       ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
       ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
+      // Database URL forwarded so the agent container can make direct DB calls
+      ...(process.env['DATABASE_URL'] ? [`DATABASE_URL=${process.env['DATABASE_URL']}`] : []),
       // LLM API keys must be in the worker's environment and forwarded explicitly
       ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
       ...(process.env['LLM_API_KEY_OPENROUTER'] ? [`LLM_API_KEY_OPENROUTER=${process.env['LLM_API_KEY_OPENROUTER']}`] : []),

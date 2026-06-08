@@ -217,17 +217,27 @@ INSERT INTO "skills" (
     'Bot Management',
     'Create, start, stop, and monitor trading bots.',
     'You can create trading bots on behalf of the user.',
-    ARRAY['create_bot', 'decision_submit', 'send_message'],
+    ARRAY['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'send_message'],
     ARRAY['bot_statuses', 'positions', 'costs'],
     ARRAY['token-budget', 'daily-loss', 'bot-limit'],
     ARRAY['trading'], 900000, 'public', ARRAY[]::text[], now(), now()
+  ),
+  (
+    'trading', NULL,
+    'Trading',
+    'Submit direct trade decisions and inspect trading state.',
+    'You can submit direct trade decisions when a venue binding is ready.',
+    ARRAY['submit_decision', 'list_positions', 'get_analytics'],
+    ARRAY['positions', 'fills', 'analytics', 'costs'],
+    ARRAY['token-budget', 'daily-loss'],
+    ARRAY['trading'], 300000, 'public', ARRAY[]::text[], now(), now()
   ),
   (
     'risk-monitoring', NULL,
     'Risk Monitoring',
     'Watch open positions and alert the user when risk thresholds are approaching.',
     'Monitor open positions and P&L continuously.',
-    ARRAY['send_message', 'artifact_publish'],
+    ARRAY['send_message', 'artifact_publish', 'list_positions', 'get_analytics'],
     ARRAY['positions', 'fills', 'analytics'],
     ARRAY['token-budget', 'daily-loss'],
     ARRAY['trading'], 300000, 'public', ARRAY[]::text[], now(), now()

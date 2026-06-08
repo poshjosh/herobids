@@ -158,6 +158,15 @@ export class WorkerRuntime {
    * and attempt to acquire a lease on any that are not currently owned by this worker.
    * This handles both initial rehydration and ongoing peer-death recovery.
    */
+  /**
+   * Stop a running instance directly — used by the Redis pub/sub stop-signal
+   * consumer so a `bot:stop:{botId}` publish from the agent container causes
+   * an immediate in-process stop without waiting for a BullMQ job.
+   */
+  async stopInstanceDirect(id: string): Promise<void> {
+    await this.stopInstance(id);
+  }
+
   private async reclaimOrphans(): Promise<void> {
     if (!this.instanceLoader) return;
 

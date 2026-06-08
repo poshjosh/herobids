@@ -71,6 +71,7 @@ const redisConnection = {
 
 // Redis client for lease management (separate from BullMQ's internal connection)
 const redisClient = new Redis(redisConnection);
+let botStopSubscriber: Redis | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 const lease = new InstanceLease(redisClient, workerId, 30);
 
@@ -783,6 +784,7 @@ process.on('SIGTERM', async () => {
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
+  await botStopSubscriber?.quit();
   await redisClient.quit();
   process.exit(0);
 });
@@ -798,6 +800,7 @@ process.on('SIGINT', async () => {
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
+  await botStopSubscriber?.quit();
   await redisClient.quit();
   process.exit(0);
 });
@@ -807,6 +810,23 @@ await agentStreamConsumer.start();
 await agentRuntimeLauncher.startEventStream();
 
 await runtime.start();
+
+// Subscribe to agent-originated bot stop signals (bot:stop:{botId}).
+// The agent container publishes this via Redis PUBLISH when the LLM calls stop_bot
+// directly. This causes an immediate in-process stop without waiting for a BullMQ job.
+botStopSubscriber = new Redis(redisConnection);
+botStopSubscriber.psubscribe('bot:stop:*', (err) => {
+  if (err) logger.error({ err }, 'Failed to subscribe to bot:stop:* channels');
+});
+botStopSubscriber.on('pmessage', (_pattern: string, channel: string, _message: string) => {
+  const botId = channel.replace('bot:stop:', '');
+  if (!botId) return;
+  logger.info({ botId }, 'Received bot:stop signal — stopping instance directly');
+  runtime.stopInstanceDirect(botId).catch((err: unknown) => {
+    logger.error({ err, botId }, 'Failed to stop instance via bot:stop signal');
+  });
+});
+
 sessionManager.start();
 agentHealthMonitor.start();
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

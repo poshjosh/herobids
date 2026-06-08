@@ -19,6 +19,38 @@ describe('WorkerRuntime startup cleanup', () => {
     vi.clearAllMocks();
   });
 
+  it('stops an active actor via stopInstanceDirect and releases the lease', async () => {
+    const actor = {
+      botId: 'inst-1',
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    };
+    const lease = {
+      acquire: vi.fn().mockResolvedValue(true),
+      release: vi.fn().mockResolvedValue(undefined),
+      shutdown: vi.fn(),
+    };
+
+    const runtime = new WorkerRuntime(
+      { redis: {} as never },
+      async () => actor,
+      undefined,
+      lease as never,
+    );
+
+    await (runtime as unknown as {
+      startInstance(id: string, config: Record<string, unknown>): Promise<boolean>;
+    }).startInstance('inst-1', {});
+
+    expect(runtime.activeInstances).toEqual(['inst-1']);
+
+    await runtime.stopInstanceDirect('inst-1');
+
+    expect(actor.stop).toHaveBeenCalledTimes(1);
+    expect(lease.release).toHaveBeenCalledWith('inst-1');
+    expect(runtime.activeInstances).toEqual([]);
+  });
+
   it('releases the lease and does not retain the actor when actor.start fails', async () => {
     const actor = {
       botId: 'inst-1',

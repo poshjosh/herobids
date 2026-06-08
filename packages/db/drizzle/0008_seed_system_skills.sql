@@ -15,7 +15,7 @@ INSERT INTO "skills" (
 When the user wants to trade, use create_bot to set up a bot with appropriate strategy and risk parameters.
 Always start bots in paper mode first unless the user has explicitly requested live trading.
 Never expose technical venue details (symbols like BTC-PERP) to the user — use plain language.',
-    ARRAY['create_bot', 'decision_submit', 'send_message'],
+    ARRAY['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'send_message'],
     ARRAY['bot_statuses', 'positions', 'costs'],
     ARRAY['token-budget', 'daily-loss', 'bot-limit'],
     900000,

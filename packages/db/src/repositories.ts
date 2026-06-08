@@ -681,7 +681,7 @@ export class BotRepository {
 
   /** Recent fills for all bots created by the given actor. */
   async getRecentFillsByCreator(creatorType: string, creatorId: string, since?: Date, botId?: string) {
-    const botRows = await this.getBotsForQuery(creatorType, creatorId, since, botId);
+    const botRows = await this.getBotsForQuery(creatorType, creatorId, undefined, botId);
     const botIds = botRows.map((row) => row.id);
     if (botIds.length === 0) return [];
 
@@ -699,7 +699,12 @@ export class BotRepository {
 
   /** Compute lightweight bot analytics for all bots created by the given actor. */
   async getAnalyticsByCreator(creatorType: string, creatorId: string, since?: Date, botId?: string) {
-    const botRows = await this.getBotsForQuery(creatorType, creatorId, since, botId);
+    // Load bots WITHOUT the since filter — we want all bots that belong to the agent,
+    // not just those created within the analytics window. Older bots can still have
+    // fills and positions within the requested window.
+    const botRows = botId
+      ? await this.getBotsForQuery(creatorType, creatorId, undefined, botId)
+      : await this.getBotsByCreator(creatorType, creatorId);
     const botIds = botRows.map((row) => row.id);
     if (botIds.length === 0) {
       return {
@@ -710,6 +715,8 @@ export class BotRepository {
         realizedPnlUsd: '0',
         totalFeesUsd: '0',
         recentFills: 0,
+        avgHoldTimeHours: null as number | null,
+        byBot: [] as Array<{ botId: string; status: string; recentFills: number; realizedPnlUsd: string }>,
       };
     }
 
@@ -718,12 +725,43 @@ export class BotRepository {
       .from(positions)
       .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
 
-    const fillRows = await this.getRecentFillsByCreator(creatorType, creatorId, since, botId);
+    // Scope fills to the time window (not bot creation time)
+    const fillConditions: ReturnType<typeof eq>[] = [eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds) as ReturnType<typeof eq>];
+    if (since) {
+      fillConditions.push(gte(fills.filledAt, since) as ReturnType<typeof eq>);
+    }
+    const fillRows = await this.db
+      .select()
+      .from(fills)
+      .where(and(...fillConditions))
+      .orderBy(desc(fills.filledAt));
+
     const openPositions = positionRows.filter((row) => row.closedAt == null);
-    const closedPositions = positionRows.filter((row) => row.closedAt != null);
+    const closedPositions = positionRows.filter((row) => row.closedAt != null && (!since || row.closedAt! >= since));
     const winningPositions = closedPositions.filter((row) => Number(row.realizedPnl ?? 0) > 0).length;
-    const realizedPnlUsd = positionRows.reduce((sum, row) => sum + Number(row.realizedPnl ?? 0), 0);
+    const realizedPnlUsd = closedPositions.reduce((sum, row) => sum + Number(row.realizedPnl ?? 0), 0);
     const totalFeesUsd = fillRows.reduce((sum, row) => sum + Number(row.fee ?? 0), 0);
+
+    // Average hold time: mean of (closedAt - openedAt) across closed positions in hours
+    const holdTimesHours = closedPositions
+      .filter((row) => row.closedAt != null)
+      .map((row) => (row.closedAt!.getTime() - row.openedAt.getTime()) / (1000 * 60 * 60));
+    const avgHoldTimeHours = holdTimesHours.length > 0
+      ? Math.round((holdTimesHours.reduce((s, h) => s + h, 0) / holdTimesHours.length) * 10) / 10
+      : null;
+
+    // Per-bot breakdown
+    const byBot = botRows.map((bot) => {
+      const botFills = fillRows.filter((f) => f.actorId === bot.id);
+      const botPositions = closedPositions.filter((p) => p.actorId === bot.id);
+      const botPnl = botPositions.reduce((s, p) => s + Number(p.realizedPnl ?? 0), 0);
+      return {
+        botId: bot.id,
+        status: bot.status,
+        recentFills: botFills.length,
+        realizedPnlUsd: botPnl.toFixed(2),
+      };
+    });
 
     return {
       botCount: botRows.length,
@@ -733,6 +771,8 @@ export class BotRepository {
       realizedPnlUsd: realizedPnlUsd.toFixed(2),
       totalFeesUsd: totalFeesUsd.toFixed(2),
       recentFills: fillRows.length,
+      avgHoldTimeHours,
+      byBot,
     };
   }
 

@@ -139,6 +139,7 @@ Alert the user via send_message when:
  */
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
   trading: ['bot-management', 'trading'],
+  'direct-trading': ['trading'],
   reminder: [],     // base only — sends scheduled alerts
   custom: [],       // user configures skills manually
 };
