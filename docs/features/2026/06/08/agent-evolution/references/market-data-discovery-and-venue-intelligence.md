@@ -8,8 +8,8 @@ This is the "trading data" implementation counterpart to 001 (LLM cost reduction
 
 ## Background
 
-`003-market-data-provider-strategy.md` defines **what** to add and **why**.
-`002-agent-data-contract-by-venue.md` defines **what data the agent sees**.
+`market-data-provider-strategy.md` defines **what** to add and **why**.
+`agent-data-contract-by-venue.md` defines **what data the agent sees**.
 This document defines **how to build it** — endpoints, data models, agent tools, rate budgets, and wiring into context assembly.
 
 ---
