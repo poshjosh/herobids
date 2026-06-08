@@ -6,7 +6,6 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import crypto from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { capabilityGrants, tradingBindings } from '@herobids/db';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
@@ -94,22 +93,15 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     return res.json<{ id: string; venue: string; label: string }>();
   }
 
-  async function seedTradingBinding(connectionId: string) {
-    const bindingId = crypto.randomUUID();
-    await ctx.db.insert(tradingBindings).values({
-      id: bindingId,
-      userId,
-      connectionId,
-      provider: 'hyperliquid',
-      label: 'Primary Hyperliquid binding',
-      bindingRef: 'acct-1',
-      status: 'active',
-      bindingProfile: { venue: 'hyperliquid' },
-      sourceVenueAccountId: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    return bindingId;
+  async function getBindingForConnection(connectionId: string): Promise<string> {
+    const [binding] = await ctx.db
+      .select({ id: tradingBindings.id })
+      .from(tradingBindings)
+      .where(eq(tradingBindings.connectionId, connectionId));
+    if (!binding) {
+      throw new Error(`No trading binding found for connection ${connectionId} — POST /connections should have created one automatically`);
+    }
+    return binding.id;
   }
 
   it('covers family catalogs, connection creation, grant lifecycle, readiness, and audit history', async () => {
@@ -136,7 +128,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(connectionDetail.statusCode).toBe(200);
     expect(connectionDetail.json<{ id: string; status: string }>().status).toBe('active');
 
-    const bindingId = await seedTradingBinding(connection.id);
+    const bindingId = await getBindingForConnection(connection.id);
 
     const readinessBefore = await ctx.app.inject({
       method: 'GET',
@@ -253,7 +245,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
   it('marks capability readiness revoked when the underlying connection is revoked', async () => {
     const connection = await createConnection();
-    const bindingId = await seedTradingBinding(connection.id);
+    const bindingId = await getBindingForConnection(connection.id);
 
     const bindRes = await ctx.app.inject({
       method: 'POST',
@@ -297,7 +289,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
   it('rejects binding a trading capability when the underlying connection is no longer ready', async () => {
     const connection = await createConnection();
-    const bindingId = await seedTradingBinding(connection.id);
+    const bindingId = await getBindingForConnection(connection.id);
 
     const revokeConnection = await ctx.app.inject({
       method: 'DELETE',
