@@ -4,7 +4,7 @@ BACKGROUND
 
 - We want to improve on an earlier project which we copied into this directory: /Users/chinomso.ikwuagwu/dev_ai/aitradingbot/
 
-- We have had some discussions. See: docs/features/2026/05/initial/
+- We have had some discussions. See: docs/features/2026/05/01/initial/
 
 INSTRUCTION
 

@@ -1,4 +1,4 @@
-# Still missing from docs/features/2026/06/005-agent-mvp-rollout-plan/001-mvp-delivery-plan.md
+# Still missing from docs/features/2026/06/06/005-agent-mvp-rollout-plan/001-mvp-delivery-plan.md
 
 **Step 6 — UI (3 items)**
 

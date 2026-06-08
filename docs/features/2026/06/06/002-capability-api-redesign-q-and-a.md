@@ -39,7 +39,7 @@ Challenged this recommendation. The user argued that:
 - the frontend should avoid exposing trading jargon by default
 - trading should come in when a user creates an agent and gives it trading-related skills
 - the platform still needs help deciding how context-specific information should be represented
-- the previous discussion in `docs/features/2026/06/008-agent-platform-roadmap/000b-q-and-a.md` should inform the direction
+- the previous discussion in `docs/features/2026/06/06/008-agent-platform-roadmap/000b-q-and-a.md` should inform the direction
 
 **Assistant follow-up**
 

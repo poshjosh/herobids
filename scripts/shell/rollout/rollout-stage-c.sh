@@ -13,7 +13,7 @@
 #      credential.decrypted events exist for the exact instance.
 #
 # Follows the operator checklist:
-#   docs/features/2026/05/initial/016-phase-4-stage-c-operator-checklist.md
+#   docs/features/2026/05/01/initial/016-phase-4-stage-c-operator-checklist.md
 #
 # Prerequisites:
 #   - Stage B instance running (or any live/shadow instance in the DB)

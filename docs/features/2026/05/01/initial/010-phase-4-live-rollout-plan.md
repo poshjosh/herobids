@@ -277,7 +277,7 @@ These are the concrete seams the implementation must build on.
 
 **Files to add/modify**
 
-- `docs/features/2026/05/initial/010-phase-4-live-rollout-plan.md` remains the implementation plan
+- `docs/features/2026/05/01/initial/010-phase-4-live-rollout-plan.md` remains the implementation plan
 - Add a short follow-up progress or results document after execution, rather than widening this plan file with post-hoc notes
 
 **Change**

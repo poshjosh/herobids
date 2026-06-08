@@ -219,4 +219,4 @@ The two credential lifecycle bullets currently at the top of [TODO.md](../../../
 
 Replace them with one pointer item:
 
-- [ ] Credential lifecycle hardening is tracked in [docs/features/2026/05/initial/014-phase-4-credential-lifecycle-plan.md](014-phase-4-credential-lifecycle-plan.md).
+- [ ] Credential lifecycle hardening is tracked in [docs/features/2026/05/01/initial/014-phase-4-credential-lifecycle-plan.md](014-phase-4-credential-lifecycle-plan.md).

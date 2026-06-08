@@ -2,7 +2,7 @@
 
 ## Prompt
 
-Have the plans in the folder been fully implemented docs/features/2026/06/005-agent-mvp-rollout-plan/
+Have the plans in the folder been fully implemented docs/features/2026/06/06/005-agent-mvp-rollout-plan/
 
 ## Response
 

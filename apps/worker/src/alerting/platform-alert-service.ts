@@ -9,7 +9,7 @@ const logger = pino({ name: 'platform-alert-service' });
  * These are platform-authored, always fired regardless of user preferences.
  * The user cannot disable this set in the MVP.
  *
- * Per docs/features/2026/06/005-agent-mvp-rollout-plan/001-mvp-delivery-plan.md:
+ * Per docs/features/2026/06/06/005-agent-mvp-rollout-plan/001-mvp-delivery-plan.md:
  * 1. runtime unhealthy or heartbeat lost beyond threshold
  * 2. runtime failed to start or crashed
  * 3. agent paused or stopped by a guardrail or platform safety rule

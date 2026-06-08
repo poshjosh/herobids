@@ -295,7 +295,7 @@ The split is deliberate:
 
 **Primary files**
 
-- docs under `docs/features/2026/05/initial/`
+- docs under `docs/features/2026/05/01/initial/`
 - optionally one small script under `scripts/` if it reduces rollout ambiguity
 
 **Do not mix into this PR**
