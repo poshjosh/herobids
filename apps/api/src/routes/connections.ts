@@ -6,6 +6,8 @@ import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, userCredentials, agents } from '@herobids/db';
 import { CreateConnectionSchema } from '../schemas.js';
 
+const TRADING_CONNECTION_PROVIDERS = new Set(['hyperliquid', 'jupiter', '1inch', 'bybit']);
+
 export async function connectionRoutes(app: FastifyInstance, db: Database, redisClient?: Redis): Promise<void> {
   async function publishRuntimeRefresh(agentId: string): Promise<void> {
     if (!redisClient) {
@@ -111,6 +113,22 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
         createdAt: now,
         updatedAt: now,
       });
+
+      if (TRADING_CONNECTION_PROVIDERS.has(parsed.data.provider)) {
+        await db.insert(tradingBindings).values({
+          id: crypto.randomUUID(),
+          userId: request.userId,
+          connectionId: id,
+          provider: parsed.data.provider,
+          label: parsed.data.label,
+          bindingRef: null,
+          status: 'active',
+          bindingProfile: { provider: parsed.data.provider },
+          sourceVenueAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     } catch (err: unknown) {
       // FK violation — credential deleted between validation and insert
       const pgErr = err as { code?: string };
@@ -171,6 +189,11 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
       .update(connections)
       .set({ status: 'revoked', updatedAt: new Date() })
       .where(eq(connections.id, id));
+
+    await db
+      .update(tradingBindings)
+      .set({ status: 'revoked', updatedAt: new Date() })
+      .where(eq(tradingBindings.connectionId, id));
 
     if (redisClient) {
       const affectedAgents = await db

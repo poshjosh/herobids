@@ -33,16 +33,22 @@ const CONNECTION_ROW = {
 
 let mockDbRows: Record<string, unknown>[] = [];
 let lastInserted: Record<string, unknown> | undefined;
+let insertedValues: Record<string, unknown>[] = [];
 let lastUpdateSet: Record<string, unknown> | undefined;
 
 function buildMockDb(credRows: Record<string, unknown>[] = []) {
   lastInserted = undefined;
+  insertedValues = [];
   lastUpdateSet = undefined;
   let selectCallCount = 0;
 
   return {
     insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation((v) => { lastInserted = v; return Promise.resolve(); }),
+      values: vi.fn().mockImplementation((v) => {
+        lastInserted = v;
+        insertedValues.push(v);
+        return Promise.resolve();
+      }),
     }),
     select: vi.fn().mockImplementation((_cols?) => ({
       from: vi.fn().mockReturnValue({
@@ -51,7 +57,7 @@ function buildMockDb(credRows: Record<string, unknown>[] = []) {
           // First call after insert is the re-fetch; credential check calls come first
           if (selectCallCount === 1 && credRows.length > 0) return credRows;
           if (mockDbRows.length > 0) return mockDbRows;
-          if (lastInserted) return [{ id: lastInserted['id'], ...lastInserted }];
+          if (insertedValues.length > 0) return [{ id: insertedValues[0]!['id'], ...insertedValues[0] }];
           return [];
         }),
       }),
@@ -70,6 +76,7 @@ describe('POST /connections', () => {
     vi.clearAllMocks();
     mockDbRows = [];
     lastInserted = undefined;
+    insertedValues = [];
   });
 
   it('creates a connection and returns 201', async () => {
@@ -89,6 +96,10 @@ describe('POST /connections', () => {
     expect(lastInserted!['provider']).toBe('hyperliquid');
     expect(lastInserted!['userId']).toBe(TEST_USER_ID);
     expect(lastInserted!['status']).toBe('active');
+    expect(insertedValues).toHaveLength(2);
+    expect(insertedValues[0]!['provider']).toBe('hyperliquid');
+    expect(insertedValues[1]!['provider']).toBe('hyperliquid');
+    expect(insertedValues[1]!['connectionId']).toBe(insertedValues[0]!['id']);
   });
 
   it('returns 400 for missing required fields', async () => {
@@ -139,7 +150,24 @@ describe('POST /connections', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(lastInserted!['credentialId']).toBe('cred-1');
+    expect(insertedValues[0]!['credentialId']).toBe('cred-1');
+  });
+
+  it('does not auto-create a trading binding for non-trading providers', async () => {
+    const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'telegram' };
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb([credRow]);
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/connections',
+      payload: { provider: 'telegram', label: 'Telegram bot', credentialId: 'cred-1' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toHaveLength(1);
   });
 
   it('returns 400 when credential venue does not match connection provider', async () => {

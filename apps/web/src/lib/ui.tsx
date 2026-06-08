@@ -423,10 +423,11 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         inset: 0,
         background: 'rgba(0,0,0,0.6)',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'center',
         zIndex: 50,
         padding: '24px',
+        overflowY: 'auto',
       }}
     >
       <div
@@ -438,6 +439,9 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
           padding: '28px',
           width: '100%',
           maxWidth: '480px',
+          maxHeight: 'calc(100vh - 48px)',
+          overflowY: 'auto',
+          margin: 'auto 0',
         }}
       >
         <div style={{ fontWeight: '600', fontSize: '17px', marginBottom: '24px' }}>{title}</div>

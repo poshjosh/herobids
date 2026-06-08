@@ -470,6 +470,13 @@ export const agents = {
     family
       ? request<CapabilityReadiness>(`/agents/${id}/capabilities/${family}/readiness`)
       : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`),
+  tradingBindings: (id: string) =>
+    request<{ agentId: string; family: 'trading'; bindings: TradingBindingSummary[] }>(`/agents/${id}/capabilities/trading/bindings`),
+  tradingAction: (id: string, action: 'bind' | 'unbind', payload: { bindingId: string }) =>
+    request<{ action: 'bind' | 'unbind'; agentId: string; bindingId: string; status: string }>(`/agents/${id}/capabilities/trading/actions/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ---------------------------------------------------------------------------
@@ -499,6 +506,34 @@ export const connections = {
 // ---------------------------------------------------------------------------
 // Platform: Capability Grants
 // ---------------------------------------------------------------------------
+
+export interface TradingBindingReadiness {
+  state: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
+  reasons: string[];
+}
+
+export interface TradingBindingSummary {
+  bindingId: string;
+  connectionId: string;
+  provider: string;
+  label: string;
+  bindingRef: string | null;
+  bindingProfile: Record<string, unknown> | null;
+  sourceVenueAccountId: string | null;
+  connectionStatus: 'active' | 'revoked';
+  status?: string;
+  grantStatus?: string;
+  readiness?: TradingBindingReadiness;
+  family: 'trading';
+  createdAt?: string;
+  updatedAt?: string;
+  grantedAt?: string;
+  revokedAt?: string | null;
+}
+
+export const capabilities = {
+  tradingBindings: () => request<{ family: 'trading'; bindings: TradingBindingSummary[] }>('/capabilities/trading/bindings'),
+};
 
 // ---------------------------------------------------------------------------
 // Platform: Readiness

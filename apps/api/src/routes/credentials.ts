@@ -24,6 +24,44 @@ interface SecretValidationError {
   message: string;
 }
 
+const SECRET_ALIASES_BY_VENUE: Record<string, Record<string, string[]>> = {
+  hyperliquid: {
+    apiKey: ['apikey'],
+    secret: ['secret', 'secretkey'],
+    walletAddress: ['walletaddress', 'accountaddress'],
+  },
+  bybit: {
+    apiKey: ['apikey'],
+    secret: ['secret', 'secretkey'],
+  },
+  '1inch': {
+    apiKey: ['apikey'],
+    privateKey: ['privatekey'],
+  },
+};
+
+function normalizeSecretToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function canonicalizeVenueSecrets(venue: string, secrets: Record<string, string>): Record<string, string> {
+  const aliases = SECRET_ALIASES_BY_VENUE[venue] ?? {};
+  const canonicalSecrets: Record<string, string> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(secrets)) {
+    const trimmedKey = rawKey.trim();
+    if (!trimmedKey) {
+      continue;
+    }
+
+    const normalizedKey = normalizeSecretToken(trimmedKey);
+    const canonicalKey = Object.entries(aliases).find(([, knownAliases]) => knownAliases.includes(normalizedKey))?.[0] ?? trimmedKey;
+    canonicalSecrets[canonicalKey] = rawValue.trim();
+  }
+
+  return canonicalSecrets;
+}
+
 /** Venue-specific validation of credential secrets. Returns empty array if valid. */
 function validateVenueSecrets(venue: string, secrets: Record<string, string>): SecretValidationError[] {
   const errors: SecretValidationError[] = [];
@@ -72,8 +110,10 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
+    const normalizedSecrets = canonicalizeVenueSecrets(parsed.data.venue, parsed.data.secrets);
+
     // Venue-specific secret validation — fail fast on incomplete credentials
-    const venueSecretErrors = validateVenueSecrets(parsed.data.venue, parsed.data.secrets);
+    const venueSecretErrors = validateVenueSecrets(parsed.data.venue, normalizedSecrets);
     if (venueSecretErrors.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
     }
@@ -91,7 +131,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     const now = new Date();
 
     // Encrypt the secrets blob
-    const secretsJson = JSON.stringify(parsed.data.secrets);
+    const secretsJson = JSON.stringify(normalizedSecrets);
     const { encryptedData, encryptionMeta } = encryptCredential(secretsJson, encryptionKey);
 
     await db.insert(userCredentials).values({
@@ -173,14 +213,16 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    const normalizedSecrets = canonicalizeVenueSecrets(existing.venue, parsed.data.secrets);
+
     // Venue-specific secret validation — fail fast on incomplete credentials
-    const venueSecretErrors = validateVenueSecrets(existing.venue, parsed.data.secrets);
+    const venueSecretErrors = validateVenueSecrets(existing.venue, normalizedSecrets);
     if (venueSecretErrors.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
     }
 
     const encryptionKey = getEncryptionKey();
-    const secretsJson = JSON.stringify(parsed.data.secrets);
+    const secretsJson = JSON.stringify(normalizedSecrets);
     const { encryptedData, encryptionMeta } = encryptCredential(secretsJson, encryptionKey);
 
     await db.update(userCredentials)

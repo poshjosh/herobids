@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, skills as skillsApi, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, type Skill, type TradingBindingSummary } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
@@ -20,7 +20,7 @@ interface IntentState {
   goal: string;
   skillIds: string[];
   executionMode: 'paper' | 'shadow' | 'live';
-  providerHint: string;
+  tradingBindingId: string;
   riskTolerance: RiskToleranceValue;
 }
 
@@ -122,22 +122,36 @@ function CreateAgentFlow({
     goal: '',
     skillIds: [],
     executionMode: 'paper',
-    providerHint: '',
+    tradingBindingId: '',
     riskTolerance: 'moderate',
   });
 
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
   const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
+  const tradingBindingsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'bindings'],
+    queryFn: () => capabilitiesApi.tradingBindings(),
+  });
+  const availableTradingBindings = (tradingBindingsQuery.data?.bindings ?? []).filter(
+    (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
+  );
+  const selectedTradingBinding = availableTradingBindings.find((binding) => binding.bindingId === intent.tradingBindingId) ?? null;
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const name = intent.goal.length > 60 ? `${intent.goal.slice(0, 57)}…` : intent.goal;
-      return agentsApi.create({
+      const agent = await agentsApi.create({
         name,
-        prompt: buildPrompt(intent, selectedSkills),
+        prompt: buildPrompt(intent, selectedSkills, selectedTradingBinding),
         skillIds: [...intent.skillIds],
         executionMode: intent.executionMode,
       });
+
+      if (requiresTradingSetup && intent.tradingBindingId) {
+        await agentsApi.tradingAction(agent.id, 'bind', { bindingId: intent.tradingBindingId });
+      }
+
+      return agent;
     },
     onSuccess: (agent) => onCreated(agent.id),
   });
@@ -189,18 +203,32 @@ function CreateAgentFlow({
               <div>
                 <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{formatCapabilityFamily('trading')} capability setup</div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                  Keep the agent creation flow light. You can finish trading setup from the agent page after creation.
+                  Select an existing trading binding to attach trading access as part of agent creation.
                 </div>
               </div>
 
               <div>
-                <FieldLabel>Provider hint (optional)</FieldLabel>
-                <input
-                  style={inputStyle}
-                  value={intent.providerHint}
-                  onChange={(e) => setIntent((state) => ({ ...state, providerHint: e.target.value }))}
-                  placeholder="e.g. hyperliquid, jupiter, zapier"
-                />
+                <FieldLabel>Trading binding</FieldLabel>
+                {tradingBindingsQuery.isLoading ? (
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading trading bindings…</div>
+                ) : availableTradingBindings.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                    No active trading bindings are available yet. Create a trading connection first, or create the agent now and bind it later.
+                  </div>
+                ) : (
+                  <select
+                    value={intent.tradingBindingId}
+                    onChange={(e) => setIntent((state) => ({ ...state, tradingBindingId: e.target.value }))}
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                  >
+                    <option value="">Choose an existing binding</option>
+                    {availableTradingBindings.map((binding) => (
+                      <option key={binding.bindingId} value={binding.bindingId}>
+                        {binding.label} ({binding.provider})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -242,9 +270,9 @@ function CreateAgentFlow({
           <tbody>
             <ReviewRow label="Execution mode" value={formatExecutionMode(intent.executionMode)} />
             <ReviewRow label="Skills" value={formatSkillSelection(selectedSkills)} />
-            <ReviewRow label="Capability setup" value={requiresTradingSetup ? 'Trading setup can be completed after creation' : 'No capability-specific setup required'} />
-            {requiresTradingSetup && intent.providerHint.trim() && (
-              <ReviewRow label="Provider hint" value={intent.providerHint.trim()} />
+            <ReviewRow label="Capability setup" value={requiresTradingSetup ? (selectedTradingBinding ? 'Selected trading binding will be bound on create' : 'No binding selected; bind later from the capability page') : 'No capability-specific setup required'} />
+            {requiresTradingSetup && selectedTradingBinding && (
+              <ReviewRow label="Trading binding" value={`${selectedTradingBinding.label} (${selectedTradingBinding.provider})`} />
             )}
           </tbody>
         </table>
@@ -274,7 +302,7 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function buildPrompt(intent: IntentState, selectedSkills: Skill[]): string {
+function buildPrompt(intent: IntentState, selectedSkills: Skill[], selectedTradingBinding: TradingBindingSummary | null): string {
   const goal = intent.goal.trim();
   const operatorContext: string[] = [];
 
@@ -283,7 +311,10 @@ function buildPrompt(intent: IntentState, selectedSkills: Skill[]): string {
   }
 
   if (hasCapabilityFamily(selectedSkills, 'trading')) {
-    operatorContext.push(`Trading capability selected${intent.providerHint.trim() ? ` with provider hint ${intent.providerHint.trim()}` : ''}.`);
+    operatorContext.push('Trading capability selected.');
+    if (selectedTradingBinding) {
+      operatorContext.push(`Selected trading binding: ${selectedTradingBinding.label} (${selectedTradingBinding.provider}).`);
+    }
     operatorContext.push(`Risk tolerance: ${intent.riskTolerance}.`);
   }
 

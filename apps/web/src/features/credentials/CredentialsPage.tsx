@@ -7,8 +7,17 @@ import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/Portfo
 const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'telegram', 'zapier', 'custom'];
 
 interface SecretEntry {
+  id: string;
   key: string;
   value: string;
+}
+
+function createSecretEntry(): SecretEntry {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    key: '',
+    value: '',
+  };
 }
 
 export function CredentialsPage() {
@@ -103,7 +112,7 @@ export function CredentialsPage() {
 function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [provider, setProvider] = useState('');
   const [label, setLabel] = useState('');
-  const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([{ key: '', value: '' }]);
+  const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createSecretEntry()]);
 
   const mutation = useMutation({
     mutationFn: () => credentialsApi.create({
@@ -128,7 +137,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
   };
 
   const addEntry = () => {
-    setSecretEntries((entries) => [...entries, { key: '', value: '' }]);
+    setSecretEntries((entries) => [...entries, createSecretEntry()]);
   };
 
   const removeEntry = (index: number) => {
@@ -170,7 +179,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
           <FieldLabel>Secrets</FieldLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {secretEntries.map((entry, index) => (
-              <div key={`${entry.key}-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}>
+              <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}>
                 <input
                   value={entry.key}
                   onChange={(event) => updateEntry(index, 'key', event.target.value)}

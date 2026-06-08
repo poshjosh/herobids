@@ -106,7 +106,11 @@ function buildDb(selectSequence: unknown[][] = []) {
   return {
     select: vi.fn().mockImplementation(() => makeSelectChain()),
     transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
-    insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockReturnValue({
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      }),
+    }),
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: TEST_AGENT_ID }]) }),
@@ -139,6 +143,11 @@ describe('trading capability routes', () => {
         label: 'HL connection',
         status: 'active',
       },
+    }], [{
+      id: 'conn-1',
+      provider: 'hyperliquid',
+      label: 'HL connection',
+      status: 'active',
     }]]);
     await tradingCapabilityRoutes(app, db);
 
@@ -149,6 +158,57 @@ describe('trading capability routes', () => {
     expect(body.bindings[0].bindingId).toBe(TEST_BINDING_ID);
     expect(body.bindings[0].provider).toBe('hyperliquid');
     expect(body.bindings[0].bindingRef).toBe('acct-1');
+  });
+
+  it('backfills a missing trading binding for an existing legacy trading connection', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([
+      [],
+      [{
+        id: 'conn-1',
+        provider: 'hyperliquid',
+        label: 'HL connection',
+        status: 'active',
+      }],
+      [{
+        binding: {
+          id: TEST_BINDING_ID,
+          userId: TEST_USER_ID,
+          connectionId: 'conn-1',
+          provider: 'hyperliquid',
+          label: 'HL connection',
+          bindingRef: null,
+          status: 'active',
+          bindingProfile: { provider: 'hyperliquid' },
+          sourceVenueAccountId: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-01'),
+        },
+        connection: {
+          id: 'conn-1',
+          provider: 'hyperliquid',
+          label: 'HL connection',
+          status: 'active',
+        },
+      }],
+    ]);
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/capabilities/trading/bindings' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.bindings).toHaveLength(1);
+    expect(body.bindings[0]).toMatchObject({
+      bindingId: TEST_BINDING_ID,
+      connectionId: 'conn-1',
+      provider: 'hyperliquid',
+      label: 'HL connection',
+      status: 'active',
+      connectionStatus: 'active',
+    });
+    expect(db.insert).toHaveBeenCalledTimes(1);
   });
 
   it('returns binding-backed readiness for an agent', async () => {

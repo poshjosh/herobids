@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { credentialRoutes } from './credentials.js';
+import { encryptCredential } from '../crypto.js';
 
 /**
  * Route-level tests for credential lifecycle:
@@ -167,6 +168,37 @@ describe('credential audit events', () => {
       });
 
       expect(res.statusCode).toBe(201);
+    });
+
+    it('normalizes aliased Hyperliquid secret names before validation and storage', async () => {
+      const app = Fastify();
+      const db = buildMockDb();
+      decorateWithAuth(app);
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          venue: 'hyperliquid',
+          label: 'prod-key',
+          secrets: {
+            'api-key': 'secret-key',
+            secret: 'secret-value',
+            'account-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(encryptCredential).toHaveBeenCalledWith(
+        JSON.stringify({
+          apiKey: 'secret-key',
+          secret: 'secret-value',
+          walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        }),
+        expect.any(String),
+      );
     });
 
     it('rejects Hyperliquid credential with empty walletAddress', async () => {
@@ -477,6 +509,36 @@ describe('credential audit events', () => {
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
       // Must not persist or rotate
       expect(mockJournalAppend).not.toHaveBeenCalled();
+    });
+
+    it('normalizes aliased Hyperliquid secret names during rotation', async () => {
+      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      const app = Fastify();
+      const db = buildMockDb();
+      decorateWithAuth(app);
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials/cred-1/rotate',
+        payload: {
+          secrets: {
+            'api-key': 'k',
+            secret: 's',
+            'account-address': '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(encryptCredential).toHaveBeenCalledWith(
+        JSON.stringify({
+          apiKey: 'k',
+          secret: 's',
+          walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        }),
+        expect.any(String),
+      );
     });
   });
 

@@ -116,7 +116,7 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
       >
         <option value="">— none —</option>
         {(credQuery.data?.credentials ?? []).map((c) => (
-          <option key={c.id} value={c.id}>{c.label} ({c.provider})</option>
+          <option key={c.id} value={c.id}>{c.venue ? `${c.label} (${c.venue})` : c.label}</option>
         ))}
       </select>
       <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
