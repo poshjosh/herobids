@@ -192,6 +192,50 @@ describe('POST /skills', () => {
     });
     expect(insertedValues['visibility']).toBe('private');
   });
+
+  it('accepts execute_code as a canonical required tool', async () => {
+    const db = {
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      select: vi.fn().mockImplementation(() => makeChain([{ ...stubSkill, requiredTools: ['execute_code'] }])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: {
+        name: 'Code Skill',
+        description: 'Runs code',
+        instructions: 'Use execute_code',
+        requiredTools: ['execute_code'],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects legacy code_execute required tools', async () => {
+    const db = {} as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: {
+        name: 'Legacy Code Skill',
+        description: 'Runs code',
+        instructions: 'Use code_execute',
+        requiredTools: ['code_execute'],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
 });
 
 // ─── GET /skills/:id ──────────────────────────────────────────────────────
@@ -263,6 +307,24 @@ describe('PUT /skills/:id', () => {
       payload: { name: 'Hack' },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('rejects legacy code_execute on update', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/skills/${SKILL_ID}`,
+      payload: { requiredTools: ['code_execute'] },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
   });
 });
 
@@ -353,5 +415,19 @@ describe('POST /skills/:id/fork', () => {
 
     const res = await app.inject({ method: 'POST', url: `/skills/${SKILL_ID}/fork` });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('rejects forking a source skill with legacy code_execute required tools', async () => {
+    const legacySkill = { ...stubSkill, requiredTools: ['code_execute'] };
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([legacySkill])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: `/skills/${SKILL_ID}/fork` });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
   });
 });

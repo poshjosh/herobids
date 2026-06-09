@@ -85,6 +85,13 @@
       "when": 1781031600000,
       "tag": "0011_publish_artifact_tool",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781042400000,
+      "tag": "0012_execute_code_programming_skill",
+      "breakpoints": true
     }
   ]
 }

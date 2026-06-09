@@ -388,11 +388,15 @@ Phases 0 through 6:
 
 These should be resolved in Phase 0, but they do not block writing this plan.
 
-1. Which i18n library should be the standard for the web app?
-2. Is locale preference local-storage first, or do we persist it on the user profile immediately?
-3. Do we want region-aware locales such as `en-US` and `fr-FR`, or language-only locales first?
-4. Should API responses retain `message` indefinitely for third-party callers, or only during migration?
-5. For agent-authored summaries and artifact bodies, do we show source language only or introduce an explicit translate-on-demand feature later?
+1. Q: Which i18n library should be the standard for the web app? A: standardize on react-intl, use semantic dot-separated keys like activity.order.filled and errors.plan.limitExceeded, mount a single provider at app root, and route all date/number/relative-time formatting through a shared intl wrapper instead of ad hoc browser calls.
+
+2. Q: Is locale preference local-storage first, or do we persist it on the user profile immediately? A: local storage first in Phase 1, but explicitly design for server persistence as the target and implement that in Phase 5. In other words, do not choose “local-only” as the end state; choose it as the rollout strategy. That also aligns with the risk already called out in the plan that adding persistence too early can slow the rollout.
+
+3. Q: Do we want region-aware locales such as `en-US` and `fr-FR`, or language-only locales first? A: Yes, but also support plain `en`.
+
+4. Q: Should API responses retain `message` indefinitely for third-party callers, or only during migration? A: No need for backward compatibility. Remove `message` entirely if it has no long-term future.
+
+5. Q: For agent-authored summaries and artifact bodies, do we show source language only or introduce an explicit translate-on-demand feature later? A: Show language only, for now.
 
 ## Suggested Initial File Inventory
 

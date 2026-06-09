@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
+import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS } from '@herobids/domain';
 import type { AgentTool, ToolContext } from '@herobids/domain';
 import { botManagementTools } from './bots.js';
 import { ToolRegistry } from './registry.js';
@@ -88,5 +89,27 @@ describe('tool registry extracted tools', () => {
       'agent.artifact.publish',
       expect.objectContaining({ summary: 'Artifact published' }),
     );
+  });
+
+  it('registers execute_code as the canonical code execution tool', () => {
+    const registry = createToolRegistry();
+
+    expect(registry.has('execute_code')).toBe(true);
+    expect(registry.has('code_execute')).toBe(false);
+  });
+
+  it('matches the shared agent tool catalog exactly', () => {
+    const registry = createToolRegistry();
+    const registryToolNames = registry.list().map((tool) => tool.name).sort();
+
+    expect(registryToolNames).toEqual([...KNOWN_AGENT_TOOL_NAMES].sort());
+  });
+
+  it('only exposes known tools from built-in skills', () => {
+    const knownToolNames = new Set(KNOWN_AGENT_TOOL_NAMES);
+
+    for (const skill of [BASE_SKILL, ...SYSTEM_SKILLS]) {
+      expect(skill.requiredTools.every((toolName) => knownToolNames.has(toolName))).toBe(true);
+    }
   });
 });

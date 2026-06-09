@@ -4,16 +4,16 @@ import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './capability
 describe('buildCapabilityPolicyEngine', () => {
   it('merges per-runtime overrides onto the default capability policy', () => {
     const engine = buildCapabilityPolicyEngine({
-      code_execute: {
+      execute_code: {
         enabled: false,
         tier: 'direct',
         limits: { timeoutMs: 5_000 },
       },
     });
 
-    expect(engine.getGrant('code_execute')).toEqual(
+    expect(engine.getGrant('execute_code')).toEqual(
       expect.objectContaining({
-        capability: 'code_execute',
+        capability: 'execute_code',
         enabled: false,
         tier: 'direct',
         limits: expect.objectContaining({
@@ -26,31 +26,31 @@ describe('buildCapabilityPolicyEngine', () => {
 
   it('preserves session rate limits when grants are refreshed in place', () => {
     const engine = buildCapabilityPolicyEngine({
-      code_execute: {
+      execute_code: {
         enabled: true,
         tier: 'direct',
         limits: { maxPerMinute: 1 },
       },
     });
 
-    expect(engine.checkAccess('code_execute', 'agent-1', 'session-1')).toBeUndefined();
-    engine.recordStart('code_execute', 'session-1');
+    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1')).toBeUndefined();
+    engine.recordStart('execute_code', 'session-1');
 
-    expect(engine.checkAccess('code_execute', 'agent-1', 'session-1')).toBe('rate_limit_exceeded');
+    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1')).toBe('rate_limit_exceeded');
 
     engine.replaceGrants(buildCapabilityGrants({
-      code_execute: {
+      execute_code: {
         enabled: true,
         tier: 'direct',
         limits: { maxPerMinute: 1, timeoutMs: 5_000 },
       },
     }));
 
-    expect(engine.getGrant('code_execute')).toEqual(
+    expect(engine.getGrant('execute_code')).toEqual(
       expect.objectContaining({
         limits: expect.objectContaining({ timeoutMs: 5_000, maxPerMinute: 1 }),
       }),
     );
-    expect(engine.checkAccess('code_execute', 'agent-1', 'session-1')).toBe('rate_limit_exceeded');
+    expect(engine.checkAccess('execute_code', 'agent-1', 'session-1')).toBe('rate_limit_exceeded');
   });
 });

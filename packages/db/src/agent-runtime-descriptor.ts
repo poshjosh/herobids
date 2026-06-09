@@ -3,10 +3,9 @@ import type { Database } from './index.js';
 import { capabilityGrants, connections, skills, tradingBindings } from './schema/index.js';
 import {
   BASE_SKILL,
-  BOT_MANAGEMENT_SKILL,
   DEFAULT_RUNTIME_BUDGETS,
-  RISK_MONITORING_SKILL,
-  TRADING_SKILL,
+  SYSTEM_SKILLS,
+  findUnknownSkillTools,
 } from '@herobids/domain';
 import type {
   CapabilityReadiness,
@@ -15,12 +14,17 @@ import type {
   SkillDefinition,
 } from '@herobids/domain';
 
-const SYSTEM_SKILLS_BY_ID: Record<string, SkillDefinition> = {
-  [BASE_SKILL.id]: BASE_SKILL,
-  [BOT_MANAGEMENT_SKILL.id]: BOT_MANAGEMENT_SKILL,
-  [TRADING_SKILL.id]: TRADING_SKILL,
-  [RISK_MONITORING_SKILL.id]: RISK_MONITORING_SKILL,
-};
+const SYSTEM_SKILLS_BY_ID: Record<string, SkillDefinition> = Object.fromEntries(
+  [BASE_SKILL, ...SYSTEM_SKILLS].map((skill) => [skill.id, skill]),
+);
+
+function assertKnownRequiredTools(skillId: string, requiredTools: string[]): string[] {
+  const unknownTools = findUnknownSkillTools(requiredTools);
+  if (unknownTools.length > 0) {
+    throw new Error(`Skill ${skillId} references unknown requiredTools: ${unknownTools.join(', ')}`);
+  }
+  return requiredTools;
+}
 
 type RuntimeGrantRow = {
   family: string;
@@ -109,12 +113,14 @@ function inferSkillFromRow(row: typeof skills.$inferSelect): SkillDefinition {
     return skill;
   }
 
-  const requiresTrading = row.requiredTools.includes('create_bot')
-    || row.requiredTools.includes('submit_decision')
+  const requiredTools = assertKnownRequiredTools(row.id, row.requiredTools);
+
+  const requiresTrading = requiredTools.includes('create_bot')
+    || requiredTools.includes('submit_decision')
     || row.requiredTools.includes('manage_bot')
     || row.requiredTools.includes('bot_query')
-    || row.requiredTools.includes('list_positions')
-    || row.requiredTools.includes('get_analytics')
+    || requiredTools.includes('list_positions')
+    || requiredTools.includes('get_analytics')
     || row.contextRequirements.some((requirement) => ['bot_statuses', 'positions', 'fills', 'analytics'].includes(requirement));
 
   const capabilityFamilies = requiresTrading ? ['trading'] : [];
@@ -125,7 +131,7 @@ function inferSkillFromRow(row: typeof skills.$inferSelect): SkillDefinition {
     name: row.name,
     description: row.description,
     instructions: row.instructions,
-    requiredTools: row.requiredTools,
+    requiredTools,
     capabilityFamilies,
     bindingRequirements: (requiresTrading
       ? { trading: { minBindings: 1, requireReady: true } }

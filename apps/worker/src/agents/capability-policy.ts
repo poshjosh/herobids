@@ -11,7 +11,7 @@ const logger = pino({ name: 'capability-policy' });
 export type CapabilityTier = 'brokered' | 'direct' | 'never';
 
 export interface CapabilityGrant {
-  /** Capability identifier (e.g. 'web_fetch', 'code_execute', 'submit_decision') */
+  /** Capability identifier (e.g. 'web_fetch', 'execute_code', 'submit_decision') */
   capability: string;
   /** Access tier */
   tier: CapabilityTier;
@@ -64,8 +64,6 @@ export function buildCapabilityGrants(toolPolicy?: Record<string, unknown> | nul
     return DEFAULT_CAPABILITY_GRANTS;
   }
 
-  // Deep-merge per-agent overrides onto defaults so partial overrides (e.g. just
-  // { limits: { maxPerMinute: 1 } }) don't lose inherited fields like tier/enabled.
   const overrideMap = new Map(perAgentGrants.map((grant) => [grant.capability, grant]));
   const merged = DEFAULT_CAPABILITY_GRANTS.map((defaultGrant) => {
     const override = overrideMap.get(defaultGrant.capability);
@@ -73,15 +71,12 @@ export function buildCapabilityGrants(toolPolicy?: Record<string, unknown> | nul
     return {
       ...defaultGrant,
       ...override,
-      // Merge limits field one level deep so a partial limits override only
-      // changes the specified sub-fields and inherits the rest from defaults.
       limits: override.limits !== undefined
         ? { ...defaultGrant.limits, ...override.limits }
         : defaultGrant.limits,
     } as CapabilityGrant;
   });
 
-  // Add any per-agent grants for capabilities not in defaults.
   for (const grant of perAgentGrants) {
     if (!DEFAULT_CAPABILITY_GRANTS.find((defaultGrant) => defaultGrant.capability === grant.capability)) {
       merged.push(grant);
@@ -109,9 +104,9 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 30, maxConcurrent: 5, timeoutMs: 30_000, maxResponseBytes: 5 * 1024 * 1024, maxTotalDownloadBytes: 50 * 1024 * 1024 },
   },
   {
-    // code_execute runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).
+    // execute_code runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).
     // It does not go through the broker, so tier is 'direct'.
-    capability: 'code_execute',
+    capability: 'execute_code',
     tier: 'direct',
     enabled: true,
     limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 60_000, maxResponseBytes: 1024 * 1024 },
@@ -186,7 +181,9 @@ export class CapabilityPolicyEngine {
 
   constructor(grants?: CapabilityGrant[]) {
     const effectiveGrants = grants ?? DEFAULT_CAPABILITY_GRANTS;
-    this.grants = new Map(effectiveGrants.map((g) => [g.capability, g]));
+    this.grants = new Map(
+      effectiveGrants.map((grant) => [grant.capability, grant] as const),
+    );
   }
 
   /** Replace the active grant set without resetting session-scoped enforcement state. */
@@ -203,7 +200,6 @@ export class CapabilityPolicyEngine {
    * Returns an error string if denied, undefined if allowed.
    */
   checkAccess(capability: string, _agentId: string, sessionId: string): string | undefined {
-    // Kill switch
     if (this.killed) {
       return 'kill_switch_active';
     }
@@ -221,7 +217,6 @@ export class CapabilityPolicyEngine {
       return 'capability_never_allowed';
     }
 
-    // Rate limit check
     if (grant.limits?.maxPerMinute) {
       const key = `${sessionId}:${capability}`;
       const now = Date.now();
@@ -234,7 +229,6 @@ export class CapabilityPolicyEngine {
       }
     }
 
-    // Concurrency check
     if (grant.limits?.maxConcurrent) {
       const key = `${sessionId}:${capability}`;
       const current = this.concurrencyCounters.get(key) ?? 0;
@@ -251,7 +245,6 @@ export class CapabilityPolicyEngine {
     const concKey = `${sessionId}:${capability}`;
     this.concurrencyCounters.set(concKey, (this.concurrencyCounters.get(concKey) ?? 0) + 1);
 
-    // Increment rate counter
     const rateKey = `${sessionId}:${capability}`;
     const now = Date.now();
     const counter = this.usageCounters.get(rateKey);

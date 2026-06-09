@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, or, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
+import { findUnknownSkillTools } from '@herobids/domain';
 import { skills } from '@herobids/db';
 
 // --- Schemas ---
@@ -29,6 +30,26 @@ const UpdateSkillSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
+function buildUnknownToolValidationError(requiredTools: string[]) {
+  const unknownTools = findUnknownSkillTools(requiredTools);
+  if (unknownTools.length === 0) {
+    return null;
+  }
+
+  return {
+    error: 'validation_error',
+    details: [{
+      code: 'custom',
+      path: ['requiredTools'],
+      message: `Unknown requiredTools: ${unknownTools.join(', ')}`,
+      params: {
+        issueCode: 'skills.unknown_required_tools',
+        unknownTools,
+      },
+    }],
+  };
+}
+
 // --- Route module ---
 
 export async function skillsRoutes(app: FastifyInstance, db: Database): Promise<void> {
@@ -53,6 +74,11 @@ export async function skillsRoutes(app: FastifyInstance, db: Database): Promise<
     const parsed = CreateSkillSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const unknownToolError = buildUnknownToolValidationError(parsed.data.requiredTools);
+    if (unknownToolError) {
+      return reply.status(400).send(unknownToolError);
     }
 
     const id = crypto.randomUUID();
@@ -101,6 +127,13 @@ export async function skillsRoutes(app: FastifyInstance, db: Database): Promise<
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
+    if (parsed.data.requiredTools) {
+      const unknownToolError = buildUnknownToolValidationError(parsed.data.requiredTools);
+      if (unknownToolError) {
+        return reply.status(400).send(unknownToolError);
+      }
+    }
+
     const [skill] = await db.select().from(skills)
       .where(and(eq(skills.id, id), eq(skills.authorId, request.userId)));
     if (!skill) return reply.status(404).send({ error: 'not_found' });
@@ -137,6 +170,11 @@ export async function skillsRoutes(app: FastifyInstance, db: Database): Promise<
         ),
       ));
     if (!source) return reply.status(404).send({ error: 'not_found' });
+
+    const unknownToolError = buildUnknownToolValidationError(source.requiredTools);
+    if (unknownToolError) {
+      return reply.status(400).send(unknownToolError);
+    }
 
     const newId = crypto.randomUUID();
     const now = new Date();

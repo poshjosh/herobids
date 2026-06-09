@@ -122,7 +122,7 @@ describe('CapabilityPolicyEngine', () => {
       expect(byCapability.get('submit_decision')?.tier).toBe('brokered');
       expect(byCapability.get('bot_query')?.tier).toBe('brokered');
       expect(byCapability.get('web_fetch')?.tier).toBe('direct');
-      expect(byCapability.get('code_execute')?.tier).toBe('direct');
+      expect(byCapability.get('execute_code')?.tier).toBe('direct');
       expect(byCapability.get('publish_artifact')?.tier).toBe('brokered');
       expect(byCapability.get('venue_api')?.tier).toBe('never');
       expect(byCapability.get('raw_secrets')?.tier).toBe('never');

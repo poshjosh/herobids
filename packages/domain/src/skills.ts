@@ -152,6 +152,29 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
 };
 
 /**
+ * `programming` skill — runs sandboxed code execution tasks.
+ */
+export const PROGRAMMING_SKILL: SkillDefinition = {
+  id: 'programming',
+  name: 'Programming',
+  description: 'Run sandboxed code for analysis, calculations, and implementation support.',
+  instructions: `You have access to programming tools.
+
+- Use \`execute_code\` to run sandboxed JavaScript for analysis, calculations, and implementation support.
+- Use \`send_message\` to report findings or ask for clarification when needed.
+- Use \`publish_artifact\` when a structured output is more useful than plain text.`,
+  requiredTools: ['execute_code', 'send_message', 'publish_artifact'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000,
+  visibility: 'public',
+};
+
+/**
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
@@ -167,4 +190,5 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   BOT_MANAGEMENT_SKILL,
   TRADING_SKILL,
   RISK_MONITORING_SKILL,
+  PROGRAMMING_SKILL,
 ];

@@ -216,8 +216,8 @@ agentRuntime:
     maxTotalDownloadBytes: 104857600  # max total download per session (100 MB)
   tools:
     codeExecute:
-      defaultTimeoutMs: 60000      # code_execute timeout when no capability grant present
-      defaultMaxOutputBytes: 51200  # code_execute max output when no capability grant present
+      defaultTimeoutMs: 60000      # execute_code timeout when no capability grant present
+      defaultMaxOutputBytes: 51200  # execute_code max output when no capability grant present
 
 llmValidation:
   requirePinnedModel: true

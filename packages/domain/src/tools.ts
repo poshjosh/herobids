@@ -164,6 +164,42 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
+export const KNOWN_AGENT_TOOL_NAMES = [
+  'adjust_bot_config',
+  'check_regime',
+  'check_watches',
+  'create_bot',
+  'discover_tokens',
+  'execute_code',
+  'get_analytics',
+  'get_bot_status',
+  'get_funding_rates',
+  'get_market_overview',
+  'get_price',
+  'list_bots',
+  'list_positions',
+  'list_watches',
+  'publish_artifact',
+  'remove_watch',
+  'search_tokens',
+  'send_message',
+  'set_memory',
+  'start_bot',
+  'stop_bot',
+  'submit_decision',
+  'watch_token',
+] as const;
+
+export type AgentToolName = typeof KNOWN_AGENT_TOOL_NAMES[number];
+
+export function isKnownAgentToolName(toolName: string): toolName is AgentToolName {
+  return (KNOWN_AGENT_TOOL_NAMES as readonly string[]).includes(toolName);
+}
+
+export function findUnknownSkillTools(requiredTools: string[]): string[] {
+  return [...new Set(requiredTools.filter((toolName) => !isKnownAgentToolName(toolName)))].sort();
+}
+
 /** Helper to check if a category implies read-only access */
 export function isReadOnlyCategory(category: ToolCategory): boolean {
   return category.startsWith('read-');

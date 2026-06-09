@@ -21,7 +21,7 @@ const _runtimePolicy = (() => {
   }
 })();
 
-// --- code_execute ---
+// --- execute_code ---
 
 const CodeExecuteParamsSchema = z.object({
   code: z.string().min(1),
@@ -29,7 +29,7 @@ const CodeExecuteParamsSchema = z.object({
 });
 
 const codeExecuteTool: AgentTool = {
-  name: 'code_execute',
+  name: 'execute_code',
   description: 'Execute arbitrary JavaScript code in a sandboxed environment. Use for data analysis, calculations, or testing ideas. Code runs in Node.js with network isolation. Output is captured and returned.',
   parametersSchema: CodeExecuteParamsSchema,
   parameters: convertZodToJsonSchema(CodeExecuteParamsSchema),
@@ -37,12 +37,12 @@ const codeExecuteTool: AgentTool = {
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     // Enforce capability policy before executing — rate limit, concurrency, and enable/disable.
     if (ctx.capabilityEngine) {
-      const policyDenied = ctx.capabilityEngine.checkAccess('code_execute', ctx.agentId, ctx.sessionId);
+      const policyDenied = ctx.capabilityEngine.checkAccess('execute_code', ctx.agentId, ctx.sessionId);
       if (policyDenied) {
-        logger.warn({ agentId: ctx.agentId, reason: policyDenied }, 'code_execute denied by capability policy');
+        logger.warn({ agentId: ctx.agentId, reason: policyDenied }, 'execute_code denied by capability policy');
         return { success: false, error: `capability policy denied: ${policyDenied}`, retryable: false };
       }
-      ctx.capabilityEngine.recordStart('code_execute', ctx.sessionId);
+      ctx.capabilityEngine.recordStart('execute_code', ctx.sessionId);
     }
 
     const codeStartMs = Date.now();
@@ -58,9 +58,9 @@ const codeExecuteTool: AgentTool = {
 
     // Read limits from the effective capability grant so operator/user policy changes
     // govern execution timeout and output size, not just rate/concurrency.
-    const codeGrant = ctx.capabilityEngine?.getGrant('code_execute');
+    const codeGrant = ctx.capabilityEngine?.getGrant('execute_code');
     if (!_runtimePolicy) {
-      return { success: false, error: 'code_execute requires AGENT_RUNTIME_CONFIG_JSON with tools.codeExecute defaults', retryable: false };
+      return { success: false, error: 'execute_code requires AGENT_RUNTIME_CONFIG_JSON with tools.codeExecute defaults', retryable: false };
     }
     const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? _runtimePolicy.defaultTimeoutMs ?? 30_000;
     const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? _runtimePolicy.defaultMaxOutputBytes ?? 1_048_576;
@@ -103,8 +103,8 @@ const codeExecuteTool: AgentTool = {
       stderr = String(execErr.stderr || execErr.message || 'execution failed').slice(0, 10 * 1024);
     } finally {
       if (ctx.capabilityEngine) {
-        ctx.capabilityEngine.recordEnd('code_execute', ctx.sessionId, {
-          capability: 'code_execute',
+        ctx.capabilityEngine.recordEnd('execute_code', ctx.sessionId, {
+          capability: 'execute_code',
           agentId: ctx.agentId,
           sessionId: ctx.sessionId,
           timestamp: new Date().toISOString(),
@@ -125,7 +125,7 @@ const codeExecuteTool: AgentTool = {
     } else {
       return {
         success: false,
-        error: `code_execute${label} failed:\nstderr: ${stderr}\nstdout: ${stdout || '(no output)'}`,
+        error: `execute_code${label} failed:\nstderr: ${stderr}\nstdout: ${stdout || '(no output)'}`,
         retryable: false,
       };
     }
