@@ -17,8 +17,10 @@ import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@he
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
   createProviderRegistry,
+  createPriceService,
   type MarketDataConfig,
   type ProviderRegistry,
+  type PriceService,
   type TokenInfo,
   evaluateRegime,
   type RegimeParams,
@@ -452,6 +454,12 @@ if (marketDataConfig) {
   applyToolVisibility();
 }
 
+// Price service — built on top of the provider registry.
+// Only available when market data is configured.
+const priceService: PriceService | null = marketDataRegistry
+  ? createPriceService(marketDataRegistry)
+  : null;
+
 // ---------------------------------------------------------------------------
 // Tool Registry
 // ---------------------------------------------------------------------------
@@ -828,6 +836,8 @@ async function executeTool(call: ToolCall): Promise<string | null> {
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
+      hgetall: redis.hgetall.bind(redis),
+      hdel: redis.hdel.bind(redis),
       publish: redis.publish.bind(redis),
     },
     publishToInbound,
@@ -837,6 +847,7 @@ async function executeTool(call: ToolCall): Promise<string | null> {
     recordMarketDataRejection,
     capabilityEngine,
     sessionMetrics,
+    priceService: priceService ?? undefined,
   };
 
   try {

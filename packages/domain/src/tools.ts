@@ -71,10 +71,12 @@ export interface ToolAnalyticsResult {
 export interface ToolContext {
   agentId: string;
   sessionId: string;
-  /** Redis client for agent memory and pub/sub */
+  /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;
     hget: (key: string, field: string) => Promise<string | null>;
+    hgetall: (key: string) => Promise<Record<string, string> | null>;
+    hdel: (key: string, ...fields: string[]) => Promise<number>;
     publish: (channel: string, message: string) => Promise<number>;
   };
   /** Publish agent protocol message to inbound stream */
@@ -122,6 +124,17 @@ export interface ToolContext {
   /** Session metrics for tool execution */
   sessionMetrics?: {
     decisionsSubmitted: number;
+  };
+  /**
+   * Price service for non-execution price lookups: valuation, watch thresholds,
+   * and discovery enrichment. NOT used for live trade sizing or swap execution.
+   */
+  priceService?: {
+    getPrice(symbol: string, chain: string, address?: string): Promise<{
+      ok: boolean;
+      data?: { priceUsd: number; source: 'execution' | 'oracle' | 'cached'; fetchedAt: string; stale: boolean };
+      error?: { code: string; message: string };
+    }>;
   };
 }
 

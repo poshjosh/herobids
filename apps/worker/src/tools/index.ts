@@ -6,6 +6,8 @@ import { botManagementTools } from './bots.js';
 import { analyticsTools } from './analytics.js';
 import { codeTools } from './code.js';
 import { marketDataTools } from './market-data.js';
+import { priceTools } from './price.js';
+import { watchTools } from './watch.js';
 
 /** Create a registry with all agent tools pre-registered. */
 export function createToolRegistry(): ToolRegistry {
@@ -19,6 +21,8 @@ export function createToolRegistry(): ToolRegistry {
     ...analyticsTools,
     ...codeTools,
     ...marketDataTools,
+    ...priceTools,
+    ...watchTools,
   ];
 
   for (const tool of allTools) {

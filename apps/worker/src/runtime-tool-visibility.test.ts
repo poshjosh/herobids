@@ -196,4 +196,20 @@ describe('createRuntimeToolVisibilityController', () => {
     // v1 should not have been re-touched.
     expect(descriptorV1.resolvedSkills[0]!.requiredTools).not.toContain('list_bots');
   });
+
+  it('hides watch_token and check_watches but keeps list_watches and remove_watch when market-data is unavailable', () => {
+    const watchTools = ['watch_token', 'list_watches', 'remove_watch', 'check_watches', 'send_message'];
+    const descriptor = makeDescriptor([{ id: 'monitoring', tools: watchTools }]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    controller.setDependencyAvailability('market-data', false);
+
+    const visibleTools = descriptor.resolvedSkills[0]!.requiredTools;
+    expect(visibleTools).not.toContain('watch_token');
+    expect(visibleTools).not.toContain('check_watches');
+    // list_watches and remove_watch only need Redis — still available during market-data outage
+    expect(visibleTools).toContain('list_watches');
+    expect(visibleTools).toContain('remove_watch');
+    expect(visibleTools).toContain('send_message');
+  });
 });

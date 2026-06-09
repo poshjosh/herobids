@@ -19,6 +19,9 @@ export const MARKET_DATA_TOOLS = new Set([
   'discover_tokens',
   'get_funding_rates',
   'get_market_overview',
+  'get_price',
+  'watch_token',
+  'check_watches',
 ]);
 
 function dependencyTools(dependency: RuntimeDependency): Set<string> {

@@ -13,6 +13,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll } from './helpers.js';
 import { sql } from 'drizzle-orm';
 import { skills } from '@herobids/db';
+import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
 
 describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
   let ctx: Awaited<ReturnType<typeof buildApp>>;
@@ -56,6 +57,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(skill!.id).toBe('bot-management');
     expect(skill!.authorId).toBeNull();
     expect(skill!.visibility).toBe('public');
+    expect(skill!.instructions).toBe(BOT_MANAGEMENT_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
     // Must include all management tools — no more, no less (order-independent)
@@ -96,9 +98,24 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(skill!.id).toBe('trading');
     expect(skill!.authorId).toBeNull();
     expect(skill!.visibility).toBe('public');
+    expect(skill!.instructions).toBe(TRADING_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
-    const expectedTools = new Set(['submit_decision', 'list_positions', 'get_analytics']);
+    const expectedTools = new Set([
+      'submit_decision',
+      'list_positions',
+      'get_analytics',
+      'check_regime',
+      'search_tokens',
+      'discover_tokens',
+      'get_funding_rates',
+      'get_market_overview',
+      'get_price',
+      'watch_token',
+      'list_watches',
+      'remove_watch',
+      'check_watches',
+    ]);
     expect(new Set(tools)).toEqual(expectedTools);
 
     const contexts = skill!.contextRequirements as string[];
@@ -122,9 +139,20 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(skill!.id).toBe('risk-monitoring');
     expect(skill!.authorId).toBeNull();
     expect(skill!.visibility).toBe('public');
+    expect(skill!.instructions).toBe(RISK_MONITORING_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
-    const expectedTools = new Set(['send_message', 'artifact_publish', 'list_positions', 'get_analytics']);
+    const expectedTools = new Set([
+      'send_message',
+      'artifact_publish',
+      'list_positions',
+      'get_analytics',
+      'get_price',
+      'watch_token',
+      'list_watches',
+      'remove_watch',
+      'check_watches',
+    ]);
     expect(new Set(tools)).toEqual(expectedTools);
 
     const contexts = skill!.contextRequirements as string[];

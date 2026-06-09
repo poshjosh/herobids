@@ -56,3 +56,11 @@ export {
 } from './coinmarketcap.js';
 export { searchTokens, type SearchTokensOptions } from './token-search.js';
 export { evaluateRegime, getRequiredRegimeCandleCount } from './regime.js';
+export {
+  createPriceService,
+  type PriceService,
+  type PriceSource,
+  type PriceLookupResult,
+  type PriceLookupError,
+  type PriceResult,
+} from './price-service.js';

@@ -93,7 +93,7 @@ export const TRADING_SKILL: SkillDefinition = {
 - Use \`list_positions\` to check current open positions.
 - Use \`search_tokens\` to find a token by name or symbol when you need its on-chain address.
   This is primarily used when preparing Jupiter DEX trades.`,
-  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview'],
+  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {
@@ -120,8 +120,9 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
 Alert the user via send_message when:
 - Unrealized loss exceeds 5% of allocated capital
 - A position has been open longer than the user's stated time horizon
-- Market volatility spikes significantly`,
-  requiredTools: ['send_message', 'artifact_publish', 'list_positions', 'get_analytics'],
+- Market volatility spikes significantly
+Use get_price for focused price checks and the watch_* tools to maintain threshold-based monitoring between ticks.`,
+  requiredTools: ['send_message', 'artifact_publish', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {

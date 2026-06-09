@@ -11,6 +11,73 @@ import { convertZodToJsonSchema } from './registry.js';
 
 const logger = pino({ name: 'tools:market-data' });
 
+async function enrichDiscoveryTokenPrices(
+  tokens: Array<Record<string, unknown>>,
+  priceService: ToolContext['priceService'],
+): Promise<Array<Record<string, unknown>>> {
+  if (!priceService || tokens.length === 0) {
+    return tokens;
+  }
+
+  const symbolNetworkCounts = new Map<string, number>();
+  for (const token of tokens) {
+    const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
+    const chain = typeof token['network'] === 'string' ? token['network'] : null;
+    if (!symbol || !chain) {
+      continue;
+    }
+
+    const key = `${chain.toLowerCase()}:${symbol.toUpperCase()}`;
+    symbolNetworkCounts.set(key, (symbolNetworkCounts.get(key) ?? 0) + 1);
+  }
+
+  const uniqueLookupKeys = new Set<string>();
+  const priceResults = new Map<string, Awaited<ReturnType<NonNullable<ToolContext['priceService']>['getPrice']>>>();
+
+  for (const token of tokens) {
+    const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
+    const chain = typeof token['network'] === 'string' ? token['network'] : null;
+    if (!symbol || !chain) {
+      continue;
+    }
+
+    const key = `${chain.toLowerCase()}:${symbol.toUpperCase()}`;
+    if ((symbolNetworkCounts.get(key) ?? 0) !== 1 || uniqueLookupKeys.has(key)) {
+      continue;
+    }
+
+    uniqueLookupKeys.add(key);
+    const address = typeof token['address'] === 'string' ? token['address'] : undefined;
+    priceResults.set(key, await priceService.getPrice(symbol, chain, address));
+  }
+
+  return Promise.all(tokens.map(async (token) => {
+    const symbol = typeof token['symbol'] === 'string' ? token['symbol'] : null;
+    const chain = typeof token['network'] === 'string' ? token['network'] : null;
+    if (!symbol || !chain) {
+      return token;
+    }
+
+    const key = `${chain.toLowerCase()}:${symbol.toUpperCase()}`;
+    if ((symbolNetworkCounts.get(key) ?? 0) !== 1) {
+      return token;
+    }
+
+    const result = priceResults.get(key);
+    if (!result.ok || !result.data) {
+      return token;
+    }
+
+    return {
+      ...token,
+      priceUsd: result.data.priceUsd,
+      priceSource: result.data.source,
+      priceFetchedAt: result.data.fetchedAt,
+      priceStale: result.data.stale,
+    };
+  }));
+}
+
 function filterSearchResults(
   rawResults: TokenInfo[],
   options?: { network?: string; minLiquidityUsd?: number; limit?: number },
@@ -121,7 +188,11 @@ const discoverTokensTool: AgentTool = {
         params as z.infer<typeof DiscoverTokensParamsSchema>,
         { onAttempt: ctx.recordMarketDataAttempt ?? (() => {}) },
       );
-      return { success: true, data: result };
+      const tokens = Array.isArray(result['tokens'])
+        ? await enrichDiscoveryTokenPrices(result['tokens'] as Array<Record<string, unknown>>, ctx.priceService)
+        : result['tokens'];
+
+      return { success: true, data: { ...result, tokens } };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error';
       if (message.includes('Rate limit exceeded')) {
