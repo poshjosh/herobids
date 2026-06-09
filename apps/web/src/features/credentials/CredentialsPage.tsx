@@ -8,7 +8,7 @@ const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'teleg
 
 /** Well-known secret key names per provider — used to pre-populate key fields when a template matches. */
 export const PROVIDER_TEMPLATES: Record<string, string[]> = {
-  hyperliquid: ['privateKey'],
+  hyperliquid: ['apiKey', 'secret', 'walletAddress'],
   jupiter: ['privateKey'],
   bybit: ['apiKey', 'apiSecret'],
   '1inch': ['apiKey'],

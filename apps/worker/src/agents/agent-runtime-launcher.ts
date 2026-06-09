@@ -192,6 +192,25 @@ export class AgentRuntimeLauncher {
   }
 
   /**
+   * Remove the in-memory runtime handle and stop the heartbeat timer without
+   * issuing a Docker stop or touching the agent status in the DB.
+   *
+   * Use this when the container has already exited (crash / voluntary stop)
+   * and you only need to clean up the launcher's in-memory state.
+   */
+  removeHandle(sessionId: string): void {
+    const handle = this.runtimes.get(sessionId);
+    if (!handle) return;
+    const timer = this.heartbeatTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.heartbeatTimers.delete(sessionId);
+    }
+    this.runtimes.delete(sessionId);
+    logger.info({ sessionId }, 'Agent runtime handle removed (container already stopped)');
+  }
+
+  /**
    * Stop a runtime gracefully (SIGTERM, wait for exit).
    */
   async stop(sessionId: string): Promise<void> {

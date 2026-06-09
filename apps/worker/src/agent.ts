@@ -270,6 +270,11 @@ const failureBackoff = new FailureBackoffController({
   maxIntervalMs: agentRuntimePolicy.failureBackoff?.maxIntervalMs,
 });
 const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.runtimeDescriptor, permanentlyExcludedTools);
+// Declared here (before functions that reference it at module-init call sites)
+// even though the main loop increments it later.
+let tickCount = 0;
+let scoutTickCount = 0;
+let scoutEscalationCount = 0;
 const marketDataRuntimeTelemetry = {
   providerAttempts: new Map<string, number>(),
   providerRejections: new Map<string, number>(),
@@ -914,13 +919,12 @@ function addToHistory(role: 'user' | 'assistant', content: string, options?: { t
 // ---------------------------------------------------------------------------
 
 let running = true;
-let tickCount = 0;
+// tickCount, scoutTickCount, scoutEscalationCount are declared earlier (before
+// module-level applyToolVisibility() calls that reference them).
 // Prevents concurrent tick execution when an LLM call takes longer than TICK_INTERVAL_MS.
 let tickInFlight = false;
 let previousContextHash: string | null = null;
 let previousFullUserContext: string | null = null;
-let scoutTickCount = 0;
-let scoutEscalationCount = 0;
 let effectiveTickIntervalMs = costProfile.tickIntervalMs;
 let previousRegimePass: boolean | null = null;
 // Hoisted so both runTick() and the heartbeat interval can trigger a clean shutdown.

@@ -94,7 +94,11 @@ export class AgentHealthMonitor {
             ));
           for (const session of stoppedSessions) {
             logger.info({ sessionId: session.id }, 'Cleaning up runtime handle for stopped session');
-            await this.runtimeLauncher.stop(session.id);
+            // Use removeHandle (not stop) — the container already exited so we only
+            // need to drop the in-memory handle. Calling stop() would invoke
+            // dockerManager.stop() which writes status='stopped' to the DB,
+            // overwriting a 'crashed' status set by onContainerDie.
+            this.runtimeLauncher.removeHandle(session.id);
           }
         }
       }

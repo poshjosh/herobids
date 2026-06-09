@@ -20,7 +20,7 @@ import { PROVIDER_TEMPLATES } from './CredentialsPage.js';
 
 describe('PROVIDER_TEMPLATES map (bug 007)', () => {
   it('maps "hyperliquid" to ["privateKey"]', () => {
-    expect(PROVIDER_TEMPLATES['hyperliquid']).toEqual(['privateKey']);
+    expect(PROVIDER_TEMPLATES['hyperliquid']).toEqual(['apiKey', 'secret', 'walletAddress']);
   });
 
   it('maps "jupiter" to ["privateKey"]', () => {
