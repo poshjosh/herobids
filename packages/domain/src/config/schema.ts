@@ -59,6 +59,13 @@ export const MarketDataRecordingConfigSchema = z.object({
   captureCandles: z.boolean().default(true),
 });
 
+export const TradingHoursConfigSchema = z.object({
+  /** Allowed UTC hours for agent ticks. Empty or omitted means always active. */
+  allowedHoursUtc: z.array(z.number().int().min(0).max(23)).default([]),
+  /** Optional weekend low-liquidity pause: Sat 00:00 UTC through Sun 12:00 UTC. */
+  weekendPause: z.boolean().default(false),
+});
+
 export const LlmRuntimeConfigSchema = z.object({
   provider: z.string().default('openrouter'),
   model: z.string().default('anthropic/claude-sonnet-4-5'),
@@ -70,6 +77,9 @@ export const LlmRuntimeConfigSchema = z.object({
   tickIntervalMs: z.number().int().min(5_000).default(900_000),
   /** Agent heartbeat cadence in ms. Must be well below the health-monitor stale threshold. */
   heartbeatIntervalMs: z.number().int().min(1_000).default(5_000),
+  /** Operator-configured server cost used in the agent performance summary. */
+  serverCostUsdPerHour: z.number().min(0).default(0.02),
+  tradingHours: TradingHoursConfigSchema.optional(),
 });
 
 export const LlmValidationConfigSchema = z.object({
@@ -241,14 +251,81 @@ export const BillingConfigSchema = z.object({
   }
 });
 
+export const MarketDataBudgetSchema = z.object({
+  requestsPerMinute: z.number().int().min(1),
+  burstCapacity: z.number().int().min(1).optional(),
+  maxWaitMs: z.number().int().min(0).default(5_000),
+  cacheTtlMs: z.number().int().min(0).default(0),
+});
+
 export const MarketDataConfigSchema = z.object({
   dexscreener: z.object({
     baseUrl: z.string().url().default('https://api.dexscreener.com'),
-    requestsPerMinute: z.number().min(1).default(60),
+    search: MarketDataBudgetSchema.default({
+      requestsPerMinute: 30,
+      burstCapacity: 30,
+      maxWaitMs: 5_000,
+      cacheTtlMs: 15_000,
+    }),
+    discovery: MarketDataBudgetSchema.default({
+      requestsPerMinute: 30,
+      burstCapacity: 15,
+      maxWaitMs: 5_000,
+      cacheTtlMs: 300_000,
+    }),
+  }).default({}),
+  geckoterminal: z.object({
+    baseUrl: z.string().url().default('https://api.geckoterminal.com'),
+    candles: MarketDataBudgetSchema.default({
+      requestsPerMinute: 15,
+      burstCapacity: 15,
+      maxWaitMs: 5_000,
+      cacheTtlMs: 60_000,
+    }),
+    discovery: MarketDataBudgetSchema.default({
+      requestsPerMinute: 10,
+      burstCapacity: 5,
+      maxWaitMs: 5_000,
+      cacheTtlMs: 300_000,
+    }),
+  }).default({}),
+  hyperliquid: z.object({
+    baseUrl: z.string().url().default('https://api.hyperliquid.xyz'),
+    intelligencePath: z.string().default('/info'),
+    intelligence: MarketDataBudgetSchema.default({
+      requestsPerMinute: 120,
+      burstCapacity: 20,
+      maxWaitMs: 2_000,
+      cacheTtlMs: 60_000,
+    }),
+  }).default({}),
+  bybit: z.object({
+    baseUrl: z.string().url().default('https://api.bybit.com'),
+    longShortRatioPath: z.string().default('/v5/market/account-ratio'),
+    intelligence: MarketDataBudgetSchema.default({
+      requestsPerMinute: 120,
+      burstCapacity: 20,
+      maxWaitMs: 2_000,
+      cacheTtlMs: 60_000,
+    }),
   }).default({}),
   binance: z.object({
     baseUrl: z.string().url().default('https://api.binance.com'),
     requestsPerMinute: z.number().min(1).default(200),
+  }).default({}),
+  birdeye: z.object({
+    enabled: z.boolean().default(false),
+    baseUrl: z.string().url().default('https://public-api.birdeye.so'),
+    requestsPerMinute: z.number().int().min(1).default(60),
+    apiKey: z.string().default(''),
+    cacheTtlMs: z.number().int().min(0).default(3_600_000),
+  }).default({}),
+  coinMarketCap: z.object({
+    enabled: z.boolean().default(false),
+    baseUrl: z.string().url().default('https://pro-api.coinmarketcap.com'),
+    requestsPerMinute: z.number().int().min(1).default(30),
+    apiKey: z.string().default(''),
+    cacheTtlMs: z.number().int().min(0).default(3_600_000),
   }).default({}),
   timeoutMs: z.number().min(1000).default(5000),
 });

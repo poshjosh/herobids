@@ -1,6 +1,6 @@
 # Bug Report: CREDENTIAL_ENCRYPTION_KEY missing from docker-compose.yaml causes instance crash on start
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** Starting any trading instance that uses a non-default venue account would crash immediately in the worker because `CREDENTIAL_ENCRYPTION_KEY` was not set in `docker-compose.yaml`. The API credential guard (added in bug 006) validates that the venue account has a credential, but the worker still needs the encryption key to decrypt it at runtime.
@@ -40,3 +40,14 @@ A comment notes this must be replaced with a real random key in production. `doc
 
 - Ran `pnpm lint`
 - Result: `tsc --noEmit` completed successfully with no errors
+
+## Regression Tests
+
+`apps/api/src/crypto.test.ts` — new test file covering the crypto helpers and the `getEncryptionKey()` function:
+
+- **`throws when CREDENTIAL_ENCRYPTION_KEY is not set (bug-007 regression)`** — clears the env var and asserts `getEncryptionKey()` throws with a message mentioning `CREDENTIAL_ENCRYPTION_KEY`. Documents that a deployment missing the key fails loudly at the first credential operation, not silently when a bot attempts to start.
+- **`throws when CREDENTIAL_ENCRYPTION_KEY is set to a wrong-length value`** — verifies that a too-short key also throws immediately.
+- **`returns the key when CREDENTIAL_ENCRYPTION_KEY is a valid 64-hex-char string`** — verifies the happy path.
+- `encryptCredential`/`decryptCredential` round-trip and invalid-key tests.
+
+All 9 `crypto.test.ts` tests pass.

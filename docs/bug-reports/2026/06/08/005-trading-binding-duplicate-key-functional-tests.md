@@ -1,6 +1,6 @@
 # 005 — Trading Binding Duplicate Key in Functional Tests
 
-- **Status:** FIXED
+- **Status:** Closed
 - **Severity:** Medium
 - **Date:** 2026-06-08
 
@@ -51,3 +51,13 @@ Also removed the now-unused `import crypto from 'node:crypto'`.
 - `pnpm lint` passes (tsc --noEmit, no errors)
 - No TypeScript errors in the modified file
 - Tests require live `DATABASE_URL`/`REDIS_URL` to run; root cause is code-level and confirmed by tracing the duplicate insert path
+
+## Regression Tests
+
+Added to `apps/api/src/routes/connections.test.ts`:
+- `auto-creates exactly one trading binding with matching connectionId for provider=hyperliquid`
+- `auto-creates exactly one trading binding with matching connectionId for provider=jupiter`
+- `auto-creates exactly one trading binding with matching connectionId for provider=1inch`
+- `auto-creates exactly one trading binding with matching connectionId for provider=bybit`
+
+These parameterised tests lock down the auto-creation contract: POST /connections inserts exactly two rows (connection + binding) for every trading provider. Callers must query for the binding rather than attempting a second insert.

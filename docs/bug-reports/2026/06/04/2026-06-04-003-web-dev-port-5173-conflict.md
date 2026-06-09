@@ -1,6 +1,6 @@
 # Bug Report: Web dev stack fails when host port 5173 is already allocated
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Medium
 - **Date:** 2026-06-04
 - **Summary:** `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d` failed because the `web` service tried to bind host port `5173`, which was already in use on the developer machine.
@@ -25,3 +25,9 @@ The API service in the dev stack also pointed `AUTH_FRONTEND_ORIGIN` at `http://
 
 - Confirmed the edited compose file interpolates `WEB_PORT` for both the `web` publish mapping and `api` frontend origin.
 - Checked the fix against the reported failure mode: the default dev stack now starts without requiring host port `5173` to be free.
+
+## Regression Tests
+
+No automated unit test is feasible for a Docker Compose configuration change. The fix is verified by:
+1. Inspecting `docker-compose.dev.yaml` to confirm `${WEB_PORT:-8080}` is used for both the `web` publish port and `AUTH_FRONTEND_ORIGIN`.
+2. Manual smoke: `docker compose up -d` succeeds when port 5173 is already occupied on the host.

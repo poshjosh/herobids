@@ -153,6 +153,21 @@ export class AgentSessionManager {
           capabilityDescriptor,
         });
         const agentConfig: Record<string, unknown> = {
+          ...(typeof (agent.modelPolicy as Record<string, unknown> | null | undefined)?.['scoutModel'] === 'string'
+            ? { scoutModel: (agent.modelPolicy as Record<string, unknown>)['scoutModel'] }
+            : {}),
+          ...(typeof (agent.modelPolicy as Record<string, unknown> | null | undefined)?.['costPreset'] === 'string'
+            ? { costPreset: (agent.modelPolicy as Record<string, unknown>)['costPreset'] }
+            : {}),
+          ...(typeof (agent.modelPolicy as Record<string, unknown> | null | undefined)?.['dailySpendBudgetUsd'] === 'number'
+            ? { dailySpendBudgetUsd: (agent.modelPolicy as Record<string, unknown>)['dailySpendBudgetUsd'] }
+            : {}),
+          ...(Array.isArray((agent.modelPolicy as Record<string, unknown> | null | undefined)?.['dexWatchlistSymbols'])
+            ? {
+              dexWatchlistSymbols: ((agent.modelPolicy as Record<string, unknown>)['dexWatchlistSymbols'] as unknown[])
+                .filter((value): value is string => typeof value === 'string')
+            }
+            : {}),
           prompt: agent.prompt,
           skillIds: agent.skillIds,
           ...(agent.executionMode != null && { executionMode: agent.executionMode }),

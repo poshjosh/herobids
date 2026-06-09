@@ -1,6 +1,6 @@
 # Bug Report: GET /skills Empty List Test Broken by System Skills
 
-- **Status:** FIXED
+- **Status:** Closed
 - **Severity:** Low
 - **Date:** 2026-06-08
 - **Summary:** Functional test `GET /skills > returns an empty list for a new user` failed after system skills were seeded, because the skills route returns all `visibility='public'` and `authorId=NULL` skills to any authenticated user.
@@ -22,3 +22,8 @@ Updated the test in `analytics-ai-skills-datasets.functional.test.ts`:
 ## Verification
 
 Functional tests: 88/88 passed after fix.
+
+## Regression Tests
+
+Added to `apps/api/src/routes/skills.test.ts`:
+- `includes system skills alongside user-owned skills in the response` — verifies that system skills (authorId=null) are present in the GET /skills response alongside user-created skills, documenting the correct contract that was previously asserted incorrectly.

@@ -1,0 +1,21 @@
+{
+  "name": "@herobids/rate-limit-lab",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "lab": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@herobids/market-data": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

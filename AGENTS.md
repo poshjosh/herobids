@@ -134,6 +134,7 @@ Key principles:
 - Do not bypass TypeScript strict checks (`any`, `@ts-ignore`, `as unknown as X`).
 - Do not swallow errors. If you catch, either handle meaningfully or re-throw/log.
 - Do not introduce circular package dependencies.
+- LLM thinking or reasoning text must never enter stored conversation history, tool parsing, or user-visible output. Strip provider-specific thinking blocks at the `@herobids/llm` boundary and only persist visible text.
 - Run `pnpm lint` before considering work complete — it must pass.
 - Test names describe behavior, not implementation (`"rejects order when notional exceeds limit"`).
 - Commits should be atomic and focused. One logical change per commit.

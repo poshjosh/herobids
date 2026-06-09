@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { RootLayout } from './layout/RootLayout.js';
+import { NotFoundPage } from './NotFoundPage.js';
 import { LoginPage } from '../features/auth/LoginPage.js';
 import { AuthCallbackPage } from '../features/auth/AuthCallbackPage.js';
 import { MissionControlPage } from '../features/mission-control/MissionControlPage.js';
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
       { path: 'exposure', element: <ExposurePage /> },
       { path: 'billing', element: <BillingPage /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);

@@ -145,7 +145,7 @@ export function AgentDetailPage() {
   const canStop = ['active', 'starting', 'paused', 'unhealthy'].includes(agent.status);
   const runtimeAlert = agent.status === 'crashed'
     ? 'Agent crashed. The runtime stopped unexpectedly. Review recent activity and capability readiness below.'
-    : agent.activeSession?.status === 'unhealthy'
+    : (agent.activeSession?.status === 'unhealthy' && agent.status !== 'stopped')
       ? 'Agent runtime is unhealthy. Heartbeats are missing and the worker is recovering.'
       : null;
 

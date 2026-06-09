@@ -1,6 +1,6 @@
 # Bug Report: API dev container restarts because the runtime image does not include `tsx`
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** After restarting the dev stack with `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d`, the API container entered a restart loop with `Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx' imported from /app/apps/api/`.
@@ -30,3 +30,9 @@ The worker service uses a build-stage image that does include `pnpm` and `tsx`, 
 - Confirmed the old runtime image `herobids-api:latest` lacked `pnpm` and `tsx`.
 - Confirmed the worker image contains `pnpm` and resolves `tsx` successfully.
 - Confirmed a clean `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml down && docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build` completed successfully and started `api`, `worker`, `web`, `postgres`, and `redis`.
+
+## Regression Tests
+
+No automated unit test is feasible for a Docker image configuration change. The fix is verified by:
+1. Inspecting `docker-compose.dev.yaml` to confirm the `api` service uses `herobids-api-dev` as its image tag (not the runtime-only `herobids-api:latest`).
+2. Confirming `docker compose up -d --build` produces an API container that resolves `tsx` without error.

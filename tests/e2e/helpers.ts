@@ -7,6 +7,7 @@
 
 import crypto from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { eq } from 'drizzle-orm';
 import { closeDatabase, createDatabase, tradingBindings } from '@herobids/db';
 
 export const TEST_EMAIL = `e2e-${Date.now()}@test.local`;
@@ -238,6 +239,29 @@ export async function seedTradingBinding(params: {
       updatedAt: new Date(),
     });
     return bindingId;
+  } finally {
+    await closeDatabase(db);
+  }
+}
+
+/**
+ * Retrieve the trading binding that POST /connections auto-created for a given connection.
+ * Use this instead of seedTradingBinding when the connection was created via the API.
+ */
+export async function getBindingForConnection(connectionId: string): Promise<string> {
+  const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
+  const db = createDatabase(databaseUrl);
+  try {
+    const [binding] = await db
+      .select({ id: tradingBindings.id })
+      .from(tradingBindings)
+      .where(eq(tradingBindings.connectionId, connectionId));
+    if (!binding) {
+      throw new Error(
+        `No trading binding found for connection ${connectionId} — POST /connections should have created one automatically`,
+      );
+    }
+    return binding.id;
   } finally {
     await closeDatabase(db);
   }

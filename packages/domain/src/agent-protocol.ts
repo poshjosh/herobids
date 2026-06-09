@@ -68,12 +68,20 @@ export type StopRequestPayload = z.infer<typeof StopRequestPayloadSchema>;
 export const HeartbeatPayloadSchema = z.object({
   sessionId: z.string().min(1),
   status: z.enum(['starting', 'ready', 'busy', 'degraded']),
+  reasonCode: z.string().min(1).optional(),
   cpuPct: z.number().optional(),
   memoryBytes: z.number().optional(),
   toolActivity: z.string().optional(),
 });
 
 export type HeartbeatPayload = z.infer<typeof HeartbeatPayloadSchema>;
+
+export const SessionEndedPayloadSchema = z.object({
+  sessionId: z.string().min(1),
+  reasonCode: z.string().min(1),
+});
+
+export type SessionEndedPayload = z.infer<typeof SessionEndedPayloadSchema>;
 
 export const ArtifactPublishPayloadSchema = z.object({
   artifactId: z.string().min(1),
@@ -252,6 +260,7 @@ export const AGENT_MESSAGE_TYPES = {
   LIFECYCLE_PAUSE: 'agent.lifecycle.pause_request',
   LIFECYCLE_STOP: 'agent.lifecycle.stop_request',
   RUNTIME_HEARTBEAT: 'agent.runtime.heartbeat',
+  RUNTIME_SESSION_ENDED: 'agent.runtime.session_ended',
   ARTIFACT_PUBLISH: 'agent.artifact.publish',
   SEND_MESSAGE: 'agent.message.send',
   MANAGE_BOT: 'agent.manage_bot',
@@ -276,6 +285,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.LIFECYCLE_PAUSE]: PauseRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.LIFECYCLE_STOP]: StopRequestPayloadSchema,
   [AGENT_MESSAGE_TYPES.RUNTIME_HEARTBEAT]: HeartbeatPayloadSchema,
+  [AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED]: SessionEndedPayloadSchema,
   [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: ArtifactPublishPayloadSchema,
   [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: SendMessagePayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_BOT]: ManageBotPayloadSchema,

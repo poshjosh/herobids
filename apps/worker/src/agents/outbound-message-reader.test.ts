@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { OUTBOUND_READ_BLOCK_MS, readOutboundMessages } from './outbound-message-reader.js';
+import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages } from './outbound-message-reader.js';
 
 describe('readOutboundMessages', () => {
   beforeEach(() => {
@@ -48,5 +48,81 @@ describe('readOutboundMessages', () => {
       blockMs: OUTBOUND_READ_BLOCK_MS,
       count: 10,
     })).resolves.toEqual([]);
+  });
+
+  it('surfaces Redis read failures to the runtime loop', async () => {
+    const redis = {
+      xgroup: vi.fn().mockResolvedValue(undefined),
+      xreadgroup: vi.fn().mockRejectedValue(new Error('Connection is closed')),
+      xack: vi.fn().mockResolvedValue(1),
+    } as any;
+
+    await expect(readOutboundMessages(redis, {
+      outboundStream: 'agent:outbound:agent-1',
+      consumerGroup: 'agent-runtime',
+      consumerName: 'agent-1-123',
+      blockMs: OUTBOUND_READ_BLOCK_MS,
+      count: 10,
+    })).rejects.toThrow('Connection is closed');
+  });
+
+  // --- Regression tests for Bug 004: BLOCK 0 caused heartbeat starvation ---
+
+  it('OUTBOUND_READ_BLOCK_MS is a finite positive value (not 0) to prevent indefinite connection blocking', () => {
+    expect(OUTBOUND_READ_BLOCK_MS).toBeGreaterThan(0);
+    expect(Number.isFinite(OUTBOUND_READ_BLOCK_MS)).toBe(true);
+  });
+
+  it('OUTBOUND_READ_BLOCK_MS is less than OUTBOUND_READ_TIMEOUT_MS so Promise.race resolves after the blocking read returns', () => {
+    // If BLOCK_MS >= TIMEOUT_MS the race guard would fire before xreadgroup returns,
+    // leaving the connection held and re-creating the heartbeat starvation bug.
+    expect(OUTBOUND_READ_BLOCK_MS).toBeLessThan(OUTBOUND_READ_TIMEOUT_MS);
+  });
+
+  it('wraps non-Error thrown values as Error so callers can rely on instanceof checks', async () => {
+    const redis = {
+      xgroup: vi.fn().mockResolvedValue(undefined),
+      // Simulate a case where something non-Error is thrown (e.g. raw string rejection)
+      xreadgroup: vi.fn().mockRejectedValue('LOADING Redis is loading'),
+      xack: vi.fn().mockResolvedValue(1),
+    } as any;
+
+    await expect(readOutboundMessages(redis, {
+      outboundStream: 'agent:outbound:agent-1',
+      consumerGroup: 'agent-runtime',
+      consumerName: 'agent-1-123',
+      blockMs: OUTBOUND_READ_BLOCK_MS,
+      count: 10,
+    })).rejects.toBeInstanceOf(Error);
+  });
+
+  it('ignores BUSYGROUP xgroup error but rethrows other xgroup errors', async () => {
+    const busyGroupRedis = {
+      xgroup: vi.fn().mockRejectedValue(new Error('BUSYGROUP Consumer Group name already exists')),
+      xreadgroup: vi.fn().mockResolvedValue(null),
+      xack: vi.fn().mockResolvedValue(1),
+    } as any;
+
+    await expect(readOutboundMessages(busyGroupRedis, {
+      outboundStream: 'agent:outbound:agent-1',
+      consumerGroup: 'agent-runtime',
+      consumerName: 'agent-1-123',
+      blockMs: OUTBOUND_READ_BLOCK_MS,
+      count: 10,
+    })).resolves.toEqual([]);
+
+    const otherErrorRedis = {
+      xgroup: vi.fn().mockRejectedValue(new Error('NOPERM no permissions')),
+      xreadgroup: vi.fn().mockResolvedValue(null),
+      xack: vi.fn().mockResolvedValue(1),
+    } as any;
+
+    await expect(readOutboundMessages(otherErrorRedis, {
+      outboundStream: 'agent:outbound:agent-1',
+      consumerGroup: 'agent-runtime',
+      consumerName: 'agent-1-123',
+      blockMs: OUTBOUND_READ_BLOCK_MS,
+      count: 10,
+    })).rejects.toThrow('NOPERM no permissions');
   });
 });

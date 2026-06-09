@@ -1,6 +1,6 @@
 # Bug Report: Instance starts crashed immediately when the linked venue account had no credential
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** Starting an orderbook instance succeeded at the API layer even when the linked venue account had no credential. The worker then failed during credential resolution with `Venue account ... has no linked credential`, marked the instance as `crashed`, and the UI only showed the crash after the fact.
@@ -35,3 +35,11 @@ This keeps the operator informed before and after the start attempt instead of l
 - Ran `pnpm lint`
 - Confirmed the new regression test passes for the missing-credential case
 - Confirmed the workspace type-check passes with the UI changes
+
+## Regression Tests
+
+`apps/worker/src/live-gate.test.ts` — **`rejects live mode when no credential is linked to the venue account and no env-var fallback exists (bug-006 regression)`**:
+
+Simulates the exact failure mode: `credentialsFromDb: false` (no credentialId in DB) and `credentialsPresent: false` (no env-var fallback). With `requireDbCredentials: false` to isolate the `credentialsPresent` check, the gate must still throw `LiveGateError('live_rollout.credentials_empty', ...)`. This documents that a live-mode bot without any credential is rejected at the gate level before any trade is attempted, rather than silently crashing the bot at runtime.
+
+All 17 `live-gate.test.ts` tests pass.

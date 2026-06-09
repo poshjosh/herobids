@@ -1,6 +1,6 @@
 # Bug Report: Paper mode TradingActor crashes on reconciliation — fetchPositions requires a wallet address
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** A paper-mode trading instance started successfully but immediately crashed during reconciliation. `TradingActor.startReconciler()` called `venuePort.fetchPositions()` on the `HyperliquidAdapter`, which requires a wallet address. Paper mode has no credential and therefore no wallet address, causing an immediate runtime error and crashing the instance.
@@ -38,3 +38,9 @@ venuePort: config.execution.mode === 'paper' ? undefined : (venueAdapter ?? unde
 - Paper-mode instance starts and stays `running` — no reconciliation crash.
 - `startReconciler()` exits early for paper mode as intended.
 - `pnpm lint` passes.
+
+## Regression Tests
+
+Added to `apps/worker/src/trading-actor.test.ts` under `startup reconciliation blocking`:
+
+- **starts without error in paper mode when reconciliationConfig is set but venuePort is absent (bug-011 regression)** — creates a `TradingActor` with `executionMode: 'paper'` and a non-null `reconciliationConfig` but no `venuePort`. Verifies `actor.start()` resolves without error. This mirrors the post-fix state: `index.ts` sets `venuePort = undefined` for paper mode, causing `startReconciler()`'s early-return guard (`if ((!venuePort && !swapVenue) || !reconciliationConfig) return`) to fire, preventing the crash from calling `fetchPositions()` on an uncredentialled adapter.

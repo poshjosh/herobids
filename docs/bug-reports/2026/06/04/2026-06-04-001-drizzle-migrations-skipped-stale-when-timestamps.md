@@ -1,6 +1,6 @@
 # Bug Report: Login 500 — `column "telegram_chat_id" does not exist`
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** POST `/auth/login` and `/auth/register` returned HTTP 500 because the `users` table was missing the `telegram_chat_id` column introduced in migration `0015_agent_mvp_communication`.
@@ -83,3 +83,14 @@ docker compose run --rm migrate   # → [✓] migrations applied successfully!
 - **Never hand-edit journal `when` timestamps with dates in the past.** Use `Date.now()` or a future timestamp relative to the last entry.
 - Always run `drizzle-kit migrate` locally against a clean DB after adding a migration to confirm it applies before committing.
 - Rebuild the migrate image with `--no-cache` after adding new migration files to ensure the image layer is not stale.
+
+## Regression Tests
+
+`packages/db/src/journal-timestamps.test.ts` — four tests guard the invariant:
+
+- **`entry \`when\` timestamps are strictly ascending (bug-001 regression)`** — iterates all journal entries and asserts each entry's `when` value is strictly greater than the previous entry's. A second instance of the stale-timestamp pattern (`0004_features_016_017`, `when = 1749254400000` from 2025-06-07) was found and corrected alongside this test (`when` updated to `1780800000000`).
+- **`entries are ordered by idx with no gaps`** — verifies entries are numbered 0, 1, 2, … with no holes.
+- **`journal file parses as valid JSON`** — guards against syntax errors in the file.
+- **`all \`when\` values are positive integers`** — prevents accidentally setting a zero or negative timestamp.
+
+All four tests pass.

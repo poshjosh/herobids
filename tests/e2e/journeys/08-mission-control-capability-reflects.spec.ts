@@ -7,9 +7,8 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   registerUser,
   createAgent,
-  getAuthenticatedUserId,
   createConnection,
-  seedTradingBinding,
+  getBindingForConnection,
   bindTradingCapability,
 } from '../helpers.js';
 
@@ -34,19 +33,11 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
       { skillIds: ['bot-management'] },
     );
 
-    const userId = await getAuthenticatedUserId(page, request);
     const connection = await createConnection(page, request, {
       provider: 'hyperliquid',
       label: 'Mission control connection',
     });
-    const bindingId = await seedTradingBinding({
-      userId,
-      connectionId: connection.id,
-      provider: 'hyperliquid',
-      label: 'Mission control binding',
-      bindingRef: 'acct-2',
-      bindingProfile: { venue: 'hyperliquid' },
-    });
+    const bindingId = await getBindingForConnection(connection.id);
 
     await bindTradingCapability(page, request, agentId, bindingId);
 

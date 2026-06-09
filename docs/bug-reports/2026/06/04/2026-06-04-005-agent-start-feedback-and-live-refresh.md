@@ -1,6 +1,6 @@
 # Bug Report: Agent start failures were not surfaced and runtime crashes were not refreshed in the UI
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Medium
 - **Date:** 2026-06-04
 - **Summary:** Starting an agent could fail or transition into a crashed/unhealthy runtime state without any prominent feedback on the agent detail page. The page only refreshed once after the start action, so fast runtime failures could look like a silent crash, and the pending start action still read like a normal idle button.
@@ -33,3 +33,11 @@ Updated `apps/web/src/features/agents/AgentDetailPage.tsx` to:
 - Ran `pnpm lint`
 - Result: `tsc --noEmit` completed successfully with no errors
 - Confirmed the edited file has no TypeScript errors with the workspace error check
+
+## Regression Tests
+
+No automated unit test is feasible for the frontend-only changes (`AgentDetailPage.tsx`). The fix is verified by:
+1. Visual inspection: clicking "Start" shows "Starting..." label while the request is pending (UAT test AG-05 ✅).
+2. Visual inspection: if an agent reaches `crashed` or `unhealthy` state, a banner is rendered on the detail page.
+3. `pnpm lint` confirms the `ErrorBanner` and polling additions compile without type errors.
+4. E2e journey 4 (`04-safety-alert-visible.spec.ts`) verifies the Runtime Health section appears on the detail page after starting, which exercises the polling path.

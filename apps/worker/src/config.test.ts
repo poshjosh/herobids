@@ -111,18 +111,85 @@ reconciliation:
 marketData:
   dexscreener:
     baseUrl: https://api.dexscreener.com
-    requestsPerMinute: 60
+    search:
+      requestsPerMinute: 35
+      cacheTtlMs: 15000
+    discovery:
+      requestsPerMinute: 25
   binance:
     baseUrl: https://api.binance.com
     requestsPerMinute: 200
+  geckoterminal:
+    baseUrl: https://api.geckoterminal.com
+    candles:
+      requestsPerMinute: 12
+    discovery:
+      requestsPerMinute: 8
+  hyperliquid:
+    baseUrl: https://api.hyperliquid.xyz
+    intelligencePath: /info
+    intelligence:
+      requestsPerMinute: 100
+  bybit:
+    baseUrl: https://api.bybit.com
+    longShortRatioPath: /v5/market/account-ratio
+    intelligence:
+      requestsPerMinute: 90
+  birdeye:
+    enabled: false
+    baseUrl: https://public-api.birdeye.so
+    requestsPerMinute: 60
+    apiKey: ''
+  coinMarketCap:
+    enabled: true
+    baseUrl: https://pro-api.coinmarketcap.com
+    requestsPerMinute: 25
+    apiKey: cmc-key
   timeoutMs: 5000
 `);
 
     const config = loadConfig(tmpDir);
 
     expect(config.marketData?.dexscreener.baseUrl).toBe('https://api.dexscreener.com');
+    expect(config.marketData?.dexscreener.search.requestsPerMinute).toBe(35);
+    expect(config.marketData?.dexscreener.discovery.requestsPerMinute).toBe(25);
+    expect(config.marketData?.geckoterminal.discovery.requestsPerMinute).toBe(8);
+    expect(config.marketData?.hyperliquid.intelligence.requestsPerMinute).toBe(100);
+    expect(config.marketData?.bybit.longShortRatioPath).toBe('/v5/market/account-ratio');
+    expect(config.marketData?.coinMarketCap.enabled).toBe(true);
     expect(config.marketData?.binance.requestsPerMinute).toBe(200);
     expect(config.marketData?.timeoutMs).toBe(5000);
+  });
+
+  it('deep-merges marketData overlays without clobbering sibling budgets', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  dexscreener:
+    baseUrl: https://api.dexscreener.com
+    search:
+      requestsPerMinute: 30
+    discovery:
+      requestsPerMinute: 20
+  geckoterminal:
+    baseUrl: https://api.geckoterminal.com
+    candles:
+      requestsPerMinute: 15
+    discovery:
+      requestsPerMinute: 10
+`);
+    writeFileSync(resolve(tmpDir, 'development.yaml'), `
+marketData:
+  dexscreener:
+    discovery:
+      requestsPerMinute: 12
+`);
+    process.env['NODE_ENV'] = 'development';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.dexscreener.search.requestsPerMinute).toBe(30);
+    expect(config.marketData?.dexscreener.discovery.requestsPerMinute).toBe(12);
+    expect(config.marketData?.geckoterminal.candles.requestsPerMinute).toBe(15);
   });
 
   it('ignores missing NODE_ENV overlay file gracefully', () => {
@@ -299,6 +366,22 @@ liveRollout:
       process.env['LLM_TICK_INTERVAL_MS'] = '1000';
 
       expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('loads optional llm trading hours config from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+llm:
+  tradingHours:
+    allowedHoursUtc: [9, 10, 11, 12]
+    weekendPause: true
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.tradingHours).toEqual({
+        allowedHoursUtc: [9, 10, 11, 12],
+        weekendPause: true,
+      });
     });
   });
 });

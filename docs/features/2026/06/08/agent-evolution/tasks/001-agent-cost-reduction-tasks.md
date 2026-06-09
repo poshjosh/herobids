@@ -10,7 +10,7 @@
 
 ### T1: Reorder prompt structure for cache hits
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Small (1 session)
 
@@ -23,7 +23,7 @@ Reorder `RUNTIME_CONTEXT_PROVIDERS` in `runtime-composition.ts` so static conten
 
 ### T2: Gating framework + Regime gate
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** None
@@ -41,7 +41,7 @@ Add a `shouldSkipTick(state): { skip: boolean; reason?: string }` function to `a
 
 ### T3: Context hash gate
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T2 (uses gating framework)
@@ -60,7 +60,7 @@ Add Gate 3 to the gating pipeline:
 
 ### T4: Session gate (trading hours)
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Small (1 session)
 **Depends on:** T2 (uses gating framework)
@@ -79,7 +79,7 @@ Add Gate 1:
 
 ### T5: Adaptive tick interval
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T2 (uses gating framework)
@@ -99,7 +99,7 @@ Add Gate 4:
 
 ### T6: Thinking-level parameter on @herobids/llm
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** None (can parallel with T2-T5)
@@ -119,7 +119,7 @@ Extend `LlmRequest` in `packages/llm/src/llm-provider.ts`:
 
 ### T7: Tick classification → thinking-level mapping
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Small (1 session)
 **Depends on:** T6
@@ -141,7 +141,7 @@ Pass the resolved thinking level to `callLlmProvider`.
 
 ### T8: Scout mode — cheap model dispatch with restricted tools
 
-**Status:** not-started
+**Status:** in-progress
 **Approach:** Vertical slice
 **Effort:** Large (1–2 sessions)
 **Depends on:** T6, T7
@@ -162,7 +162,7 @@ Implement the scout phase:
 
 ### T9: Judge escalation path
 
-**Status:** not-started
+**Status:** in-progress
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T8
@@ -182,7 +182,7 @@ Complete the judge phase:
 
 ### T10: Context diffing (incremental prompts)
 
-**Status:** not-started
+**Status:** in-progress
 **Approach:** End-to-end
 **Effort:** Medium (1–2 sessions)
 **Depends on:** T1, T3 (uses context hash infrastructure)
@@ -202,7 +202,7 @@ Instead of sending full market state every tick:
 
 ### T11: Cost presets and daily spend budget
 
-**Status:** not-started
+**Status:** in-progress
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T5, T6, T7 (uses interval + thinking level)

@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-08
 **Severity:** High — causes recurring session-unhealthy/reconnect cycles every ~60 s for every running agent
-**Status:** Fixed
+**Status:** Closed
 
 ## Symptom
 

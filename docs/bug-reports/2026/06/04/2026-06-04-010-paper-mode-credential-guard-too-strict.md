@@ -1,6 +1,6 @@
 # Bug Report: Paper mode instances blocked from starting — credential guard does not exempt paper mode
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** Starting a paper-mode trading instance was rejected at the API layer with `409 no_credential`, and again in the worker with a `CredentialResolutionError`. Paper mode does not interact with any venue and therefore does not need credentials. The guards introduced in bug 006's fix were too broad.
@@ -46,3 +46,11 @@ if (instance.venueAccountId !== 'default' && venueType !== 'swap' && executionMo
 - Paper-mode instance with a credentialless venue account now starts successfully.
 - Live-mode instance without a credential is still rejected as expected.
 - `pnpm lint` passes.
+
+## Regression Tests
+
+The worker-side credential guard is embedded in the `index.ts` factory function (not independently exportable), so a direct unit test at that layer is not practical. Regression coverage is added at the immediately adjacent enforcement layer:
+
+Added to `apps/worker/src/live-gate.test.ts` under `non-live modes pass through`:
+
+- **does not reject paper mode even when no credentials are present (bug-010 regression)** — calls `assertLiveReadiness()` with `executionMode: 'paper'`, `credentialsFromDb: false`, and `credentialsPresent: false`. Verifies it does not throw for either `liveRollout.enabled = true` or `enabled = false`. This documents that paper mode is exempt from credential enforcement at every layer of the startup gate, consistent with the `config.execution.mode !== 'paper'` guard added to `index.ts`.

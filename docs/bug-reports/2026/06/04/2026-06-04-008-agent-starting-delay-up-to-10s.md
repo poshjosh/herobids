@@ -1,6 +1,6 @@
 # Bug Report: Agent showed "starting" for up to 10 s after clicking Start
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Low
 - **Date:** 2026-06-04
 - **Summary:** After clicking "Start" on an AI agent, the UI correctly showed the `starting` status badge, but the agent could stay in `starting` for up to 10 seconds before the worker transitioned it toward `active`. The delay was noticeable and felt like the system was unresponsive.
@@ -35,3 +35,12 @@ The reconcile function performs lightweight DB queries (one JOIN select + one co
 
 - Ran `pnpm lint`
 - Result: `tsc --noEmit` completed successfully with no errors
+
+## Regression Tests
+
+`apps/worker/src/agents/agent-session-manager.test.ts` — **`healthCheckIntervalMs configuration (bug-008 regression)`** describe block with two tests:
+
+- **`default interval is 10 000 ms — production MUST override to a lower value`** — constructs `AgentSessionManager` without any config override and asserts `config.healthCheckIntervalMs === 10_000`. Documents that the default is the problematic slow value and any production deployment MUST explicitly pass `{ healthCheckIntervalMs: 2000 }`.
+- **`accepts a custom healthCheckIntervalMs that overrides the default`** — constructs with `{ healthCheckIntervalMs: 2000 }` and asserts the config reflects `2000`. Verifies the fix (passing `2000` from `apps/worker/src/index.ts`) is correctly stored and would be used by the reconcile timer.
+
+The fix was also re-applied in `apps/worker/src/index.ts` (the `healthCheckIntervalMs: 2000` had been inadvertently dropped from the `AgentSessionManager` constructor options during later refactoring). All 15 `agent-session-manager.test.ts` tests pass.

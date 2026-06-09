@@ -18,6 +18,7 @@ export interface LlmRequest {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   maxTokens: number;
   temperature?: number;
+  thinking?: 'none' | 'light' | 'deep';
 }
 
 export interface LlmResponse {
@@ -27,15 +28,25 @@ export interface LlmResponse {
   tokensUsed: number;
   latencyMs: number;
   cached: boolean;
+  thinkingTokens?: number;
 }
 
 export interface LlmProviderError {
   code: string;
   message: string;
   retryable: boolean;
+  retryAfterMs?: number;
 }
 
 export type LlmResult = { ok: true; data: LlmResponse } | { ok: false; error: LlmProviderError };
+
+export function stripReasoningContent(content: string): string {
+  return content
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+    .replace(/```(?:thinking|reasoning)[\s\S]*?```/gi, '')
+    .trim();
+}
 
 /**
  * Call the LLM provider (HTTP-based).
@@ -69,6 +80,20 @@ async function callOpenAiCompatibleProvider(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
+  const requestBody: Record<string, unknown> = {
+    model: config.model,
+    messages: request.messages,
+    max_tokens: request.maxTokens,
+    temperature: request.temperature ?? 0,
+  };
+
+  if (config.provider === 'openai') {
+    const reasoningEffort = toOpenAiReasoningEffort(request.thinking);
+    if (reasoningEffort) {
+      requestBody['reasoning_effort'] = reasoningEffort;
+    }
+  }
+
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -76,12 +101,7 @@ async function callOpenAiCompatibleProvider(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
       },
-      body: JSON.stringify({
-        model: config.model,
-        messages: request.messages,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature ?? 0,
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
@@ -93,17 +113,18 @@ async function callOpenAiCompatibleProvider(
           code: `provider.http_${response.status}`,
           message: `Provider returned ${response.status}: ${body.slice(0, 200)}`,
           retryable: response.status >= 500 || response.status === 429,
+          retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
         },
       };
     }
 
     const data = await response.json() as {
       choices?: Array<{ message?: { content?: string } }>;
-      usage?: { total_tokens?: number };
+      usage?: { total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number } };
       model?: string;
     };
 
-    const content = data.choices?.[0]?.message?.content ?? '';
+    const content = stripReasoningContent(data.choices?.[0]?.message?.content ?? '');
     return {
       ok: true,
       data: {
@@ -113,6 +134,7 @@ async function callOpenAiCompatibleProvider(
         tokensUsed: data.usage?.total_tokens ?? 0,
         latencyMs: Date.now() - startMs,
         cached: false,
+        thinkingTokens: data.usage?.output_tokens_details?.reasoning_tokens ?? 0,
       },
     };
   } catch (err) {
@@ -149,6 +171,28 @@ async function callAnthropicProvider(
   // Anthropic requires system prompt to be a top-level field, not in messages.
   const systemMessage = request.messages.find((m) => m.role === 'system');
   const chatMessages = request.messages.filter((m) => m.role !== 'system');
+  const thinkingBudgetTokens = toAnthropicThinkingBudget(request.thinking);
+  const maxTokens = thinkingBudgetTokens > 0
+    ? request.maxTokens + thinkingBudgetTokens
+    : request.maxTokens;
+  const temperature = thinkingBudgetTokens > 0
+    ? 1
+    : (request.temperature ?? 0);
+
+  const requestBody: Record<string, unknown> = {
+    model: config.model,
+    max_tokens: maxTokens,
+    temperature,
+    ...(systemMessage ? { system: systemMessage.content } : {}),
+    messages: chatMessages,
+  };
+
+  if (thinkingBudgetTokens > 0) {
+    requestBody['thinking'] = {
+      type: 'enabled',
+      budget_tokens: thinkingBudgetTokens,
+    };
+  }
 
   try {
     const response = await fetch(`${baseUrl}/messages`, {
@@ -158,13 +202,7 @@ async function callAnthropicProvider(
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: config.model,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature ?? 0,
-        ...(systemMessage ? { system: systemMessage.content } : {}),
-        messages: chatMessages,
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
@@ -176,17 +214,18 @@ async function callAnthropicProvider(
           code: `provider.http_${response.status}`,
           message: `Anthropic returned ${response.status}: ${body.slice(0, 200)}`,
           retryable: response.status >= 500 || response.status === 429,
+          retryAfterMs: parseRetryAfterMs(response.headers.get('retry-after')),
         },
       };
     }
 
     const data = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number };
+      usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number };
       model?: string;
     };
 
-    const content = data.content?.find((b) => b.type === 'text')?.text ?? '';
+    const content = stripReasoningContent(data.content?.find((b) => b.type === 'text')?.text ?? '');
     const inputTokens = data.usage?.input_tokens ?? 0;
     const outputTokens = data.usage?.output_tokens ?? 0;
 
@@ -199,6 +238,7 @@ async function callAnthropicProvider(
         tokensUsed: inputTokens + outputTokens,
         latencyMs: Date.now() - startMs,
         cached: false,
+        thinkingTokens: data.usage?.thinking_tokens ?? 0,
       },
     };
   } catch (err) {
@@ -229,4 +269,44 @@ function resolveBaseUrl(provider: string): string {
 function resolveApiKey(provider: string): string | undefined {
   const envKey = `LLM_API_KEY_${provider.toUpperCase()}`;
   return process.env[envKey] ?? process.env['LLM_API_KEY'];
+}
+
+function toAnthropicThinkingBudget(thinking: LlmRequest['thinking']): number {
+  switch (thinking) {
+    case 'light':
+      return 2_048;
+    case 'deep':
+      return 10_240;
+    default:
+      return 0;
+  }
+}
+
+function toOpenAiReasoningEffort(thinking: LlmRequest['thinking']): 'low' | 'high' | undefined {
+  switch (thinking) {
+    case 'light':
+      return 'low';
+    case 'deep':
+      return 'high';
+    default:
+      return undefined;
+  }
+}
+
+function parseRetryAfterMs(retryAfterHeader: string | null): number | undefined {
+  if (!retryAfterHeader) {
+    return undefined;
+  }
+
+  const asSeconds = Number(retryAfterHeader);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return asSeconds * 1000;
+  }
+
+  const retryAtMs = Date.parse(retryAfterHeader);
+  if (Number.isNaN(retryAtMs)) {
+    return undefined;
+  }
+
+  return Math.max(0, retryAtMs - Date.now());
 }

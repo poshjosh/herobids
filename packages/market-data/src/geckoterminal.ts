@@ -1,10 +1,11 @@
-import type { PriceCandle } from './types.js';
-import { TokenBucketRateLimiter } from './rate-limiter.js';
+import type { DiscoveredPool, DiscoveredToken, PriceCandle, RequestGate } from './types.js';
+import { fetchJson } from './http.js';
 
 export interface GeckoTerminalConfig {
   baseUrl: string;
-  rateLimiter: TokenBucketRateLimiter;
+  rateLimiter: RequestGate;
   timeoutMs: number;
+  fetchFn?: typeof fetch;
 }
 
 interface OhlcvAttributes {
@@ -15,6 +16,99 @@ interface GeckoTerminalResponse {
   data?: {
     attributes?: OhlcvAttributes;
   };
+}
+
+interface GeckoTerminalResource {
+  id?: string;
+  type?: string;
+  attributes?: {
+    address?: string;
+    name?: string;
+    symbol?: string;
+    image_url?: string;
+    base_token_price_usd?: string;
+    quote_token_price_usd?: string;
+    price_change_percentage?: { h24?: string };
+    volume_usd?: { h24?: string };
+    reserve_in_usd?: string;
+    pool_created_at?: string;
+  };
+  relationships?: {
+    base_token?: { data?: { id?: string } };
+    quote_token?: { data?: { id?: string } };
+  };
+}
+
+interface GeckoTerminalPoolResponse {
+  data?: GeckoTerminalResource[];
+  included?: GeckoTerminalResource[];
+}
+
+function parseNumber(value: string | undefined): number {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function mapIncludedToken(resources: GeckoTerminalResource[] | undefined, id: string | undefined) {
+  const token = resources?.find((resource) => resource.id === id);
+  return {
+    address: token?.attributes?.address ?? id ?? '',
+    symbol: token?.attributes?.symbol ?? '',
+    name: token?.attributes?.name ?? '',
+  };
+}
+
+function mapPoolResource(
+  network: string,
+  resource: GeckoTerminalResource,
+  included: GeckoTerminalResource[] | undefined,
+): DiscoveredPool {
+  const baseToken = mapIncludedToken(included, resource.relationships?.base_token?.data?.id);
+  const quoteToken = mapIncludedToken(included, resource.relationships?.quote_token?.data?.id);
+  return {
+    poolAddress: resource.attributes?.address ?? resource.id ?? '',
+    network,
+    baseToken,
+    quoteToken,
+    priceUsd: parseNumber(resource.attributes?.base_token_price_usd),
+    volume24hUsd: parseNumber(resource.attributes?.volume_usd?.h24),
+    liquidityUsd: parseNumber(resource.attributes?.reserve_in_usd),
+    poolCreatedAt: resource.attributes?.pool_created_at,
+  };
+}
+
+function mapPoolsToTokens(pools: DiscoveredPool[], vector: string): DiscoveredToken[] {
+  return pools.map((pool) => ({
+    address: pool.baseToken.address,
+    symbol: pool.baseToken.symbol,
+    name: pool.baseToken.name,
+    network: pool.network,
+    priceUsd: pool.priceUsd,
+    volume24hUsd: pool.volume24hUsd,
+    liquidityUsd: pool.liquidityUsd,
+    source: 'geckoterminal',
+    discoveryVectors: [vector],
+    poolAddress: pool.poolAddress,
+    poolCreatedAt: pool.poolCreatedAt,
+  }));
+}
+
+async function fetchPools(
+  network: string,
+  path: string,
+  vector: string,
+  config: GeckoTerminalConfig,
+): Promise<DiscoveredToken[]> {
+  await config.rateLimiter.acquire();
+
+  const response = await fetchJson<GeckoTerminalPoolResponse>({
+    url: `${config.baseUrl}${path}`,
+    timeoutMs: config.timeoutMs,
+    headers: { Accept: 'application/json' },
+    fetchFn: config.fetchFn,
+  });
+
+  const pools = (response.data ?? []).map((resource) => mapPoolResource(network, resource, response.included));
+  return mapPoolsToTokens(pools, vector);
 }
 
 /**
@@ -34,30 +128,56 @@ export async function fetchGeckoTerminalCandles(
 
   const url = `${config.baseUrl}/api/v2/networks/${encodeURIComponent(network)}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${timeframe}?limit=${limit}`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const data = await fetchJson<GeckoTerminalResponse>({
+    url,
+    timeoutMs: config.timeoutMs,
+    headers: { Accept: 'application/json' },
+    fetchFn: config.fetchFn,
+  });
+  const ohlcvList = data.data?.attributes?.ohlcv_list ?? [];
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'Accept': 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error(`GeckoTerminal API error: ${response.status} ${response.statusText}`);
-    }
+  return ohlcvList.map((item): PriceCandle => ({
+    timestamp: new Date(item[0] * 1000).toISOString(),
+    open: parseFloat(item[1]),
+    high: parseFloat(item[2]),
+    low: parseFloat(item[3]),
+    close: parseFloat(item[4]),
+    volume: parseFloat(item[5]),
+  }));
+}
 
-    const data = (await response.json()) as GeckoTerminalResponse;
-    const ohlcvList = data.data?.attributes?.ohlcv_list ?? [];
+export async function fetchGeckoTerminalTrendingPools(
+  network: string,
+  config: GeckoTerminalConfig,
+): Promise<DiscoveredToken[]> {
+  return fetchPools(
+    network,
+    `/api/v2/networks/${encodeURIComponent(network)}/trending_pools`,
+    'trending_pools',
+    config,
+  );
+}
 
-    return ohlcvList.map((item): PriceCandle => ({
-      timestamp: new Date(item[0] * 1000).toISOString(),
-      open: parseFloat(item[1]),
-      high: parseFloat(item[2]),
-      low: parseFloat(item[3]),
-      close: parseFloat(item[4]),
-      volume: parseFloat(item[5]),
-    }));
-  } finally {
-    clearTimeout(timeout);
-  }
+export async function fetchGeckoTerminalTopPools(
+  network: string,
+  config: GeckoTerminalConfig,
+): Promise<DiscoveredToken[]> {
+  return fetchPools(
+    network,
+    `/api/v2/networks/${encodeURIComponent(network)}/pools?sort=h24_volume_usd_desc`,
+    'top_pools',
+    config,
+  );
+}
+
+export async function fetchGeckoTerminalNewPools(
+  network: string,
+  config: GeckoTerminalConfig,
+): Promise<DiscoveredToken[]> {
+  return fetchPools(
+    network,
+    `/api/v2/networks/${encodeURIComponent(network)}/new_pools`,
+    'new_pools',
+    config,
+  );
 }

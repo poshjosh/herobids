@@ -45,7 +45,7 @@ export async function readOutboundMessages(
       }
     }
     return messages;
-  } catch {
-    return [];
+  } catch (err) {
+    throw err instanceof Error ? err : new Error(String(err));
   }
 }

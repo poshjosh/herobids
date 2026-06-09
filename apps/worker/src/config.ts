@@ -59,6 +59,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   LLM_TIMEOUT_MS: { path: 'llm.timeoutMs', type: 'number' },
   LLM_TICK_INTERVAL_MS: { path: 'llm.tickIntervalMs', type: 'number' },
   LLM_HEARTBEAT_INTERVAL_MS: { path: 'llm.heartbeatIntervalMs', type: 'number' },
+  LLM_SERVER_COST_USD_PER_HOUR: { path: 'llm.serverCostUsdPerHour', type: 'number' },
   // Billing
   BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   // Auth

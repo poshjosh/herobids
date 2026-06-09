@@ -174,6 +174,32 @@ describe('TradingActor lifecycle', () => {
       await actor.start();
       await actor.stop();
     });
+
+    // bug-011 regression: paper mode TradingActor must start without error when
+    // venuePort is absent but reconciliationConfig is present.
+    //
+    // Before the fix, apps/worker/src/index.ts passed venuePort unconditionally
+    // (even for paper mode). startReconciler() would then call
+    // venuePort.fetchPositions() on the HyperliquidAdapter, which required a
+    // wallet address that does not exist in paper mode — causing an immediate crash.
+    //
+    // Fix: index.ts now sets venuePort = undefined for paper mode, so
+    // startReconciler()'s early-return guard fires:
+    //   if ((!venuePort && !swapVenue) || !reconciliationConfig) return;
+    it('starts without error in paper mode when reconciliationConfig is set but venuePort is absent (bug-011 regression)', async () => {
+      const deps = makeBaseDeps({
+        executionMode: 'paper',
+        // reconciliationConfig is set — mirrors a real bot config that enables
+        // reconciliation. Without the fix this would cause a crash because
+        // startReconciler() would call fetchPositions() on a missing wallet.
+        reconciliationConfig: { intervalMs: 30_000, driftAlertOnly: false },
+        // venuePort intentionally absent — matches the bug-011 fix in index.ts
+      });
+
+      const actor = new TradingActor('bug-011', {}, deps);
+      await expect(actor.start()).resolves.toBeUndefined();
+      await actor.stop();
+    });
   });
 
   describe('order persistence with executionPlanId', () => {

@@ -3,3 +3,4 @@ packages:
   - 'apps/*'
   - 'scripts'
   - 'tests/e2e'
+  - 'tests/rate-limit-lab'

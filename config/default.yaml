@@ -85,10 +85,59 @@ marketDataRecording:
 marketData:
   dexscreener:
     baseUrl: "https://api.dexscreener.com"
-    requestsPerMinute: 60
+    search:
+      requestsPerMinute: 30      # reserved for explicit token lookup / price-support paths
+      burstCapacity: 30
+      maxWaitMs: 5000
+      cacheTtlMs: 15000
+    discovery:
+      requestsPerMinute: 30      # discovery must not consume the search reserve
+      burstCapacity: 15
+      maxWaitMs: 5000
+      cacheTtlMs: 300000
+  geckoterminal:
+    baseUrl: "https://api.geckoterminal.com"
+    candles:
+      requestsPerMinute: 15      # regime / active-watchlist OHLCV
+      burstCapacity: 15
+      maxWaitMs: 5000
+      cacheTtlMs: 60000
+    discovery:
+      requestsPerMinute: 10      # trending / top / new pools
+      burstCapacity: 5
+      maxWaitMs: 5000
+      cacheTtlMs: 300000
+  hyperliquid:
+    baseUrl: "https://api.hyperliquid.xyz"
+    intelligencePath: "/info"
+    intelligence:
+      requestsPerMinute: 120
+      burstCapacity: 20
+      maxWaitMs: 2000
+      cacheTtlMs: 60000
+  bybit:
+    baseUrl: "https://api.bybit.com"
+    longShortRatioPath: "/v5/market/account-ratio"
+    intelligence:
+      requestsPerMinute: 120
+      burstCapacity: 20
+      maxWaitMs: 2000
+      cacheTtlMs: 60000
   binance:
     baseUrl: "https://api.binance.com"
     requestsPerMinute: 200
+  birdeye:
+    enabled: false
+    baseUrl: "https://public-api.birdeye.so"
+    requestsPerMinute: 60
+    apiKey: ""
+    cacheTtlMs: 3600000
+  coinMarketCap:
+    enabled: false
+    baseUrl: "https://pro-api.coinmarketcap.com"
+    requestsPerMinute: 30
+    apiKey: ""
+    cacheTtlMs: 3600000
   timeoutMs: 5000
 
 llm:
@@ -98,6 +147,9 @@ llm:
   timeoutMs: 60000              # LLM call timeout in ms
   tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
   heartbeatIntervalMs: 5000     # Agent heartbeat cadence in ms
+  tradingHours:
+    allowedHoursUtc: []         # Empty = always active. Set explicit UTC hours to gate low-liquidity periods.
+    weekendPause: false         # If true, pause new no-position ticks from Sat 00:00 UTC to Sun 12:00 UTC.
 
 llmValidation:
   requirePinnedModel: true

@@ -197,4 +197,127 @@ describe('auth routes', () => {
       expect(res.statusCode).toBe(401);
     });
   });
+
+  // ── POST /auth/register ────────────────────────────────────────────────────
+
+  describe('POST /auth/register', () => {
+    function buildRegisterDb(captureUserInsert?: (vals: Record<string, unknown>) => void) {
+      return {
+        // Duplicate email check
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]), // no existing account
+            }),
+          }),
+        }),
+        // Transaction: inserts users, localIdentities, userPlans
+        transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+          let insertCount = 0;
+          const tx = {
+            insert: vi.fn().mockImplementation(() => ({
+              values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+                insertCount++;
+                if (insertCount === 1 && captureUserInsert) captureUserInsert(vals);
+                return Promise.resolve(undefined);
+              }),
+            })),
+          };
+          return callback(tx);
+        }),
+        // issueSession: inserts a session row
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+    }
+
+    it('returns 201 with a token when registration succeeds', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = buildRegisterDb();
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { email: 'alice@example.com', password: 'securepassword', displayName: 'Alice' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json<{ token: string }>().token).toBeTruthy();
+    });
+
+    // Regression: bug 003 — user INSERT omitted telegramChatId and aiModelConfig,
+    // causing PostgreSQL to substitute DEFAULT. Both columns lack a DEFAULT, so the
+    // insert threw a constraint violation and returned HTTP 500 for every registration.
+    it('includes telegramChatId: null and aiModelConfig: null in the user INSERT', async () => {
+      const { authRoutes } = await import('./auth.js');
+      let capturedUserInsert: Record<string, unknown> | undefined;
+      const db = buildRegisterDb((vals) => { capturedUserInsert = vals; });
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { email: 'alice@example.com', password: 'securepassword', displayName: 'Alice' },
+      });
+
+      expect(capturedUserInsert).toBeDefined();
+      // Both nullable columns must be explicitly set to null — not omitted —
+      // so Drizzle does not emit DEFAULT in the INSERT statement.
+      expect(capturedUserInsert!['telegramChatId']).toBeNull();
+      expect(capturedUserInsert!['aiModelConfig']).toBeNull();
+    });
+
+    it('returns 409 when the email is already registered', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: 'existing-user' }]), // duplicate
+            }),
+          }),
+        }),
+        transaction: vi.fn(),
+      };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { email: 'existing@example.com', password: 'securepassword', displayName: 'Bob' },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json<{ error: string }>().error).toMatch(/already exists/i);
+    });
+
+    it('returns 400 when password is shorter than 8 characters', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = { select: vi.fn(), transaction: vi.fn() };
+      const app = Fastify();
+      app.decorateRequest('userId', '');
+      app.decorateRequest('userPlanId', '');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { email: 'alice@example.com', password: 'short', displayName: 'Alice' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toContain('8 characters');
+    });
+  });
 });

@@ -1,6 +1,6 @@
 # Bug Report: Agent stub launcher never emits heartbeats — agents never reach `active` state
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-06-04
 - **Summary:** Starting an AI agent via `POST /agents/:id/start` caused the agent to enter `starting` state and the session to enter `launching`, but neither ever progressed further. The agent remained stuck indefinitely (or until the 30 s health-check timeout cleaned up the session). No error was surfaced to the user.
@@ -58,3 +58,17 @@ The stub heartbeat is a workaround for the absence of a real agent container pro
 - Heartbeat messages appear in the Redis stream `agent:inbound:{tradingInstanceId}`.
 - `AgentSessionManager` transitions the session to `running` on first heartbeat.
 - `pnpm lint` passes.
+
+## Regression Tests
+
+Added `apps/worker/src/agents/agent-runtime-launcher.test.ts`:
+
+- **publishes an initial heartbeat immediately after launch when Redis is provided** — verifies `xadd` is called on the `agent:inbound:{agentId}` stream with a well-formed `agent.runtime.heartbeat` envelope containing the correct `sessionId`, `agentId`, and `status: 'ready'` fields.
+- **publishes heartbeats on the configured interval** — advances fake timers and confirms `xadd` is called on each interval tick.
+- **uses `agent:inbound:{agentId}` as the stream key** — verifies the stream key format.
+- **does not publish heartbeats and registers no timer when no Redis client is provided** — confirms stub mode without Redis is a no-op for heartbeats.
+- **clears the heartbeat timer on `stop()`** — advances timers after stop and asserts no further `xadd` calls.
+- **clears the heartbeat timer on `kill()`** — same as above for `kill()`.
+- **clears all heartbeat timers on `stopAll()`** — verifies all sessions' timers are cleared.
+- **returns the same handle on duplicate launch** — idempotency check; `xadd` called only once.
+- **uses the custom `streamKeyPrefix` when configured** — verifies key prefix override.

@@ -1,5 +1,5 @@
-import type { PriceCandle } from './types.js';
-import { TokenBucketRateLimiter } from './rate-limiter.js';
+import type { PriceCandle, RequestGate } from './types.js';
+import { fetchJson } from './http.js';
 
 /**
  * Binance public klines (candles) API.
@@ -14,8 +14,9 @@ import { TokenBucketRateLimiter } from './rate-limiter.js';
 
 export interface BinanceCandlesConfig {
   baseUrl: string;
-  rateLimiter: TokenBucketRateLimiter;
+  rateLimiter: RequestGate;
   timeoutMs: number;
+  fetchFn?: typeof fetch;
 }
 
 type BinanceKline = [
@@ -63,26 +64,18 @@ export async function fetchBinanceCandles(
 
   const url = `${config.baseUrl}/api/v3/klines?symbol=${encodeURIComponent(binanceSymbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const data = await fetchJson<BinanceKline[]>({
+    url,
+    timeoutMs: config.timeoutMs,
+    fetchFn: config.fetchFn,
+  });
 
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`Binance API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as BinanceKline[];
-
-    return data.map((kline): PriceCandle => ({
-      timestamp: new Date(kline[0]).toISOString(),
-      open: parseFloat(kline[1]),
-      high: parseFloat(kline[2]),
-      low: parseFloat(kline[3]),
-      close: parseFloat(kline[4]),
-      volume: parseFloat(kline[5]),
-    }));
-  } finally {
-    clearTimeout(timeout);
-  }
+  return data.map((kline): PriceCandle => ({
+    timestamp: new Date(kline[0]).toISOString(),
+    open: parseFloat(kline[1]),
+    high: parseFloat(kline[2]),
+    low: parseFloat(kline[3]),
+    close: parseFloat(kline[4]),
+    volume: parseFloat(kline[5]),
+  }));
 }

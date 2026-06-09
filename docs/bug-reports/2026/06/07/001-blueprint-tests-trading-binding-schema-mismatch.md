@@ -1,6 +1,6 @@
 # Trading Binding Schema Mismatch in Blueprint Tests
 
-**Status:** FIXED
+**Status:** Closed
 **Severity:** High
 **Date:** 2026-06-07
 **Summary:** 4 blueprint test failures due to test payloads and mock database using outdated `venueAccountId` field instead of `tradingBindingId` following the trading_bindings migration.
@@ -50,3 +50,9 @@ where: vi.fn().mockResolvedValue([{ id: 'tb-1', sourceVenueAccountId: 'va-1' }])
 2. "returns 404 when referenced blueprint does not exist" - Line 729
 3. "sets Deprecation header when using legacy inline config" - Line 774
 4. "returns 404 (not 500) when blueprint is deleted between lookup and insert (FK race)" - Line 858
+
+## Regression Tests
+
+Added to `apps/api/src/routes/bots.test.ts`:
+- `maps sourceVenueAccountId from the trading binding to the created bot venueAccountId` — verifies the DB mock must return `{ id, sourceVenueAccountId }` and that the bot INSERT captures `sourceVenueAccountId` as `venueAccountId`.
+- `returns 404 when tradingBindingId references a nonexistent trading binding` — verifies the route returns 404 (not a 500 TypeError) when the binding lookup returns an empty array.

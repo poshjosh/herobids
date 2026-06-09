@@ -29,6 +29,12 @@ export interface DockerAgentManagerConfig {
   llmTickIntervalMs?: number;
   /** Agent heartbeat cadence in ms injected into agent container env */
   llmHeartbeatIntervalMs?: number;
+  /** Operator-configured server cost per hour injected into the agent container env */
+  llmServerCostUsdPerHour?: number;
+  /** Optional trading hours gate configuration for the agent runtime */
+  llmTradingHoursJson?: string;
+  /** Full operator-validated market-data config forwarded to the agent runtime */
+  marketDataConfigJson?: string;
   /** Market data: DexScreener base URL */
   marketDataDexscreenerBaseUrl?: string;
   /** Market data: DexScreener requests per minute */
@@ -74,6 +80,9 @@ export class DockerAgentManager {
   private readonly llmTimeoutMs: number | undefined;
   private readonly llmTickIntervalMs: number | undefined;
   private readonly llmHeartbeatIntervalMs: number | undefined;
+  private readonly llmServerCostUsdPerHour: number | undefined;
+  private readonly llmTradingHoursJson: string | undefined;
+  private readonly marketDataConfigJson: string | undefined;
   private readonly marketDataDexscreenerBaseUrl: string | undefined;
   private readonly marketDataDexscreenerRpm: number | undefined;
   private readonly marketDataBinanceBaseUrl: string | undefined;
@@ -105,6 +114,9 @@ export class DockerAgentManager {
     this.llmTimeoutMs = _config.llmTimeoutMs;
     this.llmTickIntervalMs = _config.llmTickIntervalMs;
     this.llmHeartbeatIntervalMs = _config.llmHeartbeatIntervalMs;
+    this.llmServerCostUsdPerHour = _config.llmServerCostUsdPerHour;
+    this.llmTradingHoursJson = _config.llmTradingHoursJson;
+    this.marketDataConfigJson = _config.marketDataConfigJson;
     this.marketDataDexscreenerBaseUrl = _config.marketDataDexscreenerBaseUrl;
     this.marketDataDexscreenerRpm = _config.marketDataDexscreenerRpm;
     this.marketDataBinanceBaseUrl = _config.marketDataBinanceBaseUrl;
@@ -143,6 +155,9 @@ export class DockerAgentManager {
       ...(this.llmTimeoutMs != null ? [`LLM_TIMEOUT_MS=${this.llmTimeoutMs}`] : []),
       ...(this.llmTickIntervalMs != null ? [`TICK_INTERVAL_MS=${this.llmTickIntervalMs}`] : []),
       ...(this.llmHeartbeatIntervalMs != null ? [`HEARTBEAT_INTERVAL_MS=${this.llmHeartbeatIntervalMs}`] : []),
+      ...(this.llmServerCostUsdPerHour != null ? [`LLM_SERVER_COST_USD_PER_HOUR=${this.llmServerCostUsdPerHour}`] : []),
+      ...(this.llmTradingHoursJson ? [`TRADING_HOURS_JSON=${this.llmTradingHoursJson}`] : []),
+      ...(this.marketDataConfigJson ? [`MARKET_DATA_CONFIG_JSON=${this.marketDataConfigJson}`] : []),
       // Market data config forwarded so agent tools use operator-controlled values
       // Both providers must be present — check_regime needs Binance, search_tokens needs DexScreener.
       ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),

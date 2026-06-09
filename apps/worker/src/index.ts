@@ -120,13 +120,15 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
         llmTimeoutMs: appConfig.llm.timeoutMs,
         llmTickIntervalMs: appConfig.llm.tickIntervalMs,
         llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
+        llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
+        ...(appConfig.llm.tradingHours
+          ? {
+              llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours),
+            }
+          : {}),
         ...(appConfig.marketData
           ? {
-              marketDataDexscreenerBaseUrl: appConfig.marketData.dexscreener.baseUrl,
-              marketDataDexscreenerRpm: appConfig.marketData.dexscreener.requestsPerMinute,
-              marketDataBinanceBaseUrl: appConfig.marketData.binance.baseUrl,
-              marketDataBinanceRpm: appConfig.marketData.binance.requestsPerMinute,
-              marketDataTimeoutMs: appConfig.marketData.timeoutMs,
+              marketDataConfigJson: JSON.stringify(appConfig.marketData),
             }
           : {}),
       },
@@ -214,6 +216,9 @@ const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appCo
 let agentStreamSubscribeFn: ((agentId: string) => Promise<void>) | undefined;
 
 const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, {
+  // bug-008: reduced from default 10 000 ms to 2 000 ms so agents start within
+  // ~2 s instead of up to 10 s after the API sets the session to 'starting'.
+  healthCheckIntervalMs: 2000,
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
   onAgentStatusChange: (agentId, userId, status) => {
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {

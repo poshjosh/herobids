@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { bots as botsApi, venueAccounts as venueAccountsApi } from '../../lib/api-client.js';
-import type { Bot, VenueAccount } from '../../lib/api-client.js';
+import { bots as botsApi, capabilities as capabilitiesApi } from '../../lib/api-client.js';
+import type { Bot, TradingBindingSummary } from '../../lib/api-client.js';
 import {
   PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState,
   Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle,
@@ -121,38 +121,40 @@ export function BotsPage() {
 // CreateBotModal
 // ---------------------------------------------------------------------------
 interface CreateBotForm {
-  venueAccountId: string;
+  tradingBindingId: string;
   strategyPreset: StrategyPresetValue;
   executionMode: ExecutionModeValue;
   symbol: string;
-  venue: string;
 }
 
 function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState<CreateBotForm>({
-    venueAccountId: '',
+    tradingBindingId: '',
     strategyPreset: 'momentum',
     executionMode: 'paper',
     symbol: '',
-    venue: '',
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [configJson, setConfigJson] = useState('');
 
-  const venueAccountsQuery = useQuery({
-    queryKey: ['venue-accounts'],
-    queryFn: () => venueAccountsApi.list(),
+  const tradingBindingsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'bindings'],
+    queryFn: () => capabilitiesApi.tradingBindings(),
   });
-  const venueAccounts: VenueAccount[] = venueAccountsQuery.data?.venueAccounts ?? [];
-  const selectedVA = venueAccounts.find((va) => va.id === form.venueAccountId);
+  // Only offer bindings that have a resolved venue account (required by the bot creation API).
+  const tradingBindings: TradingBindingSummary[] = (tradingBindingsQuery.data?.bindings ?? []).filter(
+    (b) => b.connectionStatus === 'active' && b.sourceVenueAccountId !== null,
+  );
+  const selectedBinding = tradingBindings.find((b) => b.bindingId === form.tradingBindingId) ?? null;
 
   const mutation = useMutation({
     mutationFn: () => {
       const preset = STRATEGY_PRESETS.find((p) => p.value === form.strategyPreset)!;
+      const venue = selectedBinding?.provider ?? 'hyperliquid';
       let config: Record<string, unknown> = {
         ...preset.config,
         execution: { mode: form.executionMode },
-        venue: form.venue || selectedVA?.venue || 'hyperliquid',
+        venue,
         symbol: form.symbol,
       };
       if (showAdvanced && configJson.trim()) {
@@ -162,12 +164,12 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           throw new Error('Invalid JSON in advanced config');
         }
       }
-      if (!form.venueAccountId) {
-        throw new Error('Select a venue account before creating a bot');
+      if (!form.tradingBindingId) {
+        throw new Error('Select a trading binding before creating a bot');
       }
       return botsApi.create({
-        venueAccountId: form.venueAccountId,
-        venue: (config['venue'] as string) || selectedVA?.venue || 'hyperliquid',
+        tradingBindingId: form.tradingBindingId,
+        venue: (config['venue'] as string) || venue,
         symbol: form.symbol,
         config,
       });
@@ -180,17 +182,17 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   return (
     <Modal title="Create Bot" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {/* Venue account */}
+        {/* Trading binding */}
         <div>
-          <FieldLabel>Venue account</FieldLabel>
+          <FieldLabel>Trading binding</FieldLabel>
           <select
-            value={form.venueAccountId}
-            onChange={(e) => setForm((s) => ({ ...s, venueAccountId: e.target.value }))}
+            value={form.tradingBindingId}
+            onChange={(e) => setForm((s) => ({ ...s, tradingBindingId: e.target.value }))}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            <option value="">— Select venue account —</option>
-            {venueAccounts.map((va) => (
-              <option key={va.id} value={va.id}>{va.label} ({va.venue})</option>
+            <option value="">— Select trading binding —</option>
+            {tradingBindings.map((b) => (
+              <option key={b.bindingId} value={b.bindingId}>{b.label} ({b.provider})</option>
             ))}
           </select>
         </div>
@@ -276,7 +278,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 strategy: { type: selectedPreset.value, params: {} },
                 risk: {},
                 execution: { mode: form.executionMode },
-                venue: selectedVA?.venue ?? 'hyperliquid',
+                venue: selectedBinding?.provider ?? 'hyperliquid',
                 symbol: form.symbol || 'BTC-PERP',
               }, null, 2)}
             />
@@ -290,7 +292,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <Button
             variant="primary"
             type="button"
-            disabled={mutation.isPending || !form.venueAccountId}
+            disabled={mutation.isPending || !form.tradingBindingId}
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? 'Creating…' : 'Create Bot'}

@@ -82,7 +82,7 @@ export function SettingsPage() {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Button variant="primary" type="submit" disabled={telegramMutation.isPending}>
+              <Button variant="primary" type="submit" disabled={telegramMutation.isPending || telegramChatId.trim() === (meQuery.data?.telegramChatId ?? '')}>
                 {telegramMutation.isPending ? 'Saving...' : 'Save'}
               </Button>
               {telegramChatId && (

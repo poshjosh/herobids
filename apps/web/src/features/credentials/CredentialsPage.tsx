@@ -6,6 +6,15 @@ import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/Portfo
 
 const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'telegram', 'zapier', 'custom'];
 
+/** Well-known secret key names per provider — used to pre-populate key fields when a template matches. */
+export const PROVIDER_TEMPLATES: Record<string, string[]> = {
+  hyperliquid: ['privateKey'],
+  jupiter: ['privateKey'],
+  bybit: ['apiKey', 'apiSecret'],
+  '1inch': ['apiKey'],
+  telegram: ['botToken'],
+};
+
 interface SecretEntry {
   id: string;
   key: string;
@@ -114,6 +123,20 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createSecretEntry()]);
 
+  const applyProviderTemplate = (value: string) => {
+    setProvider(value);
+    const template = PROVIDER_TEMPLATES[value.trim().toLowerCase()];
+    // Only auto-populate/reset when no values have been entered yet — preserve user input.
+    const hasValues = secretEntries.some((e) => e.value.trim() !== '');
+    if (hasValues) return;
+    if (template) {
+      setSecretEntries(template.map((key) => ({ id: `tpl-${key}`, key, value: '' })));
+    } else {
+      // Unknown provider: reset to a single blank row (clear stale template keys).
+      setSecretEntries([createSecretEntry()]);
+    }
+  };
+
   const mutation = useMutation({
     mutationFn: () => credentialsApi.create({
       provider: provider.trim(),
@@ -154,7 +177,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
           <input
             list="provider-suggestions"
             value={provider}
-            onChange={(event) => setProvider(event.target.value)}
+            onChange={(event) => applyProviderTemplate(event.target.value)}
             placeholder="e.g. hyperliquid, telegram, zapier"
             style={inputStyle}
           />

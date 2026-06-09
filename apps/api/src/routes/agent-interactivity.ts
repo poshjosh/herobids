@@ -7,6 +7,51 @@ import type { Database } from '@herobids/db';
 import { agents, bots, fills } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
 
+const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
+
+function mergeModelPolicy(
+  current: Record<string, unknown> | null | undefined,
+  update: {
+    modelPolicy?: Record<string, unknown>;
+    scoutModel?: string | null;
+    costPreset?: z.infer<typeof CostPresetSchema> | null;
+    dailySpendBudgetUsd?: number | null;
+    dexWatchlistSymbols?: string[] | null;
+  },
+): Record<string, unknown> | null {
+  const merged: Record<string, unknown> = { ...(current ?? {}), ...(update.modelPolicy ?? {}) };
+  if (update.scoutModel !== undefined) {
+    if (update.scoutModel === null) delete merged['scoutModel'];
+    else merged['scoutModel'] = update.scoutModel;
+  }
+  if (update.costPreset !== undefined) {
+    if (update.costPreset === null) delete merged['costPreset'];
+    else merged['costPreset'] = update.costPreset;
+  }
+  if (update.dailySpendBudgetUsd !== undefined) {
+    if (update.dailySpendBudgetUsd === null) delete merged['dailySpendBudgetUsd'];
+    else merged['dailySpendBudgetUsd'] = update.dailySpendBudgetUsd;
+  }
+  if (update.dexWatchlistSymbols !== undefined) {
+    if (update.dexWatchlistSymbols === null) delete merged['dexWatchlistSymbols'];
+    else merged['dexWatchlistSymbols'] = update.dexWatchlistSymbols;
+  }
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null }>(agent: T) {
+  const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
+  return {
+    ...agent,
+    scoutModel: typeof modelPolicy?.['scoutModel'] === 'string' ? modelPolicy['scoutModel'] : null,
+    costPreset: typeof modelPolicy?.['costPreset'] === 'string' ? modelPolicy['costPreset'] : null,
+    dailySpendBudgetUsd: typeof modelPolicy?.['dailySpendBudgetUsd'] === 'number' ? modelPolicy['dailySpendBudgetUsd'] : null,
+    dexWatchlistSymbols: Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
+      ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
+      : null,
+  };
+}
+
 // --- Schemas ---
 
 const SendMessageSchema = z.object({
@@ -23,6 +68,10 @@ const UpdateAgentSchema = z.object({
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
+  scoutModel: z.string().min(1).max(200).nullable().optional(),
+  costPreset: CostPresetSchema.nullable().optional(),
+  dailySpendBudgetUsd: z.number().positive().nullable().optional(),
+  dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyTokenBudget: z.number().int().min(1).nullable().optional(),
@@ -76,14 +125,35 @@ export async function agentInteractivityRoutes(
     }
     const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
 
+    const effectiveModelPolicy = mergeModelPolicy(
+      (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null,
+      {
+        modelPolicy: parsed.data.modelPolicy,
+        scoutModel: parsed.data.scoutModel,
+        costPreset: parsed.data.costPreset,
+        dailySpendBudgetUsd: parsed.data.dailySpendBudgetUsd,
+        dexWatchlistSymbols: parsed.data.dexWatchlistSymbols,
+      },
+    );
+
+    const {
+      scoutModel: _scoutModel,
+      costPreset: _costPreset,
+      dailySpendBudgetUsd: _dailySpendBudgetUsd,
+      dexWatchlistSymbols: _dexWatchlistSymbols,
+      modelPolicy: _modelPolicy,
+      ...agentUpdates
+    } = parsed.data;
+
     await db.update(agents).set({
-      ...parsed.data,
+      ...agentUpdates,
       toolPolicy: effectiveToolPolicy,
+      modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),
     }).where(eq(agents.id, id));
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
-    return reply.send(updated);
+    return reply.send(decorateAgentResponse(updated!));
   });
 
   // POST /agents/:id/message — deliver user message to running agent (rate-limited 10/min)

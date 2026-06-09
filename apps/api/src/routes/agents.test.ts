@@ -248,3 +248,111 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Bug 005 — GET /agents/:id must not return a stale activeSession for stopped
+// or crashed agents, even when a lingering unhealthy runtime session exists.
+// ---------------------------------------------------------------------------
+describe('GET /agents/:id — activeSession suppression for terminal-state agents (bug 005)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Build a db mock suitable for GET /agents/:id.
+   * The GET handler issues at most two SELECT queries:
+   *   1. agents.where(...)                         — always
+   *   2. agentRuntimeSessions.where(...).orderBy() — only for non-terminal agents
+   *
+   * To support the optional .orderBy() chain on the second query, the object
+   * returned by .where() is made thenable (so `await query` works) AND carries
+   * an .orderBy() method that returns the same resolved data.
+   */
+  function buildGetAgentDb(
+    agentRow: Record<string, unknown> | null,
+    sessionRow: Record<string, unknown> | null = null,
+  ) {
+    const agentRows = agentRow ? [agentRow] : [];
+    const sessionRows = sessionRow ? [sessionRow] : [];
+    let selectCallIndex = 0;
+
+    function makeQueryable(rows: Record<string, unknown>[]) {
+      const resolved = Promise.resolve(rows);
+      // A thenable that also exposes .orderBy() so drizzle-style chains work.
+      return {
+        then: (
+          resolve: (v: Record<string, unknown>[]) => unknown,
+          reject?: (e: unknown) => unknown,
+        ) => resolved.then(resolve, reject ?? undefined),
+        orderBy: vi.fn().mockReturnValue(resolved),
+      };
+    }
+
+    const db: any = {
+      select: vi.fn().mockImplementation(() => {
+        const rows = selectCallIndex++ === 0 ? agentRows : sessionRows;
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue(makeQueryable(rows)),
+          }),
+        };
+      }),
+    };
+
+    return { db };
+  }
+
+  it.each([
+    ['stopped'],
+    ['crashed'],
+  ])('returns activeSession: null for a %s agent even when a lingering unhealthy session exists', async (status) => {
+    const { agentRoutes } = await import('./agents.js');
+    const agent = { id: 'agent-1', status, userId: TEST_USER_ID, modelPolicy: null, skillIds: [] };
+    const staleSession = { id: 'session-99', status: 'unhealthy', agentId: 'agent-1', startedAt: new Date().toISOString() };
+    const { db } = buildGetAgentDb(agent, staleSession);
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    // The stale session must not leak into the response — regression for bug 005.
+    expect(res.json().activeSession).toBeNull();
+    // The session SELECT should not have been called at all for terminal agents.
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the activeSession for an active agent that has an unhealthy session', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const agent = { id: 'agent-1', status: 'active', userId: TEST_USER_ID, modelPolicy: null, skillIds: [] };
+    const session = { id: 'session-42', status: 'unhealthy', agentId: 'agent-1', startedAt: new Date().toISOString() };
+    const { db } = buildGetAgentDb(agent, session);
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().activeSession).toMatchObject({ id: 'session-42', status: 'unhealthy' });
+    // Two SELECTs: agent lookup + session lookup.
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns 404 when the agent is not found', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildGetAgentDb(null);
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('not_found');
+  });
+});
+

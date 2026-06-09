@@ -170,6 +170,57 @@ describe('POST /connections', () => {
     expect(insertedValues).toHaveLength(1);
   });
 
+  // Regression: bug 005 — functional tests called seedTradingBinding after createConnection,
+  // causing a duplicate-key violation once POST /connections started auto-creating a
+  // trading_bindings row. This verifies the auto-creation contract so callers must
+  // query (not insert) to obtain the binding ID.
+  it.each(['hyperliquid', 'jupiter', '1inch', 'bybit'] as const)(
+    'auto-creates exactly one trading binding with matching connectionId for provider=%s',
+    async (provider) => {
+      const app = Fastify();
+      decorateWithAuth(app);
+      const db = buildMockDb();
+      await connectionRoutes(app, db);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/connections',
+        payload: { provider, label: `${provider} connection` },
+      });
+
+      expect(res.statusCode).toBe(201);
+      // Two inserts: one for the connection, one for the trading binding
+      expect(insertedValues).toHaveLength(2);
+      const [connInsert, bindingInsert] = insertedValues;
+      expect(bindingInsert!['connectionId']).toBe(connInsert!['id']);
+      expect(bindingInsert!['provider']).toBe(provider);
+    },
+  );
+
+  // Regression: bug 002 — e2e helpers called seedTradingBinding after createConnection
+  // instead of looking up the auto-created binding. This documents the full binding
+  // payload so callers know userId, status, and label are correctly inherited.
+  it('auto-created trading binding carries the correct userId, status, and label', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/connections',
+      payload: { provider: 'hyperliquid', label: 'My HyperLiquid Connection' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toHaveLength(2);
+    const [connInsert, bindingInsert] = insertedValues;
+    expect(bindingInsert!['userId']).toBe(TEST_USER_ID);
+    expect(bindingInsert!['status']).toBe('active');
+    expect(bindingInsert!['label']).toBe('My HyperLiquid Connection');
+    expect(bindingInsert!['connectionId']).toBe(connInsert!['id']);
+  });
+
   it('returns 400 when credential venue does not match connection provider', async () => {
     const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'bybit' };
     const app = Fastify();

@@ -10,6 +10,7 @@
     { "path": "packages/backtesting" },
     { "path": "packages/market-data" },
     { "path": "apps/api" },
-    { "path": "apps/worker" }
+    { "path": "apps/worker" },
+    { "path": "tests/rate-limit-lab" }
   ]
 }

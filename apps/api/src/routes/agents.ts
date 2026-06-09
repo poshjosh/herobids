@@ -7,6 +7,58 @@ import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutbo
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
 
+const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
+
+function mergeModelPolicy(
+  current: Record<string, unknown> | null | undefined,
+  update: {
+    modelPolicy?: Record<string, unknown>;
+    scoutModel?: string | null;
+    costPreset?: z.infer<typeof CostPresetSchema> | null;
+    dailySpendBudgetUsd?: number | null;
+    dexWatchlistSymbols?: string[] | null;
+  },
+): Record<string, unknown> | null {
+  const merged: Record<string, unknown> = { ...(current ?? {}), ...(update.modelPolicy ?? {}) };
+
+  if (update.scoutModel !== undefined) {
+    if (update.scoutModel === null) delete merged['scoutModel'];
+    else merged['scoutModel'] = update.scoutModel;
+  }
+  if (update.costPreset !== undefined) {
+    if (update.costPreset === null) delete merged['costPreset'];
+    else merged['costPreset'] = update.costPreset;
+  }
+  if (update.dailySpendBudgetUsd !== undefined) {
+    if (update.dailySpendBudgetUsd === null) delete merged['dailySpendBudgetUsd'];
+    else merged['dailySpendBudgetUsd'] = update.dailySpendBudgetUsd;
+  }
+  if (update.dexWatchlistSymbols !== undefined) {
+    if (update.dexWatchlistSymbols === null) delete merged['dexWatchlistSymbols'];
+    else merged['dexWatchlistSymbols'] = update.dexWatchlistSymbols;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null }>(agent: T): T & {
+  scoutModel: string | null;
+  costPreset: z.infer<typeof CostPresetSchema> | null;
+  dailySpendBudgetUsd: number | null;
+  dexWatchlistSymbols: string[] | null;
+} {
+  const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
+  return {
+    ...agent,
+    scoutModel: typeof modelPolicy?.['scoutModel'] === 'string' ? modelPolicy['scoutModel'] : null,
+    costPreset: typeof modelPolicy?.['costPreset'] === 'string' ? modelPolicy['costPreset'] as z.infer<typeof CostPresetSchema> : null,
+    dailySpendBudgetUsd: typeof modelPolicy?.['dailySpendBudgetUsd'] === 'number' ? modelPolicy['dailySpendBudgetUsd'] : null,
+    dexWatchlistSymbols: Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
+      ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
+      : null,
+  };
+}
+
 // --- Request Schemas ---
 
 const CreateAgentSchema = z.object({
@@ -15,6 +67,10 @@ const CreateAgentSchema = z.object({
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
+  scoutModel: z.string().min(1).max(200).optional(),
+  costPreset: CostPresetSchema.optional(),
+  dailySpendBudgetUsd: z.number().positive().optional(),
+  dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).optional(),
   telegramChatId: z.string().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
   dailyTokenBudget: z.number().int().min(1).optional(),
@@ -29,6 +85,10 @@ const UpdateAgentSchema = z.object({
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
+  scoutModel: z.string().min(1).max(200).nullable().optional(),
+  costPreset: CostPresetSchema.nullable().optional(),
+  dailySpendBudgetUsd: z.number().positive().nullable().optional(),
+  dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
   // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
@@ -76,6 +136,8 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     }
     const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
 
+    const effectiveModelPolicy = mergeModelPolicy(parsed.data.modelPolicy ?? null, parsed.data);
+
     await db.insert(agents).values({
       id: agentId,
       userId: request.userId,
@@ -84,7 +146,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       skillIds: parsed.data.skillIds ?? [],
       status: 'stopped',
       toolPolicy: effectiveToolPolicy,
-      modelPolicy: parsed.data.modelPolicy ?? null,
+      modelPolicy: effectiveModelPolicy,
       telegramChatId: parsed.data.telegramChatId ?? null,
       executionMode: parsed.data.executionMode ?? null,
       dailyTokenBudget: parsed.data.dailyTokenBudget ?? null,
@@ -96,7 +158,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     });
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-    return reply.status(201).send(agent);
+    return reply.status(201).send(decorateAgentResponse(agent!));
   });
 
   // List user's agents
@@ -104,7 +166,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const rows = await db.select().from(agents)
       .where(eq(agents.userId, request.userId))
       .orderBy(agents.createdAt);
-    return reply.send(rows);
+    return reply.send(rows.map((agent) => decorateAgentResponse(agent)));
   });
 
   // Get single agent
@@ -116,15 +178,17 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Include active session (starting/launching/running/unhealthy)
-    const [session] = await db.select().from(agentRuntimeSessions)
+    // Include active session (starting/launching/running/unhealthy).
+    // Do not return lingering sessions for stopped/crashed agents — any such session is stale.
+    const isTerminalState = agent.status === 'stopped' || agent.status === 'crashed';
+    const [session] = isTerminalState ? [] : await db.select().from(agentRuntimeSessions)
       .where(and(
         eq(agentRuntimeSessions.agentId, id),
         inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
       ))
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
-    return reply.send({ ...agent, activeSession: session ?? null });
+    return reply.send({ ...decorateAgentResponse(agent), activeSession: session ?? null });
   });
 
   // Update agent
@@ -175,14 +239,35 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     }
     const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
 
+    const effectiveModelPolicy = mergeModelPolicy(
+      (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null,
+      {
+        modelPolicy: parsed.data.modelPolicy,
+        scoutModel: parsed.data.scoutModel,
+        costPreset: parsed.data.costPreset,
+        dailySpendBudgetUsd: parsed.data.dailySpendBudgetUsd,
+        dexWatchlistSymbols: parsed.data.dexWatchlistSymbols,
+      },
+    );
+
+    const {
+      scoutModel: _scoutModel,
+      costPreset: _costPreset,
+      dailySpendBudgetUsd: _dailySpendBudgetUsd,
+      dexWatchlistSymbols: _dexWatchlistSymbols,
+      modelPolicy: _modelPolicy,
+      ...agentUpdates
+    } = parsed.data;
+
     await db.update(agents).set({
-      ...parsed.data,
+      ...agentUpdates,
       toolPolicy: effectiveToolPolicy,
+      modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),
     }).where(eq(agents.id, id));
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
-    return reply.send(updated);
+    return reply.send(decorateAgentResponse(updated!));
   });
 
   // Delete agent

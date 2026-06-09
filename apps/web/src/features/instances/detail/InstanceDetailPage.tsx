@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import Decimal from 'decimal.js';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { bots as botsApi, journal, type ActivityEvent } from '../../../lib/api-client.js';
+import { bots as botsApi, journal, type ActivityEvent, ApiError } from '../../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
 import { TimelineEvent } from '../../timeline/TimelineEvent.js';
 import { useEventStream, type UserEvent } from '../../../lib/useEventStream.js';
@@ -56,9 +56,21 @@ export function InstanceDetailPage() {
   }
 
   if (instanceQuery.isError) {
+    const err = instanceQuery.error;
+    if (err instanceof ApiError && err.code === 'not_found') {
+      return (
+        <PageShell>
+          <EmptyState
+            title="Bot not found"
+            message="This bot does not exist or you don't have access."
+            action={<Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back to bots</Button>}
+          />
+        </PageShell>
+      );
+    }
     return (
       <PageShell>
-        <ErrorState message={(instanceQuery.error as Error).message} onRetry={() => void instanceQuery.refetch()} />
+        <ErrorState message={(err as Error).message} onRetry={() => void instanceQuery.refetch()} />
       </PageShell>
     );
   }
@@ -66,7 +78,11 @@ export function InstanceDetailPage() {
   if (!inst) {
     return (
       <PageShell>
-        <EmptyState title="Agent not found" message="This agent does not exist or you don't have access." />
+        <EmptyState
+          title="Bot not found"
+          message="This bot does not exist or you don't have access."
+          action={<Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back to bots</Button>}
+        />
       </PageShell>
     );
   }

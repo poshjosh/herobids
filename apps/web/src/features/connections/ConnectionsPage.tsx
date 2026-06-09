@@ -24,7 +24,7 @@ export function ConnectionsPage() {
     <PageShell>
       <PageHeader
         title="Connections"
-        subtitle="Platform connections to reusable providers"
+        subtitle="Platform connections to external providers"
         action={<Button onClick={() => setShowCreate(true)}>New connection</Button>}
       />
       {query.isLoading && <LoadingRows />}

@@ -270,7 +270,7 @@ export const bots = {
   list: () => request<{ bots: Bot[] }>('/bots'),
   get: (id: string) => request<Bot>(`/bots/${id}`),
   create: (data: {
-    venueAccountId: string;
+    tradingBindingId: string;
     venue: string;
     symbol: string;
     config: Record<string, unknown>;

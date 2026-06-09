@@ -10,6 +10,8 @@
     "test:integration": "vitest run --no-file-parallelism packages/db/src/journal-pg.integration.test.ts packages/db/src/alert-delivery-repository.integration.test.ts apps/api/src/plugins/auth.integration.test.ts apps/api/src/routes/auth-oauth.integration.test.ts",
     "test:venues": "vitest run --config vitest.integration.config.ts",
     "test:functional": "vitest run --no-file-parallelism apps/api/src/__tests__/functional apps/worker/src/__tests__/integration",
+    "test:rate-limit-lab": "pnpm --filter @herobids/rate-limit-lab run test",
+    "rate-limit-lab": "pnpm --filter @herobids/rate-limit-lab run lab",
     "lint": "tsc --noEmit",
     "clean": "pnpm -r run clean"
   },

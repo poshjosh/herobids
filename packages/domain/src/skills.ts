@@ -93,7 +93,7 @@ export const TRADING_SKILL: SkillDefinition = {
 - Use \`list_positions\` to check current open positions.
 - Use \`search_tokens\` to find a token by name or symbol when you need its on-chain address.
   This is primarily used when preparing Jupiter DEX trades.`,
-  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens'],
+  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {

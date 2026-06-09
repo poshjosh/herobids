@@ -1,6 +1,6 @@
 # Bug Report: System Skills Truncated Before E2E Tests
 
-- **Status:** FIXED
+- **Status:** Closed
 - **Severity:** High
 - **Date:** 2026-06-08
 - **Summary:** E2E Journey 7 test 2 and Journey 8 failed with "Could not find skill bot-management in the skills API response" because functional tests truncated the skills table, removing the system skills needed by E2E.
@@ -25,3 +25,8 @@ Two-part fix:
 ## Verification
 
 Full test suite run: E2E Journey 7 test 2 and Journey 8 now pass (9/9 E2E journeys green).
+
+## Regression Tests
+
+Added to `apps/api/src/routes/skills.test.ts`:
+- `returns system skills (authorId=null) even when user has no own or public skills` — verifies the GET /skills contract that system skills are always surfaced, even when the calling user has created no skills of their own.

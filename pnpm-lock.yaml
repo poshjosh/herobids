@@ -310,6 +310,28 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(postgres@3.4.9)
+
+  tests/rate-limit-lab:
+    dependencies:
+      '@herobids/market-data':
+        specifier: workspace:*
+        version: link:../../packages/market-data
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.3
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0)
 
 packages:
 

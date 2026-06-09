@@ -1,6 +1,6 @@
 # User Registration - Missing NULL Column Values
 
-**Status:** FIXED
+**Status:** Closed
 **Severity:** Critical
 **Date:** 2026-06-07
 **Summary:** User registration endpoint returning 500 errors due to missing NULL values for nullable columns (telegramChatId, aiModelConfig) in INSERT statement. Affected all functional and E2E tests.
@@ -67,3 +67,11 @@ The fix enables all downstream tests to proceed with valid user accounts.
 ## Related Tests Fixed
 - All 85 functional test failures (user registration errors)
 - All 9 E2E tests (auth redirect timeouts due to failed registration)
+
+## Regression Tests
+
+Added to `apps/api/src/routes/auth.test.ts` under a new `describe('POST /auth/register', ...)` block:
+- `returns 201 with a token when registration succeeds` — happy-path baseline.
+- `includes telegramChatId: null and aiModelConfig: null in the user INSERT` — captures the first `tx.insert(users).values(...)` call and asserts both columns are explicitly `null`, preventing Drizzle from emitting `DEFAULT`.
+- `returns 409 when the email is already registered` — duplicate email path.
+- `returns 400 when password is shorter than 8 characters` — validation guard.

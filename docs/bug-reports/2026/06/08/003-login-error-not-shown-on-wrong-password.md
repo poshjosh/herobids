@@ -1,6 +1,6 @@
 # Bug Report: Login Error Not Shown When Password Is Wrong
 
-- **Status:** FIXED
+- **Status:** Closed
 - **Severity:** Medium
 - **Date:** 2026-06-08
 - **Summary:** When a user submitted an incorrect password on the email login form, no error message was shown. Instead the form silently reset and the Google tab became active.
@@ -23,3 +23,11 @@ Modified the 401 handler in `apps/web/src/lib/api-client.ts` to skip the redirec
 - Email tab stays selected after failed login
 - Form fields remain accessible (user can correct password)
 - Session expiry (401 from other endpoints) still redirects to `/login` as expected
+
+## Regression Tests
+
+Added as `apps/web/src/lib/api-client.test.ts` (new file):
+- `auth.login() 401 throws ApiError with the body message and does not redirect to /login`
+- `auth.register() 401 throws ApiError with the body message and does not redirect to /login`
+- `auth.exchange() 401 throws ApiError with the body message and does not redirect to /login`
+- `auth.me() 401 (session expiry) redirects to /login and throws ApiError`

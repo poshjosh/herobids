@@ -84,6 +84,46 @@ describe('GET /skills', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().skills).toEqual([]);
   });
+
+  // Regression: bug 001 — truncateAll() removed system skills, causing E2E failures
+  // The GET /skills endpoint must always surface system skills (authorId=null) even
+  // when the requesting user has created no skills of their own.
+  it('returns system skills (authorId=null) even when user has no own or public skills', async () => {
+    const systemSkill = { ...stubBuiltinSkill };
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([systemSkill])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/skills' });
+    expect(res.statusCode).toBe(200);
+    const { skills } = res.json<{ skills: Array<{ authorId: string | null }> }>();
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.authorId).toBeNull();
+  });
+
+  // Regression: bug 002 — GET /skills returned system skills but a test asserted an
+  // empty list; the correct contract is that system skills are always present.
+  // Verifies the route correctly passes through any skills returned by the DB
+  // (including system skills with authorId=null) without filtering them out.
+  it('includes system skills alongside user-owned skills in the response', async () => {
+    const rows = [stubSkill, stubBuiltinSkill];
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain(rows)),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/skills' });
+    const { skills } = res.json<{ skills: Array<{ authorId: string | null }> }>();
+    const systemSkills = skills.filter((s) => s.authorId === null);
+    const ownedSkills = skills.filter((s) => s.authorId !== null);
+    expect(systemSkills).toHaveLength(1);
+    expect(ownedSkills).toHaveLength(1);
+  });
 });
 
 // ─── POST /skills ─────────────────────────────────────────────────────────
