@@ -110,10 +110,17 @@ export interface DiscoveredToken {
   volume24hUsd: number;
   liquidityUsd: number;
   priceChange24hPct?: number;
-  source: 'dexscreener' | 'geckoterminal';
+  source: 'dexscreener' | 'geckoterminal' | 'coinmarketcap';
   discoveryVectors: string[];
   poolAddress?: string;
   poolCreatedAt?: string;
+  // Provider enrichment fields — currently populated by the CMC post-merge pass.
+  // holderCount remains reserved for providers that can supply it.
+  marketCapUsd?: number;
+  fullyDilutedValuationUsd?: number;
+  holderCount?: number;
+  cexListings?: number;
+  riskLevel?: 'low' | 'medium' | 'high';
 }
 
 export interface RegimeParams {

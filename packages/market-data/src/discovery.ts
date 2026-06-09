@@ -2,7 +2,6 @@ import {
   fetchDexScreenerBoostsLatest,
   fetchDexScreenerProfilesLatest,
   fetchDexScreenerTrending,
-  mergeDexScreenerDiscoveryTokens,
   type DexScreenerConfig,
 } from './dexscreener.js';
 import {
@@ -11,14 +10,77 @@ import {
   fetchGeckoTerminalTrendingPools,
   type GeckoTerminalConfig,
 } from './geckoterminal.js';
+import {
+  enrichWithCmc,
+  fetchCmcNewListings,
+  fetchCmcTrending,
+  type CoinMarketCapConfig,
+} from './coinmarketcap.js';
 import type { DiscoveredToken } from './types.js';
 
 export interface DiscoveryConfig {
   dexscreener: DexScreenerConfig;
   geckoterminal: GeckoTerminalConfig;
+  coinmarketcap?: CoinMarketCapConfig;
   networks: string[];
   maxResults?: number;
   minLiquidityUsd?: number;
+}
+
+function tokenKey(token: DiscoveredToken): string {
+  return `${token.network}:${token.address}`;
+}
+
+function passesDiscoveryThreshold(token: DiscoveredToken, minLiquidityUsd: number): boolean {
+  // minLiquidityUsd is a hard floor for regular discovery sources.
+  // CMC-only tokens can still enter when the caller explicitly uses a zero floor.
+  if (token.liquidityUsd > 0 && token.liquidityUsd >= minLiquidityUsd) {
+    return true;
+  }
+
+  return token.source === 'coinmarketcap' && minLiquidityUsd === 0 && (token.marketCapUsd ?? 0) > 0;
+}
+
+function discoveryScoreUsd(token: DiscoveredToken): number {
+  if (token.liquidityUsd > 0) {
+    return token.liquidityUsd;
+  }
+
+  if (token.source === 'coinmarketcap') {
+    return token.marketCapUsd ?? 0;
+  }
+
+  return 0;
+}
+
+async function enrichByNetworkSlice(
+  tokens: DiscoveredToken[],
+  config: CoinMarketCapConfig,
+): Promise<DiscoveredToken[]> {
+  const tokensByNetwork = new Map<string, DiscoveredToken[]>();
+  for (const token of tokens) {
+    const current = tokensByNetwork.get(token.network) ?? [];
+    current.push(token);
+    tokensByNetwork.set(token.network, current);
+  }
+
+  const enrichedByKey = new Map<string, DiscoveredToken>();
+  for (const networkTokens of tokensByNetwork.values()) {
+    try {
+      const enrichedSlice = await enrichWithCmc(networkTokens, config);
+      for (const token of enrichedSlice) {
+        enrichedByKey.set(tokenKey(token), token);
+      }
+    } catch {
+      for (const token of networkTokens) {
+        if (!enrichedByKey.has(tokenKey(token))) {
+          enrichedByKey.set(tokenKey(token), token);
+        }
+      }
+    }
+  }
+
+  return tokens.map((token) => enrichedByKey.get(tokenKey(token)) ?? token);
 }
 
 function mergeDiscoveredTokens(tokens: DiscoveredToken[]): DiscoveredToken[] {
@@ -40,6 +102,11 @@ function mergeDiscoveredTokens(tokens: DiscoveredToken[]): DiscoveredToken[] {
       priceUsd: higherLiquidity.priceUsd,
       poolAddress: higherLiquidity.poolAddress ?? existing.poolAddress,
       poolCreatedAt: higherLiquidity.poolCreatedAt ?? existing.poolCreatedAt,
+      marketCapUsd: existing.marketCapUsd ?? token.marketCapUsd,
+      fullyDilutedValuationUsd: existing.fullyDilutedValuationUsd ?? token.fullyDilutedValuationUsd,
+      holderCount: existing.holderCount ?? token.holderCount,
+      cexListings: existing.cexListings ?? token.cexListings,
+      riskLevel: existing.riskLevel ?? token.riskLevel,
     });
   }
   return Array.from(merged.values());
@@ -50,6 +117,13 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
   const maxResults = config.maxResults ?? 20;
   const minLiquidityUsd = config.minLiquidityUsd ?? 10_000;
 
+  const cmcFanOut = config.coinmarketcap
+    ? [
+        fetchCmcTrending(networks, config.coinmarketcap),
+        fetchCmcNewListings(networks, config.coinmarketcap),
+      ]
+    : [];
+
   const results = await Promise.allSettled([
     fetchDexScreenerTrending(config.dexscreener),
     fetchDexScreenerBoostsLatest(config.dexscreener),
@@ -59,6 +133,7 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
       fetchGeckoTerminalTopPools(network, config.geckoterminal),
       fetchGeckoTerminalNewPools(network, config.geckoterminal),
     ]),
+    ...cmcFanOut,
   ]);
 
   const fulfilled = results
@@ -70,13 +145,30 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
     throw rejected?.reason instanceof Error ? rejected.reason : new Error('No discovery providers returned data');
   }
 
-  return mergeDiscoveredTokens(mergeDexScreenerDiscoveryTokens(fulfilled))
-    .filter((token) => token.liquidityUsd > 0 && token.liquidityUsd >= minLiquidityUsd)
+  const merged = mergeDiscoveredTokens(fulfilled)
+    .filter((token) => passesDiscoveryThreshold(token, minLiquidityUsd))
     .sort((left, right) => {
+      const rightScore = discoveryScoreUsd(right);
+      const leftScore = discoveryScoreUsd(left);
+
+      if (rightScore !== leftScore) {
+        return rightScore - leftScore;
+      }
+
       if (right.volume24hUsd !== left.volume24hUsd) {
         return right.volume24hUsd - left.volume24hUsd;
       }
       return right.liquidityUsd - left.liquidityUsd;
     })
     .slice(0, maxResults);
+
+  if (!config.coinmarketcap) return merged;
+
+  // Enrichment pass — runs after merge/filter/sort, one batch call per network slice, fail-soft
+  try {
+    return await enrichByNetworkSlice(merged, config.coinmarketcap);
+  } catch {
+    // CMC enrichment failure must not abort discovery results from other providers
+    return merged;
+  }
 }

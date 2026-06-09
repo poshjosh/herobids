@@ -17,6 +17,7 @@ import {
 } from './geckoterminal.js';
 import { fetchHyperliquidAssetContexts, type HyperliquidInfoConfig } from './hyperliquid-info.js';
 import { fetchBybitLongShortRatio, type BybitInfoConfig } from './bybit-info.js';
+import { type CoinMarketCapConfig } from './coinmarketcap.js';
 import {
   CoordinatedRateLimiter,
   createSharedRateBudgetCoordinator,
@@ -163,6 +164,25 @@ export function createProviderRegistry(
     fetchFn,
   };
 
+  // CMC is opt-in — only build config when explicitly enabled
+  const cmcConfig: CoinMarketCapConfig | undefined = config.coinMarketCap.enabled
+    ? (() => {
+        const cmcBudget: SharedBudgetConfig = {
+          requestsPerMinute: config.coinMarketCap.requestsPerMinute,
+          burstCapacity: config.coinMarketCap.requestsPerMinute,
+          maxWaitMs: config.timeoutMs,
+        };
+        return {
+          baseUrl: config.coinMarketCap.baseUrl,
+          apiKey: config.coinMarketCap.apiKey,
+          discoveryRateLimiter: createLimiter(coordinator, 'coinmarketcap', 'discovery', cmcBudget),
+          enrichmentRateLimiter: createLimiter(coordinator, 'coinmarketcap', 'enrichment', cmcBudget),
+          timeoutMs: config.timeoutMs,
+          fetchFn,
+        };
+      })()
+    : undefined;
+
   return {
     binance: {
       candles: (symbol, options) => loadWithCache({
@@ -276,19 +296,20 @@ export function createProviderRegistry(
         requestClass: 'discovery',
         cache,
         cacheKey: `discovery:${(discoveryOptions?.networks ?? []).join(',')}:${discoveryOptions?.maxResults ?? 20}:${discoveryOptions?.minLiquidityUsd ?? 10_000}`,
-        policy: {
-          ttlMs: Math.min(
+        policy: (() => {
+          const baseTtl = Math.min(
             config.dexscreener.discovery.cacheTtlMs ?? 0,
             config.geckoterminal.discovery.cacheTtlMs ?? 0,
-          ),
-          staleWhileRevalidateMs: Math.min(
-            config.dexscreener.discovery.cacheTtlMs ?? 0,
-            config.geckoterminal.discovery.cacheTtlMs ?? 0,
-          ),
-        },
+          );
+          const ttlMs = config.coinMarketCap.enabled
+            ? Math.min(baseTtl, config.coinMarketCap.cacheTtlMs)
+            : baseTtl;
+          return { ttlMs, staleWhileRevalidateMs: ttlMs };
+        })(),
         loader: () => discoverTokens({
           dexscreener: dexscreenerDiscoveryConfig,
           geckoterminal: geckoDiscoveryConfig,
+          coinmarketcap: cmcConfig,
           networks: discoveryOptions?.networks ?? ['solana', 'base'],
           maxResults: discoveryOptions?.maxResults,
           minLiquidityUsd: discoveryOptions?.minLiquidityUsd,

@@ -48,5 +48,11 @@ export { fetchHyperliquidAssetContexts, type HyperliquidInfoConfig } from './hyp
 export { fetchBybitLongShortRatio, type BybitInfoConfig } from './bybit-info.js';
 export { discoverTokens, type DiscoveryConfig } from './discovery.js';
 export { createProviderRegistry, type ProviderRegistry, type ProviderRegistryOptions } from './provider-registry.js';
+export {
+  fetchCmcTrending,
+  fetchCmcNewListings,
+  enrichWithCmc,
+  type CoinMarketCapConfig,
+} from './coinmarketcap.js';
 export { searchTokens, type SearchTokensOptions } from './token-search.js';
 export { evaluateRegime, getRequiredRegimeCandleCount } from './regime.js';

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createProviderRegistry } from './provider-registry.js';
 import { InMemoryProviderResponseCache, loadWithCache } from './cache.js';
+import { type SharedBudgetAcquireRequest, type SharedRateBudgetCoordinator } from './rate-limiter.js';
 
 function createConfig() {
   return {
@@ -236,5 +237,113 @@ describe('loadWithCache — stale-while-revalidate semantics', () => {
       loader: async () => { throw new Error('upstream down'); },
       allowStale: false,
     })).rejects.toThrow('upstream down');
+  });
+});
+
+describe('createProviderRegistry — CMC disabled-provider skipping', () => {
+  it('does not call CMC when coinMarketCap.enabled is false', async () => {
+    let cmcCalled = false;
+
+    const registry = createProviderRegistry(createConfig(), {
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.includes('coinmarketcap.com')) {
+          cmcCalled = true;
+        }
+        // Return empty DexScreener lists
+        if (url.includes('token-boosts') || url.includes('token-profiles')) {
+          return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+        }
+        // Return a valid GeckoTerminal pool so discovery doesn't throw
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{
+              id: 'pool-reg',
+              attributes: { address: 'pool-reg', base_token_price_usd: '1.0', volume_usd: { h24: '50000' }, reserve_in_usd: '100000' },
+              relationships: { base_token: { data: { id: 'bt-r' } }, quote_token: { data: { id: 'qt-r' } } },
+            }],
+            included: [
+              { id: 'bt-r', attributes: { address: 'reg-addr', symbol: 'REG', name: 'RegToken' } },
+              { id: 'qt-r', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      },
+    });
+
+    await registry.discovery.discover({ networks: ['solana'], minLiquidityUsd: 0 });
+
+    expect(cmcCalled).toBe(false);
+  });
+});
+
+describe('createProviderRegistry — CMC shared budget', () => {
+  it('passes the configured CMC RPM to both discovery and enrichment limiters', async () => {
+    const requests: SharedBudgetAcquireRequest[] = [];
+    const coordinator: SharedRateBudgetCoordinator = {
+      async acquire(request) {
+        requests.push(request);
+        return { waitMs: 0, remainingTokens: 1 };
+      },
+    };
+
+    const registry = createProviderRegistry({
+      ...createConfig(),
+      coinMarketCap: {
+        enabled: true,
+        baseUrl: 'https://pro-api.coinmarketcap.com',
+        requestsPerMinute: 30,
+        apiKey: 'test-key',
+        cacheTtlMs: 3_600_000,
+      },
+    }, {
+      coordinator,
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.includes('coinmarketcap.com') && url.includes('quotes/latest')) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            json: async () => ({ data: { REG: [{ symbol: 'REG', platform: { slug: 'solana', token_address: 'reg-addr' }, quote: { USD: { market_cap: 1_000_000 } } }] } }),
+          } as Response;
+        }
+        if (url.includes('coinmarketcap.com')) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            json: async () => ({ data: [{ symbol: 'REG', platform: { slug: 'solana', token_address: 'reg-addr' }, quote: { USD: { market_cap: 1_000_000 } } }] }),
+          } as Response;
+        }
+        if (url.includes('token-boosts') || url.includes('token-profiles')) {
+          return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({
+            data: [{
+              id: 'pool-reg',
+              attributes: { address: 'pool-reg', base_token_price_usd: '1.0', volume_usd: { h24: '50000' }, reserve_in_usd: '100000' },
+              relationships: { base_token: { data: { id: 'bt-r' } }, quote_token: { data: { id: 'qt-r' } } },
+            }],
+            included: [
+              { id: 'bt-r', attributes: { address: 'reg-addr', symbol: 'REG', name: 'RegToken' } },
+              { id: 'qt-r', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      },
+    });
+
+    await registry.discovery.discover({ networks: ['solana'], minLiquidityUsd: 0 });
+
+    const cmcRequests = requests.filter((request) => request.provider === 'coinmarketcap');
+    expect(cmcRequests).toHaveLength(3);
+    expect(new Set(cmcRequests.map((request) => request.requestClass))).toEqual(new Set(['discovery', 'enrichment']));
+    expect(cmcRequests.every((request) => request.budget.requestsPerMinute === 30)).toBe(true);
   });
 });
