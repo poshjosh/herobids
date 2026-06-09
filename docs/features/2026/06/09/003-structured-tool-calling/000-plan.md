@@ -2,7 +2,7 @@
 
 **Status:** done
 **Depends on:** ../001-tool-registry/000-note.md
-**Blocks:** ../002-scount-tools/000-note.md
+**Blocks:** ../002-scout-tools/000-note.md
 
 ## Goal
 
@@ -10,7 +10,7 @@ Wire the registry-generated tool schemas into the model-facing runtime so scout 
 
 ## Why This Comes First
 
-`001-tool-registry` already added schema generation in `apps/worker/src/tools/registry.ts`, but the active runtime path still only exposes tool names in prompt text and parses `{"tool": ..., "args": ...}` from assistant output in `apps/worker/src/agent.ts`. `002-scount-tools` should land after this wiring, otherwise scout tools will be built on the same partial mechanism.
+`001-tool-registry` already added schema generation in `apps/worker/src/tools/registry.ts`, but the active runtime path still only exposes tool names in prompt text and parses `{"tool": ..., "args": ...}` from assistant output in `apps/worker/src/agent.ts`. `002-scout-tools` should land after this wiring, otherwise scout tools will be built on the same partial mechanism.
 
 ## Plan
 
@@ -84,5 +84,5 @@ Wire the registry-generated tool schemas into the model-facing runtime so scout 
 
 | Date | Decision | Reason |
 |---|---|---|
-| 2026-06-09 | Plan runtime structured tool wiring before scout tool enablement. | `002-scount-tools` depends on a model-facing tool transport; the current runtime still uses prompt-level tool names plus text-parsed JSON. |
+| 2026-06-09 | Plan runtime structured tool wiring before scout tool enablement. | `002-scout-tools` depends on a model-facing tool transport; the current runtime still uses prompt-level tool names plus text-parsed JSON. |
 | 2026-06-09 | Implemented provider-neutral tool schemas, structured tool transport, and bounded scout/judge tool loops. | This removed the prompt-parsed JSON transport and made scout/judge use the same structured path. |
