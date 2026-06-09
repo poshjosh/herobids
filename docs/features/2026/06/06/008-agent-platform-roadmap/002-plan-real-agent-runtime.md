@@ -150,7 +150,7 @@ The engine must be constructed with:
 - `DEFAULT_CAPABILITY_GRANTS` as the base
 - The agent's persisted `toolPolicy` merged on top (per-agent overrides)
 
-Every brokered tool call (decision submit, send_message, web_fetch, code_execute, artifact_publish) must be checked against the instantiated engine before execution.
+Every brokered tool call (decision submit, send_message, web_fetch, code_execute, publish_artifact) must be checked against the instantiated engine before execution.
 
 File: `apps/worker/src/agents/sandbox-enforcer.ts`
 

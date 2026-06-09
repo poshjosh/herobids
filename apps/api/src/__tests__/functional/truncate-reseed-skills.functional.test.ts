@@ -144,7 +144,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     const tools = skill!.requiredTools as string[];
     const expectedTools = new Set([
       'send_message',
-      'artifact_publish',
+      'publish_artifact',
       'list_positions',
       'get_analytics',
       'get_price',

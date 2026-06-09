@@ -54,7 +54,7 @@ Alert the user via send_message when:
 - Unrealized loss exceeds 5% of allocated capital
 - A position has been open longer than the user''s stated time horizon
 - Market volatility spikes significantly',
-    ARRAY['send_message', 'artifact_publish', 'list_positions', 'get_analytics'],
+    ARRAY['send_message', 'publish_artifact', 'list_positions', 'get_analytics'],
     ARRAY['positions', 'fills', 'analytics'],
     ARRAY['token-budget', 'daily-loss'],
     ARRAY['trading']::text[],

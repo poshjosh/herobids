@@ -21,7 +21,7 @@ const baseDescriptor = {
       name: 'Base',
       description: 'Base skill',
       instructions: 'Be concise.',
-      requiredTools: ['send_message', 'artifact_publish', 'set_memory'],
+      requiredTools: ['send_message', 'publish_artifact', 'set_memory'],
       capabilityFamilies: [],
       bindingRequirements: {},
       contextRequirements: [],
@@ -99,7 +99,7 @@ const baseDescriptor = {
 describe('runtime composition helpers', () => {
   it('caps visible tool names by runtime budget', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
-    expect(getVisibleToolNames(state)).toEqual(['send_message', 'artifact_publish']);
+    expect(getVisibleToolNames(state)).toEqual(['send_message', 'publish_artifact']);
   });
 
   it('renders the runtime prompt from typed descriptor state', () => {

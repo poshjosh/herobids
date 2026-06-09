@@ -33,14 +33,13 @@ export interface SkillDefinition {
 export const BASE_SKILL: SkillDefinition = {
   id: 'base',
   name: 'Base',
-  description: 'Core runtime tools: memory, messaging, and cost tracking. Auto-injected into every agent.',
-  instructions: `You are a helpful autonomous agent. You have access to a memory store and can send messages to the user.
-Always be concise, accurate, and act within your stated constraints.
-Track your costs and report progress towards your goal.
+  description: 'Core tools: memory, messaging, and cost tracking. Auto-injected into every agent.',
+  instructions: `You have access to core tools.
 
-To persist a note across ticks, call set_memory:
-{"tool": "set_memory", "args": {"key": "<key>", "value": "<value>"}}`,
-  requiredTools: ['send_message', 'artifact_publish', 'set_memory'],
+- Use \`send_message\` to communicate with the user.
+- Use \`publish_artifact\` to publish structured outputs.
+- Use \`set_memory\` to persist notes across ticks.`,
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -59,10 +58,17 @@ export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
   id: 'bot-management',
   name: 'Bot Management',
   description: 'Create, start, stop, and monitor trading bots.',
-  instructions: `You can create trading bots on behalf of the user.
-When the user wants to trade, use create_bot to set up a bot with appropriate strategy and risk parameters.
-Always start bots in paper mode first unless the user has explicitly requested live trading.
-Never expose technical venue details (symbols like BTC-PERP) to the user — use plain language.`,
+  instructions: `You have access to bot-management tools.
+
+- Use \`create_bot\` to create a trading bot.
+- Use \`list_bots\` to inspect existing bots.
+- Use \`get_bot_status\` to inspect a bot's current state.
+- Use \`start_bot\` to start a bot.
+- Use \`stop_bot\` to stop a bot.
+- Use \`adjust_bot_config\` to update a bot's configuration.
+- Use \`get_analytics\` to inspect bot performance.
+- Use \`list_positions\` to inspect open positions tied to managed bots.
+- Use \`send_message\` to report actions, status, or issues to the user.`,
   requiredTools: ['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'send_message'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
@@ -85,14 +91,19 @@ Never expose technical venue details (symbols like BTC-PERP) to the user — use
 export const TRADING_SKILL: SkillDefinition = {
   id: 'trading',
   name: 'Trading',
-  description: 'Submit direct trade decisions and inspect trading state.',
-  instructions: `You have access to direct trading tools.
+  description: 'Submit trade decisions and inspect trading state.',
+  instructions: `You have access to trading tools.
+
 - Use \`submit_decision\` to submit a trade intent for a specific instrument.
-- Use \`check_regime\` to assess whether market conditions are favorable before trading.
-  BTC is the default benchmark; other symbols can be specified.
-- Use \`list_positions\` to check current open positions.
-- Use \`search_tokens\` to find a token by name or symbol when you need its on-chain address.
-  This is primarily used when preparing Jupiter DEX trades.`,
+- Use \`list_positions\` to inspect current open positions.
+- Use \`get_analytics\` to inspect recent trading outcomes and exposure.
+- Use \`check_regime\` to assess current market conditions.
+- Use \`search_tokens\` to find a token by name or symbol.
+- Use \`discover_tokens\` to explore available trading candidates.
+- Use \`get_funding_rates\` to inspect perpetual funding conditions.
+- Use \`get_market_overview\` to inspect broad market state.
+- Use \`get_price\` for focused price checks.
+- Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring.`,
   requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
@@ -116,13 +127,15 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
   id: 'risk-monitoring',
   name: 'Risk Monitoring',
   description: 'Watch open positions and alert the user when risk thresholds are approaching.',
-  instructions: `Monitor open positions and P&L continuously.
-Alert the user via send_message when:
-- Unrealized loss exceeds 5% of allocated capital
-- A position has been open longer than the user's stated time horizon
-- Market volatility spikes significantly
-Use get_price for focused price checks and the watch_* tools to maintain threshold-based monitoring between ticks.`,
-  requiredTools: ['send_message', 'artifact_publish', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
+  instructions: `You have access to risk-monitoring and alerting tools.
+
+- Use \`list_positions\` to inspect current open positions and exposure.
+- Use \`get_analytics\` to inspect realized and unrealized performance context.
+- Use \`get_price\` for focused price checks.
+- Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring.
+- Use \`send_message\` to alert the user.
+- Use \`publish_artifact\` to publish structured monitoring outputs.`,
+  requiredTools: ['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {

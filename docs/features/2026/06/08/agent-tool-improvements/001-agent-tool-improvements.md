@@ -16,7 +16,7 @@ Three problems today:
    All tools must follow verb_noun: `submit_decision`.
 
 2. **No tool result feedback.** `executeTool()` returns `void`. Brokered tools
-   (`create_bot`, `decision_submit`, `send_message`, `artifact_publish`) are pure
+  (`create_bot`, `decision_submit`, `send_message`, `publish_artifact`) are pure
    fire-and-forget — the LLM never learns whether a call succeeded, fails, or what
    data was produced. The only exception is `code_execute`, which already calls
    `addToHistory('user', result)`. This makes the `bot-management` skill broken in
@@ -41,7 +41,7 @@ Change `executeTool()` so every tool feeds a result back to the LLM conversation
 | Category | Tools | Return path |
 |---|---|---|
 | **Direct** | all new read tools + `set_memory` | `addToHistory('user', JSON.stringify(result))` immediately after execution |
-| **Brokered** | `send_message`, `artifact_publish`, `decision_submit`, `create_bot` | Return an acknowledgment string immediately; deep results arrive via `instance.status` on next tick (unchanged from today) |
+| **Brokered** | `send_message`, `publish_artifact`, `decision_submit`, `create_bot` | Return an acknowledgment string immediately; deep results arrive via `instance.status` on next tick (unchanged from today) |
 
 **Signature change:**
 
@@ -60,7 +60,7 @@ where `result` is:
 ```ts
 // Brokered tools — immediate ack
 'send_message': `{"ok":true,"note":"message queued for delivery"}`
-'artifact_publish': `{"ok":true,"artifactId":"<uuid>"}`
+'publish_artifact': `{"ok":true,"artifactId":"<uuid>"}`
 'decision_submit' → 'submit_decision': `{"ok":true,"decisionId":"<uuid>","note":"decision submitted to engine"}`
 'create_bot': `{"ok":true,"note":"bot creation submitted — you will see it in the bot list on the next tick"}`
 

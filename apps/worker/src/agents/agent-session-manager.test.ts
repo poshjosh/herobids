@@ -8,7 +8,7 @@ describe('AgentSessionManager', () => {
       agentId: 'agent-1',
       goal: 'Test agent',
       executionMode: 'paper',
-      resolvedSkills: [{ id: 'base', capabilityFamilies: [], requiredTools: ['send_message', 'artifact_publish', 'set_memory'] }],
+      resolvedSkills: [{ id: 'base', capabilityFamilies: [], requiredTools: ['send_message', 'publish_artifact', 'set_memory'] }],
       grantedBindingsByFamily: {},
       readinessByFamily: {},
       defaultBindingByFamily: {},

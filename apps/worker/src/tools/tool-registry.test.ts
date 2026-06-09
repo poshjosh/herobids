@@ -70,17 +70,17 @@ describe('tool registry extracted tools', () => {
     expect(result.error).toBe('market_data_not_configured');
   });
 
-  it('publishes a protocol-valid default summary for artifact_publish', async () => {
-    const artifactPublishTool = messagingTools.find((tool) => tool.name === 'artifact_publish');
-    expect(artifactPublishTool).toBeDefined();
+  it('publishes a protocol-valid default summary for publish_artifact', async () => {
+    const publishArtifactTool = messagingTools.find((tool) => tool.name === 'publish_artifact');
+    expect(publishArtifactTool).toBeDefined();
 
     const publishToInbound = vi.fn(async () => undefined);
     // Simulate centralized validation: schema applies the `.default('Artifact published')`.
-    const parsedParams = artifactPublishTool!.parametersSchema.parse({
+    const parsedParams = publishArtifactTool!.parametersSchema.parse({
       artifactType: 'chart',
       contentType: 'image/png',
     });
-    const result = await artifactPublishTool!.execute(parsedParams, createToolContext({ publishToInbound }));
+    const result = await publishArtifactTool!.execute(parsedParams, createToolContext({ publishToInbound }));
 
     expect(result.success).toBe(true);
     expect(publishToInbound).toHaveBeenCalledTimes(1);

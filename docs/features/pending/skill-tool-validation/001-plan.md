@@ -273,7 +273,7 @@ Preferred shape:
 ```ts
 export const KNOWN_AGENT_TOOL_NAMES = [
   'send_message',
-  'artifact_publish',
+   'publish_artifact',
   'set_memory',
   // ...
 ] as const;

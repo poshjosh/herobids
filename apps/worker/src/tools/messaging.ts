@@ -27,9 +27,9 @@ const sendMessageTool: AgentTool = {
   },
 };
 
-// --- artifact_publish ---
+// --- publish_artifact ---
 
-const ArtifactPublishParamsSchema = z.object({
+const PublishArtifactParamsSchema = z.object({
   artifactType: z.string().default('text'),
   contentType: z.string().default('text/plain'),
   summary: z.string().min(1).default('Artifact published'),
@@ -37,18 +37,18 @@ const ArtifactPublishParamsSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
-const artifactPublishTool: AgentTool = {
-  name: 'artifact_publish',
+const publishArtifactTool: AgentTool = {
+  name: 'publish_artifact',
   description: 'Publish an artifact (analysis result, chart, report) for user review. Artifacts are stored and referenced by ID.',
-  parametersSchema: ArtifactPublishParamsSchema,
-  parameters: convertZodToJsonSchema(ArtifactPublishParamsSchema),
+  parametersSchema: PublishArtifactParamsSchema,
+  parameters: convertZodToJsonSchema(PublishArtifactParamsSchema),
   category: 'write-messaging',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const p = params as z.infer<typeof ArtifactPublishParamsSchema>;
+    const p = params as z.infer<typeof PublishArtifactParamsSchema>;
     const crypto = await import('node:crypto');
     const artifactId = crypto.randomUUID();
 
-    await ctx.publishToInbound(AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH, {
+    await ctx.publishToInbound(AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT, {
       artifactId,
       artifactType: p.artifactType,
       contentType: p.contentType,
@@ -63,5 +63,5 @@ const artifactPublishTool: AgentTool = {
 
 export const messagingTools: AgentTool[] = [
   sendMessageTool,
-  artifactPublishTool,
+  publishArtifactTool,
 ];

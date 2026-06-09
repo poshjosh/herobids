@@ -237,7 +237,7 @@ INSERT INTO "skills" (
     'Risk Monitoring',
     'Watch open positions and alert the user when risk thresholds are approaching.',
     'Monitor open positions and P&L continuously.',
-    ARRAY['send_message', 'artifact_publish', 'list_positions', 'get_analytics'],
+    ARRAY['send_message', 'publish_artifact', 'list_positions', 'get_analytics'],
     ARRAY['positions', 'fills', 'analytics'],
     ARRAY['token-budget', 'daily-loss'],
     ARRAY['trading'], 300000, 'public', ARRAY[]::text[], now(), now()

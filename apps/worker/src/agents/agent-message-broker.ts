@@ -126,7 +126,7 @@ export class AgentMessageBroker {
     // 3. Enforce capability policy for brokered tool calls
     const capabilityByType: Record<string, string> = {
       [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'submit_decision',
-      [AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH]: 'artifact_publish',
+      [AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT]: 'publish_artifact',
       [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: 'send_message',
       [AGENT_MESSAGE_TYPES.MANAGE_BOT]: 'manage_bot',
       [AGENT_MESSAGE_TYPES.BOT_QUERY]: 'bot_query',
@@ -224,7 +224,7 @@ export class AgentMessageBroker {
           );
           break;
 
-        case AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH:
+        case AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT:
           await this.handleArtifactPublish(
             envelope,
             envelope.payload as unknown as ArtifactPublishPayload,

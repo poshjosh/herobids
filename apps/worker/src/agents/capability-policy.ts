@@ -117,7 +117,7 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 60_000, maxResponseBytes: 1024 * 1024 },
   },
   {
-    capability: 'artifact_publish',
+    capability: 'publish_artifact',
     tier: 'brokered',
     enabled: true,
     limits: { maxPerMinute: 20, maxConcurrent: 3, timeoutMs: 10_000 },

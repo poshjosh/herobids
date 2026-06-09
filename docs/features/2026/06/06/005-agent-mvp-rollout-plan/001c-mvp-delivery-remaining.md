@@ -11,7 +11,7 @@ The MVP backend and communication layer are complete. These are the remaining it
 **File:** `apps/worker/src/agents/capability-policy.ts`
 
 **Problem:**
-`DEFAULT_CAPABILITY_GRANTS` defines canonical policy for `decision_submit`, `web_fetch`, `code_execute`, `artifact_publish`, and the `never`-tier capabilities, but `send_message` is absent. The plan (Step 5 deliverable 1) requires explicit brokered tool semantics for `send_message` as a registered capability.
+`DEFAULT_CAPABILITY_GRANTS` defines canonical policy for `decision_submit`, `web_fetch`, `code_execute`, `publish_artifact`, and the `never`-tier capabilities, but `send_message` is absent. The plan (Step 5 deliverable 1) requires explicit brokered tool semantics for `send_message` as a registered capability.
 
 **What to add:**
 ```ts
