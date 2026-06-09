@@ -1,6 +1,7 @@
-import type { LlmProviderConfig, LlmProviderError, LlmRequest, LlmToolCall, LlmToolDefinition, LlmMessage, LlmResult } from '@herobids/llm';
+import type { LlmProviderConfig, LlmProviderError, LlmRequest, LlmToolCall, LlmToolDefinition, LlmMessage, LlmResponse } from '@herobids/llm';
 import { stripReasoningContent } from '@herobids/llm';
 import { callLlmWithRetry } from './runtime-errors.js';
+import type { RuntimeFailureClassification } from './runtime-errors.js';
 
 export interface StructuredToolLoopOptions {
   providerConfig: LlmProviderConfig;
@@ -12,7 +13,7 @@ export interface StructuredToolLoopOptions {
   executeTool: (call: LlmToolCall) => Promise<string | null>;
   onAssistantTurn?: (info: {
     turnIndex: number;
-    result: LlmResult;
+    result: { ok: true; data: LlmResponse };
     assistantResponse: string;
     toolCalls: LlmToolCall[];
   }) => Promise<void> | void;
@@ -25,7 +26,7 @@ export interface StructuredToolLoopOptions {
     turnIndex: number;
     attempt: number;
     delayMs: number;
-    classification: Parameters<NonNullable<Parameters<typeof callLlmWithRetry>[2]>['onRetry']>[0]['classification'];
+    classification: RuntimeFailureClassification;
   }) => void;
 }
 

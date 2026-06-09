@@ -73,13 +73,13 @@ const listPositionsTool: AgentTool = {
       data: {
         ok: true,
         note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
-        positions: openPositions.map((p) => ({
-          botId: p.actorId,
-          instrumentId: p.symbol,
-          side: p.side,
-          size: p.size,
-          entryPrice: p.entryPrice,
-          openedAt: p.openedAt.toISOString(),
+        positions: openPositions.map((position) => ({
+          botId: position.actorId,
+          instrumentId: position.symbol,
+          side: position.side,
+          size: position.size,
+          entryPrice: position.entryPrice,
+          openedAt: position.openedAt.toISOString(),
         })),
       },
     };

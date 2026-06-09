@@ -39,7 +39,7 @@ export interface ToolBotRecord {
   status: string;
   config: Record<string, unknown>;
   creatorType: string;
-  creatorId: string;
+  creatorId: string | null;
   startedAt: Date | null;
   stoppedAt: Date | null;
   createdAt: Date;
@@ -92,18 +92,32 @@ export interface ToolContext {
   };
   /** Optional market data registry */
   marketDataRegistry?: {
-    dexscreener: { search: (query: string) => Promise<{ data: unknown[]; meta: { freshness: string } }> };
-    binance: { candles: (symbol: string, opts: { interval: string; limit: number }) => Promise<{ data: unknown[] }> };
+    dexscreener: {
+      search: (query: string) => Promise<{
+        data: unknown[];
+        meta: {
+          freshness: {
+            source: string;
+            fetchedAt: string;
+            ageMs: number;
+            ttlMs: number;
+            isStale: boolean;
+            expiresAt: string;
+          };
+        };
+      }>;
+    };
+    binance: { candles: (symbol: string, opts?: { interval?: string; limit?: number }) => Promise<{ data: unknown[] }> };
   };
   /** Market data telemetry hooks */
   recordMarketDataAttempt?: (provider: string) => void;
   recordMarketDataRejection?: (provider: string, opts?: { priority?: 'execution' | 'discovery' }) => void;
   /** Capability policy enforcement */
   capabilityEngine?: {
-    checkAccess: (capability: string, agentId: string, sessionId: string) => string | null;
+    checkAccess: (capability: string, agentId: string, sessionId: string) => string | undefined;
     recordStart: (capability: string, sessionId: string) => void;
-    recordEnd: (capability: string, sessionId: string, telemetry: Record<string, unknown>) => void;
-    getGrant: (capability: string) => { limits?: { timeoutMs?: number; maxResponseBytes?: number } } | null;
+    recordEnd: (capability: string, sessionId: string, telemetry: { capability: string; agentId: string; sessionId: string; timestamp: string; durationMs: number; inputSummary: string; outputSummary: string; success: boolean; errorCode?: string }) => void;
+    getGrant: (capability: string) => { limits?: { maxInvocations?: number; maxPerMinute?: number; maxConcurrent?: number; timeoutMs?: number; maxResponseBytes?: number; maxTotalDownloadBytes?: number } } | undefined;
   };
   /** Session metrics for tool execution */
   sessionMetrics?: {

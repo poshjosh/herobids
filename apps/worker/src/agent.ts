@@ -10,18 +10,13 @@
 
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
-import { writeFile, mkdir, rm, access } from 'node:fs/promises';
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
 import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL, type ToolContext } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
-  type BybitCrowdingSignal,
   createProviderRegistry,
-  type HyperliquidAssetContext,
   type MarketDataConfig,
   type ProviderRegistry,
   type TokenInfo,
@@ -35,58 +30,114 @@ import { buildIncrementalContext } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import {
   applyRuntimeMessage,
-    const judgeLoopResult = await runStructuredToolLoop({
-      providerConfig: {
-        provider: LLM_PROVIDER!,
-        model: costProfile.judgeModel,
-        maxTokens: LLM_MAX_TOKENS,
-        timeoutMs: LLM_TIMEOUT_MS,
-        baseUrl: LLM_BASE_URL,
-      },
-      requestBase: {
-        maxTokens: LLM_MAX_TOKENS,
-        temperature: 0.3,
-        thinking: judgeThinking.thinking,
-      },
-      initialMessages: messages,
-      tools: judgeToolDefinitions,
-      maxTurns: 3,
-      executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
-      onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
-        recordSessionCost(runtimeState, {
-          tokensUsed: result.data.tokensUsed,
-          thinkingTokens: result.data.thinkingTokens,
-          costUsd: estimateLlmCostUsd(costProfile.judgeModel, result.data.tokensUsed),
-        });
-        logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
-        logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
-        if (toolCalls.length === 0) {
-          addToHistory('assistant', assistantResponse);
-        }
-      },
-      onToolResult: ({ toolCall, toolResult }) => {
-        if (toolResult) {
-          addToHistory('user', toolResult, { truncateToToolBudget: true });
-          if (toolResultIndicatesFailure(toolResult)) {
-            recordToolFailure(toolCall.name);
-          } else {
-            recordToolSuccess(toolCall.name);
-          }
-        }
-      },
-      onRetry: ({ attempt, delayMs, classification }) => {
-        logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
-      },
-    });
+  buildSystemPrompt as composeSystemPrompt,
+  buildTickUserContext,
+  createRuntimeCompositionState,
+  getVisibleToolNames,
+  recordPerformanceInputs,
+  recordRegimeEvaluation,
+  recordSessionCost,
+  setCapabilityDegradation,
+  recordVenueSignals,
+  type RuntimeCompositionState,
+} from './runtime-composition.js';
+import { shouldSkipTick, type TradingHoursConfig } from './tick-gates.js';
+import { buildScoutSystemPrompt, parseScoutDecision, resolveDefaultScoutModel } from './scout-dispatch.js';
+import { classifyRuntimeError } from './runtime-errors.js';
+import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
+import { processRuntimeFailure } from './runtime-degradation.js';
+import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
+import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
+import { buildDiscoveryNetworkMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
+import { createToolRegistry } from './tools/index.js';
+import { runStructuredToolLoop } from './structured-tool-loop.js';
 
-    if (!judgeLoopResult.ok) {
-      await handleRuntimeFailure('llm', judgeLoopResult.error);
-      return;
-    }
+const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
 
-    if (judgeLoopResult.terminatedByLimit) {
-      logger.warn({ phase: 'judge' }, 'Judge tool loop reached its turn limit');
+// ---------------------------------------------------------------------------
+// Config from environment
+// ---------------------------------------------------------------------------
+
+const AGENT_ID = process.env['AGENT_ID'];
+const SESSION_ID = process.env['SESSION_ID'];
+const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
+// TOOL_POLICY is forwarded into the container and enforced here for direct-tier tools.
+// Brokered tools are also enforced by the broker, but the container adds a second gate.
+const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
+const MARKET_DATA_CONFIG_RAW = process.env['MARKET_DATA_CONFIG_JSON'];
+const LLM_MODEL = process.env['LLM_MODEL'] ?? 'claude-sonnet-4-5';
+const LLM_PROVIDER = process.env['LLM_PROVIDER'];
+const LLM_BASE_URL = process.env['LLM_BASE_URL'];
+const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
+const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
+const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 10);
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
+const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
+const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
+// 0 = unlimited (the default). Set to a positive number of milliseconds to impose
+// a hard wall-clock cap on any single agent session.
+const SANDBOX_MAX_WALL_CLOCK_MS = parseInt(process.env['SANDBOX_MAX_WALL_CLOCK_MS'] ?? '0', 10);
+
+if (!AGENT_ID || !SESSION_ID) {
+  logger.fatal({ AGENT_ID, SESSION_ID }, 'AGENT_ID and SESSION_ID env vars are required');
+  process.exit(1);
+}
+
+if (!LLM_PROVIDER) {
+  logger.fatal('LLM_PROVIDER env var is required');
+  process.exit(1);
+}
+
+const LLM_API_KEY_RESOLVED =
+  process.env[`LLM_API_KEY_${LLM_PROVIDER.toUpperCase()}`] ||
+  process.env['LLM_API_KEY'];
+// Local providers (e.g. Ollama) don't need an API key when LLM_BASE_URL is set.
+if (!LLM_API_KEY_RESOLVED && !LLM_BASE_URL) {
+  logger.fatal({ provider: LLM_PROVIDER }, 'No API key found for LLM provider — set LLM_API_KEY or LLM_API_KEY_<PROVIDER>');
+  process.exit(1);
+}
+
+interface AgentConfig {
+  prompt?: string;
+  goal?: string;
+  skillIds?: string[];
+  executionMode?: string;
+  scoutModel?: string;
+  costPreset?: CostPreset;
+  dailySpendBudgetUsd?: number;
+  dexWatchlistSymbols?: string[];
+  dailyTokenBudget?: number;
+  dailyLossLimit?: string;
+  maxBots?: number;
+  maxSlippageBps?: number;
+  telegramChatId?: string;
+  runtimeDescriptor?: RuntimeDescriptor;
+}
+
+let agentConfig: AgentConfig;
+
+function parseTradingHours(rawTradingHours: string | undefined): TradingHoursConfig | undefined {
+  if (!rawTradingHours) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(rawTradingHours) as TradingHoursConfig;
+    return parsed;
+  } catch {
+    logger.warn({ rawTradingHours }, 'Failed to parse TRADING_HOURS_JSON — session gate disabled');
+    return undefined;
+  }
+}
+
+function parseToolPolicy(rawPolicy: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(rawPolicy) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
     }
+  } catch {
     logger.warn('Failed to parse TOOL_POLICY — using defaults');
   }
   return {};
@@ -694,21 +745,9 @@ async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
 // Tool execution
 // ---------------------------------------------------------------------------
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function deepMergeConfig(base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
-  const merged: Record<string, unknown> = { ...base };
-  for (const [key, value] of Object.entries(patch)) {
-    const current = merged[key];
-    if (isPlainObject(current) && isPlainObject(value)) {
-      merged[key] = deepMergeConfig(current, value);
-    } else {
-      merged[key] = value;
-    }
-  }
-  return merged;
+interface ToolCall {
+  tool: string;
+  args: Record<string, unknown>;
 }
 
 async function executeTool(call: ToolCall): Promise<string | null> {
@@ -728,6 +767,34 @@ async function executeTool(call: ToolCall): Promise<string | null> {
     return `unknown tool: ${call.tool}`;
   }
 
+  const toolBotRepo = botRepo
+    ? {
+        getBotsByCreator: botRepo.getBotsByCreator.bind(botRepo),
+        getBotById: botRepo.getBotById.bind(botRepo),
+        markBotStopped: botRepo.markBotStopped.bind(botRepo),
+        markBotRunning: botRepo.markBotRunning.bind(botRepo),
+        restoreBotRuntimeState: botRepo.restoreBotRuntimeState.bind(botRepo),
+        updateBotConfig: botRepo.updateBotConfig.bind(botRepo),
+        getAnalyticsByCreator: botRepo.getAnalyticsByCreator.bind(botRepo),
+        getOpenPositionsByCreator: async (creatorType: string, creatorId: string, botId?: string) => {
+          const openPositions = await botRepo.getOpenPositionsByCreator(creatorType, creatorId, botId);
+          return openPositions.map((position) => {
+            if (!position.actorId) {
+              throw new Error(`Invariant violation: open position ${position.id} is missing actorId`);
+            }
+            return {
+              actorId: position.actorId,
+              symbol: position.symbol,
+              side: position.side,
+              size: position.size,
+              entryPrice: position.entryPrice,
+              openedAt: position.openedAt,
+            };
+          });
+        },
+      }
+    : undefined;
+
   // Build tool context from agent runtime state
   const toolContext: ToolContext = {
     agentId: AGENT_ID!,
@@ -738,7 +805,7 @@ async function executeTool(call: ToolCall): Promise<string | null> {
       publish: redis.publish.bind(redis),
     },
     publishToInbound,
-    botRepo: botRepo ?? undefined,
+    botRepo: toolBotRepo,
     marketDataRegistry: marketDataRegistry ?? undefined,
     recordMarketDataAttempt,
     recordMarketDataRejection,
@@ -754,7 +821,7 @@ async function executeTool(call: ToolCall): Promise<string | null> {
       logger.warn({ tool: call.tool, errors: validation.error.flatten() }, 'Tool parameter validation failed');
       return JSON.stringify({
         ok: false,
-        error: `invalid parameters: ${validation.error.issues.map(i => `${i.path.length > 0 ? i.path.join('.') : 'root'}: ${i.message}`).join('; ')}`,
+        error: `invalid parameters: ${validation.error.issues.map(({ path, message }) => `${path.length > 0 ? path.join('.') : 'root'}: ${message}`).join('; ')}`,
         retryable: false,
       });
     }
@@ -1244,8 +1311,58 @@ async function runTick(): Promise<void> {
 
     handleTickSuccess();
     await sendHeartbeat('ready');
+  } catch (err: unknown) {
+    const source =
+      err instanceof Error && /redis|xreadgroup|xadd|connection is closed|econn/i.test(err.message)
+        ? 'redis'
+        : 'tool';
+    await handleRuntimeFailure(source, err);
+  }
+}
+
+async function main(): Promise<void> {
   process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
   process.on('SIGINT', () => { void shutdown('SIGINT'); });
+
+  logger.info(
+    {
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      model: LLM_MODEL,
+      skillIds: runtimeDescriptor.resolvedSkills.map((skill) => skill.id).filter((id) => id !== 'base'),
+    },
+    'Agent runtime starting',
+  );
+  runtimeState.sessionStartMs = Date.now();
+
+  await redis.ping();
+  logger.info('Redis connected');
+
+  await drainStalePendingEntries();
+
+  sandboxEnforcer.registerSession(SESSION_ID!);
+
+  await sendHeartbeat('starting');
+
+  await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+  await sendHeartbeat('ready');
+
+  heartbeatTimer = setInterval(() => {
+    if (sandboxEnforcer.isExpired(SESSION_ID!)) {
+      logger.warn({ sessionId: SESSION_ID }, 'Session wall-clock limit exceeded — shutting down');
+      void shutdown('wall_clock_expired');
+      return;
+    }
+    void sendHeartbeat('ready').catch((err: unknown) => logger.warn({ err }, 'Heartbeat error'));
+  }, HEARTBEAT_INTERVAL_MS);
+
+  tickInFlight = true;
+  try {
+    await runTick();
+  } finally {
+    tickInFlight = false;
+    scheduleNextTick(effectiveTickIntervalMs);
+  }
 }
 
 main().catch((err: unknown) => {

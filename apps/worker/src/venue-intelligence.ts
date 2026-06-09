@@ -49,7 +49,7 @@ function parseTrackedDexTarget(raw: string): TrackedDexTarget | null {
   const networkMatch = trimmed.match(/^([^:]+):(.+)$/);
   if (networkMatch) {
     const network = networkMatch[1]?.trim().toLowerCase() ?? '';
-    const symbol = parseTrackedDexSymbol(networkMatch[2]);
+    const symbol = parseTrackedDexSymbol(networkMatch[2] ?? '');
     if (network && symbol) {
       return { raw: trimmed, network, symbol };
     }
