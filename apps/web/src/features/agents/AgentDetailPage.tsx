@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness } from '../../lib/api-client.js';
+import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
@@ -19,6 +19,7 @@ export function AgentDetailPage() {
       void qc.invalidateQueries({ queryKey: ['agents', id] });
       void qc.invalidateQueries({ queryKey: ['agents'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness', 'trading'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'prompt'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'artifacts'] });
@@ -102,6 +103,23 @@ export function AgentDetailPage() {
   const activityQuery = useQuery({
     queryKey: ['agents', id, 'activity'],
     queryFn: () => agentsApi.activity(id!, 20),
+    enabled: !!id,
+    refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
+  });
+
+  const promptQuery = useQuery({
+    queryKey: ['agents', id, 'prompt'],
+    queryFn: async () => {
+      try {
+        return await agentsApi.prompt(id!);
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'prompt_not_available') {
+          return null;
+        }
+
+        throw error;
+      }
+    },
     enabled: !!id,
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
@@ -249,6 +267,43 @@ export function AgentDetailPage() {
               <KV label="Sessions run" value={String((sessionsQuery.data as unknown[]).length)} />
             )}
           </div>
+        </Card>
+
+        <Card>
+          <SectionLabel>System Prompt</SectionLabel>
+          {promptQuery.isLoading && <LoadingRows count={1} />}
+          {promptQuery.isError && (
+            <ErrorState
+              message={(promptQuery.error as Error).message}
+              onRetry={() => void promptQuery.refetch()}
+            />
+          )}
+          {promptQuery.isSuccess && promptQuery.data === null && (
+            <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+              System prompt is available only while a recent runtime snapshot exists.
+            </p>
+          )}
+          {promptQuery.isSuccess && promptQuery.data !== null && (
+            <pre
+              style={{
+                margin: 0,
+                padding: '12px 14px',
+                background: 'var(--color-surface-2)',
+                borderRadius: '8px',
+                border: '1px solid var(--color-border)',
+                fontSize: '12px',
+                lineHeight: '1.5',
+                color: 'var(--color-text-secondary)',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflow: 'auto',
+                maxHeight: '360px',
+              }}
+            >
+              {promptQuery.data.prompt}
+            </pre>
+          )}
         </Card>
 
         <section aria-label="Capabilities">

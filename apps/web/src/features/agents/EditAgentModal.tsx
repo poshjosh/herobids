@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { agents as agentsApi, skills as skillsApi, type Agent, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, listSelectableSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';

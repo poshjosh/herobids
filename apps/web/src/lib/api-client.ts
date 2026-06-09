@@ -429,6 +429,11 @@ export interface AgentOutboundMessage {
   createdAt: string;
 }
 
+export interface AgentCompiledPrompt {
+  agentId: string;
+  prompt: string;
+}
+
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
@@ -461,6 +466,7 @@ export const agents = {
     request<unknown[]>(`/agents/${id}/activity${limit ? `?limit=${limit}` : ''}`),
   artifacts: (id: string, limit?: number) =>
     request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
+  prompt: (id: string) => request<AgentCompiledPrompt>(`/agents/${id}/prompt`),
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
   decisions: (id: string, limit?: number) =>
     request<unknown[]>(`/agents/${id}/decisions${limit ? `?limit=${limit}` : ''}`),
