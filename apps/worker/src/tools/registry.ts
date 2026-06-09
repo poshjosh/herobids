@@ -6,6 +6,9 @@ export class ToolRegistry {
   private tools = new Map<string, AgentTool>();
 
   register(tool: AgentTool): void {
+    if (this.tools.has(tool.name)) {
+      throw new Error(`Duplicate tool registration: ${tool.name}`);
+    }
     this.tools.set(tool.name, tool);
   }
 

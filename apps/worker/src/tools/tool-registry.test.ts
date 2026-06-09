@@ -1,7 +1,12 @@
+import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
-import type { ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolContext } from '@herobids/domain';
+import { botManagementTools } from './bots.js';
+import { ToolRegistry } from './registry.js';
+import { createToolRegistry } from './index.js';
 import { messagingTools } from './messaging.js';
 import { marketDataTools } from './market-data.js';
+import { tradingTools } from './trading.js';
 
 function createToolContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -18,6 +23,34 @@ function createToolContext(overrides: Partial<ToolContext> = {}): ToolContext {
 }
 
 describe('tool registry extracted tools', () => {
+  it('registers create_bot only through bot-management tools', () => {
+    expect(tradingTools.map((tool) => tool.name)).not.toContain('create_bot');
+
+    const createBotTool = botManagementTools.find((tool) => tool.name === 'create_bot');
+    expect(createBotTool).toBeDefined();
+
+    const registry = createToolRegistry();
+    expect(registry.get('create_bot')).toBe(createBotTool);
+  });
+
+  it('rejects duplicate tool registrations', () => {
+    const registry = new ToolRegistry();
+    const duplicateTool: AgentTool = {
+      name: 'duplicate_tool',
+      description: 'Test duplicate registration behavior.',
+      parametersSchema: z.object({}),
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      category: 'write-messaging',
+      async execute() {
+        return { success: true };
+      },
+    };
+
+    registry.register(duplicateTool);
+
+    expect(() => registry.register(duplicateTool)).toThrow('Duplicate tool registration');
+  });
+
   it('accepts RegimeParams-shaped input for check_regime', async () => {
     const checkRegimeTool = marketDataTools.find((tool) => tool.name === 'check_regime');
     expect(checkRegimeTool).toBeDefined();

@@ -6,6 +6,37 @@ import pino from 'pino';
 
 const logger = pino({ name: 'tools:bots' });
 
+// --- create_bot ---
+
+const CreateBotParamsSchema = z.object({
+  venueAccountId: z.string().min(1).optional(),
+  config: z.record(z.unknown()).optional(),
+  rationale: z.string().max(500).optional(),
+});
+
+const createBotTool: AgentTool = {
+  name: 'create_bot',
+  description: 'Create and start a new trading bot. The bot will run independently with its own strategy and risk parameters. Use when you want to delegate a trading opportunity to an automated bot.',
+  parametersSchema: CreateBotParamsSchema,
+  parameters: convertZodToJsonSchema(CreateBotParamsSchema),
+  category: 'execute-trade',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const { venueAccountId, config, rationale } = params as z.infer<typeof CreateBotParamsSchema>;
+
+    await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
+      action: 'create_and_start',
+      venueAccountId,
+      config,
+      rationale,
+    });
+
+    return {
+      success: true,
+      data: { ok: true, note: 'bot creation submitted — you will see it in the bot list on the next tick' },
+    };
+  },
+};
+
 // --- list_bots ---
 
 const ListBotsParamsSchema = z.object({
@@ -237,6 +268,7 @@ const adjustBotConfigTool: AgentTool = {
 };
 
 export const botManagementTools: AgentTool[] = [
+  createBotTool,
   listBotsTool,
   getBotStatusTool,
   stopBotTool,
