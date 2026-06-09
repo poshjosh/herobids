@@ -264,10 +264,10 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
           ? and(
               inArray(journalEvents.actorId, botIds as [string, ...string[]]),
               or(
-                sql`${journalEvents.createdAt} < ${new Date(before)}`,
+                sql`${journalEvents.createdAt} < ${before}::timestamptz`,
                 beforeId
                   ? and(
-                      sql`${journalEvents.createdAt} = ${new Date(before)}`,
+                      sql`${journalEvents.createdAt} = ${before}::timestamptz`,
                       sql`${journalEvents.id} < ${beforeId}`,
                     )
                   : sql`false`,

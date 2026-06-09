@@ -206,10 +206,10 @@ agentRuntime:
     maxContextBlockChars: 4000
   sandboxDefaults:
     cpuShares: 256             # Docker CpuShares (relative weight vs other containers)
-    memoryMb: 512              # Docker Memory limit in MB (cgroup hard limit)
+    memoryMb: 1024             # Docker Memory limit in MB (cgroup hard limit)
     maxWallClockMs: 300000     # in-process wall-clock limit per session (5 min); 0 = unlimited
     tempStorageMb: 100         # Docker tmpfs/storage limit in MB
-    maxProcesses: 10           # ulimit nproc: max concurrent processes inside container
+    maxProcesses: 50           # ulimit nproc: max concurrent processes inside container
     maxRequestsPerMinute: 60   # in-process outbound request rate limit
     maxConcurrentConnections: 10  # in-process concurrent connection limit
     maxResponseBytes: 10485760    # max single response size (10 MB)

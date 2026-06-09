@@ -130,9 +130,9 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-12 | Start delay | Click "Start" on stopped agent | `starting` phase lasts ≤2 s (worker reconcile interval) before transitioning | ✅ | healthCheckIntervalMs: 2000 in config/default.yaml; container death detected immediately when Docker event stream live |
 | AG-13 | Sessions run count | Open agent detail | "Sessions run" KV shows correct count | ✅ | Shows correct count (increments after each Start) |
 | AG-14 | Capability section | Open detail for agent with capabilities | Capability cards show readiness, binding readiness, agent eligibility, reasons, and an "Open" action | ✅ | Shows Unconfigured, Binding readiness, eligibility, reasons |
-| AG-15 | Messages to User section | Open detail for agent with messages | Messages listed with subject, body, delivery status, timestamp; safety alerts styled distinctly | — | |
-| AG-16 | Protocol Activity section | Open detail for agent with activity | Activity entries listed with type and timestamp | — | |
-| AG-17 | Artifacts section | Open detail for agent with artifacts | Artifacts listed with type, content type, optional summary, timestamp | — | |
+| AG-15 | Messages to User section | Open detail for agent with messages | Messages listed with subject, body, delivery status, timestamp; safety alerts styled distinctly | ✅ | Messages shown with author icon, subject bold, body text, delivery status badge (delivered/pending), relative timestamp |
+| AG-16 | Protocol Activity section | Open detail for agent with activity | Activity entries listed with type and timestamp | ✅ | Shows agent.runtime.heartbeat entries with relative timestamps ("2s ago", "1m ago" etc) |
+| AG-17 | Artifacts section | Open detail for agent with artifacts | Artifacts listed with type, content type, optional summary, timestamp | ✅ | Shows artifact_type · content_type, summary text, relative timestamp |
 | AG-18 | Real-time refresh | Leave agent detail open while agent is starting | Status badge updates via 5 s polling without manual refresh | ✅ | Status badge updated from starting → crashed without manual refresh during testing |
 
 ---
@@ -168,9 +168,9 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
 | AF-01 | Activity feed renders | Navigate to `/activity` | Page loads with event list or empty state | ✅ | Heading "Activity"; subtitle shown |
-| AF-02 | Pagination / infinite scroll | Scroll to bottom of activity list | Next page of events loads (or "Load more") | — | |
+| AF-02 | Pagination / infinite scroll | Scroll to bottom of activity list | Next page of events loads (or "Load more") | ✅ | "Load older events" button appears; clicking it loads next page (fixed bug 017: Date object passed to SQL query caused 500) |
 | AF-03 | Empty state | Fresh account with no activity | Empty state shown | ✅ | "No activity yet" with explanatory copy shown; no crash |
-| AF-04 | Timestamps | Inspect event timestamps | Dates formatted readably; no epoch numbers | — | |
+| AF-04 | Timestamps | Inspect event timestamps | Dates formatted readably; no epoch numbers | ✅ | All timestamps show relative format ("2m ago", "1h ago"); no raw epoch or ISO strings visible |
 
 ---
 
