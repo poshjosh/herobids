@@ -3,6 +3,13 @@ import type { z } from 'zod';
 /**
  * Tool category system — uses composite categories for fine-grained capability control.
  *
+ * Tool names use lower snake case.
+ * Prefer action-first names.
+ * Prefer `verb_noun` or `verb_noun_qualifier` when possible.
+ * Avoid noun-first and hyphenated names.
+ * Bad: `code_execute`, `get-overview-from-market`
+ * Good: `execute_code`, `get_market_overview`
+ *
  * Format: `<operation>-<target>`
  * - Operation: read | write | execute
  * - Target: filesystem | database | trade | messaging | memory | market-data
@@ -12,7 +19,7 @@ import type { z } from 'zod';
  * - "write-messaging" — send_message
  * - "execute-trade" — submit_decision, create_bot
  * - "read-market-data" — search_tokens, check_regime
- * - "execute-filesystem" — code_execute (writes then executes)
+ * - "execute-filesystem" — execute_code (writes then executes)
  */
 export type ToolCategory =
   | 'read-database'

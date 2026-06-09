@@ -43,6 +43,12 @@ See `docs/best-practices/configuration.md` for full details.
 - TypeScript with `strict: true`. Target ES2022, ESM only.
 - `noUncheckedIndexedAccess`, `noUnusedLocals`, `noUnusedParameters` enabled.
 - Use meaningful, descriptive names. Variables are nouns, functions are verbs.
+- Tool names use lower snake case.
+- Prefer action-first tool names.
+- Prefer `verb_noun` or `verb_noun_qualifier` when possible.
+- Avoid noun-first and hyphenated tool names.
+- Bad: `code_execute`, `get-overview-from-market`.
+- Good: `execute_code`, `get_market_overview`.
 - Keep functions short and single-purpose (SRP).
 - Avoid over-engineering — write the simplest code that meets requirements (KISS).
 - DRY: abstract only when duplication is proven, not preemptive.
