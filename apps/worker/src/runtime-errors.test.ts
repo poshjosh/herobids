@@ -117,4 +117,87 @@ describe('callLlmWithRetry', () => {
     expect(result.attempts).toBe(2);
     expect(sleep).toHaveBeenCalledWith(10_000);
   });
+
+  describe('custom retry config parameters', () => {
+    it('uses custom timeoutBackoffMs for timeout retries', async () => {
+      const call = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'provider.timeout', message: 'timed out', retryable: true } })
+        .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 5, latencyMs: 5, cached: false } });
+      const sleep = vi.fn().mockResolvedValue(undefined);
+
+      const result = await callLlmWithRetry(
+        { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+        { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+        { call, sleep, timeoutBackoffMs: [3_000, 9_000] },
+      );
+
+      expect(result.result.ok).toBe(true);
+      expect(sleep).toHaveBeenCalledWith(3_000);
+    });
+
+    it('uses custom serverErrorBackoffMs for 5xx retries', async () => {
+      const call = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'provider.http_500', message: 'internal error', retryable: true } })
+        .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 5, latencyMs: 5, cached: false } });
+      const sleep = vi.fn().mockResolvedValue(undefined);
+
+      const result = await callLlmWithRetry(
+        { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+        { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+        { call, sleep, serverErrorBackoffMs: 7_000 },
+      );
+
+      expect(result.result.ok).toBe(true);
+      expect(sleep).toHaveBeenCalledWith(7_000);
+    });
+
+    it('uses custom defaultRateLimitBackoffMs when no retry-after header present', async () => {
+      const call = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'provider.http_429', message: 'rate limited', retryable: true } })
+        .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 5, latencyMs: 5, cached: false } });
+      const sleep = vi.fn().mockResolvedValue(undefined);
+
+      const result = await callLlmWithRetry(
+        { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+        { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+        { call, sleep, defaultRateLimitBackoffMs: 30_000 },
+      );
+
+      expect(result.result.ok).toBe(true);
+      expect(sleep).toHaveBeenCalledWith(30_000);
+    });
+
+    it('retry-after header still takes precedence over defaultRateLimitBackoffMs', async () => {
+      const call = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'provider.http_429', message: 'rate limited', retryable: true, retryAfterMs: 8_000 } })
+        .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 5, latencyMs: 5, cached: false } });
+      const sleep = vi.fn().mockResolvedValue(undefined);
+
+      await callLlmWithRetry(
+        { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+        { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+        { call, sleep, defaultRateLimitBackoffMs: 30_000 },
+      );
+
+      expect(sleep).toHaveBeenCalledWith(8_000);
+    });
+
+    it('progresses through multiple timeout delays from the custom array', async () => {
+      const call = vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'provider.timeout', message: 'timed out', retryable: true } })
+        .mockResolvedValueOnce({ ok: false, error: { code: 'provider.timeout', message: 'timed out again', retryable: true } })
+        .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 5, latencyMs: 5, cached: false } });
+      const sleep = vi.fn().mockResolvedValue(undefined);
+
+      const result = await callLlmWithRetry(
+        { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+        { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+        { call, sleep, maxRetries: 3, timeoutBackoffMs: [2_000, 8_000] },
+      );
+
+      expect(result.result.ok).toBe(true);
+      expect(sleep.mock.calls[0]).toEqual([2_000]);
+      expect(sleep.mock.calls[1]).toEqual([8_000]); // clamps to last element
+    });
+  });
 });

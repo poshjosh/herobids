@@ -28,4 +28,21 @@ describe('resolveAgentCostProfile', () => {
     expect(profile.tickIntervalMs).toBeGreaterThanOrEqual(300_000);
     expect(profile.judgeModel).toBe(profile.scoutModel);
   });
+
+  it('uses configured scout default models for preset resolution', () => {
+    const profile = resolveAgentCostProfile({
+      provider: 'openai',
+      judgeModel: 'gpt-4.1',
+      scoutDefaultModels: {
+        anthropic: 'claude-3-5-haiku-latest',
+        openai: 'gpt-4o-mini',
+        openrouter: 'openai/gpt-4.1-mini',
+      },
+      costPreset: 'minimal',
+      baseTickIntervalMs: 900_000,
+    });
+
+    expect(profile.scoutModel).toBe('gpt-4o-mini');
+    expect(profile.judgeModel).toBe('gpt-4o-mini');
+  });
 });

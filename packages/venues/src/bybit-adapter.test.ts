@@ -14,6 +14,11 @@ const ccxtState = vi.hoisted(() => ({
   setSandboxMode: vi.fn(),
 }));
 
+const privateStreamState = vi.hoisted(() => ({
+  config: null as unknown,
+  connect: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+}));
+
 vi.mock('ccxt', () => {
   class RateLimitExceeded extends Error {}
   class AuthenticationError extends Error {}
@@ -62,6 +67,20 @@ vi.mock('ccxt', () => {
   };
 });
 
+vi.mock('./bybit-private-stream.js', () => {
+  class MockBybitPrivateStream {
+    constructor(config: unknown) {
+      privateStreamState.config = config;
+    }
+
+    connect = privateStreamState.connect;
+  }
+
+  return {
+    BybitPrivateStream: MockBybitPrivateStream,
+  };
+});
+
 import { BybitAdapter } from './bybit.js';
 import ccxt from 'ccxt';
 
@@ -78,6 +97,8 @@ describe('BybitAdapter account-mode routing', () => {
     ccxtState.editOrder.mockReset();
     ccxtState.close.mockReset();
     ccxtState.setSandboxMode.mockReset();
+    privateStreamState.config = null;
+    privateStreamState.connect.mockClear();
   });
 
   it('routes standard-account balances to the derivatives wallet', async () => {
@@ -187,5 +208,78 @@ describe('BybitAdapter account-mode routing', () => {
     const result2 = await adapter.fetchBalances();
     expect(result2.ok).toBe(true);
     expect(ccxtState.fetchBalance).toHaveBeenLastCalledWith({ type: 'swap', subType: 'linear' });
+  });
+
+  it('wsUrl overrides wsPrivateUrl for live private streams', async () => {
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret', testnet: false },
+      wsUrl: 'wss://global-override.example/private',
+      wsPrivateUrl: 'wss://live.example/private',
+    });
+
+    const result = await adapter.subscribePrivate({} as never);
+
+    expect(result.ok).toBe(true);
+    expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://global-override.example/private' });
+  });
+
+  it('uses wsPrivateUrl when wsUrl is not set for live private streams', async () => {
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret', testnet: false },
+      wsPrivateUrl: 'wss://live.example/private',
+    });
+
+    const result = await adapter.subscribePrivate({} as never);
+
+    expect(result.ok).toBe(true);
+    expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://live.example/private' });
+  });
+
+  it('prefers wsTestnetPrivateUrl over built-in default for testnet private streams', async () => {
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret', testnet: true },
+      wsTestnetPrivateUrl: 'wss://testnet.example/private',
+    });
+
+    const result = await adapter.subscribePrivate({} as never);
+
+    expect(result.ok).toBe(true);
+    expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://testnet.example/private' });
+  });
+
+  it('wsUrl overrides wsTestnetPrivateUrl for testnet private streams', async () => {
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret', testnet: true },
+      wsUrl: 'wss://global-override.example/private',
+      wsTestnetPrivateUrl: 'wss://testnet.example/private',
+    });
+
+    const result = await adapter.subscribePrivate({} as never);
+
+    expect(result.ok).toBe(true);
+    expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://global-override.example/private' });
+  });
+
+  it('wsUrl is used for testnet private streams when no testnet URL is configured', async () => {
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret', testnet: true },
+      wsUrl: 'wss://global-override.example/private',
+    });
+
+    const result = await adapter.subscribePrivate({} as never);
+
+    expect(result.ok).toBe(true);
+    expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://global-override.example/private' });
+  });
+
+  it('falls back to the built-in mainnet private stream when no URL is configured', async () => {
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret', testnet: false },
+    });
+
+    const result = await adapter.subscribePrivate({} as never);
+
+    expect(result.ok).toBe(true);
+    expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://stream.bybit.com/v5/private' });
   });
 });

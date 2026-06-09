@@ -3,7 +3,8 @@ import type { Result } from '@herobids/domain';
 import { ok, err, price } from '@herobids/domain';
 
 export interface OracleMarkSourceConfig {
-  baseUrl: string;
+  /** Base URL for the pricing oracle. Default: 'https://api.coingecko.com/api/v3' */
+  baseUrl?: string;
   timeoutMs?: number;
   /** Mapping from instrument identifier to CoinGecko coin ID */
   instrumentToCoinId: Record<string, string>;
@@ -23,7 +24,7 @@ export class OracleMarkSource implements MarkSource {
   private readonly vsCurrency: string;
 
   constructor(config: OracleMarkSourceConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, '');
+    this.baseUrl = (config.baseUrl ?? 'https://api.coingecko.com/api/v3').replace(/\/$/, '');
     this.timeoutMs = config.timeoutMs ?? 10_000;
     this.instrumentToCoinId = config.instrumentToCoinId;
     this.vsCurrency = config.vsCurrency ?? 'usd';

@@ -99,7 +99,7 @@ await agentRoutes(app, db, appConfig.plans);
 // These are retained as optional advanced paths. Step 21.3 will migrate
 // venue_accounts to trading bindings and further reframe bots as internals.
 await botRoutes(app, lifecycleQueue, db, appConfig.plans);
-await venueAccountRoutes(app, db, appConfig.plans);
+await venueAccountRoutes(app, db, appConfig.plans, appConfig.venues);
 await credentialRoutes(app, lifecycleQueue, db, appConfig.plans);
 await journalRoutes(app, db);
 await positionRoutes(app, db);

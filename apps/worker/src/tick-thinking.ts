@@ -7,6 +7,8 @@ export interface TickThinkingInput {
   incomingMessagesCount: number;
   userMessageReceived?: boolean;
   drawdownPct?: number | null;
+  /** Drawdown percentage that triggers deep thinking. Must be <= 0. */
+  drawdownThresholdPct: number;
 }
 
 export interface TickThinkingDecision {
@@ -25,7 +27,7 @@ export function classifyTickThinking(input: TickThinkingInput): TickThinkingDeci
     return { thinking: 'deep', reason: 'regime_flip' };
   }
 
-  if ((input.drawdownPct ?? 0) <= -2) {
+  if ((input.drawdownPct ?? 0) <= input.drawdownThresholdPct) {
     return { thinking: 'deep', reason: 'drawdown_threshold' };
   }
 

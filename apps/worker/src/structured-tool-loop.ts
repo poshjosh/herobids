@@ -10,6 +10,12 @@ export interface StructuredToolLoopOptions {
   tools: LlmToolDefinition[];
   maxTurns: number;
   toolChoice?: 'auto' | 'none' | 'required';
+  retryPolicy?: {
+    maxRetries?: number;
+    timeoutBackoffMs?: number[];
+    serverErrorBackoffMs?: number;
+    defaultRateLimitBackoffMs?: number;
+  };
   executeTool: (call: LlmToolCall) => Promise<string | null>;
   onAssistantTurn?: (info: {
     turnIndex: number;
@@ -60,6 +66,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         toolChoice,
       },
       {
+        ...options.retryPolicy,
         onRetry: options.onRetry
           ? ({ attempt, delayMs, classification }) => options.onRetry?.({ turnIndex, attempt, delayMs, classification })
           : undefined,

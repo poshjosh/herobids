@@ -11,9 +11,9 @@
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL, type ToolContext } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL, type ToolContext, initDefaultRuntimeBudgets, DEFAULT_RUNTIME_BUDGETS } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
-import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
+import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
   createProviderRegistry,
@@ -66,6 +66,7 @@ const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
 // Brokered tools are also enforced by the broker, but the container adds a second gate.
 const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
 const MARKET_DATA_CONFIG_RAW = process.env['MARKET_DATA_CONFIG_JSON'];
+const AGENT_RUNTIME_CONFIG_RAW = process.env['AGENT_RUNTIME_CONFIG_JSON'];
 const LLM_MODEL = process.env['LLM_MODEL'] ?? 'claude-sonnet-4-5';
 const LLM_PROVIDER = process.env['LLM_PROVIDER'];
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
@@ -75,9 +76,6 @@ const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 1
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
 const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
-// 0 = unlimited (the default). Set to a positive number of milliseconds to impose
-// a hard wall-clock cap on any single agent session.
-const SANDBOX_MAX_WALL_CLOCK_MS = parseInt(process.env['SANDBOX_MAX_WALL_CLOCK_MS'] ?? '0', 10);
 
 if (!AGENT_ID || !SESSION_ID) {
   logger.fatal({ AGENT_ID, SESSION_ID }, 'AGENT_ID and SESSION_ID env vars are required');
@@ -143,10 +141,35 @@ function parseToolPolicy(rawPolicy: string): Record<string, unknown> {
   return {};
 }
 
-// SandboxEnforcer enforces the session wall-clock limit in-process. All other
-// sandbox limits (network, download) require hooking the network layer inside
-// the container process and are enforced by the container runtime (cgroups/ulimits).
-const sandboxEnforcer = new SandboxEnforcer({ maxWallClockMs: SANDBOX_MAX_WALL_CLOCK_MS });
+// Parse operator agentRuntime config forwarded from worker.
+// Missing config falls back to schema defaults; malformed config is fatal.
+function parseAgentRuntimePolicy(raw: string | undefined): AgentRuntimePolicy {
+  if (!raw) {
+    return AgentRuntimePolicySchema.parse({});
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    logger.fatal({ raw }, 'Failed to parse AGENT_RUNTIME_CONFIG_JSON');
+    process.exit(1);
+  }
+
+  try {
+    return AgentRuntimePolicySchema.parse(parsed);
+  } catch (error) {
+    logger.fatal({ err: error }, 'Invalid AGENT_RUNTIME_CONFIG_JSON');
+    process.exit(1);
+  }
+}
+
+const agentRuntimePolicy = parseAgentRuntimePolicy(AGENT_RUNTIME_CONFIG_RAW);
+initDefaultRuntimeBudgets(agentRuntimePolicy.defaultBudgets);
+
+// SandboxEnforcer enforces the session wall-clock limit and network limits in-process.
+// Container-level limits (memory, cpu, storage) are enforced by Docker cgroups/ulimits.
+const sandboxEnforcer = new SandboxEnforcer(agentRuntimePolicy.sandboxDefaults);
 
 try {
   agentConfig = JSON.parse(AGENT_CONFIG_RAW) as AgentConfig;
@@ -163,6 +186,7 @@ const costProfile = resolveAgentCostProfile({
   provider: LLM_PROVIDER!,
   judgeModel: LLM_MODEL,
   scoutModel: agentConfig.scoutModel,
+  scoutDefaultModels: agentRuntimePolicy.llm.scout.defaultModels,
   costPreset: agentConfig.costPreset,
   dailyBudgetUsd: agentConfig.dailySpendBudgetUsd,
   baseTickIntervalMs: TICK_INTERVAL_MS,
@@ -221,13 +245,7 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
       maxBots: agentConfig.maxBots ?? null,
       maxSlippageBps: agentConfig.maxSlippageBps ?? null,
     },
-    budgets: {
-      maxHistoryMessages: 20,
-      maxRecentToolMessages: 6,
-      maxToolResultChars: 4_000,
-      maxVisibleToolSchemas: 16,
-      maxContextBlockChars: 4_000,
-    },
+    budgets: { ...DEFAULT_RUNTIME_BUDGETS },
   };
 }
 
@@ -239,8 +257,16 @@ runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour = Number.isFinit
 const sessionMetrics = runtimeState.metrics;
 let capabilityEngine = buildCapabilityPolicyEngine(runtimeState.runtimeDescriptor.toolPolicy);
 const permanentlyExcludedTools = new Set<string>();
-const toolCircuitBreaker = new ToolCircuitBreaker();
-const failureBackoff = new FailureBackoffController({ baseIntervalMs: costProfile.tickIntervalMs });
+const toolCircuitBreaker = new ToolCircuitBreaker({
+  failureThreshold: agentRuntimePolicy.toolCircuitBreaker?.failureThreshold,
+  reopenAfterTicks: agentRuntimePolicy.toolCircuitBreaker?.reopenAfterTicks,
+});
+const failureBackoff = new FailureBackoffController({
+  baseIntervalMs: costProfile.tickIntervalMs,
+  backoffThreshold: agentRuntimePolicy.failureBackoff?.backoffThreshold,
+  maxFailures: agentRuntimePolicy.failureBackoff?.maxFailures,
+  maxIntervalMs: agentRuntimePolicy.failureBackoff?.maxIntervalMs,
+});
 const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.runtimeDescriptor, permanentlyExcludedTools);
 const marketDataRuntimeTelemetry = {
   providerAttempts: new Map<string, number>(),
@@ -1121,6 +1147,9 @@ async function runTick(): Promise<void> {
       previousContext: previousFullUserContext,
       currentContext: fullUserContext,
       tickNumber: tickCount,
+      fullContextEveryTicks: agentRuntimePolicy.contextDiff!.fullContextEveryTicks,
+      maxDiffTokens: agentRuntimePolicy.contextDiff!.maxDiffTokens,
+      maxChangedLines: agentRuntimePolicy.contextDiff!.maxChangedLines,
     });
     previousFullUserContext = fullUserContext;
     logger.info({ mode: incrementalContext.mode, estimatedTokens: incrementalContext.estimatedTokens }, 'Prepared tick context payload');
@@ -1157,7 +1186,7 @@ async function runTick(): Promise<void> {
     const scoutLoopResult = await runStructuredToolLoop({
       providerConfig: {
         provider: LLM_PROVIDER!,
-        model: agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL),
+        model: agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL, agentRuntimePolicy.llm.scout.defaultModels),
         maxTokens: 256,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: LLM_BASE_URL,
@@ -1173,8 +1202,10 @@ async function runTick(): Promise<void> {
       ],
       tools: readOnlyScoutDefinitions,
       maxTurns: 3,
+      retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => {
         const allowedReadOnlyTool = readOnlyScoutTools.includes(toolCall.name);
+
         if (!allowedReadOnlyTool) {
           logger.warn({ tool: toolCall.name, phase: 'scout' }, 'Scout attempted write or unavailable tool — rejecting');
           return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false });
@@ -1191,7 +1222,7 @@ async function runTick(): Promise<void> {
         recordSessionCost(runtimeState, {
           tokensUsed: result.data.tokensUsed,
           thinkingTokens: result.data.thinkingTokens,
-          costUsd: estimateLlmCostUsd(agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL), result.data.tokensUsed),
+          costUsd: estimateLlmCostUsd(agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL, agentRuntimePolicy.llm.scout.defaultModels), result.data.tokensUsed),
         });
       },
       onRetry: ({ attempt, delayMs, classification }) => {
@@ -1247,6 +1278,7 @@ async function runTick(): Promise<void> {
       incomingMessagesCount: incomingMessages.length,
       userMessageReceived: incomingMessages.some((message) => message['type'] === 'agent.user.message' || message['type'] === 'user.message'),
       drawdownPct: sessionMetrics.performance.drawdownPct ?? extractDrawdownPct(sessionMetrics.lastPnlSummary),
+      drawdownThresholdPct: agentRuntimePolicy.thinking.drawdownThresholdPct,
     });
     const judgeThinking = costProfile.defaultThinking === 'deep'
       ? { thinking: 'deep' as const, reason: 'cost_profile_premium' }
@@ -1261,6 +1293,7 @@ async function runTick(): Promise<void> {
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: LLM_BASE_URL,
+        thinking: agentRuntimePolicy.llm.thinking,
       },
       requestBase: {
         maxTokens: LLM_MAX_TOKENS,
@@ -1270,6 +1303,7 @@ async function runTick(): Promise<void> {
       initialMessages: messages,
       tools: judgeToolDefinitions,
       maxTurns: 3,
+      retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
       onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
         recordSessionCost(runtimeState, {

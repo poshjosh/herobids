@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { venueAccounts, userCredentials } from '@herobids/db';
-import type { PlansConfig } from '@herobids/domain';
+import type { AppConfig, PlansConfig } from '@herobids/domain';
 import { HyperliquidAdapter } from '@herobids/venues';
 import { JupiterSwapAdapter, OneInchSwapAdapter } from '@herobids/venues';
 import { CreateVenueAccountSchema } from '../schemas.js';
@@ -34,7 +34,12 @@ function isValidSolanaAddress(address: string): boolean {
   return leadingZeros + bytes.length === 32;
 }
 
-export async function venueAccountRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
+export async function venueAccountRoutes(
+  app: FastifyInstance,
+  db: Database,
+  plansConfig?: PlansConfig,
+  venueConfigs?: AppConfig['venues'],
+): Promise<void> {
   // Create venue account
   app.post('/venue-accounts', async (request, reply) => {
     const parsed = CreateVenueAccountSchema.safeParse(request.body);
@@ -110,10 +115,10 @@ export async function venueAccountRoutes(app: FastifyInstance, db: Database, pla
     let venueProfile = null;
     try {
       if (parsed.data.venue === 'hyperliquid') {
-        venueProfile = await HyperliquidAdapter.probe();
-        if (parsed.data.credentialId) {
-          venueProfile = { ...venueProfile, authenticated: true, supportedExecutionModes: ['paper', 'shadow', 'live'] as Array<'paper' | 'shadow' | 'live'> };
-        }
+        // Unauthenticated probe always targets mainnet (testnet requires explicit credentials)
+        venueProfile = await HyperliquidAdapter.probe(undefined, {
+          baseUrl: venueConfigs?.['hyperliquid']?.baseUrl,
+        });
       } else if (parsed.data.venue === 'jupiter') {
         venueProfile = await JupiterSwapAdapter.probe(parsed.data.venueAccountRef);
       } else if (parsed.data.venue === '1inch') {

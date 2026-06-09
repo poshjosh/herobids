@@ -21,6 +21,7 @@ import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
+import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
 import { TelegramClient, PlatformAlertService } from './alerting/index.js';
 import {
@@ -121,6 +122,18 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
         llmTickIntervalMs: appConfig.llm.tickIntervalMs,
         llmHeartbeatIntervalMs: appConfig.llm.heartbeatIntervalMs,
         llmServerCostUsdPerHour: appConfig.llm.serverCostUsdPerHour,
+        memoryLimitMb: appConfig.agentRuntime.sandboxDefaults.memoryMb,
+        cpuShares: appConfig.agentRuntime.sandboxDefaults.cpuShares,
+        tempStorageMb: appConfig.agentRuntime.sandboxDefaults.tempStorageMb,
+        maxProcesses: appConfig.agentRuntime.sandboxDefaults.maxProcesses,
+        agentRuntimeConfigJson: JSON.stringify({
+          ...appConfig.agentRuntime,
+          llm: {
+            retry: appConfig.llm.retry,
+            scout: appConfig.llm.scout,
+            thinking: appConfig.llm.thinking,
+          },
+        }),
         ...(appConfig.llm.tradingHours
           ? {
               llmTradingHoursJson: JSON.stringify(appConfig.llm.tradingHours),
@@ -218,7 +231,7 @@ let agentStreamSubscribeFn: ((agentId: string) => Promise<void>) | undefined;
 const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentRuntimeLauncher, {
   // bug-008: reduced from default 10 000 ms to 2 000 ms so agents start within
   // ~2 s instead of up to 10 s after the API sets the session to 'starting'.
-  healthCheckIntervalMs: 2000,
+  healthCheckIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
   onAgentStatusChange: (agentId, userId, status) => {
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {
@@ -298,20 +311,9 @@ const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
 // Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
 // Initialised when at least one orderbook venue has a wsUrl configured.
 const publicStreamConfig = appConfig.streams.public;
-const hyperliquidVenueConfig = appConfig.venues['hyperliquid'];
 const bybitVenueConfig = appConfig.venues['bybit'];
 
-const streamConnectors = new Map<string, () => import('@herobids/venues').VenueStreamConnector>();
-if (hyperliquidVenueConfig?.wsUrl) {
-  streamConnectors.set('hyperliquid', () => new HyperliquidPublicStream({
-    wsUrl: hyperliquidVenueConfig.wsUrl!,
-  }));
-}
-if (bybitVenueConfig?.wsPublicUrl || bybitVenueConfig?.wsUrl) {
-  streamConnectors.set('bybit', () => new BybitPublicStream({
-    wsUrl: bybitVenueConfig.wsPublicUrl ?? 'wss://stream.bybit.com/v5/public/linear',
-  }));
-}
+const streamConnectors = buildPublicStreamConnectors(appConfig.venues);
 
 const publicStreamPool = streamConnectors.size > 0
   ? new PublicStreamPool(publicStreamConfig, streamConnectors)
@@ -319,15 +321,17 @@ const publicStreamPool = streamConnectors.size > 0
 
 // Worker-scoped oracle mark source (stateless, safe to share)
 const oracleMarkSource = new OracleMarkSource({
-  baseUrl: appConfig.marking.oracleBaseUrl ?? 'https://api.coingecko.com/api/v3',
+  baseUrl: appConfig.marking.oracleBaseUrl,
+  timeoutMs: appConfig.marking.oracleTimeoutMs,
+  vsCurrency: appConfig.marking.oracleVsCurrency,
   instrumentToCoinId: appConfig.marking.instrumentToCoinId ?? {},
 });
 
 const runtime = new WorkerRuntime(
   {
     redis: redisConnection,
-    scanIntervalMs: 5000,
-    concurrency: 10,
+    scanIntervalMs: appConfig.worker.scanIntervalMs,
+    concurrency: appConfig.worker.concurrency,
     onStartFailed: async (botId, error) => {
       logger.error(
         {
@@ -490,10 +494,15 @@ const runtime = new WorkerRuntime(
         ? new BybitAdapter({
             credentials: { apiKey, secret, testnet },
             wsUrl: bybitVenueConfig?.wsUrl,
+            wsPrivateUrl: bybitVenueConfig?.wsPrivateUrl,
+            wsTestnetPrivateUrl: bybitVenueConfig?.wsTestnetPrivateUrl,
             streamConfig,
           })
         : new HyperliquidAdapter({
             credentials: { apiKey, secret, walletAddress, testnet },
+            wsUrl: appConfig.venues['hyperliquid']?.wsUrl,
+            testnetBaseUrl: appConfig.venues['hyperliquid']?.testnetBaseUrl,
+            testnetWsUrl: appConfig.venues['hyperliquid']?.testnetWsUrl,
             streamConfig,
           })
       : undefined;
@@ -576,8 +585,9 @@ const runtime = new WorkerRuntime(
               apiKey: oneInchApiKey,
               signer: {
                 privateKey,
-                rpcUrl: oneInchConfig?.rpcUrl ?? process.env['BASE_RPC_URL'] ?? 'https://mainnet.base.org',
+                rpcUrl: oneInchConfig?.rpcUrl ?? 'https://mainnet.base.org',
                 chainId: oneInchConfig?.chainId ?? 8453,
+                confirmationTimeoutMs: oneInchConfig?.confirmationTimeoutMs ?? appConfig.execution.orderTimeoutMs,
               },
               rateLimitPerSec: oneInchConfig?.rateLimitPerSec,
               tokenDecimals,
@@ -597,8 +607,8 @@ const runtime = new WorkerRuntime(
 
           return new JupiterSwapAdapter({
             walletAddress,
-            apiUrl: appConfig.venues['jupiter']?.baseUrl ?? 'https://quote-api.jup.ag/v6',
-            rpcUrl: process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com',
+            apiUrl: appConfig.venues['jupiter']?.baseUrl,
+            rpcUrl: appConfig.venues['jupiter']?.rpcUrl,
             tokenDecimals,
             timeoutMs: appConfig.venues['jupiter']?.timeoutMs,
           });
@@ -707,7 +717,9 @@ const runtime = new WorkerRuntime(
       venueType: config.venueType,
       swapAssets: config.swapAssets,
       swapVenue,
-      streamPool: config.venueType !== 'swap' ? publicStreamPool : undefined,
+      streamPool: config.venueType !== 'swap'
+        ? createScopedStreamPoolHandle(publicStreamPool, config.venue, testnet)
+        : undefined,
       markSource: new MarkSelector(
         { stalenessThresholdMs: appConfig.marking.stalenessThresholdMs },
         new LastFillMarkSource(fillRepo, botId),
@@ -715,7 +727,8 @@ const runtime = new WorkerRuntime(
       ),
       recordMarketSnapshot,
       recordReferenceMark,
-      shadowPollIntervalMs: config.shadowPollIntervalMs,
+      shadowPollIntervalMs: config.shadowPollIntervalMs ?? appConfig.execution.shadowPollIntervalMs,
+      shadowQuoteSlippageBps: appConfig.execution.shadowQuoteSlippageBps,
       credentialId: resolvedCredentialId,
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
@@ -761,7 +774,7 @@ const runtime = new WorkerRuntime(
 const backtestRuntime = new BacktestRuntime(
   {
     redis: redisConnection,
-    concurrency: 2,
+    concurrency: appConfig.backtesting.concurrency,
     maxDataGapMs: appConfig.backtesting.maxDataGapMs,
     defaultWarmUpFrames: appConfig.backtesting.warmupLookbackBars,
     validationThresholds: {

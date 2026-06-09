@@ -3,14 +3,24 @@ export interface ScoutDecision {
   reason?: string;
 }
 
-export function resolveDefaultScoutModel(provider: string, judgeModel: string): string {
+export const DEFAULT_SCOUT_MODELS = {
+  anthropic: 'claude-3-5-haiku-latest',
+  openai: 'gpt-4.1-mini',
+  openrouter: 'openai/gpt-4.1-mini',
+} as const;
+
+export function resolveDefaultScoutModel(
+  provider: string,
+  judgeModel: string,
+  defaultModels: { anthropic: string; openai: string; openrouter: string } = DEFAULT_SCOUT_MODELS,
+): string {
   switch (provider) {
     case 'anthropic':
-      return 'claude-3-5-haiku-latest';
+      return defaultModels.anthropic;
     case 'openai':
-      return 'gpt-4.1-mini';
+      return defaultModels.openai;
     case 'openrouter':
-      return 'openai/gpt-4.1-mini';
+      return defaultModels.openrouter;
     default:
       return judgeModel;
   }

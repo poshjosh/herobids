@@ -21,7 +21,7 @@ export interface EvmSignerConfig {
   rpcUrl: string;
   /** Chain ID. Default: 8453 (Base) */
   chainId?: number;
-  /** Transaction confirmation timeout in ms. Default: 60000 */
+  /** Transaction confirmation timeout in ms */
   confirmationTimeoutMs?: number;
 }
 

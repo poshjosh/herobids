@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-policy.js';
-import { SandboxEnforcer, DEFAULT_SANDBOX_LIMITS } from './sandbox-enforcer.js';
+import { SandboxEnforcer } from './sandbox-enforcer.js';
 
 describe('CapabilityPolicyEngine', () => {
   describe('checkAccess', () => {
@@ -133,9 +133,21 @@ describe('CapabilityPolicyEngine', () => {
 });
 
 describe('SandboxEnforcer', () => {
+  const TEST_LIMITS: import('./sandbox-enforcer.js').SandboxLimits = {
+    cpuShares: 256,
+    memoryMb: 512,
+    maxWallClockMs: 300_000,
+    tempStorageMb: 100,
+    maxProcesses: 10,
+    maxRequestsPerMinute: 60,
+    maxConcurrentConnections: 10,
+    maxResponseBytes: 10_485_760,
+    maxTotalDownloadBytes: 104_857_600,
+  };
+
   describe('session registration', () => {
     it('registers and deregisters sessions', () => {
-      const enforcer = new SandboxEnforcer();
+      const enforcer = new SandboxEnforcer(TEST_LIMITS);
       enforcer.registerSession('sess-1');
       expect(enforcer.isExpired('sess-1')).toBe(false);
       enforcer.deregisterSession('sess-1');
@@ -146,7 +158,7 @@ describe('SandboxEnforcer', () => {
   describe('wall-clock expiry', () => {
     it('expires session after wall-clock limit', () => {
       // Use a very short limit
-      const enforcer = new SandboxEnforcer({ maxWallClockMs: 1 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxWallClockMs: 1 });
       enforcer.registerSession('sess-1');
       // It starts at Date.now(), so with 1ms limit it's immediately/nearly expired
       // We need a small delay
@@ -156,7 +168,7 @@ describe('SandboxEnforcer', () => {
     });
 
     it('does not expire session within limit', () => {
-      const enforcer = new SandboxEnforcer({ maxWallClockMs: 60_000 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxWallClockMs: 60_000 });
       enforcer.registerSession('sess-1');
       expect(enforcer.isExpired('sess-1')).toBe(false);
     });
@@ -164,7 +176,7 @@ describe('SandboxEnforcer', () => {
 
   describe('outbound request enforcement', () => {
     it('allows requests within rate limit', () => {
-      const enforcer = new SandboxEnforcer({ maxRequestsPerMinute: 10 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxRequestsPerMinute: 10 });
       enforcer.registerSession('sess-1');
       for (let i = 0; i < 10; i++) {
         const violation = enforcer.checkOutboundRequest('sess-1');
@@ -173,7 +185,7 @@ describe('SandboxEnforcer', () => {
     });
 
     it('denies requests exceeding rate limit', () => {
-      const enforcer = new SandboxEnforcer({ maxRequestsPerMinute: 3 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxRequestsPerMinute: 3 });
       enforcer.registerSession('sess-1');
       enforcer.checkOutboundRequest('sess-1');
       enforcer.checkOutboundRequest('sess-1');
@@ -184,7 +196,7 @@ describe('SandboxEnforcer', () => {
     });
 
     it('denies response exceeding size limit', () => {
-      const enforcer = new SandboxEnforcer({ maxResponseBytes: 1000 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxResponseBytes: 1000 });
       enforcer.registerSession('sess-1');
       const violation = enforcer.checkOutboundRequest('sess-1', 2000);
       expect(violation).toBeDefined();
@@ -192,7 +204,7 @@ describe('SandboxEnforcer', () => {
     });
 
     it('tracks total download budget', () => {
-      const enforcer = new SandboxEnforcer({ maxTotalDownloadBytes: 500, maxResponseBytes: 1000 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxTotalDownloadBytes: 500, maxResponseBytes: 1000 });
       enforcer.registerSession('sess-1');
       enforcer.checkOutboundRequest('sess-1', 300);
       const violation = enforcer.checkOutboundRequest('sess-1', 300);
@@ -204,7 +216,7 @@ describe('SandboxEnforcer', () => {
 
   describe('concurrent connections', () => {
     it('allows connections within limit', () => {
-      const enforcer = new SandboxEnforcer({ maxConcurrentConnections: 3 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxConcurrentConnections: 3 });
       enforcer.registerSession('sess-1');
       expect(enforcer.connectionOpened('sess-1')).toBeUndefined();
       expect(enforcer.connectionOpened('sess-1')).toBeUndefined();
@@ -212,7 +224,7 @@ describe('SandboxEnforcer', () => {
     });
 
     it('denies connections exceeding limit', () => {
-      const enforcer = new SandboxEnforcer({ maxConcurrentConnections: 2 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxConcurrentConnections: 2 });
       enforcer.registerSession('sess-1');
       enforcer.connectionOpened('sess-1');
       enforcer.connectionOpened('sess-1');
@@ -222,7 +234,7 @@ describe('SandboxEnforcer', () => {
     });
 
     it('allows connections after close', () => {
-      const enforcer = new SandboxEnforcer({ maxConcurrentConnections: 1 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxConcurrentConnections: 1 });
       enforcer.registerSession('sess-1');
       enforcer.connectionOpened('sess-1');
       enforcer.connectionClosed('sess-1');
@@ -232,24 +244,13 @@ describe('SandboxEnforcer', () => {
 
   describe('violations tracking', () => {
     it('accumulates violations', () => {
-      const enforcer = new SandboxEnforcer({ maxRequestsPerMinute: 1 });
+      const enforcer = new SandboxEnforcer({ ...TEST_LIMITS, maxRequestsPerMinute: 1 });
       enforcer.registerSession('sess-1');
       enforcer.checkOutboundRequest('sess-1');
       enforcer.checkOutboundRequest('sess-1'); // violation
       enforcer.checkOutboundRequest('sess-1'); // violation
       const violations = enforcer.getViolations('sess-1');
       expect(violations.length).toBe(2);
-    });
-  });
-
-  describe('DEFAULT_SANDBOX_LIMITS', () => {
-    it('has conservative v1 defaults', () => {
-      expect(DEFAULT_SANDBOX_LIMITS.cpuShares).toBe(256);
-      expect(DEFAULT_SANDBOX_LIMITS.memoryMb).toBe(512);
-      expect(DEFAULT_SANDBOX_LIMITS.maxWallClockMs).toBe(300_000);
-      expect(DEFAULT_SANDBOX_LIMITS.maxProcesses).toBe(10);
-      expect(DEFAULT_SANDBOX_LIMITS.maxRequestsPerMinute).toBe(60);
-      expect(DEFAULT_SANDBOX_LIMITS.maxConcurrentConnections).toBe(10);
     });
   });
 });

@@ -17,28 +17,37 @@ venues:
   hyperliquid:
     baseUrl: https://api.hyperliquid.xyz
     wsUrl: wss://api.hyperliquid.xyz/ws
+    testnetBaseUrl: https://api.hyperliquid-testnet.xyz
+    testnetWsUrl: wss://api.hyperliquid-testnet.xyz/ws
     rateLimitPerSec: 10
     timeoutMs: 30000
   bybit:
     baseUrl: https://api.bybit.com
-    wsUrl: wss://stream.bybit.com/v5/private
-    wsPublicUrl: wss://stream.bybit.com/v5/public/linear
+    wsUrl: wss://stream.bybit.com/v5/private     # global private-stream override (highest priority)
+    wsPublicUrl: wss://stream.bybit.com/v5/public/linear   # public stream (required for public pool)
+    wsTestnetPublicUrl: wss://stream-testnet.bybit.com/v5/public/linear
+    wsPrivateUrl: wss://stream.bybit.com/v5/private  # mainnet private stream (used when wsUrl is not set)
+    wsTestnetPrivateUrl: wss://stream-testnet.bybit.com/v5/private
     rateLimitPerSec: 10
     timeoutMs: 30000
   jupiter:
     baseUrl: https://quote-api.jup.ag/v6
+    rpcUrl: https://api.mainnet-beta.solana.com
     timeoutMs: 15000
   1inch:
     baseUrl: https://api.1inch.dev/swap/v6.0/8453
     rpcUrl: https://mainnet.base.org
     chainId: 8453
     timeoutMs: 60000
+    confirmationTimeoutMs: 60000
     rateLimitPerSec: 1
 
 execution:
   defaultSlippageBps: 50
   orderTimeoutMs: 30000
   maxRetries: 3
+  shadowPollIntervalMs: 2000   # swap-venue price polling interval when no live stream
+  shadowQuoteSlippageBps: 50   # slippage assumed for shadow swap price estimation
 
 risk:
   globalMaxDrawdownPct: 20
@@ -66,6 +75,8 @@ streams:
 marking:
   stalenessThresholdMs: 300000     # 5 min — use oracle if last fill older than this
   oracleBaseUrl: https://api.coingecko.com/api/v3
+  oracleTimeoutMs: 10000           # CoinGecko request timeout in ms
+  oracleVsCurrency: usd            # quote currency for oracle price lookups
   instrumentToCoinId:
     BTC/USD:USD: bitcoin
     ETH/USD:USD: ethereum
@@ -75,6 +86,7 @@ backtesting:
   warmupLookbackBars: 200
   maxDataGapMs: 60000
   persistJournal: true
+  concurrency: 2       # BullMQ consumer concurrency for backtest jobs
 
 marketDataRecording:
   enabled: false
@@ -150,6 +162,62 @@ llm:
   tradingHours:
     allowedHoursUtc: []         # Empty = always active. Set explicit UTC hours to gate low-liquidity periods.
     weekendPause: false         # If true, pause new no-position ticks from Sat 00:00 UTC to Sun 12:00 UTC.
+  retry:
+    maxRetries: 2                       # LLM call retry attempts
+    timeoutBackoffMs: [5000, 15000]     # per-attempt delay for timeout errors
+    serverErrorBackoffMs: 10000         # fixed delay for 5xx errors
+    defaultRateLimitBackoffMs: 60000    # fallback when no Retry-After header
+  scout:
+    defaultModels:
+      anthropic: claude-3-5-haiku-latest
+      openai: gpt-4.1-mini
+      openrouter: openai/gpt-4.1-mini
+  thinking:
+    lightBudgetTokens: 2048    # token budget for light thinking mode
+    deepBudgetTokens: 10240    # token budget for deep thinking mode
+
+# Worker process — scan loop and concurrency settings.
+worker:
+  scanIntervalMs: 5000         # WorkerRuntime scan loop interval in ms
+  concurrency: 10              # WorkerRuntime max concurrent trading actors
+  agents:
+    healthCheckIntervalMs: 2000  # AgentSessionManager health poll cadence in ms
+
+# Agent runtime — behavior policy for agent containers.
+agentRuntime:
+  failureBackoff:
+    backoffThreshold: 3        # consecutive failures before doubling tick interval
+    maxFailures: 5             # consecutive failures before agent shutdown
+    maxIntervalMs: 1800000     # cap on backed-off tick interval (30 min)
+  toolCircuitBreaker:
+    failureThreshold: 3        # consecutive tool failures before circuit opens
+    reopenAfterTicks: 5        # ticks before circuit auto-resets
+  thinking:
+    drawdownThresholdPct: -2   # drawdown % that triggers deep thinking mode
+  contextDiff:
+    fullContextEveryTicks: 10  # force full context every N ticks (not a diff)
+    maxDiffTokens: 200         # fall back to full context if diff exceeds this token budget
+    maxChangedLines: 12        # truncate diff at this many changed lines
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 16
+    maxContextBlockChars: 4000
+  sandboxDefaults:
+    cpuShares: 256             # Docker CpuShares (relative weight vs other containers)
+    memoryMb: 512              # Docker Memory limit in MB (cgroup hard limit)
+    maxWallClockMs: 300000     # in-process wall-clock limit per session (5 min); 0 = unlimited
+    tempStorageMb: 100         # Docker tmpfs/storage limit in MB
+    maxProcesses: 10           # ulimit nproc: max concurrent processes inside container
+    maxRequestsPerMinute: 60   # in-process outbound request rate limit
+    maxConcurrentConnections: 10  # in-process concurrent connection limit
+    maxResponseBytes: 10485760    # max single response size (10 MB)
+    maxTotalDownloadBytes: 104857600  # max total download per session (100 MB)
+  tools:
+    codeExecute:
+      defaultTimeoutMs: 60000      # code_execute timeout when no capability grant present
+      defaultMaxOutputBytes: 51200  # code_execute max output when no capability grant present
 
 llmValidation:
   requirePinnedModel: true

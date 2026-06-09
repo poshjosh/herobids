@@ -15,10 +15,16 @@ export const VenueConfigSchema = z.object({
   baseUrl: z.string().url(),
   wsUrl: z.string().url().optional(),
   wsPublicUrl: z.string().url().optional(),
+  wsTestnetPublicUrl: z.string().url().optional(),
+  wsPrivateUrl: z.string().url().optional(),
+  wsTestnetPrivateUrl: z.string().url().optional(),
+  testnetBaseUrl: z.string().url().optional(),
+  testnetWsUrl: z.string().url().optional(),
   rpcUrl: z.string().url().optional(),
   chainId: z.number().int().positive().optional(),
   rateLimitPerSec: z.number().min(1).default(10),
   timeoutMs: z.number().min(1000).default(30_000),
+  confirmationTimeoutMs: z.number().min(1000).default(60_000),
   routerAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid EVM address (0x + 40 hex chars)').optional(),
 });
 
@@ -43,6 +49,8 @@ export const PublicStreamConfigSchema = z.object({
 export const MarkingConfigSchema = z.object({
   stalenessThresholdMs: z.number().min(10_000).default(300_000),
   oracleBaseUrl: z.string().url().optional(),
+  oracleTimeoutMs: z.number().min(1000).default(10_000),
+  oracleVsCurrency: z.string().min(1).default('usd'),
   instrumentToCoinId: z.record(z.string(), z.string()).optional(),
 });
 
@@ -50,6 +58,7 @@ export const BacktestingConfigSchema = z.object({
   warmupLookbackBars: z.number().int().min(1).default(200),
   maxDataGapMs: z.number().min(1).default(60_000),
   persistJournal: z.boolean().default(true),
+  concurrency: z.number().int().min(1).default(2),
 });
 
 export const MarketDataRecordingConfigSchema = z.object({
@@ -66,6 +75,26 @@ export const TradingHoursConfigSchema = z.object({
   weekendPause: z.boolean().default(false),
 });
 
+export const LlmRetryConfigSchema = z.object({
+  maxRetries: z.number().int().min(0).default(2),
+  timeoutBackoffMs: z.array(z.number().int().min(0)).default([5_000, 15_000]),
+  serverErrorBackoffMs: z.number().int().min(0).default(10_000),
+  defaultRateLimitBackoffMs: z.number().int().min(0).default(60_000),
+});
+
+export const LlmScoutConfigSchema = z.object({
+  defaultModels: z.object({
+    anthropic: z.string().default('claude-3-5-haiku-latest'),
+    openai: z.string().default('gpt-4.1-mini'),
+    openrouter: z.string().default('openai/gpt-4.1-mini'),
+  }).default({}),
+});
+
+export const LlmThinkingConfigSchema = z.object({
+  lightBudgetTokens: z.number().int().min(0).default(2_048),
+  deepBudgetTokens: z.number().int().min(0).default(10_240),
+});
+
 export const LlmRuntimeConfigSchema = z.object({
   provider: z.string().default('openrouter'),
   model: z.string().default('anthropic/claude-sonnet-4-5'),
@@ -80,6 +109,9 @@ export const LlmRuntimeConfigSchema = z.object({
   /** Operator-configured server cost used in the agent performance summary. */
   serverCostUsdPerHour: z.number().min(0).default(0.02),
   tradingHours: TradingHoursConfigSchema.optional(),
+  retry: LlmRetryConfigSchema.default({}),
+  scout: LlmScoutConfigSchema.default({}),
+  thinking: LlmThinkingConfigSchema.default({}),
 });
 
 export const LlmValidationConfigSchema = z.object({
@@ -328,6 +360,81 @@ export const MarketDataConfigSchema = z.object({
     cacheTtlMs: z.number().int().min(0).default(3_600_000),
   }).default({}),
   timeoutMs: z.number().min(1000).default(5000),
+}).superRefine((data, ctx) => {
+  if (data.birdeye.enabled && !data.birdeye.apiKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'marketData.birdeye.apiKey is required when birdeye.enabled is true',
+      path: ['birdeye', 'apiKey'],
+    });
+  }
+  if (data.coinMarketCap.enabled && !data.coinMarketCap.apiKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'marketData.coinMarketCap.apiKey is required when coinMarketCap.enabled is true',
+      path: ['coinMarketCap', 'apiKey'],
+    });
+  }
+});
+
+export const WorkerConfigSchema = z.object({
+  scanIntervalMs: z.number().int().min(100).default(5_000),
+  concurrency: z.number().int().min(1).default(10),
+  agents: z.object({
+    healthCheckIntervalMs: z.number().int().min(100).default(2_000),
+  }).default({}),
+});
+
+export const AgentRuntimeConfigSchema = z.object({
+  failureBackoff: z.object({
+    backoffThreshold: z.number().int().min(1).default(3),
+    maxFailures: z.number().int().min(1).default(5),
+    maxIntervalMs: z.number().int().min(1000).default(1_800_000),
+  }).default({}),
+  toolCircuitBreaker: z.object({
+    failureThreshold: z.number().int().min(1).default(3),
+    reopenAfterTicks: z.number().int().min(1).default(5),
+  }).default({}),
+  thinking: z.object({
+    drawdownThresholdPct: z.number().min(-100).max(0).default(-2),
+  }).default({}),
+  contextDiff: z.object({
+    fullContextEveryTicks: z.number().int().min(1).default(10),
+    maxDiffTokens: z.number().int().min(1).default(200),
+    maxChangedLines: z.number().int().min(1).default(12),
+  }).default({}),
+  defaultBudgets: z.object({
+    maxHistoryMessages: z.number().int().min(1).default(20),
+    maxRecentToolMessages: z.number().int().min(1).default(6),
+    maxToolResultChars: z.number().int().min(1).default(4_000),
+    maxVisibleToolSchemas: z.number().int().min(1).default(16),
+    maxContextBlockChars: z.number().int().min(1).default(4_000),
+  }).default({}),
+  sandboxDefaults: z.object({
+    cpuShares: z.number().int().min(1).default(256),
+    memoryMb: z.number().int().min(64).default(512),
+    maxWallClockMs: z.number().int().min(0).default(300_000),
+    tempStorageMb: z.number().int().min(1).default(100),
+    maxProcesses: z.number().int().min(1).default(10),
+    maxRequestsPerMinute: z.number().int().min(1).default(60),
+    maxConcurrentConnections: z.number().int().min(1).default(10),
+    maxResponseBytes: z.number().int().min(1).default(10_485_760),
+    maxTotalDownloadBytes: z.number().int().min(1).default(104_857_600),
+  }).default({}),
+  tools: z.object({
+    codeExecute: z.object({
+      defaultTimeoutMs: z.number().int().min(1000).default(60_000),
+      defaultMaxOutputBytes: z.number().int().min(1).default(51_200),
+    }).default({}),
+  }).default({}),
+});
+
+export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
+  llm: z.object({
+    retry: LlmRetryConfigSchema.default({}),
+    scout: LlmScoutConfigSchema.default({}),
+    thinking: LlmThinkingConfigSchema.default({}),
+  }).default({}),
 });
 
 export const LiveRolloutConfigSchema = z.object({
@@ -367,6 +474,8 @@ export const AppConfigSchema = z.object({
     defaultSlippageBps: z.number().min(0).default(50),
     orderTimeoutMs: z.number().min(1000).default(30_000),
     maxRetries: z.number().min(0).default(3),
+    shadowPollIntervalMs: z.number().int().min(100).default(2_000),
+    shadowQuoteSlippageBps: z.number().min(0).default(50),
   }),
   risk: z.object({
     globalMaxDrawdownPct: z.number().min(0).max(100).default(20),
@@ -379,6 +488,8 @@ export const AppConfigSchema = z.object({
   backtesting: BacktestingConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
+  worker: WorkerConfigSchema.default({}),
+  agentRuntime: AgentRuntimeConfigSchema.default({}),
   llm: LlmRuntimeConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),
@@ -501,6 +612,9 @@ export const AppConfigSchema = z.object({
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
+export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
+export type AgentRuntimePolicy = z.infer<typeof AgentRuntimePolicySchema>;
 export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;

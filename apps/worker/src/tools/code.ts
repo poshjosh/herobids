@@ -9,6 +9,18 @@ import { convertZodToJsonSchema } from './registry.js';
 const execFileAsync = promisify(execFileCb);
 const logger = pino({ name: 'tools:code' });
 
+// Read code-execute defaults from the agent runtime config injected by the worker.
+const _runtimePolicy = (() => {
+  try {
+    const raw = process.env['AGENT_RUNTIME_CONFIG_JSON'];
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { tools?: { codeExecute?: { defaultTimeoutMs?: number; defaultMaxOutputBytes?: number } } };
+    return parsed.tools?.codeExecute;
+  } catch {
+    return undefined;
+  }
+})();
+
 // --- code_execute ---
 
 const CodeExecuteParamsSchema = z.object({
@@ -47,8 +59,11 @@ const codeExecuteTool: AgentTool = {
     // Read limits from the effective capability grant so operator/user policy changes
     // govern execution timeout and output size, not just rate/concurrency.
     const codeGrant = ctx.capabilityEngine?.getGrant('code_execute');
-    const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? 60_000;
-    const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? (50 * 1024);
+    if (!_runtimePolicy) {
+      return { success: false, error: 'code_execute requires AGENT_RUNTIME_CONFIG_JSON with tools.codeExecute defaults', retryable: false };
+    }
+    const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? _runtimePolicy.defaultTimeoutMs;
+    const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? _runtimePolicy.defaultMaxOutputBytes;
 
     let stdout = '';
     let stderr = '';

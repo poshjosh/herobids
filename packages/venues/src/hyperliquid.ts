@@ -43,8 +43,12 @@ export interface HyperliquidAdapterConfig {
   credentials: HyperliquidCredentials;
   /** Rate limiter config. Default: 10 requests/second with burst of 20 */
   rateLimit?: { capacity: number; refillRate: number };
-  /** WebSocket URL for private streams. Default: wss://api.hyperliquid.xyz/ws */
+  /** Global WebSocket URL override for private streams. Takes highest priority regardless of environment. */
   wsUrl?: string;
+  /** Base URL for testnet REST API. Default: https://api.hyperliquid-testnet.xyz */
+  testnetBaseUrl?: string;
+  /** WebSocket URL for testnet streams. Used when testnet is true and wsUrl is not set. */
+  testnetWsUrl?: string;
   /** Private stream reconnection config */
   streamConfig?: {
     reconnectBaseMs?: number;
@@ -231,7 +235,18 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
 
   async subscribePrivate(handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>> {
     const { credentials, wsUrl, streamConfig } = this.adapterConfig;
-    const effectiveWsUrl = wsUrl ?? (credentials.testnet ? 'wss://api.hyperliquid-testnet.xyz/ws' : 'wss://api.hyperliquid.xyz/ws');
+    const defaultWsUrl = credentials.testnet
+      ? 'wss://api.hyperliquid-testnet.xyz/ws'
+      : 'wss://api.hyperliquid.xyz/ws';
+    // Resolution: global wsUrl override → environment-specific field → built-in default
+    const environmentWsUrl = credentials.testnet
+      ? this.adapterConfig.testnetWsUrl
+      : undefined;
+    const effectiveWsUrl = wsUrl ?? environmentWsUrl ?? defaultWsUrl;
+
+    if (!effectiveWsUrl) {
+      return err({ code: 'venue.misconfigured', message: 'No WebSocket URL configured for Hyperliquid private streams. Set wsUrl or testnetWsUrl in venue config.' });
+    }
 
     const streamCfg: PrivateStreamConfig = {
       wsUrl: effectiveWsUrl,
@@ -250,6 +265,12 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
     return ok(stream);
   }
 
+  getPublicWsUrl(): string {
+    return this.adapterConfig.credentials.testnet
+      ? this.adapterConfig.testnetWsUrl ?? 'wss://api.hyperliquid-testnet.xyz/ws'
+      : this.adapterConfig.wsUrl ?? 'wss://api.hyperliquid.xyz/ws';
+  }
+
   async subscribePublic(_symbols: string[], _handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>> {
     // Real implementation delegates to the worker-scoped PublicStreamPool.
     // The adapter does not own a public WebSocket — the pool manages shared connections.
@@ -261,11 +282,14 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
    * Returns a VenueProfile describing what instruments and modes are available.
    * Unauthenticated probe (no real keys) uses the public Hyperliquid API.
    */
-  static async probe(credentials?: HyperliquidCredentials): Promise<VenueProfile> {
-    const testnet = credentials?.testnet ?? true;
+  static async probe(
+    credentials?: HyperliquidCredentials,
+    options?: { testnetBaseUrl?: string; baseUrl?: string },
+  ): Promise<VenueProfile> {
+    const testnet = credentials?.testnet ?? false;
     const baseUrl = testnet
-      ? 'https://api.hyperliquid-testnet.xyz'
-      : 'https://api.hyperliquid.xyz';
+      ? options?.testnetBaseUrl ?? 'https://api.hyperliquid-testnet.xyz'
+      : options?.baseUrl ?? 'https://api.hyperliquid.xyz';
 
     const availableSymbols: string[] = [];
 

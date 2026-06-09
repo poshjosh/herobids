@@ -76,7 +76,7 @@ export function classifyRuntimeError(
         mode: 'recoverable',
         reasonCode: 'llm.rate_limit',
         message: llmError.message,
-        retryAfterMs: llmError.retryAfterMs ?? 60_000,
+        retryAfterMs: llmError.retryAfterMs,
       };
     }
     if (/^provider\.http_5\d\d$/.test(llmError.code)) {
@@ -136,6 +136,9 @@ export async function callLlmWithRetry(
   request: LlmRequest,
   options?: {
     maxRetries?: number;
+    timeoutBackoffMs?: number[];
+    serverErrorBackoffMs?: number;
+    defaultRateLimitBackoffMs?: number;
     call?: typeof callLlmProvider;
     sleep?: (ms: number) => Promise<void>;
     onRetry?: (info: { attempt: number; delayMs: number; classification: RuntimeFailureClassification }) => void;
@@ -144,7 +147,9 @@ export async function callLlmWithRetry(
   const caller = options?.call ?? callLlmProvider;
   const sleep = options?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const maxRetries = options?.maxRetries ?? 2;
-  const timeoutDelays = [5_000, 15_000];
+  const timeoutDelays = options?.timeoutBackoffMs ?? [5_000, 15_000];
+  const serverErrorBackoffMs = options?.serverErrorBackoffMs ?? 10_000;
+  const defaultRateLimitBackoffMs = options?.defaultRateLimitBackoffMs ?? 60_000;
   const delaysMs: number[] = [];
 
   for (let attempt = 0; ; attempt++) {
@@ -163,17 +168,17 @@ export async function callLlmWithRetry(
       if (attempt >= 1) {
         return { result, attempts: attempt + 1, delaysMs, classification };
       }
-      delayMs = classification.retryAfterMs ?? 60_000;
+      delayMs = classification.retryAfterMs ?? defaultRateLimitBackoffMs;
     } else if (result.error.code === 'provider.timeout') {
       if (attempt >= maxRetries) {
         return { result, attempts: attempt + 1, delaysMs, classification };
       }
-      delayMs = timeoutDelays[Math.min(attempt, timeoutDelays.length - 1)] ?? 15_000;
+      delayMs = timeoutDelays[Math.min(attempt, timeoutDelays.length - 1)] ?? timeoutDelays[timeoutDelays.length - 1] ?? 15_000;
     } else if (/^provider\.http_5\d\d$/.test(result.error.code)) {
       if (attempt >= maxRetries) {
         return { result, attempts: attempt + 1, delaysMs, classification };
       }
-      delayMs = 10_000;
+      delayMs = serverErrorBackoffMs;
     }
 
     if (delayMs === null) {

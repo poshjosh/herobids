@@ -8,6 +8,7 @@ describe('classifyTickThinking', () => {
       previousRegimePass: false,
       regimePass: true,
       incomingMessagesCount: 0,
+      drawdownThresholdPct: -2,
     })).toEqual({ thinking: 'deep', reason: 'regime_flip' });
   });
 
@@ -16,6 +17,7 @@ describe('classifyTickThinking', () => {
       hasOpenPositions: true,
       incomingMessagesCount: 0,
       drawdownPct: -2.5,
+      drawdownThresholdPct: -2,
     })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
   });
 
@@ -23,6 +25,7 @@ describe('classifyTickThinking', () => {
     expect(classifyTickThinking({
       hasOpenPositions: true,
       incomingMessagesCount: 0,
+      drawdownThresholdPct: -2,
     })).toEqual({ thinking: 'light', reason: 'open_positions' });
   });
 
@@ -30,7 +33,65 @@ describe('classifyTickThinking', () => {
     expect(classifyTickThinking({
       hasOpenPositions: false,
       incomingMessagesCount: 0,
+      drawdownThresholdPct: -2,
     })).toEqual({ thinking: 'none', reason: 'routine_tick' });
+  });
+
+  describe('drawdownThresholdPct parameter', () => {
+    it('triggers deep thinking at the custom threshold', () => {
+      expect(classifyTickThinking({
+        hasOpenPositions: true,
+        incomingMessagesCount: 0,
+        drawdownPct: -5.1,
+        drawdownThresholdPct: -5,
+      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+    });
+
+    it('does not trigger deep thinking when drawdown is above the custom threshold', () => {
+      expect(classifyTickThinking({
+        hasOpenPositions: true,
+        incomingMessagesCount: 0,
+        drawdownPct: -3,
+        drawdownThresholdPct: -5,
+      })).toEqual({ thinking: 'light', reason: 'open_positions' });
+    });
+
+    it('triggers at exactly the threshold value (inclusive)', () => {
+      expect(classifyTickThinking({
+        hasOpenPositions: true,
+        incomingMessagesCount: 0,
+        drawdownPct: -5,
+        drawdownThresholdPct: -5,
+      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+    });
+
+    it('uses configured threshold of -2', () => {
+      // -1.9 is above -2, so should not trigger
+      expect(classifyTickThinking({
+        hasOpenPositions: true,
+        incomingMessagesCount: 0,
+        drawdownPct: -1.9,
+        drawdownThresholdPct: -2,
+      })).toEqual({ thinking: 'light', reason: 'open_positions' });
+
+      // -2.0 is at -2, so should trigger
+      expect(classifyTickThinking({
+        hasOpenPositions: true,
+        incomingMessagesCount: 0,
+        drawdownPct: -2.0,
+        drawdownThresholdPct: -2,
+      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+    });
+
+    it('uses a tighter threshold (closer to 0) to require more extreme drawdown', () => {
+      // drawdownPct = -2 would trigger at default -2 but not at -0.5
+      expect(classifyTickThinking({
+        hasOpenPositions: true,
+        incomingMessagesCount: 0,
+        drawdownPct: -2,
+        drawdownThresholdPct: -0.5,
+      })).toEqual({ thinking: 'deep', reason: 'drawdown_threshold' });
+    });
   });
 });
 

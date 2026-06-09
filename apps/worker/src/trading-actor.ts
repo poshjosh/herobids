@@ -75,6 +75,8 @@ export interface TradingActorDeps {
   streamConfig?: StreamConfig;
   /** Polling interval for shadow market data feed (ms). Defaults to 2000. */
   shadowPollIntervalMs?: number;
+  /** Slippage used for shadow swap price quotes (bps). Defaults to 50. */
+  shadowQuoteSlippageBps?: number;
   venue: string;
   symbol: string;
   venueAccountId: string;
@@ -201,7 +203,7 @@ export class TradingActor implements InstanceActor {
             inputAsset: quoteAsset,
             outputAsset: baseAsset,
             amount: quantity('1'),
-            slippageBps: 50,
+            slippageBps: this.deps.shadowQuoteSlippageBps ?? 50,
           });
           if (quoteResult.ok) {
             const inAmt = new Decimal(quoteResult.data.inputAmount.toString());

@@ -47,3 +47,5 @@ Some of these may no longer be valid (they may have been done/implemented).
 - [ ] When implementing venue adapters: apply rate-limiting lessons from `docs/lessons/rate-limiting-guide.md` — never nest rate-limited calls, short TTL for empty/error cache entries, staleness max on cached prices, self-healing pressure backoff, and check whether provider limits are per-IP or per-key before sharing counters.
 
 - [ ] Get insights from: /Users/chinomso.ikwuagwu/dev_ai/aitradingbot/config.example.yaml. Is there anything you would add or change? Now or later?
+
+- [ ] accounts.test.ts:61, accounts.test.ts:67, and accounts.test.ts:190 use vi.spyOn(HyperliquidAdapter, 'probe') in multiple tests, but the suite only calls vi.clearAllMocks(). That clears call history, not mocked implementations, so one test’s probe stub can leak into later tests and mask route regressions. What to change: switch the setup to vi.restoreAllMocks() or restore these spies explicitly in afterEach. Dependency: none. Risk: low production risk, medium test-suite reliability risk. Test coverage: no new integration coverage needed; this is a unit-test isolation fix.

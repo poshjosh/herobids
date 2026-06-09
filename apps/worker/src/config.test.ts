@@ -384,4 +384,330 @@ llm:
       });
     });
   });
+
+  describe('worker config defaults and YAML', () => {
+    it('applies Zod defaults for worker block when omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.worker.scanIntervalMs).toBe(5000);
+      expect(config.worker.concurrency).toBe(10);
+      expect(config.worker.agents.healthCheckIntervalMs).toBe(2000);
+    });
+
+    it('loads explicit worker config from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+worker:
+  scanIntervalMs: 10000
+  concurrency: 5
+  agents:
+    healthCheckIntervalMs: 3000
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.worker.scanIntervalMs).toBe(10000);
+      expect(config.worker.concurrency).toBe(5);
+      expect(config.worker.agents.healthCheckIntervalMs).toBe(3000);
+    });
+
+    it('rejects worker.scanIntervalMs below minimum (1)', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+worker:
+  scanIntervalMs: 0
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects worker.concurrency below minimum (1)', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+worker:
+  concurrency: 0
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+  });
+
+  describe('venue public stream config', () => {
+    it('preserves Bybit testnet public stream URL from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+venues:
+  bybit:
+    baseUrl: https://api.bybit.com
+    wsPublicUrl: wss://stream.bybit.com/v5/public/linear
+    wsTestnetPublicUrl: wss://stream-testnet.bybit.com/v5/public/linear
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.venues['bybit']?.wsPublicUrl).toBe('wss://stream.bybit.com/v5/public/linear');
+      expect(config.venues['bybit']?.wsTestnetPublicUrl).toBe('wss://stream-testnet.bybit.com/v5/public/linear');
+    });
+  });
+
+  describe('backtesting config', () => {
+    it('applies Zod default for backtesting.concurrency when omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.backtesting.concurrency).toBe(2);
+    });
+
+    it('loads explicit backtesting.concurrency from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+backtesting:
+  concurrency: 4
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.backtesting.concurrency).toBe(4);
+    });
+  });
+
+  describe('execution shadow config', () => {
+    it('applies Zod defaults for shadowPollIntervalMs and shadowQuoteSlippageBps', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.execution.shadowPollIntervalMs).toBe(2000);
+      expect(config.execution.shadowQuoteSlippageBps).toBe(50);
+    });
+
+    it('loads explicit shadow execution config from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+  shadowPollIntervalMs: 3000
+  shadowQuoteSlippageBps: 100
+risk:
+  globalMaxDrawdownPct: 20
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.execution.shadowPollIntervalMs).toBe(3000);
+      expect(config.execution.shadowQuoteSlippageBps).toBe(100);
+    });
+  });
+
+  describe('marking oracle config', () => {
+    it('applies Zod defaults for oracleTimeoutMs and oracleVsCurrency', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.marking.oracleTimeoutMs).toBe(10000);
+      expect(config.marking.oracleVsCurrency).toBe('usd');
+    });
+
+    it('loads explicit oracle config from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marking:
+  oracleTimeoutMs: 5000
+  oracleVsCurrency: eur
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.marking.oracleTimeoutMs).toBe(5000);
+      expect(config.marking.oracleVsCurrency).toBe('eur');
+    });
+  });
+
+  describe('llm retry, scout, and thinking config', () => {
+    it('applies Zod defaults for llm.retry when omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.retry.maxRetries).toBe(2);
+      expect(config.llm.retry.serverErrorBackoffMs).toBe(10000);
+      expect(config.llm.retry.defaultRateLimitBackoffMs).toBe(60000);
+    });
+
+    it('applies Zod defaults for llm.scout.defaultModels when omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.scout.defaultModels.anthropic).toBe('claude-3-5-haiku-latest');
+      expect(config.llm.scout.defaultModels.openai).toBe('gpt-4.1-mini');
+      expect(config.llm.scout.defaultModels.openrouter).toBe('openai/gpt-4.1-mini');
+    });
+
+    it('applies Zod defaults for llm.thinking budgets when omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.thinking.lightBudgetTokens).toBe(2048);
+      expect(config.llm.thinking.deepBudgetTokens).toBe(10240);
+    });
+
+    it('loads explicit llm retry config from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+llm:
+  retry:
+    maxRetries: 3
+    serverErrorBackoffMs: 15000
+    defaultRateLimitBackoffMs: 90000
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.retry.maxRetries).toBe(3);
+      expect(config.llm.retry.serverErrorBackoffMs).toBe(15000);
+      expect(config.llm.retry.defaultRateLimitBackoffMs).toBe(90000);
+    });
+
+    it('rejects llm.retry.maxRetries below 0', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+llm:
+  retry:
+    maxRetries: -1
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+  });
+
+  describe('agentRuntime config defaults', () => {
+    it('applies Zod defaults for agentRuntime when omitted', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.agentRuntime.failureBackoff.backoffThreshold).toBe(3);
+      expect(config.agentRuntime.failureBackoff.maxFailures).toBe(5);
+      expect(config.agentRuntime.toolCircuitBreaker.failureThreshold).toBe(3);
+      expect(config.agentRuntime.toolCircuitBreaker.reopenAfterTicks).toBe(5);
+      expect(config.agentRuntime.thinking.drawdownThresholdPct).toBe(-2);
+      expect(config.agentRuntime.contextDiff.fullContextEveryTicks).toBe(10);
+      expect(config.agentRuntime.contextDiff.maxDiffTokens).toBe(200);
+      expect(config.agentRuntime.contextDiff.maxChangedLines).toBe(12);
+      expect(config.agentRuntime.defaultBudgets.maxHistoryMessages).toBe(20);
+      expect(config.agentRuntime.sandboxDefaults.memoryMb).toBe(512);
+      expect(config.agentRuntime.sandboxDefaults.cpuShares).toBe(256);
+      expect(config.agentRuntime.tools.codeExecute.defaultTimeoutMs).toBe(60000);
+      expect(config.agentRuntime.tools.codeExecute.defaultMaxOutputBytes).toBe(51200);
+    });
+
+    it('loads explicit agentRuntime overrides from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+agentRuntime:
+  failureBackoff:
+    maxFailures: 10
+  thinking:
+    drawdownThresholdPct: -5
+  sandboxDefaults:
+    memoryMb: 1024
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.agentRuntime.failureBackoff.maxFailures).toBe(10);
+      expect(config.agentRuntime.thinking.drawdownThresholdPct).toBe(-5);
+      expect(config.agentRuntime.sandboxDefaults.memoryMb).toBe(1024);
+    });
+
+    it('rejects agentRuntime.thinking.drawdownThresholdPct above 0 (must be negative)', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+agentRuntime:
+  thinking:
+    drawdownThresholdPct: 5
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects agentRuntime.contextDiff.maxChangedLines below 1', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+agentRuntime:
+  contextDiff:
+    maxChangedLines: 0
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('rejects agentRuntime.sandboxDefaults.memoryMb below minimum (64)', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+agentRuntime:
+  sandboxDefaults:
+    memoryMb: 32
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+  });
+
+  describe('marketData fail-fast validation', () => {
+    it('rejects birdeye enabled without apiKey', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  birdeye:
+    enabled: true
+    baseUrl: https://public-api.birdeye.so
+    requestsPerMinute: 60
+    apiKey: ''
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('accepts birdeye with enabled: false and no apiKey', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  birdeye:
+    enabled: false
+    baseUrl: https://public-api.birdeye.so
+    requestsPerMinute: 60
+    apiKey: ''
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.marketData?.birdeye?.enabled).toBe(false);
+    });
+
+    it('rejects coinMarketCap enabled without apiKey', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  coinMarketCap:
+    enabled: true
+    baseUrl: https://pro-api.coinmarketcap.com
+    requestsPerMinute: 25
+    apiKey: ''
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+
+    it('accepts coinMarketCap with valid apiKey when enabled', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  coinMarketCap:
+    enabled: true
+    baseUrl: https://pro-api.coinmarketcap.com
+    requestsPerMinute: 25
+    apiKey: valid-key-123
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.marketData?.coinMarketCap?.enabled).toBe(true);
+    });
+  });
 });

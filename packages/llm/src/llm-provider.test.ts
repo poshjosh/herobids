@@ -31,6 +31,7 @@ describe('callLlmProvider thinking controls', () => {
         model: 'claude-sonnet',
         maxTokens: 512,
         timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 2_048, deepBudgetTokens: 10_240 },
       },
       {
         messages: [
@@ -501,5 +502,121 @@ describe('callLlmProvider retryAfterMs propagation', () => {
     if (!result.ok) {
       expect(result.error.retryAfterMs).toBe(10_000);
     }
+  });
+});
+
+describe('callLlmProvider thinking budget config', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('uses custom lightBudgetTokens from config.thinking', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 4_096, deepBudgetTokens: 20_480 },
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        thinking: 'light',
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 4_096 });
+    expect(body['max_tokens']).toBe(512 + 4_096); // maxTokens + lightBudget
+  });
+
+  it('uses custom deepBudgetTokens from config.thinking', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 1_000, deepBudgetTokens: 20_000 },
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+        thinking: 'deep',
+      },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 20_000 });
+    expect(body['max_tokens']).toBe(512 + 20_000);
+  });
+
+  it('skips thinking block when config.thinking is absent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      { provider: 'anthropic', model: 'claude-sonnet', maxTokens: 512, timeoutMs: 1_000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, thinking: 'light' },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['thinking']).toBeUndefined();
+  });
+
+  it('returns zero thinking budget when thinking mode is "none"', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'response' }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+      model: 'claude-sonnet',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+        thinking: { lightBudgetTokens: 4_096, deepBudgetTokens: 20_480 },
+      },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 512, thinking: 'none' },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    // No thinking block should appear in the body when mode is 'none'
+    expect(body['thinking']).toBeUndefined();
+    expect(body['max_tokens']).toBe(512);
   });
 });

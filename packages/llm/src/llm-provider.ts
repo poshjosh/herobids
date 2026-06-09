@@ -12,6 +12,11 @@ export interface LlmProviderConfig {
   timeoutMs: number;
   /** Base URL override (for testing or alternative endpoints) */
   baseUrl?: string;
+  /** Thinking token budgets (used for Anthropic extended thinking) */
+  thinking?: {
+    lightBudgetTokens: number;
+    deepBudgetTokens: number;
+  };
 }
 
 export interface LlmToolDefinition {
@@ -216,7 +221,7 @@ async function callAnthropicProvider(
     return { ok: false, error: { code: 'provider.no_credentials', message: 'No API key found for provider "anthropic"', retryable: false } };
   }
 
-  const baseUrl = config.baseUrl ?? 'https://api.anthropic.com/v1';
+  const baseUrl = config.baseUrl ?? resolveBaseUrl('anthropic');
   const startMs = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -224,7 +229,9 @@ async function callAnthropicProvider(
   // Anthropic requires system prompt to be a top-level field, not in messages.
   const systemMessage = request.messages.find((m) => m.role === 'system');
   const chatMessages = request.messages.filter((m) => m.role !== 'system');
-  const thinkingBudgetTokens = toAnthropicThinkingBudget(request.thinking);
+  const thinkingBudgetTokens = config.thinking
+    ? toAnthropicThinkingBudget(request.thinking, config.thinking)
+    : 0;
   const maxTokens = thinkingBudgetTokens > 0
     ? request.maxTokens + thinkingBudgetTokens
     : request.maxTokens;
@@ -533,12 +540,15 @@ function invalidToolArgsError(error: unknown): LlmResult {
   };
 }
 
-function toAnthropicThinkingBudget(thinking: LlmRequest['thinking']): number {
+function toAnthropicThinkingBudget(
+  thinking: LlmRequest['thinking'],
+  budgetConfig: { lightBudgetTokens: number; deepBudgetTokens: number },
+): number {
   switch (thinking) {
     case 'light':
-      return 2_048;
+      return budgetConfig.lightBudgetTokens;
     case 'deep':
-      return 10_240;
+      return budgetConfig.deepBudgetTokens;
     default:
       return 0;
   }

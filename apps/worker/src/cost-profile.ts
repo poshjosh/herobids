@@ -7,6 +7,7 @@ export interface AgentCostProfileInput {
   provider: string;
   judgeModel: string;
   scoutModel?: string;
+  scoutDefaultModels?: { anthropic: string; openai: string; openrouter: string };
   costPreset?: CostPreset;
   dailyBudgetUsd?: number;
   baseTickIntervalMs: number;
@@ -34,7 +35,7 @@ function deriveCustomTickIntervalMs(dailyBudgetUsd: number): number {
 }
 
 export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCostProfile {
-  const scoutModel = input.scoutModel ?? resolveDefaultScoutModel(input.provider, input.judgeModel);
+  const scoutModel = input.scoutModel ?? resolveDefaultScoutModel(input.provider, input.judgeModel, input.scoutDefaultModels);
 
   switch (input.costPreset) {
     case 'minimal':

@@ -3,6 +3,7 @@ import {
   BotConfigSchema,
   PublicStreamConfigSchema,
   MarkingConfigSchema,
+  AgentRuntimePolicySchema,
   StrategyConfigSchema,
   MomentumParamsSchema,
   LlmParamsSchema,
@@ -158,6 +159,24 @@ describe('MarkingConfigSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.instrumentToCoinId).toEqual({ 'SOL/USDC': 'solana', 'BTC/USD': 'bitcoin' });
+    }
+  });
+});
+
+describe('AgentRuntimePolicySchema', () => {
+  it('accepts the worker-forwarded llm subtree and applies defaults', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      llm: {
+        retry: { maxRetries: 4 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.llm.retry.maxRetries).toBe(4);
+      expect(result.data.llm.scout.defaultModels.anthropic).toBe('claude-3-5-haiku-latest');
+      expect(result.data.llm.thinking.deepBudgetTokens).toBe(10_240);
+      expect(result.data.sandboxDefaults.memoryMb).toBe(512);
     }
   });
 });

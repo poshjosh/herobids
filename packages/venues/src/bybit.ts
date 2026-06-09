@@ -34,10 +34,14 @@ export interface BybitAdapterConfig {
   credentials: BybitCredentials;
   /** Rate limiter config. Default: 10 requests/second with burst of 20 */
   rateLimit?: { capacity: number; refillRate: number };
-  /** WebSocket URL for private streams. Overrides default based on testnet flag. */
+  /** Global WebSocket URL override for private streams. Takes highest priority regardless of environment. */
   wsUrl?: string;
-  /** WebSocket URL for public streams. Overrides default based on testnet flag. */
+  /** WebSocket URL for public streams. */
   wsPublicUrl?: string;
+  /** WebSocket URL for mainnet private streams. Used when testnet is false and wsUrl is not set. */
+  wsPrivateUrl?: string;
+  /** WebSocket URL for testnet private streams. Used when testnet is true and wsUrl is not set. */
+  wsTestnetPrivateUrl?: string;
   /** Private stream reconnection config */
   streamConfig?: {
     reconnectBaseMs?: number;
@@ -242,9 +246,18 @@ export class BybitAdapter implements OrderbookVenuePort {
 
   async subscribePrivate(handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>> {
     const { credentials, wsUrl, streamConfig } = this.adapterConfig;
-    const effectiveWsUrl = wsUrl ?? (credentials.testnet
+    const defaultWsUrl = credentials.testnet
       ? 'wss://stream-testnet.bybit.com/v5/private'
-      : 'wss://stream.bybit.com/v5/private');
+      : 'wss://stream.bybit.com/v5/private';
+    // Resolution: global wsUrl override → environment-specific field → built-in default
+    const environmentWsUrl = credentials.testnet
+      ? this.adapterConfig.wsTestnetPrivateUrl
+      : this.adapterConfig.wsPrivateUrl;
+    const effectiveWsUrl = wsUrl ?? environmentWsUrl ?? defaultWsUrl;
+
+    if (!effectiveWsUrl) {
+      return err({ code: 'venue.misconfigured', message: 'No WebSocket URL configured for Bybit private streams. Set wsUrl, wsPrivateUrl, or wsTestnetPrivateUrl in venue config.' });
+    }
 
     const streamCfg: BybitPrivateStreamConfig = {
       wsUrl: effectiveWsUrl,

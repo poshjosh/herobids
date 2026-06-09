@@ -274,3 +274,28 @@ describe('runBacktest', () => {
     })).rejects.toThrow('Strategy error during warm-up frame 1');
   });
 });
+
+/**
+ * Regression: bug 2026-05-31-001 — package.json used "main": "./src/index.ts"
+ * causing Node.js to attempt to load TS source at runtime, which failed with
+ * ERR_MODULE_NOT_FOUND because .js extension imports don't exist in src/.
+ * Fix: replaced with a conditional `exports` field pointing to ./dist/index.js.
+ */
+describe('@herobids/backtesting package.json exports (bug 2026-05-31-001 regression)', () => {
+  it('uses conditional exports pointing to dist/index.js, not src/index.ts', () => {
+    const pkgPath = new URL('../package.json', import.meta.url).pathname;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pkg = JSON.parse(require('node:fs').readFileSync(pkgPath, 'utf-8')) as Record<string, unknown>;
+
+    // Must NOT have a "main" pointing to TypeScript source
+    expect(pkg['main']).toBeUndefined();
+
+    // Must have conditional exports with import -> dist
+    const exports = pkg['exports'] as Record<string, unknown> | undefined;
+    expect(exports).toBeDefined();
+    const root = (exports as Record<string, Record<string, string>>)['.'];
+    expect(root).toBeDefined();
+    expect(root!['import']).toBe('./dist/index.js');
+    expect(root!['types']).toBe('./dist/index.d.ts');
+  });
+});

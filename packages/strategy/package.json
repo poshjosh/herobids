@@ -17,6 +17,7 @@
     "@types/node": "^25.9.1"
   },
   "dependencies": {
-    "@herobids/domain": "workspace:*"
+    "@herobids/domain": "workspace:*",
+    "@herobids/llm": "workspace:*"
   }
 }

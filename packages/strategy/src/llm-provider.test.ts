@@ -102,7 +102,8 @@ describe('callLlmProvider', () => {
     );
 
     const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(fetchCall[0]).toBe('https://proxy.example.com/v1/chat/completions');
+    // @herobids/llm always uses the native Anthropic /messages endpoint, with baseUrl override
+    expect(fetchCall[0]).toBe('https://proxy.example.com/v1/messages');
   });
 
   it('returns retryable error for HTTP 429 (rate limit)', async () => {
@@ -110,6 +111,7 @@ describe('callLlmProvider', () => {
       ok: false,
       status: 429,
       text: async () => 'Rate limited',
+      headers: { get: () => null },
     }) as unknown as typeof fetch;
 
     const result = await callLlmProvider(baseConfig, baseRequest);
@@ -126,6 +128,7 @@ describe('callLlmProvider', () => {
       ok: false,
       status: 400,
       text: async () => 'Bad request body',
+      headers: { get: () => null },
     }) as unknown as typeof fetch;
 
     const result = await callLlmProvider(baseConfig, baseRequest);
@@ -142,6 +145,7 @@ describe('callLlmProvider', () => {
       ok: false,
       status: 503,
       text: async () => 'Service unavailable',
+      headers: { get: () => null },
     }) as unknown as typeof fetch;
 
     const result = await callLlmProvider(baseConfig, baseRequest);
@@ -250,6 +254,7 @@ describe('callLlmProvider', () => {
       ok: false,
       status: 422,
       text: async () => longBody,
+      headers: { get: () => null },
     }) as unknown as typeof fetch;
 
     const result = await callLlmProvider(baseConfig, baseRequest);

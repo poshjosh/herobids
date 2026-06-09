@@ -219,4 +219,83 @@ describe('runStructuredToolLoop', () => {
     expect(toolExecutions).toEqual(['check_regime', 'list_positions']);
     expect(vi.mocked(callLlmWithRetry)).toHaveBeenCalledTimes(2);
   });
+
+  describe('retryPolicy option', () => {
+    it('passes retryPolicy fields to callLlmWithRetry', async () => {
+      vi.mocked(callLlmWithRetry).mockResolvedValueOnce({
+        result: {
+          ok: true,
+          data: {
+            content: 'done',
+            toolCalls: [],
+            model: 'test-model',
+            provider: 'openai',
+            tokensUsed: 5,
+            latencyMs: 3,
+            cached: false,
+          },
+        },
+        attempts: 1,
+        delaysMs: [],
+      });
+
+      const retryPolicy = {
+        maxRetries: 3,
+        timeoutBackoffMs: [3_000, 9_000],
+        serverErrorBackoffMs: 7_000,
+        defaultRateLimitBackoffMs: 30_000,
+      };
+
+      await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        maxTurns: 1,
+        retryPolicy,
+        executeTool: async () => null,
+      });
+
+      expect(vi.mocked(callLlmWithRetry)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          maxRetries: 3,
+          timeoutBackoffMs: [3_000, 9_000],
+          serverErrorBackoffMs: 7_000,
+          defaultRateLimitBackoffMs: 30_000,
+        }),
+      );
+    });
+
+    it('works without a retryPolicy (uses defaults internally)', async () => {
+      vi.mocked(callLlmWithRetry).mockResolvedValueOnce({
+        result: {
+          ok: true,
+          data: {
+            content: 'ok',
+            toolCalls: [],
+            model: 'test-model',
+            provider: 'openai',
+            tokensUsed: 5,
+            latencyMs: 3,
+            cached: false,
+          },
+        },
+        attempts: 1,
+        delaysMs: [],
+      });
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        maxTurns: 1,
+        executeTool: async () => null,
+      });
+
+      expect(result.ok).toBe(true);
+    });
+  });
 });

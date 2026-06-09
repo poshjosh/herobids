@@ -40,6 +40,7 @@ describe('EVM signer address derivation', () => {
       privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
       rpcUrl: 'https://mainnet.base.org',
       chainId: 8453,
+      confirmationTimeoutMs: 60_000,
     });
 
     const result = await signer.signTransaction({
@@ -62,12 +63,24 @@ describe('EVM signer address derivation', () => {
       privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
       rpcUrl: 'https://eth.llamarpc.com',
       chainId: 1,
+      confirmationTimeoutMs: 60_000,
     })).not.toThrow();
 
     expect(() => new EvmSigner({
       privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
       rpcUrl: 'https://arb1.arbitrum.io/rpc',
       chainId: 42161,
+      confirmationTimeoutMs: 60_000,
     })).not.toThrow();
+  });
+
+  it('defaults confirmation timeout when omitted', async () => {
+    const signer = new EvmSigner({
+      privateKey: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+      rpcUrl: 'https://mainnet.base.org',
+      chainId: 8453,
+    });
+
+    expect(signer).toBeDefined();
   });
 });

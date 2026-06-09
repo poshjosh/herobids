@@ -18,6 +18,7 @@ describe.skip('OneInch integration', () => {
         privateKey: process.env['ONEINCH_PRIVATE_KEY']!,
         rpcUrl: process.env['BASE_RPC_URL'] ?? 'https://mainnet.base.org',
         chainId: 8453,
+        confirmationTimeoutMs: 60_000,
       },
       tokenDecimals: {
         '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // USDC on Base
@@ -51,6 +52,7 @@ describe.skip('OneInch integration', () => {
         privateKey: process.env['ONEINCH_PRIVATE_KEY']!,
         rpcUrl: process.env['BASE_RPC_URL'] ?? 'https://mainnet.base.org',
         chainId: 8453,
+        confirmationTimeoutMs: 60_000,
       },
       tokenDecimals: {
         '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // USDC on Base

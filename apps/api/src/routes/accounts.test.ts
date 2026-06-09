@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { venueAccountRoutes } from './accounts.js';
+import type { AppConfig } from '@herobids/domain';
+import { HyperliquidAdapter } from '@herobids/venues';
 
 /**
  * Route-level tests for venue-account credential linkage validation.
@@ -59,6 +61,40 @@ describe('POST /venue-accounts credential validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     credentialLookupResult = [];
+  });
+
+  it('passes configured Hyperliquid baseUrl into the probe', async () => {
+    const probeSpy = vi.spyOn(HyperliquidAdapter, 'probe').mockResolvedValue({
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+      availableSymbols: [],
+      supportedExecutionModes: ['paper'],
+      authenticated: false,
+      probedAt: '2026-06-09T00:00:00.000Z',
+    });
+
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db, undefined, {
+      hyperliquid: {
+        baseUrl: 'https://hyperliquid-custom.example',
+      },
+    } as AppConfig['venues']);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: {
+        venue: 'hyperliquid',
+        label: 'Test Account',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(probeSpy).toHaveBeenCalledWith(undefined, {
+      baseUrl: 'https://hyperliquid-custom.example',
+    });
   });
 
   it('rejects when credentialId references a nonexistent credential', async () => {
@@ -147,6 +183,41 @@ describe('POST /venue-accounts credential validation', () => {
     });
 
     expect(res.statusCode).toBe(201);
+  });
+
+  it('keeps Hyperliquid venueProfile aligned with the unauthenticated probe even when a credential is linked', async () => {
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'hyperliquid' }];
+    const probeSpy = vi.spyOn(HyperliquidAdapter, 'probe').mockResolvedValue({
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+      availableSymbols: ['BTC/USD:USD'],
+      supportedExecutionModes: ['paper', 'shadow'],
+      authenticated: false,
+      probedAt: '2026-06-09T00:00:00.000Z',
+    });
+
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/venue-accounts',
+      payload: {
+        venue: 'hyperliquid',
+        label: 'Test Account',
+        credentialId: 'cred-1',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(probeSpy).toHaveBeenCalledWith(undefined, {
+      baseUrl: undefined,
+    });
+    expect(body.venueProfile?.authenticated).toBe(false);
+    expect(body.venueProfile?.supportedExecutionModes).toEqual(['paper', 'shadow']);
   });
 
   it('succeeds when no credentialId is provided (wallet-only, non-swap venue)', async () => {

@@ -35,6 +35,8 @@ export interface DockerAgentManagerConfig {
   llmTradingHoursJson?: string;
   /** Full operator-validated market-data config forwarded to the agent runtime */
   marketDataConfigJson?: string;
+  /** Full operator agentRuntime config (policy, budgets, thresholds) forwarded to the agent runtime */
+  agentRuntimeConfigJson: string;
   /** Market data: DexScreener base URL */
   marketDataDexscreenerBaseUrl?: string;
   /** Market data: DexScreener requests per minute */
@@ -49,6 +51,10 @@ export interface DockerAgentManagerConfig {
   memoryLimitMb?: number;
   /** CPU shares per agent container. Default: 512 */
   cpuShares?: number;
+  /** Tmpfs size limit for /tmp in MB. Default: 100 */
+  tempStorageMb?: number;
+  /** Max number of processes (PIDs) inside the container. Default: 10 */
+  maxProcesses?: number;
 }
 
 export interface DockerContainerSpec {
@@ -83,6 +89,7 @@ export class DockerAgentManager {
   private readonly llmServerCostUsdPerHour: number | undefined;
   private readonly llmTradingHoursJson: string | undefined;
   private readonly marketDataConfigJson: string | undefined;
+  private readonly agentRuntimeConfigJson: string;
   private readonly marketDataDexscreenerBaseUrl: string | undefined;
   private readonly marketDataDexscreenerRpm: number | undefined;
   private readonly marketDataBinanceBaseUrl: string | undefined;
@@ -90,6 +97,8 @@ export class DockerAgentManager {
   private readonly marketDataTimeoutMs: number | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
+  private readonly tempStorageMb: number;
+  private readonly maxProcesses: number;
 
   private eventStreamAbort: AbortController | null = null;
 
@@ -117,6 +126,7 @@ export class DockerAgentManager {
     this.llmServerCostUsdPerHour = _config.llmServerCostUsdPerHour;
     this.llmTradingHoursJson = _config.llmTradingHoursJson;
     this.marketDataConfigJson = _config.marketDataConfigJson;
+    this.agentRuntimeConfigJson = _config.agentRuntimeConfigJson;
     this.marketDataDexscreenerBaseUrl = _config.marketDataDexscreenerBaseUrl;
     this.marketDataDexscreenerRpm = _config.marketDataDexscreenerRpm;
     this.marketDataBinanceBaseUrl = _config.marketDataBinanceBaseUrl;
@@ -124,6 +134,8 @@ export class DockerAgentManager {
     this.marketDataTimeoutMs = _config.marketDataTimeoutMs;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
+    this.tempStorageMb = _config.tempStorageMb ?? 100;
+    this.maxProcesses = _config.maxProcesses ?? 10;
   }
 
   /**
@@ -158,6 +170,7 @@ export class DockerAgentManager {
       ...(this.llmServerCostUsdPerHour != null ? [`LLM_SERVER_COST_USD_PER_HOUR=${this.llmServerCostUsdPerHour}`] : []),
       ...(this.llmTradingHoursJson ? [`TRADING_HOURS_JSON=${this.llmTradingHoursJson}`] : []),
       ...(this.marketDataConfigJson ? [`MARKET_DATA_CONFIG_JSON=${this.marketDataConfigJson}`] : []),
+      `AGENT_RUNTIME_CONFIG_JSON=${this.agentRuntimeConfigJson}`,
       // Market data config forwarded so agent tools use operator-controlled values
       // Both providers must be present — check_regime needs Binance, search_tokens needs DexScreener.
       ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),
@@ -183,6 +196,10 @@ export class DockerAgentManager {
         NetworkMode: this.network,
         Memory: this.memoryBytes,
         CpuShares: this.cpuShares,
+        // Tmpfs mount enforces tempStorageMb — writes beyond this fail with ENOSPC.
+        Tmpfs: { '/tmp': `size=${this.tempStorageMb}m,noexec` },
+        // PidsLimit enforces maxProcesses inside the container.
+        PidsLimit: this.maxProcesses,
         // CAP_NET_ADMIN required for sandbox-exec.sh network namespace creation
         CapAdd: ['NET_ADMIN'],
         RestartPolicy: { Name: 'no' },

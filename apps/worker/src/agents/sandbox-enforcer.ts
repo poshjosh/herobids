@@ -24,18 +24,7 @@ export interface SandboxLimits {
   maxTotalDownloadBytes: number;
 }
 
-/** Conservative v1 defaults */
-export const DEFAULT_SANDBOX_LIMITS: SandboxLimits = {
-  cpuShares: 256,
-  memoryMb: 512,
-  maxWallClockMs: 300_000, // 5 minutes per session
-  tempStorageMb: 100,
-  maxProcesses: 10,
-  maxRequestsPerMinute: 60,
-  maxConcurrentConnections: 10,
-  maxResponseBytes: 10 * 1024 * 1024, // 10MB
-  maxTotalDownloadBytes: 100 * 1024 * 1024, // 100MB
-};
+/** Conservative v1 defaults live in AgentRuntimeConfigSchema.sandboxDefaults */
 
 export interface SandboxViolation {
   type: 'memory' | 'cpu' | 'time' | 'storage' | 'processes' | 'network' | 'download';
@@ -55,8 +44,8 @@ export class SandboxEnforcer {
   private readonly sessions = new Map<string, SessionState>();
   private readonly limits: SandboxLimits;
 
-  constructor(limits?: Partial<SandboxLimits>) {
-    this.limits = { ...DEFAULT_SANDBOX_LIMITS, ...limits };
+  constructor(limits: SandboxLimits) {
+    this.limits = limits;
   }
 
   /** Register a new session for enforcement */

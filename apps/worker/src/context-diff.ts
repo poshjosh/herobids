@@ -4,14 +4,11 @@ export interface ContextDiffResult {
   estimatedTokens: number;
 }
 
-const FULL_CONTEXT_EVERY_TICKS = 10;
-const MAX_DIFF_TOKENS = 200;
-
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function summarizeDiff(previousContext: string, currentContext: string): string[] {
+function summarizeDiff(previousContext: string, currentContext: string, maxChangedLines: number): string[] {
   const previousLines = previousContext.split('\n');
   const currentLines = currentContext.split('\n');
   const changedLines: string[] = [];
@@ -28,7 +25,7 @@ function summarizeDiff(previousContext: string, currentContext: string): string[
         changedLines.push(`+ ${currentLine}`);
       }
     }
-    if (changedLines.length >= 12) {
+    if (changedLines.length >= maxChangedLines) {
       break;
     }
   }
@@ -47,8 +44,13 @@ export function buildIncrementalContext(params: {
   previousContext: string | null;
   currentContext: string;
   tickNumber: number;
+  fullContextEveryTicks: number;
+  maxDiffTokens: number;
+  maxChangedLines: number;
 }): ContextDiffResult {
-  if (!params.previousContext || params.tickNumber % FULL_CONTEXT_EVERY_TICKS === 0) {
+  const { fullContextEveryTicks, maxDiffTokens, maxChangedLines } = params;
+
+  if (!params.previousContext || params.tickNumber % fullContextEveryTicks === 0) {
     return {
       mode: 'full',
       content: params.currentContext,
@@ -56,7 +58,7 @@ export function buildIncrementalContext(params: {
     };
   }
 
-  const changedLines = summarizeDiff(params.previousContext, params.currentContext);
+  const changedLines = summarizeDiff(params.previousContext, params.currentContext, maxChangedLines);
   const previousHeadings = extractHeadingSignature(params.previousContext);
   const currentHeadings = extractHeadingSignature(params.currentContext);
   if (previousHeadings !== currentHeadings) {
@@ -72,7 +74,7 @@ export function buildIncrementalContext(params: {
     : '## Context Diff\n- No material changes from the prior tick.';
   const estimatedTokens = estimateTokens(diffContent);
 
-  if (estimatedTokens > MAX_DIFF_TOKENS) {
+  if (estimatedTokens > maxDiffTokens) {
     return {
       mode: 'full',
       content: params.currentContext,

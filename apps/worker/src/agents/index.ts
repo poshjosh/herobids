@@ -13,7 +13,7 @@ export { AgentStreamConsumer } from './agent-stream-consumer.js';
 export type { AgentStreamConsumerConfig } from './agent-stream-consumer.js';
 export { CapabilityPolicyEngine, DEFAULT_CAPABILITY_GRANTS } from './capability-policy.js';
 export type { CapabilityGrant, CapabilityLimits, CapabilityTier, ToolInvocationRecord } from './capability-policy.js';
-export { SandboxEnforcer, DEFAULT_SANDBOX_LIMITS } from './sandbox-enforcer.js';
+export { SandboxEnforcer } from './sandbox-enforcer.js';
 export type { SandboxLimits, SandboxViolation } from './sandbox-enforcer.js';
 export { AgentReconnectHandler } from './agent-reconnect-handler.js';
 export type { ReconnectConfig, ContextSnapshotResolver } from './agent-reconnect-handler.js';
