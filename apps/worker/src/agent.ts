@@ -14,7 +14,7 @@ import { writeFile, mkdir, rm, access } from 'node:fs/promises';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL, type ToolContext } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { stripReasoningContent } from '@herobids/llm';
@@ -55,6 +55,7 @@ import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
 import { buildDiscoveryNetworkMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, normalizeTrackedSymbol } from './venue-intelligence.js';
+import { createToolRegistry } from './tools/index.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -431,6 +432,12 @@ if (marketDataConfig) {
   }
   applyToolVisibility();
 }
+
+// ---------------------------------------------------------------------------
+// Tool Registry
+// ---------------------------------------------------------------------------
+
+const toolRegistry = createToolRegistry();
 
 function filterSearchResults(
   rawResults: TokenInfo[],
@@ -825,417 +832,65 @@ async function executeTool(call: ToolCall): Promise<string | null> {
 
   logger.info({ tool: call.tool, args: call.args }, 'Executing tool');
 
-  switch (call.tool) {
-    case 'send_message': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, {
-        body: call.args['body'] as string ?? 'No message body',
-        subject: call.args['subject'] as string | undefined,
-      });
-      return JSON.stringify({ ok: true, note: 'message queued for delivery' });
-    }
-
-    case 'set_memory': {
-      const key = call.args['key'];
-      const value = call.args['value'];
-      if (typeof key === 'string' && key.length > 0 && value !== undefined) {
-        await redis.hset(`agent:memory:${AGENT_ID}`, key, JSON.stringify(value));
-        logger.debug({ key }, 'Memory entry set');
-        return JSON.stringify({ ok: true, key });
-      }
-      return JSON.stringify({ ok: false, note: 'key or value missing' });
-    }
-
-    case 'artifact_publish': {
-      const artifactId = crypto.randomUUID();
-      await publishToInbound(AGENT_MESSAGE_TYPES.ARTIFACT_PUBLISH, {
-        artifactId,
-        artifactType: call.args['artifactType'] as string ?? 'text',
-        contentType: call.args['contentType'] as string ?? 'text/plain',
-        summary: call.args['summary'] as string ?? '',
-        location: call.args['location'],
-        metadata: call.args['metadata'],
-      });
-      return JSON.stringify({ ok: true, artifactId });
-    }
-
-    case 'submit_decision': {
-      sessionMetrics.decisionsSubmitted++;
-      const decisionId = crypto.randomUUID();
-      await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
-        decisionId,
-        instrumentId: call.args['instrumentId'] as string ?? '',
-        intent: call.args['intent'] as string ?? 'go_flat',
-        targetSize: call.args['targetSize'] as string ?? '0',
-        limitPrice: call.args['limitPrice'] as string | undefined,
-        rationaleSummary: call.args['rationaleSummary'] as string ?? 'Agent decision',
-        confidence: call.args['confidence'] as number | undefined,
-      });
-      return JSON.stringify({ ok: true, decisionId, note: 'decision submitted to engine' });
-    }
-
-    case 'create_bot': {
-      await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
-        action: 'create_and_start',
-        venueAccountId: call.args['venueAccountId'] as string | undefined,
-        config: call.args['config'] as Record<string, unknown> | undefined,
-        rationale: call.args['rationale'] as string | undefined,
-      });
-      return JSON.stringify({ ok: true, note: 'bot creation submitted — you will see it in the bot list on the next tick' });
-    }
-
-    case 'list_bots': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const daysFilter = typeof call.args['days'] === 'number' ? call.args['days'] : undefined;
-      const since = daysFilter ? new Date(Date.now() - daysFilter * 24 * 60 * 60 * 1000) : undefined;
-      const botRows = await botRepo.getBotsByCreator('agent', AGENT_ID!, since);
-      return JSON.stringify({
-        ok: true,
-        bots: botRows.map((b) => ({
-          id: b.id,
-          status: b.status,
-          strategyPreset: (b.config as Record<string, unknown>)?.['strategyPreset'] ?? null,
-          symbol: (b.config as Record<string, unknown>)?.['symbol'] ?? null,
-          createdAt: b.createdAt.toISOString(),
-        })),
-      });
-    }
-
-    case 'get_bot_status': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const targetBotId = call.args['botId'] as string | undefined;
-      if (!targetBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
-      const bot = await botRepo.getBotById(targetBotId);
-      if (!bot || bot.creatorType !== 'agent' || bot.creatorId !== AGENT_ID) {
-        return JSON.stringify({ ok: false, note: `bot ${targetBotId} not found or not owned by this agent` });
-      }
-      return JSON.stringify({
-        ok: true,
-        id: bot.id,
-        status: bot.status,
-        strategyPreset: (bot.config as Record<string, unknown>)?.['strategyPreset'] ?? null,
-        symbol: (bot.config as Record<string, unknown>)?.['symbol'] ?? null,
-        config: bot.config,
-        startedAt: bot.startedAt?.toISOString() ?? null,
-        stoppedAt: bot.stoppedAt?.toISOString() ?? null,
-      });
-    }
-
-    case 'stop_bot': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const stopBotId = call.args['botId'] as string | undefined;
-      if (!stopBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
-      const stopTarget = await botRepo.getBotById(stopBotId);
-      if (!stopTarget || stopTarget.creatorType !== 'agent' || stopTarget.creatorId !== AGENT_ID) {
-        return JSON.stringify({ ok: false, note: `bot ${stopBotId} not found or not owned by this agent` });
-      }
-      const previousStatus = stopTarget.status;
-
-      if (previousStatus !== 'running') {
-        await botRepo.markBotStopped(stopBotId);
-        return JSON.stringify({ ok: true, botId: stopBotId, previousStatus, note: 'bot was not running' });
-      }
-
-      await botRepo.markBotStopped(stopBotId);
-      try {
-        // Signal the running job to self-terminate without polling.
-        await redis.publish(`bot:stop:${stopBotId}`, '1');
-      } catch (err) {
-        logger.error({ err, botId: stopBotId }, 'Failed to publish bot:stop signal — restoring previous runtime state');
-        try {
-          await botRepo.restoreBotRuntimeState({
-            botId: stopBotId,
-            status: stopTarget.status,
-            startedAt: stopTarget.startedAt,
-            stoppedAt: stopTarget.stoppedAt,
-          });
-        } catch (rollbackErr) {
-          logger.error({ rollbackErr, botId: stopBotId }, 'CRITICAL: failed to restore bot state after stop signal failure');
-        }
-        return JSON.stringify({ ok: false, botId: stopBotId, previousStatus, note: 'failed to signal bot stop' });
-      }
-
-      return JSON.stringify({ ok: true, botId: stopBotId, previousStatus, note: 'bot stopped' });
-    }
-
-    case 'start_bot': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const startBotId = call.args['botId'] as string | undefined;
-      if (!startBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
-      const startTarget = await botRepo.getBotById(startBotId);
-      if (!startTarget || startTarget.creatorType !== 'agent' || startTarget.creatorId !== AGENT_ID) {
-        return JSON.stringify({ ok: false, note: `bot ${startBotId} not found or not owned by this agent` });
-      }
-      if (startTarget.status === 'running') {
-        return JSON.stringify({ ok: false, note: `bot ${startBotId} is already running` });
-      }
-      await botRepo.markBotRunning(startBotId);
-      try {
-        // Enqueue BullMQ start job via broker (agent container does not have direct BullMQ access)
-        await publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
-          action: 'start',
-          botId: startBotId,
-          rationale: call.args['rationale'] as string | undefined,
-        });
-      } catch (err) {
-        logger.error({ err, botId: startBotId }, 'Failed to enqueue direct bot start — restoring previous runtime state');
-        try {
-          await botRepo.restoreBotRuntimeState({
-            botId: startBotId,
-            status: startTarget.status,
-            startedAt: startTarget.startedAt,
-            stoppedAt: startTarget.stoppedAt,
-          });
-        } catch (rollbackErr) {
-          logger.error({ rollbackErr, botId: startBotId }, 'CRITICAL: failed to restore bot state after start enqueue failure');
-        }
-        return JSON.stringify({ ok: false, botId: startBotId, note: 'failed to submit bot start' });
-      }
-
-      return JSON.stringify({ ok: true, botId: startBotId, status: 'running', note: 'bot start submitted' });
-    }
-
-    case 'adjust_bot_config': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const configBotId = call.args['botId'] as string | undefined;
-      const configOverride = call.args['config'] as Record<string, unknown> | undefined;
-      if (!configBotId) return JSON.stringify({ ok: false, note: 'botId is required' });
-      if (!configOverride || typeof configOverride !== 'object') return JSON.stringify({ ok: false, note: 'config is required' });
-      const configTarget = await botRepo.getBotById(configBotId);
-      if (!configTarget || configTarget.creatorType !== 'agent' || configTarget.creatorId !== AGENT_ID) {
-        return JSON.stringify({ ok: false, note: `bot ${configBotId} not found or not owned by this agent` });
-      }
-      const merged = deepMergeConfig(configTarget.config as Record<string, unknown>, configOverride);
-      await botRepo.updateBotConfig(configBotId, merged);
-      return JSON.stringify({ ok: true, botId: configBotId, note: 'config updated — takes effect on next bot tick' });
-    }
-
-    case 'get_analytics': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const analyticsBotId = call.args['botId'] as string | undefined;
-      const analyticsDays = typeof call.args['days'] === 'number' ? Math.min(call.args['days'], 90) : 7;
-      const analyticsSince = new Date(Date.now() - analyticsDays * 24 * 60 * 60 * 1000);
-      const analytics = await botRepo.getAnalyticsByCreator('agent', AGENT_ID!, analyticsSince, analyticsBotId);
-      const winRate = analytics.closedPositions > 0
-        ? (analytics.winningPositions / analytics.closedPositions) * 100
-        : 0;
-      return JSON.stringify({
-        ok: true,
-        totalTrades: analytics.recentFills,
-        winRate: Math.round(winRate * 100) / 100,
-        totalPnlUsd: analytics.realizedPnlUsd,
-        totalFeesUsd: analytics.totalFeesUsd,
-        openPositions: analytics.openPositions,
-        botCount: analytics.botCount,
-        avgHoldTimeHours: analytics.avgHoldTimeHours,
-        byBot: analytics.byBot,
-        days: analyticsDays,
-      });
-    }
-
-    case 'list_positions': {
-      if (!botRepo) return JSON.stringify({ ok: false, note: 'direct db access not available' });
-      const positionsBotId = call.args['botId'] as string | undefined;
-      const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!, positionsBotId);
-      return JSON.stringify({
-        ok: true,
-        note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
-        positions: openPositions.map((p) => ({
-          botId: p.actorId,
-          instrumentId: p.symbol,
-          side: p.side,
-          size: p.size,
-          entryPrice: p.entryPrice,
-          openedAt: p.openedAt.toISOString(),
-        })),
-      });
-    }
-
-    case 'code_execute': {
-      // Enforce capability policy before executing — rate limit, concurrency, and enable/disable.
-      const policyDenied = capabilityEngine.checkAccess('code_execute', AGENT_ID!, SESSION_ID!);
-      if (policyDenied) {
-        addToHistory('user', `code_execute denied by capability policy: ${policyDenied}`);
-        logger.warn({ agentId: AGENT_ID, reason: policyDenied }, 'code_execute denied by capability policy');
-        break;
-      }
-      capabilityEngine.recordStart('code_execute', SESSION_ID!);
-      const codeStartMs = Date.now();
-      let codeSuccess = false;
-
-      // Code execution runs locally inside this container — no broker round-trip needed.
-      // In Docker mode, sandbox-exec.sh provides network namespace isolation (blocks RFC 1918,
-      // allows public internet, uses public DNS). Falls back to direct node in stub/dev mode.
-      const code = call.args['code'] as string ?? '';
-      const description = call.args['description'] as string | undefined;
-      const SANDBOX_SCRIPT = '/usr/local/bin/sandbox-exec.sh';
-      const SANDBOX_DIR = '/tmp/agent-sandbox';
-      const scriptPath = `${SANDBOX_DIR}/script.js`;
-      // Read limits from the effective capability grant so operator/user policy changes
-      // govern execution timeout and output size, not just rate/concurrency.
-      const codeGrant = capabilityEngine.getGrant('code_execute');
-      const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? 60_000;
-      const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? (50 * 1024);
-
-      let stdout = '';
-      let stderr = '';
-      let success = false;
-
-      try {
-        await rm(SANDBOX_DIR, { recursive: true, force: true });
-        await mkdir(SANDBOX_DIR, { recursive: true });
-        await writeFile(scriptPath, code, 'utf8');
-
-        const hasSandbox = await access(SANDBOX_SCRIPT).then(() => true).catch(() => false);
-        let sandboxBin: string;
-        let sandboxArgs: string[];
-        if (hasSandbox) {
-          // sandbox-exec.sh passes $@ to `exec ip netns exec <ns> "$@"`,
-          // so args become the full command inside the namespace.
-          sandboxBin = SANDBOX_SCRIPT;
-          sandboxArgs = ['node', scriptPath];
-        } else {
-          sandboxBin = 'node';
-          sandboxArgs = [scriptPath];
-        }
-
-        const result = await execFileAsync(sandboxBin, sandboxArgs, {
-          timeout: TIMEOUT_MS,
-          maxBuffer: MAX_OUTPUT * 2,
-          env: hasSandbox
-            ? { PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', TIMEOUT: String(Math.ceil(TIMEOUT_MS / 1000)) }
-            : process.env,
-        });
-        stdout = String(result.stdout || '').slice(0, MAX_OUTPUT);
-        success = true;
-        codeSuccess = true;
-      } catch (err) {
-        const execErr = err as { stdout?: string; stderr?: string; message?: string };
-        stdout = String(execErr.stdout || '').slice(0, MAX_OUTPUT);
-        stderr = String(execErr.stderr || execErr.message || 'execution failed').slice(0, 10 * 1024);
-      } finally {
-        capabilityEngine.recordEnd('code_execute', SESSION_ID!, {
-          capability: 'code_execute',
-          agentId: AGENT_ID!,
-          sessionId: SESSION_ID!,
-          timestamp: new Date().toISOString(),
-          durationMs: Date.now() - codeStartMs,
-          inputSummary: `${code.length} bytes`,
-          outputSummary: success ? `${stdout.length} bytes` : `error: ${stderr.slice(0, 100)}`,
-          success: codeSuccess,
-        });
-        // Per-execution stdout is already bounded by MAX_OUTPUT (derived from
-        // the capability grant's maxResponseBytes). Session-level download budget
-        // enforcement would require hooking the network layer inside the sandbox
-        // process — out of scope for the in-process SandboxEnforcer.
-      }
-
-      const label = description ? ` (${description})` : '';
-      const resultContent = success
-        ? `code_execute${label} result:\n${stdout || '(no output)'}`
-        : `code_execute${label} failed:\nstderr: ${stderr}\nstdout: ${stdout || '(no output)'}`;
-      return resultContent;
-    }
-
-    case 'search_tokens': {
-      if (!marketDataRegistry) {
-        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
-      }
-      const query = call.args['query'] as string | undefined;
-      if (!query) return JSON.stringify({ ok: false, error: 'query is required' });
-      try {
-        recordMarketDataAttempt('dexscreener');
-        const searchResult = await marketDataRegistry.dexscreener.search(query);
-        const results = filterSearchResults(searchResult.data, {
-          network: call.args['network'] as string | undefined,
-          minLiquidityUsd: call.args['minLiquidityUsd'] as number | undefined,
-          limit: call.args['limit'] as number | undefined,
-        });
-        return JSON.stringify({ ok: true, tokens: results, freshness: searchResult.meta.freshness });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'unknown error';
-        if (message.includes('Rate limit exceeded')) {
-          recordMarketDataRejection('dexscreener', { priority: 'discovery' });
-          return JSON.stringify({ ok: false, error: 'rate_limit', note: 'Try again in a moment.' });
-        }
-        logger.warn({ err, tool: 'search_tokens' }, 'search_tokens failed');
-        return JSON.stringify({ ok: false, error: message });
-      }
-    }
-
-    case 'discover_tokens': {
-      if (!marketDataRegistry) {
-        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
-      }
-      try {
-        const result = await executeDiscoverTokensTool(marketDataRegistry, call.args, { onAttempt: recordMarketDataAttempt });
-        return JSON.stringify(result);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'unknown error';
-        if (message.includes('Rate limit exceeded')) {
-          recordMarketDataRejection('aggregated-discovery', { priority: 'discovery' });
-          return JSON.stringify({ ok: false, error: 'rate_limit', note: 'Try again next tick.' });
-        }
-        logger.warn({ err, tool: 'discover_tokens' }, 'discover_tokens failed');
-        return JSON.stringify({ ok: false, error: message });
-      }
-    }
-
-    case 'check_regime': {
-      if (!marketDataRegistry) {
-        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
-      }
-      const params = call.args as RegimeParams;
-      try {
-        const result = await evaluateRegime(params, (symbol) =>
-          (recordMarketDataAttempt('binance'), marketDataRegistry!.binance.candles(symbol, { interval: '1h', limit: 200 })).then((response) => response.data),
-        );
-        return JSON.stringify({ ok: true, ...result });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'unknown error';
-        if (message.includes('Rate limit exceeded')) {
-          recordMarketDataRejection('binance', { priority: 'execution' });
-          return JSON.stringify({ ok: false, error: 'rate_limit', note: 'Try again in a moment.' });
-        }
-        logger.warn({ err, tool: 'check_regime' }, 'check_regime failed');
-        return JSON.stringify({ ok: false, error: message });
-      }
-    }
-
-    case 'get_funding_rates': {
-      if (!marketDataRegistry) {
-        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
-      }
-      try {
-        const result = await executeFundingRatesTool(marketDataRegistry, call.args, { onAttempt: recordMarketDataAttempt });
-        return JSON.stringify(result);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'unknown error';
-        logger.warn({ err, tool: 'get_funding_rates' }, 'get_funding_rates failed');
-        return JSON.stringify({ ok: false, error: message });
-      }
-    }
-
-    case 'get_market_overview': {
-      if (!marketDataRegistry) {
-        return JSON.stringify({ ok: false, error: 'market_data_not_configured', note: 'Market data is not configured for this agent.' });
-      }
-      try {
-        const result = await executeMarketOverviewTool(marketDataRegistry, call.args, { onAttempt: recordMarketDataAttempt });
-        return JSON.stringify(result);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'unknown error';
-        logger.warn({ err, tool: 'get_market_overview' }, 'get_market_overview failed');
-        return JSON.stringify({ ok: false, error: message });
-      }
-    }
-
-    default:
-      logger.warn({ tool: call.tool }, 'Unknown tool — ignoring');
-      return `unknown tool: ${call.tool}`;
+  const tool = toolRegistry.get(call.tool);
+  if (!tool) {
+    logger.warn({ tool: call.tool }, 'Unknown tool — not in registry');
+    return `unknown tool: ${call.tool}`;
   }
 
-  return null;
+  // Build tool context from agent runtime state
+  const toolContext: ToolContext = {
+    agentId: AGENT_ID!,
+    sessionId: SESSION_ID!,
+    redis: {
+      hset: redis.hset.bind(redis),
+      hget: redis.hget.bind(redis),
+      publish: redis.publish.bind(redis),
+    },
+    publishToInbound,
+    botRepo: botRepo ?? undefined,
+    marketDataRegistry: marketDataRegistry ?? undefined,
+    recordMarketDataAttempt,
+    recordMarketDataRejection,
+    capabilityEngine,
+    sessionMetrics,
+  };
+
+  try {
+    // Validate parameters at the registry boundary before dispatching.
+    // Tools receive pre-validated data and trust it without re-parsing.
+    const validation = tool.parametersSchema.safeParse(call.args);
+    if (!validation.success) {
+      logger.warn({ tool: call.tool, errors: validation.error.flatten() }, 'Tool parameter validation failed');
+      return JSON.stringify({
+        ok: false,
+        error: `invalid parameters: ${validation.error.issues.map(i => `${i.path.length > 0 ? i.path.join('.') : 'root'}: ${i.message}`).join('; ')}`,
+        retryable: false,
+      });
+    }
+
+    const result = await tool.execute(validation.data, toolContext);
+
+    if (!result.success) {
+      return JSON.stringify({
+        ok: false,
+        error: result.error ?? 'tool execution failed',
+        retryable: result.retryable,
+      });
+    }
+
+    // For tools that return ToolResult, serialize the data
+    if (typeof result.data === 'string') {
+      return result.data;
+    }
+    return JSON.stringify(result.data);
+  } catch (err) {
+    logger.error({ err, tool: call.tool }, 'Tool execution threw unexpected error');
+    const message = err instanceof Error ? err.message : 'unknown error';
+    return JSON.stringify({ ok: false, error: message, retryable: false });
+  }
 }
+
 
 // ---------------------------------------------------------------------------
 // Conversation history
@@ -1525,13 +1180,10 @@ async function runTick(): Promise<void> {
     redis.set(`agent:prompt:${AGENT_ID}`, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
-    const readOnlyScoutTools = getVisibleToolNames(runtimeState).filter((tool) => !new Set([
-      'submit_decision',
-      'create_bot',
-      'stop_bot',
-      'start_bot',
-      'adjust_bot_config',
-    ]).has(tool));
+
+    // Scout tools: auto-derived from registry — all tools with 'read-*' categories
+    const readOnlyScoutTools = toolRegistry.getReadOnlyToolNames()
+      .filter((tool) => allowedTools().has(tool)); // Only visible tools
 
     const scoutSystemPrompt = buildScoutSystemPrompt({
       agentId: AGENT_ID!,

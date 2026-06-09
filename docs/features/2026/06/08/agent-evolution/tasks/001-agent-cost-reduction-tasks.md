@@ -141,39 +141,44 @@ Pass the resolved thinking level to `callLlmProvider`.
 
 ### T8: Scout mode — cheap model dispatch with restricted tools
 
-**Status:** in-progress
+**Status:** in-progress (85% complete)
 **Approach:** Vertical slice
 **Effort:** Large (1–2 sessions)
 **Depends on:** T6, T7
 
 Implement the scout phase:
 
-- Add a `scoutModel` field to agent config (defaults to cheapest available provider).
-- Scout gets a compact prompt: recent context diff + "should we act or hold?"
-- Scout tool policy: read-only tools only (no `submit_decision`, `create_bot`, `stop_bot`, etc.).
-- Scout returns structured output: `{ disposition: 'hold' | 'escalate', reason?: string }`.
-- If `hold` → tick ends, no judge call.
-- If `escalate` → proceed to judge (existing full flow).
+- ✅ Add a `scoutModel` field to agent config (defaults to cheapest available provider).
+- ✅ Scout gets a compact prompt: recent context diff + "should we act or hold?"
+- ✅ Scout tool policy: read-only tools only (no `submit_decision`, `create_bot`, `stop_bot`, etc.).
+- ✅ Scout returns structured output: `{ disposition: 'hold' | 'escalate', reason?: string }`.
+- ✅ If `hold` → tick ends, no judge call.
+- ✅ If `escalate` → proceed to judge (existing full flow).
+- ❌ **Missing:** Scout LLM call doesn't receive tool schemas — currently text-in/text-out only. Scout needs `tools:` parameter with read-only tool definitions so it can invoke `check_regime`, `list_positions`, etc. for informed triage.
 
 **Files:** `apps/worker/src/agent.ts`, tool policy config, agent config schema
-**Acceptance:** Scout calls use cheap model. Scout cannot invoke write tools (enforced, not prompt-only). `hold` disposition ends the tick without a judge call. `escalate` triggers full judge flow.
+**Acceptance:** Scout calls use cheap model. Scout cannot invoke write tools (enforced, not prompt-only). `hold` disposition ends the tick without a judge call. `escalate` triggers full judge flow. **Scout can call read-only tools to inform its hold/escalate decision.**
+
+**To complete:** Add `tools: readOnlyScoutToolSchemas` to the scout `callLlmWithRetry()` invocation (line ~1543 in agent.ts), then handle tool calls in scout response before parsing disposition.
+
+**Continuation:** See `docs/features/2026/06/09/001-tool-registry/000-note.md` (tool registry infrastructure) and `docs/features/2026/06/09/002-scout-tools/000-note.md` (scout tool integration).
 
 ---
 
 ### T9: Judge escalation path
 
-**Status:** in-progress
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T8
 
 Complete the judge phase:
 
-- Judge receives scout's `reason` as additional context in the prompt.
-- Judge uses premium model with `thinking: 'deep'` (or per tick classification).
-- Judge has full tool access.
-- Track and log scout→judge escalation rate for tuning.
-- Metric: `agent.escalation_rate` (target: 15–25% of ticks escalate).
+- ✅ Judge receives scout's `reason` as additional context in the prompt.
+- ✅ Judge uses premium model with `thinking: 'deep'` (or per tick classification).
+- ✅ Judge has full tool access.
+- ✅ Track and log scout→judge escalation rate for tuning.
+- ✅ Metric: `agent.escalation_rate` (target: 15–25% of ticks escalate).
 
 **Files:** `apps/worker/src/agent.ts`
 **Acceptance:** Judge prompt includes scout handoff context. Metrics show escalation rate. Only escalated ticks incur premium model cost.
@@ -182,7 +187,7 @@ Complete the judge phase:
 
 ### T10: Context diffing (incremental prompts)
 
-**Status:** in-progress
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1–2 sessions)
 **Depends on:** T1, T3 (uses context hash infrastructure)

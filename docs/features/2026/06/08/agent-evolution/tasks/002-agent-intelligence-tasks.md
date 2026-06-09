@@ -13,7 +13,7 @@
 
 ### T1: Expand runtime state for portfolio, venue, and cost inputs
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 
@@ -34,7 +34,7 @@ The data model should tolerate partial availability and preserve explicit `unava
 
 ### T2: Rework context assembly order and trimming policy
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -59,7 +59,7 @@ Implement the trimming policy from the reference doc rather than the current sin
 
 ### T3: Add portfolio, position, and recent-event context blocks
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1, T2
@@ -80,7 +80,7 @@ Use the data already flowing through runtime messages and tool results before in
 
 ### T4: Inject perps venue intelligence for active instruments
 
-**Status:** not-started
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1–2 sessions)
 **Depends on:** T2
@@ -102,7 +102,7 @@ Only inject data for instruments the agent can actually trade or currently holds
 
 ### T5: Inject DEX venue intelligence for active holdings and watchlists
 
-**Status:** not-started
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1–2 sessions)
 **Depends on:** T2
@@ -124,7 +124,7 @@ Keep this block asset-class aware: if the agent has no swap bindings or DEX watc
 
 ### T6: Replace the placeholder progress score with goal-aware performance scoring
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1, T3, T4, T5
@@ -153,7 +153,7 @@ Move any fixed cost assumptions into operator config or a clearly typed runtime 
 
 ### T7: Add agent-facing intelligence and discovery tools
 
-**Status:** not-started
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Large (1–2 sessions)
 **Depends on:** T4, T5
@@ -173,7 +173,7 @@ Expose them through skill definitions, runtime tool visibility, and `executeTool
 
 ### T8: Enforce freshness annotations and mixed-venue prompt coverage
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T4, T5, T6, T7

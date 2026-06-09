@@ -12,7 +12,7 @@
 
 ### T1: Expand operator config for the full provider inventory
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 
@@ -33,7 +33,7 @@ Keep this strictly in operator config. Do not fall back to ad hoc `process.env` 
 
 ### T2: Introduce a single provider registry and request-class model
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -55,7 +55,7 @@ The registry should make priority explicit and stop each caller from instantiati
 
 ### T3: Add shared rate-budget coordination across concurrent agents
 
-**Status:** not-started
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Large (1–2 sessions)
 **Depends on:** T2
@@ -77,7 +77,7 @@ This can be a Redis-backed limiter, a worker-owned broker, or another shared coo
 
 ### T4: Add cache, TTL, and freshness metadata for provider responses
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T2
@@ -98,7 +98,7 @@ Minimum TTL coverage:
 
 ### T5: Route agent intelligence features through the coordinated infra
 
-**Status:** not-started
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1–2 sessions)
 **Depends on:** T3, T4
@@ -120,7 +120,7 @@ The goal is to eliminate the current pattern where an agent container directly c
 
 ### T6: Build the rate-limit lab harness and report generator
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Large (1–2 sessions)
 **Depends on:** T3
@@ -143,7 +143,7 @@ This harness is not a correctness unit test. It exists to validate behavior unde
 
 ### T7: Add degradation telemetry and pass/fail thresholds to the runtime surface
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T3, T4, T6

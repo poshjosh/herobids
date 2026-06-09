@@ -10,7 +10,7 @@
 
 ### T1: Add an explicit runtime error taxonomy
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 
@@ -38,7 +38,7 @@ Avoid scattering `if (message.includes(...))` logic across the tick loop.
 
 ### T2: Wrap LLM calls with retry and 429-aware backoff
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -59,7 +59,7 @@ Keep retry policy out of the provider-specific parsing code where possible so ot
 
 ### T3: Make the tick loop self-healing and failure-count aware
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1, T2
@@ -80,7 +80,7 @@ This must apply both to the immediate first tick and the interval-driven loop.
 
 ### T4: Degrade capabilities cleanly when dependencies are unavailable
 
-**Status:** not-started
+**Status:** done
 **Approach:** Vertical slice
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -103,7 +103,7 @@ This task is about dependency-aware capability reduction, not tool-specific busi
 
 ### T5: Add a tool circuit breaker across ticks
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T4
@@ -124,7 +124,7 @@ This prevents the model from burning tokens repeatedly on known-broken tools.
 
 ### T6: Strip thinking content and harden assistant-response parsing
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Medium (1 session)
 **Depends on:** T1
@@ -145,7 +145,7 @@ The current Anthropic parser already prefers `text` blocks; this task finishes t
 
 ### T7: Strengthen reliability observability and documentation
 
-**Status:** not-started
+**Status:** done
 **Approach:** End-to-end
 **Effort:** Small (1 session)
 **Depends on:** T2, T3, T4, T5, T6
