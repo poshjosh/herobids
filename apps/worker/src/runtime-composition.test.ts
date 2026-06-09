@@ -109,6 +109,8 @@ describe('runtime composition helpers', () => {
 
     expect(prompt).toContain('Trade carefully');
     expect(prompt).toContain('Core Platform');
+    expect(prompt).not.toContain('To call a tool, output a JSON object');
+    expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');
     expect(prompt).not.toContain('Capability Readiness');
     expect(prompt).not.toContain('Portfolio Summary');
     expect(userContext).toContain('Capability Readiness');

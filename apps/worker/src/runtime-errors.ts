@@ -85,6 +85,9 @@ export function classifyRuntimeError(
     if (llmError.code === 'provider.http_401' || llmError.code === 'provider.http_403' || llmError.code === 'provider.no_credentials') {
       return { source, mode: 'fatal', reasonCode: 'llm.credentials', message: llmError.message };
     }
+    if (llmError.code === 'provider.invalid_tool_args') {
+      return { source, mode: 'fatal', reasonCode: 'llm.invalid_tool_args', message: llmError.message };
+    }
     return {
       source,
       mode: llmError.retryable ? 'recoverable' : 'degraded',

@@ -26,6 +26,7 @@ export function buildScoutSystemPrompt(params: {
     `Goal: ${params.goal}`,
     `Visible read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
     'Decide whether the judge model needs to act this tick.',
+    'Use tools only when they help decide hold versus escalate.',
     'Respond with JSON only: {"disposition":"hold"|"escalate","reason":"short reason"}.',
   ].join('\n');
 }

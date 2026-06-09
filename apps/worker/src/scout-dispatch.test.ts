@@ -18,6 +18,7 @@ describe('buildScoutSystemPrompt', () => {
     });
 
     expect(prompt).toContain('Visible read-only tools: check_regime, search_tokens.');
+    expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
     expect(prompt).toContain('Respond with JSON only');
   });
 });

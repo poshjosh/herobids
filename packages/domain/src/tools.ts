@@ -123,14 +123,11 @@ export interface AgentTool {
   execute(params: unknown, ctx: ToolContext): Promise<ToolResult>;
 }
 
-/** OpenAI-format tool definition for LLM function calling */
+/** Provider-neutral tool definition for LLM tool calling */
 export interface ToolDefinition {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
 }
 
 /** Helper to check if a category implies read-only access */

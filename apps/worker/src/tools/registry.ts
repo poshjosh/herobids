@@ -26,19 +26,16 @@ export class ToolRegistry {
     return this.list().filter((tool) => predicate(tool.category));
   }
 
-  /** Get OpenAI-format tool definitions for LLM function calling. */
+  /** Get provider-neutral tool definitions for LLM tool calling. */
   getDefinitions(filter?: string[]): ToolDefinition[] {
     const tools = filter
       ? this.list().filter((t) => filter.includes(t.name))
       : this.list();
 
     return tools.map((t) => ({
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters,
-      },
+      name: t.name,
+      description: t.description,
+      inputSchema: t.parameters,
     }));
   }
 

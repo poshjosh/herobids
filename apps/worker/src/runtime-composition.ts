@@ -867,8 +867,6 @@ export function buildSystemPrompt(state: RuntimeCompositionState): string {
     state.runtimeDescriptor.goal,
     '## Available Tools',
     `You can call the following tools: ${allowedTools}.`,
-    'To call a tool, output a JSON object in your response with this format:',
-    '{"tool": "<tool_name>", "args": {...}}',
     '## Agent Identity',
     `Agent ID: ${state.runtimeDescriptor.agentId}`,
     `Execution mode: ${state.runtimeDescriptor.executionMode}`,

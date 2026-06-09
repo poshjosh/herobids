@@ -17,7 +17,7 @@ import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL, type ToolContext } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
-import { stripReasoningContent } from '@herobids/llm';
+import { type LlmToolDefinition } from '@herobids/llm';
 import {
   type BybitCrowdingSignal,
   createProviderRegistry,
@@ -35,116 +35,58 @@ import { buildIncrementalContext } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import {
   applyRuntimeMessage,
-  buildSystemPrompt as composeSystemPrompt,
-  buildTickUserContext,
-  createRuntimeCompositionState,
-  getVisibleToolNames,
-  recordPerformanceInputs,
-  recordRegimeEvaluation,
-  recordSessionCost,
-  setCapabilityDegradation,
-  recordVenueSignals,
-  type RuntimeCompositionState,
-} from './runtime-composition.js';
-import { executeDiscoverTokensTool, executeFundingRatesTool, executeMarketOverviewTool } from './intelligence-tools.js';
-import { shouldSkipTick, type TradingHoursConfig } from './tick-gates.js';
-import { buildScoutSystemPrompt, parseScoutDecision, resolveDefaultScoutModel } from './scout-dispatch.js';
-import { callLlmWithRetry, classifyRuntimeError } from './runtime-errors.js';
-import { applyToolExclusions, FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
-import { processRuntimeFailure } from './runtime-degradation.js';
-import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
-import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
-import { buildDiscoveryNetworkMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, normalizeTrackedSymbol } from './venue-intelligence.js';
-import { createToolRegistry } from './tools/index.js';
+    const judgeLoopResult = await runStructuredToolLoop({
+      providerConfig: {
+        provider: LLM_PROVIDER!,
+        model: costProfile.judgeModel,
+        maxTokens: LLM_MAX_TOKENS,
+        timeoutMs: LLM_TIMEOUT_MS,
+        baseUrl: LLM_BASE_URL,
+      },
+      requestBase: {
+        maxTokens: LLM_MAX_TOKENS,
+        temperature: 0.3,
+        thinking: judgeThinking.thinking,
+      },
+      initialMessages: messages,
+      tools: judgeToolDefinitions,
+      maxTurns: 3,
+      executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
+      onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
+        recordSessionCost(runtimeState, {
+          tokensUsed: result.data.tokensUsed,
+          thinkingTokens: result.data.thinkingTokens,
+          costUsd: estimateLlmCostUsd(costProfile.judgeModel, result.data.tokensUsed),
+        });
+        logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
+        logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
+        if (toolCalls.length === 0) {
+          addToHistory('assistant', assistantResponse);
+        }
+      },
+      onToolResult: ({ toolCall, toolResult }) => {
+        if (toolResult) {
+          addToHistory('user', toolResult, { truncateToToolBudget: true });
+          if (toolResultIndicatesFailure(toolResult)) {
+            recordToolFailure(toolCall.name);
+          } else {
+            recordToolSuccess(toolCall.name);
+          }
+        }
+      },
+      onRetry: ({ attempt, delayMs, classification }) => {
+        logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
+      },
+    });
 
-const execFileAsync = promisify(execFileCb);
-
-const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
-
-// ---------------------------------------------------------------------------
-// Config from environment
-// ---------------------------------------------------------------------------
-
-const AGENT_ID = process.env['AGENT_ID'];
-const SESSION_ID = process.env['SESSION_ID'];
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
-// TOOL_POLICY is forwarded into the container and enforced here for direct-tier tools.
-// Brokered tools are also enforced by the broker, but the container adds a second gate.
-const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
-const MARKET_DATA_CONFIG_RAW = process.env['MARKET_DATA_CONFIG_JSON'];
-const LLM_MODEL = process.env['LLM_MODEL'] ?? 'claude-sonnet-4-5';
-const LLM_PROVIDER = process.env['LLM_PROVIDER'];
-const LLM_BASE_URL = process.env['LLM_BASE_URL'];
-const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
-const LLM_TIMEOUT_MS = parseInt(process.env['LLM_TIMEOUT_MS'] ?? '60000', 10);
-const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 10);
-const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
-const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
-const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
-// 0 = unlimited (the default). Set to a positive number of milliseconds to impose
-// a hard wall-clock cap on any single agent session.
-const SANDBOX_MAX_WALL_CLOCK_MS = parseInt(process.env['SANDBOX_MAX_WALL_CLOCK_MS'] ?? '0', 10);
-
-if (!AGENT_ID || !SESSION_ID) {
-  logger.fatal({ AGENT_ID, SESSION_ID }, 'AGENT_ID and SESSION_ID env vars are required');
-  process.exit(1);
-}
-
-if (!LLM_PROVIDER) {
-  logger.fatal('LLM_PROVIDER env var is required');
-  process.exit(1);
-}
-
-const LLM_API_KEY_RESOLVED =
-  process.env[`LLM_API_KEY_${LLM_PROVIDER.toUpperCase()}`] ||
-  process.env['LLM_API_KEY'];
-// Local providers (e.g. Ollama) don't need an API key when LLM_BASE_URL is set.
-if (!LLM_API_KEY_RESOLVED && !LLM_BASE_URL) {
-  logger.fatal({ provider: LLM_PROVIDER }, 'No API key found for LLM provider — set LLM_API_KEY or LLM_API_KEY_<PROVIDER>');
-  process.exit(1);
-}
-
-interface AgentConfig {
-  prompt?: string;
-  goal?: string;
-  skillIds?: string[];
-  executionMode?: string;
-  scoutModel?: string;
-  costPreset?: CostPreset;
-  dailySpendBudgetUsd?: number;
-  dexWatchlistSymbols?: string[];
-  dailyTokenBudget?: number;
-  dailyLossLimit?: string;
-  maxBots?: number;
-  maxSlippageBps?: number;
-  telegramChatId?: string;
-  runtimeDescriptor?: RuntimeDescriptor;
-}
-
-let agentConfig: AgentConfig;
-
-function parseTradingHours(rawTradingHours: string | undefined): TradingHoursConfig | undefined {
-  if (!rawTradingHours) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(rawTradingHours) as TradingHoursConfig;
-    return parsed;
-  } catch {
-    logger.warn({ rawTradingHours }, 'Failed to parse TRADING_HOURS_JSON — session gate disabled');
-    return undefined;
-  }
-}
-
-function parseToolPolicy(rawPolicy: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(rawPolicy) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    if (!judgeLoopResult.ok) {
+      await handleRuntimeFailure('llm', judgeLoopResult.error);
+      return;
     }
-  } catch {
+
+    if (judgeLoopResult.terminatedByLimit) {
+      logger.warn({ phase: 'judge' }, 'Judge tool loop reached its turn limit');
+    }
     logger.warn('Failed to parse TOOL_POLICY — using defaults');
   }
   return {};
@@ -752,58 +694,6 @@ async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
 // Tool execution
 // ---------------------------------------------------------------------------
 
-interface ToolCall {
-  tool: string;
-  args: Record<string, unknown>;
-}
-
-function parseToolCalls(llmResponse: string): ToolCall[] {
-  const sanitizedResponse = stripReasoningContent(llmResponse);
-  const calls: ToolCall[] = [];
-  let i = 0;
-
-  // Depth-tracking scanner: handles nested objects inside `args` that the old
-  // flat regex /[^{}]/ could not match (e.g. create_bot's config sub-object).
-  while (i < sanitizedResponse.length) {
-    const start = sanitizedResponse.indexOf('{', i);
-    if (start === -1) break;
-
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    let end = -1;
-
-    for (let j = start; j < sanitizedResponse.length; j++) {
-      const ch = sanitizedResponse[j]!;
-      if (escape) { escape = false; continue; }
-      if (ch === '\\' && inString) { escape = true; continue; }
-      if (ch === '"') { inString = !inString; continue; }
-      if (inString) continue;
-      if (ch === '{') depth++;
-      else if (ch === '}') {
-        depth--;
-        if (depth === 0) { end = j; break; }
-      }
-    }
-
-    if (end === -1) break; // Unclosed brace — stop scanning
-
-    const candidate = sanitizedResponse.slice(start, end + 1);
-    try {
-      const parsed = JSON.parse(candidate) as { tool?: string; args?: Record<string, unknown> };
-      if (typeof parsed.tool === 'string' && parsed.args && typeof parsed.args === 'object') {
-        calls.push({ tool: parsed.tool, args: parsed.args });
-      }
-    } catch {
-      // Not a valid JSON object or not a tool call — skip
-    }
-
-    i = end + 1;
-  }
-
-  return calls;
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -1184,6 +1074,11 @@ async function runTick(): Promise<void> {
     // Scout tools: auto-derived from registry — all tools with 'read-*' categories
     const readOnlyScoutTools = toolRegistry.getReadOnlyToolNames()
       .filter((tool) => allowedTools().has(tool)); // Only visible tools
+    const readOnlyScoutDefinitions: LlmToolDefinition[] = toolRegistry.getDefinitions(readOnlyScoutTools).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
 
     const scoutSystemPrompt = buildScoutSystemPrompt({
       agentId: AGENT_ID!,
@@ -1192,65 +1087,88 @@ async function runTick(): Promise<void> {
     });
 
     scoutTickCount++;
-    const scoutResultWithRetry = await callLlmWithRetry(
-      {
+    const scoutLoopResult = await runStructuredToolLoop({
+      providerConfig: {
         provider: LLM_PROVIDER!,
         model: agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL),
         maxTokens: 256,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: LLM_BASE_URL,
       },
-      {
-        messages: [
-          { role: 'system', content: scoutSystemPrompt },
-          { role: 'user', content: userContext },
-        ],
+      requestBase: {
         maxTokens: 256,
         temperature: 0,
         thinking: 'none',
       },
-      {
-        onRetry: ({ attempt, delayMs, classification }) => {
-          logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout LLM call after backoff');
-        },
+      initialMessages: [
+        { role: 'system', content: scoutSystemPrompt },
+        { role: 'user', content: userContext },
+      ],
+      tools: readOnlyScoutDefinitions,
+      maxTurns: 3,
+      executeTool: async (toolCall) => {
+        const allowedReadOnlyTool = readOnlyScoutTools.includes(toolCall.name);
+        if (!allowedReadOnlyTool) {
+          logger.warn({ tool: toolCall.name, phase: 'scout' }, 'Scout attempted write or unavailable tool — rejecting');
+          return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false });
+        }
+
+        try {
+          return await executeTool({ tool: toolCall.name, args: toolCall.args });
+        } catch (err) {
+          logger.warn({ err, tool: toolCall.name, phase: 'scout' }, 'Scout tool execution threw unexpectedly');
+          return JSON.stringify({ ok: false, error: 'tool_failed', note: 'Tool timed out or failed. Skip or retry later.' });
+        }
       },
-    );
-    const scoutResult = scoutResultWithRetry.result;
+      onAssistantTurn: ({ result }) => {
+        recordSessionCost(runtimeState, {
+          tokensUsed: result.data.tokensUsed,
+          thinkingTokens: result.data.thinkingTokens,
+          costUsd: estimateLlmCostUsd(agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL), result.data.tokensUsed),
+        });
+      },
+      onRetry: ({ attempt, delayMs, classification }) => {
+        logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
+      },
+    });
 
-    if (scoutResult.ok) {
-      recordSessionCost(runtimeState, {
-        tokensUsed: scoutResult.data.tokensUsed,
-        thinkingTokens: scoutResult.data.thinkingTokens,
-        costUsd: estimateLlmCostUsd(agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL), scoutResult.data.tokensUsed),
-      });
-    }
-
-    if (!scoutResult.ok) {
-      const scoutFailure = classifyRuntimeError('llm', scoutResult.error);
+    if (!scoutLoopResult.ok) {
+      const scoutFailure = classifyRuntimeError('llm', scoutLoopResult.error);
       if (scoutFailure.mode === 'fatal') {
-        await handleRuntimeFailure('llm', scoutResult.error);
+        await handleRuntimeFailure('llm', scoutLoopResult.error);
         return;
       }
-      logger.warn({ error: scoutResult.error, attempts: scoutResultWithRetry.attempts }, 'Scout LLM call failed — falling back to judge');
-    } else {
-      const scoutDecision = parseScoutDecision(scoutResult.data.content);
-      if (scoutDecision.disposition === 'hold') {
-        const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
-        logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: scoutDecision.reason }, 'Scout held the tick');
-        handleTickSuccess();
-        await sendHeartbeat('ready');
-        return;
-      }
-
-      scoutEscalationCount++;
-      const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
-      logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: scoutDecision.reason }, 'Scout escalated to judge');
-      userContext = `${fullUserContext}\n\nScout escalation reason: ${scoutDecision.reason ?? 'unspecified'}`;
+      logger.warn({ error: scoutLoopResult.error }, 'Scout tool loop failed — falling back to judge');
     }
+
+    if (scoutLoopResult.ok && scoutLoopResult.terminatedByLimit) {
+      logger.warn({ phase: 'scout' }, 'Scout tool loop reached its turn limit');
+    }
+
+    const resolvedScoutDecision = scoutLoopResult.ok && !scoutLoopResult.terminatedByLimit
+      ? parseScoutDecision(scoutLoopResult.assistantResponse)
+      : { disposition: 'escalate' as const, reason: 'scout_tool_loop_limit' };
+    if (resolvedScoutDecision.disposition === 'hold') {
+      const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
+      logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout held the tick');
+      handleTickSuccess();
+      await sendHeartbeat('ready');
+      return;
+    }
+
+    scoutEscalationCount++;
+    const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
+    logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout escalated to judge');
+    userContext = `${fullUserContext}\n\nScout escalation reason: ${resolvedScoutDecision.reason ?? 'unspecified'}`;
 
     addToHistory('user', userContext);
     const recentHistory = conversationHistory.slice(-10);
-    const messages: ConversationMessage[] = [
+    const judgeToolDefinitions: LlmToolDefinition[] = toolRegistry.getDefinitions([...allowedTools()]).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string; toolCalls?: Array<{ id: string; name: string; args: Record<string, unknown> }> }> = [
       { role: 'system', content: systemPrompt },
       ...recentHistory,
     ];
@@ -1269,119 +1187,63 @@ async function runTick(): Promise<void> {
     previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
     logger.info({ thinking: judgeThinking.thinking, reason: judgeThinking.reason }, 'Resolved tick thinking level');
 
-    // Call the LLM
-    const llmResultWithRetry = await callLlmWithRetry(
-      {
+    const judgeLoopResult = await runStructuredToolLoop({
+      providerConfig: {
         provider: LLM_PROVIDER!,
         model: costProfile.judgeModel,
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: LLM_BASE_URL,
       },
-      {
-        messages,
+      requestBase: {
         maxTokens: LLM_MAX_TOKENS,
         temperature: 0.3,
         thinking: judgeThinking.thinking,
       },
-      {
-        onRetry: ({ attempt, delayMs, classification }) => {
-          logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
-        },
+      initialMessages: messages,
+      tools: judgeToolDefinitions,
+      maxTurns: 3,
+      executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
+      onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
+        recordSessionCost(runtimeState, {
+          tokensUsed: result.data.tokensUsed,
+          thinkingTokens: result.data.thinkingTokens,
+          costUsd: estimateLlmCostUsd(costProfile.judgeModel, result.data.tokensUsed),
+        });
+        logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
+        logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
+        if (toolCalls.length === 0) {
+          addToHistory('assistant', assistantResponse);
+        }
       },
-    );
-    const llmResult = llmResultWithRetry.result;
+      onToolResult: ({ toolCall, toolResult }) => {
+        if (toolResult) {
+          addToHistory('user', toolResult, { truncateToToolBudget: true });
+          if (toolResultIndicatesFailure(toolResult)) {
+            recordToolFailure(toolCall.name);
+          } else {
+            recordToolSuccess(toolCall.name);
+          }
+        }
+      },
+      onRetry: ({ attempt, delayMs, classification }) => {
+        logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
+      },
+    });
 
-    if (!llmResult.ok) {
-      await handleRuntimeFailure('llm', llmResult.error);
+    if (!judgeLoopResult.ok) {
+      await handleRuntimeFailure('llm', judgeLoopResult.error);
       return;
     }
 
-    const assistantResponse = stripReasoningContent(llmResult.data.content);
-    recordSessionCost(runtimeState, {
-      tokensUsed: llmResult.data.tokensUsed,
-      thinkingTokens: llmResult.data.thinkingTokens,
-      costUsd: estimateLlmCostUsd(costProfile.judgeModel, llmResult.data.tokensUsed),
-    });
-    addToHistory('assistant', assistantResponse);
-
-    logger.info({ tokensUsed: llmResult.data.tokensUsed, thinkingTokens: llmResult.data.thinkingTokens ?? 0, latencyMs: llmResult.data.latencyMs }, 'LLM response received');
-    logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
-
-    // Parse and execute tool calls
-    const toolCalls = parseToolCalls(assistantResponse);
-    for (const call of toolCalls) {
-      let toolResult: string | null = null;
-      try {
-        toolResult = await executeTool(call);
-      } catch (err) {
-        logger.warn({ err, tool: call.tool }, 'Tool execution threw unexpectedly');
-        toolResult = JSON.stringify({ ok: false, error: 'tool_failed', note: 'Tool timed out or failed. Skip or retry later.' });
-      }
-      if (toolResult) {
-        addToHistory('user', toolResult, { truncateToToolBudget: true });
-        if (toolResultIndicatesFailure(toolResult)) {
-          recordToolFailure(call.tool);
-        } else {
-          recordToolSuccess(call.tool);
-        }
-      }
+    if (judgeLoopResult.terminatedByLimit) {
+      logger.warn({ phase: 'judge' }, 'Judge tool loop reached its turn limit');
+      await sendHeartbeat('degraded', 'llm.tool_loop_limit');
+      return;
     }
 
     handleTickSuccess();
     await sendHeartbeat('ready');
-  } catch (err) {
-    const source = err instanceof Error && /redis|xreadgroup|xadd|connection is closed|econn/i.test(err.message)
-      ? 'redis'
-      : 'tool';
-    await handleRuntimeFailure(source, err);
-  }
-}
-
-async function main(): Promise<void> {
-  logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID, model: LLM_MODEL, skillIds: runtimeDescriptor.resolvedSkills.map((skill) => skill.id).filter((id) => id !== 'base') }, 'Agent runtime starting');
-  runtimeState.sessionStartMs = Date.now();
-
-  // Connect to Redis
-  await redis.ping();
-  logger.info('Redis connected');
-
-  // Drain any entries left pending in the PEL by a previous container incarnation.
-  await drainStalePendingEntries();
-
-  // Register session with the sandbox enforcer so wall-clock and budget tracking begins.
-  sandboxEnforcer.registerSession(SESSION_ID!);
-
-  // Signal starting
-  await sendHeartbeat('starting');
-
-  // Wait for Redis to be fully ready before first tick
-  await new Promise<void>((resolve) => setTimeout(resolve, 1000));
-  await sendHeartbeat('ready');
-
-  // Heartbeat interval — keep the session alive between ticks.
-  // Also checks wall-clock expiry so shutdown is timely even across long tick gaps.
-  heartbeatTimer = setInterval(() => {
-    if (sandboxEnforcer.isExpired(SESSION_ID!)) {
-      logger.warn({ sessionId: SESSION_ID }, 'Session wall-clock limit exceeded — shutting down');
-      void shutdown('wall_clock_expired');
-      return;
-    }
-    void sendHeartbeat('ready').catch((err: unknown) => logger.warn({ err }, 'Heartbeat error'));
-  }, HEARTBEAT_INTERVAL_MS);
-
-  // Main reasoning loop — serialized: skip the interval fire if the previous tick
-  // is still in flight (slow LLM response, long tool chain, etc.).
-  // Run the first tick immediately — hold the in-flight flag so the interval
-  // timer cannot start a concurrent tick if the first one takes longer than TICK_INTERVAL_MS.
-  tickInFlight = true;
-  try {
-    await runTick();
-  } finally {
-    tickInFlight = false;
-    scheduleNextTick(effectiveTickIntervalMs);
-  }
-
   process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
   process.on('SIGINT', () => { void shutdown('SIGINT'); });
 }

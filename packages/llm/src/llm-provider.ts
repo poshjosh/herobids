@@ -14,15 +14,37 @@ export interface LlmProviderConfig {
   baseUrl?: string;
 }
 
+export interface LlmToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface LlmToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export type LlmMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: LlmToolCall[] }
+  | { role: 'tool'; content: string; toolCallId: string; toolName?: string; isError?: boolean };
+
+export type LlmToolChoice = 'auto' | 'none' | 'required';
+
 export interface LlmRequest {
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  messages: LlmMessage[];
   maxTokens: number;
   temperature?: number;
   thinking?: 'none' | 'light' | 'deep';
+  tools?: LlmToolDefinition[];
+  toolChoice?: LlmToolChoice;
 }
 
 export interface LlmResponse {
   content: string;
+  toolCalls: LlmToolCall[];
   model: string;
   provider: string;
   tokensUsed: number;
@@ -58,7 +80,7 @@ export async function callLlmProvider(
   config: LlmProviderConfig,
   request: LlmRequest,
 ): Promise<LlmResult> {
-  if (config.provider === 'anthropic' && !config.baseUrl) {
+  if (config.provider === 'anthropic') {
     return callAnthropicProvider(config, request);
   }
   return callOpenAiCompatibleProvider(config, request);
@@ -82,10 +104,22 @@ async function callOpenAiCompatibleProvider(
 
   const requestBody: Record<string, unknown> = {
     model: config.model,
-    messages: request.messages,
+    messages: toOpenAiMessages(request.messages),
     max_tokens: request.maxTokens,
     temperature: request.temperature ?? 0,
   };
+
+  if (request.tools && request.tools.length > 0 && request.toolChoice !== 'none') {
+    requestBody['tools'] = request.tools.map((tool) => ({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
+    }));
+    requestBody['tool_choice'] = request.toolChoice === 'required' ? 'required' : 'auto';
+  }
 
   if (config.provider === 'openai') {
     const reasoningEffort = toOpenAiReasoningEffort(request.thinking);
@@ -119,16 +153,35 @@ async function callOpenAiCompatibleProvider(
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{
+            id?: string;
+            function?: {
+              name?: string;
+              arguments?: string;
+            };
+          }>;
+        };
+      }>;
       usage?: { total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number } };
       model?: string;
     };
 
-    const content = stripReasoningContent(data.choices?.[0]?.message?.content ?? '');
+    const message = data.choices?.[0]?.message;
+    const content = stripReasoningContent(typeof message?.content === 'string' ? message.content : '');
+    let toolCalls: LlmToolCall[];
+    try {
+      toolCalls = normalizeOpenAiToolCalls(message?.tool_calls);
+    } catch (error) {
+      return invalidToolArgsError(error);
+    }
     return {
       ok: true,
       data: {
         content,
+        toolCalls,
         model: data.model ?? config.model,
         provider: config.provider,
         tokensUsed: data.usage?.total_tokens ?? 0,
@@ -163,7 +216,7 @@ async function callAnthropicProvider(
     return { ok: false, error: { code: 'provider.no_credentials', message: 'No API key found for provider "anthropic"', retryable: false } };
   }
 
-  const baseUrl = 'https://api.anthropic.com/v1';
+  const baseUrl = config.baseUrl ?? 'https://api.anthropic.com/v1';
   const startMs = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -184,8 +237,19 @@ async function callAnthropicProvider(
     max_tokens: maxTokens,
     temperature,
     ...(systemMessage ? { system: systemMessage.content } : {}),
-    messages: chatMessages,
+    messages: toAnthropicMessages(chatMessages),
   };
+
+  if (request.tools && request.tools.length > 0 && request.toolChoice !== 'none') {
+    requestBody['tools'] = request.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema,
+    }));
+    requestBody['tool_choice'] = request.toolChoice === 'required'
+      ? { type: 'any' }
+      : { type: 'auto' };
+  }
 
   if (thinkingBudgetTokens > 0) {
     requestBody['thinking'] = {
@@ -220,19 +284,32 @@ async function callAnthropicProvider(
     }
 
     const data = await response.json() as {
-      content?: Array<{ type: string; text?: string }>;
+      content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>;
       usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number };
       model?: string;
     };
 
-    const content = stripReasoningContent(data.content?.find((b) => b.type === 'text')?.text ?? '');
+    const contentBlocks = data.content ?? [];
+    const content = stripReasoningContent(
+      contentBlocks
+        .filter((block) => block.type === 'text' && typeof block.text === 'string')
+        .map((block) => block.text)
+        .join('\n'),
+    );
     const inputTokens = data.usage?.input_tokens ?? 0;
     const outputTokens = data.usage?.output_tokens ?? 0;
+    let toolCalls: LlmToolCall[];
+    try {
+      toolCalls = normalizeAnthropicToolCalls(contentBlocks);
+    } catch (error) {
+      return invalidToolArgsError(error);
+    }
 
     return {
       ok: true,
       data: {
         content,
+        toolCalls,
         model: data.model ?? config.model,
         provider: 'anthropic',
         tokensUsed: inputTokens + outputTokens,
@@ -269,6 +346,191 @@ function resolveBaseUrl(provider: string): string {
 function resolveApiKey(provider: string): string | undefined {
   const envKey = `LLM_API_KEY_${provider.toUpperCase()}`;
   return process.env[envKey] ?? process.env['LLM_API_KEY'];
+}
+
+function toOpenAiMessages(messages: LlmMessage[]): Array<Record<string, unknown>> {
+  return messages.map((message) => {
+    if (message.role === 'assistant') {
+      const toolCalls = message.toolCalls?.map((toolCall) => ({
+        id: toolCall.id,
+        type: 'function',
+        function: {
+          name: toolCall.name,
+          arguments: JSON.stringify(toolCall.args),
+        },
+      }));
+      return {
+        role: 'assistant',
+        content: message.content.length > 0 ? message.content : null,
+        ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      };
+    }
+
+    if (message.role === 'tool') {
+      return {
+        role: 'tool',
+        content: message.content,
+        tool_call_id: message.toolCallId,
+      };
+    }
+
+    return {
+      role: message.role,
+      content: message.content,
+    };
+  });
+}
+
+function toAnthropicMessages(messages: LlmMessage[]): Array<Record<string, unknown>> {
+  const normalized: Array<Record<string, unknown>> = [];
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const blocks: Array<Record<string, unknown>> = [];
+      if (message.content.length > 0) {
+        blocks.push({ type: 'text', text: message.content });
+      }
+      for (const toolCall of message.toolCalls ?? []) {
+        blocks.push({
+          type: 'tool_use',
+          id: toolCall.id,
+          name: toolCall.name,
+          input: toolCall.args,
+        });
+      }
+
+      normalized.push({
+        role: 'assistant',
+        content: blocks.length === 0 ? message.content : blocks,
+      });
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      appendAnthropicUserBlock(normalized, {
+        type: 'tool_result',
+        tool_use_id: message.toolCallId,
+        content: message.content,
+        is_error: message.isError ?? false,
+      });
+      continue;
+    }
+
+    appendAnthropicUserText(normalized, message.content);
+  }
+
+  return normalized;
+}
+
+function appendAnthropicUserText(messages: Array<Record<string, unknown>>, text: string): void {
+  const lastMessage = messages.at(-1);
+  if (lastMessage && lastMessage['role'] === 'user') {
+    const content = lastMessage['content'];
+    if (typeof content === 'string') {
+      lastMessage['content'] = content.length > 0 ? `${content}\n\n${text}` : text;
+      return;
+    }
+    if (Array.isArray(content)) {
+      content.push({ type: 'text', text });
+      return;
+    }
+  }
+
+  messages.push({ role: 'user', content: text });
+}
+
+function appendAnthropicUserBlock(messages: Array<Record<string, unknown>>, block: Record<string, unknown>): void {
+  const lastMessage = messages.at(-1);
+  if (lastMessage && lastMessage['role'] === 'user') {
+    const content = lastMessage['content'];
+    if (Array.isArray(content)) {
+      content.push(block);
+      return;
+    }
+    if (typeof content === 'string') {
+      lastMessage['content'] = [
+        ...(content.length > 0 ? [{ type: 'text', text: content }] : []),
+        block,
+      ];
+      return;
+    }
+  }
+
+  messages.push({ role: 'user', content: [block] });
+}
+
+function normalizeOpenAiToolCalls(toolCalls: unknown): LlmToolCall[] {
+  if (!Array.isArray(toolCalls)) {
+    return [];
+  }
+
+  return toolCalls.flatMap((toolCall, index) => {
+    if (!toolCall || typeof toolCall !== 'object') {
+      return [];
+    }
+
+    const candidate = toolCall as {
+      id?: string;
+      function?: { name?: string; arguments?: string };
+    };
+
+    if (typeof candidate.function?.name !== 'string') {
+      return [];
+    }
+
+    return [{
+      id: candidate.id ?? `tool_call_${index + 1}`,
+      name: candidate.function.name,
+      args: parseToolArgs(candidate.function.arguments),
+    }];
+  });
+}
+
+function normalizeAnthropicToolCalls(
+  contentBlocks: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>,
+): LlmToolCall[] {
+  return contentBlocks.flatMap((block, index) => {
+    if (block.type !== 'tool_use' || typeof block.name !== 'string') {
+      return [];
+    }
+
+    return [{
+      id: block.id ?? `tool_call_${index + 1}`,
+      name: block.name,
+      args: asToolArgs(block.input),
+    }];
+  });
+}
+
+function parseToolArgs(rawArguments: string | undefined): Record<string, unknown> {
+  if (!rawArguments) {
+    return {};
+  }
+
+  return asToolArgs(JSON.parse(rawArguments));
+}
+
+function asToolArgs(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Tool arguments must be a JSON object');
+  }
+  return value as Record<string, unknown>;
+}
+
+function invalidToolArgsError(error: unknown): LlmResult {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    ok: false,
+    error: {
+      code: 'provider.invalid_tool_args',
+      message,
+      retryable: false,
+    },
+  };
 }
 
 function toAnthropicThinkingBudget(thinking: LlmRequest['thinking']): number {

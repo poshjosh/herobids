@@ -27,6 +27,14 @@ describe('classifyRuntimeError', () => {
     })).toMatchObject({ mode: 'fatal', reasonCode: 'llm.credentials' });
   });
 
+  it('classifies invalid tool arguments as fatal', () => {
+    expect(classifyRuntimeError('llm', {
+      code: 'provider.invalid_tool_args',
+      message: 'tool args malformed',
+      retryable: false,
+    })).toMatchObject({ mode: 'fatal', reasonCode: 'llm.invalid_tool_args' });
+  });
+
   it('classifies database outages as degraded', () => {
     expect(classifyRuntimeError('database', new Error('db unavailable'))).toMatchObject({
       mode: 'degraded',
