@@ -262,6 +262,9 @@ importers:
       '@herobids/domain':
         specifier: workspace:*
         version: link:../domain
+      '@herobids/llm':
+        specifier: workspace:*
+        version: link:../llm
     devDependencies:
       '@types/node':
         specifier: ^25.9.1

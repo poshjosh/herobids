@@ -62,8 +62,8 @@ const codeExecuteTool: AgentTool = {
     if (!_runtimePolicy) {
       return { success: false, error: 'code_execute requires AGENT_RUNTIME_CONFIG_JSON with tools.codeExecute defaults', retryable: false };
     }
-    const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? _runtimePolicy.defaultTimeoutMs;
-    const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? _runtimePolicy.defaultMaxOutputBytes;
+    const TIMEOUT_MS = codeGrant?.limits?.timeoutMs ?? _runtimePolicy.defaultTimeoutMs ?? 30_000;
+    const MAX_OUTPUT = codeGrant?.limits?.maxResponseBytes ?? _runtimePolicy.defaultMaxOutputBytes ?? 1_048_576;
 
     let stdout = '';
     let stderr = '';

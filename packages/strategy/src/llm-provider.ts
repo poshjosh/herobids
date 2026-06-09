@@ -6,7 +6,7 @@
 import { callLlmProvider as callLlmProviderImpl } from '@herobids/llm';
 import type { LlmProviderConfig, LlmResult } from '@herobids/llm';
 
-export type { LlmProviderConfig, LlmResult } from '@herobids/llm';
+export type { LlmProviderConfig, LlmResult, LlmResponse } from '@herobids/llm';
 
 export interface LlmRequest {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;

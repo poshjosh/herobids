@@ -64,7 +64,7 @@ async function enrichDiscoveryTokenPrices(
     }
 
     const result = priceResults.get(key);
-    if (!result.ok || !result.data) {
+    if (!result || !result.ok || !result.data) {
       return token;
     }
 

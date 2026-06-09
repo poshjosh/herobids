@@ -7,7 +7,7 @@
 
 import Fastify from 'fastify';
 import { sql } from 'drizzle-orm';
-import { createDatabase } from '@herobids/db';
+import { createDatabase, skills as skillsTable } from '@herobids/db';
 import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
@@ -23,7 +23,7 @@ import { skillsRoutes } from '../../routes/skills.js';
 import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import type { AuthConfig } from '@herobids/domain';
-import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
+import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL, LlmRuntimeConfigSchema } from '@herobids/domain';
 import { Queue } from 'bullmq';
 
 export const SKIP = !process.env['DATABASE_URL'] || !process.env['REDIS_URL'];
@@ -105,15 +105,14 @@ export async function buildApp() {
 
   await analyticsRoutes(app, db);
 
-  const stubLlmConfig = {
+  const stubLlmConfig = LlmRuntimeConfigSchema.parse({
     provider: 'openai',
     model: 'gpt-4o',
-    baseUrl: undefined,
     maxTokens: 4096,
     timeoutMs: 60_000,
     tickIntervalMs: 900_000,
     heartbeatIntervalMs: 5_000,
-  };
+  });
   await aiRoutes(app, db, stubLlmConfig, redisClient);
 
   await skillsRoutes(app, db);
@@ -157,24 +156,20 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
   // them in sync with what the functional contract tests assert.
   const skillDefs = [BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL];
   for (const skill of skillDefs) {
-    await db.execute(sql`
-      INSERT INTO "skills" (
-        "id", "author_id", "name", "description", "instructions",
-        "required_tools", "context_requirements", "required_guardrails",
-        "capability_families", "suggested_tick_interval_ms", "visibility", "tags",
-        "created_at", "updated_at"
-      ) VALUES (
-        ${skill.id}, NULL,
-        ${skill.name},
-        ${skill.description},
-        ${skill.instructions},
-        ${skill.requiredTools},
-        ${skill.contextRequirements},
-        ${skill.requiredGuardrails},
-        ${skill.capabilityFamilies}::text[], ${skill.suggestedTickIntervalMs}, ${skill.visibility}, ARRAY[]::text[], now(), now()
-      )
-      ON CONFLICT ("id") DO NOTHING
-    `);
+    await db.insert(skillsTable).values({
+      id: skill.id,
+      authorId: null,
+      name: skill.name,
+      description: skill.description,
+      instructions: skill.instructions,
+      requiredTools: skill.requiredTools,
+      contextRequirements: skill.contextRequirements,
+      requiredGuardrails: skill.requiredGuardrails,
+      capabilityFamilies: skill.capabilityFamilies,
+      suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
+      visibility: skill.visibility,
+      tags: [],
+    }).onConflictDoNothing();
   }
 }
 

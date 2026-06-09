@@ -16,6 +16,7 @@ export {
   ExecutionConfigSchema,
   MomentumParamsSchema,
   LlmParamsSchema,
+  LlmRuntimeConfigSchema,
   LiveRolloutConfigSchema,
   MarketDataConfigSchema,
   AlertsConfigSchema,

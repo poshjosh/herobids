@@ -13,24 +13,20 @@ export function buildPublicStreamConnectors(venues: AppConfig['venues']): Map<st
   const bybitVenueConfig = venues['bybit'];
 
   if (hyperliquidVenueConfig?.wsUrl) {
-    streamConnectors.set(publicStreamVenueKey('hyperliquid', false), () => new HyperliquidPublicStream({
-      wsUrl: hyperliquidVenueConfig.wsUrl,
-    }));
+    const wsUrl = hyperliquidVenueConfig.wsUrl;
+    streamConnectors.set(publicStreamVenueKey('hyperliquid', false), () => new HyperliquidPublicStream({ wsUrl }));
   }
   if (hyperliquidVenueConfig?.testnetWsUrl) {
-    streamConnectors.set(publicStreamVenueKey('hyperliquid', true), () => new HyperliquidPublicStream({
-      wsUrl: hyperliquidVenueConfig.testnetWsUrl,
-    }));
+    const wsUrl = hyperliquidVenueConfig.testnetWsUrl;
+    streamConnectors.set(publicStreamVenueKey('hyperliquid', true), () => new HyperliquidPublicStream({ wsUrl }));
   }
   if (bybitVenueConfig?.wsPublicUrl) {
-    streamConnectors.set(publicStreamVenueKey('bybit', false), () => new BybitPublicStream({
-      wsUrl: bybitVenueConfig.wsPublicUrl,
-    }));
+    const wsUrl = bybitVenueConfig.wsPublicUrl;
+    streamConnectors.set(publicStreamVenueKey('bybit', false), () => new BybitPublicStream({ wsUrl }));
   }
   if (bybitVenueConfig?.wsTestnetPublicUrl) {
-    streamConnectors.set(publicStreamVenueKey('bybit', true), () => new BybitPublicStream({
-      wsUrl: bybitVenueConfig.wsTestnetPublicUrl,
-    }));
+    const wsUrl = bybitVenueConfig.wsTestnetPublicUrl;
+    streamConnectors.set(publicStreamVenueKey('bybit', true), () => new BybitPublicStream({ wsUrl }));
   }
 
   return streamConnectors;
