@@ -1,6 +1,6 @@
 # Bug Report: Stale Credential Blob Missing walletAddress Causes Crash on Re-run
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-05-30
 - **Summary:** After bug 001 added `walletAddress` to the Hyperliquid adapter, existing credentials stored in PostgreSQL still contained the old encrypted blob (only `apiKey` + `secret`). The rollout script reused the existing credential without rotating it, so the worker decrypted a blob without `walletAddress`, passed an empty string to CCXT, and the instance crashed with the same `fetchPositions()` error.
@@ -51,6 +51,13 @@ Followed by: `"Reconciliation first pass inconclusive (venue fetch failed) — b
    secret = decrypted.secret;
    walletAddress = decrypted.walletAddress || walletAddress; // fallback to env
    ```
+
+## Regression Tests
+
+Added in `apps/worker/src/crypto.test.ts`:
+- `'decrypts a stale blob without walletAddress without throwing'` — verifies old blobs can be decrypted without crashing
+- `'env-var fallback activates when walletAddress is absent from stale blob'` — verifies the `|| fallback` pattern keeps the env-var value when the blob field is missing
+- `'blob walletAddress takes precedence over the env-var fallback when present'` — verifies the blob value wins when it's present
 
 ## Files Changed
 

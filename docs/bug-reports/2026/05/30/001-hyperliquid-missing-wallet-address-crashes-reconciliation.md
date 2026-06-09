@@ -1,6 +1,6 @@
 # Bug Report: Missing walletAddress in HyperliquidCredentials Crashes Instance on Startup
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-05-30
 - **Summary:** Trading instances using Hyperliquid crash immediately after startup because the CCXT exchange object is never told which account to query. Reconciliation's first-pass call to `fetchPositions()` throws and blocks trading permanently.
@@ -45,6 +45,13 @@ When using your main wallet key directly (not an agent key), `walletAddress` mus
 3. **`scripts/shell/rollout-stage-b.sh`** — Added `HYPERLIQUID_WALLET_ADDRESS` to required env checks. Included `walletAddress` field in the credential secrets JSON when creating the credential.
 
 4. **`packages/venues/src/hyperliquid.integration.test.ts`** — Added `HYPERLIQUID_TESTNET_WALLET_ADDRESS` to the integration test env requirements.
+
+## Regression Tests
+
+Added in `packages/venues/src/hyperliquid.test.ts`:
+- `'passes walletAddress to the CCXT exchange constructor'` — verifies walletAddress is forwarded so fetchPositions/fetchBalances don't throw
+- `'passes apiKey and secret to the CCXT exchange constructor'` — full credential set coverage
+- `'enables sandbox mode when credentials.testnet is true'` — testnet path covered
 
 ## Files Changed
 

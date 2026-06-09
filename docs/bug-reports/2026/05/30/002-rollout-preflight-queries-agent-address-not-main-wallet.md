@@ -1,6 +1,6 @@
 # Bug Report: Pre-flight clearinghouseState Queries Agent Address Instead of Main Account
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Medium
 - **Date:** 2026-05-30
 - **Summary:** The rollout script's pre-flight account check queries the wrong Hyperliquid address. It used `HYPERLIQUID_API_KEY` (the agent/API wallet address) as the `user` parameter for `clearinghouseState`, which always returns $0 equity and 0 positions because the agent wallet holds no funds.
@@ -26,6 +26,10 @@ Consequences:
 ```bash
 -d "{\"type\":\"clearinghouseState\",\"user\":\"$HYPERLIQUID_WALLET_ADDRESS\"}"
 ```
+
+## Regression Tests
+
+This bug is in `scripts/shell/rollout-stage-b.sh` — a shell script. The fix (changing the `clearinghouseState` query from `HYPERLIQUID_API_KEY` to `HYPERLIQUID_WALLET_ADDRESS`) is verified by shell syntax check (`bash -n`) and manual integration test. No unit test is applicable for a bash variable substitution.
 
 ## Files Changed
 

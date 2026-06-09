@@ -1,6 +1,6 @@
 # Bug Report: Rotation-Triggered Restart Crashes — Job Payload Missing Instance Config
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-05-31
 - **Discovered:** Stage C verification Test 4 (post-rotation readiness) — instance crashed immediately after credential rotation
@@ -76,3 +76,14 @@ case 'restart':
 - The restart job should be self-sufficient: either include config in the payload, or the handler must always load from DB
 - Unit test: rotation-triggered restart with no config in job payload should still succeed
 - Consider making `config` always loaded from DB for restart (single source of truth) rather than trusting job payloads
+
+## Regression Tests
+
+Added to `apps/worker/src/runtime.test.ts`:
+
+> **`WorkerRuntime restart — missing config in job payload (bug 2026-05-31-002 regression)`**
+
+Three cases:
+- **Loads config from instanceLoader when restart job has no config** — sends `{ command: 'restart', botId }` with no `config` field; verifies `instanceLoader` is called and the actorFactory receives the loaded config.
+- **Throws when restart job has no config and no instanceLoader is registered** — verifies the error message `'No config available for restart of instance ...'` is thrown.
+- **Uses the job payload config directly and does not call instanceLoader** — sends a restart job with an explicit `config`; verifies `instanceLoader` is NOT called.

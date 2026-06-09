@@ -21,7 +21,7 @@ Changed the `subtitle` prop on the `PageHeader` in `ConnectionsPage.tsx`:
 ## Files Changed
 
 - `apps/web/src/features/connections/ConnectionsPage.tsx`
-- `docs/tech/web/user-acceptance-tests.md` (UAT note updated)
+- `docs/tech/user-acceptance-tests.md` (UAT note updated)
 
 ## Verification
 

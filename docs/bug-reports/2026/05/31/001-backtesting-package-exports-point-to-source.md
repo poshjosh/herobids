@@ -1,6 +1,6 @@
 # Bug Report: Backtesting Package Exports Point to TypeScript Source Instead of Compiled Output
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Medium
 - **Date:** 2026-05-31
 - **Discovered:** Stage C runner — API crashed on startup with `ERR_MODULE_NOT_FOUND`
@@ -58,3 +58,16 @@ Replaced `main`/`types` with proper conditional exports:
 
 - Add a smoke test that imports each workspace package at runtime (not just type-checks)
 - Or enforce `exports` field presence in a lint rule for all `packages/*/package.json`
+
+## Regression Tests
+
+Added to `packages/backtesting/src/backtesting.test.ts`:
+
+> **`@herobids/backtesting package.json exports (bug 2026-05-31-001 regression) > uses conditional exports pointing to dist/index.js, not src/index.ts`**
+
+Reads `packages/backtesting/package.json` directly and asserts:
+- `"main"` field is absent
+- `exports["."].import` is `"./dist/index.js"`
+- `exports["."].types` is `"./dist/index.d.ts"`
+
+Any regression that reverts the exports to `"main": "./src/index.ts"` will immediately fail this test.

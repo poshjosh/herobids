@@ -112,7 +112,7 @@ These tests should use `AGENT_RUNTIME_MODE=stub` in CI unless a Docker-in-Docker
 
 #### 3c. User-acceptance test scenarios
 
-File location: `tests/e2e/` or reference [docs/tech/web/user-acceptance-tests.md](../../../tech/web/user-acceptance-tests.md)
+File location: `tests/e2e/` or reference [docs/tech/user-acceptance-tests.md](../../../tech/user-acceptance-tests.md)
 
 Cover the key user journeys from the browser perspective using a headless browser (Playwright recommended):
 

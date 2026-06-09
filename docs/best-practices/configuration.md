@@ -197,3 +197,23 @@ Stored in Postgres, loaded by the trading instance at startup:
 
   The `:-` syntax makes the entry optional (empty string if unset), which is falsy and safely skipped by conditional forwarding code.
 - **Applying bot blueprint risk defaults as agent constraints.** When an agent is the actor, risk config fields in the bot blueprint are data the agent reasons over, not platform-enforced constraints. Never silently enforce a default stop-loss, position cap, or portfolio stop over an agent's decisions unless the user's goal explicitly specifies it. See [Agent Mode Purity](../tech/agents/runtime-boundary-and-message-contract.md#agent-mode-purity).
+
+---
+
+## Three Config Surfaces — Never Mix Them
+
+| Surface | Home | Lifecycle |
+|---|---|---|
+| Operator config | `config/default.yaml` + `packages/domain/src/config/schema.ts` | Deploy/restart |
+| Env overrides | `apps/worker/src/config.ts` `ENV_OVERRIDES` map | Deploy/restart — secrets and infra wiring only |
+| Agent container payload | `apps/worker/src/index.ts` + `docker-agent-manager.ts` | Runtime, derived from resolved operator config |
+
+**Schema presence does not imply env override support.** Not every operator-config field needs an env override. The burden of proof for a new env override is operational need, not schema existence.
+
+**Env overrides are justified for:** secrets, deployment-specific scalars infra injects (URLs, ports, provider names), and existing scalar LLM runtime values already in the `ENV_OVERRIDES` map.
+
+**Env overrides are not justified for:** structured policy objects (trading hours, market-data budgets, context diff policy, sandbox limits, retry backoff arrays). These belong in YAML.
+
+**Container payload fields** (`TRADING_HOURS_JSON`, `MARKET_DATA_CONFIG_JSON`, `AGENT_CONFIG`, `TOOL_POLICY`, `AGENT_RUNTIME_CONFIG_JSON`) are internal worker-to-agent transport contract. They are not operator env vars, must not appear in `docker-compose.yaml`, and must always be derived from resolved `appConfig` in `index.ts`.
+
+**`docker-compose.yaml`** is infra wiring only: service URLs, Docker runtime wiring, and secret passthrough into worker. It is not a second home for structured operator policy.

@@ -1,6 +1,6 @@
 # Bug Report: Crashed Instances Block Start of Same-Account Instances via Unique Constraint
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Medium
 - **Date:** 2026-05-31
 - **Discovered:** Stage C runner Step 6 — `POST /instances/:id/start` returned 500
@@ -54,3 +54,14 @@ The runner script workaround (pre-stopping crashed instances) has been removed s
 - Common in development: instances crash frequently during testing, accumulate in `crashed` state
 - The 500 error gave no indication of which other instance was blocking
 - Now resolved with informative 409 responses
+
+## Regression Tests
+
+Added to `packages/db/src/schema/bots.test.ts`:
+
+> **`bots schema — removed unique index (bug 2026-05-31-003 regression)`**
+
+Three cases:
+- **does not import uniqueIndex from drizzle-orm/pg-core** — verifies the schema source does not contain `uniqueIndex` (which would re-introduce a unique constraint).
+- **documents the removal with REMOVED marker** — verifies the source retains the `// uq_trading_instances_active_venue_account REMOVED` comment, making any re-introduction deliberate.
+- **only uses non-unique index() on venueAccountId** — asserts the regular (non-unique) `idx_bots_venue_account_id` index is present instead.

@@ -1,6 +1,6 @@
 # Bug Report: Silent fetchPrice Failure — No Log When Ticker Fetch Fails
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** High
 - **Date:** 2026-05-30
 - **Summary:** The `fetchPrice()` closure in the worker returned `null` without any logging when `venueAdapter.fetchTicker()` returned an error Result. Since `tick()` also exits silently on null snapshot, a failing ticker fetch produced zero diagnostic output. The actor appeared healthy from logs (reconciliation passing, no errors), making it impossible to distinguish "strategy hasn't fired yet" from "price data is completely broken."
@@ -46,6 +46,16 @@ const fetchPrice = async (): Promise<MarketSnapshot | null> => {
   return { symbol: config.symbol, price: result.data.last, timestamp: result.data.timestamp };
 };
 ```
+
+## Regression Tests
+
+The `fetchPrice` closure in `apps/worker/src/index.ts` is not exported and cannot be unit-tested in isolation. The nearest testable level is the `HyperliquidAdapter.fetchTicker` contract: it must return an `err` Result (not throw) so that `fetchPrice` can check `!result.ok` and call `logger.warn`.
+
+Added in `packages/venues/src/hyperliquid.test.ts`:
+- `'returns err with venue.exchange_error when exchange throws for unknown symbol'` — the exact scenario that triggered Bug 005 (wrong symbol format), ensuring the error propagates as a Result that `fetchPrice` can inspect and log
+- `'returns err with venue.network_error when exchange throws NetworkError'`
+- `'returns err with venue.rate_limited when exchange throws RateLimitExceeded'`
+- `'returns err with venue.unknown for unexpected errors'`
 
 ## Lesson
 

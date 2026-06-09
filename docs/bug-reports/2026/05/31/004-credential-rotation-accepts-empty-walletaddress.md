@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-31  
 **Severity:** Medium  
-**Status:** FIXED  
+**Status:** CLOSED  
 **Component:** `apps/api/src/routes/credentials.ts` (create + rotate endpoints)
 
 ## Summary
@@ -63,3 +63,15 @@ if (venue === 'hyperliquid') {
 ## Workaround
 
 Ensure `HYPERLIQUID_ACCOUNT_ADDRESS` is set in the environment before running any rotation commands. Re-rotate with the correct value to fix an existing bad credential.
+
+## Regression Tests
+
+Added to `apps/api/src/routes/credentials.test.ts`:
+
+> **`POST /credentials (create) > rejects Hyperliquid credential with empty walletAddress`** — sends `{ walletAddress: '' }`; asserts HTTP 400, `error: 'validation_error'`, and `details` path includes `secrets.walletAddress`.
+
+> **`POST /credentials (create) > rejects Hyperliquid credential with malformed walletAddress`** — sends `{ walletAddress: 'not-an-address' }`; asserts HTTP 400, `details` path includes `secrets.walletAddress`.
+
+> **`POST /credentials/:id/rotate > rejects rotation with empty walletAddress for Hyperliquid`** — sends rotate payload with `{ walletAddress: '' }`; asserts HTTP 400, `error: 'validation_error'`, `details` path includes `secrets.walletAddress`, and no journal event is appended (rotation did not proceed).
+
+These three tests together ensure that both the create and rotate paths reject invalid Hyperliquid credentials before they are encrypted and stored.

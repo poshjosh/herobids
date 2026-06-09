@@ -1,6 +1,6 @@
 # Bug Report: Wrong Hyperliquid Symbol Format Prevents All Trading
 
-- **Status:** FIXED
+- **Status:** CLOSED
 - **Severity:** Critical
 - **Date:** 2026-05-30
 - **Summary:** The rollout script defaulted to `ETH/USD:USD` as the trading symbol, but Hyperliquid's CCXT integration uses `ETH/USDC:USDC` for perpetual contracts. Every `fetchTicker` call threw "hyperliquid does not have market symbol ETH/USD:USD", which was caught by the adapter's `withRateLimit` wrapper and returned as an error Result. `fetchPrice()` then returned `null`, causing `tick()` to exit silently every cycle. The instance appeared healthy (reconciliation passed, no errors logged) but could never generate orders.
@@ -42,6 +42,12 @@ The symbol `ETH/USD:USD` matches no market on the exchange.
 ```bash
 SYMBOL="${ROLLOUT_SYMBOL:-ETH/USDC:USDC}"
 ```
+
+## Regression Tests
+
+This bug is in `scripts/shell/rollout-stage-b.sh` — a shell script variable default. The fix (changing the default symbol from `ETH/USD:USD` to `ETH/USDC:USDC`) is verified by manual end-to-end testing. No unit test is applicable for a bash default variable.
+
+The adapter-level guarantee that an invalid symbol causes a correctly-typed `err` Result (rather than an uncaught throw) is covered by `packages/venues/src/hyperliquid.test.ts`: `'returns err with venue.exchange_error when exchange throws for unknown symbol'`.
 
 ## Lesson
 
