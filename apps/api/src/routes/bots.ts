@@ -10,6 +10,7 @@ import {
   UpdateInstanceConfigSchema,
 } from '../schemas.js';
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
+import { errorPayload } from '../error-payload.js';
 import type { LifecycleJob } from '../types.js';
 
 export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
@@ -113,7 +114,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
       }
       if (result.kind === 'limit') {
-        return reply.status(403).send({ error: result.error.code, message: result.error.message });
+        return reply.status(403).send(errorPayload(result.error.code, result.error.message, result.error.params));
       }
     } else {
       // No plan config — verify trading binding ownership then insert directly.

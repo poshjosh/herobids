@@ -25,14 +25,26 @@ function resolvePlanLimits(config: PlansConfig, planId: string): PlanLimits {
   return plan;
 }
 
-export type PlanCheckResult = Result<void, { code: string; message: string; limit: number; current: number }>;
+export type PlanCheckResult = Result<void, {
+  code: string;
+  message: string;
+  limit: number;
+  current: number;
+  params?: Record<string, unknown>;
+}>;
 
 /** Check if user can create a new venue account */
 export async function checkVenueAccountLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: venueAccounts.id }).from(venueAccounts).where(eq(venueAccounts.userId, userId));
   if (rows.length >= limits.maxVenueAccounts) {
-    return err({ code: 'plan.limit_exceeded', message: `Venue account limit reached (${limits.maxVenueAccounts})`, limit: limits.maxVenueAccounts, current: rows.length });
+    return err({
+      code: 'plan.limit_exceeded',
+      message: `Venue account limit reached (${limits.maxVenueAccounts})`,
+      limit: limits.maxVenueAccounts,
+      current: rows.length,
+      params: { resource: 'venue_account', limit: limits.maxVenueAccounts, current: rows.length },
+    });
   }
   return ok(undefined);
 }
@@ -42,7 +54,13 @@ export async function checkCredentialLimit(db: Database, config: PlansConfig, us
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: userCredentials.id }).from(userCredentials).where(eq(userCredentials.userId, userId));
   if (rows.length >= limits.maxCredentials) {
-    return err({ code: 'plan.limit_exceeded', message: `Credential limit reached (${limits.maxCredentials})`, limit: limits.maxCredentials, current: rows.length });
+    return err({
+      code: 'plan.limit_exceeded',
+      message: `Credential limit reached (${limits.maxCredentials})`,
+      limit: limits.maxCredentials,
+      current: rows.length,
+      params: { resource: 'credential', limit: limits.maxCredentials, current: rows.length },
+    });
   }
   return ok(undefined);
 }
@@ -53,7 +71,13 @@ export async function checkBotLimit(db: Database, config: PlansConfig, userId: s
   const rows = await db.select({ id: bots.id }).from(bots)
     .where(eq(bots.userId, userId));
   if (rows.length >= limits.maxTradingInstances) {
-    return err({ code: 'plan.limit_exceeded', message: `Bot limit reached (${limits.maxTradingInstances})`, limit: limits.maxTradingInstances, current: rows.length });
+    return err({
+      code: 'plan.limit_exceeded',
+      message: `Bot limit reached (${limits.maxTradingInstances})`,
+      limit: limits.maxTradingInstances,
+      current: rows.length,
+      params: { resource: 'bot', limit: limits.maxTradingInstances, current: rows.length },
+    });
   }
   return ok(undefined);
 }
@@ -65,7 +89,13 @@ export const checkTradingInstanceLimit = checkBotLimit;
 export function checkLiveEnabled(config: PlansConfig, planId: string): PlanCheckResult {
   const limits = resolvePlanLimits(config, planId);
   if (!limits.liveEnabled) {
-    return err({ code: 'plan.live_disabled', message: 'Live trading is not available on your current plan', limit: 0, current: 0 });
+    return err({
+      code: 'plan.live_disabled',
+      message: 'Live trading is not available on your current plan',
+      limit: 0,
+      current: 0,
+      params: { resource: 'live_trading' },
+    });
   }
   return ok(undefined);
 }
@@ -76,7 +106,13 @@ export async function checkBacktestLimit(db: Database, config: PlansConfig, user
   const rows = await db.select({ id: backtestRuns.id }).from(backtestRuns)
     .where(and(eq(backtestRuns.userId, userId), inArray(backtestRuns.status, ['pending', 'running'])));
   if (rows.length >= limits.maxConcurrentBacktests) {
-    return err({ code: 'plan.limit_exceeded', message: `Concurrent backtest limit reached (${limits.maxConcurrentBacktests})`, limit: limits.maxConcurrentBacktests, current: rows.length });
+    return err({
+      code: 'plan.limit_exceeded',
+      message: `Concurrent backtest limit reached (${limits.maxConcurrentBacktests})`,
+      limit: limits.maxConcurrentBacktests,
+      current: rows.length,
+      params: { resource: 'backtest', limit: limits.maxConcurrentBacktests, current: rows.length },
+    });
   }
   return ok(undefined);
 }
@@ -86,7 +122,13 @@ export async function checkAgentLimit(db: Database, config: PlansConfig, userId:
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId));
   if (rows.length >= limits.maxAgents) {
-    return err({ code: 'plan.limit_exceeded', message: `Agent limit reached (${limits.maxAgents})`, limit: limits.maxAgents, current: rows.length });
+    return err({
+      code: 'plan.limit_exceeded',
+      message: `Agent limit reached (${limits.maxAgents})`,
+      limit: limits.maxAgents,
+      current: rows.length,
+      params: { resource: 'agent', limit: limits.maxAgents, current: rows.length },
+    });
   }
   return ok(undefined);
 }

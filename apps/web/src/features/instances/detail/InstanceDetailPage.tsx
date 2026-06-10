@@ -97,11 +97,11 @@ export function InstanceDetailPage() {
   const timelineEvents: ActivityEvent[] = (journalQuery.data?.events ?? []).map((ev) => ({
     id: ev.id,
     botId: ev.actorId,
-    actorId: ev.actorId,
+    instanceLabel: null,
     type: ev.type,
     category: inferCategory(ev.type),
     severity: inferSeverity(ev.type),
-    message: ev.type,
+    messageKey: `activity.${ev.type}`,
     timestamp: ev.createdAt,
     detail: ev.payload,
   }));

@@ -22,105 +22,88 @@ type EventSeverity = 'info' | 'warn' | 'critical';
 interface EventMeta {
   category: EventCategory;
   severity: EventSeverity;
-  message: (payload: Record<string, unknown>) => string;
 }
 
 const EVENT_META: Record<string, EventMeta> = {
   'decision.accepted': {
     category: 'decision',
     severity: 'info',
-    message: (p) => `Decision accepted: ${(p['intent'] as string | undefined) ?? 'unknown'} ${(p['instrumentId'] as string | undefined) ?? ''}`.trim(),
   },
   'decision.rejected': {
     category: 'risk',
     severity: 'warn',
-    message: (p) => `Decision rejected: ${(p['reason'] as string | undefined) ?? 'risk gate'}`,
   },
   'risk.breach': {
     category: 'risk',
     severity: 'critical',
-    message: (p) => `Risk limit breached: ${(p['reason'] as string | undefined) ?? 'limit exceeded'}`,
   },
   'risk.guardrail_triggered': {
     category: 'risk',
     severity: 'warn',
-    message: (p) => `Guardrail triggered: ${(p['reason'] as string | undefined) ?? 'safety limit'}`,
   },
   'order.submitted': {
     category: 'execution',
     severity: 'info',
-    message: (p) => `Order placed: ${(p['side'] as string | undefined) ?? ''} ${(p['symbol'] as string | undefined) ?? ''}`.trim(),
   },
   'order.filled': {
     category: 'execution',
     severity: 'info',
-    message: (p) => `Order filled: ${(p['side'] as string | undefined) ?? ''} ${(p['quantity'] as string | undefined) ?? ''} ${(p['symbol'] as string | undefined) ?? ''} @ ${(p['price'] as string | undefined) ?? 'market'}`.trim(),
   },
   'order.fill_confirmed_from_stream': {
     category: 'execution',
     severity: 'info',
-    message: (p) => `Fill confirmed: ${(p['side'] as string | undefined) ?? ''} ${(p['quantity'] as string | undefined) ?? ''} ${(p['symbol'] as string | undefined) ?? ''}`.trim(),
   },
   'order.cancelled': {
     category: 'execution',
     severity: 'info',
-    message: () => 'Order cancelled',
   },
   'order.rejected': {
     category: 'execution',
     severity: 'warn',
-    message: (p) => `Order rejected by venue: ${(p['reason'] as string | undefined) ?? 'unknown reason'}`,
   },
   'instance.started': {
     category: 'system',
     severity: 'info',
-    message: () => 'Agent started',
   },
   'instance.stopped': {
     category: 'system',
     severity: 'info',
-    message: () => 'Agent stopped',
   },
   'instance.crashed': {
     category: 'system',
     severity: 'critical',
-    message: (p) => `Agent crashed: ${(p['reason'] as string | undefined) ?? 'unexpected error'}`,
   },
   'instance.live_armed': {
     category: 'system',
     severity: 'warn',
-    message: () => 'Live trading armed',
   },
   'instance.live_blocked': {
     category: 'system',
     severity: 'warn',
-    message: (p) => `Live trading blocked: ${(p['reason'] as string | undefined) ?? 'checks failed'}`,
   },
   'reconciliation.drift_detected': {
     category: 'system',
     severity: 'warn',
-    message: () => 'Position drift detected — reconciling',
   },
   'live.slippage_alert': {
     category: 'execution',
     severity: 'warn',
-    message: (p) => `High slippage detected: ${(p['slippageBps'] as number | undefined) ?? '?'} bps`,
   },
 };
 
-function classifyEvent(type: string, payload: Record<string, unknown>): { category: EventCategory; severity: EventSeverity; message: string } {
+function classifyEvent(type: string, _payload: Record<string, unknown>): { category: EventCategory; severity: EventSeverity } {
   const meta = EVENT_META[type];
   if (meta) {
-    return { category: meta.category, severity: meta.severity, message: meta.message(payload) };
+    return { category: meta.category, severity: meta.severity };
   }
-  // Fallback: infer from type prefix
+  // Fallback: infer category from type prefix
   const prefix = type.split('.')[0] ?? '';
   const category: EventCategory =
     prefix === 'decision' ? 'decision' :
     prefix === 'risk' ? 'risk' :
     prefix === 'order' || prefix === 'fill' ? 'execution' :
     'system';
-  return { category, severity: 'info', message: type };
+  return { category, severity: 'info' };
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +267,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
 
     const normalised = events.map((ev) => {
       const payload = ev.payload as Record<string, unknown>;
-      const { category, severity, message } = classifyEvent(ev.type, payload);
+      const { category, severity } = classifyEvent(ev.type, payload);
       const va = ev.actorId ? botVaMap.get(ev.actorId) : undefined;
       return {
         id: ev.id,
@@ -293,7 +276,8 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
         type: ev.type,
         category,
         severity,
-        message,
+        // Client resolves user-visible text from this key + detail params
+        messageKey: `activity.${ev.type}`,
         timestamp: ev.createdAt.toISOString(),
         detail: payload,
       };

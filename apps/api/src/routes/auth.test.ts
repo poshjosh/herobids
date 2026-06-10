@@ -82,6 +82,8 @@ describe('auth routes', () => {
         email: 'test@example.com',
         avatarUrl: null,
         planId: 'free',
+        preferredLocale: 'ar',
+        telegramChatId: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-01'),
       };
@@ -105,6 +107,71 @@ describe('auth routes', () => {
       expect(body.id).toBe('user-1');
       expect(body.email).toBe('test@example.com');
       expect(body.planId).toBe('free');
+      expect(body.preferredLocale).toBe('ar');
+    });
+  });
+
+  describe('PATCH /auth/me', () => {
+    it('updates preferredLocale and telegramChatId when payload is valid', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        preferredLocale: 'hi',
+        telegramChatId: '123456',
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-02'),
+      };
+      const updateWhere = vi.fn().mockResolvedValue(undefined);
+      const db = {
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({ where: updateWhere }),
+        }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([updatedUser]),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { preferredLocale: 'hi', telegramChatId: '123456' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(updateWhere).toHaveBeenCalled();
+      expect(res.json<{ preferredLocale: string | null }>().preferredLocale).toBe('hi');
+    });
+
+    it('returns a stable code when preferredLocale is invalid', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const db = {
+        update: vi.fn(),
+        select: vi.fn(),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { preferredLocale: 'fr' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ error: string }>().error).toBe('auth.profile.invalid_preferred_locale');
+      expect(res.json<{ params?: { supportedLocales?: string } }>().params?.supportedLocales).toBe('en, ar, hi');
     });
   });
 
@@ -250,10 +317,10 @@ describe('auth routes', () => {
       expect(res.json<{ token: string }>().token).toBeTruthy();
     });
 
-    // Regression: bug 003 — user INSERT omitted telegramChatId and aiModelConfig,
+    // Regression: bug 003 — user INSERT omitted nullable preference fields,
     // causing PostgreSQL to substitute DEFAULT. Both columns lack a DEFAULT, so the
     // insert threw a constraint violation and returned HTTP 500 for every registration.
-    it('includes telegramChatId: null and aiModelConfig: null in the user INSERT', async () => {
+    it('includes preferredLocale: null, telegramChatId: null and aiModelConfig: null in the user INSERT', async () => {
       const { authRoutes } = await import('./auth.js');
       let capturedUserInsert: Record<string, unknown> | undefined;
       const db = buildRegisterDb((vals) => { capturedUserInsert = vals; });
@@ -271,6 +338,7 @@ describe('auth routes', () => {
       expect(capturedUserInsert).toBeDefined();
       // Both nullable columns must be explicitly set to null — not omitted —
       // so Drizzle does not emit DEFAULT in the INSERT statement.
+      expect(capturedUserInsert!['preferredLocale']).toBeNull();
       expect(capturedUserInsert!['telegramChatId']).toBeNull();
       expect(capturedUserInsert!['aiModelConfig']).toBeNull();
     });
@@ -299,7 +367,7 @@ describe('auth routes', () => {
       });
 
       expect(res.statusCode).toBe(409);
-      expect(res.json<{ error: string }>().error).toMatch(/already exists/i);
+      expect(res.json<{ error: string }>().error).toBe('auth.register.email_taken');
     });
 
     it('returns 400 when password is shorter than 8 characters', async () => {
@@ -317,7 +385,8 @@ describe('auth routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(res.json<{ error: string }>().error).toContain('8 characters');
+      expect(res.json<{ error: string }>().error).toBe('auth.register.password_too_short');
+      expect(res.json<{ params?: { minLength?: number } }>().params?.minLength).toBe(8);
     });
   });
 });

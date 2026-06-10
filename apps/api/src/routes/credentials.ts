@@ -11,6 +11,7 @@ import { CreateCredentialSchema, RotateCredentialSchema } from '../schemas.js';
 import { findCredentialDependents } from '../credential-dependents.js';
 import { checkCredentialLimit } from '../plan-guards.js';
 import type { LifecycleJob } from '../types.js';
+import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 
 /** Best-effort audit append — never fails the HTTP request if the mutation already succeeded */
 function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<InstanceType<typeof PgJournal>['append']>[0], log: { error: (obj: unknown, msg: string) => void }): void {
@@ -21,7 +22,9 @@ function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<
 
 interface SecretValidationError {
   field: string;
+  code: string;
   message: string;
+  params?: Record<string, unknown>;
 }
 
 const SECRET_ALIASES_BY_VENUE: Record<string, Record<string, string[]>> = {
@@ -68,32 +71,32 @@ function validateVenueSecrets(venue: string, secrets: Record<string, string>): S
 
   if (venue === 'hyperliquid') {
     if (!secrets['apiKey']?.trim()) {
-      errors.push({ field: 'secrets.apiKey', message: 'apiKey is required for Hyperliquid credentials' });
+      errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey is required for Hyperliquid credentials', params: { field: 'apiKey', venue: 'hyperliquid' } });
     }
     if (!secrets['secret']?.trim()) {
-      errors.push({ field: 'secrets.secret', message: 'secret is required for Hyperliquid credentials' });
+      errors.push({ field: 'secrets.secret', code: 'credential.validation_error.required', message: 'secret is required for Hyperliquid credentials', params: { field: 'secret', venue: 'hyperliquid' } });
     }
     if (!secrets['walletAddress']?.trim()) {
-      errors.push({ field: 'secrets.walletAddress', message: 'walletAddress is required for Hyperliquid credentials' });
+      errors.push({ field: 'secrets.walletAddress', code: 'credential.validation_error.required', message: 'walletAddress is required for Hyperliquid credentials', params: { field: 'walletAddress', venue: 'hyperliquid' } });
     } else if (!/^0x[0-9a-fA-F]{40}$/.test(secrets['walletAddress'])) {
-      errors.push({ field: 'secrets.walletAddress', message: 'walletAddress must be a valid EVM address (0x + 40 hex chars)' });
+      errors.push({ field: 'secrets.walletAddress', code: 'credential.validation_error.invalid_wallet_address', message: 'walletAddress must be a valid EVM address (0x + 40 hex chars)', params: { field: 'walletAddress', venue: 'hyperliquid' } });
     }
   } else if (venue === 'bybit') {
     if (!secrets['apiKey']?.trim()) {
-      errors.push({ field: 'secrets.apiKey', message: 'apiKey is required for Bybit credentials' });
+      errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey is required for Bybit credentials', params: { field: 'apiKey', venue: 'bybit' } });
     }
     if (!secrets['secret']?.trim()) {
-      errors.push({ field: 'secrets.secret', message: 'secret is required for Bybit credentials' });
+      errors.push({ field: 'secrets.secret', code: 'credential.validation_error.required', message: 'secret is required for Bybit credentials', params: { field: 'secret', venue: 'bybit' } });
     }
   } else if (venue === '1inch') {
     const pk = secrets['privateKey']?.trim() ?? '';
     if (!pk) {
-      errors.push({ field: 'secrets.privateKey', message: 'privateKey is required for 1inch credentials' });
+      errors.push({ field: 'secrets.privateKey', code: 'credential.validation_error.required', message: 'privateKey is required for 1inch credentials', params: { field: 'privateKey', venue: '1inch' } });
     } else if (!/^(0x)?[0-9a-fA-F]{64}$/.test(pk)) {
-      errors.push({ field: 'secrets.privateKey', message: 'privateKey must be 64 hex chars (optionally 0x-prefixed)' });
+      errors.push({ field: 'secrets.privateKey', code: 'credential.validation_error.invalid_private_key', message: 'privateKey must be 64 hex chars (optionally 0x-prefixed)', params: { field: 'privateKey', venue: '1inch' } });
     }
     if (!secrets['apiKey']?.trim()) {
-      errors.push({ field: 'secrets.apiKey', message: 'apiKey (1inch developer portal key) is required for 1inch credentials' });
+      errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey (1inch developer portal key) is required for 1inch credentials', params: { field: 'apiKey', venue: '1inch' } });
     }
   }
 
@@ -102,6 +105,13 @@ function validateVenueSecrets(venue: string, secrets: Record<string, string>): S
 
 export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
   const journal = new PgJournal(db);
+
+  function credentialValidationPayload(errors: SecretValidationError[]) {
+    const primary = errors[0]!;
+    return errorPayload(primary.code, primary.message, primary.params, {
+      details: errors.map<ApiErrorDetail>(({ field, code, message, params }) => ({ field, code, message, params })),
+    });
+  }
 
   // Create credential
   app.post('/credentials', async (request, reply) => {
@@ -115,14 +125,14 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     // Venue-specific secret validation — fail fast on incomplete credentials
     const venueSecretErrors = validateVenueSecrets(parsed.data.venue, normalizedSecrets);
     if (venueSecretErrors.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
+      return reply.status(400).send(credentialValidationPayload(venueSecretErrors));
     }
 
     // Plan enforcement
     if (plansConfig) {
       const planCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
       if (!planCheck.ok) {
-        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+        return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
     }
 
@@ -218,7 +228,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     // Venue-specific secret validation — fail fast on incomplete credentials
     const venueSecretErrors = validateVenueSecrets(existing.venue, normalizedSecrets);
     if (venueSecretErrors.length > 0) {
-      return reply.status(400).send({ error: 'validation_error', details: venueSecretErrors });
+      return reply.status(400).send(credentialValidationPayload(venueSecretErrors));
     }
 
     const encryptionKey = getEncryptionKey();

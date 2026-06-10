@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, type Agent } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, listSelectableSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -24,6 +26,7 @@ interface FormState {
 }
 
 export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModalProps) {
+  const intl = useIntl();
   const qc = useQueryClient();
   const skillsQuery = useQuery({
     queryKey: ['skills'],
@@ -79,7 +82,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' };
 
   return (
-    <Modal title="Edit agent" onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose}>
       <div
         style={{
           maxHeight: 'min(560px, 70vh)',
@@ -90,12 +93,12 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
       >
         <form id="edit-agent-form" onSubmit={handleSubmit}>
           <div style={fieldGap}>
-            <FieldLabel>Name</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.name' })}</FieldLabel>
             <input style={inputStyle} value={form.name} onChange={set('name')} required maxLength={100} />
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Objective / prompt</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.objective' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
               value={form.prompt}
@@ -106,7 +109,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Skills</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
             <SkillPicker
               skills={selectableSkills}
               selectedSkillIds={form.skillIds}
@@ -115,66 +118,68 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
             />
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-              Base is included automatically. Select the skills this agent should keep using.
+              {intl.formatMessage({ id: 'agents.edit.skillsHelp' })}
               {preservedSkillIds.length > 0 && (
-                <span> Existing hidden skills will be preserved unless you replace them.</span>
+                <span> {intl.formatMessage({ id: 'agents.edit.skillsHelpPreserved' })}</span>
               )}
             </div>
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Execution mode</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
             <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={set('executionMode')}>
-              <option value="">Not set — inherit or decide later</option>
-              <option value="paper">Paper — simulated, no real money</option>
-              <option value="shadow">Shadow — tracks prices, no orders</option>
-              <option value="live">Live — real order placement</option>
+              <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
+              <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
+              <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+              <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
             </select>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatExecutionMode(form.executionMode)} is the runtime mode visible to operators.</div>
-          </div>
-
-          <div style={fieldGap}>
-            <FieldLabel>Selected skills</FieldLabel>
-            <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>
-              {formatSkillSelection(selectableSkills.filter((skill) => form.skillIds.includes(skill.id)))}
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+              {intl.formatMessage({ id: 'agents.edit.executionModeHelp' }, { mode: formatExecutionMode(form.executionMode, intl) })}
             </div>
           </div>
 
           <div style={fieldGap}>
-            <FieldLabel>Telegram chat ID</FieldLabel>
-            <input style={inputStyle} value={form.telegramChatId} onChange={set('telegramChatId')} placeholder="Optional" />
+            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.selectedSkills' })}</FieldLabel>
+            <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>
+              {formatSkillSelection(selectableSkills.filter((skill) => form.skillIds.includes(skill.id)), intl)}
+            </div>
+          </div>
+
+          <div style={fieldGap}>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.telegramChatId' })}</FieldLabel>
+            <input style={inputStyle} value={form.telegramChatId} onChange={set('telegramChatId')} placeholder={intl.formatMessage({ id: 'common.optional' })} />
           </div>
 
           <div style={{ ...rowStyle, marginBottom: '14px' }}>
             <div style={fieldGap}>
-              <FieldLabel>Daily token budget</FieldLabel>
-              <input style={inputStyle} type="number" min={1} value={form.dailyTokenBudget} onChange={set('dailyTokenBudget')} placeholder="Unlimited" />
+              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.dailyTokenBudget' })}</FieldLabel>
+              <input style={inputStyle} type="number" min={1} value={form.dailyTokenBudget} onChange={set('dailyTokenBudget')} placeholder={intl.formatMessage({ id: 'common.unlimited' })} />
             </div>
             <div style={fieldGap}>
-              <FieldLabel>Max bots</FieldLabel>
-              <input style={inputStyle} type="number" min={1} value={form.maxBots} onChange={set('maxBots')} placeholder="Unlimited" />
+              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.maxBots' })}</FieldLabel>
+              <input style={inputStyle} type="number" min={1} value={form.maxBots} onChange={set('maxBots')} placeholder={intl.formatMessage({ id: 'common.unlimited' })} />
             </div>
           </div>
 
           <div style={{ ...rowStyle, marginBottom: '0' }}>
             <div style={fieldGap}>
-              <FieldLabel>Daily loss limit (USD)</FieldLabel>
-              <input style={inputStyle} value={form.dailyLossLimit} onChange={set('dailyLossLimit')} placeholder="Unlimited" />
+              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.dailyLossLimit' })}</FieldLabel>
+              <input style={inputStyle} value={form.dailyLossLimit} onChange={set('dailyLossLimit')} placeholder={intl.formatMessage({ id: 'common.unlimited' })} />
             </div>
             <div style={fieldGap}>
-              <FieldLabel>Max slippage (bps)</FieldLabel>
-              <input style={inputStyle} type="number" min={0} value={form.maxSlippageBps} onChange={set('maxSlippageBps')} placeholder="Default" />
+              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.maxSlippage' })}</FieldLabel>
+              <input style={inputStyle} type="number" min={0} value={form.maxSlippageBps} onChange={set('maxSlippageBps')} placeholder={intl.formatMessage({ id: 'common.default' })} />
             </div>
           </div>
         </form>
       </div>
 
-      {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
+      {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}>
-        <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+        <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
         <Button variant="primary" type="submit" form="edit-agent-form" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Saving…' : 'Save changes'}
+          {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
         </Button>
       </div>
     </Modal>

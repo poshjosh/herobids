@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, venueAccounts, userCredentials, agents } from '@herobids/db';
 import { CreateConnectionSchema } from '../schemas.js';
+import { errorPayload } from '../error-payload.js';
 
 const TRADING_CONNECTION_PROVIDERS = new Set(['hyperliquid', 'jupiter', '1inch', 'bybit']);
 
@@ -85,16 +86,19 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
           ),
         );
       if (!cred) {
-        return reply.status(400).send({
-          error: 'credential.not_found',
-          message: `Credential ${parsed.data.credentialId} does not exist`,
-        });
+        return reply.status(400).send(
+          errorPayload('credential.not_found', `Credential ${parsed.data.credentialId} does not exist`, {
+            credentialId: parsed.data.credentialId,
+          }),
+        );
       }
       if (cred.venue !== parsed.data.provider) {
-        return reply.status(400).send({
-          error: 'credential.provider_mismatch',
-          message: `Credential is for venue "${cred.venue}", not provider "${parsed.data.provider}"`,
-        });
+        return reply.status(400).send(
+          errorPayload('credential.provider_mismatch', `Credential is for venue "${cred.venue}", not provider "${parsed.data.provider}"`, {
+            credentialVenue: cred.venue,
+            provider: parsed.data.provider,
+          }),
+        );
       }
     }
 
@@ -148,10 +152,13 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
       // FK violation — credential deleted between validation and insert
       const pgErr = err as { code?: string };
       if (pgErr.code === '23503') {
-        return reply.status(400).send({
-          error: 'credential.not_found',
-          message: `Credential ${parsed.data.credentialId} was removed before the connection could be created`,
-        });
+        return reply.status(400).send(
+          errorPayload(
+            'credential.not_found',
+            `Credential ${parsed.data.credentialId} was removed before the connection could be created`,
+            { credentialId: parsed.data.credentialId },
+          ),
+        );
       }
       throw err;
     }

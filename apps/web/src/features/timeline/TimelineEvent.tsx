@@ -1,5 +1,8 @@
+import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import type { ActivityEvent } from '../../lib/api-client.js';
 import { RelativeTime } from '../../lib/ui.js';
+import { toMessageValues } from '../../lib/localize-api-error.js';
 
 const CATEGORY_ICONS: Record<string, string> = {
   decision: '◈',
@@ -22,10 +25,23 @@ interface TimelineEventProps {
 
 export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
   const [expanded, setExpanded] = useState(false);
+  const intl = useIntl();
   const icon = CATEGORY_ICONS[event.category] ?? '·';
   const dotColor = CATEGORY_COLORS[event.category] ?? 'var(--color-text-muted)';
 
   const hasDetail = Object.keys(event.detail).length > 0;
+
+  const messageText = intl.formatMessage(
+    { id: event.messageKey, defaultMessage: event.type },
+    toMessageValues(event.detail),
+  );
+  const severityLabel = intl.formatMessage({
+    id: `timeline.severity.${event.severity}`,
+    defaultMessage: event.severity,
+  });
+  const toggleDetailLabel = intl.formatMessage({
+    id: expanded ? 'timeline.toggle.hideDetail' : 'timeline.toggle.showDetail',
+  });
 
   return (
     <div style={{ display: 'flex', gap: '12px', position: 'relative' }}>
@@ -67,7 +83,7 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
       <div style={{ flex: 1, paddingBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
           <span style={{ fontSize: '13px', color: 'var(--color-text-primary)', fontWeight: '500' }}>
-            {event.message}
+            {messageText}
           </span>
           {event.severity !== 'info' && (
             <span
@@ -79,7 +95,7 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
                 color: event.severity === 'critical' ? 'var(--color-danger)' : 'var(--color-warning)',
               }}
             >
-              {event.severity}
+              {severityLabel}
             </span>
           )}
         </div>
@@ -97,7 +113,7 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
                 padding: '0',
               }}
             >
-              {expanded ? 'hide detail ↑' : 'show detail ↓'}
+              {toggleDetailLabel}
             </button>
           )}
         </div>
@@ -121,6 +137,3 @@ export function TimelineEvent({ event, isLast = false }: TimelineEventProps) {
     </div>
   );
 }
-
-// useState is needed — import here
-import { useState } from 'react';

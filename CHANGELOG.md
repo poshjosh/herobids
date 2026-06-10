@@ -7,6 +7,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Web i18n (2026-06-10): full react-intl migration — locale provider, EN/AR/HI catalogs, locale selector in Settings, server-persisted preference, structured API error codes with interpolation params, activity event message keys, shared formatting helpers (`formatShortDate`, `formatCurrencyFromCents`). See ADR 002.
+- `preferred_locale` column on `users` table (migration `0001_add_preferred_locale`): stores the user's chosen UI language; synced to client on session bootstrap.
+
+### Changed
+
+- **Migration squash (2026-06-10):** The 13 incremental migration files `0000_windy_serpent_society` through `0012_execute_code_programming_skill` were replaced with a single baseline (`0000_baseline.sql`) that represents the full schema at this point. Migration `0001_add_preferred_locale` is additive on top.
+  - **Fresh databases:** run `pnpm --filter @herobids/db run migrate` as normal.
+  - **Existing databases that ran the old migrations:** run `bash scripts/shell/ops/apply-db-squash-fixup.sh` once, then run `pnpm --filter @herobids/db run db:migrate`. The helper records the new baseline hash in `drizzle.__drizzle_migrations` so the squashed baseline is skipped and `0001_add_preferred_locale` can apply safely.
+
 ### Fixed
 
 - Agent runtime policy (2026-06-09): added a dedicated container runtime policy schema so forwarded LLM retry/scout/thinking settings are validated and preserved inside the agent runtime

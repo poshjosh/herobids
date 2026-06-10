@@ -8,6 +8,7 @@ import { HyperliquidAdapter } from '@herobids/venues';
 import { JupiterSwapAdapter, OneInchSwapAdapter } from '@herobids/venues';
 import { CreateVenueAccountSchema } from '../schemas.js';
 import { checkVenueAccountLimit } from '../plan-guards.js';
+import { errorPayload } from '../error-payload.js';
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
@@ -51,7 +52,7 @@ export async function venueAccountRoutes(
     if (plansConfig) {
       const planCheck = await checkVenueAccountLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
       if (!planCheck.ok) {
-        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+        return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
     }
 
@@ -65,17 +66,20 @@ export async function venueAccountRoutes(
         .where(and(eq(userCredentials.id, parsed.data.credentialId), eq(userCredentials.userId, request.userId)));
 
       if (!cred) {
-        return reply.status(400).send({
-          error: 'credential.not_found',
-          message: `Credential ${parsed.data.credentialId} does not exist`,
-        });
+        return reply.status(400).send(
+          errorPayload('credential.not_found', `Credential ${parsed.data.credentialId} does not exist`, {
+            credentialId: parsed.data.credentialId,
+          }),
+        );
       }
 
       if (cred.venue !== parsed.data.venue) {
-        return reply.status(400).send({
-          error: 'credential.venue_mismatch',
-          message: `Credential is for venue "${cred.venue}", not "${parsed.data.venue}"`,
-        });
+        return reply.status(400).send(
+          errorPayload('credential.venue_mismatch', `Credential is for venue "${cred.venue}", not "${parsed.data.venue}"`, {
+            credentialVenue: cred.venue,
+            venue: parsed.data.venue,
+          }),
+        );
       }
     }
 
@@ -87,24 +91,33 @@ export async function venueAccountRoutes(
     if (parsed.data.venue === 'jupiter') {
       const ref = parsed.data.venueAccountRef ?? '';
       if (!ref) {
-        return reply.status(400).send({
-          error: 'validation_error',
-          message: 'venueAccountRef (Solana wallet address) is required for Jupiter venue accounts',
-        });
+        return reply.status(400).send(
+          errorPayload(
+            'account.validation_error.missing_venue_account_ref',
+            'venueAccountRef (Solana wallet address) is required for Jupiter venue accounts',
+            { field: 'venueAccountRef', venue: 'jupiter' },
+          ),
+        );
       }
       // Decode base58 and verify the result is exactly 32 bytes (Ed25519 public key)
       if (!isValidSolanaAddress(ref)) {
-        return reply.status(400).send({
-          error: 'validation_error',
-          message: 'venueAccountRef must be a valid Solana wallet address (32-byte base58-encoded public key)',
-        });
+        return reply.status(400).send(
+          errorPayload(
+            'account.validation_error.invalid_venue_account_ref',
+            'venueAccountRef must be a valid Solana wallet address (32-byte base58-encoded public key)',
+            { field: 'venueAccountRef', venue: 'jupiter' },
+          ),
+        );
       }
     }
     if (parsed.data.venue === '1inch' && !parsed.data.credentialId) {
-      return reply.status(400).send({
-        error: 'validation_error',
-        message: 'credentialId is required for 1inch venue accounts',
-      });
+      return reply.status(400).send(
+        errorPayload(
+          'account.validation_error.missing_credential_id',
+          'credentialId is required for 1inch venue accounts',
+          { field: 'credentialId', venue: '1inch' },
+        ),
+      );
     }
 
     const id = crypto.randomUUID();
@@ -144,10 +157,13 @@ export async function venueAccountRoutes(
       // FK violation — credential deleted between validation and insert
       const pgErr = err as { code?: string };
       if (pgErr.code === '23503') {
-        return reply.status(400).send({
-          error: 'credential.not_found',
-          message: `Credential ${parsed.data.credentialId} was removed before the account could be created`,
-        });
+        return reply.status(400).send(
+          errorPayload(
+            'credential.not_found',
+            `Credential ${parsed.data.credentialId} was removed before the account could be created`,
+            { credentialId: parsed.data.credentialId },
+          ),
+        );
       }
       throw err;
     }

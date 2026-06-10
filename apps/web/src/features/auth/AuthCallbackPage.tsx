@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import { auth } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
 type CallbackState = 'loading' | 'error';
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const { login } = useSession();
+  const intl = useIntl();
   const [state, setState] = useState<CallbackState>('loading');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const ran = useRef(false);
@@ -22,7 +25,7 @@ export function AuthCallbackPage() {
 
     if (!code) {
       setState('error');
-      setErrorMessage('Missing exchange code in callback URL.');
+      setErrorMessage(intl.formatMessage({ id: 'auth.callback.missingCode' }));
       return;
     }
 
@@ -31,20 +34,20 @@ export function AuthCallbackPage() {
       .then(() => navigate('/mission-control', { replace: true }))
       .catch((err: unknown) => {
         setState('error');
-        setErrorMessage(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
+        setErrorMessage(localizeApiError(intl, err, 'auth.error.default'));
       });
-  }, [login, navigate]);
+  }, [login, navigate, intl]);
 
   if (state === 'error') {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center', maxWidth: '400px', padding: '24px' }}>
           <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-danger)' }}>
-            Sign-in failed
+            {intl.formatMessage({ id: 'auth.callback.signInFailed' })}
           </div>
           <div style={{ color: 'var(--color-text-secondary)', marginBottom: '24px' }}>{errorMessage}</div>
           <a href="/login" style={{ color: 'var(--color-brand)', textDecoration: 'none' }}>
-            Back to sign-in
+            {intl.formatMessage({ id: 'auth.callback.backToSignIn' })}
           </a>
         </div>
       </div>
@@ -55,7 +58,9 @@ export function AuthCallbackPage() {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
         <Spinner />
-        <div style={{ color: 'var(--color-text-secondary)' }}>Signing you in…</div>
+        <div style={{ color: 'var(--color-text-secondary)' }}>
+          {intl.formatMessage({ id: 'auth.callback.signingIn' })}
+        </div>
       </div>
     </div>
   );

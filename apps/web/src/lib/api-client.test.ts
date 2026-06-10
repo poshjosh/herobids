@@ -116,6 +116,31 @@ describe('api-client — 401 handling', () => {
     expect(mockWindowLocation.href).toBe('');
   });
 
+  it('preserves structured params from the API error payload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        mockResponse(400, {
+          error: 'auth.register.password_too_short',
+          message: 'Password must be at least 8 characters',
+          params: { minLength: 8 },
+        }),
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await auth.register('test@example.com', 'short', 'Alice');
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    const err = caught as ApiError;
+    expect(err.code).toBe('auth.register.password_too_short');
+    expect(err.params).toEqual({ minLength: 8 });
+  });
+
   // ── Non-auth endpoints: must redirect ─────────────────────────────────────
 
   it('auth.me() 401 (session expiry) redirects to /login and throws ApiError', async () => {

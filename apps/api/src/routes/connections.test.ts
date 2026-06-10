@@ -96,10 +96,11 @@ describe('POST /connections', () => {
     expect(lastInserted!['provider']).toBe('hyperliquid');
     expect(lastInserted!['userId']).toBe(TEST_USER_ID);
     expect(lastInserted!['status']).toBe('active');
-    expect(insertedValues).toHaveLength(2);
+    expect(insertedValues).toHaveLength(3);
     expect(insertedValues[0]!['provider']).toBe('hyperliquid');
-    expect(insertedValues[1]!['provider']).toBe('hyperliquid');
-    expect(insertedValues[1]!['connectionId']).toBe(insertedValues[0]!['id']);
+    expect(insertedValues[1]!['venue']).toBe('hyperliquid');
+    expect(insertedValues[2]!['provider']).toBe('hyperliquid');
+    expect(insertedValues[2]!['connectionId']).toBe(insertedValues[0]!['id']);
   });
 
   it('returns 400 for missing required fields', async () => {
@@ -189,9 +190,10 @@ describe('POST /connections', () => {
       });
 
       expect(res.statusCode).toBe(201);
-      // Two inserts: one for the connection, one for the trading binding
-      expect(insertedValues).toHaveLength(2);
-      const [connInsert, bindingInsert] = insertedValues;
+      // Three inserts: connection, companion venue account, then trading binding
+      expect(insertedValues).toHaveLength(3);
+      const [connInsert, venueAccountInsert, bindingInsert] = insertedValues;
+      expect(venueAccountInsert!['venue']).toBe(provider);
       expect(bindingInsert!['connectionId']).toBe(connInsert!['id']);
       expect(bindingInsert!['provider']).toBe(provider);
     },
@@ -213,8 +215,10 @@ describe('POST /connections', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(insertedValues).toHaveLength(2);
-    const [connInsert, bindingInsert] = insertedValues;
+    expect(insertedValues).toHaveLength(3);
+    const [connInsert, venueAccountInsert, bindingInsert] = insertedValues;
+    expect(venueAccountInsert!['userId']).toBe(TEST_USER_ID);
+    expect(venueAccountInsert!['credentialId']).toBeNull();
     expect(bindingInsert!['userId']).toBe(TEST_USER_ID);
     expect(bindingInsert!['status']).toBe('active');
     expect(bindingInsert!['label']).toBe('My HyperLiquid Connection');

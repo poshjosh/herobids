@@ -92,6 +92,32 @@ Strategy presets belong on bots. Skill presets belong on agents.
 
 ---
 
+## Credential
+
+A user-owned secret record for authenticating with an external provider or system.
+
+A credential stores authentication material such as API keys, API secrets, passphrases, or private keys. Credentials are encrypted at rest and may be reused across multiple connections. A credential does not by itself grant an agent or bot permission to act; it only stores the secrets needed to authenticate.
+
+---
+
+## Connection
+
+A user-owned platform link to an external provider or system.
+
+A connection identifies the provider being linked, carries a user-facing label, and may reference one credential when the provider requires secrets. Connections are capability-agnostic: they represent that the user has linked something external, not what a specific agent or capability is allowed to do with it.
+
+---
+
+## Binding
+
+A capability-specific target derived from a connection.
+
+A binding adapts a connection into the shape required by a capability family. The primary example is a trading binding: the concrete trading target an agent can be granted access to. Grants, readiness, and audit history attach to bindings rather than raw connections so the platform can manage capability-specific access separately from the underlying provider link.
+
+A trading binding serves the same conceptual role as a Venue Account for legacy API surfaces. New integrations should work with trading bindings; venue accounts remain for backward-compatible bot configuration.
+
+---
+
 ## Venue Account
 
 A user-owned connection to an external trading venue (e.g. a Hyperliquid API key, a Solana wallet address).

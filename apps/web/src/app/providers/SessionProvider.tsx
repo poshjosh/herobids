@@ -2,6 +2,8 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import { auth, ApiError, type MeResponse } from '../../lib/api-client.js';
 import { getToken, setToken, clearToken, isAuthenticated } from '../../lib/session.js';
 import { queryClient } from './QueryProvider.js';
+import { useLocale } from '../i18n/I18nProvider.js';
+import { isSupportedLocale } from '../i18n/resolveLocale.js';
 
 interface SessionState {
   user: MeResponse | null;
@@ -18,6 +20,7 @@ interface SessionContextValue extends SessionState {
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const { locale, setLocale } = useLocale();
   const [state, setState] = useState<SessionState>({
     user: null,
     loading: isAuthenticated(),
@@ -53,6 +56,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void loadUser();
   }, [loadUser]);
+
+  // Sync active locale once per user load, driven by the server preference.
+  // locale is intentionally excluded from deps: this effect propagates server→client only;
+  // including locale would revert manual language changes while a mutation is in-flight.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const preferredLocale = state.user?.preferredLocale;
+    if (isSupportedLocale(preferredLocale) && preferredLocale !== locale) {
+      setLocale(preferredLocale);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.user?.preferredLocale, setLocale]);
 
   const login = useCallback(async (token: string) => {
     // Clear any stale cached data from a previous session before establishing

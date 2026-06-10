@@ -1,3 +1,4 @@
+import type { IntlShape } from 'react-intl';
 import type { CapabilityReadiness, Skill } from '../../lib/api-client.js';
 
 const OPERATOR_CONTEXT_MARKER = '\n\nOperator context:\n';
@@ -12,6 +13,18 @@ export const EXECUTION_MODE_LABELS: Record<string, string> = {
 export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
 };
+
+function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
+  if (!intl) {
+    return fallback;
+  }
+
+  try {
+    return intl.formatMessage({ id, defaultMessage: fallback });
+  } catch {
+    return fallback;
+  }
+}
 
 export function listSelectableSkills(skills: Skill[]): Skill[] {
   return skills
@@ -38,8 +51,8 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
     });
 }
 
-export function formatSkillSelection(skills: Array<{ name: string }>): string {
-  return skills.length > 0 ? skills.map((skill) => skill.name).join(', ') : 'Base only';
+export function formatSkillSelection(skills: Array<{ name: string }>, intl?: IntlShape): string {
+  return skills.length > 0 ? skills.map((skill) => skill.name).join(', ') : formatMessageOrFallback(intl, 'agents.skills.baseOnly', 'Base only');
 }
 
 export function hasCapabilityFamily(skills: Array<{ capabilityFamilies: string[] }>, family: string): boolean {
@@ -54,33 +67,35 @@ export function resolveSelectedSkills(skillIds: string[], skills: Skill[]): Skil
     .filter((skill): skill is Skill => skill !== undefined);
 }
 
-export function formatExecutionMode(executionMode: string | null | undefined): string {
+export function formatExecutionMode(executionMode: string | null | undefined, intl?: IntlShape): string {
   if (!executionMode) {
-    return 'Not set';
+    return formatMessageOrFallback(intl, 'agents.executionMode.not_set', 'Not set');
   }
 
-  return EXECUTION_MODE_LABELS[executionMode] ?? executionMode;
+  const fallback = EXECUTION_MODE_LABELS[executionMode] ?? executionMode;
+  return formatMessageOrFallback(intl, `agents.executionMode.${executionMode}`, fallback);
 }
 
-export function formatCapabilityFamily(family: string): string {
-  return CAPABILITY_FAMILY_LABELS[family] ?? family.replace(/[-_]/g, ' ');
+export function formatCapabilityFamily(family: string, intl?: IntlShape): string {
+  const fallback = CAPABILITY_FAMILY_LABELS[family] ?? family.replace(/[-_]/g, ' ');
+  return formatMessageOrFallback(intl, `agents.capabilityFamily.${family}`, fallback);
 }
 
-export function formatCapabilityState(state: CapabilityReadiness['state']): string {
-  if (state === 'ready') return 'Ready';
-  if (state === 'degraded') return 'Degraded';
-  if (state === 'provisioning') return 'Provisioning';
-  if (state === 'revoked') return 'Revoked';
-  return 'Unconfigured';
+export function formatCapabilityState(state: CapabilityReadiness['state'], intl?: IntlShape): string {
+  if (state === 'ready') return formatMessageOrFallback(intl, 'agents.capabilityState.ready', 'Ready');
+  if (state === 'degraded') return formatMessageOrFallback(intl, 'agents.capabilityState.degraded', 'Degraded');
+  if (state === 'provisioning') return formatMessageOrFallback(intl, 'agents.capabilityState.provisioning', 'Provisioning');
+  if (state === 'revoked') return formatMessageOrFallback(intl, 'agents.capabilityState.revoked', 'Revoked');
+  return formatMessageOrFallback(intl, 'agents.capabilityState.unconfigured', 'Unconfigured');
 }
 
-export function formatCapabilitySummary(capabilities: CapabilityReadiness[]): string {
+export function formatCapabilitySummary(capabilities: CapabilityReadiness[], intl?: IntlShape): string {
   if (capabilities.length === 0) {
-    return 'No capability setup required';
+    return formatMessageOrFallback(intl, 'agents.summary.noCapabilitySetup', 'No capability setup required');
   }
 
   return capabilities
-    .map((capability) => `${formatCapabilityFamily(capability.family)}: ${formatCapabilityState(capability.state)}`)
+    .map((capability) => `${formatCapabilityFamily(capability.family, intl)}: ${formatCapabilityState(capability.state, intl)}`)
     .join(' · ');
 }
 

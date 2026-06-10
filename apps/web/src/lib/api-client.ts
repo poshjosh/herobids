@@ -6,6 +6,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly params?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -39,9 +40,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     let code = 'api_error';
     let message = `HTTP ${res.status}`;
+    let params: Record<string, unknown> | undefined;
     try {
-      const body = await res.json() as { error?: string; message?: string; details?: Array<{ message?: string }> };
+      const body = await res.json() as {
+        error?: string;
+        message?: string;
+        params?: Record<string, unknown>;
+        details?: Array<{ message?: string }>;
+      };
       code = body.error ?? code;
+      params = body.params;
       if (body.message) {
         message = body.message;
       } else if (Array.isArray(body.details) && body.details.length > 0) {
@@ -57,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON error response
     }
-    throw new ApiError(res.status, code, message);
+    throw new ApiError(res.status, code, message, params);
   }
 
   // 204 No Content
@@ -86,6 +94,7 @@ export interface MeResponse {
   email: string;
   avatarUrl: string | null;
   planId: string;
+  preferredLocale: string | null;
   telegramChatId: string | null;
   createdAt: string;
 }
@@ -107,7 +116,7 @@ export const auth = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<MeResponse>('/auth/me'),
-  updateMe: (data: { telegramChatId?: string | null }) =>
+  updateMe: (data: { preferredLocale?: string | null; telegramChatId?: string | null }) =>
     request<MeResponse>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
 };
@@ -132,12 +141,15 @@ export interface DashboardOverview {
 export interface ActivityEvent {
   id: string;
   botId: string | null;
-  actorId: string | null;
+  /** Human-readable venue/account label, e.g. "hyperliquid / main-account" */
+  instanceLabel: string | null;
   type: string;
   category: 'decision' | 'execution' | 'risk' | 'system';
   severity: 'info' | 'warn' | 'critical';
-  message: string;
+  /** Translation key for client-side localization, e.g. "activity.order.filled" */
+  messageKey: string;
   timestamp: string;
+  /** Raw event payload — used as interpolation params for messageKey */
   detail: Record<string, unknown>;
 }
 

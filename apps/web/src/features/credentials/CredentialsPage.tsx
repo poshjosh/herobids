@@ -1,8 +1,11 @@
+import { useIntl } from 'react-intl';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { credentials as credentialsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
+import { formatShortDate } from '../../lib/formatting.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
 const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'telegram', 'zapier', 'custom'];
 
@@ -30,6 +33,7 @@ function createSecretEntry(): SecretEntry {
 }
 
 export function CredentialsPage() {
+  const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
   const qc = useQueryClient();
 
@@ -48,19 +52,19 @@ export function CredentialsPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Credentials"
-        subtitle="Reusable provider secrets for agents and capability bindings"
-        action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add provider credential</Button>}
+        title={intl.formatMessage({ id: 'credentials.title' })}
+        subtitle={intl.formatMessage({ id: 'credentials.subtitle' })}
+        action={<Button variant="primary" onClick={() => setShowCreate(true)}>{intl.formatMessage({ id: 'credentials.addButton' })}</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
-      {query.isError && <ErrorState message={(query.error as Error).message} onRetry={() => void query.refetch()} />}
+      {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No credentials yet"
-          message="Add provider credentials once and reuse them across agents and capability families."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add provider credential</Button>}
+          title={intl.formatMessage({ id: 'credentials.empty.title' })}
+          message={intl.formatMessage({ id: 'credentials.empty.message' })}
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>{intl.formatMessage({ id: 'credentials.addButton' })}</Button>}
         />
       )}
 
@@ -76,25 +80,25 @@ export function CredentialsPage() {
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-                    Provider: {provider}
+                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider })}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>ID: {credential.id}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'credentials.idLabel' }, { id: credential.id })}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                    Added {new Date(credential.createdAt).toLocaleDateString()}
+                    {intl.formatMessage({ id: 'credentials.addedDate' }, { date: formatShortDate(intl, credential.createdAt) })}
                   </div>
                   <Button
                     variant="danger"
                     size="sm"
                     onClick={() => {
-                      if (confirm(`Delete credential "${credential.label}"?`)) {
+                      if (confirm(intl.formatMessage({ id: 'credentials.deleteConfirm' }, { label: credential.label }))) {
                         deleteMutation.mutate(credential.id);
                       }
                     }}
                     disabled={deleteMutation.isPending}
                   >
-                    Delete
+                    {intl.formatMessage({ id: 'common.delete' })}
                   </Button>
                 </div>
               </div>
@@ -119,6 +123,7 @@ export function CredentialsPage() {
 }
 
 function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const intl = useIntl();
   const [provider, setProvider] = useState('');
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createSecretEntry()]);
@@ -170,15 +175,15 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
   const hasCompleteSecret = secretEntries.some((entry) => entry.key.trim() && entry.value.trim());
 
   return (
-    <Modal title="Add provider credential" onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: 'credentials.modal.title' })} onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Provider</FieldLabel>
+          <FieldLabel>{intl.formatMessage({ id: 'credentials.modal.provider' })}</FieldLabel>
           <input
             list="provider-suggestions"
             value={provider}
             onChange={(event) => applyProviderTemplate(event.target.value)}
-            placeholder="e.g. hyperliquid, telegram, zapier"
+            placeholder={intl.formatMessage({ id: 'credentials.modal.providerPlaceholder' })}
             style={inputStyle}
           />
           <datalist id="provider-suggestions">
@@ -189,55 +194,55 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <FieldLabel>Label</FieldLabel>
+          <FieldLabel>{intl.formatMessage({ id: 'credentials.modal.label' })}</FieldLabel>
           <input
             value={label}
             onChange={(event) => setLabel(event.target.value)}
-            placeholder="e.g. Primary provider credential"
+            placeholder={intl.formatMessage({ id: 'credentials.modal.labelPlaceholder' })}
             style={inputStyle}
           />
         </div>
 
         <div style={{ marginBottom: '12px' }}>
-          <FieldLabel>Secrets</FieldLabel>
+          <FieldLabel>{intl.formatMessage({ id: 'credentials.modal.secrets' })}</FieldLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {secretEntries.map((entry, index) => (
               <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}>
                 <input
                   value={entry.key}
                   onChange={(event) => updateEntry(index, 'key', event.target.value)}
-                  placeholder="Secret name"
+                  placeholder={intl.formatMessage({ id: 'credentials.modal.secretNamePlaceholder' })}
                   style={inputStyle}
                 />
                 <input
                   type="password"
                   value={entry.value}
                   onChange={(event) => updateEntry(index, 'value', event.target.value)}
-                  placeholder="Secret value"
+                  placeholder={intl.formatMessage({ id: 'credentials.modal.secretValuePlaceholder' })}
                   style={inputStyle}
                   autoComplete="new-password"
                 />
                 <Button variant="ghost" size="sm" onClick={() => removeEntry(index)} disabled={secretEntries.length === 1}>
-                  Remove
+                  {intl.formatMessage({ id: 'common.remove' })}
                 </Button>
               </div>
             ))}
           </div>
           <div style={{ marginTop: '8px' }}>
-            <Button variant="secondary" size="sm" onClick={addEntry}>Add secret</Button>
+            <Button variant="secondary" size="sm" onClick={addEntry}>{intl.formatMessage({ id: 'credentials.modal.addSecret' })}</Button>
           </div>
         </div>
 
-        {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
+        {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+          <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
           <Button
             variant="primary"
             type="submit"
             disabled={mutation.isPending || !provider.trim() || !label.trim() || !hasCompleteSecret}
           >
-            {mutation.isPending ? 'Saving…' : 'Save provider credential'}
+            {mutation.isPending ? intl.formatMessage({ id: 'credentials.modal.saving' }) : intl.formatMessage({ id: 'credentials.modal.save' })}
           </Button>
         </div>
       </form>

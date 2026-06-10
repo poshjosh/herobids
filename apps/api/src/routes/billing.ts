@@ -9,6 +9,7 @@ import { CreemSignatureError } from '../billing/creem-provider.js';
 import { StripeSignatureError } from '../billing/stripe-client.js';
 import { UnknownWebhookEventTypeError } from '../billing/provider-port.js';
 import { MockProvider } from '../billing/mock-provider.js';
+import { errorPayload } from '../error-payload.js';
 
 /**
  * Billing routes — multi-provider checkout, portal, cancel, upgrade, webhooks, and summary.
@@ -123,18 +124,26 @@ export async function billingRoutes(
     const { planId: targetPlanId, priceId: targetPriceId } = request.body as { planId?: string; priceId?: string };
 
     if (!targetPlanId || typeof targetPlanId !== 'string') {
-      return reply.status(400).send({ error: 'planId is required' });
+      return reply.status(400).send(errorPayload('billing.checkout.plan_id_required', 'planId is required'));
     }
 
     // Validate plan exists in plans config
     if (!(targetPlanId in plansConfig.plans)) {
-      return reply.status(400).send({ error: 'Invalid planId — not found in plans configuration' });
+      return reply.status(400).send(
+        errorPayload('billing.checkout.invalid_plan_id', 'Invalid planId — not found in plans configuration', { planId: targetPlanId }),
+      );
     }
 
     // Validate priceId belongs to the requested plan, scoped to the primary provider
     // (prevents cross-provider IDs reaching an adapter that cannot resolve them).
     if (targetPriceId !== undefined && !isPriceIdValidForPlan(billingConfig, targetPlanId, targetPriceId, billingConfig.primaryProvider)) {
-      return reply.status(400).send({ error: `priceId is not valid for plan '${targetPlanId}'` });
+      return reply.status(400).send(
+        errorPayload('billing.checkout.invalid_price_id', `priceId is not valid for plan '${targetPlanId}'`, {
+          planId: targetPlanId,
+          priceId: targetPriceId,
+          provider: billingConfig.primaryProvider,
+        }),
+      );
     }
 
     // Fetch user info
@@ -145,7 +154,7 @@ export async function billingRoutes(
       .limit(1);
 
     if (!user) {
-      return reply.status(404).send({ error: 'User not found' });
+      return reply.status(404).send(errorPayload('billing.user_not_found', 'User not found'));
     }
 
     const { url, provider } = await providerManager.createCheckoutUrl({
@@ -183,11 +192,15 @@ export async function billingRoutes(
     // Use the subscription's provider to find the right customer record.
     const subscription = await billingRepo.findSubscriptionByUserId(userId);
     if (!subscription) {
-      return reply.status(400).send({ error: 'No billing account found. Please start a subscription first.' });
+      return reply.status(400).send(
+        errorPayload('billing.portal.no_billing_account', 'No billing account found. Please start a subscription first.'),
+      );
     }
     const customer = await billingRepo.findCustomerByUserIdAndProvider(userId, subscription.provider);
     if (!customer) {
-      return reply.status(400).send({ error: 'No billing account found. Please start a subscription first.' });
+      return reply.status(400).send(
+        errorPayload('billing.portal.no_billing_account', 'No billing account found. Please start a subscription first.'),
+      );
     }
 
     const url = await providerManager.createPortalUrl(
@@ -209,11 +222,11 @@ export async function billingRoutes(
 
     const subscription = await billingRepo.findSubscriptionByUserId(userId);
     if (!subscription) {
-      return reply.status(400).send({ error: 'No active subscription found' });
+      return reply.status(400).send(errorPayload('billing.cancel.no_active_subscription', 'No active subscription found'));
     }
 
     if (subscription.status === 'canceled') {
-      return reply.status(400).send({ error: 'Subscription is already canceled' });
+      return reply.status(400).send(errorPayload('billing.cancel.already_canceled', 'Subscription is already canceled'));
     }
 
     await providerManager.cancelSubscription(
@@ -248,32 +261,51 @@ export async function billingRoutes(
     const { planId: newPlanId, priceId: newPriceId } = request.body as { planId?: string; priceId?: string };
 
     if (!newPlanId || typeof newPlanId !== 'string') {
-      return reply.status(400).send({ error: 'planId is required' });
+      return reply.status(400).send(errorPayload('billing.upgrade.plan_id_required', 'planId is required'));
     }
 
     if (!(newPlanId in plansConfig.plans)) {
-      return reply.status(400).send({ error: 'Invalid planId — not found in plans configuration' });
+      return reply.status(400).send(
+        errorPayload('billing.upgrade.invalid_plan_id', 'Invalid planId — not found in plans configuration', { planId: newPlanId }),
+      );
     }
 
     const subscription = await billingRepo.findSubscriptionByUserId(userId);
     if (!subscription) {
-      return reply.status(400).send({ error: 'No active subscription found. Use checkout to subscribe.' });
+      return reply.status(400).send(
+        errorPayload('billing.upgrade.no_active_subscription', 'No active subscription found. Use checkout to subscribe.'),
+      );
     }
 
     if (subscription.status !== 'active' && subscription.status !== 'trialing') {
-      return reply.status(400).send({ error: 'Subscription must be active or trialing to upgrade' });
+      return reply.status(400).send(
+        errorPayload('billing.upgrade.subscription_not_upgradeable', 'Subscription must be active or trialing to upgrade', {
+          status: subscription.status,
+        }),
+      );
     }
 
     // Resolve owning provider first so priceId validation is scoped to the correct provider.
     const provider = subscription.provider as BillingProvider;
     // Validate priceId against the owning provider only — prevents cross-provider ID injection.
     if (newPriceId !== undefined && !isPriceIdValidForPlan(billingConfig, newPlanId, newPriceId, provider)) {
-      return reply.status(400).send({ error: `priceId is not valid for plan '${newPlanId}' with provider '${provider}'` });
+      return reply.status(400).send(
+        errorPayload('billing.upgrade.invalid_price_id', `priceId is not valid for plan '${newPlanId}' with provider '${provider}'`, {
+          planId: newPlanId,
+          priceId: newPriceId,
+          provider,
+        }),
+      );
     }
 
     const newProductOrPriceId = newPriceId ?? resolveTargetId(billingConfig, provider, newPlanId);
     if (!newProductOrPriceId) {
-      return reply.status(400).send({ error: `No ${provider} mapping for plan '${newPlanId}'` });
+      return reply.status(400).send(
+        errorPayload('billing.upgrade.missing_provider_mapping', `No ${provider} mapping for plan '${newPlanId}'`, {
+          planId: newPlanId,
+          provider,
+        }),
+      );
     }
 
     await providerManager.upgradeSubscription(
@@ -314,12 +346,12 @@ export async function billingRoutes(
     sub.post('/billing/webhook/stripe', async (request, reply) => {
       const stripeProvider = providerManager?.getProvider('stripe');
       if (!stripeProvider) {
-        return reply.status(404).send({ error: 'Stripe provider not configured' });
+        return reply.status(404).send(errorPayload('billing.webhook.provider_not_configured', 'Stripe provider not configured', { provider: 'stripe' }));
       }
 
       const rawBody = request.body;
       if (!rawBody || typeof rawBody !== 'string') {
-        return reply.status(400).send({ error: 'Missing request body' });
+        return reply.status(400).send(errorPayload('billing.webhook.missing_body', 'Missing request body'));
       }
 
       let event;
@@ -328,7 +360,7 @@ export async function billingRoutes(
       } catch (err) {
         if (err instanceof StripeSignatureError) {
           app.log.warn({ err: err.message }, 'Stripe webhook signature verification failed');
-          return reply.status(400).send({ error: 'Invalid signature' });
+          return reply.status(400).send(errorPayload('billing.webhook.invalid_signature', 'Invalid signature', { provider: 'stripe' }));
         }
         if (err instanceof UnknownWebhookEventTypeError) {
           app.log.debug({ eventType: err.eventType }, 'Ignoring unsupported Stripe event type');
@@ -340,7 +372,7 @@ export async function billingRoutes(
       const result = await entitlementSync.processEvent(event);
       if (result.error) {
         app.log.error({ eventId: event.id, eventType: event.type, error: result.error }, 'Stripe webhook processing failed');
-        return reply.status(500).send({ error: 'Webhook processing failed' });
+        return reply.status(500).send(errorPayload('billing.webhook.processing_failed', 'Webhook processing failed', { provider: 'stripe' }));
       }
       return reply.status(200).send({ received: true });
     });
@@ -349,12 +381,12 @@ export async function billingRoutes(
     sub.post('/billing/webhook/creem', async (request, reply) => {
       const creemProvider = providerManager?.getProvider('creem');
       if (!creemProvider) {
-        return reply.status(404).send({ error: 'Creem provider not configured' });
+        return reply.status(404).send(errorPayload('billing.webhook.provider_not_configured', 'Creem provider not configured', { provider: 'creem' }));
       }
 
       const rawBody = request.body;
       if (!rawBody || typeof rawBody !== 'string') {
-        return reply.status(400).send({ error: 'Missing request body' });
+        return reply.status(400).send(errorPayload('billing.webhook.missing_body', 'Missing request body'));
       }
 
       let event;
@@ -363,7 +395,7 @@ export async function billingRoutes(
       } catch (err) {
         if (err instanceof CreemSignatureError) {
           app.log.warn({ err: err.message }, 'Creem webhook signature verification failed');
-          return reply.status(400).send({ error: 'Invalid signature' });
+          return reply.status(400).send(errorPayload('billing.webhook.invalid_signature', 'Invalid signature', { provider: 'creem' }));
         }
         if (err instanceof UnknownWebhookEventTypeError) {
           app.log.debug({ eventType: err.eventType }, 'Ignoring unsupported Creem event type');
@@ -375,7 +407,7 @@ export async function billingRoutes(
       const result = await entitlementSync.processEvent(event);
       if (result.error) {
         app.log.error({ eventId: event.id, eventType: event.type, error: result.error }, 'Creem webhook processing failed');
-        return reply.status(500).send({ error: 'Webhook processing failed' });
+        return reply.status(500).send(errorPayload('billing.webhook.processing_failed', 'Webhook processing failed', { provider: 'creem' }));
       }
       return reply.status(200).send({ received: true });
     });
@@ -383,11 +415,11 @@ export async function billingRoutes(
     // POST /billing/webhook — alias for primary provider
     sub.post('/billing/webhook', async (request, reply) => {
       if (providerManager.primaryProvider.name === 'mock') {
-        return reply.status(404).send({ error: 'No external webhook endpoint when using mock provider' });
+        return reply.status(404).send(errorPayload('billing.webhook.mock_not_supported', 'No external webhook endpoint when using mock provider'));
       }
       const rawBody = request.body;
       if (!rawBody || typeof rawBody !== 'string') {
-        return reply.status(400).send({ error: 'Missing request body' });
+        return reply.status(400).send(errorPayload('billing.webhook.missing_body', 'Missing request body'));
       }
 
       let event;
@@ -396,7 +428,9 @@ export async function billingRoutes(
       } catch (err) {
         if (err instanceof StripeSignatureError || err instanceof CreemSignatureError) {
           app.log.warn({ err: (err as Error).message }, 'Webhook signature verification failed');
-          return reply.status(400).send({ error: 'Invalid signature' });
+          return reply.status(400).send(
+            errorPayload('billing.webhook.invalid_signature', 'Invalid signature', { provider: providerManager.primaryProvider.name }),
+          );
         }
         if (err instanceof UnknownWebhookEventTypeError) {
           app.log.debug({ eventType: err.eventType }, 'Ignoring unsupported webhook event type');
@@ -408,7 +442,9 @@ export async function billingRoutes(
       const result = await entitlementSync.processEvent(event);
       if (result.error) {
         app.log.error({ eventId: event.id, eventType: event.type, error: result.error }, 'Webhook processing failed');
-        return reply.status(500).send({ error: 'Webhook processing failed' });
+        return reply.status(500).send(
+          errorPayload('billing.webhook.processing_failed', 'Webhook processing failed', { provider: providerManager.primaryProvider.name }),
+        );
       }
       return reply.status(200).send({ received: true });
     });
@@ -423,13 +459,13 @@ export async function billingRoutes(
     if (request.query.botId) {
       const [bot] = await db.select({ id: bots.id }).from(bots)
         .where(and(eq(bots.id, request.query.botId), eq(bots.userId, userId)));
-      if (!bot) return reply.status(404).send({ error: 'not_found', message: 'Bot not found' });
+      if (!bot) return reply.status(404).send(errorPayload('billing.ledger.bot_not_found', 'Bot not found', { botId: request.query.botId }));
     }
 
     if (request.query.agentId) {
       const [agent] = await db.select({ id: agents.id }).from(agents)
         .where(and(eq(agents.id, request.query.agentId), eq(agents.userId, userId)));
-      if (!agent) return reply.status(404).send({ error: 'not_found', message: 'Agent not found' });
+      if (!agent) return reply.status(404).send(errorPayload('billing.ledger.agent_not_found', 'Agent not found', { agentId: request.query.agentId }));
     }
 
     const conditions: SQL[] = [];

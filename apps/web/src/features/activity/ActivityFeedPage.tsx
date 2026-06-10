@@ -1,9 +1,11 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useIntl } from 'react-intl';
 import { dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, EmptyState, ErrorState, LoadingRows, Button } from '../../lib/ui.js';
 import { ActivityItem } from './ActivityItem.js';
 
 export function ActivityFeedPage() {
+  const intl = useIntl();
   const query = useInfiniteQuery({
     queryKey: ['dashboard', 'activity'],
     queryFn: ({ pageParam }) =>
@@ -23,8 +25,8 @@ export function ActivityFeedPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Activity"
-        subtitle="What your agents have been doing"
+        title={intl.formatMessage({ id: 'activity.title' })}
+        subtitle={intl.formatMessage({ id: 'activity.subtitle' })}
       />
 
       {query.isLoading && <LoadingRows count={6} />}
@@ -37,8 +39,8 @@ export function ActivityFeedPage() {
 
       {query.isSuccess && allEvents.length === 0 && (
         <EmptyState
-          title="No activity yet"
-          message="Events will appear here as your agents make decisions, place orders, and manage positions."
+          title={intl.formatMessage({ id: 'activity.noActivity.title' })}
+          message={intl.formatMessage({ id: 'activity.noActivity.message' })}
         />
       )}
 
@@ -56,7 +58,9 @@ export function ActivityFeedPage() {
                 onClick={() => void query.fetchNextPage()}
                 disabled={query.isFetchingNextPage}
               >
-                {query.isFetchingNextPage ? 'Loading…' : 'Load older events'}
+                {query.isFetchingNextPage
+                  ? intl.formatMessage({ id: 'common.loading' })
+                  : intl.formatMessage({ id: 'activity.loadOlderEvents' })}
               </Button>
             </div>
           )}

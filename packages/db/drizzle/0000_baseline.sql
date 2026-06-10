@@ -163,11 +163,27 @@ CREATE TABLE "billing_webhook_events" (
 	"processed_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "blueprints" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"config_data" jsonb NOT NULL,
+	"config_version" integer DEFAULT 1 NOT NULL,
+	"visibility" text DEFAULT 'private' NOT NULL,
+	"strategy_preset" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "bots" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
 	"venue_account_id" text NOT NULL,
+	"trading_binding_id" text NOT NULL,
 	"config" jsonb NOT NULL,
+	"blueprint_id" text,
+	"config_snapshot" jsonb,
 	"status" text DEFAULT 'stopped' NOT NULL,
 	"creator_type" text DEFAULT 'user' NOT NULL,
 	"creator_id" text,
@@ -175,6 +191,61 @@ CREATE TABLE "bots" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"started_at" timestamp with time zone,
 	"stopped_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "capability_grant_audit" (
+	"id" text PRIMARY KEY NOT NULL,
+	"grant_id" text NOT NULL,
+	"action" text NOT NULL,
+	"actor_type" text NOT NULL,
+	"actor_id" text NOT NULL,
+	"reason" text,
+	"detail" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "capability_grants" (
+	"id" text PRIMARY KEY NOT NULL,
+	"agent_id" text NOT NULL,
+	"binding_id" text NOT NULL,
+	"capability_family" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"granted_by" text NOT NULL,
+	"granted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"revoked_at" timestamp with time zone,
+	"meta" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "connections" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"credential_id" text,
+	"provider" text NOT NULL,
+	"label" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"meta" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "datasets" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"venue" text,
+	"symbol" text,
+	"interval" text,
+	"from" timestamp with time zone,
+	"to" timestamp with time zone,
+	"file_path" text,
+	"row_count" integer,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"meta" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "decision_contexts" (
@@ -383,10 +454,25 @@ CREATE TABLE "skills" (
 	"required_tools" text[] DEFAULT '{}'::text[] NOT NULL,
 	"context_requirements" text[] DEFAULT '{}'::text[] NOT NULL,
 	"required_guardrails" text[] DEFAULT '{}'::text[] NOT NULL,
+	"capability_families" text[] DEFAULT '{}'::text[] NOT NULL,
 	"suggested_tick_interval_ms" integer DEFAULT 900000,
 	"visibility" text DEFAULT 'private' NOT NULL,
 	"tags" text[] DEFAULT '{}'::text[],
 	"fork_of" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "trading_bindings" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"connection_id" text NOT NULL,
+	"provider" text NOT NULL,
+	"label" text NOT NULL,
+	"binding_ref" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"binding_profile" jsonb,
+	"source_venue_account_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -418,6 +504,7 @@ CREATE TABLE "users" (
 	"avatar_url" text,
 	"plan_id" text DEFAULT 'free' NOT NULL,
 	"telegram_chat_id" text,
+	"ai_model_config" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email")
@@ -430,28 +517,40 @@ CREATE TABLE "venue_accounts" (
 	"label" text NOT NULL,
 	"venue_account_ref" text,
 	"credential_id" text,
+	"venue_profile" jsonb,
 	"last_reconciled_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "agent_artifacts" ADD CONSTRAINT "agent_artifacts_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_artifacts" ADD CONSTRAINT "agent_artifacts_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_credentials" ADD CONSTRAINT "agent_credentials_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_credentials" ADD CONSTRAINT "agent_credentials_credential_id_user_credentials_id_fk" FOREIGN KEY ("credential_id") REFERENCES "public"."user_credentials"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_outbound_messages" ADD CONSTRAINT "agent_outbound_messages_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_runtime_sessions" ADD CONSTRAINT "agent_runtime_sessions_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_outbound_messages" ADD CONSTRAINT "agent_outbound_messages_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_runtime_sessions" ADD CONSTRAINT "agent_runtime_sessions_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agents" ADD CONSTRAINT "agents_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "backtest_runs" ADD CONSTRAINT "backtest_runs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_customers" ADD CONSTRAINT "billing_customers_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "billing_subscriptions" ADD CONSTRAINT "billing_subscriptions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "blueprints" ADD CONSTRAINT "blueprints_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bots" ADD CONSTRAINT "bots_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bots" ADD CONSTRAINT "bots_venue_account_id_venue_accounts_id_fk" FOREIGN KEY ("venue_account_id") REFERENCES "public"."venue_accounts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bots" ADD CONSTRAINT "bots_trading_binding_id_trading_bindings_id_fk" FOREIGN KEY ("trading_binding_id") REFERENCES "public"."trading_bindings"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bots" ADD CONSTRAINT "bots_blueprint_id_blueprints_id_fk" FOREIGN KEY ("blueprint_id") REFERENCES "public"."blueprints"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "capability_grant_audit" ADD CONSTRAINT "capability_grant_audit_grant_id_capability_grants_id_fk" FOREIGN KEY ("grant_id") REFERENCES "public"."capability_grants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "capability_grants" ADD CONSTRAINT "capability_grants_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "capability_grants" ADD CONSTRAINT "capability_grants_binding_id_trading_bindings_id_fk" FOREIGN KEY ("binding_id") REFERENCES "public"."trading_bindings"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "connections" ADD CONSTRAINT "connections_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "connections" ADD CONSTRAINT "connections_credential_id_user_credentials_id_fk" FOREIGN KEY ("credential_id") REFERENCES "public"."user_credentials"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "datasets" ADD CONSTRAINT "datasets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "local_identities" ADD CONSTRAINT "local_identities_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_identities" ADD CONSTRAINT "oauth_identities_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "replay_corpora" ADD CONSTRAINT "replay_corpora_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "skills" ADD CONSTRAINT "skills_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "skills" ADD CONSTRAINT "skills_fork_of_skills_id_fk" FOREIGN KEY ("fork_of") REFERENCES "public"."skills"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trading_bindings" ADD CONSTRAINT "trading_bindings_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trading_bindings" ADD CONSTRAINT "trading_bindings_connection_id_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."connections"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_credentials" ADD CONSTRAINT "user_credentials_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_plans" ADD CONSTRAINT "user_plans_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "venue_accounts" ADD CONSTRAINT "venue_accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -492,10 +591,25 @@ CREATE INDEX "idx_billing_subscriptions_external_subscription_id" ON "billing_su
 CREATE INDEX "idx_billing_subscriptions_status" ON "billing_subscriptions" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "idx_billing_subscriptions_provider" ON "billing_subscriptions" USING btree ("provider");--> statement-breakpoint
 CREATE INDEX "idx_billing_webhook_events_event_type" ON "billing_webhook_events" USING btree ("event_type");--> statement-breakpoint
+CREATE INDEX "idx_blueprints_user_id" ON "blueprints" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_blueprints_visibility" ON "blueprints" USING btree ("visibility");--> statement-breakpoint
 CREATE INDEX "idx_bots_user_id" ON "bots" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_bots_status" ON "bots" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "idx_bots_creator_id" ON "bots" USING btree ("creator_id");--> statement-breakpoint
 CREATE INDEX "idx_bots_venue_account_id" ON "bots" USING btree ("venue_account_id");--> statement-breakpoint
+CREATE INDEX "idx_bots_trading_binding_id" ON "bots" USING btree ("trading_binding_id");--> statement-breakpoint
+CREATE INDEX "idx_capability_grant_audit_grant_id" ON "capability_grant_audit" USING btree ("grant_id");--> statement-breakpoint
+CREATE INDEX "idx_capability_grant_audit_created_at" ON "capability_grant_audit" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "idx_capability_grant_audit_actor_id" ON "capability_grant_audit" USING btree ("actor_id");--> statement-breakpoint
+CREATE INDEX "idx_capability_grants_agent_id" ON "capability_grants" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX "idx_capability_grants_binding_id" ON "capability_grants" USING btree ("binding_id");--> statement-breakpoint
+CREATE INDEX "idx_capability_grants_status" ON "capability_grants" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_capability_grants_active" ON "capability_grants" USING btree ("agent_id","binding_id","capability_family") WHERE status = 'active';--> statement-breakpoint
+CREATE INDEX "idx_connections_user_id" ON "connections" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_connections_provider" ON "connections" USING btree ("provider");--> statement-breakpoint
+CREATE INDEX "idx_connections_status" ON "connections" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_datasets_user_id" ON "datasets" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_datasets_status" ON "datasets" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "idx_decision_contexts_decision_id" ON "decision_contexts" USING btree ("decision_id");--> statement-breakpoint
 CREATE INDEX "idx_decision_contexts_context_hash" ON "decision_contexts" USING btree ("context_hash");--> statement-breakpoint
 CREATE INDEX "idx_decision_contexts_venue_account_id" ON "decision_contexts" USING btree ("venue_account_id");--> statement-breakpoint
@@ -538,6 +652,11 @@ CREATE INDEX "idx_sessions_user_id" ON "sessions" USING btree ("user_id");--> st
 CREATE INDEX "idx_sessions_expires_at" ON "sessions" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "idx_skills_author_id" ON "skills" USING btree ("author_id");--> statement-breakpoint
 CREATE INDEX "idx_skills_visibility" ON "skills" USING btree ("visibility");--> statement-breakpoint
+CREATE INDEX "idx_trading_bindings_user_id" ON "trading_bindings" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "idx_trading_bindings_connection_id" ON "trading_bindings" USING btree ("connection_id");--> statement-breakpoint
+CREATE INDEX "idx_trading_bindings_provider" ON "trading_bindings" USING btree ("provider");--> statement-breakpoint
+CREATE INDEX "idx_trading_bindings_status" ON "trading_bindings" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_trading_bindings_connection_id" ON "trading_bindings" USING btree ("connection_id");--> statement-breakpoint
 CREATE INDEX "idx_user_plans_user_id" ON "user_plans" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_venue_accounts_user_id" ON "venue_accounts" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_venue_accounts_credential_id" ON "venue_accounts" USING btree ("credential_id");

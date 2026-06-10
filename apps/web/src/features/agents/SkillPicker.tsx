@@ -1,3 +1,4 @@
+import { useIntl } from 'react-intl';
 import { listSelectableSkills } from './agent-display.js';
 import type { Skill } from '../../lib/api-client.js';
 
@@ -10,11 +11,12 @@ interface SkillPickerProps {
 }
 
 export function SkillPicker({ skills, selectedSkillIds, onChange, loading = false, errorMessage = null }: SkillPickerProps) {
+  const intl = useIntl();
   const selectableSkills = listSelectableSkills(skills);
   const selected = new Set(selectedSkillIds);
 
   if (loading) {
-    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading skills…</div>;
+    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.loading' })}</div>;
   }
 
   if (errorMessage) {
@@ -22,7 +24,7 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
   }
 
   if (selectableSkills.length === 0) {
-    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Base is included automatically. No additional skills are available yet.</div>;
+    return <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.skillPicker.empty' })}</div>;
   }
 
   return (

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import { useIntl } from 'react-intl';
 import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
 import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
@@ -7,6 +8,7 @@ import { ActivityItem } from '../activity/ActivityItem.js';
 
 export function MissionControlPage() {
   const navigate = useNavigate();
+  const intl = useIntl();
 
   const agentsQuery = useQuery({
     queryKey: ['agents'],
@@ -29,15 +31,18 @@ export function MissionControlPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Mission Control"
+        title={intl.formatMessage({ id: 'missionControl.title' })}
         subtitle={
           agentsQuery.data
-            ? `${counts.active} active agent${counts.active !== 1 ? 's' : ''} across ${agents.length} total`
+            ? intl.formatMessage(
+                { id: 'missionControl.subtitle' },
+                { activeCount: counts.active, totalCount: agents.length },
+              )
             : undefined
         }
         action={
           <Button variant="primary" onClick={() => navigate('/agents?create=1')}>
-            Create agent
+            {intl.formatMessage({ id: 'missionControl.createAgent' })}
           </Button>
         }
       />
@@ -52,16 +57,16 @@ export function MissionControlPage() {
             marginBottom: '32px',
           }}
         >
-          <MetricCard label="Active" value={counts.active} total={agents.length} />
-          <MetricCard label="Paused" value={counts.paused} />
-          <MetricCard label="Unhealthy" value={counts.unhealthy} />
-          <MetricCard label="Stopped" value={counts.stopped} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.active' })} value={counts.active} total={agents.length} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.paused' })} value={counts.paused} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.unhealthy' })} value={counts.unhealthy} />
+          <MetricCard label={intl.formatMessage({ id: 'missionControl.metric.stopped' })} value={counts.stopped} />
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', alignItems: 'start' }}>
-        <section aria-label="Your agents">
-          <SectionLabel>Your agents</SectionLabel>
+        <section aria-label={intl.formatMessage({ id: 'missionControl.section.agents' })}>
+          <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.agents' })}</SectionLabel>
 
           {agentsQuery.isLoading && <LoadingRows count={3} />}
           {agentsQuery.isError && (
@@ -72,11 +77,11 @@ export function MissionControlPage() {
           )}
           {agentsQuery.isSuccess && agents.length === 0 && (
             <EmptyState
-              title="No agents yet"
-              message="Create an agent from a goal, then attach capabilities only when you need them."
+              title={intl.formatMessage({ id: 'missionControl.noAgents.title' })}
+              message={intl.formatMessage({ id: 'missionControl.noAgents.message' })}
               action={
                 <Button variant="primary" onClick={() => navigate('/agents?create=1')}>
-                  Create agent
+                  {intl.formatMessage({ id: 'missionControl.createAgent' })}
                 </Button>
               }
             />
@@ -90,8 +95,8 @@ export function MissionControlPage() {
           )}
         </section>
 
-        <section aria-label="Recent activity">
-          <SectionLabel>Recent activity</SectionLabel>
+        <section aria-label={intl.formatMessage({ id: 'missionControl.section.recentActivity' })}>
+          <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
 
           <Card style={{ padding: '0' }}>
             {overviewQuery.isLoading && (
@@ -100,7 +105,10 @@ export function MissionControlPage() {
               </div>
             )}
             {overviewQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) === 0 && (
-              <EmptyState title="No activity yet" message="Events appear here once agents start taking actions." />
+              <EmptyState
+                title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
+                message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
+              />
             )}
             {overviewQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) > 0 && (
               <div>
@@ -118,7 +126,7 @@ export function MissionControlPage() {
                     onClick={() => navigate('/activity')}
                     style={{ width: '100%', justifyContent: 'center' }}
                   >
-                    View all activity →
+                    {intl.formatMessage({ id: 'missionControl.viewAllActivity' })}
                   </Button>
                 </div>
               </div>

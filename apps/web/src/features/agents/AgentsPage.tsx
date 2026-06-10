@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, type Skill, type TradingBindingSummary } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
-const RISK_TOLERANCES = [
-  { value: 'conservative', label: 'Conservative', description: 'Smaller positions, lower drawdown tolerance' },
-  { value: 'moderate', label: 'Moderate', description: 'Balanced risk-reward' },
-  { value: 'aggressive', label: 'Aggressive', description: 'Larger positions, higher potential returns and losses' },
-] as const;
-
-type RiskToleranceValue = typeof RISK_TOLERANCES[number]['value'];
+type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
 
 interface IntentState {
@@ -26,6 +22,7 @@ interface IntentState {
 
 export function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const intl = useIntl();
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
@@ -63,19 +60,19 @@ export function AgentsPage() {
   return (
     <PageShell>
       <PageHeader
-        title="Agents"
-        subtitle="Goal-driven agents with explicit skills and execution modes"
-        action={<Button variant="primary" onClick={openCreate}>New agent</Button>}
+        title={intl.formatMessage({ id: 'agents.title' })}
+        subtitle={intl.formatMessage({ id: 'agents.subtitle' })}
+        action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.newAgent' })}</Button>}
       />
 
       {query.isLoading && <LoadingRows count={3} />}
-      {query.isError && <ErrorState message={(query.error as Error).message} onRetry={() => void query.refetch()} />}
+      {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
 
       {query.isSuccess && items.length === 0 && (
         <EmptyState
-          title="No agents yet"
-          message="Describe the goal, then add capabilities only when you need them."
-          action={<Button variant="primary" onClick={openCreate}>Create agent</Button>}
+          title={intl.formatMessage({ id: 'agents.empty.title' })}
+          message={intl.formatMessage({ id: 'agents.empty.message' })}
+          action={<Button variant="primary" onClick={openCreate}>{intl.formatMessage({ id: 'agents.createAgent' })}</Button>}
         />
       )}
 
@@ -117,6 +114,7 @@ function CreateAgentFlow({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const intl = useIntl();
   const [step, setStep] = useState<CreateStep>('intent');
   const [intent, setIntent] = useState<IntentState>({
     goal: '',
@@ -157,22 +155,40 @@ function CreateAgentFlow({
   });
 
   if (step === 'intent') {
+    const riskOptions = [
+      {
+        value: 'conservative',
+        label: intl.formatMessage({ id: 'agents.risk.conservative.label' }),
+        description: intl.formatMessage({ id: 'agents.risk.conservative.description' }),
+      },
+      {
+        value: 'moderate',
+        label: intl.formatMessage({ id: 'agents.risk.moderate.label' }),
+        description: intl.formatMessage({ id: 'agents.risk.moderate.description' }),
+      },
+      {
+        value: 'aggressive',
+        label: intl.formatMessage({ id: 'agents.risk.aggressive.label' }),
+        description: intl.formatMessage({ id: 'agents.risk.aggressive.description' }),
+      },
+    ] as const;
+
     return (
-      <Modal title="Create agent" onClose={onClose}>
+      <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <FieldLabel>What should the agent do?</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.goal' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
               value={intent.goal}
               onChange={(e) => setIntent((state) => ({ ...state, goal: e.target.value }))}
-              placeholder="e.g. Grow my Solana portfolio conservatively over 30 days"
+              placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
               required
             />
           </div>
 
           <div>
-            <FieldLabel>Skills</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
             <SkillPicker
               skills={skills}
               selectedSkillIds={intent.skillIds}
@@ -181,39 +197,41 @@ function CreateAgentFlow({
               errorMessage={skillsError}
             />
             <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-              Base is included automatically. Select any additional skills the agent should have after creation.
+              {intl.formatMessage({ id: 'agents.create.skillsHelp' })}
             </div>
           </div>
 
           <div>
-            <FieldLabel>Execution mode</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
             <select
               value={intent.executionMode}
               onChange={(e) => setIntent((state) => ({ ...state, executionMode: e.target.value as IntentState['executionMode'] }))}
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
-              <option value="paper">Paper — simulated, no real money</option>
-              <option value="shadow">Shadow — tracks prices, no orders</option>
-              <option value="live">Live — real order placement</option>
+              <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
+              <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+              <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
             </select>
           </div>
 
           {requiresTradingSetup && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>{formatCapabilityFamily('trading')} capability setup</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                  {intl.formatMessage({ id: 'agents.create.capabilitySetupTitle' }, { capability: formatCapabilityFamily('trading', intl) })}
+                </div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                  Select an existing trading binding to attach trading access as part of agent creation.
+                  {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
                 </div>
               </div>
 
               <div>
-                <FieldLabel>Trading binding</FieldLabel>
+                <FieldLabel>{intl.formatMessage({ id: 'agents.create.tradingBinding' })}</FieldLabel>
                 {tradingBindingsQuery.isLoading ? (
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading trading bindings…</div>
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingBindings' })}</div>
                 ) : availableTradingBindings.length === 0 ? (
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                    No active trading bindings are available yet. Create a trading connection first, or create the agent now and bind it later.
+                    {intl.formatMessage({ id: 'agents.create.noBindings' })}
                   </div>
                 ) : (
                   <select
@@ -221,7 +239,7 @@ function CreateAgentFlow({
                     onChange={(e) => setIntent((state) => ({ ...state, tradingBindingId: e.target.value }))}
                     style={{ ...inputStyle, cursor: 'pointer' }}
                   >
-                    <option value="">Choose an existing binding</option>
+                    <option value="">{intl.formatMessage({ id: 'agents.create.chooseBinding' })}</option>
                     {availableTradingBindings.map((binding) => (
                       <option key={binding.bindingId} value={binding.bindingId}>
                         {binding.label} ({binding.provider})
@@ -232,13 +250,13 @@ function CreateAgentFlow({
               </div>
 
               <div>
-                <FieldLabel>Risk tolerance</FieldLabel>
+                <FieldLabel>{intl.formatMessage({ id: 'agents.create.riskTolerance' })}</FieldLabel>
                 <select
                   value={intent.riskTolerance}
                   onChange={(e) => setIntent((state) => ({ ...state, riskTolerance: e.target.value as RiskToleranceValue }))}
                   style={{ ...inputStyle, cursor: 'pointer' }}
                 >
-                  {RISK_TOLERANCES.map((risk) => (
+                  {riskOptions.map((risk) => (
                     <option key={risk.value} value={risk.value}>
                       {risk.label} — {risk.description}
                     </option>
@@ -249,9 +267,9 @@ function CreateAgentFlow({
           )}
 
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+            <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
             <Button variant="primary" type="button" disabled={!intent.goal.trim()} onClick={() => setStep('review')}>
-              Review →
+              {intl.formatMessage({ id: 'agents.create.review' })}
             </Button>
           </div>
         </div>
@@ -260,7 +278,7 @@ function CreateAgentFlow({
   }
 
   return (
-    <Modal title="Review and create" onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: 'agents.review.title' })} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
           {intent.goal}
@@ -268,23 +286,30 @@ function CreateAgentFlow({
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
-            <ReviewRow label="Execution mode" value={formatExecutionMode(intent.executionMode)} />
-            <ReviewRow label="Skills" value={formatSkillSelection(selectedSkills)} />
-            <ReviewRow label="Capability setup" value={requiresTradingSetup ? (selectedTradingBinding ? 'Selected trading binding will be bound on create' : 'No binding selected; bind later from the capability page') : 'No capability-specific setup required'} />
+            <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />
+            <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />
+            <ReviewRow
+              label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
+              value={requiresTradingSetup
+                ? (selectedTradingBinding
+                  ? intl.formatMessage({ id: 'agents.review.capabilitySetup.bound' })
+                  : intl.formatMessage({ id: 'agents.review.capabilitySetup.defer' }))
+                : intl.formatMessage({ id: 'agents.review.capabilitySetup.none' })}
+            />
             {requiresTradingSetup && selectedTradingBinding && (
-              <ReviewRow label="Trading binding" value={`${selectedTradingBinding.label} (${selectedTradingBinding.provider})`} />
+              <ReviewRow label={intl.formatMessage({ id: 'agents.create.tradingBinding' })} value={`${selectedTradingBinding.label} (${selectedTradingBinding.provider})`} />
             )}
           </tbody>
         </table>
 
-        {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
+        {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
-          <Button variant="ghost" onClick={() => setStep('intent')} type="button">← Back</Button>
+          <Button variant="ghost" onClick={() => setStep('intent')} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+            <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
             <Button variant="primary" type="button" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
-              {mutation.isPending ? 'Creating…' : 'Create agent'}
+              {mutation.isPending ? intl.formatMessage({ id: 'agents.create.creating' }) : intl.formatMessage({ id: 'agents.createAgent' })}
             </Button>
           </div>
         </div>

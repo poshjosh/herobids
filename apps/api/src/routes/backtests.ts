@@ -7,6 +7,7 @@ import { StrategyConfigSchema, Decimal } from '@herobids/domain';
 import type { PlansConfig } from '@herobids/domain';
 import { parseCsvToFrames } from '@herobids/backtesting';
 import { checkBacktestLimit } from '../plan-guards.js';
+import { errorPayload } from '../error-payload.js';
 import type { BacktestJob } from '../types.js';
 import crypto from 'node:crypto';
 
@@ -152,7 +153,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       if (plansConfig) {
         const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
         if (!planCheck.ok) {
-          return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+          return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
         }
       }
 
@@ -221,7 +222,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
     if (plansConfig) {
       const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
       if (!planCheck.ok) {
-        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+        return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
     }
 

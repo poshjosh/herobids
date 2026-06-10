@@ -1,30 +1,39 @@
+import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router';
+import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
-
-const NAV_ITEMS = [
-  { path: '/mission-control', label: 'Mission Control', icon: '◈' },
-  { path: '/skills', label: 'Skills', icon: '✦' },
-  { path: '/activity', label: 'Activity', icon: '◎' },
-  { path: '/outcomes', label: 'Outcomes', icon: '▦' },
-];
-
-const MANAGE_ITEMS = [
-  { path: '/agents', label: 'Agents', icon: '⊡' },
-  { path: '/connections', label: 'Connections', icon: '⊟' },
-  { path: '/credentials', label: 'Credentials', icon: '⊛' },
-  { path: '/billing', label: 'Billing', icon: '⊘' },
-  { path: '/settings', label: 'Settings', icon: '⊙' },
-];
-
-const ADVANCED_ITEMS = [
-  { path: '/bots', label: 'Bots', icon: '⊞' },
-  { path: '/venue-accounts', label: 'Trading setup', icon: '⬡' },
-  { path: '/exposure', label: 'Exposure', icon: '◑' },
-];
 
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const location = useLocation();
   const { user, logout } = useSession();
+  const intl = useIntl();
+
+  const { locale } = intl;
+
+  // Rebuild only when locale changes, not on every route re-render.
+  const NAV_ITEMS = useMemo(() => [
+    { path: '/mission-control', label: intl.formatMessage({ id: 'nav.missionControl' }), icon: '◈' },
+    { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
+    { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◎' },
+    { path: '/outcomes', label: intl.formatMessage({ id: 'nav.outcomes' }), icon: '▦' },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [locale]);
+
+  const MANAGE_ITEMS = useMemo(() => [
+    { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
+    { path: '/connections', label: intl.formatMessage({ id: 'nav.connections' }), icon: '⊟' },
+    { path: '/credentials', label: intl.formatMessage({ id: 'nav.credentials' }), icon: '⊛' },
+    { path: '/billing', label: intl.formatMessage({ id: 'nav.billing' }), icon: '⊘' },
+    { path: '/settings', label: intl.formatMessage({ id: 'nav.settings' }), icon: '⊙' },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [locale]);
+
+  const ADVANCED_ITEMS = useMemo(() => [
+    { path: '/bots', label: intl.formatMessage({ id: 'nav.bots' }), icon: '⊞' },
+    { path: '/venue-accounts', label: intl.formatMessage({ id: 'nav.tradingSetup' }), icon: '⬡' },
+    { path: '/exposure', label: intl.formatMessage({ id: 'nav.exposure' }), icon: '◑' },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [locale]);
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
@@ -50,7 +59,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           // Hidden on desktop via .sidebar-close-btn (display:none at ≥769px).
           <button
             onClick={onClose}
-            aria-label="Close navigation"
+            aria-label={intl.formatMessage({ id: 'nav.closeNavigation' })}
             className="sidebar-close-btn"
             style={{
               background: 'transparent',
@@ -75,14 +84,14 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           ))}
         </NavGroup>
 
-        <SectionLabel>Manage</SectionLabel>
+        <SectionLabel>{intl.formatMessage({ id: 'nav.manage' })}</SectionLabel>
         <NavGroup>
           {MANAGE_ITEMS.map((item) => (
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>
 
-        <SectionLabel>Advanced</SectionLabel>
+        <SectionLabel>{intl.formatMessage({ id: 'nav.advanced' })}</SectionLabel>
         <NavGroup>
           {ADVANCED_ITEMS.map((item) => (
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
@@ -162,7 +171,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
               textAlign: 'left',
             }}
           >
-            Sign out
+            {intl.formatMessage({ id: 'nav.signOut' })}
           </button>
         </div>
       )}

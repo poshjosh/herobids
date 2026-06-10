@@ -219,8 +219,9 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.error).toBe('validation_error');
+      expect(body.error).toBe('credential.validation_error.required');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
+      expect(body.params).toEqual({ field: 'walletAddress', venue: 'hyperliquid' });
     });
 
     it('rejects Hyperliquid credential with malformed walletAddress', async () => {
@@ -281,7 +282,7 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.error).toBe('validation_error');
+      expect(body.error).toBe('credential.validation_error.required');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.apiKey' }));
     });
 
@@ -303,7 +304,7 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.error).toBe('validation_error');
+      expect(body.error).toBe('credential.validation_error.required');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.secret' }));
     });
 
@@ -350,7 +351,7 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.error).toBe('validation_error');
+      expect(body.error).toBe('credential.validation_error.invalid_private_key');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.privateKey' }));
     });
 
@@ -375,7 +376,7 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.error).toBe('validation_error');
+      expect(body.error).toBe('credential.validation_error.required');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.apiKey' }));
     });
   });
@@ -505,7 +506,7 @@ describe('credential audit events', () => {
 
       expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.error).toBe('validation_error');
+      expect(body.error).toBe('credential.validation_error.required');
       expect(body.details).toContainEqual(expect.objectContaining({ field: 'secrets.walletAddress' }));
       // Must not persist or rotate
       expect(mockJournalAppend).not.toHaveBeenCalled();

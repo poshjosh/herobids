@@ -5,92 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1780673008497,
-      "tag": "0000_windy_serpent_society",
+      "when": 1781074302998,
+      "tag": "0000_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1780674204357,
-      "tag": "0001_massive_mandarin",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1780698666458,
-      "tag": "0002_dizzy_pete_wisdom",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1780783106206,
-      "tag": "0003_wonderful_inhumans",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1780800000000,
-      "tag": "0004_features_016_017",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1780837589059,
-      "tag": "0005_empty_hemingway",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1780839597115,
-      "tag": "0006_flippant_quicksilver",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1780841600000,
-      "tag": "0007_trading_bindings",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1780860000000,
-      "tag": "0008_seed_system_skills",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1780863600000,
-      "tag": "0009_skills_capability_families",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1780963200000,
-      "tag": "0010_seed_all_system_skills",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1781031600000,
-      "tag": "0011_publish_artifact_tool",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1781042400000,
-      "tag": "0012_execute_code_programming_skill",
+      "when": 1781074320283,
+      "tag": "0001_add_preferred_locale",
       "breakpoints": true
     }
   ]

@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import { config } from '../../lib/config.js';
 import { auth } from '../../lib/api-client.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
+import { localizeApiError } from '../../lib/localize-api-error.js';
 
 type EmailMode = 'login' | 'register';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useSession();
+  const intl = useIntl();
 
   // 'email' tab state
   const [tab, setTab] = useState<'google' | 'email'>('google');
@@ -30,7 +33,7 @@ export function LoginPage() {
       await login(token);
       navigate('/mission-control', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
+      setError(localizeApiError(intl, err, 'auth.error.default'));
     } finally {
       setPending(false);
     }
@@ -63,7 +66,7 @@ export function LoginPage() {
             Herobids
           </div>
           <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px' }}>
-            Your AI trading operator
+            {intl.formatMessage({ id: 'auth.tagline' })}
           </div>
         </div>
 
@@ -89,7 +92,9 @@ export function LoginPage() {
                 transition: 'all 0.15s',
               }}
             >
-              {t === 'google' ? 'Google' : 'Email'}
+              {t === 'google'
+                ? intl.formatMessage({ id: 'auth.tab.google' })
+                : intl.formatMessage({ id: 'auth.tab.email' })}
             </button>
           ))}
         </div>
@@ -119,20 +124,22 @@ export function LoginPage() {
               onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = 'white'; }}
             >
               <GoogleIcon />
-              Continue with Google
+              {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
             </a>
           </div>
         ) : (
           <form onSubmit={(e) => { void handleEmailSubmit(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {emailMode === 'register' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label htmlFor="login-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Name</label>
+                <label htmlFor="login-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+                  {intl.formatMessage({ id: 'auth.email.name.label' })}
+                </label>
                 <input
                   id="login-name"
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your name"
+                  placeholder={intl.formatMessage({ id: 'auth.email.name.placeholder' })}
                   required
                   autoComplete="name"
                   style={inputStyle}
@@ -140,7 +147,9 @@ export function LoginPage() {
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Email</label>
+              <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+                {intl.formatMessage({ id: 'auth.email.email.label' })}
+              </label>
               <input
                 id="login-email"
                 type="email"
@@ -153,13 +162,15 @@ export function LoginPage() {
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>Password</label>
+              <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+                {intl.formatMessage({ id: 'auth.email.password.label' })}
+              </label>
               <input
                 id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={emailMode === 'register' ? 'At least 8 characters' : ''}
+                placeholder={emailMode === 'register' ? intl.formatMessage({ id: 'auth.email.password.placeholder' }) : ''}
                 required
                 autoComplete={emailMode === 'register' ? 'new-password' : 'current-password'}
                 style={inputStyle}
@@ -187,7 +198,11 @@ export function LoginPage() {
                 opacity: pending ? 0.7 : 1,
               }}
             >
-              {pending ? 'Please wait…' : emailMode === 'register' ? 'Create account' : 'Sign in'}
+              {pending
+                ? intl.formatMessage({ id: 'auth.pendingSubmit' })
+                : emailMode === 'register'
+                  ? intl.formatMessage({ id: 'auth.register.submit' })
+                  : intl.formatMessage({ id: 'auth.login.submit' })}
             </button>
 
             <button
@@ -195,13 +210,15 @@ export function LoginPage() {
               onClick={() => { setEmailMode(emailMode === 'login' ? 'register' : 'login'); setError(null); }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text-muted)', textDecoration: 'underline' }}
             >
-              {emailMode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              {emailMode === 'login'
+                ? intl.formatMessage({ id: 'auth.switchToRegister' })
+                : intl.formatMessage({ id: 'auth.switchToLogin' })}
             </button>
           </form>
         )}
 
         <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
-          By signing in you agree to the terms of service.
+          {intl.formatMessage({ id: 'auth.terms' })}
         </div>
       </div>
     </div>

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Outlet, Navigate } from 'react-router';
+import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
 import { Sidebar } from './Sidebar.js';
 
 export function RootLayout() {
   const { authenticated, loading } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const intl = useIntl();
 
   if (loading) {
     return (
@@ -42,7 +44,7 @@ export function RootLayout() {
         <div className="layout-topbar">
           <button
             className="layout-hamburger"
-            aria-label="Open navigation"
+            aria-label={intl.formatMessage({ id: 'nav.openNavigation' })}
             onClick={() => setSidebarOpen(true)}
           >
             ☰

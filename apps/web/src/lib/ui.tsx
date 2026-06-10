@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 
 // ---------------------------------------------------------------------------
 // Page shell
@@ -78,7 +79,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> =
 };
 
 export function StatusBadge({ status }: { status: string }) {
+  const intl = useIntl();
   const colors = STATUS_COLORS[status] ?? STATUS_COLORS['stopped']!;
+  const label = intl.formatMessage({ id: `status.${status}`, defaultMessage: status });
   return (
     <span
       style={{
@@ -102,7 +105,7 @@ export function StatusBadge({ status }: { status: string }) {
           flexShrink: 0,
         }}
       />
-      {status}
+      {label}
     </span>
   );
 }
@@ -261,6 +264,7 @@ export function EmptyState({ title, message, action }: { title: string; message:
 // ---------------------------------------------------------------------------
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const intl = useIntl();
   return (
     <div
       style={{
@@ -271,7 +275,9 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         color: 'var(--color-danger)',
       }}
     >
-      <div style={{ fontWeight: '500', marginBottom: '4px' }}>Something went wrong</div>
+      <div style={{ fontWeight: '500', marginBottom: '4px' }}>
+        {intl.formatMessage({ id: 'common.errorTitle' })}
+      </div>
       <div style={{ fontSize: '13px', opacity: 0.8 }}>{message}</div>
       {onRetry && (
         <button
@@ -287,7 +293,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
             cursor: 'pointer',
           }}
         >
-          Retry
+          {intl.formatMessage({ id: 'common.retry' })}
         </button>
       )}
     </div>
@@ -353,17 +359,32 @@ export function Grid({ children, columns = 3, gap = 16 }: { children: ReactNode;
 // ---------------------------------------------------------------------------
 
 export function RelativeTime({ timestamp }: { timestamp: string | null }) {
+  const intl = useIntl();
+
   if (!timestamp) return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
 
   const now = Date.now();
   const then = new Date(timestamp).getTime();
-  const diff = Math.floor((now - then) / 1000);
+  const diffSeconds = Math.floor((now - then) / 1000);
 
-  let label: string;
-  if (diff < 60) label = `${diff}s ago`;
-  else if (diff < 3600) label = `${Math.floor(diff / 60)}m ago`;
-  else if (diff < 86400) label = `${Math.floor(diff / 3600)}h ago`;
-  else label = `${Math.floor(diff / 86400)}d ago`;
+  let value: number;
+  let unit: Intl.RelativeTimeFormatUnit;
+
+  if (diffSeconds < 60) {
+    value = -diffSeconds;
+    unit = 'second';
+  } else if (diffSeconds < 3600) {
+    value = -Math.floor(diffSeconds / 60);
+    unit = 'minute';
+  } else if (diffSeconds < 86400) {
+    value = -Math.floor(diffSeconds / 3600);
+    unit = 'hour';
+  } else {
+    value = -Math.floor(diffSeconds / 86400);
+    unit = 'day';
+  }
+
+  const label = intl.formatRelativeTime(value, unit, { numeric: 'always', style: 'short' });
 
   return (
     <span style={{ color: 'var(--color-text-muted)', fontSize: '12px' }} title={timestamp}>

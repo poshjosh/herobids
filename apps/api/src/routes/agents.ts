@@ -6,6 +6,7 @@ import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, bots, decisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
+import { errorPayload } from '../error-payload.js';
 
 const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
 
@@ -116,7 +117,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     if (plansConfig) {
       const planCheck = await checkAgentLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
       if (!planCheck.ok) {
-        return reply.status(403).send({ error: planCheck.error.code, message: planCheck.error.message });
+        return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
     }
 
@@ -209,10 +210,13 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     // Mutating prompt, skills, or limits while a session is active would produce
     // inconsistent behaviour — the running process has already loaded its config.
     if (!['stopped', 'crashed'].includes(agent.status)) {
-      return reply.status(409).send({
-        error: 'agent_not_editable',
-        message: `Agent config can only be updated when stopped or crashed (current status: ${agent.status}).`,
-      });
+      return reply.status(409).send(
+        errorPayload(
+          'agent_not_editable',
+          `Agent config can only be updated when stopped or crashed (current status: ${agent.status}).`,
+          { status: agent.status },
+        ),
+      );
     }
 
     // Re-derive toolPolicy from the effective skillIds — same logic as the create path —
@@ -281,7 +285,9 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
 
     // Only allow delete when stopped
     if (agent.status !== 'stopped') {
-      return reply.status(409).send({ error: 'agent_not_stopped', message: 'Agent must be stopped before deletion' });
+      return reply.status(409).send(
+        errorPayload('agent_not_stopped', 'Agent must be stopped before deletion', { status: agent.status }),
+      );
     }
 
     // Delete the agent — explicitly cascade-delete child rows before the parent.
@@ -332,7 +338,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     }
 
     if (agent.status !== 'paused') {
-      return reply.status(409).send({ error: 'not_paused', message: 'Agent is not paused' });
+      return reply.status(409).send(errorPayload('not_paused', 'Agent is not paused', { status: agent.status }));
     }
 
     await db.update(agents).set({
@@ -357,7 +363,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       }
 
       if (agent.status !== 'stopped') {
-        return { kind: 'not_stopped' as const };
+        return { kind: 'not_stopped' as const, status: agent.status };
       }
 
       const [claimedAgent] = await tx.update(agents).set({
@@ -370,7 +376,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
         eq(agents.status, 'stopped'),
       )).returning({ id: agents.id });
       if (!claimedAgent) {
-        return { kind: 'not_stopped' as const };
+        return { kind: 'not_stopped' as const, status: 'starting' };
       }
 
       await tx.update(agentRuntimeSessions)
@@ -394,7 +400,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     }
 
     if (result.kind === 'not_stopped') {
-      return reply.status(409).send({ error: 'not_stopped', message: 'Agent is not stopped' });
+      return reply.status(409).send(errorPayload('not_stopped', 'Agent is not stopped', { status: result.status }));
     }
 
     return reply.status(202).send({ status: 'starting', sessionId });

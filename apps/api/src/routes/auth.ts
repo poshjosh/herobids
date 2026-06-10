@@ -7,8 +7,17 @@ import type { Database } from '@herobids/db';
 import { users, oauthIdentities, localIdentities, sessions, userPlans } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
+import { errorPayload } from '../error-payload.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
+// Supported locales mirror apps/web/src/app/i18n/resolveLocale.ts — keep in sync.
+const SUPPORTED_LOCALES = new Set(['en', 'ar', 'hi']);
+
+type SupportedLocale = 'en' | 'ar' | 'hi';
+
+function isSupportedLocale(value: unknown): value is SupportedLocale {
+  return typeof value === 'string' && SUPPORTED_LOCALES.has(value);
+}
 
 async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -89,19 +98,25 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     const displayName = typeof body?.['displayName'] === 'string' ? body['displayName'].trim() : undefined;
 
     if (!email || !password || !displayName) {
-      return reply.status(400).send({ error: 'email, password, and displayName are required' });
+      return reply.status(400).send(
+        errorPayload('auth.register.required_fields', 'Email, password, and display name are required'),
+      );
     }
     if (password.length < 8) {
-      return reply.status(400).send({ error: 'Password must be at least 8 characters' });
+      return reply.status(400).send(
+        errorPayload('auth.register.password_too_short', 'Password must be at least 8 characters', { minLength: 8 }),
+      );
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return reply.status(400).send({ error: 'Invalid email address' });
+      return reply.status(400).send(errorPayload('auth.register.invalid_email', 'Enter a valid email address'));
     }
 
     // Check for existing account
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
     if (existing) {
-      return reply.status(409).send({ error: 'An account with this email already exists' });
+      return reply.status(409).send(
+        errorPayload('auth.register.email_taken', 'An account with this email already exists'),
+      );
     }
 
     const passwordHash = await hashPassword(password);
@@ -115,6 +130,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
         email,
         avatarUrl: null,
         planId: defaultPlanId,
+        preferredLocale: null,
         telegramChatId: null,
         aiModelConfig: null,
         createdAt: now,
@@ -148,25 +164,33 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     const password = typeof body?.['password'] === 'string' ? body['password'] : undefined;
 
     if (!email || !password) {
-      return reply.status(400).send({ error: 'email and password are required' });
+      return reply.status(400).send(
+        errorPayload('auth.login.required_fields', 'Email and password are required'),
+      );
     }
 
     const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (!user) {
       // Constant-time response to avoid user enumeration
       await hashPassword('dummy-constant-time-work');
-      return reply.status(401).send({ error: 'Invalid email or password' });
+      return reply.status(401).send(
+        errorPayload('auth.login.invalid_credentials', 'Invalid email or password'),
+      );
     }
 
     const [identity] = await db.select().from(localIdentities).where(eq(localIdentities.userId, user.id)).limit(1);
     if (!identity) {
       await hashPassword('dummy-constant-time-work');
-      return reply.status(401).send({ error: 'Invalid email or password' });
+      return reply.status(401).send(
+        errorPayload('auth.login.invalid_credentials', 'Invalid email or password'),
+      );
     }
 
     const valid = await verifyPassword(password, identity.passwordHash);
     if (!valid) {
-      return reply.status(401).send({ error: 'Invalid email or password' });
+      return reply.status(401).send(
+        errorPayload('auth.login.invalid_credentials', 'Invalid email or password'),
+      );
     }
 
     const token = await issueSession(config, db, user.id);
@@ -204,11 +228,13 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     // Validate CSRF state — must match the cookie set during /auth/google
     const cookies = parseCookies(request.headers['cookie']);
     if (!state || !verifyOAuthState(state, cookies['oauth_state'] ?? '', config.jwtSecret)) {
-      return reply.status(400).send({ error: 'Invalid or missing OAuth state parameter' });
+      return reply.status(400).send(
+        errorPayload('auth.google.invalid_state', 'Invalid or missing OAuth state parameter'),
+      );
     }
 
     if (!code) {
-      return reply.status(400).send({ error: 'Missing authorization code' });
+      return reply.status(400).send(errorPayload('auth.google.missing_code', 'Missing authorization code'));
     }
 
     // Exchange code for tokens
@@ -228,13 +254,17 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       });
     } catch (fetchErr) {
       app.log.error({ err: fetchErr }, 'Google OAuth token exchange network error');
-      return reply.status(502).send({ error: 'OAuth token exchange failed' });
+      return reply.status(502).send(
+        errorPayload('auth.google.token_exchange_failed', 'OAuth token exchange failed'),
+      );
     }
 
     if (!tokenResponse.ok) {
       const errBody = await tokenResponse.text();
       app.log.error({ status: tokenResponse.status, body: errBody }, 'Google token exchange failed');
-      return reply.status(502).send({ error: 'OAuth token exchange failed' });
+      return reply.status(502).send(
+        errorPayload('auth.google.token_exchange_failed', 'OAuth token exchange failed'),
+      );
     }
 
     const tokens = await tokenResponse.json() as GoogleTokenResponse;
@@ -247,11 +277,15 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       });
     } catch (fetchErr) {
       app.log.error({ err: fetchErr }, 'Google OAuth userinfo network error');
-      return reply.status(502).send({ error: 'Failed to fetch user info from Google' });
+      return reply.status(502).send(
+        errorPayload('auth.google.userinfo_failed', 'Failed to fetch user info from Google'),
+      );
     }
 
     if (!userInfoResponse.ok) {
-      return reply.status(502).send({ error: 'Failed to fetch user info from Google' });
+      return reply.status(502).send(
+        errorPayload('auth.google.userinfo_failed', 'Failed to fetch user info from Google'),
+      );
     }
 
     const googleUser = await userInfoResponse.json() as GoogleUserInfo;
@@ -261,7 +295,9 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     // account-takeover path for any existing local user with that address.
     if (googleUser.email_verified !== true) {
       app.log.warn({ sub: googleUser.sub }, 'OAuth login rejected: email not verified by Google');
-      return reply.status(401).send({ error: 'Email address not verified by Google' });
+      return reply.status(401).send(
+        errorPayload('auth.google.email_not_verified', 'Email address not verified by Google'),
+      );
     }
 
     // Find or create user
@@ -287,12 +323,14 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     const body = request.body as Record<string, unknown> | undefined;
     const code = typeof body?.['code'] === 'string' ? body['code'] : undefined;
     if (!code) {
-      return reply.status(400).send({ error: 'Missing exchange code' });
+      return reply.status(400).send(errorPayload('auth.exchange.missing_code', 'Missing exchange code'));
     }
     // Atomic get-and-delete — one-time use
     const token = await redis.getdel(`auth:code:${code}`);
     if (!token) {
-      return reply.status(400).send({ error: 'Invalid or expired exchange code' });
+      return reply.status(400).send(
+        errorPayload('auth.exchange.invalid_code', 'Invalid or expired exchange code'),
+      );
     }
     return reply.send({ token });
   });
@@ -303,7 +341,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
   app.get('/auth/me', async (request, reply) => {
     const userId = request.userId;
     if (!userId) {
-      return reply.status(401).send({ error: 'Not authenticated' });
+      return reply.status(401).send(errorPayload('auth.unauthenticated', 'Not authenticated'));
     }
 
     const [user] = await db
@@ -313,7 +351,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       .limit(1);
 
     if (!user) {
-      return reply.status(404).send({ error: 'User not found' });
+      return reply.status(404).send(errorPayload('auth.user_not_found', 'User not found'));
     }
 
     return reply.send({
@@ -322,6 +360,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       email: user.email,
       avatarUrl: user.avatarUrl,
       planId: user.planId,
+      preferredLocale: user.preferredLocale ?? null,
       telegramChatId: user.telegramChatId ?? null,
       createdAt: user.createdAt.toISOString(),
     });
@@ -329,21 +368,39 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
 
   /**
    * PATCH /auth/me — Update mutable user profile fields.
-   * Currently supports: telegramChatId (for user-level Telegram binding).
+   * Currently supports: preferredLocale and telegramChatId.
    */
   app.patch('/auth/me', async (request, reply) => {
     const userId = request.userId;
     if (!userId) {
-      return reply.status(401).send({ error: 'Not authenticated' });
+      return reply.status(401).send(errorPayload('auth.unauthenticated', 'Not authenticated'));
     }
 
     const body = (request.body ?? {}) as Record<string, unknown>;
-    const updates: { telegramChatId?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+    const updates: { preferredLocale?: SupportedLocale | null; telegramChatId?: string | null; updatedAt: Date } = {
+      updatedAt: new Date(),
+    };
+
+    if ('preferredLocale' in body) {
+      const val = body['preferredLocale'];
+      if (val !== null && !isSupportedLocale(val)) {
+        return reply.status(400).send(
+          errorPayload(
+            'auth.profile.invalid_preferred_locale',
+            'preferredLocale must be one of: en, ar, hi, or null',
+            { supportedLocales: 'en, ar, hi' },
+          ),
+        );
+      }
+      updates.preferredLocale = (val as SupportedLocale | null) ?? null;
+    }
 
     if ('telegramChatId' in body) {
       const val = body['telegramChatId'];
       if (val !== null && typeof val !== 'string') {
-        return reply.status(400).send({ error: 'validation_error', message: 'telegramChatId must be a string or null' });
+        return reply.status(400).send(
+          errorPayload('auth.profile.invalid_telegram_chat_id', 'telegramChatId must be a string or null'),
+        );
       }
       updates.telegramChatId = (val as string | null) ?? null;
     }
@@ -351,7 +408,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
     await db.update(users).set(updates).where(eq(users.id, userId));
 
     const [updated] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-    if (!updated) return reply.status(404).send({ error: 'User not found' });
+    if (!updated) return reply.status(404).send(errorPayload('auth.user_not_found', 'User not found'));
 
     return reply.send({
       id: updated.id,
@@ -359,6 +416,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       email: updated.email,
       avatarUrl: updated.avatarUrl,
       planId: updated.planId,
+      preferredLocale: updated.preferredLocale ?? null,
       telegramChatId: updated.telegramChatId ?? null,
       createdAt: updated.createdAt.toISOString(),
     });
@@ -370,24 +428,28 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
   app.post('/auth/logout', async (request, reply) => {
     const userId = request.userId;
     if (!userId) {
-      return reply.status(401).send({ error: 'Not authenticated' });
+      return reply.status(401).send(errorPayload('auth.unauthenticated', 'Not authenticated'));
     }
 
     // Extract session ID from token
     const authHeader = request.headers['authorization'];
     if (!authHeader) {
-      return reply.status(401).send({ error: 'Missing authorization' });
+      return reply.status(401).send(
+        errorPayload('auth.logout.missing_authorization', 'Missing authorization'),
+      );
     }
 
     // Parse JWT to get jti (session ID) — verification already done by plugin
     const token = authHeader.slice(7);
     const parts = token.split('.');
     if (parts.length !== 3) {
-      return reply.status(400).send({ error: 'Malformed token' });
+      return reply.status(400).send(errorPayload('auth.logout.malformed_token', 'Malformed token'));
     }
     const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString()) as { jti?: string };
     if (!payload.jti) {
-      return reply.status(400).send({ error: 'Token missing session ID' });
+      return reply.status(400).send(
+        errorPayload('auth.logout.missing_session_id', 'Token missing session ID'),
+      );
     }
 
     await db
@@ -431,6 +493,7 @@ async function findOrCreateUser(db: Database, googleUser: GoogleUserInfo, defaul
       email: googleUser.email,
       avatarUrl: googleUser.picture ?? null,
       planId: defaultPlanId,
+      preferredLocale: null,
       telegramChatId: null,
       aiModelConfig: null,
       createdAt: now,

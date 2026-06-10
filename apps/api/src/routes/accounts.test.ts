@@ -274,8 +274,9 @@ describe('POST /venue-accounts credential validation', () => {
 
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
-    expect(body.error).toBe('validation_error');
+    expect(body.error).toBe('account.validation_error.missing_venue_account_ref');
     expect(body.message).toContain('Solana wallet address');
+    expect(body.params).toEqual({ field: 'venueAccountRef', venue: 'jupiter' });
   });
 
   it('rejects jupiter account with an address that is not a valid 32-byte Solana public key', async () => {
@@ -291,7 +292,7 @@ describe('POST /venue-accounts credential validation', () => {
       payload: { venue: 'jupiter', label: 'Swap Wallet', venueAccountRef: 'tooshort' },
     });
     expect(resShort.statusCode).toBe(400);
-    expect(JSON.parse(resShort.body).error).toBe('validation_error');
+    expect(JSON.parse(resShort.body).error).toBe('account.validation_error.invalid_venue_account_ref');
 
     // '0x...' contains '0' and 'x' which are not in the base58 alphabet
     const resHex = await app.inject({
@@ -300,7 +301,7 @@ describe('POST /venue-accounts credential validation', () => {
       payload: { venue: 'jupiter', label: 'Swap Wallet', venueAccountRef: '0x3419aabbccdd112233445566778899aabb112233' },
     });
     expect(resHex.statusCode).toBe(400);
-    expect(JSON.parse(resHex.body).error).toBe('validation_error');
+    expect(JSON.parse(resHex.body).error).toBe('account.validation_error.invalid_venue_account_ref');
   });
 
   it('rejects 1inch account without a credential', async () => {
@@ -320,8 +321,9 @@ describe('POST /venue-accounts credential validation', () => {
 
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
-    expect(body.error).toBe('validation_error');
+    expect(body.error).toBe('account.validation_error.missing_credential_id');
     expect(body.message).toContain('credentialId');
+    expect(body.params).toEqual({ field: 'credentialId', venue: '1inch' });
   });
 
   it('creates 1inch account with venueProfile set to swap/authenticated when credential is linked', async () => {
