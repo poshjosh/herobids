@@ -798,8 +798,19 @@ await alertDispatcher.start();
 // discovery polling and monitor evaluation at a time. The monitor is
 // started and stopped by the coordinator as it gains/loses the lease,
 // ensuring evaluation never races across multiple worker processes.
+const miConfig = appConfig.marketIntelligence;
 const marketMonitor = createMarketMonitor(
-  { enabled: Boolean(appConfig.marketData) },
+  {
+    enabled: miConfig.enabled && Boolean(appConfig.marketData),
+    evaluationIntervalMs: miConfig.evaluationIntervalMs,
+    families: {
+      watchThresholds: miConfig.families.watchThresholds.enabled,
+      discoveryDeltas: miConfig.families.discoveryDeltas.enabled,
+      regimeChanges: miConfig.families.regimeChanges.enabled,
+    },
+    wakeCoalescingWindowMs: miConfig.wakeCoalescingWindowMs,
+    wakeCooldownMs: miConfig.wakeCooldownMs,
+  },
   { redis: redisClient, publisher: eventPublisher },
 );
 
@@ -809,8 +820,11 @@ const marketIntelCoordinator = appConfig.marketData
       const coordinator = createMarketDataCoordinator(
         {
           workerId,
-          networks: ['solana'],
-          enabled: true,
+          networks: miConfig.networks,
+          benchmarkSymbols: miConfig.benchmarkSymbols,
+          discoveryPollMs: miConfig.discoveryPollMs,
+          regimePollMs: miConfig.regimePollMs,
+          enabled: miConfig.enabled,
         },
         { redis: redisClient, providerRegistry, publisher: eventPublisher, monitor: marketMonitor },
       );

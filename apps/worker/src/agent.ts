@@ -54,6 +54,7 @@ import { buildDiscoveryNetworkMap, collectDexTrackedTargets, collectPerpsTracked
 import { createToolRegistry } from './tools/index.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
+import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
 
 const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
 
@@ -805,16 +806,16 @@ async function ensureWakeSignalConsumerGroup(): Promise<void> {
 function requestWakeDrivenTick(reason: string): void {
   wakePending = true;
 
-  if (!running || tickInFlight) {
-    return;
-  }
+  const nextDelayMs = getWakeRescheduleDelay({
+    running,
+    tickInFlight,
+    nextTickDueAt,
+    now: Date.now(),
+    effectiveTickIntervalMs,
+    wakeMinIntervalMs: WAKE_MIN_INTERVAL_MS,
+  });
 
-  const remainingDelayMs = nextTickDueAt > 0
-    ? Math.max(0, nextTickDueAt - Date.now())
-    : effectiveTickIntervalMs;
-  const nextDelayMs = Math.min(remainingDelayMs, WAKE_MIN_INTERVAL_MS);
-
-  if (nextDelayMs < remainingDelayMs) {
+  if (nextDelayMs !== null) {
     logger.info({ scheduledDelay: nextDelayMs }, reason);
     scheduleNextTick(nextDelayMs);
   }
@@ -1124,19 +1125,22 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
     return;
   }
 
-  // If a wake request is pending and cooldown has elapsed, pull tick earlier
-  let actualDelay = delayMs;
-  if (wakePending && !tickInFlight) {
-    const timeSinceLastWake = Date.now() - lastWakeTickAt;
-    if (timeSinceLastWake >= WAKE_MIN_INTERVAL_MS) {
-      actualDelay = Math.min(actualDelay, WAKE_MIN_INTERVAL_MS);
-      lastWakeTickAt = Date.now(); // stamp when we commit to the early schedule
-      logger.info({ scheduledDelay: actualDelay }, 'Scheduling early tick due to wake request');
-    }
-    wakePending = false;
+  const delayDecision = resolveNextTickDelay({
+    requestedDelayMs: delayMs,
+    wakePending,
+    tickInFlight,
+    now: Date.now(),
+    lastWakeTickAt,
+    wakeMinIntervalMs: WAKE_MIN_INTERVAL_MS,
+  });
+  const actualDelay = delayDecision.actualDelayMs;
+  wakePending = delayDecision.wakePending;
+  lastWakeTickAt = delayDecision.lastWakeTickAt;
+  if (delayDecision.wakeTriggered) {
+    logger.info({ scheduledDelay: actualDelay }, 'Scheduling early tick due to wake request');
   }
 
-  nextTickDueAt = Date.now() + actualDelay;
+  nextTickDueAt = delayDecision.nextTickDueAt;
   tickTimer = setTimeout(() => {
     nextTickDueAt = 0;
     if (!running || tickInFlight) {
@@ -1145,6 +1149,9 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
     }
 
     tickInFlight = true;
+    // A firing tick processes current market state, satisfying any pending wake.
+    // Wakes arriving during execution will re-set this via requestWakeDrivenTick.
+    wakePending = false;
     void (async () => {
       try {
         await runTick();

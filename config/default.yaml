@@ -236,6 +236,28 @@ liveRollout:
   maxConsecutiveVenueErrors: 3     # circuit-breaker: halt after N consecutive venue errors (wired in Step 2)
   slippageAlertBps: 50             # log warning when fill slippage exceeds this (wired in Step 2)
 
+# Market intelligence — always-on discovery coordinator and monitor.
+# Controls the background market intelligence subsystem that wakes agents
+# when market conditions match their registered watches.
+marketIntelligence:
+  enabled: true                    # master switch for the entire subsystem
+  evaluationIntervalMs: 5000       # monitor evaluation loop interval
+  discoveryPollMs: 30000           # how often the coordinator polls discovery sources
+  regimePollMs: 60000              # how often the coordinator polls regime sources
+  networks:                        # networks to scan for discovery
+    - solana
+  benchmarkSymbols:                # symbols for regime evaluation
+    - BTC
+  families:                        # per-family toggles for the monitor
+    watchThresholds:
+      enabled: true
+    discoveryDeltas:
+      enabled: true
+    regimeChanges:
+      enabled: true
+  wakeCoalescingWindowMs: 3000     # wake coalescing window before flush
+  wakeCooldownMs: 30000            # minimum gap between wakes to the same agent
+
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   enabled: false                    # controls whether the system dispatches journal events to Telegram channels — it doesn't affect agent-to-user communication via tools like send_message

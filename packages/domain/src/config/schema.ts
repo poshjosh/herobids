@@ -455,6 +455,35 @@ export const LiveRolloutConfigSchema = z.object({
   slippageAlertBps: z.number().min(0).default(50),
 });
 
+export const MarketIntelligenceFamilySchema = z.object({
+  enabled: z.boolean().default(true),
+});
+
+export const MarketIntelligenceConfigSchema = z.object({
+  /** Master enable/disable for the entire market intelligence subsystem */
+  enabled: z.boolean().default(true),
+  /** Monitor evaluation interval in ms. Default: 5000 */
+  evaluationIntervalMs: z.number().int().min(500).default(5_000),
+  /** Discovery source poll interval in ms. Default: 30000 */
+  discoveryPollMs: z.number().int().min(5_000).default(30_000),
+  /** Regime source poll interval in ms. Default: 60000 */
+  regimePollMs: z.number().int().min(5_000).default(60_000),
+  /** Networks to scan for discovery. Default: ['solana'] */
+  networks: z.array(z.string()).default(['solana']),
+  /** Benchmark symbols for regime evaluation. Default: ['BTC'] */
+  benchmarkSymbols: z.array(z.string()).default(['BTC']),
+  /** Per-family toggles for the monitor */
+  families: z.object({
+    watchThresholds: MarketIntelligenceFamilySchema.default({}),
+    discoveryDeltas: MarketIntelligenceFamilySchema.default({}),
+    regimeChanges: MarketIntelligenceFamilySchema.default({}),
+  }).default({}),
+  /** Wake coalescing window in ms. Default: 3000 */
+  wakeCoalescingWindowMs: z.number().int().min(500).default(3_000),
+  /** Wake cooldown in ms. Default: 30000 */
+  wakeCooldownMs: z.number().int().min(1_000).default(30_000),
+});
+
 export const AppConfigSchema = z.object({
   app: z.object({
     port: z.number().default(3000),
@@ -488,6 +517,7 @@ export const AppConfigSchema = z.object({
   backtesting: BacktestingConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
+  marketIntelligence: MarketIntelligenceConfigSchema.default({}),
   worker: WorkerConfigSchema.default({}),
   agentRuntime: AgentRuntimeConfigSchema.default({}),
   llm: LlmRuntimeConfigSchema.default({}),
@@ -621,6 +651,7 @@ export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
+export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type PlansConfig = z.infer<typeof PlansConfigSchema>;

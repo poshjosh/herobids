@@ -366,7 +366,7 @@ describe('createMarketMonitor — family toggles', () => {
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
       { network: 'solana', address: '0xWIF', symbol: 'WIF' },
     ]));
-    redis._scanKeys.push('agent:outbound:agent-1');
+    redis._scanKeys.push('agent:watches:agent-1');
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: false, discoveryDeltas: false, regimeChanges: false } },
@@ -406,8 +406,8 @@ describe('createMarketMonitor — discovery deltas', () => {
   beforeEach(() => {
     redis = makeRedisMock();
     publisher = makePublisherMock();
-    // Add an active agent stream key so getActiveAgentIds returns something
-    redis._scanKeys.push('agent:outbound:agent-1');
+    // Add an active agent watch key so getActiveAgentIds returns something
+    redis._scanKeys.push('agent:watches:agent-1');
   });
 
   it('emits entered_top_set for tokens not in previous snapshot', async () => {
@@ -546,7 +546,7 @@ describe('createMarketMonitor — regime changes', () => {
   beforeEach(() => {
     redis = makeRedisMock();
     publisher = makePublisherMock();
-    redis._scanKeys.push('agent:outbound:agent-1');
+    redis._scanKeys.push('agent:watches:agent-1');
   });
 
   it('emits regime changed when pass flips from true to false', async () => {

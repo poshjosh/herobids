@@ -13,8 +13,8 @@ const logger = pino({ name: 'market-monitor' });
 
 // --- Rate limit constants ---
 const MAX_EVENTS_PER_AGENT_PER_MINUTE = 20;
-const WAKE_COOLDOWN_MS = 15_000;
-const WAKE_COALESCING_WINDOW_MS = 3_000;
+const DEFAULT_WAKE_COOLDOWN_MS = 30_000;
+const DEFAULT_WAKE_COALESCING_WINDOW_MS = 3_000;
 const MAX_COALESCED_EVENT_IDS = 5;
 const DISCOVERY_COOLDOWN_MS = 600_000; // 10 minutes
 const REGIME_COOLDOWN_MS = 300_000; // 5 minutes
@@ -30,6 +30,10 @@ export interface MonitorConfig {
     discoveryDeltas?: boolean;
     regimeChanges?: boolean;
   };
+  /** Wake coalescing window in ms. Default: 3000 */
+  wakeCoalescingWindowMs?: number;
+  /** Wake cooldown in ms. Default: 30000 */
+  wakeCooldownMs?: number;
 }
 
 export interface MonitorDeps {
@@ -53,6 +57,8 @@ interface PendingWake {
   agentId: string;
   eventIds: string[];
   scheduledAt: number;
+  /** Monotonically incremented on every enqueue — used as a CAS token by flush. */
+  generation: number;
 }
 
 export interface MarketMonitor {
@@ -60,6 +66,8 @@ export interface MarketMonitor {
   stop(): void;
   /** Run a single evaluation cycle (exposed for testing) */
   evaluate(): Promise<void>;
+  /** Flush pending wakes (exposed for testing) */
+  flushWakes(): Promise<void>;
   /** Get observability metrics */
   getMetrics(): {
     eventsEmitted: number;
@@ -73,6 +81,8 @@ export interface MarketMonitor {
 
 export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): MarketMonitor {
   const { enabled = true, evaluationIntervalMs = 15_000 } = config;
+  const WAKE_COALESCING_WINDOW_MS = config.wakeCoalescingWindowMs ?? DEFAULT_WAKE_COALESCING_WINDOW_MS;
+  const WAKE_COOLDOWN_MS = config.wakeCooldownMs ?? DEFAULT_WAKE_COOLDOWN_MS;
   const families = {
     watchThresholds: config.families?.watchThresholds ?? true,
     discoveryDeltas: config.families?.discoveryDeltas ?? true,
@@ -82,10 +92,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
   let evaluationTimer: ReturnType<typeof setInterval> | undefined;
   let wakeFlushTimer: ReturnType<typeof setInterval> | undefined;
+  let wakeFlushInFlight = false;
+  let wakeMutationChain: Promise<void> = Promise.resolve();
   let stopped = false;
-
-  // In-memory wake coalescing buckets
-  const pendingWakes = new Map<string, PendingWake>();
 
   // Observability counters
   const metrics = {
@@ -108,8 +117,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       void evaluate();
     }, evaluationIntervalMs);
     wakeFlushTimer = setInterval(() => {
-      if (stopped) return;
-      void flushPendingWakes();
+      if (stopped || wakeFlushInFlight) return;
+      void flushPendingWakes().catch((err) => {
+        logger.error({ err }, 'Wake flush cycle failed');
+      });
     }, WAKE_COALESCING_WINDOW_MS);
     // Run first evaluation immediately
     void evaluate();
@@ -119,7 +130,8 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     stopped = true;
     clearInterval(evaluationTimer);
     clearInterval(wakeFlushTimer);
-    pendingWakes.clear();
+    wakeFlushInFlight = false;
+    wakeMutationChain = Promise.resolve();
   }
 
   async function evaluate(): Promise<void> {
@@ -215,7 +227,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           await publisher.emitMarketWatchTriggered(agentId, payload);
           await recordDedupe(dedupeKey);
           await incrementRateCounter(agentId, 'watch_threshold');
-          enqueueWake(agentId, eventId);
+          await enqueueWake(agentId, eventId);
           metrics.eventsEmitted++;
           logger.info({ agentId, watchId: watch.watchId, symbol: watch.symbol }, 'Watch triggered');
         }
@@ -291,7 +303,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           if (rateLimited) continue;
           await publisher.emitMarketDiscoveryDetected(agentId, payload);
           await incrementRateCounter(agentId, 'discovery_delta');
-          enqueueWake(agentId, eventId);
+          await enqueueWake(agentId, eventId);
         }
 
         logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: entered top set');
@@ -330,7 +342,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             if (rateLimited) continue;
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
-            enqueueWake(agentId, eventId);
+            await enqueueWake(agentId, eventId);
           }
 
           logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: multi vector confirmation');
@@ -377,7 +389,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             if (rateLimited) continue;
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
-            enqueueWake(agentId, eventId);
+            await enqueueWake(agentId, eventId);
           }
 
           logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: reappeared after cooldown');
@@ -459,7 +471,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
         if (rateLimited) continue;
         await publisher.emitMarketRegimeChanged(agentId, payload);
         await incrementRateCounter(agentId, 'regime_change');
-        enqueueWake(agentId, eventId);
+        await enqueueWake(agentId, eventId);
       }
 
       logger.info({ benchmarkSymbol, previousState, currentState }, 'Regime changed');
@@ -467,63 +479,138 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   }
 
   // -----------------------------------------------------------------------
-  // Wake coalescing
+  // Wake coalescing — Redis-backed for failover safety
   // -----------------------------------------------------------------------
 
-  function enqueueWake(agentId: string, eventId: string): void {
-    const existing = pendingWakes.get(agentId);
-    if (existing) {
-      if (existing.eventIds.length < MAX_COALESCED_EVENT_IDS) {
-        existing.eventIds.push(eventId);
+  function wakeKey(agentId: string): string {
+    return `market-monitor:wake:${agentId}`;
+  }
+
+  function withWakeMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    const run = wakeMutationChain.then(operation, operation);
+    wakeMutationChain = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  async function enqueueWake(agentId: string, eventId: string): Promise<void> {
+    return withWakeMutationLock(async () => {
+      const key = wakeKey(agentId);
+      const wakeBucketTtlMs = Math.max(WAKE_COALESCING_WINDOW_MS * 3, WAKE_COOLDOWN_MS + WAKE_COALESCING_WINDOW_MS);
+      const existingRaw = await redis.get(key);
+      if (existingRaw) {
+        try {
+          const existing = JSON.parse(existingRaw) as PendingWake;
+          if (existing.eventIds.length < MAX_COALESCED_EVENT_IDS) {
+            existing.eventIds.push(eventId);
+          }
+          existing.generation = (existing.generation ?? 0) + 1;
+          await redis.set(key, JSON.stringify(existing), 'PX', wakeBucketTtlMs);
+          metrics.wakeRequestsCoalesced++;
+        } catch {
+          // Malformed — overwrite
+          const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1 };
+          await redis.set(key, JSON.stringify(wake), 'PX', wakeBucketTtlMs);
+        }
+      } else {
+        const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1 };
+        await redis.set(key, JSON.stringify(wake), 'PX', wakeBucketTtlMs);
       }
-      metrics.wakeRequestsCoalesced++;
-    } else {
-      pendingWakes.set(agentId, {
-        agentId,
-        eventIds: [eventId],
-        scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS,
-      });
-    }
+    });
   }
 
   async function flushPendingWakes(): Promise<void> {
-    if (stopped) return;
-    const now = Date.now();
-    const toFlush: PendingWake[] = [];
+    if (stopped || wakeFlushInFlight) return;
+    wakeFlushInFlight = true;
+    try {
+      // Phase 1: Claim eligible wake buckets under the mutation lock.
+      // This is a short critical section that only reads/updates Redis state
+      // without external I/O, so concurrent enqueues are not blocked for long.
+      const claimed = await withWakeMutationLock(async () => {
+        const now = Date.now();
+        const wakeKeys = await scanKeys('market-monitor:wake:*');
+        if (stopped) return [];
 
-    for (const [agentId, wake] of pendingWakes) {
-      if (now >= wake.scheduledAt) {
-        toFlush.push(wake);
-        pendingWakes.delete(agentId);
-      }
-    }
+        const eligible: Array<{ key: string; wake: PendingWake; lastWakeKey: string }> = [];
 
-    for (const wake of toFlush) {
-      // Check wake cooldown
-      const lastWakeKey = `market-monitor:wake:last:${wake.agentId}`;
-      const lastWakeRaw = await redis.get(lastWakeKey);
-      if (stopped) return;
-      if (lastWakeRaw) {
-        const lastWakeTime = Number(lastWakeRaw);
-        if (now - lastWakeTime < WAKE_COOLDOWN_MS) {
-          metrics.wakeRequestsSuppressed++;
-          logger.debug({ agentId: wake.agentId }, 'Wake suppressed by cooldown');
-          continue;
+        for (const key of wakeKeys) {
+          if (key.includes(':last:')) continue;
+
+          const raw = await redis.get(key);
+          if (!raw) continue;
+
+          let wake: PendingWake;
+          try {
+            wake = JSON.parse(raw) as PendingWake;
+          } catch {
+            continue;
+          }
+
+          if (now < wake.scheduledAt) continue;
+
+          // Check wake cooldown
+          const lastWakeKey = `market-monitor:wake:last:${wake.agentId}`;
+          const lastWakeRaw = await redis.get(lastWakeKey);
+          if (stopped) return [];
+          if (lastWakeRaw) {
+            const lastWakeTime = Number(lastWakeRaw);
+            if (now - lastWakeTime < WAKE_COOLDOWN_MS) {
+              metrics.wakeRequestsSuppressed++;
+              const nextEligibleAt = lastWakeTime + WAKE_COOLDOWN_MS;
+              wake.scheduledAt = nextEligibleAt;
+              const nextWakeBucketTtlMs = Math.max(
+                WAKE_COALESCING_WINDOW_MS * 3,
+                nextEligibleAt - now + WAKE_COALESCING_WINDOW_MS,
+              );
+              await redis.set(key, JSON.stringify(wake), 'PX', nextWakeBucketTtlMs);
+              logger.debug({ agentId: wake.agentId }, 'Wake suppressed by cooldown');
+              continue;
+            }
+          }
+
+          eligible.push({ key, wake, lastWakeKey });
         }
+
+        return eligible;
+      });
+
+      if (!claimed || claimed.length === 0) return;
+
+      // Phase 2: Publish outside the lock so concurrent enqueues can proceed.
+      const now = Date.now();
+      for (const { key, wake, lastWakeKey } of claimed) {
+        if (stopped) return;
+
+        const payload: AgentMarketWakePayload = {
+          wakeId: crypto.randomUUID(),
+          reason: 'market_monitor_triggered',
+          eventIds: wake.eventIds,
+          priority: 'normal',
+          requestedAt: new Date().toISOString(),
+        };
+
+        await publisher.emitAgentMarketWake(wake.agentId, payload);
+        await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);
+
+        // Phase 3: Delete the claimed bucket only if its generation hasn't
+        // advanced since we claimed it. A higher generation means a new enqueue
+        // arrived during publish and the bucket must be preserved.
+        await withWakeMutationLock(async () => {
+          const currentRaw = await redis.get(key);
+          if (!currentRaw) return;
+          try {
+            const current = JSON.parse(currentRaw) as PendingWake;
+            if ((current.generation ?? 0) !== (wake.generation ?? 0)) {
+              return;
+            }
+          } catch { /* malformed — safe to delete */ }
+          await redis.del(key);
+        });
+
+        metrics.wakeRequestsEmitted++;
+        logger.debug({ agentId: wake.agentId, eventCount: wake.eventIds.length }, 'Wake signal emitted');
       }
-
-      const payload: AgentMarketWakePayload = {
-        wakeId: crypto.randomUUID(),
-        reason: 'market_monitor_triggered',
-        eventIds: wake.eventIds,
-        priority: 'normal',
-        requestedAt: new Date().toISOString(),
-      };
-
-      await publisher.emitAgentMarketWake(wake.agentId, payload);
-      await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);
-      metrics.wakeRequestsEmitted++;
-      logger.debug({ agentId: wake.agentId, eventCount: wake.eventIds.length }, 'Wake signal emitted');
+    } finally {
+      wakeFlushInFlight = false;
     }
   }
 
@@ -586,9 +673,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   }
 
   async function getActiveAgentIds(): Promise<string[]> {
-    // Get agent IDs from outbound streams
-    const streamKeys = await scanKeys('agent:outbound:*');
-    return streamKeys.map((k) => k.replace('agent:outbound:', ''));
+    // Target only agents that have active watches (expressed interest in market data)
+    const watchKeys = await scanKeys('agent:watches:*');
+    return watchKeys.map((k) => k.replace('agent:watches:', ''));
   }
 
   async function checkDedupe(dedupeKey: string, _cooldownMs: number): Promise<boolean> {
@@ -623,5 +710,5 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     await pipeline.exec();
   }
 
-  return { start, stop, evaluate, getMetrics: () => ({ ...metrics }) };
+  return { start, stop, evaluate, flushWakes: flushPendingWakes, getMetrics: () => ({ ...metrics }) };
 }

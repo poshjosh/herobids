@@ -105,6 +105,93 @@ export function createMarketDataCoordinator(
     clearInterval(regimeTimer);
   }
 
+  function countTokensByNetwork(tokens: Array<{ network: string }>): Record<string, number> {
+    const networkCounts: Record<string, number> = {};
+    for (const token of tokens) {
+      networkCounts[token.network] = (networkCounts[token.network] ?? 0) + 1;
+    }
+    return networkCounts;
+  }
+
+  function getElapsedAgeMs(capturedAt: string): number {
+    const capturedAtMs = Date.parse(capturedAt);
+    if (!Number.isFinite(capturedAtMs)) {
+      return 0;
+    }
+
+    return Math.max(0, Date.now() - capturedAtMs);
+  }
+
+  async function writeDiscoveryState(
+    snapshot: {
+      snapshotId: string;
+      capturedAt: string;
+      freshness: { state: 'fresh' | 'stale' | 'unavailable'; ageMs: number; maxAllowedAgeMs: number };
+      sources: Record<string, unknown>;
+      tokens: Array<{
+        network: string;
+        address: string;
+        symbol: string;
+        name?: string | null;
+        priceUsd?: number | null;
+        liquidityUsd?: number | null;
+        volume24hUsd?: number | null;
+        poolAddress?: string | null;
+        poolCreatedAt?: string | null;
+        discoveryVectors?: string[];
+        rank?: number;
+      }>;
+    },
+  ): Promise<void> {
+    const networkCounts = countTokensByNetwork(snapshot.tokens);
+    const sourceStats = Object.fromEntries(
+      Object.entries(snapshot.sources).map(([sourceName, value]) => {
+        const sourceRecord = value as Record<string, unknown>;
+        return [sourceName, {
+          ok: sourceRecord['ok'] ?? false,
+          freshness: sourceRecord['freshness'] ?? snapshot.freshness.state,
+          tokenCount: snapshot.tokens.length,
+          networkCounts,
+        }];
+      }),
+    );
+
+    const meta = {
+      snapshotId: snapshot.snapshotId,
+      leaderWorkerId: config.workerId,
+      capturedAt: snapshot.capturedAt,
+      networks,
+      tokenCount: snapshot.tokens.length,
+      pollIntervalMs: discoveryPollMs,
+      nextPollDueAt: new Date(Date.now() + discoveryPollMs).toISOString(),
+      sourceStats,
+    };
+
+    const pipeline = redis.pipeline();
+    pipeline.set('market-intel:discovery:latest', JSON.stringify(snapshot), 'PX', discoveryMaxAgeMs);
+    pipeline.set('market-intel:discovery:meta', JSON.stringify(meta), 'PX', discoveryMaxAgeMs);
+
+    for (const network of networks) {
+      const networkTokens = snapshot.tokens.filter((token) => token.network === network);
+      const networkSlice = {
+        snapshotId: snapshot.snapshotId,
+        capturedAt: snapshot.capturedAt,
+        network,
+        freshness: snapshot.freshness,
+        sources: snapshot.sources,
+        tokens: networkTokens,
+      };
+      pipeline.set(
+        `market-intel:discovery:by-network:${network}`,
+        JSON.stringify(networkSlice),
+        'PX',
+        discoveryMaxAgeMs,
+      );
+    }
+
+    await pipeline.exec();
+  }
+
   async function refreshDiscovery(): Promise<void> {
     const snapshotId = crypto.randomUUID();
     const capturedAt = new Date().toISOString();
@@ -122,6 +209,9 @@ export function createMarketDataCoordinator(
           ageMs: 0,
           maxAllowedAgeMs: discoveryMaxAgeMs,
         },
+        sources: {
+          discovery: { ok: true, freshness: 'fresh' },
+        },
         tokens: tokens.map((token, idx) => ({
           network: token.network,
           address: token.address,
@@ -137,20 +227,7 @@ export function createMarketDataCoordinator(
         })),
       };
 
-      const meta = {
-        snapshotId,
-        leaderWorkerId: config.workerId,
-        capturedAt,
-        networks,
-        tokenCount: tokens.length,
-        pollIntervalMs: discoveryPollMs,
-        nextPollDueAt: new Date(Date.now() + discoveryPollMs).toISOString(),
-      };
-
-      const pipeline = redis.pipeline();
-      pipeline.set('market-intel:discovery:latest', JSON.stringify(snapshot), 'PX', discoveryMaxAgeMs);
-      pipeline.set('market-intel:discovery:meta', JSON.stringify(meta), 'PX', discoveryMaxAgeMs);
-      await pipeline.exec();
+      await writeDiscoveryState(snapshot);
       if (stopped) return;
 
       logger.debug({ snapshotId, tokenCount: tokens.length }, 'Discovery snapshot refreshed');
@@ -171,7 +248,56 @@ export function createMarketDataCoordinator(
         if (freshness) {
           if (stopped) return;
           freshness['state'] = 'stale';
-          await redis.set('market-intel:discovery:latest', JSON.stringify(existing), 'KEEPTTL');
+          // Update source health to reflect failure
+          const sources = (existing['sources'] ?? {}) as Record<string, unknown>;
+          sources['discovery'] = { ok: false, freshness: 'stale' };
+          existing['sources'] = sources;
+          const staleCapturedAt = String(existing['capturedAt'] ?? capturedAt);
+          await writeDiscoveryState({
+            snapshotId: String(existing['snapshotId'] ?? snapshotId),
+            capturedAt: staleCapturedAt,
+            freshness: {
+              state: 'stale',
+              ageMs: getElapsedAgeMs(staleCapturedAt),
+              maxAllowedAgeMs: Number(freshness['maxAllowedAgeMs'] ?? discoveryMaxAgeMs),
+            },
+            sources,
+            tokens: Array.isArray(existing['tokens']) ? existing['tokens'] as Array<{
+              network: string;
+              address: string;
+              symbol: string;
+              name?: string | null;
+              priceUsd?: number | null;
+              liquidityUsd?: number | null;
+              volume24hUsd?: number | null;
+              poolAddress?: string | null;
+              poolCreatedAt?: string | null;
+              discoveryVectors?: string[];
+              rank?: number;
+            }> : [],
+          });
+        } else {
+          if (stopped) return;
+          const unavailableSnapshot = {
+            snapshotId: String(existing['snapshotId'] ?? snapshotId),
+            capturedAt: String(existing['capturedAt'] ?? capturedAt),
+            freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
+            sources: { discovery: { ok: false, freshness: 'unavailable' } },
+            tokens: Array.isArray(existing['tokens']) ? existing['tokens'] as Array<{
+              network: string;
+              address: string;
+              symbol: string;
+              name?: string | null;
+              priceUsd?: number | null;
+              liquidityUsd?: number | null;
+              volume24hUsd?: number | null;
+              poolAddress?: string | null;
+              poolCreatedAt?: string | null;
+              discoveryVectors?: string[];
+              rank?: number;
+            }> : [],
+          };
+          await writeDiscoveryState(unavailableSnapshot);
         }
       } catch {
         if (stopped) return;
@@ -180,10 +306,22 @@ export function createMarketDataCoordinator(
           snapshotId,
           capturedAt,
           freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
+          sources: { discovery: { ok: false, freshness: 'unavailable' } },
           tokens: [],
         };
-        await redis.set('market-intel:discovery:latest', JSON.stringify(unavailableSnapshot), 'PX', discoveryMaxAgeMs);
+        await writeDiscoveryState(unavailableSnapshot);
       }
+    } else {
+      // No prior snapshot exists — write an explicit unavailable snapshot
+      if (stopped) return;
+      const unavailableSnapshot = {
+        snapshotId,
+        capturedAt,
+        freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
+        sources: { discovery: { ok: false, freshness: 'unavailable' } },
+        tokens: [],
+      };
+      await writeDiscoveryState(unavailableSnapshot);
     }
     await redis.set('market-intel:last-error', JSON.stringify({
       source: 'discovery',
