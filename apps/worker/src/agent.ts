@@ -53,6 +53,7 @@ import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
 import { buildDiscoveryNetworkMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
+import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
 
 const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
 
@@ -103,7 +104,9 @@ interface AgentConfig {
   goal?: string;
   skillIds?: string[];
   executionMode?: string;
-  scoutModel?: string;
+  provider?: string;
+  lightModel?: string;
+  heavyModel?: string;
   costPreset?: CostPreset;
   dailySpendBudgetUsd?: number;
   dexWatchlistSymbols?: string[];
@@ -113,6 +116,7 @@ interface AgentConfig {
   maxSlippageBps?: number;
   telegramChatId?: string;
   runtimeDescriptor?: RuntimeDescriptor;
+  userModelDefaults?: UserModelDefaults | null;
 }
 
 let agentConfig: AgentConfig;
@@ -184,11 +188,16 @@ const agentGoal = agentConfig.prompt ?? agentConfig.goal ?? 'No goal provided';
 const skillIds = agentConfig.skillIds ?? [];
 const initialToolPolicy = agentConfig.runtimeDescriptor?.toolPolicy ?? parseToolPolicy(TOOL_POLICY_RAW);
 const tradingHours = parseTradingHours(TRADING_HOURS_RAW);
+const { provider: resolvedProvider, heavyModel: resolvedHeavyModel, lightModel: resolvedLightModel } = resolveEffectiveLlmSelection({
+  agentConfig,
+  operatorProvider: LLM_PROVIDER!,
+  operatorHeavyModel: LLM_MODEL,
+  defaultScoutModels: agentRuntimePolicy.llm.scout.defaultModels,
+});
 const costProfile = resolveAgentCostProfile({
-  provider: LLM_PROVIDER!,
-  judgeModel: LLM_MODEL,
-  scoutModel: agentConfig.scoutModel,
-  scoutDefaultModels: agentRuntimePolicy.llm.scout.defaultModels,
+  provider: resolvedProvider,
+  heavyModel: resolvedHeavyModel,
+  lightModel: resolvedLightModel,
   costPreset: agentConfig.costPreset,
   dailyBudgetUsd: agentConfig.dailySpendBudgetUsd,
   baseTickIntervalMs: TICK_INTERVAL_MS,
@@ -1200,8 +1209,8 @@ async function runTick(): Promise<void> {
     scoutTickCount++;
     const scoutLoopResult = await runStructuredToolLoop({
       providerConfig: {
-        provider: LLM_PROVIDER!,
-        model: agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL, agentRuntimePolicy.llm.scout.defaultModels),
+        provider: resolvedProvider,
+        model: resolvedLightModel,
         maxTokens: 256,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: LLM_BASE_URL,
@@ -1237,7 +1246,7 @@ async function runTick(): Promise<void> {
         recordSessionCost(runtimeState, {
           tokensUsed: result.data.tokensUsed,
           thinkingTokens: result.data.thinkingTokens,
-          costUsd: estimateLlmCostUsd(agentConfig.scoutModel ?? resolveDefaultScoutModel(LLM_PROVIDER!, LLM_MODEL, agentRuntimePolicy.llm.scout.defaultModels), result.data.tokensUsed),
+          costUsd: estimateLlmCostUsd(resolvedLightModel, result.data.tokensUsed),
         });
       },
       onRetry: ({ attempt, delayMs, classification }) => {
@@ -1303,8 +1312,8 @@ async function runTick(): Promise<void> {
 
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
-        provider: LLM_PROVIDER!,
-        model: costProfile.judgeModel,
+        provider: resolvedProvider,
+        model: costProfile.heavyModel,
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: LLM_BASE_URL,
@@ -1324,7 +1333,7 @@ async function runTick(): Promise<void> {
         recordSessionCost(runtimeState, {
           tokensUsed: result.data.tokensUsed,
           thinkingTokens: result.data.thinkingTokens,
-          costUsd: estimateLlmCostUsd(costProfile.judgeModel, result.data.tokensUsed),
+          costUsd: estimateLlmCostUsd(costProfile.heavyModel, result.data.tokensUsed),
         });
         logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
         logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
@@ -1377,7 +1386,9 @@ async function main(): Promise<void> {
     {
       agentId: AGENT_ID,
       sessionId: SESSION_ID,
-      model: LLM_MODEL,
+      provider: resolvedProvider,
+      lightModel: resolvedLightModel,
+      heavyModel: resolvedHeavyModel,
       skillIds: runtimeDescriptor.resolvedSkills.map((skill) => skill.id).filter((id) => id !== 'base'),
     },
     'Agent runtime starting',

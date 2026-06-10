@@ -1,0 +1,179 @@
+import { useEffect } from 'react';
+import type { AiAvailableModelProvider } from '../../lib/api-client.js';
+import { FieldLabel, inputStyle } from '../../lib/ui.js';
+
+export interface ModelSelectionValue {
+  provider: string;
+  lightModel: string;
+  heavyModel: string;
+}
+
+interface ModelSelectionFieldsProps {
+  value: ModelSelectionValue;
+  providers: AiAvailableModelProvider[];
+  loading: boolean;
+  loadingLabel: string;
+  emptyLabel: string;
+  providerLabel: string;
+  providerPlaceholder: string;
+  economyLabel: string;
+  economyHelp: string;
+  premiumLabel: string;
+  premiumHelp: string;
+  onChange: (value: ModelSelectionValue) => void;
+}
+
+function getProviderModels(providers: AiAvailableModelProvider[], provider: string): string[] {
+  return providers.find((entry) => entry.provider === provider)?.models ?? [];
+}
+
+function pickFallbackModel(models: string[], preferredIndex: number): string {
+  if (models.length === 0) {
+    return '';
+  }
+  return models[Math.min(preferredIndex, models.length - 1)] ?? models[0] ?? '';
+}
+
+export function normalizeModelSelection(
+  value: ModelSelectionValue,
+  providers: AiAvailableModelProvider[],
+): ModelSelectionValue {
+  const providerModels = getProviderModels(providers, value.provider);
+  if (!value.provider || providerModels.length === 0) {
+    return value;
+  }
+
+  const nextLightModel = providerModels.includes(value.lightModel)
+    ? value.lightModel
+    : pickFallbackModel(providerModels, 0);
+  const nextHeavyModel = providerModels.includes(value.heavyModel)
+    ? value.heavyModel
+    : pickFallbackModel(providerModels, 1);
+
+  if (nextLightModel === value.lightModel && nextHeavyModel === value.heavyModel) {
+    return value;
+  }
+
+  return {
+    provider: value.provider,
+    lightModel: nextLightModel,
+    heavyModel: nextHeavyModel,
+  };
+}
+
+export function ModelSelectionFields({
+  value,
+  providers,
+  loading,
+  loadingLabel,
+  emptyLabel,
+  providerLabel,
+  providerPlaceholder,
+  economyLabel,
+  economyHelp,
+  premiumLabel,
+  premiumHelp,
+  onChange,
+}: ModelSelectionFieldsProps) {
+  const providerModels = getProviderModels(providers, value.provider);
+  const normalizedValue = normalizeModelSelection(value, providers);
+
+  useEffect(() => {
+    if (normalizedValue === value) {
+      return;
+    }
+
+    onChange(normalizedValue);
+  }, [normalizedValue, onChange, value]);
+
+  const handleProviderChange = (provider: string) => {
+    onChange(normalizeModelSelection({
+      provider,
+      lightModel: value.lightModel,
+      heavyModel: value.heavyModel,
+    }, providers));
+  };
+
+  const handleModelChange = (field: 'lightModel' | 'heavyModel') => (event: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange({
+      provider: value.provider,
+      lightModel: field === 'lightModel' ? event.target.value : value.lightModel,
+      heavyModel: field === 'heavyModel' ? event.target.value : value.heavyModel,
+    });
+  };
+
+  const providerOptions = providers;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div>
+        <FieldLabel>{providerLabel}</FieldLabel>
+        <select
+          value={value.provider}
+          onChange={(event) => handleProviderChange(event.target.value)}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+          disabled={providerOptions.length === 0}
+        >
+          <option value="">{providerPlaceholder}</option>
+          {providerOptions.map((provider) => (
+            <option key={provider.provider} value={provider.provider}>
+              {provider.provider}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          {loadingLabel}
+        </div>
+      ) : providerOptions.length === 0 ? (
+        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          {emptyLabel}
+        </div>
+      ) : providerModels.length === 0 ? (
+        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          {emptyLabel}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <FieldLabel>{economyLabel}</FieldLabel>
+            <select
+              value={value.lightModel}
+              onChange={handleModelChange('lightModel')}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              {providerModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              {economyHelp}
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>{premiumLabel}</FieldLabel>
+            <select
+              value={value.heavyModel}
+              onChange={handleModelChange('heavyModel')}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              {providerModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              {premiumHelp}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

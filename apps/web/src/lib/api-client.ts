@@ -122,6 +122,42 @@ export const auth = {
 };
 
 // ---------------------------------------------------------------------------
+// AI model settings
+// ---------------------------------------------------------------------------
+
+export interface AiAvailableModelProvider {
+  provider: string;
+  models: string[];
+}
+
+export interface AiAvailableModelsResponse {
+  providers: AiAvailableModelProvider[];
+}
+
+export interface AiModelSettings {
+  provider: string | null;
+  lightModel: string | null;
+  heavyModel: string | null;
+}
+
+export type AiModelSettingsUpdate =
+  | { provider: string; lightModel: string; heavyModel: string }
+  | { provider: null; lightModel: null; heavyModel: null };
+
+export interface AiModelSettingsResponse {
+  aiModelConfig: AiModelSettings | null;
+}
+
+export const ai = {
+  availableModels: () => request<AiAvailableModelsResponse>('/ai/available-models'),
+  settings: () => request<AiModelSettingsResponse>('/settings/ai-model'),
+  updateSettings: (data: AiModelSettingsUpdate) => request<AiModelSettingsResponse>('/settings/ai-model', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard composite read models
 // ---------------------------------------------------------------------------
 
@@ -405,6 +441,9 @@ export interface Agent {
   pauseState: Record<string, unknown> | null;
   toolPolicy: Record<string, unknown> | null;
   modelPolicy: Record<string, unknown> | null;
+  provider: string | null;
+  lightModel: string | null;
+  heavyModel: string | null;
   telegramChatId: string | null;
   executionMode: string | null;
   dailyTokenBudget: number | null;
@@ -449,7 +488,18 @@ export interface AgentCompiledPrompt {
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
-  create: (data: { name: string; prompt: string; skillIds?: string[]; toolPolicy?: Record<string, unknown>; modelPolicy?: Record<string, unknown>; executionMode?: string | null }) =>
+  create: (data: {
+    name: string;
+    prompt: string;
+    skillIds?: string[];
+    toolPolicy?: Record<string, unknown>;
+    modelPolicy?: Record<string, unknown>;
+    provider?: string | null;
+    lightModel?: string | null;
+    heavyModel?: string | null;
+    executionMode?: string | null;
+    telegramChatId?: string | null;
+  }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
     name?: string;
@@ -457,6 +507,9 @@ export const agents = {
     skillIds?: string[];
     toolPolicy?: Record<string, unknown>;
     modelPolicy?: Record<string, unknown>;
+    provider?: string | null;
+    lightModel?: string | null;
+    heavyModel?: string | null;
     telegramChatId?: string | null;
     executionMode?: string | null;
     dailyTokenBudget?: number | null;

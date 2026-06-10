@@ -108,6 +108,26 @@ describe('setup flow copy changes', () => {
     expect(enMessages['agents.capabilityPage.setupOnMissionControl']).toBe('Go to Mission Control');
   });
 
+  it('ai model selection copy is defined for settings and agent forms', () => {
+    for (const key of [
+      'aiModels.title',
+      'aiModels.description',
+      'aiModels.provider.label',
+      'aiModels.economy.label',
+      'aiModels.premium.label',
+      'agents.create.models.title',
+      'agents.create.models.description',
+      'agents.create.telegramChatId',
+      'agents.review.models',
+      'agents.edit.models.title',
+      'agents.edit.models.description',
+      'agents.edit.models.override',
+      'agents.edit.models.clearOverride',
+    ]) {
+      expect(enMessages[key], `Missing i18n key: ${key}`).toBeTruthy();
+    }
+  });
+
   it('missionControl.setup.* keys are all defined for the setup card on Mission Control', () => {
     for (const key of [
       'missionControl.setup.title',

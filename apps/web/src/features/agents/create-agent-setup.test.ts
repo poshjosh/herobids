@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ProviderSetupResult, TradingBindingSummary } from '../../lib/api-client.js';
+import { createAgentUsesInheritedModels, resolveCreateAgentModelPayload } from './create-agent-models.js';
 
 // ---------------------------------------------------------------------------
 // Auto-select logic
@@ -149,5 +150,70 @@ describe('Create Agent — available trading bindings filter', () => {
     const result = filterAvailableBindings(bindings);
     expect(result).toHaveLength(1);
     expect(result[0]!.bindingId).toBe('b-active');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Model selection gate + review summary
+// ---------------------------------------------------------------------------
+
+describe('Create Agent — model selection gate and review summary', () => {
+  function canProceedToReview(intent: {
+    goal: string;
+    provider: string;
+    lightModel: string;
+    heavyModel: string;
+  }): boolean {
+    return Boolean(
+      intent.goal.trim() && intent.provider.trim() && intent.lightModel.trim() && intent.heavyModel.trim(),
+    );
+  }
+
+  function formatModelReview(intent: {
+    provider: string;
+    lightModel: string;
+    heavyModel: string;
+    modelInherited: boolean;
+  }): string {
+    return intent.modelInherited ? 'Inherits your saved model settings' : `${intent.provider}: ${intent.lightModel} / ${intent.heavyModel}`;
+  }
+
+  it('blocks review until the provider and both models are selected', () => {
+    expect(canProceedToReview({ goal: 'Trade BTC', provider: '', lightModel: '', heavyModel: '' })).toBe(false);
+    expect(canProceedToReview({ goal: 'Trade BTC', provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' })).toBe(true);
+    expect(canProceedToReview({ goal: '  ', provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' })).toBe(false);
+  });
+
+  it('formats the review summary with the provider and both model tiers', () => {
+    expect(
+      formatModelReview({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o', modelInherited: false }),
+    ).toBe('openai: gpt-4o-mini / gpt-4o');
+    expect(formatModelReview({ provider: '', lightModel: '', heavyModel: '', modelInherited: true })).toBe('Inherits your saved model settings');
+  });
+
+  it('treats unchanged saved settings as inherited instead of an explicit override', () => {
+    expect(createAgentUsesInheritedModels(
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+    )).toBe(true);
+  });
+
+  it('omits model override fields from create payload when the selection still matches saved settings', () => {
+    expect(resolveCreateAgentModelPayload(
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+    )).toEqual({ inherits: true });
+  });
+
+  it('sends explicit override fields when the selection differs from saved settings', () => {
+    expect(resolveCreateAgentModelPayload(
+      { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
+      { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+    )).toEqual({
+      inherits: false,
+      provider: 'anthropic',
+      lightModel: 'claude-haiku-3-5',
+      heavyModel: 'claude-sonnet-4-5',
+    });
   });
 });

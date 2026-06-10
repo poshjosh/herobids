@@ -29,9 +29,11 @@ describe('AgentSessionManager', () => {
     };
     const makeAgent = (agentId: string) => ({
       id: agentId,
+      userId: 'user-1',
       prompt: 'Test agent',
       skillIds: [],
       toolPolicy: null,
+      modelPolicy: null,
       executionMode: null,
       dailyTokenBudget: null,
       dailyLossLimit: null,
@@ -51,6 +53,7 @@ describe('AgentSessionManager', () => {
       getSessionForAgentAndInstance: vi.fn().mockResolvedValue(null),
       retireActiveSessions: vi.fn().mockResolvedValue(undefined),
       getAgent: vi.fn().mockImplementation(async (agentId: string) => makeAgent(agentId)),
+      getUserAiModelConfig: vi.fn().mockResolvedValue(null),
       getSessionsByStatuses: vi.fn().mockResolvedValue([]),
       getRuntimeCapabilityDescriptor: vi.fn().mockImplementation(async (agentId: string) => ({
         ...runtimeDescriptor,
@@ -218,6 +221,44 @@ describe('AgentSessionManager', () => {
     expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
       agentConfig: expect.objectContaining({
         dexWatchlistSymbols: ['BONK', 'WIF'],
+      }),
+    }));
+  });
+
+  it('forwards saved user model defaults into agent config for runtime fallback resolution', async () => {
+    const { manager, agentRepo, runtimeLauncher } = buildManager();
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1', botId: 'inst-1' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'agent-1',
+      userId: 'user-1',
+      prompt: 'Trade BTC carefully',
+      skillIds: [],
+      toolPolicy: null,
+      modelPolicy: { lightModel: 'gpt-4o-mini' },
+      executionMode: 'paper',
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+    });
+    (agentRepo.getUserAiModelConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      provider: 'openai',
+      lightModel: 'gpt-4.1-mini',
+      heavyModel: 'gpt-4.1',
+    });
+
+    await manager.reconcileStartingSessions();
+
+    expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
+      agentConfig: expect.objectContaining({
+        lightModel: 'gpt-4o-mini',
+        userModelDefaults: {
+          provider: 'openai',
+          lightModel: 'gpt-4.1-mini',
+          heavyModel: 'gpt-4.1',
+        },
       }),
     }));
   });

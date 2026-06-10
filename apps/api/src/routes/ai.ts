@@ -6,6 +6,8 @@ import type { Database } from '@herobids/db';
 import { users } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
 import type { AppConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig } from '@herobids/domain';
+import { getAvailableProviders, getProviderModels, validateAiModelSelection } from '../llm-model-catalog.js';
 
 type LlmConfig = AppConfig['llm'];
 
@@ -27,56 +29,22 @@ const ExplainSignalSchema = z.object({
   candles: z.array(z.record(z.unknown())).optional(),
 });
 
-const ModelPreferenceSchema = z.object({
+const AiModelConfigSchema = z.object({
   provider: z.string().min(1),
-  model: z.string().min(1),
+  lightModel: z.string().min(1),
+  heavyModel: z.string().min(1),
 });
 
-const AiModelPatchSchema = z.object({
-  primary: ModelPreferenceSchema.nullable().optional(),
-  fallback1: ModelPreferenceSchema.nullable().optional(),
-  fallback2: ModelPreferenceSchema.nullable().optional(),
+const ClearedAiModelConfigSchema = z.object({
+  provider: z.null(),
+  lightModel: z.null(),
+  heavyModel: z.null(),
 });
 
-// --- Known providers and their env-key lookup ---
+const AiModelPatchSchema = z.union([AiModelConfigSchema, ClearedAiModelConfigSchema]);
 
-const KNOWN_PROVIDERS = ['openai', 'anthropic', 'openrouter', 'together', 'fireworks', 'mistral', 'cohere', 'google'];
-
-/**
- * Resolve the API key for a provider when actually calling it.
- * Falls back to the generic LLM_API_KEY so operators can use a single key for one provider.
- */
-function resolveApiKey(provider: string): string | undefined {
-  return process.env[`LLM_API_KEY_${provider.toUpperCase()}`] ?? process.env['LLM_API_KEY'];
-}
-
-/**
- * Check whether a specific provider is explicitly configured.
- * Only returns true when the provider has its own dedicated key — NOT the generic fallback.
- * This prevents a single LLM_API_KEY from spuriously advertising all 8 providers as available.
- */
-function isProviderExplicitlyConfigured(provider: string): boolean {
-  return !!process.env[`LLM_API_KEY_${provider.toUpperCase()}`];
-}
-
-function getConfiguredProviders(): string[] {
-  return KNOWN_PROVIDERS.filter(isProviderExplicitlyConfigured);
-}
-
-/**
- * Returns the full set of providers available to serve requests.
- * Includes all explicitly-keyed providers, plus the operator's configured
- * provider when it is reachable via the generic LLM_API_KEY fallback.
- * This covers the common deployment pattern: provider=openai + LLM_API_KEY=sk-...
- */
-function getAvailableProviders(operatorProvider: string): string[] {
-  const explicit = getConfiguredProviders();
-  // If the operator's provider is already in the explicit list nothing extra is needed.
-  // Otherwise, add it when resolveApiKey finds a key for it (e.g. generic LLM_API_KEY).
-  if (resolveApiKey(operatorProvider) && !explicit.includes(operatorProvider)) {
-    return [...explicit, operatorProvider];
-  }
-  return explicit;
+function canServeProviderSelection(selectedProvider: string, operatorProvider: string): boolean {
+  return getAvailableProviders(operatorProvider).includes(selectedProvider);
 }
 
 async function resolveUserLlmConfig(
@@ -85,17 +53,24 @@ async function resolveUserLlmConfig(
   baseConfig: LlmConfig,
 ): Promise<{ provider: string; model: string; baseUrl: string | undefined; timeoutMs: number }> {
   const [user] = await db.select({ aiModelConfig: users.aiModelConfig }).from(users).where(eq(users.id, userId));
-  const userModelConfig = user?.aiModelConfig as Record<string, unknown> | null | undefined;
-  for (const key of ['primary', 'fallback1', 'fallback2'] as const) {
-    const pref = userModelConfig?.[key] as { provider: string; model: string } | null | undefined;
-    // Only use a user preference when the provider has its own dedicated key.
-    // Using the generic LLM_API_KEY fallback here would silently send requests to
-    // the wrong provider with an incompatible credential.
-    if (pref?.provider && pref?.model && isProviderExplicitlyConfigured(pref.provider)) {
-      // Keep the operator-configured baseUrl (proxy / gateway) even when the user selects a different model.
-      return { provider: pref.provider, model: pref.model, baseUrl: baseConfig.baseUrl, timeoutMs: baseConfig.timeoutMs };
-    }
+  const userModelConfig = normalizePersistedAiModelConfig(user?.aiModelConfig);
+  const selectedProvider = userModelConfig?.provider;
+  const selectedHeavyModel = userModelConfig?.heavyModel ?? userModelConfig?.lightModel;
+
+  if (
+    selectedProvider
+    && selectedHeavyModel
+    && canServeProviderSelection(selectedProvider, baseConfig.provider)
+  ) {
+    // Keep the operator-configured baseUrl (proxy / gateway) even when the user selects a different model.
+    return {
+      provider: selectedProvider,
+      model: selectedHeavyModel,
+      baseUrl: baseConfig.baseUrl,
+      timeoutMs: baseConfig.timeoutMs,
+    };
   }
+
   return { provider: baseConfig.provider, model: baseConfig.model, baseUrl: baseConfig.baseUrl, timeoutMs: baseConfig.timeoutMs };
 }
 
@@ -116,24 +91,17 @@ export async function aiRoutes(
       return reply.status(503).send(NO_AI_PROVIDER);
     }
 
-    // Curated model lists per provider
-    const PROVIDER_MODELS: Record<string, string[]> = {
-      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-      anthropic: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-3-5'],
-      openrouter: ['anthropic/claude-sonnet-4-5', 'openai/gpt-4o', 'meta-llama/llama-3.3-70b-instruct'],
-      together: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
-      fireworks: ['accounts/fireworks/models/llama-v3p1-70b-instruct'],
-      mistral: ['mistral-large-latest', 'mistral-small-latest'],
-      cohere: ['command-r-plus', 'command-r'],
-      google: ['gemini-1.5-pro', 'gemini-1.5-flash'],
-    };
-
     const providers = configured.map((p) => ({
       provider: p,
-      models: PROVIDER_MODELS[p] ?? [],
+      models: getProviderModels(p),
     }));
 
     return reply.send({ providers });
+  });
+
+  app.get('/settings/ai-model', async (request, reply) => {
+    const [user] = await db.select({ aiModelConfig: users.aiModelConfig }).from(users).where(eq(users.id, request.userId));
+    return reply.send({ aiModelConfig: normalizePersistedAiModelConfig(user?.aiModelConfig) });
   });
 
   // POST /ai/generate-config — generate blueprint configData from freeform text (rate-limited 10/min)
@@ -274,14 +242,14 @@ Respond with ONLY a valid JSON object, no prose.`;
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const existing = await db.select({ aiModelConfig: users.aiModelConfig })
-      .from(users).where(eq(users.id, request.userId));
-    const current = (existing[0]?.aiModelConfig ?? {}) as Record<string, unknown>;
+    if (parsed.data.provider !== null) {
+      const issues = validateAiModelSelection(parsed.data, llmConfig.provider);
+      if (issues.length > 0) {
+        return reply.status(400).send({ error: 'validation_error', details: issues });
+      }
+    }
 
-    const updated: Record<string, unknown> = { ...current };
-    if (parsed.data.primary !== undefined) updated['primary'] = parsed.data.primary;
-    if (parsed.data.fallback1 !== undefined) updated['fallback1'] = parsed.data.fallback1;
-    if (parsed.data.fallback2 !== undefined) updated['fallback2'] = parsed.data.fallback2;
+    const updated = parsed.data.provider === null ? null : parsed.data;
 
     await db.update(users).set({ aiModelConfig: updated, updatedAt: new Date() })
       .where(eq(users.id, request.userId));

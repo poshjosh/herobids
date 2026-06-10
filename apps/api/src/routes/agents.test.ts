@@ -246,6 +246,224 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('validation_error');
   });
+
+  it('persists provider, lightModel, and heavyModel fields on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+    };
+    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'new agent',
+        prompt: 'trade carefully',
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      modelPolicy: expect.objectContaining({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' }),
+    }));
+    expect(res.json()).toMatchObject({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
+  });
+
+  it('rejects create when model fields are provided without a provider', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'new agent',
+        prompt: 'trade carefully',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['provider'] })],
+    });
+  });
+
+  it('rejects create when the provider and models do not belong together', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'new agent',
+        prompt: 'trade carefully',
+        provider: 'openai',
+        lightModel: 'claude-haiku-3-5',
+        heavyModel: 'gpt-4o',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('allows PATCH and persists the new model fields when agent status is stopped', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      name: 'new name',
+      prompt: 'p',
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], modelPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        name: 'new name',
+        provider: 'anthropic',
+        lightModel: 'claude-haiku-3-5',
+        heavyModel: 'claude-sonnet-4-5',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({
+      modelPolicy: expect.objectContaining({ provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }),
+    }));
+    expect(res.json()).toMatchObject({ provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' });
+  });
+
+  it('clears explicit model overrides when nullable fields are sent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      }],
+      activeLinkRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        modelPolicy: null,
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        provider: null,
+        lightModel: null,
+        heavyModel: null,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ modelPolicy: null }));
+    expect(res.json()).toMatchObject({ provider: null, lightModel: null, heavyModel: null });
+  });
+
+  it('persists only the canonical model fields on update', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], modelPolicy: null }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({
+      modelPolicy: expect.objectContaining({
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      }),
+    }));
+    expect((updateSets[0] as { modelPolicy?: Record<string, unknown> }).modelPolicy).not.toHaveProperty('scoutModel');
+  });
+
+  it('rejects patch when model fields are provided without a provider', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], modelPolicy: null }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: {
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['provider'] })],
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -325,7 +543,13 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
 
   it('returns the activeSession for an active agent that has an unhealthy session', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const agent = { id: 'agent-1', status: 'active', userId: TEST_USER_ID, modelPolicy: null, skillIds: [] };
+    const agent = {
+      id: 'agent-1',
+      status: 'active',
+      userId: TEST_USER_ID,
+      modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      skillIds: [],
+    };
     const session = { id: 'session-42', status: 'unhealthy', agentId: 'agent-1', startedAt: new Date().toISOString() };
     const { db } = buildGetAgentDb(agent, session);
 
@@ -337,6 +561,7 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
 
     expect(res.statusCode).toBe(200);
     expect(res.json().activeSession).toMatchObject({ id: 'session-42', status: 'unhealthy' });
+    expect(res.json()).toMatchObject({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
     // Two SELECTs: agent lookup + session lookup.
     expect(db.select).toHaveBeenCalledTimes(2);
   });

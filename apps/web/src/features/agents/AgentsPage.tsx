@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, type Skill, type TradingBindingSummary } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, type Skill, type TradingBindingSummary } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
+import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
+import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -17,6 +19,10 @@ interface IntentState {
   goal: string;
   skillIds: string[];
   executionMode: 'paper' | 'shadow' | 'live';
+  provider: string;
+  lightModel: string;
+  heavyModel: string;
+  telegramChatId: string;
   tradingBindingId: string;
   riskTolerance: RiskToleranceValue;
 }
@@ -123,11 +129,60 @@ function CreateAgentFlow({
     goal: '',
     skillIds: [],
     executionMode: 'paper',
+    provider: '',
+    lightModel: '',
+    heavyModel: '',
+    telegramChatId: '',
     tradingBindingId: '',
     riskTolerance: 'moderate',
   });
+  const [modelTouched, setModelTouched] = useState(false);
+  const [telegramTouched, setTelegramTouched] = useState(false);
+
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: () => authApi.me(),
+  });
+  const aiSettingsQuery = useQuery({
+    queryKey: ['ai', 'settings'],
+    queryFn: () => aiApi.settings(),
+  });
+  const availableModelsQuery = useQuery({
+    queryKey: ['ai', 'available-models'],
+    queryFn: () => aiApi.availableModels(),
+  });
+
+  useEffect(() => {
+    if (modelTouched) {
+      return;
+    }
+    const savedModels = aiSettingsQuery.data?.aiModelConfig;
+    if (savedModels) {
+      setIntent((state) => ({
+        ...state,
+        provider: savedModels.provider,
+        lightModel: savedModels.lightModel,
+        heavyModel: savedModels.heavyModel,
+      }));
+    }
+  }, [aiSettingsQuery.data?.aiModelConfig, modelTouched]);
+
+  useEffect(() => {
+    if (telegramTouched) {
+      return;
+    }
+    const chatId = meQuery.data?.telegramChatId;
+    if (chatId !== undefined) {
+      setIntent((state) => ({ ...state, telegramChatId: chatId ?? '' }));
+    }
+  }, [meQuery.data?.telegramChatId, telegramTouched]);
 
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
+  const savedModelSettings = aiSettingsQuery.data?.aiModelConfig ?? null;
+  const modelPayload = resolveCreateAgentModelPayload(
+    { provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel },
+    savedModelSettings,
+  );
   const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
   const tradingBindingsQuery = useQuery({
     queryKey: ['capabilities', 'trading', 'bindings'],
@@ -146,6 +201,12 @@ function CreateAgentFlow({
         prompt: buildPrompt(intent, selectedSkills, selectedTradingBinding),
         skillIds: [...intent.skillIds],
         executionMode: intent.executionMode,
+        ...(!modelPayload.inherits ? {
+          provider: modelPayload.provider,
+          lightModel: modelPayload.lightModel,
+          heavyModel: modelPayload.heavyModel,
+        } : {}),
+        telegramChatId: intent.telegramChatId.trim() || null,
       });
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -219,6 +280,35 @@ function CreateAgentFlow({
             </div>
           </div>
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                {intl.formatMessage({ id: 'agents.create.models.title' })}
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                {intl.formatMessage({ id: 'agents.create.models.description' })}
+              </div>
+            </div>
+
+            <ModelSelectionFields
+              value={{ provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel }}
+              providers={availableModelsQuery.data?.providers ?? []}
+              loading={availableModelsQuery.isLoading}
+              loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
+              emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
+              providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
+              providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
+              economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
+              economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
+              premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
+              premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
+              onChange={(value) => {
+                setModelTouched(true);
+                setIntent((state) => ({ ...state, ...value }));
+              }}
+            />
+          </div>
+
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
             <select
@@ -230,6 +320,22 @@ function CreateAgentFlow({
               <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
               <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
             </select>
+          </div>
+
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.telegramChatId' })}</FieldLabel>
+            <input
+              style={inputStyle}
+              value={intent.telegramChatId}
+              onChange={(e) => {
+                setTelegramTouched(true);
+                setIntent((state) => ({ ...state, telegramChatId: e.target.value }));
+              }}
+              placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
+            />
+            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
+            </div>
           </div>
 
           {requiresTradingSetup && (
@@ -293,7 +399,12 @@ function CreateAgentFlow({
 
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
-            <Button variant="primary" type="button" disabled={!intent.goal.trim()} onClick={() => setStep('review')}>
+            <Button
+              variant="primary"
+              type="button"
+              disabled={!intent.goal.trim() || !intent.provider || !intent.lightModel || !intent.heavyModel}
+              onClick={() => setStep('review')}
+            >
               {intl.formatMessage({ id: 'agents.create.review' })}
             </Button>
           </div>
@@ -312,6 +423,17 @@ function CreateAgentFlow({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
             <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />
+            <ReviewRow
+              label={intl.formatMessage({ id: 'agents.review.models' })}
+              value={modelPayload.inherits
+                ? intl.formatMessage({ id: 'agents.review.models.inherit' })
+                : intent.provider
+                ? intl.formatMessage(
+                  { id: 'agents.review.models.value' },
+                  { provider: intent.provider, lightModel: intent.lightModel || intl.formatMessage({ id: 'common.default' }), heavyModel: intent.heavyModel || intl.formatMessage({ id: 'common.default' }) },
+                )
+                : intl.formatMessage({ id: 'agents.review.models.inherit' })}
+            />
             <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}

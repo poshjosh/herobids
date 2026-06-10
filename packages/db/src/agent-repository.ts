@@ -3,6 +3,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, users } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig } from '@herobids/domain';
 
 // --- Agent ---
 
@@ -139,6 +140,14 @@ export class AgentRepository {
   async getAgent(id: string) {
     const rows = await this.db.select().from(agents).where(eq(agents.id, id)).limit(1);
     return rows[0] ?? null;
+  }
+
+  async getUserAiModelConfig(userId: string): Promise<PersistedAiModelConfig | null> {
+    const rows = await this.db.select({ aiModelConfig: users.aiModelConfig })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return normalizePersistedAiModelConfig(rows[0]?.aiModelConfig);
   }
 
   async getAgentsByUser(userId: string) {

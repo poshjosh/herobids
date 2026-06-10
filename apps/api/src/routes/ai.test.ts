@@ -156,6 +156,9 @@ describe('POST /ai/generate-config', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
+    app.setErrorHandler((error, _request, reply) => {
+      reply.status(500).send({ message: error.message, stack: error.stack });
+    });
     await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
 
     const res = await app.inject({
@@ -287,8 +290,68 @@ describe('POST /ai/explain-signal', () => {
 
 // ─── PATCH /settings/ai-model ─────────────────────────────────────────────
 
+describe('GET /settings/ai-model', () => {
+  it('returns normalized current settings when present', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }])),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, stubLlmConfig, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig).toEqual({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
+  });
+
+  it('returns null when persisted settings still use the removed legacy shape', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([
+        {
+          aiModelConfig: {
+            primary: { provider: 'openai', model: 'gpt-4o' },
+            fallback1: { provider: 'openai', model: 'gpt-4o-mini' },
+          },
+        },
+      ])),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, stubLlmConfig, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig).toBeNull();
+  });
+
+  it('returns null when persisted settings are no longer valid for the catalog', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([
+        {
+          aiModelConfig: {
+            provider: 'openai',
+            lightModel: 'claude-haiku-3-5',
+            heavyModel: 'gpt-4o',
+          },
+        },
+      ])),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, stubLlmConfig, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig).toBeNull();
+  });
+});
+
 describe('PATCH /settings/ai-model', () => {
   it('returns 200 and updated config when valid body provided', async () => {
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
 
     const db = {
       select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
@@ -297,21 +360,22 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
 
     const res = await app.inject({
       method: 'PATCH',
       url: '/settings/ai-model',
-      payload: { primary: { provider: 'openai', model: 'gpt-4o' } },
+      payload: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().aiModelConfig.primary).toEqual({ provider: 'openai', model: 'gpt-4o' });
+    expect(res.json().aiModelConfig).toEqual({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
+    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
   it('returns 200 when setting a field to null (clearing preference)', async () => {
 
     const db = {
-      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: { primary: { provider: 'openai', model: 'gpt-4o' } } }])),
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }])),
       update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
     } as unknown as Database;
     const redis = buildMockRedis();
@@ -322,10 +386,10 @@ describe('PATCH /settings/ai-model', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/settings/ai-model',
-      payload: { primary: null },
+      payload: { provider: null, lightModel: null, heavyModel: null },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().aiModelConfig.primary).toBeNull();
+    expect(res.json().aiModelConfig).toBeNull();
   });
 
   it('returns 400 for invalid provider shape', async () => {
@@ -339,8 +403,46 @@ describe('PATCH /settings/ai-model', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/settings/ai-model',
-      payload: { primary: { provider: 123, model: 'gpt-4o' } },
+      payload: { provider: 123, lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 400 when the selected provider is not available on this platform', async () => {
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    delete process.env['LLM_API_KEY_OPENAI'];
+  });
+
+  it('returns 400 when a selected model is not available for the provider', async () => {
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: { provider: 'openai', lightModel: 'claude-haiku-3-5', heavyModel: 'gpt-4o' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    delete process.env['LLM_API_KEY_OPENAI'];
   });
 });

@@ -184,9 +184,9 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
         url: '/settings/ai-model',
         headers: authHeader(),
         payload: {
-          primary: { provider: 'openai', model: 'gpt-4o' },
-          fallback1: null,
-          fallback2: null,
+          provider: 'openai',
+          lightModel: 'gpt-4o-mini',
+          heavyModel: 'gpt-4o',
         },
       });
       // 200 means the preference was saved
@@ -197,7 +197,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
       const res = await ctx.app.inject({
         method: 'PATCH',
         url: '/settings/ai-model',
-        payload: { primary: null },
+        payload: { provider: null, lightModel: null, heavyModel: null },
       });
       expect(res.statusCode).toBe(401);
     });

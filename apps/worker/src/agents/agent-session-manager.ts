@@ -152,19 +152,25 @@ export class AgentSessionManager {
           maxSlippageBps: agent.maxSlippageBps,
           capabilityDescriptor,
         });
+        const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
+        const userModelDefaults = await this.agentRepo.getUserAiModelConfig(agent.userId);
+        const provider = typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : undefined;
+        const lightModel = typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : undefined;
+        const heavyModel = typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : undefined;
         const agentConfig: Record<string, unknown> = {
-          ...(typeof (agent.modelPolicy as Record<string, unknown> | null | undefined)?.['scoutModel'] === 'string'
-            ? { scoutModel: (agent.modelPolicy as Record<string, unknown>)['scoutModel'] }
+          ...(provider ? { provider } : {}),
+          ...(lightModel ? { lightModel } : {}),
+          ...(heavyModel ? { heavyModel } : {}),
+          ...(userModelDefaults ? { userModelDefaults } : {}),
+          ...(typeof modelPolicy?.['costPreset'] === 'string'
+            ? { costPreset: modelPolicy['costPreset'] }
             : {}),
-          ...(typeof (agent.modelPolicy as Record<string, unknown> | null | undefined)?.['costPreset'] === 'string'
-            ? { costPreset: (agent.modelPolicy as Record<string, unknown>)['costPreset'] }
+          ...(typeof modelPolicy?.['dailySpendBudgetUsd'] === 'number'
+            ? { dailySpendBudgetUsd: modelPolicy['dailySpendBudgetUsd'] }
             : {}),
-          ...(typeof (agent.modelPolicy as Record<string, unknown> | null | undefined)?.['dailySpendBudgetUsd'] === 'number'
-            ? { dailySpendBudgetUsd: (agent.modelPolicy as Record<string, unknown>)['dailySpendBudgetUsd'] }
-            : {}),
-          ...(Array.isArray((agent.modelPolicy as Record<string, unknown> | null | undefined)?.['dexWatchlistSymbols'])
+          ...(Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
             ? {
-              dexWatchlistSymbols: ((agent.modelPolicy as Record<string, unknown>)['dexWatchlistSymbols'] as unknown[])
+              dexWatchlistSymbols: (modelPolicy['dexWatchlistSymbols'] as unknown[])
                 .filter((value): value is string => typeof value === 'string')
             }
             : {}),

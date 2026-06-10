@@ -97,7 +97,7 @@ await setupRoutes(app, db, appConfig.plans);
 await connectionRoutes(app, db, redisClient);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans);
+await agentRoutes(app, db, appConfig.plans, appConfig.llm);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate

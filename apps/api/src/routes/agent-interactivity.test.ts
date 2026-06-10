@@ -96,6 +96,59 @@ describe('PUT /agents/:id', () => {
     expect(res.statusCode).toBe(200);
   });
 
+  it('stores and returns only canonical model fields', async () => {
+    const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    let selectCount = 0;
+    const updatedAgent = {
+      ...stubAgent,
+      name: 'Updated',
+      prompt: 'New prompt',
+      modelPolicy: {
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    };
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [stubAgent] : [updatedAgent]);
+      }),
+      update: vi.fn().mockReturnValue({ set: updateSet }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, redis);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: {
+        name: 'Updated',
+        prompt: 'New prompt',
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({
+      modelPolicy: {
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+    }));
+    expect(res.json()).toEqual(expect.objectContaining({
+      provider: 'openai',
+      lightModel: 'gpt-4o-mini',
+      heavyModel: 'gpt-4o',
+    }));
+    expect(res.json().scoutModel).toBeUndefined();
+  });
+
   it('returns 409 when agent is running', async () => {
     const db = buildAgentDb({ ...stubAgent, status: 'running' });
     const redis = buildMockRedis();

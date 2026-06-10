@@ -1,13 +1,11 @@
-import { resolveDefaultScoutModel } from './scout-dispatch.js';
 import type { TickThinkingLevel } from './tick-thinking.js';
 
 export type CostPreset = 'minimal' | 'standard' | 'premium' | 'custom';
 
 export interface AgentCostProfileInput {
   provider: string;
-  judgeModel: string;
-  scoutModel?: string;
-  scoutDefaultModels?: { anthropic: string; openai: string; openrouter: string };
+  heavyModel: string;
+  lightModel: string;
   costPreset?: CostPreset;
   dailyBudgetUsd?: number;
   baseTickIntervalMs: number;
@@ -16,8 +14,8 @@ export interface AgentCostProfileInput {
 export interface AgentCostProfile {
   preset: CostPreset;
   dailyBudgetUsd: number;
-  judgeModel: string;
-  scoutModel: string;
+  heavyModel: string;
+  lightModel: string;
   tickIntervalMs: number;
   enabledGates: {
     session: boolean;
@@ -35,15 +33,16 @@ function deriveCustomTickIntervalMs(dailyBudgetUsd: number): number {
 }
 
 export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCostProfile {
-  const scoutModel = input.scoutModel ?? resolveDefaultScoutModel(input.provider, input.judgeModel, input.scoutDefaultModels);
+  const lightModel = input.lightModel;
+  const heavyModel = input.heavyModel;
 
   switch (input.costPreset) {
     case 'minimal':
       return {
         preset: 'minimal',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 3,
-        judgeModel: scoutModel,
-        scoutModel,
+        heavyModel: lightModel,
+        lightModel,
         tickIntervalMs: 1_800_000,
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
         defaultThinking: 'none',
@@ -52,8 +51,8 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
       return {
         preset: 'standard',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 10,
-        judgeModel: input.judgeModel,
-        scoutModel,
+        heavyModel,
+        lightModel,
         tickIntervalMs: 900_000,
         enabledGates: { session: false, regime: true, contextHash: true, adaptiveInterval: false },
         defaultThinking: 'light',
@@ -62,8 +61,8 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
       return {
         preset: 'premium',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 30,
-        judgeModel: input.judgeModel,
-        scoutModel,
+        heavyModel,
+        lightModel,
         tickIntervalMs: 300_000,
         enabledGates: { session: false, regime: false, contextHash: true, adaptiveInterval: false },
         defaultThinking: 'deep',
@@ -72,8 +71,8 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
       return {
         preset: 'custom',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 5,
-        judgeModel: (input.dailyBudgetUsd ?? 5) <= 3 ? scoutModel : input.judgeModel,
-        scoutModel,
+        heavyModel: (input.dailyBudgetUsd ?? 5) <= 3 ? lightModel : heavyModel,
+        lightModel,
         tickIntervalMs: deriveCustomTickIntervalMs(input.dailyBudgetUsd ?? 5),
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
         defaultThinking: (input.dailyBudgetUsd ?? 5) <= 3 ? 'none' : 'light',
@@ -82,8 +81,8 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
       return {
         preset: 'standard',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 10,
-        judgeModel: input.judgeModel,
-        scoutModel,
+        heavyModel,
+        lightModel,
         tickIntervalMs: input.baseTickIntervalMs,
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
         defaultThinking: 'light',
