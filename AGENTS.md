@@ -98,11 +98,11 @@ Package dependency direction: `domain` ← `engine` ← `strategy` / `venues` / 
 
 ## Agent Mode Purity
 
-When an agent is running, the agent's goal text is the **sole source of trading policy**. Do not inject hidden constraints the user did not ask for.
+When an agent is running, the agent's goal text and any explicit creator-specified constraints are the **source of trading policy**. Do not inject hidden constraints the creator did not ask for.
 
 | Category | Examples | Rule |
 |---|---|---|
-| **Constraints** | Stop-loss %, position caps, portfolio stop | Never apply unless the goal explicitly specifies them |
+| **Constraints** | Stop-loss %, position caps, portfolio stop | Never apply unless the goal or creator-specified instructions explicitly specify them |
 | **Data** | Price, P&L, market context, progress score | Always provide — the agent reasons over it |
 | **Operational mechanics** | Execution mode, slippage, retries, schema validation | Always apply — infrastructure, not policy |
 
@@ -130,7 +130,7 @@ Key principles:
 
 - [General lessons](./docs/lessons/lessons-from-previous-project.md) — critical bugs from previous project
 - [Rate limiting guide](./docs/lessons/rate-limiting-guide.md) — venue rate limit architecture
-- [Configuration management](./docs/best-practices/configuration.md) — config layers and loading
+- [Configuration management](./docs/best-practices/configuration.md) — config layers and loading; avoid hard-coded literals unless they are genuinely internal and not user-facing
  - [Skill authoring guide](./docs/tech/agents/skill-authoring.md) — conventions for writing skills and a JSON template for `POST /skills`
 
 ## Rules

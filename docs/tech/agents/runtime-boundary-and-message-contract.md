@@ -99,6 +99,7 @@ Herobids preserves agent purity with a narrow interpretation:
 
 1. The initiator owns strategic intent.
 2. The platform must not silently inject hidden strategy constraints or rewrite a valid target because of unspoken preferences.
+   Constraints explicitly set by the agent creator through configuration, UI, or instructions are part of the policy and may be enforced.
 3. The trading instance may still reject or constrain intent when an explicit safety invariant would otherwise be violated.
 
 This means the engine may reject intent that is malformed, unauthorized, stale against required context, inconsistent with reconciled state, or outside explicit safety bounds.
@@ -113,7 +114,7 @@ When an agent is running, the agent's goal text is the **sole source of trading 
 
 | Category | Examples | Agent mode rule |
 |---|---|---|
-| **Constraints** (restrict decisions) | Stop-loss %, take-profit %, max simultaneous positions, portfolio stop, position size caps | **Never apply** unless explicitly derived from the agent's goal or instructions |
+| **Constraints** (restrict decisions) | Stop-loss %, take-profit %, max simultaneous positions, portfolio stop, position size caps | **Never apply** unless explicitly derived from the agent's goal, creator-specified configuration, or instructions |
 | **Data** (inform reasoning) | Price, P&L, position state, market context, progress score, fills history | **Always provide** — the agent reasons over it |
 | **Operational mechanics** | Execution mode, slippage tolerance, retry logic, schema validation | **Always apply** — these are infrastructure, not trading policy |
 
@@ -127,9 +128,9 @@ The distinction: a constraint mechanically overrides or prevents the agent's dec
 
 3. **No portfolio stop.** Unless the goal says "stop after X% loss", no circuit breaker fires on the agent's behalf.
 
-4. **Risk config from the bot blueprint is data, not policy.** The agent may read the blueprint's risk fields as context. The engine does not silently enforce them as hard limits over agent decisions unless they represent explicit safety invariants (see below).
+4. **Risk config from the bot blueprint is data, not policy.** The agent may read the blueprint's risk fields as context. The engine does not silently enforce them as hard limits over agent decisions unless they represent explicit creator-specified constraints or explicit safety invariants (see below).
 
-5. **The engine risk gate still applies to hard safety invariants.** Malformed payloads, unauthorized access, unreconciled state, and limits explicitly configured by the user are still enforced. The purity rule removes hidden defaults — it does not remove user-configured constraints.
+5. **The engine risk gate still applies to hard safety invariants.** Malformed payloads, unauthorized access, unreconciled state, and limits explicitly configured by the user are still enforced. The purity rule removes hidden defaults — it does not remove user-configured or creator-configured constraints.
 
 ### Agent Lifecycle Authority
 

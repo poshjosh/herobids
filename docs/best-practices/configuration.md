@@ -179,6 +179,7 @@ Stored in Postgres, loaded by the trading instance at startup:
 ## Anti-patterns
 
 - **Hard-coding a value with a TODO.** Add it to config now. The cost is one line in the Zod schema.
+- **Hard-coding a value that should be creator-controlled.** Expose it as explicit config or UI input now instead of burying it as a code literal.
 - **Reading `process.env` in business logic.** Use the config loader.
 - **Duplicating defaults at call sites.** `const timeout = cfg.timeout ?? 30000` — the default belongs in the Zod schema, not here.
 - **Mixing operator and user config.** Don't merge deploy-time settings with per-instance parameters into one blob.
