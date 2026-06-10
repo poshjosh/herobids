@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SUPPORTED_LOCALES } from './resolveLocale.js';
+import { messages as enMessages } from './locales/en.js';
 
 const webRoot = new URL('../../', import.meta.url);
 
@@ -72,5 +73,68 @@ describe('i18n regressions', () => {
       .sort();
     const webLocales = [...SUPPORTED_LOCALES].sort();
     expect(apiLocales).toEqual(webLocales);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Improved connection & credential handling — copy change regressions (feature 001)
+// ---------------------------------------------------------------------------
+
+describe('setup flow copy changes', () => {
+  it('agents.create.noBindings no longer tells users to "Create a trading connection first"', () => {
+    // The old copy equated connection creation with full trading readiness.
+    // The new copy is provider-link aware and surfaces the inline setup button.
+    expect(enMessages['agents.create.noBindings']).not.toContain('Create a trading connection first');
+  });
+
+  it('agents.capabilityPage.noBindings no longer tells users to "Create a trading connection first"', () => {
+    // The old copy pointed to connections as the next step. The correct next step
+    // is now Mission Control (guided setup) or Create Agent (inline setup).
+    expect(enMessages['agents.capabilityPage.noBindings']).not.toContain('Create a trading connection first');
+  });
+
+  it('setup.form.title is defined and names the guided setup flow', () => {
+    expect(enMessages['setup.form.title']).toBeTruthy();
+    expect(enMessages['setup.form.title']).toBe('Add trading provider');
+  });
+
+  it('agents.create.setupTradingNow key exists for the inline escape-hatch button', () => {
+    expect(enMessages['agents.create.setupTradingNow']).toBeTruthy();
+    expect(enMessages['agents.create.setupTradingNow']).toBe('Set up trading now');
+  });
+
+  it('agents.capabilityPage.setupOnMissionControl key exists for the updated next-steps CTA', () => {
+    expect(enMessages['agents.capabilityPage.setupOnMissionControl']).toBeTruthy();
+    expect(enMessages['agents.capabilityPage.setupOnMissionControl']).toBe('Go to Mission Control');
+  });
+
+  it('missionControl.setup.* keys are all defined for the setup card on Mission Control', () => {
+    for (const key of [
+      'missionControl.setup.title',
+      'missionControl.setup.message',
+      'missionControl.setup.cta',
+      'missionControl.setup.successMessage',
+      'missionControl.setup.successDismiss',
+    ]) {
+      expect(enMessages[key], `Missing i18n key: ${key}`).toBeTruthy();
+    }
+  });
+
+  it('AgentCapabilityPage trading next steps no longer route to /connections', () => {
+    // The trading capability page must guide users to Mission Control for setup,
+    // not to /connections which is now an advanced/partial tool.
+    const source = readFileSync(
+      new URL('../../features/agents/AgentCapabilityPage.tsx', import.meta.url),
+      'utf8',
+    );
+    // The trading branch should use the setupOnMissionControl key, not the
+    // manageConnections key pointing to /connections.
+    const tradingBranchStart = source.indexOf("if (family === 'trading')");
+    const tradingBranchEnd = source.indexOf('return [', tradingBranchStart + 1);
+    const returnEnd = source.indexOf('];', tradingBranchEnd) + 2;
+    const tradingReturnBlock = source.slice(tradingBranchStart, returnEnd);
+
+    expect(tradingReturnBlock).toContain('setupOnMissionControl');
+    expect(tradingReturnBlock).not.toContain("path: '/connections'");
   });
 });

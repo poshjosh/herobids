@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { connections as connectionsApi, credentials as credentialsApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 
 export function ConnectionsPage() {
+  const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
   const qc = useQueryClient();
 
@@ -24,7 +26,7 @@ export function ConnectionsPage() {
     <PageShell>
       <PageHeader
         title="Connections"
-        subtitle="Platform connections to external providers"
+        subtitle={intl.formatMessage({ id: 'connections.subtitle' })}
         action={<Button onClick={() => setShowCreate(true)}>New connection</Button>}
       />
       {query.isLoading && <LoadingRows />}
@@ -32,7 +34,7 @@ export function ConnectionsPage() {
       {!query.isLoading && items.length === 0 && (
         <EmptyState
           title="No connections yet"
-          message="Create one to enable capability families for your agents."
+          message={intl.formatMessage({ id: 'connections.empty.message' })}
         />
       )}
       {items.map((conn) => (

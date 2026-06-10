@@ -109,6 +109,11 @@ export const messages: Record<string, string> = {
   'missionControl.noActivityYet.title': 'لا نشاط حتى الآن',
   'missionControl.noActivityYet.message': 'ستظهر الأحداث هنا بمجرد أن يبدأ الوكلاء في اتخاذ الإجراءات.',
   'missionControl.viewAllActivity': 'عرض جميع الأنشطة →',
+  'missionControl.setup.title': 'إعداد التداول السريع',
+  'missionControl.setup.message': 'اربط مزوّد تداول لتمكين التداول الآلي لوكلائك.',
+  'missionControl.setup.cta': 'إضافة مزوّد تداول',
+  'missionControl.setup.successDismiss': 'تم',
+  'missionControl.setup.successMessage': 'تم إعداد {label} ({provider}).',
 
   // Outcomes
   'outcomes.title': 'لوحة النتائج',
@@ -180,12 +185,16 @@ export const messages: Record<string, string> = {
   'billing.status.canceled': 'ملغى',
   'billing.status.incomplete': 'غير مكتمل',
 
+  // Connections
+  'connections.subtitle': 'إدارة اتصالات المزوّدين المتقدمة — للاستخدام المتقدم. للإعداد الكامل للتداول، استخدم مركز التحكم.',
+  'connections.empty.message': 'هذه أداة متقدمة لإدارة اتصالات المزوّدين مباشرة. للإعداد الموجّه للتداول، استخدم مركز التحكم أو تدفق إنشاء الوكيل.',
+
   // Credentials
   'credentials.title': 'بيانات الاعتماد',
-  'credentials.subtitle': 'أسرار مزود قابلة لإعادة الاستخدام للوكلاء وروابط القدرات',
+  'credentials.subtitle': 'أسرار المزوّدين القابلة لإعادة الاستخدام — للاستخدام المتقدم. الإعداد الكامل للتداول يتم من مركز التحكم.',
   'credentials.addButton': 'إضافة بيانات اعتماد',
   'credentials.empty.title': 'لا توجد بيانات اعتماد بعد',
-  'credentials.empty.message': 'أضف بيانات الاعتماد مرة واحدة ثم أعد استخدامها عبر الوكلاء وعائلات القدرات.',
+  'credentials.empty.message': 'تخزّن بيانات الاعتماد أسرار مزوّديك. للإعداد الكامل (بيانات اعتماد + اتصال + ربط)، استخدم مركز التحكم أو تدفق إنشاء الوكيل.',
   'credentials.providerLabel': 'المزوّد: {provider}',
   'credentials.idLabel': 'المعرّف: {id}',
   'credentials.addedDate': 'أضيفت {date}',
@@ -249,7 +258,8 @@ export const messages: Record<string, string> = {
   'agents.create.capabilitySetupMessage': 'اختر ربط تداول موجود لإرفاق وصول التداول أثناء إنشاء الوكيل.',
   'agents.create.tradingBinding': 'ربط التداول',
   'agents.create.loadingBindings': 'جارٍ تحميل روابط التداول…',
-  'agents.create.noBindings': 'لا توجد روابط تداول نشطة بعد. أنشئ اتصال تداول أولاً، أو أنشئ الوكيل الآن واربطه لاحقاً.',
+  'agents.create.noBindings': 'لا توجد روابط تداول نشطة بعد. أعدّ التداول الآن أو أنشئ الوكيل واربطه لاحقاً.',
+  'agents.create.setupTradingNow': 'إعداد التداول الآن',
   'agents.create.chooseBinding': 'اختر ربطاً موجوداً',
   'agents.create.riskTolerance': 'تحمل المخاطر',
   'agents.create.review': 'مراجعة →',
@@ -327,13 +337,14 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.noGuidedSetup': 'لا توجد خطوات إعداد موجهة لهذه القدرة بعد. استخدم أسباب الجاهزية وصفحة تفاصيل الوكيل لتحديد الخطوة التالية.',
   'agents.capabilityPage.availableBindings': 'الروابط المتاحة',
   'agents.capabilityPage.failedBindings': 'فشل تحميل روابط التداول',
-  'agents.capabilityPage.noBindings': 'لا توجد روابط تداول بعد. أنشئ اتصال تداول أولاً ثم اربطه بهذا الوكيل.',
+  'agents.capabilityPage.noBindings': 'لا توجد روابط تداول بعد. أكمل إعداد التداول من مركز التحكم أو عند إنشاء وكيل، ثم عد هنا للربط.',
   'agents.capabilityPage.bindingMeta': 'المزوّد: {provider} · الاتصال: {connectionStatus} · الربط: {bindingStatus}',
   'agents.capabilityPage.reference': 'المرجع: {reference}',
   'agents.capabilityPage.unbind': 'فك الربط',
   'agents.capabilityPage.bind': 'ربط بالوكيل',
   'agents.capabilityPage.manageConnections': 'إدارة الاتصالات',
   'agents.capabilityPage.manageCredentials': 'إدارة بيانات الاعتماد',
+  'agents.capabilityPage.setupOnMissionControl': 'الذهاب إلى مركز التحكم',
 
   // Outcomes extended
   'outcomes.latestArtifact': 'أحدث مخرج',
@@ -376,6 +387,19 @@ export const messages: Record<string, string> = {
   'billing.upgrade.subscription_not_upgradeable': 'لا يمكن تغيير الاشتراك الحالي تلقائياً.',
   'billing.upgrade.invalid_price_id': 'سعر الترقية المحدد غير صالح.',
   'billing.upgrade.missing_provider_mapping': 'الخطة المحددة تفتقد ربط مزود الفوترة.',
+
+  // Setup: unified provider-link form
+  'setup.form.title': 'إضافة مزوّد تداول',
+  'setup.form.provider': 'المزوّد',
+  'setup.form.providerPlaceholder': 'مثلاً hyperliquid أو bybit أو 1inch',
+  'setup.form.label': 'الاسم',
+  'setup.form.labelPlaceholder': 'مثلاً حسابي على Hyperliquid',
+  'setup.form.secrets': 'الأسرار',
+  'setup.form.secretNamePlaceholder': 'اسم السر',
+  'setup.form.secretValuePlaceholder': 'قيمة السر',
+  'setup.form.addSecret': 'إضافة سر',
+  'setup.form.saving': 'جارٍ الإعداد…',
+  'setup.form.submit': 'إعداد مزوّد التداول',
 
   // Status labels
   'status.running': 'يعمل',

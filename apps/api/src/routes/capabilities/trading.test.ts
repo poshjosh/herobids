@@ -120,6 +120,35 @@ function buildDb(selectSequence: unknown[][] = []) {
 }
 
 describe('trading capability routes', () => {
+  it('publishes the full supported trading provider catalog', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb();
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/capabilities/trading' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ providers: string[] }>().providers).toEqual(['hyperliquid', 'jupiter', '1inch', 'bybit']);
+  });
+
+  it('publishes provider metadata for all supported trading providers', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb();
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/capabilities/trading/providers' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ providers: Array<{ provider: string }> }>().providers.map((provider) => provider.provider)).toEqual([
+      'hyperliquid',
+      'jupiter',
+      '1inch',
+      'bybit',
+    ]);
+  });
+
   it('lists trading bindings as real binding resources', async () => {
     const app = Fastify();
     decorateWithAuth(app);
@@ -143,11 +172,6 @@ describe('trading capability routes', () => {
         label: 'HL connection',
         status: 'active',
       },
-    }], [{
-      id: 'conn-1',
-      provider: 'hyperliquid',
-      label: 'HL connection',
-      status: 'active',
     }]]);
     await tradingCapabilityRoutes(app, db);
 
@@ -158,57 +182,21 @@ describe('trading capability routes', () => {
     expect(body.bindings[0].bindingId).toBe(TEST_BINDING_ID);
     expect(body.bindings[0].provider).toBe('hyperliquid');
     expect(body.bindings[0].bindingRef).toBe('acct-1');
+    // No inserts — the endpoint is now read-only
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it('backfills a missing trading binding for an existing legacy trading connection', async () => {
+  it('returns empty bindings list when no bindings are provisioned', async () => {
     const app = Fastify();
     decorateWithAuth(app);
-    const db = buildDb([
-      [],
-      [{
-        id: 'conn-1',
-        provider: 'hyperliquid',
-        label: 'HL connection',
-        status: 'active',
-      }],
-      [{
-        binding: {
-          id: TEST_BINDING_ID,
-          userId: TEST_USER_ID,
-          connectionId: 'conn-1',
-          provider: 'hyperliquid',
-          label: 'HL connection',
-          bindingRef: null,
-          status: 'active',
-          bindingProfile: { provider: 'hyperliquid' },
-          sourceVenueAccountId: null,
-          createdAt: new Date('2026-01-01'),
-          updatedAt: new Date('2026-01-01'),
-        },
-        connection: {
-          id: 'conn-1',
-          provider: 'hyperliquid',
-          label: 'HL connection',
-          status: 'active',
-        },
-      }],
-    ]);
+    const db = buildDb([[]]);
     await tradingCapabilityRoutes(app, db);
 
     const res = await app.inject({ method: 'GET', url: '/capabilities/trading/bindings' });
-
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.bindings).toHaveLength(1);
-    expect(body.bindings[0]).toMatchObject({
-      bindingId: TEST_BINDING_ID,
-      connectionId: 'conn-1',
-      provider: 'hyperliquid',
-      label: 'HL connection',
-      status: 'active',
-      connectionStatus: 'active',
-    });
-    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(body.bindings).toHaveLength(0);
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it('returns binding-backed readiness for an agent', async () => {

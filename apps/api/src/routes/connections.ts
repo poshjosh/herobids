@@ -3,11 +3,9 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, venueAccounts, userCredentials, agents } from '@herobids/db';
+import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, userCredentials, agents } from '@herobids/db';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
-
-const TRADING_CONNECTION_PROVIDERS = new Set(['hyperliquid', 'jupiter', '1inch', 'bybit']);
 
 export async function connectionRoutes(app: FastifyInstance, db: Database, redisClient?: Redis): Promise<void> {
   async function publishRuntimeRefresh(agentId: string): Promise<void> {
@@ -117,37 +115,6 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
         createdAt: now,
         updatedAt: now,
       });
-
-      if (TRADING_CONNECTION_PROVIDERS.has(parsed.data.provider)) {
-        // Create a companion venue account so that bots.venue_account_id (NOT NULL FK) can be
-        // populated when a user creates a bot from this binding. This mirrors what migration
-        // 0007_trading_bindings.sql did for pre-existing venue accounts.
-        const venueAccountId = crypto.randomUUID();
-        await db.insert(venueAccounts).values({
-          id: venueAccountId,
-          userId: request.userId,
-          venue: parsed.data.provider,
-          label: parsed.data.label,
-          venueAccountRef: null,
-          credentialId: parsed.data.credentialId ?? null,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        await db.insert(tradingBindings).values({
-          id: crypto.randomUUID(),
-          userId: request.userId,
-          connectionId: id,
-          provider: parsed.data.provider,
-          label: parsed.data.label,
-          bindingRef: null,
-          status: 'active',
-          bindingProfile: { provider: parsed.data.provider },
-          sourceVenueAccountId: venueAccountId,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
     } catch (err: unknown) {
       // FK violation — credential deleted between validation and insert
       const pgErr = err as { code?: string };

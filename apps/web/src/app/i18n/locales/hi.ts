@@ -109,6 +109,11 @@ export const messages: Record<string, string> = {
   'missionControl.noActivityYet.title': 'अभी तक कोई गतिविधि नहीं',
   'missionControl.noActivityYet.message': 'एजेंट कार्रवाई शुरू होने पर इवेंट यहाँ दिखाई देंगे।',
   'missionControl.viewAllActivity': 'सभी गतिविधि देखें →',
+  'missionControl.setup.title': 'त्वरित ट्रेडिंग सेटअप',
+  'missionControl.setup.message': 'अपने एजेंटों के लिए स्वचधालित ट्रेडिंग सक्षम करने के लिए एक ट्रेडिंग प्रदधाता कनेक्ट करें।',
+  'missionControl.setup.cta': 'ट्रेडिंग प्रदाता जोड़ें',
+  'missionControl.setup.successDismiss': 'हो गया',
+  'missionControl.setup.successMessage': '{label} ({provider}) सेटअप हो गया।',
 
   // Outcomes
   'outcomes.title': 'परिणाम बोर्ड',
@@ -180,12 +185,16 @@ export const messages: Record<string, string> = {
   'billing.status.canceled': 'रद्द',
   'billing.status.incomplete': 'अपूर्ण',
 
+  // Connections
+  'connections.subtitle': 'निम्न-स्तरीय प्रदाता कनेक्शन प्रबंधन — उन्नत उपयोग के लिए। पूर्ण ट्रेडिंग सेटअप के लिए, मिशन कंट्रोल का उपयोग करें।',
+  'connections.empty.message': 'यह प्रदाता कनेक्शन सीधे प्रबंधित करने का एक उन्नत उपकरण है। निर्देशित ट्रेडिंग सेटअप के लिए, मिशन कंट्रोल या एजेंट बनाएं फ़्लो का उपयोग करें।',
+
   // Credentials
   'credentials.title': 'क्रेडेंशियल',
-  'credentials.subtitle': 'एजेंटों और क्षमता बाइंडिंग के लिए पुन: प्रयोज्य प्रदाता सीक्रेट्स',
+  'credentials.subtitle': 'पुन: प्रयोज्य प्रदाता सीक्रेट्स — उन्नत उपयोग के लिए। पूर्ण ट्रेडिंग सेटअप मिशन कंट्रोल से किया जाता है।',
   'credentials.addButton': 'प्रदाता क्रेडेंशियल जोड़ें',
   'credentials.empty.title': 'अभी तक कोई क्रेडेंशियल नहीं',
-  'credentials.empty.message': 'प्रदाता क्रेडेंशियल एक बार जोड़ें और उन्हें एजेंटों व क्षमताओं में दोबारा उपयोग करें।',
+  'credentials.empty.message': 'क्रेडेंशियल आपके प्रदाता सीक्रेट्स स्टोर करते हैं। पूर्ण ट्रेडिंग सेटअप (क्रेडेंशियल + कनेक्शन + बाइंडिंग) के लिए, मिशन कंट्रोल या एजेंट बनाएं फ़्लो का उपयोग करें।',
   'credentials.providerLabel': 'प्रदाता: {provider}',
   'credentials.idLabel': 'आईडी: {id}',
   'credentials.addedDate': '{date} को जोड़ा गया',
@@ -249,7 +258,8 @@ export const messages: Record<string, string> = {
   'agents.create.capabilitySetupMessage': 'एजेंट निर्माण के हिस्से के रूप में ट्रेडिंग एक्सेस जोड़ने के लिए मौजूदा ट्रेडिंग बाइंडिंग चुनें।',
   'agents.create.tradingBinding': 'ट्रेडिंग बाइंडिंग',
   'agents.create.loadingBindings': 'ट्रेडिंग बाइंडिंग लोड हो रही हैं…',
-  'agents.create.noBindings': 'अभी कोई सक्रिय ट्रेडिंग बाइंडिंग उपलब्ध नहीं है। पहले ट्रेडिंग कनेक्शन बनाएँ, या एजेंट अभी बनाएँ और बाद में बाइंड करें।',
+  'agents.create.noBindings': 'अभी तक कोई सक्रिय ट्रेडिंग बाइंडिंग नहीं। अभी ट्रेडिंग सेटअप करें या एजेंट बनाकर बाद में बाइंड करें।',
+  'agents.create.setupTradingNow': 'अभी ट्रेडिंग सेटअप करें',
   'agents.create.chooseBinding': 'मौजूदा बाइंडिंग चुनें',
   'agents.create.riskTolerance': 'जोखिम सहनशीलता',
   'agents.create.review': 'समीक्षा →',
@@ -327,13 +337,14 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.noGuidedSetup': 'इस क्षमता परिवार के लिए अभी कोई निर्देशित सेटअप कार्रवाई परिभाषित नहीं है। अगला ऑपरेटर कदम तय करने के लिए तैयारी कारणों और एजेंट विवरण पेज का उपयोग करें।',
   'agents.capabilityPage.availableBindings': 'उपलब्ध बाइंडिंग्स',
   'agents.capabilityPage.failedBindings': 'ट्रेडिंग बाइंडिंग्स लोड नहीं हो सकीं',
-  'agents.capabilityPage.noBindings': 'अभी कोई ट्रेडिंग बाइंडिंग मौजूद नहीं है। पहले ट्रेडिंग कनेक्शन बनाएं, फिर इसे इस एजेंट से बाइंड करें।',
+  'agents.capabilityPage.noBindings': 'अभी तक कोई ट्रेडिंग बाइंडिंग नहीं। मिशन कंट्रोल से या एजेंट बनाते समय ट्रेडिंग सेटअप पूरा करें, फिर बाइंड करने के लिए यहाँ लौटें।',
   'agents.capabilityPage.bindingMeta': 'प्रदाता: {provider} · कनेक्शन: {connectionStatus} · बाइंडिंग: {bindingStatus}',
   'agents.capabilityPage.reference': 'संदर्भ: {reference}',
   'agents.capabilityPage.unbind': 'अनबाइंड',
   'agents.capabilityPage.bind': 'एजेंट से बाइंड करें',
   'agents.capabilityPage.manageConnections': 'कनेक्शन प्रबंधित करें',
   'agents.capabilityPage.manageCredentials': 'क्रेडेंशियल प्रबंधित करें',
+  'agents.capabilityPage.setupOnMissionControl': 'मिशन कंट्रोल पर जाएं',
 
   // Outcomes extended
   'outcomes.latestArtifact': 'नवीनतम आर्टिफैक्ट',
@@ -376,6 +387,19 @@ export const messages: Record<string, string> = {
   'billing.upgrade.subscription_not_upgradeable': 'वर्तमान सदस्यता को स्वचालित रूप से बदला नहीं जा सकता।',
   'billing.upgrade.invalid_price_id': 'चयनित अपग्रेड मूल्य अमान्य है।',
   'billing.upgrade.missing_provider_mapping': 'चयनित योजना में बिलिंग प्रदाता मैपिंग नहीं है।',
+
+  // Setup: unified provider-link form
+  'setup.form.title': 'ट्रेडिंग प्रदाता जोड़ें',
+  'setup.form.provider': 'प्रदाता',
+  'setup.form.providerPlaceholder': 'उदा. hyperliquid, bybit, 1inch',
+  'setup.form.label': 'लेबल',
+  'setup.form.labelPlaceholder': 'उदा. मेरा Hyperliquid खाता',
+  'setup.form.secrets': 'सीक्रेट्स',
+  'setup.form.secretNamePlaceholder': 'सीक्रेट नाम',
+  'setup.form.secretValuePlaceholder': 'सीक्रेट मान',
+  'setup.form.addSecret': 'सीक्रेट जोड़ें',
+  'setup.form.saving': 'सेटअप हो रहा है…',
+  'setup.form.submit': 'ट्रेडिंग प्रदाता सेटअप करें',
 
   // Status labels
   'status.running': 'चल रहा है',

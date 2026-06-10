@@ -9,6 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Improved connection and credential handling (2026-06-10): added guided provider-link setup from Mission Control and Create Agent, with a transactional setup endpoint and explicit trading provisioning.
 - Web i18n (2026-06-10): full react-intl migration — locale provider, EN/AR/HI catalogs, locale selector in Settings, server-persisted preference, structured API error codes with interpolation params, activity event message keys, shared formatting helpers (`formatShortDate`, `formatCurrencyFromCents`). See ADR 002.
 - `preferred_locale` column on `users` table (migration `0001_add_preferred_locale`): stores the user's chosen UI language; synced to client on session bootstrap.
 

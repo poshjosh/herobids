@@ -20,7 +20,7 @@ function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<
   });
 }
 
-interface SecretValidationError {
+export interface SecretValidationError {
   field: string;
   code: string;
   message: string;
@@ -35,7 +35,7 @@ const SECRET_ALIASES_BY_VENUE: Record<string, Record<string, string[]>> = {
   },
   bybit: {
     apiKey: ['apikey'],
-    secret: ['secret', 'secretkey'],
+    secret: ['secret', 'secretkey', 'apisecret'],
   },
   '1inch': {
     apiKey: ['apikey'],
@@ -47,7 +47,7 @@ function normalizeSecretToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function canonicalizeVenueSecrets(venue: string, secrets: Record<string, string>): Record<string, string> {
+export function canonicalizeVenueSecrets(venue: string, secrets: Record<string, string>): Record<string, string> {
   const aliases = SECRET_ALIASES_BY_VENUE[venue] ?? {};
   const canonicalSecrets: Record<string, string> = {};
 
@@ -66,7 +66,7 @@ function canonicalizeVenueSecrets(venue: string, secrets: Record<string, string>
 }
 
 /** Venue-specific validation of credential secrets. Returns empty array if valid. */
-function validateVenueSecrets(venue: string, secrets: Record<string, string>): SecretValidationError[] {
+export function validateVenueSecrets(venue: string, secrets: Record<string, string>): SecretValidationError[] {
   const errors: SecretValidationError[] = [];
 
   if (venue === 'hyperliquid') {
@@ -97,6 +97,10 @@ function validateVenueSecrets(venue: string, secrets: Record<string, string>): S
     }
     if (!secrets['apiKey']?.trim()) {
       errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey (1inch developer portal key) is required for 1inch credentials', params: { field: 'apiKey', venue: '1inch' } });
+    }
+  } else if (venue === 'jupiter') {
+    if (!secrets['privateKey']?.trim()) {
+      errors.push({ field: 'secrets.privateKey', code: 'credential.validation_error.required', message: 'privateKey is required for Jupiter credentials', params: { field: 'privateKey', venue: 'jupiter' } });
     }
   }
 

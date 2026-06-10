@@ -74,7 +74,7 @@ type TradingBindingResourceRow = {
   };
 };
 
-const TRADING_CONNECTION_PROVIDERS = new Set(['hyperliquid', 'jupiter', '1inch', 'bybit']);
+const SUPPORTED_TRADING_PROVIDERS = ['hyperliquid', 'jupiter', '1inch', 'bybit'] as const;
 
 function deriveTradingReadiness(
   grantStatus: string,
@@ -167,48 +167,6 @@ async function selectTradingBindingResourceRows(db: Database, userId: string): P
     .where(eq(tradingBindings.userId, userId));
 }
 
-async function ensureTradingBindingsForUser(db: Database, userId: string): Promise<TradingBindingResourceRow[]> {
-  const existingRows = await selectTradingBindingResourceRows(db, userId);
-  const existingConnectionIds = new Set(existingRows.map((row) => row.connection.id));
-
-  const connectionRows = await db
-    .select({
-      id: connections.id,
-      provider: connections.provider,
-      label: connections.label,
-      status: connections.status,
-    })
-    .from(connections)
-    .where(eq(connections.userId, userId));
-
-  const missingConnections = connectionRows.filter((connection) => (
-    TRADING_CONNECTION_PROVIDERS.has(connection.provider)
-    && !existingConnectionIds.has(connection.id)
-  ));
-
-  if (missingConnections.length === 0) {
-    return existingRows;
-  }
-
-  await db.insert(tradingBindings).values(
-    missingConnections.map((connection) => ({
-      id: crypto.randomUUID(),
-      userId,
-      connectionId: connection.id,
-      provider: connection.provider,
-      label: connection.label,
-      bindingRef: null,
-      status: connection.status,
-      bindingProfile: { provider: connection.provider },
-      sourceVenueAccountId: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })),
-  ).onConflictDoNothing();
-
-  return selectTradingBindingResourceRows(db, userId);
-}
-
 export async function tradingCapabilityRoutes(
   app: FastifyInstance,
   db: Database,
@@ -276,7 +234,7 @@ export async function tradingCapabilityRoutes(
       description: 'Algorithmic trading across multiple venues',
       status: 'available',
       supportedActions: [...SUPPORTED_ACTIONS],
-      providers: ['hyperliquid', 'jupiter', '1inch'],
+      providers: [...SUPPORTED_TRADING_PROVIDERS],
       readinessStates: ['unconfigured', 'provisioning', 'ready', 'degraded', 'revoked'],
     });
   });
@@ -287,12 +245,13 @@ export async function tradingCapabilityRoutes(
         { provider: 'hyperliquid', type: 'perpetuals', status: 'available' },
         { provider: 'jupiter', type: 'swap', status: 'available' },
         { provider: '1inch', type: 'swap', status: 'available' },
+        { provider: 'bybit', type: 'perpetuals', status: 'available' },
       ],
     });
   });
 
   app.get('/capabilities/trading/bindings', async (request, reply) => {
-    const rows = await ensureTradingBindingsForUser(db, request.userId);
+    const rows = await selectTradingBindingResourceRows(db, request.userId);
 
     return reply.send({
       family: 'trading',

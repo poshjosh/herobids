@@ -8,6 +8,7 @@ import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasC
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -115,7 +116,9 @@ function CreateAgentFlow({
   onCreated: (id: string) => void;
 }) {
   const intl = useIntl();
+  const qc = useQueryClient();
   const [step, setStep] = useState<CreateStep>('intent');
+  const [showSetup, setShowSetup] = useState(false);
   const [intent, setIntent] = useState<IntentState>({
     goal: '',
     skillIds: [],
@@ -153,6 +156,21 @@ function CreateAgentFlow({
     },
     onSuccess: (agent) => onCreated(agent.id),
   });
+
+  if (showSetup) {
+    return (
+      <ProviderSetupForm
+        onClose={() => setShowSetup(false)}
+        onSuccess={(result) => {
+          setShowSetup(false);
+          void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
+          if (result.tradingBinding) {
+            setIntent((state) => ({ ...state, tradingBindingId: result.tradingBinding!.id }));
+          }
+        }}
+      />
+    );
+  }
 
   if (step === 'intent') {
     const riskOptions = [
@@ -230,8 +248,15 @@ function CreateAgentFlow({
                 {tradingBindingsQuery.isLoading ? (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingBindings' })}</div>
                 ) : availableTradingBindings.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                    {intl.formatMessage({ id: 'agents.create.noBindings' })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                      {intl.formatMessage({ id: 'agents.create.noBindings' })}
+                    </div>
+                    <div>
+                      <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
+                        {intl.formatMessage({ id: 'agents.create.setupTradingNow' })}
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <select

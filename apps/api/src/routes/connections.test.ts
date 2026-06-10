@@ -96,11 +96,9 @@ describe('POST /connections', () => {
     expect(lastInserted!['provider']).toBe('hyperliquid');
     expect(lastInserted!['userId']).toBe(TEST_USER_ID);
     expect(lastInserted!['status']).toBe('active');
-    expect(insertedValues).toHaveLength(3);
+    // Only the connection itself is created — no hidden venue account or trading binding
+    expect(insertedValues).toHaveLength(1);
     expect(insertedValues[0]!['provider']).toBe('hyperliquid');
-    expect(insertedValues[1]!['venue']).toBe('hyperliquid');
-    expect(insertedValues[2]!['provider']).toBe('hyperliquid');
-    expect(insertedValues[2]!['connectionId']).toBe(insertedValues[0]!['id']);
   });
 
   it('returns 400 for missing required fields', async () => {
@@ -171,12 +169,8 @@ describe('POST /connections', () => {
     expect(insertedValues).toHaveLength(1);
   });
 
-  // Regression: bug 005 — functional tests called seedTradingBinding after createConnection,
-  // causing a duplicate-key violation once POST /connections started auto-creating a
-  // trading_bindings row. This verifies the auto-creation contract so callers must
-  // query (not insert) to obtain the binding ID.
   it.each(['hyperliquid', 'jupiter', '1inch', 'bybit'] as const)(
-    'auto-creates exactly one trading binding with matching connectionId for provider=%s',
+    'creates only the connection (no hidden binding) for trading provider=%s',
     async (provider) => {
       const app = Fastify();
       decorateWithAuth(app);
@@ -190,40 +184,11 @@ describe('POST /connections', () => {
       });
 
       expect(res.statusCode).toBe(201);
-      // Three inserts: connection, companion venue account, then trading binding
-      expect(insertedValues).toHaveLength(3);
-      const [connInsert, venueAccountInsert, bindingInsert] = insertedValues;
-      expect(venueAccountInsert!['venue']).toBe(provider);
-      expect(bindingInsert!['connectionId']).toBe(connInsert!['id']);
-      expect(bindingInsert!['provider']).toBe(provider);
+      // Only one insert: the connection itself
+      expect(insertedValues).toHaveLength(1);
+      expect(insertedValues[0]!['provider']).toBe(provider);
     },
   );
-
-  // Regression: bug 002 — e2e helpers called seedTradingBinding after createConnection
-  // instead of looking up the auto-created binding. This documents the full binding
-  // payload so callers know userId, status, and label are correctly inherited.
-  it('auto-created trading binding carries the correct userId, status, and label', async () => {
-    const app = Fastify();
-    decorateWithAuth(app);
-    const db = buildMockDb();
-    await connectionRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/connections',
-      payload: { provider: 'hyperliquid', label: 'My HyperLiquid Connection' },
-    });
-
-    expect(res.statusCode).toBe(201);
-    expect(insertedValues).toHaveLength(3);
-    const [connInsert, venueAccountInsert, bindingInsert] = insertedValues;
-    expect(venueAccountInsert!['userId']).toBe(TEST_USER_ID);
-    expect(venueAccountInsert!['credentialId']).toBeNull();
-    expect(bindingInsert!['userId']).toBe(TEST_USER_ID);
-    expect(bindingInsert!['status']).toBe('active');
-    expect(bindingInsert!['label']).toBe('My HyperLiquid Connection');
-    expect(bindingInsert!['connectionId']).toBe(connInsert!['id']);
-  });
 
   it('returns 400 when credential venue does not match connection provider', async () => {
     const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'bybit' };

@@ -72,6 +72,12 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
 | MC-10 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
 | MC-11 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
+| MC-12 | Quick trading setup card renders | Open Mission Control | "Quick trading setup" card visible in the agents column with "Add trading provider" button | — | |
+| MC-13 | Quick trading setup — opens form | Click "Add trading provider" | Modal opens with provider, label, and secrets fields | — | |
+| MC-14 | Quick trading setup — submit | Fill in provider (e.g. hyperliquid), label, and valid secrets; click "Set up trading provider" | Modal closes; success banner shows "{label} ({provider}) has been set up." | — | |
+| MC-15 | Quick trading setup — success dismiss | Click "Done" on the success banner | Banner disappears; setup card returns to default state | — | |
+| MC-16 | Quick trading setup — validation | Submit form with empty provider or label | Submit button disabled; form cannot be submitted | — | |
+| MC-17 | Quick trading setup — API error | Submit with invalid secrets | ErrorBanner shown inside modal; modal stays open | — | |
 
 ---
 
@@ -134,6 +140,10 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-16 | Protocol Activity section | Open detail for agent with activity | Activity entries listed with type and timestamp | ✅ | Shows agent.runtime.heartbeat entries with relative timestamps ("2s ago", "1m ago" etc) |
 | AG-17 | Artifacts section | Open detail for agent with artifacts | Artifacts listed with type, content type, optional summary, timestamp | ✅ | Shows artifact_type · content_type, summary text, relative timestamp |
 | AG-18 | Real-time refresh | Leave agent detail open while agent is starting | Status badge updates via 5 s polling without manual refresh | ✅ | Status badge updated from starting → crashed without manual refresh during testing |
+| AG-19 | Create agent — no bindings shows setup button | Open Create Agent with a trading skill; ensure no bindings exist | "No active trading bindings yet" text + "Set up trading now" secondary button shown instead of binding selector | — | |
+| AG-20 | Create agent — inline setup opens form | Click "Set up trading now" | Modal replaces with ProviderSetupForm; main create flow is suspended | — | |
+| AG-21 | Create agent — inline setup success auto-selects | Complete setup form with valid credentials | ProviderSetupForm closes; binding selector appears with new binding pre-selected | — | |
+| AG-22 | Capability page — trading next steps | Open any agent's trading capability page | "Go to Mission Control" primary button shown in Next steps; no longer shows /connections or /credentials links for trading | — | |
 
 ---
 

@@ -245,8 +245,9 @@ export async function seedTradingBinding(params: {
 }
 
 /**
- * Retrieve the trading binding that POST /connections auto-created for a given connection.
- * Use this instead of seedTradingBinding when the connection was created via the API.
+ * Retrieve a trading binding for a given connection by querying the DB directly.
+ * Use seedTradingBinding or setupTradingLink to create bindings — POST /connections
+ * no longer auto-creates them.
  */
 export async function getBindingForConnection(connectionId: string): Promise<string> {
   const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
@@ -258,11 +259,34 @@ export async function getBindingForConnection(connectionId: string): Promise<str
       .where(eq(tradingBindings.connectionId, connectionId));
     if (!binding) {
       throw new Error(
-        `No trading binding found for connection ${connectionId} — POST /connections should have created one automatically`,
+        `No trading binding found for connection ${connectionId}`,
       );
     }
     return binding.id;
   } finally {
     await closeDatabase(db);
   }
+}
+
+/**
+ * Call POST /setup/provider-link to create a credential, connection, venue account,
+ * and trading binding in one transaction. Returns the connection and binding IDs.
+ */
+export async function setupTradingLink(
+  page: Page,
+  request: APIRequestContext,
+  data: { provider: string; label: string; secrets: Record<string, string> },
+): Promise<{ connectionId: string; bindingId: string }> {
+  const token = await getAuthToken(page);
+  const response = await request.post('/api/setup/provider-link', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { ...data, capability: 'trading' },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to setup trading link: ${response.status()} ${await response.text()}`);
+  }
+
+  const body = await response.json() as { connection: { id: string }; tradingBinding: { id: string } };
+  return { connectionId: body.connection.id, bindingId: body.tradingBinding.id };
 }

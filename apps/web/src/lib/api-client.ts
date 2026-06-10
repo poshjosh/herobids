@@ -554,6 +554,22 @@ export const capabilities = {
 };
 
 // ---------------------------------------------------------------------------
+// Setup: unified provider-link flow
+// ---------------------------------------------------------------------------
+
+export interface ProviderSetupResult {
+  credential: { id: string; venue: string; label: string; createdAt: string };
+  connection: { id: string; provider: string; label: string; status: string; credentialId: string; createdAt: string };
+  venueAccount?: { id: string; venue: string; label: string; credentialId: string; createdAt: string };
+  tradingBinding?: { id: string; connectionId: string; provider: string; label: string; sourceVenueAccountId: string; status: string; createdAt: string };
+}
+
+export const setup = {
+  providerLink: (data: { provider: string; label: string; secrets: Record<string, string>; capability?: 'trading' }) =>
+    request<ProviderSetupResult>('/setup/provider-link', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// ---------------------------------------------------------------------------
 // Platform: Readiness
 // ---------------------------------------------------------------------------
 

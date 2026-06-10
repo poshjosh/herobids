@@ -12,7 +12,7 @@ import { watchTools } from './watch.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredToolNames = registry.list().map((tool) => tool.name).sort();
-  const knownToolNames = [...KNOWN_AGENT_TOOL_NAMES].sort();
+  const knownToolNames = ([...KNOWN_AGENT_TOOL_NAMES] as string[]).sort();
   const missingFromRegistry = knownToolNames.filter((toolName) => !registeredToolNames.includes(toolName));
   const missingFromCatalog = registeredToolNames.filter((toolName) => !knownToolNames.includes(toolName));
 

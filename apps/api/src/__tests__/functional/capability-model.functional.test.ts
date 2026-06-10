@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { capabilityGrants, tradingBindings } from '@herobids/db';
+import { capabilityGrants } from '@herobids/db';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
 async function createAgent(app: Awaited<ReturnType<typeof buildApp>>['app'], token: string, name: string, prompt: string) {
@@ -73,6 +73,28 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     return res.json<{ id: string; provider: string; label: string }>();
   }
 
+  async function setupTradingLink(): Promise<{ connectionId: string; bindingId: string }> {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      headers: { Authorization: `Bearer ${token}` },
+      payload: {
+        provider: 'hyperliquid',
+        label: 'Hyperliquid trading setup',
+        secrets: {
+          apiKey: 'test-api-key',
+          secret: 'test-secret',
+          walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        capability: 'trading',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ connection: { id: string }; tradingBinding: { id: string } }>();
+    return { connectionId: body.connection.id, bindingId: body.tradingBinding.id };
+  }
+
   async function createCredential() {
     const res = await ctx.app.inject({
       method: 'POST',
@@ -91,17 +113,6 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
     expect(res.statusCode).toBe(201);
     return res.json<{ id: string; venue: string; label: string }>();
-  }
-
-  async function getBindingForConnection(connectionId: string): Promise<string> {
-    const [binding] = await ctx.db
-      .select({ id: tradingBindings.id })
-      .from(tradingBindings)
-      .where(eq(tradingBindings.connectionId, connectionId));
-    if (!binding) {
-      throw new Error(`No trading binding found for connection ${connectionId} — POST /connections should have created one automatically`);
-    }
-    return binding.id;
   }
 
   it('covers family catalogs, connection creation, grant lifecycle, readiness, and audit history', async () => {
@@ -128,7 +139,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(connectionDetail.statusCode).toBe(200);
     expect(connectionDetail.json<{ id: string; status: string }>().status).toBe('active');
 
-    const bindingId = await getBindingForConnection(connection.id);
+    const { bindingId } = await setupTradingLink();
 
     const readinessBefore = await ctx.app.inject({
       method: 'GET',
@@ -244,8 +255,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
   });
 
   it('marks capability readiness revoked when the underlying connection is revoked', async () => {
-    const connection = await createConnection();
-    const bindingId = await getBindingForConnection(connection.id);
+    const { connectionId, bindingId } = await setupTradingLink();
 
     const bindRes = await ctx.app.inject({
       method: 'POST',
@@ -257,7 +267,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
     const revokeConnection = await ctx.app.inject({
       method: 'DELETE',
-      url: `/connections/${connection.id}`,
+      url: `/connections/${connectionId}`,
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(revokeConnection.statusCode).toBe(204);
@@ -288,12 +298,11 @@ describe.skipIf(SKIP)('Capability model functional', () => {
   });
 
   it('rejects binding a trading capability when the underlying connection is no longer ready', async () => {
-    const connection = await createConnection();
-    const bindingId = await getBindingForConnection(connection.id);
+    const { connectionId, bindingId } = await setupTradingLink();
 
     const revokeConnection = await ctx.app.inject({
       method: 'DELETE',
-      url: `/connections/${connection.id}`,
+      url: `/connections/${connectionId}`,
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(revokeConnection.statusCode).toBe(204);

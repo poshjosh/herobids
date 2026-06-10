@@ -1,14 +1,19 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
 import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
 import { ActivityItem } from '../activity/ActivityItem.js';
+import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 
 export function MissionControlPage() {
   const navigate = useNavigate();
   const intl = useIntl();
+  const qc = useQueryClient();
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupSuccess, setSetupSuccess] = useState<{ label: string; provider: string } | null>(null);
 
   const agentsQuery = useQuery({
     queryKey: ['agents'],
@@ -67,6 +72,32 @@ export function MissionControlPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '24px', alignItems: 'start' }}>
         <section aria-label={intl.formatMessage({ id: 'missionControl.section.agents' })}>
           <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.agents' })}</SectionLabel>
+
+          {/* Quick trading setup card */}
+          {setupSuccess ? (
+            <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', border: '1px solid var(--color-border-subtle)' }}>
+              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                {intl.formatMessage({ id: 'missionControl.setup.successMessage' }, { label: setupSuccess.label, provider: setupSuccess.provider })}
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setSetupSuccess(null)}>
+                {intl.formatMessage({ id: 'missionControl.setup.successDismiss' })}
+              </Button>
+            </Card>
+          ) : (
+            <Card style={{ padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: '1px solid var(--color-border-subtle)' }}>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px' }}>
+                  {intl.formatMessage({ id: 'missionControl.setup.title' })}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  {intl.formatMessage({ id: 'missionControl.setup.message' })}
+                </div>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
+                {intl.formatMessage({ id: 'missionControl.setup.cta' })}
+              </Button>
+            </Card>
+          )}
 
           {agentsQuery.isLoading && <LoadingRows count={3} />}
           {agentsQuery.isError && (
@@ -134,6 +165,17 @@ export function MissionControlPage() {
           </Card>
         </section>
       </div>
+
+      {showSetup && (
+        <ProviderSetupForm
+          onClose={() => setShowSetup(false)}
+          onSuccess={(result) => {
+            setShowSetup(false);
+            void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
+            setSetupSuccess({ label: result.connection.label, provider: result.connection.provider });
+          }}
+        />
+      )}
     </PageShell>
   );
 }

@@ -9,8 +9,7 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   registerUser,
   createAgent,
-  createConnection,
-  getBindingForConnection,
+  setupTradingLink,
   bindTradingCapability,
 } from '../helpers.js';
 
@@ -42,11 +41,15 @@ test.describe('Journey 7: Capability setup and readiness', () => {
       { skillIds: ['bot-management'] },
     );
 
-    const connection = await createConnection(page, request, {
+    const { bindingId } = await setupTradingLink(page, request, {
       provider: 'hyperliquid',
       label: 'Primary Hyperliquid connection',
+      secrets: {
+        apiKey: 'test-api-key',
+        secret: 'test-secret',
+        walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
     });
-    const bindingId = await getBindingForConnection(connection.id);
 
     await page.goto(`/agents/${agentId}/capabilities/trading`);
     await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });

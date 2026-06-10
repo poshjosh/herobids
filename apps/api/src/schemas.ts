@@ -128,6 +128,17 @@ export const RevokeGrantSchema = z.object({
   reason: z.string().min(1).optional(),
 });
 
+export const SetupProviderLinkSchema = z.object({
+  /** Provider identifier: "hyperliquid", "bybit", "1inch", etc. */
+  provider: z.string().min(1),
+  /** Base label used for the credential, connection, and binding */
+  label: z.string().min(1),
+  /** Secrets to encrypt (API key, secret, passphrase, etc.) */
+  secrets: z.record(z.string()),
+  /** Optional capability to provision alongside the connection. Currently only "trading" is supported. */
+  capability: z.enum(['trading']).optional(),
+});
+
 export type CreateConnectionInput = z.infer<typeof CreateConnectionSchema>;
 export type CreateGrantInput = z.infer<typeof CreateGrantSchema>;
 export type RevokeGrantInput = z.infer<typeof RevokeGrantSchema>;

@@ -109,6 +109,11 @@ export const messages: Record<string, string> = {
   'missionControl.noActivityYet.title': 'No activity yet',
   'missionControl.noActivityYet.message': 'Events appear here once agents start taking actions.',
   'missionControl.viewAllActivity': 'View all activity →',
+  'missionControl.setup.title': 'Quick trading setup',
+  'missionControl.setup.message': 'Connect a trading provider to enable automated trading for your agents.',
+  'missionControl.setup.cta': 'Add trading provider',
+  'missionControl.setup.successDismiss': 'Done',
+  'missionControl.setup.successMessage': '{label} ({provider}) has been set up.',
 
   // Outcomes
   'outcomes.title': 'Outcome Board',
@@ -180,12 +185,16 @@ export const messages: Record<string, string> = {
   'billing.status.canceled': 'Canceled',
   'billing.status.incomplete': 'Incomplete',
 
+  // Connections
+  'connections.subtitle': 'Low-level provider connection management — for advanced use. For complete trading setup, use Mission Control.',
+  'connections.empty.message': 'This is an advanced tool for managing provider connections directly. For guided trading setup, use Mission Control or the Create Agent flow.',
+
   // Credentials
   'credentials.title': 'Credentials',
-  'credentials.subtitle': 'Reusable provider secrets for agents and capability bindings',
+  'credentials.subtitle': 'Reusable provider secrets — for advanced use. Full trading setup is done from Mission Control.',
   'credentials.addButton': 'Add provider credential',
   'credentials.empty.title': 'No credentials yet',
-  'credentials.empty.message': 'Add provider credentials once and reuse them across agents and capability families.',
+  'credentials.empty.message': 'Credentials store your provider secrets. For full trading setup (credential + connection + binding), use Mission Control or the Create Agent flow.',
   'credentials.providerLabel': 'Provider: {provider}',
   'credentials.idLabel': 'ID: {id}',
   'credentials.addedDate': 'Added {date}',
@@ -249,7 +258,8 @@ export const messages: Record<string, string> = {
   'agents.create.capabilitySetupMessage': 'Select an existing trading binding to attach trading access as part of agent creation.',
   'agents.create.tradingBinding': 'Trading binding',
   'agents.create.loadingBindings': 'Loading trading bindings…',
-  'agents.create.noBindings': 'No active trading bindings are available yet. Create a trading connection first, or create the agent now and bind it later.',
+  'agents.create.noBindings': 'No active trading bindings yet. Set up trading now or create the agent and bind it later.',
+  'agents.create.setupTradingNow': 'Set up trading now',
   'agents.create.chooseBinding': 'Choose an existing binding',
   'agents.create.riskTolerance': 'Risk tolerance',
   'agents.create.review': 'Review →',
@@ -327,13 +337,14 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.noGuidedSetup': 'No guided setup actions are defined for this capability family yet. Use the readiness reasons and agent detail page to decide the next operator step.',
   'agents.capabilityPage.availableBindings': 'Available bindings',
   'agents.capabilityPage.failedBindings': 'Failed to load trading bindings',
-  'agents.capabilityPage.noBindings': 'No trading bindings exist yet. Create a trading connection first, then bind it to this agent.',
+  'agents.capabilityPage.noBindings': 'No trading bindings yet. Complete trading setup from Mission Control or when creating an agent, then return here to bind.',
   'agents.capabilityPage.bindingMeta': 'Provider: {provider} · Connection: {connectionStatus} · Binding: {bindingStatus}',
   'agents.capabilityPage.reference': 'Reference: {reference}',
   'agents.capabilityPage.unbind': 'Unbind',
   'agents.capabilityPage.bind': 'Bind to agent',
   'agents.capabilityPage.manageConnections': 'Manage connections',
   'agents.capabilityPage.manageCredentials': 'Manage credentials',
+  'agents.capabilityPage.setupOnMissionControl': 'Go to Mission Control',
 
   // Outcomes extended
   'outcomes.latestArtifact': 'Latest artifact',
@@ -376,6 +387,19 @@ export const messages: Record<string, string> = {
   'billing.upgrade.subscription_not_upgradeable': 'The current subscription cannot be changed automatically.',
   'billing.upgrade.invalid_price_id': 'The selected upgrade price is invalid.',
   'billing.upgrade.missing_provider_mapping': 'The selected plan is missing its billing provider mapping.',
+
+  // Setup: unified provider-link form
+  'setup.form.title': 'Add trading provider',
+  'setup.form.provider': 'Provider',
+  'setup.form.providerPlaceholder': 'e.g. hyperliquid, bybit, 1inch',
+  'setup.form.label': 'Label',
+  'setup.form.labelPlaceholder': 'e.g. My Hyperliquid account',
+  'setup.form.secrets': 'Secrets',
+  'setup.form.secretNamePlaceholder': 'Secret name',
+  'setup.form.secretValuePlaceholder': 'Secret value',
+  'setup.form.addSecret': 'Add secret',
+  'setup.form.saving': 'Setting up\u2026',
+  'setup.form.submit': 'Set up trading provider',
 
   // Status labels
   'status.running': 'running',
