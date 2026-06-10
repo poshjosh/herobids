@@ -69,7 +69,11 @@ describe('applyProviderTemplate logic (bug 007)', () => {
 
   it('returns template keys for a known provider when entries have no values', () => {
     const result = applyProviderTemplate('hyperliquid', [{ key: '', value: '' }]);
-    expect(result).toEqual([{ key: 'privateKey', value: '' }]);
+    expect(result).toEqual([
+      { key: 'apiKey', value: '' },
+      { key: 'secret', value: '' },
+      { key: 'walletAddress', value: '' },
+    ]);
   });
 
   it('returns multiple template keys for bybit', () => {
@@ -106,6 +110,10 @@ describe('applyProviderTemplate logic (bug 007)', () => {
   it('is case-insensitive for provider lookup', () => {
     // Datalist suggestions are lowercase, but the user might type mixed case.
     const result = applyProviderTemplate('Hyperliquid', [{ key: '', value: '' }]);
-    expect(result).toEqual([{ key: 'privateKey', value: '' }]);
+    expect(result).toEqual([
+      { key: 'apiKey', value: '' },
+      { key: 'secret', value: '' },
+      { key: 'walletAddress', value: '' },
+    ]);
   });
 });

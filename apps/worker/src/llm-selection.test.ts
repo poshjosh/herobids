@@ -4,6 +4,7 @@ import { resolveEffectiveLlmSelection } from './llm-selection.js';
 const DEFAULT_SCOUT_MODELS = {
   openai: 'gpt-4.1-mini',
   anthropic: 'claude-3-5-haiku-latest',
+  openrouter: 'openai/gpt-4.1-mini',
 };
 
 describe('resolveEffectiveLlmSelection', () => {

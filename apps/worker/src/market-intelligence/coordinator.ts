@@ -281,7 +281,7 @@ export function createMarketDataCoordinator(
           const unavailableSnapshot = {
             snapshotId: String(existing['snapshotId'] ?? snapshotId),
             capturedAt: String(existing['capturedAt'] ?? capturedAt),
-            freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
+            freshness: { state: 'unavailable' as const, ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
             sources: { discovery: { ok: false, freshness: 'unavailable' } },
             tokens: Array.isArray(existing['tokens']) ? existing['tokens'] as Array<{
               network: string;
@@ -305,7 +305,7 @@ export function createMarketDataCoordinator(
         const unavailableSnapshot = {
           snapshotId,
           capturedAt,
-          freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
+          freshness: { state: 'unavailable' as const, ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
           sources: { discovery: { ok: false, freshness: 'unavailable' } },
           tokens: [],
         };
@@ -317,7 +317,7 @@ export function createMarketDataCoordinator(
       const unavailableSnapshot = {
         snapshotId,
         capturedAt,
-        freshness: { state: 'unavailable', ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
+        freshness: { state: 'unavailable' as const, ageMs: 0, maxAllowedAgeMs: discoveryMaxAgeMs },
         sources: { discovery: { ok: false, freshness: 'unavailable' } },
         tokens: [],
       };
@@ -351,7 +351,7 @@ export function createMarketDataCoordinator(
 
         // Use evaluateRegime from market-data — import dynamically to avoid circular deps
         const { evaluateRegime } = await import('@herobids/market-data');
-        const regimeResult = evaluateRegime(candles, { benchmarkSymbol });
+        const regimeResult = await evaluateRegime({ benchmarkSymbol }, async () => candles);
         if (stopped) return;
 
         const snapshot = {

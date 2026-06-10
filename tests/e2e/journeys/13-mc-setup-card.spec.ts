@@ -29,7 +29,7 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
 
     // Open the setup form
     await ctaButton.click();
-    await expect(page.getByText('Add trading provider')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').getByText('Add trading provider')).toBeVisible({ timeout: 5_000 });
 
     // Fill provider — typing 'hyperliquid' triggers the template auto-fill
     await page.getByPlaceholder('e.g. hyperliquid, bybit, 1inch').fill('hyperliquid');

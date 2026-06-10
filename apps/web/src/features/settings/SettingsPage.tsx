@@ -125,6 +125,7 @@ export function SettingsPage() {
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'settings.locale.label' })}</FieldLabel>
             <select
+              aria-label={intl.formatMessage({ id: 'settings.locale.label' })}
               value={locale}
               onChange={(e) => localeMutation.mutate(e.target.value as SupportedLocale)}
               disabled={localeMutation.isPending}

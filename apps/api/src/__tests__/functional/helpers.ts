@@ -22,6 +22,7 @@ import { aiRoutes } from '../../routes/ai.js';
 import { skillsRoutes } from '../../routes/skills.js';
 import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
+import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig } from '@herobids/domain';
 import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL, LlmRuntimeConfigSchema } from '@herobids/domain';
 import { Queue } from 'bullmq';
@@ -118,6 +119,8 @@ export async function buildApp() {
   await skillsRoutes(app, db);
   await datasetRoutes(app, db, redisClient);
   await exportRoutes(app, db);
+
+  await setupRoutes(app, db);
 
   await app.ready();
 

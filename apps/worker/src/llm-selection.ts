@@ -27,7 +27,7 @@ export function resolveEffectiveLlmSelection(input: {
   agentConfig: AgentLlmSelectionInput;
   operatorProvider: string;
   operatorHeavyModel: string;
-  defaultScoutModels: Record<string, string>;
+  defaultScoutModels: { anthropic: string; openai: string; openrouter: string };
 }): ResolvedLlmSelection {
   const userModelDefaults = input.agentConfig.userModelDefaults ?? null;
   const resolvedProvider = getNonEmptyString(input.agentConfig.provider)

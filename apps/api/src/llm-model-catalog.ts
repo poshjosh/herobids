@@ -28,8 +28,13 @@ export function validateAiModelSelection(
   selection: { provider: string; lightModel: string; heavyModel: string },
   operatorProvider?: string,
 ): Array<{ code: 'custom'; path: string[]; message: string }> {
-  if (operatorProvider && !new Set(getAvailableProviders(operatorProvider)).has(selection.provider)) {
-    return [{ code: 'custom', path: ['provider'], message: 'Selected provider is not available on this platform' }];
+  // Allow the operator's own provider even if no explicit API key env var is set
+  // (it may be configured externally or use a shared fallback key).
+  if (operatorProvider && selection.provider !== operatorProvider) {
+    const available = new Set(getAvailableProviders(operatorProvider));
+    if (!available.has(selection.provider)) {
+      return [{ code: 'custom', path: ['provider'], message: 'Selected provider is not available on this platform' }];
+    }
   }
 
   return validateLlmModelSelection(selection);

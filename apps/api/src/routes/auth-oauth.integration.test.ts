@@ -206,7 +206,7 @@ describe.skipIf(SKIP)('authRoutes OAuth callback (integration)', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body)).toMatchObject({ error: expect.stringContaining('OAuth state') });
+    expect(JSON.parse(res.body)).toMatchObject({ message: expect.stringContaining('OAuth state') });
   });
 
   it('missing authorization code → 400', async () => {
@@ -220,7 +220,7 @@ describe.skipIf(SKIP)('authRoutes OAuth callback (integration)', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body)).toMatchObject({ error: 'Missing authorization code' });
+    expect(JSON.parse(res.body)).toMatchObject({ message: 'Missing authorization code' });
   });
 
   it('email_verified: false → 401 (prevents account-takeover via unverified email)', async () => {

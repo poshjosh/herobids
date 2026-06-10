@@ -14,7 +14,7 @@ export const PROVIDER_TEMPLATES: Record<string, string[]> = {
   hyperliquid: ['apiKey', 'secret', 'walletAddress'],
   jupiter: ['privateKey'],
   bybit: ['apiKey', 'apiSecret'],
-  '1inch': ['privateKey', 'apiKey'],
+  '1inch': ['apiKey'],
   telegram: ['botToken'],
 };
 

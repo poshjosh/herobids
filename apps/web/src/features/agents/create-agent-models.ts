@@ -28,13 +28,18 @@ export function resolveCreateAgentModelPayload(
   lightModel?: string | null;
   heavyModel?: string | null;
 } {
+  // If no model is selected, inherit operator defaults (don't send null fields to the API)
+  if (!selection.provider) {
+    return { inherits: true };
+  }
+
   if (createAgentUsesInheritedModels(selection, savedModelSettings)) {
     return { inherits: true };
   }
 
   return {
     inherits: false,
-    provider: selection.provider || null,
+    provider: selection.provider,
     lightModel: selection.lightModel || null,
     heavyModel: selection.heavyModel || null,
   };

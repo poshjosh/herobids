@@ -219,20 +219,20 @@ function CreateAgentFlow({
         prompt: buildPrompt(intent, selectedSkills, selectedTradingBinding),
         skillIds: [...intent.skillIds],
         executionMode: intent.executionMode,
-        ...(!modelPayload.inherits ? {
+        ...(!modelPayload.inherits && modelPayload.provider ? {
           provider: modelPayload.provider,
-          lightModel: modelPayload.lightModel,
-          heavyModel: modelPayload.heavyModel,
+          ...(modelPayload.lightModel ? { lightModel: modelPayload.lightModel } : {}),
+          ...(modelPayload.heavyModel ? { heavyModel: modelPayload.heavyModel } : {}),
         } : {}),
-        costPreset: intent.costPreset || null,
-        dailySpendBudgetUsd: intent.dailySpendBudgetUsd ? parseFloat(intent.dailySpendBudgetUsd) : null,
-        telegramChatId: intent.telegramChatId.trim() || null,
-        tickIntervalMs: intent.tickIntervalMs ? parseInt(intent.tickIntervalMs, 10) : null,
-        maxBots: intent.maxBots ? parseInt(intent.maxBots, 10) : null,
-        capital: intent.capital.trim() || null,
-        dailyLossLimit: intent.dailyLossLimit.trim() || null,
-        maxSlippageBps: intent.maxSlippageBps ? parseInt(intent.maxSlippageBps, 10) : null,
-        dailyLlmTokenBudget: intent.dailyLlmTokenBudget ? parseInt(intent.dailyLlmTokenBudget, 10) : null,
+        ...(intent.costPreset ? { costPreset: intent.costPreset } : {}),
+        ...(intent.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(intent.dailySpendBudgetUsd) } : {}),
+        ...(intent.telegramChatId.trim() ? { telegramChatId: intent.telegramChatId.trim() } : {}),
+        ...(intent.tickIntervalMs ? { tickIntervalMs: parseInt(intent.tickIntervalMs, 10) } : {}),
+        ...(intent.maxBots ? { maxBots: parseInt(intent.maxBots, 10) } : {}),
+        ...(intent.capital.trim() ? { capital: intent.capital.trim() } : {}),
+        ...(intent.dailyLossLimit.trim() ? { dailyLossLimit: intent.dailyLossLimit.trim() } : {}),
+        ...(intent.maxSlippageBps ? { maxSlippageBps: parseInt(intent.maxSlippageBps, 10) } : {}),
+        ...(intent.dailyLlmTokenBudget ? { dailyLlmTokenBudget: parseInt(intent.dailyLlmTokenBudget, 10) } : {}),
       });
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -442,7 +442,7 @@ function CreateAgentFlow({
             <Button
               variant="primary"
               type="button"
-              disabled={!intent.goal.trim() || !intent.provider || !intent.lightModel || !intent.heavyModel}
+              disabled={!intent.goal.trim()}
               onClick={() => setStep('review')}
             >
               {intl.formatMessage({ id: 'agents.create.review' })}
