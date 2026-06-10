@@ -7,143 +7,18 @@ import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutbo
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
-import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
-
-const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
-
-function mergeModelPolicy(
-  current: Record<string, unknown> | null | undefined,
-  update: {
-    modelPolicy?: Record<string, unknown>;
-    provider?: string | null;
-    lightModel?: string | null;
-    heavyModel?: string | null;
-    costPreset?: z.infer<typeof CostPresetSchema> | null;
-    dailySpendBudgetUsd?: number | null;
-    dexWatchlistSymbols?: string[] | null;
-  },
-): Record<string, unknown> | null {
-  const merged: Record<string, unknown> = { ...(current ?? {}), ...(update.modelPolicy ?? {}) };
-
-  const setOrDelete = (key: string, value: string | null | undefined) => {
-    if (value === undefined) {
-      return;
-    }
-    if (value === null) {
-      delete merged[key];
-      return;
-    }
-    merged[key] = value;
-  };
-
-  setOrDelete('provider', update.provider);
-  setOrDelete('lightModel', update.lightModel);
-  setOrDelete('heavyModel', update.heavyModel);
-  if (update.costPreset !== undefined) {
-    if (update.costPreset === null) delete merged['costPreset'];
-    else merged['costPreset'] = update.costPreset;
-  }
-  if (update.dailySpendBudgetUsd !== undefined) {
-    if (update.dailySpendBudgetUsd === null) delete merged['dailySpendBudgetUsd'];
-    else merged['dailySpendBudgetUsd'] = update.dailySpendBudgetUsd;
-  }
-  if (update.dexWatchlistSymbols !== undefined) {
-    if (update.dexWatchlistSymbols === null) delete merged['dexWatchlistSymbols'];
-    else merged['dexWatchlistSymbols'] = update.dexWatchlistSymbols;
-  }
-
-  return normalizeAgentModelPolicy(merged);
-}
-
-function extractModelSelection(modelPolicy: Record<string, unknown> | null | undefined): {
-  provider: string | null;
-  lightModel: string | null;
-  heavyModel: string | null;
-} {
-  const provider = typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : null;
-  const lightModel = typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : null;
-  const heavyModel = typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : null;
-
-  return { provider, lightModel, heavyModel };
-}
-
-function validateAgentModelPolicy(modelPolicy: Record<string, unknown> | null | undefined, operatorProvider?: string): Array<{ code: 'custom'; path: string[]; message: string }> {
-  const selection = extractModelSelection(modelPolicy);
-  if (!selection.provider) {
-    return [];
-  }
-
-  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
-  if (!selection.lightModel) {
-    issues.push({ code: 'custom', path: ['lightModel'], message: 'Selected economy model is required when a provider is set' });
-  }
-  if (!selection.heavyModel) {
-    issues.push({ code: 'custom', path: ['heavyModel'], message: 'Selected premium model is required when a provider is set' });
-  }
-  if (issues.length > 0) {
-    return issues;
-  }
-
-  return validateAiModelSelection({ provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! }, operatorProvider);
-}
-
-function extractSubmittedModelSelection(payload: {
-  modelPolicy?: Record<string, unknown>;
-  provider?: string | null;
-  lightModel?: string | null;
-  heavyModel?: string | null;
-}): { provider: string | null; lightModel: string | null; heavyModel: string | null } {
-  const modelPolicy = payload.modelPolicy ?? null;
-  const provider = typeof payload.provider === 'string'
-    ? payload.provider
-    : typeof modelPolicy?.['provider'] === 'string'
-      ? modelPolicy['provider']
-      : null;
-  const lightModel = typeof payload.lightModel === 'string'
-    ? payload.lightModel
-    : typeof modelPolicy?.['lightModel'] === 'string'
-      ? modelPolicy['lightModel']
-      : null;
-  const heavyModel = typeof payload.heavyModel === 'string'
-    ? payload.heavyModel
-    : typeof modelPolicy?.['heavyModel'] === 'string'
-      ? modelPolicy['heavyModel']
-      : null;
-
-  return { provider, lightModel, heavyModel };
-}
-
-function hasModelFieldsWithoutProvider(payload: {
-  modelPolicy?: Record<string, unknown>;
-  provider?: string | null;
-  lightModel?: string | null;
-  heavyModel?: string | null;
-}): boolean {
-  const selection = extractSubmittedModelSelection(payload);
-  return !selection.provider && (selection.lightModel !== null || selection.heavyModel !== null);
-}
-
-function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null }>(agent: T): T & {
-  provider: string | null;
-  lightModel: string | null;
-  heavyModel: string | null;
-  costPreset: z.infer<typeof CostPresetSchema> | null;
-  dailySpendBudgetUsd: number | null;
-  dexWatchlistSymbols: string[] | null;
-} {
-  const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
-  return {
-    ...agent,
-    provider: typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : null,
-    lightModel: typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : null,
-    heavyModel: typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : null,
-    costPreset: typeof modelPolicy?.['costPreset'] === 'string' ? modelPolicy['costPreset'] as z.infer<typeof CostPresetSchema> : null,
-    dailySpendBudgetUsd: typeof modelPolicy?.['dailySpendBudgetUsd'] === 'number' ? modelPolicy['dailySpendBudgetUsd'] : null,
-    dexWatchlistSymbols: Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
-      ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
-      : null,
-  };
-}
+import {
+  CostPresetSchema,
+  decorateAgentResponse,
+  hasModelFieldsWithoutProvider,
+  mergeModelPolicy,
+  nullablePositiveDecimalStringSchema,
+  nullablePositiveIntegerSchema,
+  optionalPositiveDecimalStringSchema,
+  optionalPositiveIntegerSchema,
+  resolveDailyLlmTokenBudget,
+  validateAgentModelPolicy,
+} from './agent-config-helpers.js';
 
 // --- Request Schemas ---
 
@@ -161,10 +36,13 @@ const CreateAgentSchema = z.object({
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).optional(),
   telegramChatId: z.string().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
-  dailyTokenBudget: z.number().int().min(1).optional(),
-  dailyLossLimit: z.string().optional(),
-  maxBots: z.number().int().min(1).optional(),
-  maxSlippageBps: z.number().int().min(0).optional(),
+  dailyTokenBudget: optionalPositiveIntegerSchema(),
+  dailyLlmTokenBudget: optionalPositiveIntegerSchema(),
+  dailyLossLimit: optionalPositiveDecimalStringSchema,
+  maxBots: optionalPositiveIntegerSchema(),
+  maxSlippageBps: optionalPositiveIntegerSchema(0),
+  tickIntervalMs: optionalPositiveIntegerSchema(1000),
+  capital: optionalPositiveDecimalStringSchema,
 });
 
 const UpdateAgentSchema = z.object({
@@ -182,10 +60,13 @@ const UpdateAgentSchema = z.object({
   telegramChatId: z.string().nullable().optional(),
   // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
-  dailyTokenBudget: z.number().int().min(1).nullable().optional(),
-  dailyLossLimit: z.string().nullable().optional(),
-  maxBots: z.number().int().min(1).nullable().optional(),
-  maxSlippageBps: z.number().int().min(0).nullable().optional(),
+  dailyTokenBudget: nullablePositiveIntegerSchema(),
+  dailyLlmTokenBudget: nullablePositiveIntegerSchema(),
+  dailyLossLimit: nullablePositiveDecimalStringSchema,
+  maxBots: nullablePositiveIntegerSchema(),
+  maxSlippageBps: nullablePositiveIntegerSchema(0),
+  tickIntervalMs: nullablePositiveIntegerSchema(1000),
+  capital: nullablePositiveDecimalStringSchema,
 });
 
 const PauseAgentSchema = z.object({
@@ -200,6 +81,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const parsed = CreateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
+    if (dailyLlmTokenBudget.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [dailyLlmTokenBudget.issue] });
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -250,10 +136,12 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       modelPolicy: effectiveModelPolicy,
       telegramChatId: parsed.data.telegramChatId ?? null,
       executionMode: parsed.data.executionMode ?? null,
-      dailyTokenBudget: parsed.data.dailyTokenBudget ?? null,
+      dailyTokenBudget: dailyLlmTokenBudget.value ?? null,
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
       maxBots: parsed.data.maxBots ?? null,
       maxSlippageBps: parsed.data.maxSlippageBps ?? null,
+      tickIntervalMs: parsed.data.tickIntervalMs ?? null,
+      capital: parsed.data.capital ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -298,6 +186,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const parsed = UpdateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
+    if (dailyLlmTokenBudget.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [dailyLlmTokenBudget.issue] });
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -374,12 +267,14 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       costPreset: _costPreset,
       dailySpendBudgetUsd: _dailySpendBudgetUsd,
       dexWatchlistSymbols: _dexWatchlistSymbols,
+      dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
       ...agentUpdates
     } = parsed.data;
 
     await db.update(agents).set({
       ...agentUpdates,
+      ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),

@@ -44,7 +44,7 @@ import {
   type RuntimeCompositionState,
 } from './runtime-composition.js';
 import { shouldSkipTick, type TradingHoursConfig } from './tick-gates.js';
-import { buildScoutSystemPrompt, parseScoutDecision, resolveDefaultScoutModel } from './scout-dispatch.js';
+import { buildScoutSystemPrompt, parseScoutDecision } from './scout-dispatch.js';
 import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
@@ -114,6 +114,8 @@ interface AgentConfig {
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
+  tickIntervalMs?: number;
+  capital?: string;
   telegramChatId?: string;
   runtimeDescriptor?: RuntimeDescriptor;
   userModelDefaults?: UserModelDefaults | null;
@@ -201,6 +203,7 @@ const costProfile = resolveAgentCostProfile({
   costPreset: agentConfig.costPreset,
   dailyBudgetUsd: agentConfig.dailySpendBudgetUsd,
   baseTickIntervalMs: TICK_INTERVAL_MS,
+  tickIntervalMs: agentConfig.tickIntervalMs,
 });
 
 // ---------------------------------------------------------------------------

@@ -581,3 +581,179 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
   });
 });
 
+// ---------------------------------------------------------------------------
+// tickIntervalMs and capital round-trip tests (feature 003)
+// ---------------------------------------------------------------------------
+describe('agent routes — tickIntervalMs and capital fields', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('persists tickIntervalMs and capital on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      tickIntervalMs: 600_000,
+      dailyTokenBudget: 42_000,
+      capital: '5000',
+    };
+    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'agent with controls',
+        prompt: 'trade carefully',
+        tickIntervalMs: 600_000,
+        dailyLlmTokenBudget: 42_000,
+        capital: '5000.00',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({
+      tickIntervalMs: 600_000,
+      dailyTokenBudget: 42_000,
+      capital: '5000',
+    }));
+    expect(res.json()).toEqual(expect.objectContaining({
+      dailyLlmTokenBudget: 42_000,
+      dailyTokenBudget: 42_000,
+      capital: '5000',
+    }));
+  });
+
+  it('rejects conflicting dailyLlmTokenBudget aliases on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'agent',
+        prompt: 'p',
+        dailyLlmTokenBudget: 1000,
+        dailyTokenBudget: 2000,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['dailyLlmTokenBudget'] })],
+    });
+  });
+
+  it('rejects tickIntervalMs below 1000ms on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'agent',
+        prompt: 'p',
+        tickIntervalMs: 500,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('persists tickIntervalMs on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped',
+      skillIds: [], modelPolicy: null, tickIntervalMs: 1_200_000, capital: null,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { tickIntervalMs: 1_200_000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ tickIntervalMs: 1_200_000 }));
+  });
+
+  it('normalizes capital and canonical token budget on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+      tickIntervalMs: null, capital: '750', dailyTokenBudget: 12_000,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { capital: '750.00', dailyLlmTokenBudget: 12_000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ capital: '750', dailyTokenBudget: 12_000 }));
+    expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: 12_000 }));
+  });
+
+  it('clears tickIntervalMs when null is sent on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped',
+      skillIds: [], modelPolicy: null, tickIntervalMs: null, capital: null,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null, tickIntervalMs: 900_000 }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { tickIntervalMs: null },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ tickIntervalMs: null }));
+  });
+});
+

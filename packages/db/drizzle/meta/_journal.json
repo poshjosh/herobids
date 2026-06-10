@@ -15,6 +15,13 @@
       "when": 1781074320283,
       "tag": "0001_add_preferred_locale",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781107723276,
+      "tag": "0002_aberrant_redwing",
+      "breakpoints": true
     }
   ]
 }

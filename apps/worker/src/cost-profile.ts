@@ -9,6 +9,8 @@ export interface AgentCostProfileInput {
   costPreset?: CostPreset;
   dailyBudgetUsd?: number;
   baseTickIntervalMs: number;
+  /** User-configured base cadence in ms. When present, overrides the preset-derived interval. */
+  tickIntervalMs?: number;
 }
 
 export interface AgentCostProfile {
@@ -36,9 +38,11 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
   const lightModel = input.lightModel;
   const heavyModel = input.heavyModel;
 
+  let profile: AgentCostProfile;
+
   switch (input.costPreset) {
     case 'minimal':
-      return {
+      profile = {
         preset: 'minimal',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 3,
         heavyModel: lightModel,
@@ -47,8 +51,9 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
         defaultThinking: 'none',
       };
+      break;
     case 'standard':
-      return {
+      profile = {
         preset: 'standard',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 10,
         heavyModel,
@@ -57,8 +62,9 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         enabledGates: { session: false, regime: true, contextHash: true, adaptiveInterval: false },
         defaultThinking: 'light',
       };
+      break;
     case 'premium':
-      return {
+      profile = {
         preset: 'premium',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 30,
         heavyModel,
@@ -67,8 +73,9 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         enabledGates: { session: false, regime: false, contextHash: true, adaptiveInterval: false },
         defaultThinking: 'deep',
       };
+      break;
     case 'custom':
-      return {
+      profile = {
         preset: 'custom',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 5,
         heavyModel: (input.dailyBudgetUsd ?? 5) <= 3 ? lightModel : heavyModel,
@@ -77,8 +84,9 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
         defaultThinking: (input.dailyBudgetUsd ?? 5) <= 3 ? 'none' : 'light',
       };
+      break;
     default:
-      return {
+      profile = {
         preset: 'standard',
         dailyBudgetUsd: input.dailyBudgetUsd ?? 10,
         heavyModel,
@@ -88,4 +96,12 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         defaultThinking: 'light',
       };
   }
+
+  // Explicit user-configured tick interval wins over the preset-derived value.
+  // Runtime adaptive slowdown still applies on top of this base cadence.
+  if (input.tickIntervalMs != null && input.tickIntervalMs > 0) {
+    profile = { ...profile, tickIntervalMs: input.tickIntervalMs };
+  }
+
+  return profile;
 }

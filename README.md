@@ -101,6 +101,15 @@ LLM_API_KEY_OPENROUTER=sk-or-...  # key for the chosen provider
 
 The worker reads these from `.env` and forwards them to each spawned agent container. If `LLM_PROVIDER` or its key are missing, the worker (in docker mode) and the agent container both exit immediately with a fatal log rather than failing silently on the first reasoning tick.
 
+### Agent controls and cadence
+
+Agent cost presets, cadence, and capital limits are related but separate controls:
+
+- `costPreset` controls the model mix, default reasoning depth, and preset-specific runtime gates.
+- `tickIntervalMs` sets the base reasoning cadence. If you set it explicitly, it overrides the preset-derived cadence, but runtime slowdown and recovery still apply on top of that base interval.
+- `capital` is the amount the agent may deploy, not the full wallet balance. Managed bot configs are clamped so their `risk.maxOrderNotional` cannot exceed the agent capital limit.
+- `dailyLlmTokenBudget` is the canonical API field for LLM token limits. The legacy `dailyTokenBudget` field is still accepted for backward compatibility.
+
 ---
 
 ## Building

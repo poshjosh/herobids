@@ -6,135 +6,16 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, bots, fills } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
-import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
-
-const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
-
-function mergeModelPolicy(
-  current: Record<string, unknown> | null | undefined,
-  update: {
-    modelPolicy?: Record<string, unknown>;
-    provider?: string | null;
-    lightModel?: string | null;
-    heavyModel?: string | null;
-    costPreset?: z.infer<typeof CostPresetSchema> | null;
-    dailySpendBudgetUsd?: number | null;
-    dexWatchlistSymbols?: string[] | null;
-  },
-): Record<string, unknown> | null {
-  const merged: Record<string, unknown> = { ...(current ?? {}), ...(update.modelPolicy ?? {}) };
-
-  const setOrDelete = (key: string, value: string | null | undefined) => {
-    if (value === undefined) {
-      return;
-    }
-    if (value === null) {
-      delete merged[key];
-      return;
-    }
-    merged[key] = value;
-  };
-
-  setOrDelete('provider', update.provider);
-  setOrDelete('lightModel', update.lightModel);
-  setOrDelete('heavyModel', update.heavyModel);
-  if (update.costPreset !== undefined) {
-    if (update.costPreset === null) delete merged['costPreset'];
-    else merged['costPreset'] = update.costPreset;
-  }
-  if (update.dailySpendBudgetUsd !== undefined) {
-    if (update.dailySpendBudgetUsd === null) delete merged['dailySpendBudgetUsd'];
-    else merged['dailySpendBudgetUsd'] = update.dailySpendBudgetUsd;
-  }
-  if (update.dexWatchlistSymbols !== undefined) {
-    if (update.dexWatchlistSymbols === null) delete merged['dexWatchlistSymbols'];
-    else merged['dexWatchlistSymbols'] = update.dexWatchlistSymbols;
-  }
-  return normalizeAgentModelPolicy(merged);
-}
-
-function extractModelSelection(modelPolicy: Record<string, unknown> | null | undefined): {
-  provider: string | null;
-  lightModel: string | null;
-  heavyModel: string | null;
-} {
-  const provider = typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : null;
-  const lightModel = typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : null;
-  const heavyModel = typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : null;
-
-  return { provider, lightModel, heavyModel };
-}
-
-function validateAgentModelPolicy(modelPolicy: Record<string, unknown> | null | undefined): Array<{ code: 'custom'; path: string[]; message: string }> {
-  const selection = extractModelSelection(modelPolicy);
-  if (!selection.provider) {
-    return [];
-  }
-
-  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
-  if (!selection.lightModel) {
-    issues.push({ code: 'custom', path: ['lightModel'], message: 'Selected economy model is required when a provider is set' });
-  }
-  if (!selection.heavyModel) {
-    issues.push({ code: 'custom', path: ['heavyModel'], message: 'Selected premium model is required when a provider is set' });
-  }
-  if (issues.length > 0) {
-    return issues;
-  }
-
-  return validateAiModelSelection({ provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! });
-}
-
-function extractSubmittedModelSelection(payload: {
-  modelPolicy?: Record<string, unknown>;
-  provider?: string | null;
-  lightModel?: string | null;
-  heavyModel?: string | null;
-}): { provider: string | null; lightModel: string | null; heavyModel: string | null } {
-  const modelPolicy = payload.modelPolicy ?? null;
-  const provider = typeof payload.provider === 'string'
-    ? payload.provider
-    : typeof modelPolicy?.['provider'] === 'string'
-      ? modelPolicy['provider']
-      : null;
-  const lightModel = typeof payload.lightModel === 'string'
-    ? payload.lightModel
-    : typeof modelPolicy?.['lightModel'] === 'string'
-      ? modelPolicy['lightModel']
-      : null;
-  const heavyModel = typeof payload.heavyModel === 'string'
-    ? payload.heavyModel
-    : typeof modelPolicy?.['heavyModel'] === 'string'
-      ? modelPolicy['heavyModel']
-      : null;
-
-  return { provider, lightModel, heavyModel };
-}
-
-function hasModelFieldsWithoutProvider(payload: {
-  modelPolicy?: Record<string, unknown>;
-  provider?: string | null;
-  lightModel?: string | null;
-  heavyModel?: string | null;
-}): boolean {
-  const selection = extractSubmittedModelSelection(payload);
-  return !selection.provider && (selection.lightModel !== null || selection.heavyModel !== null);
-}
-
-function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null }>(agent: T) {
-  const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
-  return {
-    ...agent,
-    provider: typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : null,
-    lightModel: typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : null,
-    heavyModel: typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : null,
-    costPreset: typeof modelPolicy?.['costPreset'] === 'string' ? modelPolicy['costPreset'] : null,
-    dailySpendBudgetUsd: typeof modelPolicy?.['dailySpendBudgetUsd'] === 'number' ? modelPolicy['dailySpendBudgetUsd'] : null,
-    dexWatchlistSymbols: Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
-      ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
-      : null,
-  };
-}
+import {
+  CostPresetSchema,
+  decorateAgentResponse,
+  hasModelFieldsWithoutProvider,
+  mergeModelPolicy,
+  nullablePositiveDecimalStringSchema,
+  nullablePositiveIntegerSchema,
+  resolveDailyLlmTokenBudget,
+  validateAgentModelPolicy,
+} from './agent-config-helpers.js';
 
 // --- Schemas ---
 
@@ -160,10 +41,13 @@ const UpdateAgentSchema = z.object({
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
-  dailyTokenBudget: z.number().int().min(1).nullable().optional(),
-  dailyLossLimit: z.string().nullable().optional(),
-  maxBots: z.number().int().min(1).nullable().optional(),
-  maxSlippageBps: z.number().int().min(0).nullable().optional(),
+  dailyTokenBudget: nullablePositiveIntegerSchema(),
+  dailyLlmTokenBudget: nullablePositiveIntegerSchema(),
+  dailyLossLimit: nullablePositiveDecimalStringSchema,
+  maxBots: nullablePositiveIntegerSchema(),
+  maxSlippageBps: nullablePositiveIntegerSchema(0),
+  tickIntervalMs: nullablePositiveIntegerSchema(1000),
+  capital: nullablePositiveDecimalStringSchema,
 });
 
 // --- Route module ---
@@ -182,6 +66,11 @@ export async function agentInteractivityRoutes(
     const parsed = UpdateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
+    if (dailyLlmTokenBudget.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [dailyLlmTokenBudget.issue] });
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -242,12 +131,14 @@ export async function agentInteractivityRoutes(
       costPreset: _costPreset,
       dailySpendBudgetUsd: _dailySpendBudgetUsd,
       dexWatchlistSymbols: _dexWatchlistSymbols,
+      dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
       ...agentUpdates
     } = parsed.data;
 
     await db.update(agents).set({
       ...agentUpdates,
+      ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),

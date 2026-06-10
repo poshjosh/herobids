@@ -184,4 +184,22 @@ describe('adaptive interval helpers', () => {
 
     expect(result.nextTickIntervalMs).toBe(120_000);
   });
+
+  it('treats an explicit base cadence as the floor while still allowing slowdown and recovery', () => {
+    const slowed = resolveAdaptiveIntervalMs({
+      candles: lowVolCandles,
+      baseTickIntervalMs: 600_000,
+      currentTickIntervalMs: 600_000,
+    });
+
+    expect(slowed.nextTickIntervalMs).toBe(1_200_000);
+
+    const recovered = resolveAdaptiveIntervalMs({
+      candles: highVolCandles,
+      baseTickIntervalMs: 600_000,
+      currentTickIntervalMs: slowed.nextTickIntervalMs,
+    });
+
+    expect(recovered.nextTickIntervalMs).toBe(600_000);
+  });
 });

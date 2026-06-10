@@ -7,6 +7,7 @@ import { formatExecutionMode, formatSkillSelection, listSelectableSkills } from 
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
+import { AgentControlsSection } from './AgentControlsSection.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -20,10 +21,14 @@ interface FormState {
   skillIds: string[];
   executionMode: string;
   telegramChatId: string;
-  dailyTokenBudget: string;
+  costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
+  dailySpendBudgetUsd: string;
+  dailyLlmTokenBudget: string;
   dailyLossLimit: string;
   maxBots: string;
   maxSlippageBps: string;
+  tickIntervalMs: string;
+  capital: string;
 }
 
 export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModalProps) {
@@ -52,10 +57,14 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     skillIds: initialData.skillIds ?? [],
     executionMode: initialData.executionMode ?? '',
     telegramChatId: initialData.telegramChatId ?? '',
-    dailyTokenBudget: initialData.dailyTokenBudget != null ? String(initialData.dailyTokenBudget) : '',
+    costPreset: (initialData.costPreset as FormState['costPreset']) ?? '',
+    dailySpendBudgetUsd: initialData.dailySpendBudgetUsd != null ? String(initialData.dailySpendBudgetUsd) : '',
+    dailyLlmTokenBudget: initialData.dailyLlmTokenBudget != null ? String(initialData.dailyLlmTokenBudget) : '',
     dailyLossLimit: initialData.dailyLossLimit ?? '',
     maxBots: initialData.maxBots != null ? String(initialData.maxBots) : '',
     maxSlippageBps: initialData.maxSlippageBps != null ? String(initialData.maxSlippageBps) : '',
+    tickIntervalMs: initialData.tickIntervalMs != null ? String(initialData.tickIntervalMs) : '',
+    capital: initialData.capital ?? '',
   });
   const [modelOverrideEnabled, setModelOverrideEnabled] = useState(hasExplicitModelOverride);
   const [modelForm, setModelForm] = useState({
@@ -77,10 +86,14 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
         skillIds,
         executionMode: form.executionMode || null,
         telegramChatId: form.telegramChatId.trim() || null,
-        dailyTokenBudget: form.dailyTokenBudget ? parseInt(form.dailyTokenBudget, 10) : null,
+        costPreset: form.costPreset || null,
+        dailySpendBudgetUsd: form.dailySpendBudgetUsd ? parseFloat(form.dailySpendBudgetUsd) : null,
+        dailyLlmTokenBudget: form.dailyLlmTokenBudget ? parseInt(form.dailyLlmTokenBudget, 10) : null,
         dailyLossLimit: form.dailyLossLimit.trim() || null,
         maxBots: form.maxBots ? parseInt(form.maxBots, 10) : null,
         maxSlippageBps: form.maxSlippageBps ? parseInt(form.maxSlippageBps, 10) : null,
+        tickIntervalMs: form.tickIntervalMs ? parseInt(form.tickIntervalMs, 10) : null,
+        capital: form.capital.trim() || null,
         provider: modelOverrideEnabled ? modelForm.provider || null : null,
         lightModel: modelOverrideEnabled ? modelForm.lightModel || null : null,
         heavyModel: modelOverrideEnabled ? modelForm.heavyModel || null : null,
@@ -99,7 +112,6 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   };
 
   const fieldGap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '14px' };
-  const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' };
 
   return (
     <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose}>
@@ -243,26 +255,20 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
             <input style={inputStyle} value={form.telegramChatId} onChange={set('telegramChatId')} placeholder={intl.formatMessage({ id: 'common.optional' })} />
           </div>
 
-          <div style={{ ...rowStyle, marginBottom: '14px' }}>
-            <div style={fieldGap}>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.dailyTokenBudget' })}</FieldLabel>
-              <input style={inputStyle} type="number" min={1} value={form.dailyTokenBudget} onChange={set('dailyTokenBudget')} placeholder={intl.formatMessage({ id: 'common.unlimited' })} />
-            </div>
-            <div style={fieldGap}>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.maxBots' })}</FieldLabel>
-              <input style={inputStyle} type="number" min={1} value={form.maxBots} onChange={set('maxBots')} placeholder={intl.formatMessage({ id: 'common.unlimited' })} />
-            </div>
-          </div>
-
-          <div style={{ ...rowStyle, marginBottom: '0' }}>
-            <div style={fieldGap}>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.dailyLossLimit' })}</FieldLabel>
-              <input style={inputStyle} value={form.dailyLossLimit} onChange={set('dailyLossLimit')} placeholder={intl.formatMessage({ id: 'common.unlimited' })} />
-            </div>
-            <div style={fieldGap}>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.edit.maxSlippage' })}</FieldLabel>
-              <input style={inputStyle} type="number" min={0} value={form.maxSlippageBps} onChange={set('maxSlippageBps')} placeholder={intl.formatMessage({ id: 'common.default' })} />
-            </div>
+          <div style={{ marginBottom: '14px' }}>
+            <AgentControlsSection
+              value={{
+                costPreset: form.costPreset,
+                dailySpendBudgetUsd: form.dailySpendBudgetUsd,
+                tickIntervalMs: form.tickIntervalMs,
+                maxBots: form.maxBots,
+                capital: form.capital,
+                dailyLossLimit: form.dailyLossLimit,
+                maxSlippageBps: form.maxSlippageBps,
+                dailyLlmTokenBudget: form.dailyLlmTokenBudget,
+              }}
+              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            />
           </div>
         </form>
       </div>

@@ -776,6 +776,66 @@ describe('AgentMessageBroker', () => {
       expect(botRepo.createBot).not.toHaveBeenCalled();
     });
 
+    it('clamps create_and_start risk.maxOrderNotional to the agent capital limit', async () => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        maxBots: 5,
+        capital: '1000',
+        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+      });
+
+      const botRepo = {
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-cap'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+      const botStart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-001',
+          config: {
+            venue: 'hyperliquid',
+            symbol: 'BTC-USD',
+            strategy: {},
+            venueType: 'orderbook',
+            risk: { maxDrawdownPct: 10, maxOrderNotional: '2500' },
+          },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+        config: expect.objectContaining({
+          risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '1000' }),
+        }),
+      }));
+      expect(botStart).toHaveBeenCalledWith(
+        'bot-cap',
+        'user-1',
+        'va-001',
+        expect.objectContaining({
+          risk: expect.objectContaining({ maxOrderNotional: '1000' }),
+        }),
+      );
+    });
+
     it('enqueues a stop job for stop_bot', async () => {
       const botRepo = {
         getBotById: vi.fn().mockResolvedValue({
@@ -824,8 +884,10 @@ describe('AgentMessageBroker', () => {
           creatorType: 'agent',
           creatorId: 'agent-123',
         }),
+        updateBotConfig: vi.fn().mockResolvedValue(undefined),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
       const botStart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
 
@@ -854,6 +916,59 @@ describe('AgentMessageBroker', () => {
       });
     });
 
+    it('reapplies the agent capital clamp before starting an existing bot', async () => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        maxBots: 5,
+        capital: '750',
+        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+      });
+
+      const botRepo = {
+        getBotById: vi.fn().mockResolvedValue({
+          id: 'bot-start',
+          userId: 'user-1',
+          venueAccountId: 'va-001',
+          status: 'stopped',
+          startedAt: null,
+          stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
+          config: { risk: { maxOrderNotional: '1500', maxDrawdownPct: 10 } },
+          creatorType: 'agent',
+          creatorId: 'agent-123',
+        }),
+        updateBotConfig: vi.fn().mockResolvedValue(undefined),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+      const botStart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: { action: 'start', botId: 'bot-start' },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-start', {
+        risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
+      });
+      expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'va-001', {
+        risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
+      });
+    });
+
     it('still fails gracefully when start enqueue AND rollback both fail', async () => {
       const botRepo = {
         getBotById: vi.fn().mockResolvedValue({
@@ -867,6 +982,7 @@ describe('AgentMessageBroker', () => {
           creatorType: 'agent',
           creatorId: 'agent-123',
         }),
+        updateBotConfig: vi.fn().mockResolvedValue(undefined),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         restoreBotRuntimeState: vi.fn().mockRejectedValue(new Error('DB also down')),
       };
@@ -941,6 +1057,66 @@ describe('AgentMessageBroker', () => {
         strategy: { type: 'momentum', threshold: 5 },
         risk: { maxDrawdownPct: 10 },
         executionMode: 'shadow',
+      });
+    });
+
+    it('clamps adjusted risk.maxOrderNotional to agent capital', async () => {
+      agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-123',
+        userId: 'user-1',
+        status: 'active',
+        maxBots: 5,
+        capital: '750',
+        toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+      });
+
+      const botRepo = {
+        getBotById: vi.fn().mockResolvedValue({
+          id: 'bot-run',
+          userId: 'user-1',
+          venueAccountId: 'va-001',
+          status: 'running',
+          config: {
+            strategy: { type: 'momentum', threshold: 2 },
+            risk: { maxDrawdownPct: 10, maxOrderNotional: '2000' },
+          },
+          creatorType: 'agent',
+          creatorId: 'agent-123',
+        }),
+        updateBotConfig: vi.fn().mockResolvedValue(undefined),
+      };
+      const botRestart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+        undefined,
+        undefined,
+        botRestart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'adjust_config',
+          botId: 'bot-run',
+          config: { risk: { maxOrderNotional: '1500' } },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', {
+        strategy: { type: 'momentum', threshold: 2 },
+        risk: { maxDrawdownPct: 10, maxOrderNotional: '750' },
+      });
+      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', {
+        strategy: { type: 'momentum', threshold: 2 },
+        risk: { maxDrawdownPct: 10, maxOrderNotional: '750' },
       });
     });
 

@@ -11,6 +11,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
+import { AgentControlsSection } from './AgentControlsSection.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -25,6 +26,15 @@ interface IntentState {
   telegramChatId: string;
   tradingBindingId: string;
   riskTolerance: RiskToleranceValue;
+  // Configurable controls
+  costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
+  dailySpendBudgetUsd: string;
+  tickIntervalMs: string;
+  maxBots: string;
+  capital: string;
+  dailyLossLimit: string;
+  maxSlippageBps: string;
+  dailyLlmTokenBudget: string;
 }
 
 export function AgentsPage() {
@@ -135,6 +145,14 @@ function CreateAgentFlow({
     telegramChatId: '',
     tradingBindingId: '',
     riskTolerance: 'moderate',
+    costPreset: '',
+    dailySpendBudgetUsd: '',
+    tickIntervalMs: '',
+    maxBots: '',
+    capital: '',
+    dailyLossLimit: '',
+    maxSlippageBps: '',
+    dailyLlmTokenBudget: '',
   });
   const [modelTouched, setModelTouched] = useState(false);
   const [telegramTouched, setTelegramTouched] = useState(false);
@@ -206,7 +224,15 @@ function CreateAgentFlow({
           lightModel: modelPayload.lightModel,
           heavyModel: modelPayload.heavyModel,
         } : {}),
+        costPreset: intent.costPreset || null,
+        dailySpendBudgetUsd: intent.dailySpendBudgetUsd ? parseFloat(intent.dailySpendBudgetUsd) : null,
         telegramChatId: intent.telegramChatId.trim() || null,
+        tickIntervalMs: intent.tickIntervalMs ? parseInt(intent.tickIntervalMs, 10) : null,
+        maxBots: intent.maxBots ? parseInt(intent.maxBots, 10) : null,
+        capital: intent.capital.trim() || null,
+        dailyLossLimit: intent.dailyLossLimit.trim() || null,
+        maxSlippageBps: intent.maxSlippageBps ? parseInt(intent.maxSlippageBps, 10) : null,
+        dailyLlmTokenBudget: intent.dailyLlmTokenBudget ? parseInt(intent.dailyLlmTokenBudget, 10) : null,
       });
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -337,6 +363,20 @@ function CreateAgentFlow({
               {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
             </div>
           </div>
+
+          <AgentControlsSection
+            value={{
+              costPreset: intent.costPreset,
+              dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
+              tickIntervalMs: intent.tickIntervalMs,
+              maxBots: intent.maxBots,
+              capital: intent.capital,
+              dailyLossLimit: intent.dailyLossLimit,
+              maxSlippageBps: intent.maxSlippageBps,
+              dailyLlmTokenBudget: intent.dailyLlmTokenBudget,
+            }}
+            onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
+          />
 
           {requiresTradingSetup && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>

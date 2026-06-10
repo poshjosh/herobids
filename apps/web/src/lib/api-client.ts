@@ -444,12 +444,17 @@ export interface Agent {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
+  costPreset: string | null;
+  dailySpendBudgetUsd: number | null;
+  dailyLlmTokenBudget: number | null;
   telegramChatId: string | null;
   executionMode: string | null;
   dailyTokenBudget: number | null;
   dailyLossLimit: string | null;
   maxBots: number | null;
   maxSlippageBps: number | null;
+  tickIntervalMs: number | null;
+  capital: string | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;
@@ -497,8 +502,17 @@ export const agents = {
     provider?: string | null;
     lightModel?: string | null;
     heavyModel?: string | null;
+    costPreset?: 'minimal' | 'standard' | 'premium' | 'custom' | null;
+    dailySpendBudgetUsd?: number | null;
     executionMode?: string | null;
     telegramChatId?: string | null;
+    dailyLlmTokenBudget?: number | null;
+    dailyTokenBudget?: number | null;
+    dailyLossLimit?: string | null;
+    maxBots?: number | null;
+    maxSlippageBps?: number | null;
+    tickIntervalMs?: number | null;
+    capital?: string | null;
   }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
@@ -510,12 +524,17 @@ export const agents = {
     provider?: string | null;
     lightModel?: string | null;
     heavyModel?: string | null;
+    costPreset?: 'minimal' | 'standard' | 'premium' | 'custom' | null;
+    dailySpendBudgetUsd?: number | null;
     telegramChatId?: string | null;
     executionMode?: string | null;
+    dailyLlmTokenBudget?: number | null;
     dailyTokenBudget?: number | null;
     dailyLossLimit?: string | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
+    tickIntervalMs?: number | null;
+    capital?: string | null;
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),

@@ -181,6 +181,8 @@ export class AgentSessionManager {
           ...(agent.dailyLossLimit != null && { dailyLossLimit: agent.dailyLossLimit }),
           ...(agent.maxBots != null && { maxBots: agent.maxBots }),
           ...(agent.maxSlippageBps != null && { maxSlippageBps: agent.maxSlippageBps }),
+          ...(agent.tickIntervalMs != null && { tickIntervalMs: agent.tickIntervalMs }),
+          ...(agent.capital != null && { capital: agent.capital }),
           runtimeDescriptor,
         };
         await this.runtimeLauncher.launch({

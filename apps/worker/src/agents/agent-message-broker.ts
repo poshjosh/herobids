@@ -11,6 +11,7 @@ import type {
   BotQueryPayload,
 } from '@herobids/domain';
 import {
+  Decimal,
   MessageEnvelopeSchema,
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
@@ -449,11 +450,13 @@ export class AgentMessageBroker {
         throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
       }
 
+      const effectiveConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
+
       const botId = await this.botRepo.createBot({
         userId: agent.userId,
         tradingBindingId: binding.bindingId,
         venueAccountId: binding.sourceVenueAccountId,
-        config: payload.config,
+        config: effectiveConfig,
         creatorType: 'agent',
         creatorId: agent.id,
       });
@@ -463,7 +466,7 @@ export class AgentMessageBroker {
       if (this.botStart) {
         // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
         await this.botRepo.markBotRunning(botId);
-        await this.botStart(botId, agent.userId, binding.sourceVenueAccountId, payload.config);
+        await this.botStart(botId, agent.userId, binding.sourceVenueAccountId, effectiveConfig);
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }
 
@@ -492,6 +495,12 @@ export class AgentMessageBroker {
         throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
       }
 
+      const persistedConfig = bot.config as Record<string, unknown>;
+      const effectiveConfig = applyAgentCapitalLimit(persistedConfig, agent.capital ?? null);
+      if (!configsEqual(persistedConfig, effectiveConfig)) {
+        await this.botRepo.updateBotConfig(payload.botId, effectiveConfig);
+      }
+
       // Consistency model: we mark the bot running in DB then enqueue the
       // lifecycle start job.  If the process crashes between these two steps
       // the bot will be marked 'running' with no active actor — the worker's
@@ -500,7 +509,7 @@ export class AgentMessageBroker {
       if (this.botStart) {
         await this.botRepo.markBotRunning(payload.botId);
         try {
-          await this.botStart(payload.botId, agent.userId, bot.venueAccountId, bot.config as Record<string, unknown>);
+          await this.botStart(payload.botId, agent.userId, bot.venueAccountId, effectiveConfig);
         } catch (err) {
           logger.error({ botId: payload.botId, err }, 'Failed to enqueue start job during start action');
           try {
@@ -561,7 +570,10 @@ export class AgentMessageBroker {
         throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
       }
 
-      const mergedConfig = mergeBotConfig(bot.config as Record<string, unknown>, payload.config);
+      const mergedConfig = applyAgentCapitalLimit(
+        mergeBotConfig(bot.config as Record<string, unknown>, payload.config),
+        agent.capital ?? null,
+      );
 
       // Consistency model: we persist the merged config then enqueue a restart.
       // If the process crashes between these steps the bot keeps running with
@@ -733,6 +745,47 @@ function mergeBotConfig(baseConfig: Record<string, unknown>, patch: Record<strin
   }
 
   return merged;
+}
+
+function configsEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function applyAgentCapitalLimit(config: Record<string, unknown>, capital: string | number | null | undefined): Record<string, unknown> {
+  const capitalLimit = parsePositiveDecimal(capital);
+  if (!capitalLimit) {
+    return config;
+  }
+
+  const riskConfig = isPlainObject(config['risk']) ? { ...config['risk'] } : {};
+  const configuredMaxOrderNotional = parsePositiveDecimal(riskConfig['maxOrderNotional']);
+
+  riskConfig['maxOrderNotional'] = configuredMaxOrderNotional && configuredMaxOrderNotional.lte(capitalLimit)
+    ? configuredMaxOrderNotional.toString()
+    : capitalLimit.toString();
+
+  return {
+    ...config,
+    risk: riskConfig,
+  };
+}
+
+function parsePositiveDecimal(value: unknown): Decimal | null {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return null;
+  }
+
+  const rawValue = String(value).trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const decimalValue = new Decimal(rawValue);
+    return decimalValue.isFinite() && decimalValue.gt(0) ? decimalValue : null;
+  } catch {
+    return null;
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

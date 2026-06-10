@@ -149,6 +149,51 @@ describe('PUT /agents/:id', () => {
     expect(res.json().scoutModel).toBeUndefined();
   });
 
+  it('normalizes capital and canonical dailyLlmTokenBudget on PUT', async () => {
+    const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    let selectCount = 0;
+    const updatedAgent = {
+      ...stubAgent,
+      name: 'Updated',
+      prompt: 'New prompt',
+      capital: '750',
+      dailyTokenBudget: 12_000,
+    };
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [stubAgent] : [updatedAgent]);
+      }),
+      update: vi.fn().mockReturnValue({ set: updateSet }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, redis);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: {
+        name: 'Updated',
+        prompt: 'New prompt',
+        capital: '750.00',
+        dailyLlmTokenBudget: 12_000,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({
+      capital: '750',
+      dailyTokenBudget: 12_000,
+    }));
+    expect(res.json()).toEqual(expect.objectContaining({
+      capital: '750',
+      dailyLlmTokenBudget: 12_000,
+      dailyTokenBudget: 12_000,
+    }));
+  });
+
   it('returns 409 when agent is running', async () => {
     const db = buildAgentDb({ ...stubAgent, status: 'running' });
     const redis = buildMockRedis();
