@@ -27,17 +27,17 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | A-02d | Login with email | Register first; log out; go to Email tab; enter credentials; submit | Authenticated and redirected to `/mission-control` | ✅ | |
 | A-02e | Register — duplicate email | Try to register with an already-registered email | Error message shown; form stays open | ✅ | "An account with this email already exists" |
 | A-02f | Register — short password | Submit with password < 8 chars | Browser HTML5 validation prevents submit or app shows error | ✅ | Server-side validation; form submits, API returns 400, app shows "Password must be at least 8 characters" banner; form stays open, no account created |
-| A-02g | Register — invalid email | Submit with "notanemail" as email | Browser native email validation tooltip shown; form not submitted | — | Browser-native HTML5 validation, not a custom banner |
-| A-02h | Register — missing fields | Submit with blank name, email, or password | Browser `required` attribute validation; account not created | — | All three fields have `required` attribute; submitting blank focuses Name field (browser native validation), no API call, account not created |
+| A-02g | Register — invalid email | Submit with "notanemail" as email | Browser native email validation tooltip shown; form not submitted | ✅ | Browser-native HTML5 validation, not a custom banner |
+| A-02h | Register — missing fields | Submit with blank name, email, or password | Browser `required` attribute validation; account not created | ✅ | All three fields have `required` attribute; submitting blank focuses Name field (browser native validation), no API call, account not created |
 | A-02i | Login — wrong password | Submit with correct email but wrong password | Error message shown; does not reveal whether email exists | ✅ | Was broken (tab switched to Google, no error); fixed in 003-login-error-not-shown |
 | A-02j | Login — unknown email | Submit with unregistered email | Same error wording as wrong password (no enumeration) | ✅ | "Invalid email or password" — same wording |
 | A-02k | Submit button disabled while pending | Click submit on email form | Button shows "Please wait…" and is non-interactive until response | ✅ | Button showed "Please wait…" during submit |
 | A-02l | Toggle login ↔ register | Click "Don't have an account?" / "Already have an account?" | Form switches modes; error banner clears on switch | ✅ | Form switched modes; error cleared on toggle |
-| A-03 | Auth callback with invalid/expired code | Navigate to `/auth/callback?code=invalid-code` | Error state shown; user can return to login | — | |
+| A-03 | Auth callback with invalid/expired code | Navigate to `/auth/callback?code=invalid-code` | Error state shown; user can return to login | ✅ | |
 | A-04 | Auth callback with missing code param | Navigate to `/auth/callback` (no `?code=`) | "Missing exchange code in callback URL." shown with "Back to sign-in" link | ✅ | |
 | A-05 | One-time code use | Copy the `/auth/callback?code=…` URL; use it a second time | Second use shows error (code already consumed) | — | |
 | A-06 | Explicit logout | Click "Sign out" in the nav footer | Token cleared; redirected to `/login`; back button does not show authenticated state | ✅ | Clicked Sign out → redirected to /login |
-| A-07 | Post-logout cache cleared | Log out; log back in as same user; navigate to Mission Control | Fresh data loaded from the API | — | |
+| A-07 | Post-logout cache cleared | Log out; log back in as same user; navigate to Mission Control | Fresh data loaded from the API | ✅ | |
 | A-08 | Session expiry — server 401 | Invalidate JWT in Redis; attempt any navigation | Redirected to `/login`; no stale data | — | |
 | A-09 | Re-login same tab clears cache | Let session expire; log in again in same tab | Fresh data loaded; no cross-session leak | — | |
 | A-10 | Direct navigation to protected route unauthenticated | Paste `/agents` in URL bar without token | Redirected to `/login` | ✅ | |
@@ -68,16 +68,16 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 | MC-05 | Empty state — no agents | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | Verified with new test account: all metrics 0, "No agents yet" empty state |
 | MC-06 | "Create agent" button navigates | Click "Create agent" | Navigates to `/agents?create=1` or opens the create flow from the agents page | ✅ | Navigated to /agents?create=1 with create form open |
 | MC-07 | Clicking an agent action navigates | Click "Open agent" on an agent card | Navigates to `/agents/:id` | ✅ | "Open agent" navigated to /agents/1d49ea83-... |
-| MC-08 | Capability CTA opens agent capability page | Click "Open trading" or "Configure trading" on an agent card | Navigates to `/agents/:id/capabilities/trading` | — | "Configure trading capability" CTA visible on agent card |
+| MC-08 | Capability CTA opens agent capability page | Click "Open trading" or "Configure trading" on an agent card | Navigates to `/agents/:id/capabilities/trading` | ✅ | "Configure trading capability" CTA visible on agent card |
 | MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
 | MC-10 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
 | MC-11 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
-| MC-12 | Quick trading setup card renders | Open Mission Control | "Quick trading setup" card visible in the agents column with "Add trading provider" button | — | |
-| MC-13 | Quick trading setup — opens form | Click "Add trading provider" | Modal opens with provider, label, and secrets fields | — | |
-| MC-14 | Quick trading setup — submit | Fill in provider (e.g. hyperliquid), label, and valid secrets; click "Set up trading provider" | Modal closes; success banner shows "{label} ({provider}) has been set up." | — | |
-| MC-15 | Quick trading setup — success dismiss | Click "Done" on the success banner | Banner disappears; setup card returns to default state | — | |
-| MC-16 | Quick trading setup — validation | Submit form with empty provider or label | Submit button disabled; form cannot be submitted | — | |
-| MC-17 | Quick trading setup — API error | Submit with invalid secrets | ErrorBanner shown inside modal; modal stays open | — | |
+| MC-12 | Quick trading setup card renders | Open Mission Control | "Quick trading setup" card visible in the agents column with "Add trading provider" button | ✅ | |
+| MC-13 | Quick trading setup — opens form | Click "Add trading provider" | Modal opens with provider, label, and secrets fields | ✅ | |
+| MC-14 | Quick trading setup — submit | Fill in provider (e.g. hyperliquid), label, and valid secrets; click "Set up trading provider" | Modal closes; success banner shows "{label} ({provider}) has been set up." | ✅ | |
+| MC-15 | Quick trading setup — success dismiss | Click "Done" on the success banner | Banner disappears; setup card returns to default state | ✅ | |
+| MC-16 | Quick trading setup — validation | Submit form with empty provider or label | Submit button disabled; form cannot be submitted | ✅ | |
+| MC-17 | Quick trading setup — API error | Submit with invalid secrets | ErrorBanner shown inside modal; modal stays open | ✅ | |
 
 ---
 
@@ -140,10 +140,10 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-16 | Protocol Activity section | Open detail for agent with activity | Activity entries listed with type and timestamp | ✅ | Shows agent.runtime.heartbeat entries with relative timestamps ("2s ago", "1m ago" etc) |
 | AG-17 | Artifacts section | Open detail for agent with artifacts | Artifacts listed with type, content type, optional summary, timestamp | ✅ | Shows artifact_type · content_type, summary text, relative timestamp |
 | AG-18 | Real-time refresh | Leave agent detail open while agent is starting | Status badge updates via 5 s polling without manual refresh | ✅ | Status badge updated from starting → crashed without manual refresh during testing |
-| AG-19 | Create agent — no bindings shows setup button | Open Create Agent with a trading skill; ensure no bindings exist | "No active trading bindings yet" text + "Set up trading now" secondary button shown instead of binding selector | — | |
-| AG-20 | Create agent — inline setup opens form | Click "Set up trading now" | Modal replaces with ProviderSetupForm; main create flow is suspended | — | |
-| AG-21 | Create agent — inline setup success auto-selects | Complete setup form with valid credentials | ProviderSetupForm closes; binding selector appears with new binding pre-selected | — | |
-| AG-22 | Capability page — trading next steps | Open any agent's trading capability page | "Go to Mission Control" primary button shown in Next steps; no longer shows /connections or /credentials links for trading | — | |
+| AG-19 | Create agent — no bindings shows setup button | Open Create Agent with a trading skill; ensure no bindings exist | "No active trading bindings yet" text + "Set up trading now" secondary button shown instead of binding selector | ✅ | |
+| AG-20 | Create agent — inline setup opens form | Click "Set up trading now" | Modal replaces with ProviderSetupForm; main create flow is suspended | ✅ | |
+| AG-21 | Create agent — inline setup success auto-selects | Complete setup form with valid credentials | ProviderSetupForm closes; binding selector appears with new binding pre-selected | ✅ | |
+| AG-22 | Capability page — trading next steps | Open any agent's trading capability page | "Go to Mission Control" primary button shown in Next steps; no longer shows /connections or /credentials links for trading | ✅ | |
 
 ---
 
@@ -246,7 +246,7 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| SC-01 | Logout clears cache | Log in as User A; log out; log in as User B | User B sees their own data, not User A's | — | |
+| SC-01 | Logout clears cache | Log in as User A; log out; log in as User B | User B sees their own data, not User A's | ✅ | |
 | SC-02 | Server 401 clears cache | Invalidate JWT in Redis; navigate to any page | Redirected to login; cache cleared | — | |
 | SC-03 | Re-login same tab clears cache | Let session expire; log in again | Fresh data loaded; no cross-session leakage | — | |
 | SC-04 | Mutations invalidate related queries | Start/stop an agent | Instances list and Mission Control both reflect updated state | ✅ | Starting agent updated status in detail page via 5s polling; Stop updated status immediately |
