@@ -253,6 +253,67 @@ export const ToolResultPayloadSchema = z.object({
 
 export type ToolResultPayload = z.infer<typeof ToolResultPayloadSchema>;
 
+// --- Market Monitor Payload Schemas ---
+
+export const MarketWatchTriggeredPayloadSchema = z.object({
+  eventId: z.string().min(1),
+  monitorType: z.literal('watch_threshold'),
+  watchId: z.string().min(1),
+  symbol: z.string().min(1),
+  chain: z.string().min(1),
+  condition: z.enum(['above', 'below']),
+  thresholdPrice: z.number(),
+  currentPrice: z.number(),
+  priceSource: z.string().min(1),
+  stale: z.boolean(),
+  note: z.string().optional(),
+  triggeredAt: z.string().datetime(),
+});
+
+export type MarketWatchTriggeredPayload = z.infer<typeof MarketWatchTriggeredPayloadSchema>;
+
+export const MarketDiscoveryDetectedPayloadSchema = z.object({
+  eventId: z.string().min(1),
+  monitorType: z.literal('discovery_delta'),
+  symbol: z.string().min(1),
+  network: z.string().min(1),
+  address: z.string().min(1),
+  reason: z.enum(['entered_top_set', 'reappeared_after_cooldown', 'multi_vector_confirmation']),
+  rank: z.number().int().optional(),
+  liquidityUsd: z.number().optional(),
+  volume24hUsd: z.number().optional(),
+  discoveryVectors: z.array(z.string()).optional(),
+  detectedAt: z.string().datetime(),
+});
+
+export type MarketDiscoveryDetectedPayload = z.infer<typeof MarketDiscoveryDetectedPayloadSchema>;
+
+export const MarketRegimeChangedPayloadSchema = z.object({
+  eventId: z.string().min(1),
+  monitorType: z.literal('regime_change'),
+  benchmarkSymbol: z.string().min(1),
+  previousState: z.string().min(1),
+  currentState: z.string().min(1),
+  details: z.record(z.unknown()).optional(),
+  changedAt: z.string().datetime(),
+});
+
+export type MarketRegimeChangedPayload = z.infer<typeof MarketRegimeChangedPayloadSchema>;
+
+export const WakePrioritySchema = z.enum(['low', 'normal', 'high']);
+export type WakePriority = z.infer<typeof WakePrioritySchema>;
+
+export const AgentMarketWakePayloadSchema = z.object({
+  wakeId: z.string().min(1),
+  reason: z.string().min(1),
+  eventIds: z.array(z.string().min(1)),
+  priority: WakePrioritySchema,
+  requestedAt: z.string().datetime(),
+  notBefore: z.string().datetime().optional(),
+});
+
+export type AgentMarketWakePayload = z.infer<typeof AgentMarketWakePayloadSchema>;
+
 // --- Message Type Constants ---
 
 export const AGENT_MESSAGE_TYPES = {
@@ -279,6 +340,13 @@ export const INSTANCE_MESSAGE_TYPES = {
   TOOL_RESULT: 'instance.tool.result',
 } as const;
 
+export const MARKET_MONITOR_MESSAGE_TYPES = {
+  WATCH_TRIGGERED: 'market.watch.triggered',
+  DISCOVERY_DETECTED: 'market.discovery.detected',
+  REGIME_CHANGED: 'market.regime.changed',
+  AGENT_WAKE: 'agent.market.wake',
+} as const;
+
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: DecisionSubmitPayloadSchema,
@@ -299,6 +367,10 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [INSTANCE_MESSAGE_TYPES.RECONCILIATION_NOTICE]: ReconciliationNoticePayloadSchema,
   [INSTANCE_MESSAGE_TYPES.STATUS]: InstanceStatusPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: ToolResultPayloadSchema,
+  [MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED]: MarketWatchTriggeredPayloadSchema,
+  [MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED]: MarketDiscoveryDetectedPayloadSchema,
+  [MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED]: MarketRegimeChangedPayloadSchema,
+  [MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE]: AgentMarketWakePayloadSchema,
 };
 
 /**

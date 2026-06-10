@@ -9,8 +9,12 @@ import type {
   InstanceStatusPayload,
   ContextSnapshotPayload,
   ToolResultPayload,
+  MarketWatchTriggeredPayload,
+  MarketDiscoveryDetectedPayload,
+  MarketRegimeChangedPayload,
+  AgentMarketWakePayload,
 } from '@herobids/domain';
-import { INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
+import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
 import crypto from 'node:crypto';
 import pino from 'pino';
 
@@ -59,6 +63,22 @@ export class InstanceEventPublisher {
 
   async emitToolResult(agentId: string, payload: ToolResultPayload): Promise<void> {
     await this.publish(agentId, INSTANCE_MESSAGE_TYPES.TOOL_RESULT, payload);
+  }
+
+  async emitMarketWatchTriggered(agentId: string, payload: MarketWatchTriggeredPayload): Promise<void> {
+    await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED, payload);
+  }
+
+  async emitMarketDiscoveryDetected(agentId: string, payload: MarketDiscoveryDetectedPayload): Promise<void> {
+    await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED, payload);
+  }
+
+  async emitMarketRegimeChanged(agentId: string, payload: MarketRegimeChangedPayload): Promise<void> {
+    await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED, payload);
+  }
+
+  async emitAgentMarketWake(agentId: string, payload: AgentMarketWakePayload): Promise<void> {
+    await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE, payload);
   }
 
   /**

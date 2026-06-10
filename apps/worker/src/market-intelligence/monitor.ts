@@ -1,0 +1,627 @@
+import type { Redis } from 'ioredis';
+import pino from 'pino';
+import crypto from 'node:crypto';
+import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
+import type {
+  MarketWatchTriggeredPayload,
+  MarketDiscoveryDetectedPayload,
+  MarketRegimeChangedPayload,
+  AgentMarketWakePayload,
+} from '@herobids/domain';
+
+const logger = pino({ name: 'market-monitor' });
+
+// --- Rate limit constants ---
+const MAX_EVENTS_PER_AGENT_PER_MINUTE = 20;
+const WAKE_COOLDOWN_MS = 15_000;
+const WAKE_COALESCING_WINDOW_MS = 3_000;
+const MAX_COALESCED_EVENT_IDS = 5;
+const DISCOVERY_COOLDOWN_MS = 600_000; // 10 minutes
+const REGIME_COOLDOWN_MS = 300_000; // 5 minutes
+
+export interface MonitorConfig {
+  /** Enable/disable monitor. Default: true */
+  enabled?: boolean;
+  /** Monitor evaluation interval in ms. Default: 15000 */
+  evaluationIntervalMs?: number;
+  /** Enable/disable individual monitor families */
+  families?: {
+    watchThresholds?: boolean;
+    discoveryDeltas?: boolean;
+    regimeChanges?: boolean;
+  };
+}
+
+export interface MonitorDeps {
+  redis: Redis;
+  publisher: InstanceEventPublisher;
+}
+
+interface WatchEntry {
+  watchId: string;
+  symbol: string;
+  chain: string;
+  thresholdPrice: number;
+  condition: 'above' | 'below';
+  note?: string;
+  createdAt: string;
+  lastConditionMet: boolean | null;
+  lastCheckedAt?: string;
+}
+
+interface PendingWake {
+  agentId: string;
+  eventIds: string[];
+  scheduledAt: number;
+}
+
+export interface MarketMonitor {
+  start(): void;
+  stop(): void;
+  /** Run a single evaluation cycle (exposed for testing) */
+  evaluate(): Promise<void>;
+  /** Get observability metrics */
+  getMetrics(): {
+    eventsEmitted: number;
+    eventsSuppressed: number;
+    wakeRequestsEmitted: number;
+    wakeRequestsCoalesced: number;
+    wakeRequestsSuppressed: number;
+    evaluationFailures: number;
+  };
+}
+
+export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): MarketMonitor {
+  const { enabled = true, evaluationIntervalMs = 15_000 } = config;
+  const families = {
+    watchThresholds: config.families?.watchThresholds ?? true,
+    discoveryDeltas: config.families?.discoveryDeltas ?? true,
+    regimeChanges: config.families?.regimeChanges ?? true,
+  };
+  const { redis, publisher } = deps;
+
+  let evaluationTimer: ReturnType<typeof setInterval> | undefined;
+  let wakeFlushTimer: ReturnType<typeof setInterval> | undefined;
+  let stopped = false;
+
+  // In-memory wake coalescing buckets
+  const pendingWakes = new Map<string, PendingWake>();
+
+  // Observability counters
+  const metrics = {
+    eventsEmitted: 0,
+    eventsSuppressed: 0,
+    wakeRequestsEmitted: 0,
+    wakeRequestsCoalesced: 0,
+    wakeRequestsSuppressed: 0,
+    evaluationFailures: 0,
+  };
+
+  function start(): void {
+    if (!enabled) {
+      logger.info('Market monitor disabled');
+      return;
+    }
+    stopped = false;
+    evaluationTimer = setInterval(() => {
+      if (stopped) return;
+      void evaluate();
+    }, evaluationIntervalMs);
+    wakeFlushTimer = setInterval(() => {
+      if (stopped) return;
+      void flushPendingWakes();
+    }, WAKE_COALESCING_WINDOW_MS);
+    // Run first evaluation immediately
+    void evaluate();
+  }
+
+  function stop(): void {
+    stopped = true;
+    clearInterval(evaluationTimer);
+    clearInterval(wakeFlushTimer);
+    pendingWakes.clear();
+  }
+
+  async function evaluate(): Promise<void> {
+    if (stopped) return;
+    try {
+      if (families.watchThresholds) await evaluateWatches();
+      if (families.discoveryDeltas) await evaluateDiscoveryDeltas();
+      if (families.regimeChanges) await evaluateRegimeChanges();
+    } catch (err) {
+      metrics.evaluationFailures++;
+      logger.error({ err }, 'Monitor evaluation cycle failed');
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Watch threshold evaluation
+  // -----------------------------------------------------------------------
+
+  async function evaluateWatches(): Promise<void> {
+    if (stopped) return;
+    // Find all agent watch keys
+    const watchKeys = await scanKeys('agent:watches:*');
+    if (stopped) return;
+
+    for (const key of watchKeys) {
+      const agentId = key.replace('agent:watches:', '');
+      const raw = await redis.hgetall(key);
+      if (!raw || Object.keys(raw).length === 0) continue;
+
+      const watches: WatchEntry[] = [];
+      for (const value of Object.values(raw)) {
+        try {
+          watches.push(JSON.parse(value) as WatchEntry);
+        } catch { /* skip malformed */ }
+      }
+
+      if (watches.length === 0) continue;
+
+      // Get latest price data from shared state
+      const priceMap = await getLatestPrices(watches);
+      if (stopped) return;
+
+      for (const watch of watches) {
+        const priceKey = `${watch.chain}:${watch.symbol}`;
+        const priceData = priceMap.get(priceKey);
+        if (!priceData) continue;
+
+        const conditionMet = watch.condition === 'above'
+          ? priceData.priceUsd >= watch.thresholdPrice
+          : priceData.priceUsd <= watch.thresholdPrice;
+
+        // Edge trigger: only fire on false -> true transition
+        const isTriggered = watch.lastConditionMet === false && conditionMet;
+
+        if (conditionMet !== watch.lastConditionMet) {
+          // Update watch state
+          const updated: WatchEntry = { ...watch, lastConditionMet: conditionMet, lastCheckedAt: new Date().toISOString() };
+          await redis.hset(key, watch.watchId, JSON.stringify(updated));
+          // When condition resets to false, clear the dedupe key so the next
+          // false→true crossing is not suppressed within the same day.
+          if (!conditionMet) {
+            await redis.del(`market-monitor:dedupe:watch:${watch.watchId}:cross:${watch.condition}`);
+          }
+        }
+
+        if (isTriggered) {
+          if (stopped) return;
+          // Check dedupe
+          const dedupeKey = `watch:${watch.watchId}:cross:${watch.condition}`;
+          const suppressed = await checkDedupe(dedupeKey, 0); // No time-based cooldown for watches
+          if (suppressed) { metrics.eventsSuppressed++; continue; }
+
+          // Check rate limit
+          const rateLimited = await checkRateLimit(agentId, 'watch_threshold');
+          if (rateLimited) { metrics.eventsSuppressed++; continue; }
+
+          const eventId = crypto.randomUUID();
+          const payload: MarketWatchTriggeredPayload = {
+            eventId,
+            monitorType: 'watch_threshold',
+            watchId: watch.watchId,
+            symbol: watch.symbol,
+            chain: watch.chain,
+            condition: watch.condition,
+            thresholdPrice: watch.thresholdPrice,
+            currentPrice: priceData.priceUsd,
+            priceSource: priceData.source,
+            stale: priceData.stale,
+            ...(watch.note ? { note: watch.note } : {}),
+            triggeredAt: new Date().toISOString(),
+          };
+
+          await publisher.emitMarketWatchTriggered(agentId, payload);
+          await recordDedupe(dedupeKey);
+          await incrementRateCounter(agentId, 'watch_threshold');
+          enqueueWake(agentId, eventId);
+          metrics.eventsEmitted++;
+          logger.info({ agentId, watchId: watch.watchId, symbol: watch.symbol }, 'Watch triggered');
+        }
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Discovery delta evaluation
+  // -----------------------------------------------------------------------
+
+  async function evaluateDiscoveryDeltas(): Promise<void> {
+    if (stopped) return;
+    const snapshotRaw = await redis.get('market-intel:discovery:latest');
+    if (!snapshotRaw) return;
+
+    let snapshot: { tokens: Array<{ network: string; address: string; symbol: string; rank: number; liquidityUsd: number; volume24hUsd: number; discoveryVectors: string[] }> };
+    try {
+      snapshot = JSON.parse(snapshotRaw) as typeof snapshot;
+    } catch { return; }
+
+    if (!snapshot.tokens || snapshot.tokens.length === 0) return;
+
+    // Get previous snapshot for delta comparison
+    const prevRaw = await redis.get('market-monitor:discovery:previous-snapshot');
+    const prevTokenKeys = new Set<string>();
+    if (prevRaw) {
+      try {
+        const prev = JSON.parse(prevRaw) as { tokens: Array<{ network: string; address: string; discoveryVectors?: string[] }> };
+        for (const t of prev.tokens ?? []) {
+          prevTokenKeys.add(`${t.network}:${t.address}`);
+        }
+      } catch { /* no previous */ }
+    }
+
+    // Store current snapshot for next delta comparison
+    await redis.set('market-monitor:discovery:previous-snapshot', snapshotRaw, 'EX', 3600);
+    if (stopped) return;
+
+    // Get all agent IDs that have active watches or are running
+    const agentIds = await getActiveAgentIds();
+    if (stopped) return;
+
+    for (const token of snapshot.tokens) {
+      const tokenKey = `${token.network}:${token.address}`;
+
+      // Check entered_top_set
+      if (!prevTokenKeys.has(tokenKey)) {
+        const dedupeKey = `discovery:${tokenKey}:reason:entered_top_set`;
+        const suppressed = await checkDedupe(dedupeKey, DISCOVERY_COOLDOWN_MS);
+        if (suppressed) continue;
+
+        const eventId = crypto.randomUUID();
+        const payload: MarketDiscoveryDetectedPayload = {
+          eventId,
+          monitorType: 'discovery_delta',
+          symbol: token.symbol,
+          network: token.network,
+          address: token.address,
+          reason: 'entered_top_set',
+          rank: token.rank,
+          liquidityUsd: token.liquidityUsd,
+          volume24hUsd: token.volume24hUsd,
+          discoveryVectors: token.discoveryVectors,
+          detectedAt: new Date().toISOString(),
+        };
+
+        await recordDedupe(dedupeKey, DISCOVERY_COOLDOWN_MS);
+        if (stopped) return;
+
+        for (const agentId of agentIds) {
+          const rateLimited = await checkRateLimit(agentId, 'discovery_delta');
+          if (rateLimited) continue;
+          await publisher.emitMarketDiscoveryDetected(agentId, payload);
+          await incrementRateCounter(agentId, 'discovery_delta');
+          enqueueWake(agentId, eventId);
+        }
+
+        logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: entered top set');
+      }
+
+      // Check multi_vector_confirmation
+      if (token.discoveryVectors && token.discoveryVectors.length >= 2 && prevTokenKeys.has(tokenKey)) {
+        const dedupeKey = `discovery:${tokenKey}:reason:multi_vector_confirmation`;
+        const suppressed = await checkDedupe(dedupeKey, DISCOVERY_COOLDOWN_MS);
+        if (suppressed) continue;
+
+        // Check if previous had fewer vectors
+        const prevSnapshotTokens = prevRaw ? (JSON.parse(prevRaw) as { tokens: Array<{ network: string; address: string; discoveryVectors?: string[] }> }).tokens : [];
+        const prevToken = prevSnapshotTokens.find((t) => `${t.network}:${t.address}` === tokenKey);
+        if (prevToken && (prevToken.discoveryVectors?.length ?? 0) < 2) {
+          const eventId = crypto.randomUUID();
+          const payload: MarketDiscoveryDetectedPayload = {
+            eventId,
+            monitorType: 'discovery_delta',
+            symbol: token.symbol,
+            network: token.network,
+            address: token.address,
+            reason: 'multi_vector_confirmation',
+            rank: token.rank,
+            liquidityUsd: token.liquidityUsd,
+            volume24hUsd: token.volume24hUsd,
+            discoveryVectors: token.discoveryVectors,
+            detectedAt: new Date().toISOString(),
+          };
+
+          await recordDedupe(dedupeKey, DISCOVERY_COOLDOWN_MS);
+          if (stopped) return;
+
+          for (const agentId of agentIds) {
+            const rateLimited = await checkRateLimit(agentId, 'discovery_delta');
+            if (rateLimited) continue;
+            await publisher.emitMarketDiscoveryDetected(agentId, payload);
+            await incrementRateCounter(agentId, 'discovery_delta');
+            enqueueWake(agentId, eventId);
+          }
+
+          logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: multi vector confirmation');
+        }
+      }
+    }
+
+    // Check reappeared_after_cooldown
+    const antiStalenessWindow = 4 * 60 * 60 * 1000; // 4 hours
+    const now = Date.now();
+    for (const token of snapshot.tokens) {
+      const tokenKey = `${token.network}:${token.address}`;
+      if (prevTokenKeys.has(tokenKey)) continue; // Only for tokens not in previous
+
+      const lastSeenScore = await redis.zscore('market-intel:discovery:seen', tokenKey);
+      if (lastSeenScore) {
+        const lastSeen = Number(lastSeenScore);
+        const elapsed = now - lastSeen;
+        if (elapsed >= antiStalenessWindow) {
+          const dedupeKey = `discovery:${tokenKey}:reason:reappeared_after_cooldown`;
+          const suppressed = await checkDedupe(dedupeKey, DISCOVERY_COOLDOWN_MS);
+          if (suppressed) continue;
+
+          const eventId = crypto.randomUUID();
+          const payload: MarketDiscoveryDetectedPayload = {
+            eventId,
+            monitorType: 'discovery_delta',
+            symbol: token.symbol,
+            network: token.network,
+            address: token.address,
+            reason: 'reappeared_after_cooldown',
+            rank: token.rank,
+            liquidityUsd: token.liquidityUsd,
+            volume24hUsd: token.volume24hUsd,
+            discoveryVectors: token.discoveryVectors,
+            detectedAt: new Date().toISOString(),
+          };
+
+          await recordDedupe(dedupeKey, DISCOVERY_COOLDOWN_MS);
+          if (stopped) return;
+
+          for (const agentId of agentIds) {
+            const rateLimited = await checkRateLimit(agentId, 'discovery_delta');
+            if (rateLimited) continue;
+            await publisher.emitMarketDiscoveryDetected(agentId, payload);
+            await incrementRateCounter(agentId, 'discovery_delta');
+            enqueueWake(agentId, eventId);
+          }
+
+          logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: reappeared after cooldown');
+        }
+      }
+    }
+
+    // Update anti-staleness tracking AFTER evaluation so the seen score reflects the
+    // previous poll when reappearance is checked, not "just now".
+    const seenNow = Date.now();
+    const seenPipeline = redis.pipeline();
+    for (const token of snapshot.tokens) {
+      seenPipeline.zadd('market-intel:discovery:seen', String(seenNow), `${token.network}:${token.address}`);
+    }
+    await seenPipeline.exec();
+  }
+
+  // -----------------------------------------------------------------------
+  // Regime change evaluation
+  // -----------------------------------------------------------------------
+
+  async function evaluateRegimeChanges(): Promise<void> {
+    if (stopped) return;
+    const regimeKeys = await scanKeys('market-intel:regime:*');
+    if (stopped) return;
+
+    for (const key of regimeKeys) {
+      const benchmarkSymbol = key.replace('market-intel:regime:', '');
+      const raw = await redis.get(key);
+      if (!raw) continue;
+
+      let current: { pass: boolean; details: Record<string, unknown> };
+      try {
+        current = JSON.parse(raw) as typeof current;
+      } catch { continue; }
+
+      // Get previous regime state
+      const prevStateKey = `market-monitor:regime:last-state:${benchmarkSymbol}`;
+      const prevRaw = await redis.get(prevStateKey);
+
+      let previousPass: boolean | null = null;
+      if (prevRaw) {
+        try {
+          previousPass = (JSON.parse(prevRaw) as { pass: boolean }).pass;
+        } catch { /* no previous */ }
+      }
+
+      // Store current state for next comparison
+      await redis.set(prevStateKey, JSON.stringify({ pass: current.pass }), 'EX', 3600);
+      if (stopped) return;
+
+      // Edge trigger: only fire on actual flip
+      if (previousPass === null || previousPass === current.pass) continue;
+
+      const previousState = previousPass ? 'favorable' : 'unfavorable';
+      const currentState = current.pass ? 'favorable' : 'unfavorable';
+
+      const dedupeKey = `regime:${benchmarkSymbol}:from:${previousState}:to:${currentState}`;
+      const suppressed = await checkDedupe(dedupeKey, REGIME_COOLDOWN_MS);
+      if (suppressed) continue;
+
+      const agentIds = await getActiveAgentIds();
+      const eventId = crypto.randomUUID();
+      const payload: MarketRegimeChangedPayload = {
+        eventId,
+        monitorType: 'regime_change',
+        benchmarkSymbol,
+        previousState,
+        currentState,
+        details: current.details,
+        changedAt: new Date().toISOString(),
+      };
+
+      await recordDedupe(dedupeKey, REGIME_COOLDOWN_MS);
+      if (stopped) return;
+
+      for (const agentId of agentIds) {
+        const rateLimited = await checkRateLimit(agentId, 'regime_change');
+        if (rateLimited) continue;
+        await publisher.emitMarketRegimeChanged(agentId, payload);
+        await incrementRateCounter(agentId, 'regime_change');
+        enqueueWake(agentId, eventId);
+      }
+
+      logger.info({ benchmarkSymbol, previousState, currentState }, 'Regime changed');
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Wake coalescing
+  // -----------------------------------------------------------------------
+
+  function enqueueWake(agentId: string, eventId: string): void {
+    const existing = pendingWakes.get(agentId);
+    if (existing) {
+      if (existing.eventIds.length < MAX_COALESCED_EVENT_IDS) {
+        existing.eventIds.push(eventId);
+      }
+      metrics.wakeRequestsCoalesced++;
+    } else {
+      pendingWakes.set(agentId, {
+        agentId,
+        eventIds: [eventId],
+        scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS,
+      });
+    }
+  }
+
+  async function flushPendingWakes(): Promise<void> {
+    if (stopped) return;
+    const now = Date.now();
+    const toFlush: PendingWake[] = [];
+
+    for (const [agentId, wake] of pendingWakes) {
+      if (now >= wake.scheduledAt) {
+        toFlush.push(wake);
+        pendingWakes.delete(agentId);
+      }
+    }
+
+    for (const wake of toFlush) {
+      // Check wake cooldown
+      const lastWakeKey = `market-monitor:wake:last:${wake.agentId}`;
+      const lastWakeRaw = await redis.get(lastWakeKey);
+      if (stopped) return;
+      if (lastWakeRaw) {
+        const lastWakeTime = Number(lastWakeRaw);
+        if (now - lastWakeTime < WAKE_COOLDOWN_MS) {
+          metrics.wakeRequestsSuppressed++;
+          logger.debug({ agentId: wake.agentId }, 'Wake suppressed by cooldown');
+          continue;
+        }
+      }
+
+      const payload: AgentMarketWakePayload = {
+        wakeId: crypto.randomUUID(),
+        reason: 'market_monitor_triggered',
+        eventIds: wake.eventIds,
+        priority: 'normal',
+        requestedAt: new Date().toISOString(),
+      };
+
+      await publisher.emitAgentMarketWake(wake.agentId, payload);
+      await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);
+      metrics.wakeRequestsEmitted++;
+      logger.debug({ agentId: wake.agentId, eventCount: wake.eventIds.length }, 'Wake signal emitted');
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+
+  async function scanKeys(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      keys.push(...batch);
+    } while (cursor !== '0');
+    return keys;
+  }
+
+  async function getLatestPrices(watches: WatchEntry[]): Promise<Map<string, { priceUsd: number; source: string; stale: boolean }>> {
+    const priceMap = new Map<string, { priceUsd: number; source: string; stale: boolean }>();
+
+    // Try to get prices from shared discovery snapshot first
+    const snapshotRaw = await redis.get('market-intel:discovery:latest');
+    if (snapshotRaw) {
+      try {
+        const snapshot = JSON.parse(snapshotRaw) as {
+          freshness: { state: string };
+          tokens: Array<{ network: string; address: string; symbol: string; priceUsd: number }>;
+        };
+        const isStale = snapshot.freshness?.state !== 'fresh';
+        for (const token of snapshot.tokens ?? []) {
+          priceMap.set(`${token.network}:${token.symbol}`, { priceUsd: token.priceUsd, source: 'discovery_snapshot', stale: isStale });
+          priceMap.set(`${token.network}:${token.address}`, { priceUsd: token.priceUsd, source: 'discovery_snapshot', stale: isStale });
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    // For watches not found in discovery snapshot, check regime (for perp symbols)
+    for (const watch of watches) {
+      const key = `${watch.chain}:${watch.symbol}`;
+      if (priceMap.has(key)) continue;
+
+      // Try regime snapshot for benchmark symbols
+      const regimeRaw = await redis.get(`market-intel:regime:${watch.symbol}`);
+      if (regimeRaw) {
+        try {
+          const regime = JSON.parse(regimeRaw) as { details: { currentPrice?: number }; freshness?: { state: string } };
+          if (regime.details?.currentPrice) {
+            priceMap.set(key, {
+              priceUsd: regime.details.currentPrice,
+              source: 'regime_snapshot',
+              stale: regime.freshness?.state !== 'fresh',
+            });
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    return priceMap;
+  }
+
+  async function getActiveAgentIds(): Promise<string[]> {
+    // Get agent IDs from outbound streams
+    const streamKeys = await scanKeys('agent:outbound:*');
+    return streamKeys.map((k) => k.replace('agent:outbound:', ''));
+  }
+
+  async function checkDedupe(dedupeKey: string, _cooldownMs: number): Promise<boolean> {
+    const fullKey = `market-monitor:dedupe:${dedupeKey}`;
+    const exists = await redis.exists(fullKey);
+    return exists === 1;
+  }
+
+  async function recordDedupe(dedupeKey: string, cooldownMs?: number): Promise<void> {
+    const fullKey = `market-monitor:dedupe:${dedupeKey}`;
+    if (cooldownMs && cooldownMs > 0) {
+      await redis.set(fullKey, '1', 'PX', cooldownMs);
+    } else {
+      // For watch thresholds without time cooldown, the dedupe expires when watch state resets
+      // Use a long TTL that covers normal watch lifetime
+      await redis.set(fullKey, '1', 'EX', 86400);
+    }
+  }
+
+  async function checkRateLimit(agentId: string, family: string): Promise<boolean> {
+    const key = `market-monitor:rate:${agentId}:${family}`;
+    const countRaw = await redis.get(key);
+    if (!countRaw) return false;
+    return Number(countRaw) >= MAX_EVENTS_PER_AGENT_PER_MINUTE;
+  }
+
+  async function incrementRateCounter(agentId: string, family: string): Promise<void> {
+    const key = `market-monitor:rate:${agentId}:${family}`;
+    const pipeline = redis.pipeline();
+    pipeline.incr(key);
+    pipeline.expire(key, 60);
+    await pipeline.exec();
+  }
+
+  return { start, stop, evaluate, getMetrics: () => ({ ...metrics }) };
+}

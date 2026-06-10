@@ -426,11 +426,15 @@ const redis = new Redis({
   lazyConnect: false,
   maxRetriesPerRequest: 3,
 });
+const wakeRedis = redis.duplicate();
 
 const INBOUND_STREAM = `agent:inbound:${AGENT_ID}`;
 const OUTBOUND_STREAM = `agent:outbound:${AGENT_ID}`;
 const CONSUMER_GROUP = 'agent-runtime';
 const CONSUMER_NAME = `agent-${AGENT_ID}-${process.pid}`;
+const WAKE_CONSUMER_GROUP = 'agent-market-wake';
+const WAKE_CONSUMER_NAME = `agent-market-wake-${AGENT_ID}-${process.pid}`;
+const WAKE_SIGNAL_POLL_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // Database (optional — enables direct bot tool access)
@@ -792,6 +796,92 @@ async function readOutboundMessages(): Promise<Array<Record<string, unknown>>> {
   });
 }
 
+async function ensureWakeSignalConsumerGroup(): Promise<void> {
+  await wakeRedis.xgroup('CREATE', OUTBOUND_STREAM, WAKE_CONSUMER_GROUP, '$', 'MKSTREAM').catch((err: unknown) => {
+    if (err instanceof Error && !err.message.includes('BUSYGROUP')) throw err;
+  });
+}
+
+function requestWakeDrivenTick(reason: string): void {
+  wakePending = true;
+
+  if (!running || tickInFlight) {
+    return;
+  }
+
+  const remainingDelayMs = nextTickDueAt > 0
+    ? Math.max(0, nextTickDueAt - Date.now())
+    : effectiveTickIntervalMs;
+  const nextDelayMs = Math.min(remainingDelayMs, WAKE_MIN_INTERVAL_MS);
+
+  if (nextDelayMs < remainingDelayMs) {
+    logger.info({ scheduledDelay: nextDelayMs }, reason);
+    scheduleNextTick(nextDelayMs);
+  }
+}
+
+async function pollWakeSignals(): Promise<void> {
+  if (!running || wakePollInFlight) {
+    return;
+  }
+
+  wakePollInFlight = true;
+  try {
+    for (;;) {
+      const result = await wakeRedis.xreadgroup(
+        'GROUP', WAKE_CONSUMER_GROUP, WAKE_CONSUMER_NAME,
+        'COUNT', 10,
+        'BLOCK', WAKE_SIGNAL_POLL_MS,
+        'STREAMS', OUTBOUND_STREAM, '>',
+      ) as Array<[string, Array<[string, string[]]>]> | null;
+
+      if (!running) {
+        return;
+      }
+
+      if (!result) {
+        continue;
+      }
+
+      for (const [, entries] of result) {
+        for (const [msgId, fields] of entries) {
+          const envelopeIdx = fields.indexOf('envelope');
+          if (envelopeIdx < 0 || !fields[envelopeIdx + 1]) {
+            await wakeRedis.xack(OUTBOUND_STREAM, WAKE_CONSUMER_GROUP, msgId).catch(() => { /* ignore */ });
+            continue;
+          }
+
+          try {
+            const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
+            if (envelope['type'] === 'agent.market.wake') {
+              requestWakeDrivenTick('Received market wake signal between ticks');
+            }
+          } catch {
+            // Ignore malformed envelopes.
+          }
+
+          await wakeRedis.xack(OUTBOUND_STREAM, WAKE_CONSUMER_GROUP, msgId).catch(() => { /* ignore */ });
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to poll market wake signals');
+  } finally {
+    wakePollInFlight = false;
+  }
+}
+
+function startWakeSignalPolling(): void {
+  if (wakePollInFlight) {
+    return;
+  }
+  void pollWakeSignals();
+}
+
+function stopWakeSignalPolling(): void {
+  wakePollInFlight = false;
+}
+
 // ---------------------------------------------------------------------------
 // Tool execution
 // ---------------------------------------------------------------------------
@@ -942,6 +1032,12 @@ let previousRegimePass: boolean | null = null;
 // Hoisted so both runTick() and the heartbeat interval can trigger a clean shutdown.
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let tickTimer: ReturnType<typeof setTimeout> | undefined;
+// Wake scheduling state — bounded early tick support
+let wakePending = false;
+const WAKE_MIN_INTERVAL_MS = 15_000; // Hard minimum between wake-driven ticks
+let lastWakeTickAt = 0;
+let nextTickDueAt = 0;
+let wakePollInFlight = false;
 
 async function handleRuntimeFailure(
   source: Parameters<typeof classifyRuntimeError>[0],
@@ -1024,10 +1120,25 @@ function extractTickSignals(incomingMessages: Array<Record<string, unknown>>): {
 function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
   clearTimeout(tickTimer);
   if (!running) {
+    nextTickDueAt = 0;
     return;
   }
 
+  // If a wake request is pending and cooldown has elapsed, pull tick earlier
+  let actualDelay = delayMs;
+  if (wakePending && !tickInFlight) {
+    const timeSinceLastWake = Date.now() - lastWakeTickAt;
+    if (timeSinceLastWake >= WAKE_MIN_INTERVAL_MS) {
+      actualDelay = Math.min(actualDelay, WAKE_MIN_INTERVAL_MS);
+      lastWakeTickAt = Date.now(); // stamp when we commit to the early schedule
+      logger.info({ scheduledDelay: actualDelay }, 'Scheduling early tick due to wake request');
+    }
+    wakePending = false;
+  }
+
+  nextTickDueAt = Date.now() + actualDelay;
   tickTimer = setTimeout(() => {
+    nextTickDueAt = 0;
     if (!running || tickInFlight) {
       scheduleNextTick(effectiveTickIntervalMs);
       return;
@@ -1044,7 +1155,7 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
         scheduleNextTick(effectiveTickIntervalMs);
       }
     })();
-  }, delayMs);
+  }, actualDelay);
 }
 
 /**
@@ -1056,11 +1167,14 @@ async function shutdown(reason: string): Promise<void> {
   running = false;
   clearInterval(heartbeatTimer);
   clearTimeout(tickTimer);
+  stopWakeSignalPolling();
+  nextTickDueAt = 0;
   await sendHeartbeat('degraded', reason).catch(() => { /* ignore */ });
   await publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED, {
     sessionId: SESSION_ID!,
     reasonCode: reason,
   }).catch(() => { /* ignore */ });
+  await wakeRedis.quit().catch(() => { /* ignore */ });
   await redis.quit().catch(() => { /* ignore */ });
   process.exit(0);
 }
@@ -1087,6 +1201,11 @@ async function runTick(): Promise<void> {
 
     for (const message of incomingMessages) {
       applyRuntimeMessage(runtimeState, message);
+    }
+
+    const hasWakeRequest = incomingMessages.some((msg) => msg['type'] === 'agent.market.wake');
+    if (hasWakeRequest) {
+      logger.info({ tickCount }, 'Processing market wake signal');
     }
 
     if (incomingMessages.some((message) => message['type'] === 'agent.runtime.config_update')) {
@@ -1400,8 +1519,12 @@ async function main(): Promise<void> {
 
   await redis.ping();
   logger.info('Redis connected');
+  await wakeRedis.ping();
+  logger.info('Wake-signal Redis connected');
 
   await drainStalePendingEntries();
+  await ensureWakeSignalConsumerGroup();
+  startWakeSignalPolling();
 
   sandboxEnforcer.registerSession(SESSION_ID!);
 

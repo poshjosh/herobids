@@ -36,6 +36,8 @@ import {
 } from './agents/index.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { UserEventPublisher } from './user-event-publisher.js';
+import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
+import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -791,6 +793,33 @@ backtestRuntime.start();
 const alertDispatcher = new AlertDispatcher(appConfig.alerts, journal, alertDeliveryRepo, logger, redisClient, workerId);
 await alertDispatcher.start();
 
+// Start always-on market intelligence coordinator and monitor.
+// Uses Redis-based leader election so only one worker instance runs
+// discovery polling and monitor evaluation at a time. The monitor is
+// started and stopped by the coordinator as it gains/loses the lease,
+// ensuring evaluation never races across multiple worker processes.
+const marketMonitor = createMarketMonitor(
+  { enabled: Boolean(appConfig.marketData) },
+  { redis: redisClient, publisher: eventPublisher },
+);
+
+const marketIntelCoordinator = appConfig.marketData
+  ? (() => {
+      const providerRegistry = createProviderRegistry(appConfig.marketData!, { redisClient: redisClient as unknown as RedisEvalClient });
+      const coordinator = createMarketDataCoordinator(
+        {
+          workerId,
+          networks: ['solana'],
+          enabled: true,
+        },
+        { redis: redisClient, providerRegistry, publisher: eventPublisher, monitor: marketMonitor },
+      );
+      return coordinator;
+    })()
+  : undefined;
+
+marketIntelCoordinator?.start();
+
 // Register graceful shutdown handlers after all services are fully initialized.
 // Placing them here guarantees no temporal-dead-zone reference errors if a
 // signal arrives during the async startup above.
@@ -805,6 +834,8 @@ process.on('SIGTERM', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
+  marketMonitor.stop();
+  await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
@@ -821,6 +852,8 @@ process.on('SIGINT', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
+  marketMonitor.stop();
+  await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
