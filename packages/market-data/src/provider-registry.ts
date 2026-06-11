@@ -43,6 +43,7 @@ export interface ProviderRegistry {
     trending(): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchDexScreenerTrending>>>>;
     boostsLatest(): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchDexScreenerBoostsLatest>>>>;
     profilesLatest(): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchDexScreenerProfilesLatest>>>>;
+    searchConfig: DexScreenerConfig;
   };
   geckoterminal: {
     candles(network: string, poolAddress: string, options?: { timeframe?: 'minute' | 'hour' | 'day'; limit?: number }): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchGeckoTerminalCandles>>>>;
@@ -230,6 +231,7 @@ export function createProviderRegistry(
         loader: () => fetchDexScreenerProfilesLatest(dexscreenerDiscoveryConfig),
         allowStale: true,
       }),
+      searchConfig: dexscreenerSearchConfig,
     },
     geckoterminal: {
       candles: (network, poolAddress, options) => loadWithCache({

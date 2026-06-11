@@ -18,6 +18,48 @@ risk:
   globalMaxDrawdownPct: 20
 `;
 
+const MINIMAL_MARKET_DATA_YAML = `
+marketData:
+  dexscreener:
+    baseUrl: https://api.dexscreener.com
+    search:
+      requestsPerMinute: 35
+    discovery:
+      requestsPerMinute: 25
+  binance:
+    baseUrl: https://api.binance.com
+    requestsPerMinute: 200
+  geckoterminal:
+    baseUrl: https://api.geckoterminal.com
+    candles:
+      requestsPerMinute: 12
+    discovery:
+      requestsPerMinute: 8
+  hyperliquid:
+    baseUrl: https://api.hyperliquid.xyz
+    intelligencePath: /info
+    intelligence:
+      requestsPerMinute: 100
+  bybit:
+    baseUrl: https://api.bybit.com
+    longShortRatioPath: /v5/market/account-ratio
+    intelligence:
+      requestsPerMinute: 90
+  birdeye:
+    enabled: false
+    baseUrl: https://public-api.birdeye.so
+    requestsPerMinute: 60
+    apiKey: ''
+  coinMarketCap:
+    enabled: false
+    baseUrl: https://pro-api.coinmarketcap.com
+    requestsPerMinute: 25
+    apiKey: ''
+  timeoutMs: 5000
+  tokenSafety:
+    enabled: true
+`;
+
 describe('loadConfig', () => {
   let tmpDir: string;
   const originalEnv = { ...process.env };
@@ -349,6 +391,48 @@ liveRollout:
 liveRollout:
   allowedVenues:
     - kraken
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow();
+    });
+  });
+
+  describe('1inch token safety config', () => {
+    it('rejects unsupported 1inch chainId without tokenSafetyNetwork when token safety is enabled', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + MINIMAL_MARKET_DATA_YAML + `
+venues:
+  1inch:
+    baseUrl: https://api.1inch.dev/swap/v6.0/43114
+    rpcUrl: https://api.avax.network/ext/bc/C/rpc
+    chainId: 43114
+`);
+
+      expect(() => loadConfig(tmpDir)).toThrow('venues.1inch.chainId 43114 requires venues.1inch.tokenSafetyNetwork');
+    });
+
+    it('accepts explicit tokenSafetyNetwork for unsupported 1inch chainId when token safety is enabled', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + MINIMAL_MARKET_DATA_YAML + `
+venues:
+  1inch:
+    baseUrl: https://api.1inch.dev/swap/v6.0/43114
+    rpcUrl: https://api.avax.network/ext/bc/C/rpc
+    chainId: 43114
+    tokenSafetyNetwork: avalanche
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.venues['1inch']?.tokenSafetyNetwork).toBe('avalanche');
+    });
+
+    it('rejects invalid tokenSafetyNetwork values', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + MINIMAL_MARKET_DATA_YAML + `
+venues:
+  1inch:
+    baseUrl: https://api.1inch.dev/swap/v6.0/43114
+    rpcUrl: https://api.avax.network/ext/bc/C/rpc
+    chainId: 43114
+    tokenSafetyNetwork: avalanchee
 `);
 
       expect(() => loadConfig(tmpDir)).toThrow();

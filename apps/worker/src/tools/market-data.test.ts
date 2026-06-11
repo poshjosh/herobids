@@ -3,6 +3,7 @@ import type { ToolContext } from '@herobids/domain';
 import { marketDataTools } from './market-data.js';
 
 const discoverTokensTool = marketDataTools.find((tool) => tool.name === 'discover_tokens');
+const searchTokensTool = marketDataTools.find((tool) => tool.name === 'search_tokens');
 
 function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -171,6 +172,75 @@ describe('discover_tokens tool', () => {
           priceSource: 'oracle',
         }),
       ],
+    });
+  });
+});
+
+describe('search_tokens tool', () => {
+  it('uses the shared registry search wrapper when policy filtering is enabled', async () => {
+    const search = vi.fn().mockResolvedValue({
+      data: [
+        {
+          address: 'So11111111111111111111111111111111111111112',
+          symbol: 'SOL',
+          name: 'Wrapped SOL',
+          network: 'solana',
+          priceUsd: 150,
+          volume24hUsd: 500_000,
+          liquidityUsd: 2_000_000,
+          priceChange24hPct: 1,
+          dexId: 'raydium',
+        },
+      ],
+      meta: { freshness: { isStale: false, ageMs: 0 }, provider: 'dexscreener' },
+    });
+
+    const result = await searchTokensTool!.execute(
+      { query: 'SOL', network: 'solana' },
+      makeContext({
+        marketDataConfig: {
+          dexscreener: { baseUrl: 'https://api.dexscreener.com', search: { requestsPerMinute: 100 }, discovery: { requestsPerMinute: 100 } },
+          geckoterminal: { baseUrl: 'https://api.geckoterminal.com', candles: { requestsPerMinute: 100 }, discovery: { requestsPerMinute: 100 } },
+          hyperliquid: { baseUrl: 'https://api.hyperliquid.xyz', intelligencePath: '/info', intelligence: { requestsPerMinute: 100 } },
+          bybit: { baseUrl: 'https://api.bybit.com', longShortRatioPath: '/v5/market/account-ratio', intelligence: { requestsPerMinute: 100 } },
+          binance: { baseUrl: 'https://api.binance.com', requestsPerMinute: 100 },
+          birdeye: { enabled: false, baseUrl: '', requestsPerMinute: 0, apiKey: '', cacheTtlMs: 0 },
+          coinMarketCap: { enabled: false, baseUrl: '', requestsPerMinute: 0, apiKey: '', cacheTtlMs: 0 },
+          tokenSafety: {
+            enabled: true,
+            defaults: {
+              minLiquidityUsd: 10_000,
+              minVolume24hUsd: 25_000,
+              minTokenAgeHours: 0,
+              deadPoolMinAgeHours: 720,
+              deadPoolMaxVolume24hUsd: 1_000,
+              preferCanonical: true,
+              requireCanonicalForKnownSymbols: false,
+              includeBlockedSearchResults: false,
+            },
+            tradeGuard: { enabled: false, liquidityMultiplier: 5, allowOverrides: true, overrideTtlMs: 60_000 },
+            canonicalTokens: {
+              solana: {
+                SOL: { address: 'So11111111111111111111111111111111111111112', name: 'Wrapped SOL', aliases: ['WSOL'] },
+              },
+            },
+          },
+          timeoutMs: 5_000,
+        },
+        marketDataRegistry: {
+          dexscreener: {
+            search,
+          },
+        } as ToolContext['marketDataRegistry'],
+      }),
+    );
+
+    expect(search).toHaveBeenCalledWith('SOL');
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      ok: true,
+      freshness: { isStale: false, ageMs: 0 },
+      tokens: [expect.objectContaining({ symbol: 'SOL', network: 'solana' })],
     });
   });
 });

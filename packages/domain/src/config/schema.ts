@@ -9,6 +9,34 @@ export const ORDERBOOK_VENUES = ['hyperliquid', 'bybit'] as const;
 export type SwapVenue = typeof SWAP_VENUES[number];
 export type OrderbookVenue = typeof ORDERBOOK_VENUES[number];
 
+export const SUPPORTED_TOKEN_SAFETY_NETWORKS = [
+  'solana',
+  'ethereum',
+  'optimism',
+  'polygon',
+  'base',
+  'arbitrum',
+  'avalanche',
+] as const;
+export type SupportedTokenSafetyNetwork = typeof SUPPORTED_TOKEN_SAFETY_NETWORKS[number];
+export const TokenSafetyNetworkSchema = z.enum(SUPPORTED_TOKEN_SAFETY_NETWORKS);
+
+const ONE_INCH_TOKEN_SAFETY_NETWORK_BY_CHAIN_ID: Record<number, SupportedTokenSafetyNetwork> = {
+  1: 'ethereum',
+  10: 'optimism',
+  137: 'polygon',
+  8453: 'base',
+  42161: 'arbitrum',
+};
+
+export function inferOneInchTokenSafetyNetwork(chainId: number | undefined): SupportedTokenSafetyNetwork | undefined {
+  if (chainId == null) {
+    return undefined;
+  }
+
+  return ONE_INCH_TOKEN_SAFETY_NETWORK_BY_CHAIN_ID[chainId];
+}
+
 // --- Operator Config (loaded from YAML + env at startup) ---
 
 export const VenueConfigSchema = z.object({
@@ -22,6 +50,7 @@ export const VenueConfigSchema = z.object({
   testnetWsUrl: z.string().url().optional(),
   rpcUrl: z.string().url().optional(),
   chainId: z.number().int().positive().optional(),
+  tokenSafetyNetwork: TokenSafetyNetworkSchema.optional(),
   rateLimitPerSec: z.number().min(1).default(10),
   timeoutMs: z.number().min(1000).default(30_000),
   confirmationTimeoutMs: z.number().min(1000).default(60_000),
@@ -311,6 +340,42 @@ export const MarketDataBudgetSchema = z.object({
   cacheTtlMs: z.number().int().min(0).default(0),
 });
 
+// --- Token Safety Config ---
+
+export const CanonicalTokenEntrySchema = z.object({
+  address: z.string().min(1),
+  name: z.string().min(1),
+  aliases: z.array(z.string().min(1)).default([]),
+});
+
+export const TokenSafetyDefaultsSchema = z.object({
+  minLiquidityUsd: z.number().min(0).default(10_000),
+  minVolume24hUsd: z.number().min(0).default(25_000),
+  minTokenAgeHours: z.number().min(0).default(24),
+  deadPoolMinAgeHours: z.number().min(1).default(24 * 30),
+  deadPoolMaxVolume24hUsd: z.number().min(0).default(1_000),
+  preferCanonical: z.boolean().default(true),
+  requireCanonicalForKnownSymbols: z.boolean().default(true),
+  includeBlockedSearchResults: z.boolean().default(false),
+});
+
+export const TokenSafetyTradeGuardSchema = z.object({
+  enabled: z.boolean().default(true),
+  liquidityMultiplier: z.number().min(1).default(200),
+  allowOverrides: z.boolean().default(true),
+  overrideTtlMs: z.number().int().min(60_000).default(300_000),
+});
+
+export const TokenSafetyConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  defaults: TokenSafetyDefaultsSchema.default({}),
+  tradeGuard: TokenSafetyTradeGuardSchema.default({}),
+  canonicalTokens: z.record(
+    z.string(),
+    z.record(z.string(), CanonicalTokenEntrySchema),
+  ).default({}),
+});
+
 export const MarketDataConfigSchema = z.object({
   dexscreener: z.object({
     baseUrl: z.string().url().default('https://api.dexscreener.com'),
@@ -380,6 +445,7 @@ export const MarketDataConfigSchema = z.object({
     apiKey: z.string().default(''),
     cacheTtlMs: z.number().int().min(0).default(3_600_000),
   }).default({}),
+  tokenSafety: TokenSafetyConfigSchema.default({}),
   timeoutMs: z.number().min(1000).default(5000),
 }).superRefine((data, ctx) => {
   if (data.birdeye.enabled && !data.birdeye.apiKey) {
@@ -563,6 +629,21 @@ export const AppConfigSchema = z.object({
   plans: PlansConfigSchema.default({}),
   billing: BillingConfigSchema.default({}),
 }).superRefine((data, ctx) => {
+  const oneInchConfig = data.venues['1inch'];
+  if (
+    data.marketData?.tokenSafety?.enabled
+    && oneInchConfig
+    && !oneInchConfig.tokenSafetyNetwork
+    && oneInchConfig.chainId != null
+    && !inferOneInchTokenSafetyNetwork(oneInchConfig.chainId)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `venues.1inch.chainId ${String(oneInchConfig.chainId)} requires venues.1inch.tokenSafetyNetwork when marketData.tokenSafety.enabled is true`,
+      path: ['venues', '1inch', 'tokenSafetyNetwork'],
+    });
+  }
+
   if (!(data.plans.defaultPlanId in data.plans.plans)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -686,6 +767,7 @@ export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
+export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
 export type AlertsConfig = z.infer<typeof AlertsConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
@@ -705,6 +787,10 @@ export const RiskConfigSchema = z.object({
   dailyMaxLossPct: z.number().min(0).max(100).optional(),
   stopLossCooldownMs: z.number().min(0).optional(),
   maxOrderNotional: z.string().optional(),
+  minSwapTokenLiquidityUsd: z.number().min(0).optional(),
+  minSwapTokenVolume24hUsd: z.number().min(0).optional(),
+  minSwapTokenAgeHours: z.number().min(0).optional(),
+  allowSwapTokenSafetyOverride: z.boolean().optional(),
 });
 
 export const MomentumParamsSchema = z.object({

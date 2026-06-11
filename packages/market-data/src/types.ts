@@ -192,5 +192,85 @@ export interface MarketDataConfig {
     apiKey: string;
     cacheTtlMs: number;
   };
+  tokenSafety?: {
+    enabled: boolean;
+    defaults: {
+      minLiquidityUsd: number;
+      minVolume24hUsd: number;
+      minTokenAgeHours: number;
+      deadPoolMinAgeHours: number;
+      deadPoolMaxVolume24hUsd: number;
+      preferCanonical: boolean;
+      requireCanonicalForKnownSymbols: boolean;
+      includeBlockedSearchResults: boolean;
+    };
+    tradeGuard: {
+      enabled: boolean;
+      liquidityMultiplier: number;
+      allowOverrides: boolean;
+      overrideTtlMs: number;
+    };
+    canonicalTokens: Record<string, Record<string, { address: string; name: string; aliases: string[] }>>;
+  };
   timeoutMs: number;
 }
+
+// --- Token Safety Types ---
+
+export type TokenSafetyReasonCode =
+  | 'token.low_liquidity'
+  | 'token.low_volume'
+  | 'token.too_new'
+  | 'token.dead_pool'
+  | 'token.non_canonical'
+  | 'token.high_risk'
+  | 'token.network_mismatch'
+  | 'token.identity_ambiguous'
+  | 'token.age_unknown';
+
+export interface TokenSafetyReason {
+  code: TokenSafetyReasonCode;
+  message: string;
+  actual?: number | string;
+  threshold?: number | string;
+}
+
+export interface CanonicalTokenDefinition {
+  symbol: string;
+  network: string;
+  address: string;
+  name: string;
+  aliases?: string[];
+}
+
+export interface TokenSafetySummary {
+  eligible: boolean;
+  score: number;
+  canonical: boolean;
+  canonicalSymbol?: string;
+  ageHours?: number;
+  blockedReasons: TokenSafetyReason[];
+  warnings: TokenSafetyReason[];
+}
+
+export interface TokenSearchCandidate extends TokenInfo {
+  poolCreatedAt?: string;
+  marketCapUsd?: number;
+  fullyDilutedValuationUsd?: number;
+  holderCount?: number;
+  cexListings?: number;
+  riskLevel?: 'low' | 'medium' | 'high';
+  discoveryVectors?: string[];
+  safety: TokenSafetySummary;
+}
+
+export interface TokenSearchPolicyOptions {
+  network?: string;
+  limit?: number;
+  includeBlocked?: boolean;
+  minLiquidityUsd?: number;
+  minVolume24hUsd?: number;
+  minTokenAgeHours?: number;
+  preferCanonical?: boolean;
+}
+

@@ -1,5 +1,6 @@
 export type {
 	BybitCrowdingSignal,
+	CanonicalTokenDefinition,
 	DiscoveredPool,
 	DiscoveredToken,
 	FreshnessMetadata,
@@ -13,6 +14,11 @@ export type {
 	RegimeResult,
 	RequestGate,
 	TokenInfo,
+	TokenSafetyReason,
+	TokenSafetyReasonCode,
+	TokenSafetySummary,
+	TokenSearchCandidate,
+	TokenSearchPolicyOptions,
 } from './types.js';
 export {
 	CoordinatedRateLimiter,
@@ -54,7 +60,16 @@ export {
   enrichWithCmc,
   type CoinMarketCapConfig,
 } from './coinmarketcap.js';
-export { searchTokens, type SearchTokensOptions } from './token-search.js';
+export { searchTokens, searchTokensWithPolicy, applyTokenSearchPolicy, type SearchTokensOptions } from './token-search.js';
+export {
+  evaluateTokenSafety,
+  rankAndFilterCandidates,
+  deduplicateByAddress,
+  lookupCanonical,
+  isKnownCanonicalSymbol,
+  resolveTokenSafetyPolicyConfig,
+  type TokenSafetyPolicyConfig,
+} from './token-safety.js';
 export { evaluateRegime, getRequiredRegimeCandleCount } from './regime.js';
 export {
   createPriceService,

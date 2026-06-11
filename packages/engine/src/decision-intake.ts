@@ -1,4 +1,4 @@
-import type { Decision, MarkSource } from '@herobids/domain';
+import type { Decision, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import { price } from '@herobids/domain';
 import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan, PlannerDeps } from './planner.js';
@@ -26,7 +26,9 @@ export interface DecisionIntakeDeps {
   symbol: string;
   venueAccountId: string;
   venueType?: 'orderbook' | 'swap';
-  swapAssets?: { baseAsset: string; quoteAsset: string };
+  swapAssets?: { baseAsset: string; quoteAsset: string; baseDecimals?: number; quoteDecimals?: number };
+  swapNetwork?: string;
+  swapBaseTokenAddress?: string;
   executor: Executor;
   journal: Journal;
   riskLimits: RiskLimits;
@@ -34,6 +36,15 @@ export interface DecisionIntakeDeps {
   persistence: TradingCyclePersistence;
   idGen: { planId(): string };
   clock: Clock;
+  swapTokenSafety?: SwapTokenSafetyPort;
+  safetyOverrideId?: string;
+  /** Instance-level swap-token thresholds that tighten operator defaults */
+  swapTokenSafetyThresholds?: {
+    minLiquidityUsd?: number;
+    minVolume24hUsd?: number;
+    minAgeHours?: number;
+    allowOverrides?: boolean;
+  };
 }
 
 /**
@@ -60,6 +71,17 @@ export interface DecisionContext {
 }
 
 /**
+ * Pre-execution rejection — a guardrail rejection before execution starts.
+ */
+export interface PreExecutionRejection {
+  scope: 'risk_gate' | 'swap_token_safety';
+  code: string;
+  message: string;
+  retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
+/**
  * Result of submitting a decision for execution.
  */
 export interface DecisionIntakeResult {
@@ -69,6 +91,7 @@ export interface DecisionIntakeResult {
   executionResult?: ExecutionResult;
   position: PositionState;
   executionFailed: boolean;
+  preExecutionRejection?: PreExecutionRejection;
 }
 
 /**
@@ -158,6 +181,49 @@ export async function submitDecisionForExecution(
   });
 
   await deps.journal.append(planEvent(plan, 'plan.created'));
+
+  // 5b. Swap token safety guard (pre-execution)
+  if (deps.venueType === 'swap' && deps.swapTokenSafety && deps.swapBaseTokenAddress) {
+    const isBuyPath = plan.orders.some((o) => o.side === 'buy');
+    if (isBuyPath) {
+      const estimatedNotional = computeEstimatedNotionalUsd(plan, context, deps.swapAssets);
+      const safetyResult = await deps.swapTokenSafety.checkSwapTarget({
+        actorType: deps.actorType,
+        actorId: deps.actorId,
+        botId: resolvedDecision.botId,
+        venue: deps.venue,
+        venueAccountId: deps.venueAccountId,
+        network: deps.swapNetwork ?? '',
+        tokenAddress: deps.swapBaseTokenAddress,
+        tokenSymbol: deps.swapAssets?.baseAsset,
+        swapSide: 'buy',
+        estimatedOrderNotionalUsd: estimatedNotional,
+        overrideId: deps.safetyOverrideId,
+        instanceThresholds: deps.swapTokenSafetyThresholds,
+      });
+
+      if (!safetyResult.ok) {
+        await deps.persistence.markPlanFailed(plan.id);
+        return {
+          decision: resolvedDecision,
+          plan,
+          riskRejected: false,
+          position,
+          executionFailed: false,
+          preExecutionRejection: {
+            scope: 'swap_token_safety',
+            code: safetyResult.error.code,
+            message: safetyResult.error.message,
+            retryable: safetyResult.error.retryable,
+            details: {
+              ...safetyResult.error.details,
+              overrideTicket: safetyResult.error.overrideTicket,
+            },
+          },
+        };
+      }
+    }
+  }
 
   // 6. Risk check
   const referenceMark = price(context.referenceMark.price);
@@ -270,4 +336,29 @@ export async function submitDecisionForExecution(
 function normalizeContextHash(contextHash: string | undefined): string | undefined {
   const trimmed = contextHash?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+const STABLECOIN_SYMBOLS = new Set(['USDC', 'USDT', 'DAI', 'BUSD', 'PYUSD', 'USDP', 'TUSD', 'FRAX']);
+
+function computeEstimatedNotionalUsd(
+  plan: ExecutionPlan,
+  context: DecisionContext,
+  swapAssets?: { baseAsset: string; quoteAsset: string },
+): string | undefined {
+  const buyOrder = plan.orders.find((o) => o.side === 'buy');
+  if (!buyOrder) return undefined;
+
+  const quantity = Number(buyOrder.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) return undefined;
+
+  // For swap buys, quantity is denominated in the quote asset.
+  // If the quote asset is a stablecoin, quantity is already ≈ USD notional.
+  if (swapAssets && STABLECOIN_SYMBOLS.has(swapAssets.quoteAsset.toUpperCase())) {
+    return quantity.toFixed(2);
+  }
+
+  const refPrice = Number(context.referenceMark.price);
+  if (!Number.isFinite(refPrice) || refPrice <= 0) return undefined;
+
+  return (quantity * refPrice).toFixed(2);
 }

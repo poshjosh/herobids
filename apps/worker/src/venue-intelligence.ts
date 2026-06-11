@@ -20,6 +20,25 @@ export function buildDiscoveryNetworkMap<T extends { network: string; symbol: st
   return map;
 }
 
+/**
+ * Build a map from `${network}:${address}` to a discovered token object.
+ * Address-based keying is the correct join strategy for DEX discovery metadata
+ * because same-symbol fakes on the same network cannot inherit metadata from the
+ * canonical token.
+ */
+export function buildDiscoveryAddressMap<T extends { network: string; address: string }>(
+  tokens: T[],
+): Map<string, T> {
+  const map = new Map<string, T>();
+  for (const token of tokens) {
+    const key = `${token.network.toLowerCase()}:${token.address.toLowerCase()}`;
+    if (!map.has(key)) {
+      map.set(key, token);
+    }
+  }
+  return map;
+}
+
 export interface TrackedDexTarget {
   raw: string;
   symbol: string;

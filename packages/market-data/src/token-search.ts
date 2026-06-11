@@ -1,5 +1,11 @@
-import type { TokenInfo } from './types.js';
+import type { TokenInfo, TokenSearchCandidate, TokenSearchPolicyOptions, MarketDataConfig } from './types.js';
 import { fetchDexScreenerSearch, type DexScreenerConfig } from './dexscreener.js';
+import {
+  resolveTokenSafetyPolicyConfig,
+  deduplicateByAddress,
+  rankAndFilterCandidates,
+  type TokenSafetyPolicyConfig,
+} from './token-safety.js';
 
 export interface SearchTokensOptions {
   network?: string;
@@ -47,3 +53,40 @@ export async function searchTokens(
 
   return deduped.slice(0, limit);
 }
+
+/**
+ * Search tokens with full safety policy evaluation, canonical promotion,
+ * and structured safety metadata.
+ */
+export async function searchTokensWithPolicy(
+  query: string,
+  config: DexScreenerConfig,
+  marketDataConfig: MarketDataConfig,
+  options?: TokenSearchPolicyOptions,
+): Promise<TokenSearchCandidate[]> {
+  const rawResults = await fetchDexScreenerSearch(query, config);
+
+  return applyTokenSearchPolicy(rawResults, marketDataConfig, options);
+}
+
+export function applyTokenSearchPolicy(
+  rawResults: TokenInfo[],
+  marketDataConfig: MarketDataConfig,
+  options?: TokenSearchPolicyOptions,
+): TokenSearchCandidate[] {
+  const policy: TokenSafetyPolicyConfig = resolveTokenSafetyPolicyConfig(marketDataConfig);
+
+  // Network filter
+  let filtered: TokenInfo[] = rawResults;
+  if (options?.network) {
+    const networkLower = options.network.toLowerCase();
+    filtered = filtered.filter((t) => t.network.toLowerCase() === networkLower);
+  }
+
+  // Deduplicate by network:address
+  const deduped = deduplicateByAddress(filtered);
+
+  // Evaluate, rank, filter
+  return rankAndFilterCandidates(deduped, policy, options);
+}
+

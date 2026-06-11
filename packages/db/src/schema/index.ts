@@ -40,3 +40,4 @@ export { connections } from './connections.js';
 export { tradingBindings } from './trading-bindings.js';
 export { capabilityGrants } from './capability-grants.js';
 export { capabilityGrantAudit } from './capability-grant-audit.js';
+export { tokenSafetyOverrides } from './token-safety-overrides.js';

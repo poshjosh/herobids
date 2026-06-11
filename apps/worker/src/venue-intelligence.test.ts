@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDiscoveryNetworkMap, collectDexTrackedSymbols, collectDexTrackedTargets, findDexPositionForTarget, collectPerpsTrackedSymbols, normalizeTrackedSymbol } from './venue-intelligence.js';
+import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedSymbols, collectDexTrackedTargets, findDexPositionForTarget, collectPerpsTrackedSymbols, normalizeTrackedSymbol } from './venue-intelligence.js';
 import type { RuntimeSessionMetrics } from './runtime-composition.js';
 
 function buildSessionMetrics(): RuntimeSessionMetrics {
@@ -162,5 +162,38 @@ describe('findDexPositionForTarget', () => {
     const match = findDexPositionForTarget([...positions], target);
 
     expect(match?.instrumentId).toBe('solana:BONK/USDC');
+  });
+});
+
+describe('buildDiscoveryAddressMap', () => {
+  it('keys by network:address instead of network:symbol', () => {
+    const tokens = [
+      { network: 'solana', address: 'So11111111111111111111111111111111111111112', symbol: 'SOL' },
+      { network: 'solana', address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', symbol: 'USDC' },
+    ];
+    const map = buildDiscoveryAddressMap(tokens);
+    expect(map.size).toBe(2);
+    expect(map.get('solana:so11111111111111111111111111111111111111112')?.symbol).toBe('SOL');
+    expect(map.get('solana:epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v')?.symbol).toBe('USDC');
+  });
+
+  it('prevents same-symbol fakes from inheriting metadata', () => {
+    const canonical = { network: 'solana', address: 'So11111111111111111111111111111111111111112', symbol: 'SOL' };
+    const fake = { network: 'solana', address: 'FAKE_SOL_ADDRESS', symbol: 'SOL' };
+    const map = buildDiscoveryAddressMap([canonical, fake]);
+
+    // Both are separate entries
+    expect(map.size).toBe(2);
+    expect(map.get('solana:so11111111111111111111111111111111111111112')).toBeDefined();
+    expect(map.get('solana:fake_sol_address')).toBeDefined();
+
+    // A lookup for the fake address does NOT return canonical metadata
+    expect(map.get('solana:fake_sol_address')?.address).toBe('FAKE_SOL_ADDRESS');
+  });
+
+  it('normalizes network and address to lowercase', () => {
+    const token = { network: 'Solana', address: '0xABC123', symbol: 'TEST' };
+    const map = buildDiscoveryAddressMap([token]);
+    expect(map.has('solana:0xabc123')).toBe(true);
   });
 });

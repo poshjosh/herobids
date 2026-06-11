@@ -1,4 +1,4 @@
-import type { Strategy, MarketSnapshot, Decision, MarkSource } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, Decision, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { Journal } from './journal.js';
@@ -134,6 +134,8 @@ export interface TradingCycleDeps {
   venueAccountId: string;
   venueType?: 'orderbook' | 'swap';
   swapAssets?: { baseAsset: string; quoteAsset: string };
+  swapNetwork?: string;
+  swapBaseTokenAddress?: string;
   strategy: Strategy;
   strategyConfig: Record<string, unknown>;
   executor: Executor;
@@ -143,6 +145,13 @@ export interface TradingCycleDeps {
   persistence: TradingCyclePersistence;
   idGen: { planId(): string; decisionId(): string };
   clock: Clock;
+  swapTokenSafety?: SwapTokenSafetyPort;
+  swapTokenSafetyThresholds?: {
+    minLiquidityUsd?: number;
+    minVolume24hUsd?: number;
+    minAgeHours?: number;
+    allowOverrides?: boolean;
+  };
 }
 
 /**
@@ -165,6 +174,8 @@ export interface TradingCycleResult {
   executionFailed: boolean;
   /** Whether the strategy returned an error (distinct from 'hold'/null) */
   strategyError: boolean;
+  /** Pre-execution guardrail rejection (e.g. swap token safety) */
+  preExecutionRejection?: import('./decision-intake.js').PreExecutionRejection;
 }
 
 /**
@@ -242,6 +253,8 @@ export async function runTradingCycle(
     venueAccountId: deps.venueAccountId,
     venueType: deps.venueType,
     swapAssets: deps.swapAssets,
+    swapNetwork: deps.swapNetwork,
+    swapBaseTokenAddress: deps.swapBaseTokenAddress,
     executor: deps.executor,
     journal: deps.journal,
     riskLimits: deps.riskLimits,
@@ -249,6 +262,8 @@ export async function runTradingCycle(
     persistence: deps.persistence,
     idGen: deps.idGen,
     clock: deps.clock,
+    swapTokenSafety: deps.swapTokenSafety,
+    swapTokenSafetyThresholds: deps.swapTokenSafetyThresholds,
   });
 
   return {
@@ -260,6 +275,7 @@ export async function runTradingCycle(
     position: intakeResult.position,
     executionFailed: intakeResult.executionFailed,
     strategyError: false,
+    preExecutionRejection: intakeResult.preExecutionRejection,
   };
 }
 

@@ -7,15 +7,16 @@ import { BacktestRuntime } from './backtest-runtime.js';
 import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
+import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, bots, venueAccounts, userCredentials, users } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, bots, venueAccounts, userCredentials, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { decryptCredential } from './crypto.js';
@@ -37,8 +38,66 @@ import {
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
+import { createProviderRegistry, type RedisEvalClient, type TokenInfo } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
+import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
+
+async function resolveSwapTokenData(
+  registry: ReturnType<typeof createProviderRegistry>,
+  network: string,
+  tokenAddress: string,
+): Promise<ResolvedSwapTokenData | null> {
+  const searchResult = await registry.dexscreener.search(tokenAddress);
+  // Same token can appear in multiple pools — pick the highest-liquidity match
+  // to align with the market-data selection semantics used elsewhere.
+  const exactMatch = searchResult.data
+    .filter((token) => (
+      token.network.toLowerCase() === network.toLowerCase()
+      && token.address.toLowerCase() === tokenAddress.toLowerCase()
+    ))
+    .sort((a, b) => b.liquidityUsd - a.liquidityUsd)[0];
+
+  if (!exactMatch) {
+    return null;
+  }
+
+  if (exactMatch.poolCreatedAt) {
+    return {
+      ...exactMatch,
+      ageResolution: 'available',
+    };
+  }
+
+  try {
+    const discoveryResult = await registry.discovery.discover({
+      networks: [network],
+      maxResults: 250,
+      minLiquidityUsd: 0,
+    });
+    const discoveryMatch = discoveryResult.data.find((token) => (
+      token.network.toLowerCase() === network.toLowerCase()
+      && token.address.toLowerCase() === tokenAddress.toLowerCase()
+    ));
+
+    if (!discoveryMatch) {
+      return {
+        ...exactMatch,
+        ageResolution: 'indeterminate',
+      };
+    }
+
+    return {
+      ...exactMatch,
+      poolCreatedAt: discoveryMatch.poolCreatedAt ?? exactMatch.poolCreatedAt,
+      ageResolution: discoveryMatch.poolCreatedAt ? 'available' : 'missing',
+    };
+  } catch {
+    return {
+      ...exactMatch,
+      ageResolution: 'indeterminate',
+    };
+  }
+}
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -90,6 +149,19 @@ const reconciliationRepo = new ReconciliationEventRepository(db);
 const decisionRepo = new DecisionRepository(db);
 const backtestingRepo = new BacktestingRepository(db);
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
+const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
+
+const sharedMarketDataRegistry = appConfig.marketData
+  ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient })
+  : undefined;
+
+const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
+  ? createSwapTokenSafetyAdapter({
+      marketDataConfig: appConfig.marketData,
+      overrideRepo: tokenSafetyOverrideRepo,
+      resolveTokenData: (network, tokenAddress) => resolveSwapTokenData(sharedMarketDataRegistry, network, tokenAddress),
+    })
+  : undefined;
 
 // Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
 // actor factory can subscribe streams and register actors on creation.
@@ -706,6 +778,19 @@ const runtime = new WorkerRuntime(
       };
     }
 
+    const swapNetwork = config.venueType !== 'swap'
+      ? undefined
+      : config.venue === 'jupiter'
+        ? 'solana'
+        : appConfig.venues['1inch']?.tokenSafetyNetwork
+          ?? inferOneInchTokenSafetyNetwork(appConfig.venues['1inch']?.chainId);
+
+    if (config.venueType === 'swap' && config.venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !swapNetwork) {
+      throw new CredentialResolutionError(
+        `Unsupported 1inch chainId ${String(appConfig.venues['1inch']?.chainId)} for token safety on bot ${botId}`,
+      );
+    }
+
     const deps: TradingActorDeps = {
       strategy,
       journal,
@@ -737,6 +822,8 @@ const runtime = new WorkerRuntime(
       venueAccountId,
       venueType: config.venueType,
       swapAssets: config.swapAssets,
+      swapNetwork,
+      swapBaseTokenAddress: config.venueType === 'swap' ? config.swapAssets?.baseAsset : undefined,
       swapVenue,
       streamPool: config.venueType !== 'swap'
         ? createScopedStreamPoolHandle(publicStreamPool, config.venue, testnet)
@@ -751,6 +838,15 @@ const runtime = new WorkerRuntime(
       shadowPollIntervalMs: config.shadowPollIntervalMs ?? appConfig.execution.shadowPollIntervalMs,
       shadowQuoteSlippageBps: appConfig.execution.shadowQuoteSlippageBps,
       credentialId: resolvedCredentialId,
+      swapTokenSafety: config.venueType === 'swap' ? swapTokenSafety : undefined,
+      swapTokenSafetyThresholds: (config.risk.minSwapTokenLiquidityUsd != null || config.risk.minSwapTokenVolume24hUsd != null || config.risk.minSwapTokenAgeHours != null || config.risk.allowSwapTokenSafetyOverride != null)
+        ? {
+            minLiquidityUsd: config.risk.minSwapTokenLiquidityUsd,
+            minVolume24hUsd: config.risk.minSwapTokenVolume24hUsd,
+            minAgeHours: config.risk.minSwapTokenAgeHours,
+            allowOverrides: config.risk.allowSwapTokenSafetyOverride,
+          }
+        : undefined,
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
           agentStreamConsumer.unsubscribe(instanceId);
@@ -835,7 +931,6 @@ const marketMonitor = createMarketMonitor(
 
 const marketIntelCoordinator = appConfig.marketData
   ? (() => {
-      const providerRegistry = createProviderRegistry(appConfig.marketData!, { redisClient: redisClient as unknown as RedisEvalClient });
       const coordinator = createMarketDataCoordinator(
         {
           workerId,
@@ -845,7 +940,7 @@ const marketIntelCoordinator = appConfig.marketData
           regimePollMs: miConfig.regimePollMs,
           enabled: miConfig.enabled,
         },
-        { redis: redisClient, providerRegistry, publisher: eventPublisher, monitor: marketMonitor },
+        { redis: redisClient, providerRegistry: sharedMarketDataRegistry!, publisher: eventPublisher, monitor: marketMonitor },
       );
       return coordinator;
     })()

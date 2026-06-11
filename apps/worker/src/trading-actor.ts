@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import {
   PaperExecutor,
@@ -98,6 +98,19 @@ export interface TradingActorDeps {
   onCrashed?: (botId: string) => Promise<void>;
   /** Credential ID used by this actor (for audit trail). Set when credentials resolved from DB. */
   credentialId?: string;
+  /** Swap token safety port for pre-execution guardrails */
+  swapTokenSafety?: SwapTokenSafetyPort;
+  /** Swap network identifier (e.g. 'solana', 'base') for token safety lookups */
+  swapNetwork?: string;
+  /** Base token address for swap token safety checks */
+  swapBaseTokenAddress?: string;
+  /** Instance-level swap-token thresholds that tighten operator defaults */
+  swapTokenSafetyThresholds?: {
+    minLiquidityUsd?: number;
+    minVolume24hUsd?: number;
+    minAgeHours?: number;
+    allowOverrides?: boolean;
+  };
 }
 
 /**
@@ -870,6 +883,8 @@ export class TradingActor implements InstanceActor {
         venueAccountId: this.deps.venueAccountId,
         venueType: this.deps.venueType,
         swapAssets: this.deps.swapAssets,
+        swapNetwork: this.deps.swapNetwork,
+        swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
         strategy: this.deps.strategy,
         strategyConfig: this.strategyConfig,
         executor: this.executor,
@@ -879,6 +894,8 @@ export class TradingActor implements InstanceActor {
         persistence: this.buildCyclePersistence(),
         idGen: this.deps.idGen,
         clock: realClock,
+        swapTokenSafety: this.deps.swapTokenSafety,
+        swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
       });
 
       this.position = cycleResult.position;
@@ -906,6 +923,24 @@ export class TradingActor implements InstanceActor {
           { intent: cycleResult.decision?.intent, fills: cycleResult.executionResult.fills.length, position: this.position.side },
           'Tick completed',
         );
+      } else if (cycleResult.preExecutionRejection) {
+        this.logger.warn(
+          { decision: cycleResult.decision?.intent, code: cycleResult.preExecutionRejection.code, scope: cycleResult.preExecutionRejection.scope },
+          'Pre-execution guardrail rejected',
+        );
+        void this.deps.journal.append({
+          actorType: 'bot',
+          actorId: this.botId,
+          type: 'guardrail.rejected',
+          payload: {
+            scope: cycleResult.preExecutionRejection.scope,
+            code: cycleResult.preExecutionRejection.code,
+            message: cycleResult.preExecutionRejection.message,
+            retryable: cycleResult.preExecutionRejection.retryable,
+            intent: cycleResult.decision?.intent,
+            planId: cycleResult.plan?.id,
+          },
+        }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append guardrail.rejected journal event'));
       } else if (cycleResult.riskRejected) {
         this.logger.warn({ decision: cycleResult.decision?.intent }, 'Risk gate rejected');
       } else if (cycleResult.executionFailed) {
@@ -1045,6 +1080,8 @@ export class TradingActor implements InstanceActor {
       venueAccountId: this.deps.venueAccountId,
       venueType: this.deps.venueType,
       swapAssets: this.deps.swapAssets,
+      swapNetwork: this.deps.swapNetwork,
+      swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
       executor: this.executor,
       journal: this.deps.journal,
       riskLimits: this.deps.riskLimits,
@@ -1052,6 +1089,8 @@ export class TradingActor implements InstanceActor {
       persistence: this.buildCyclePersistence(),
       idGen: this.deps.idGen,
       clock: realClock,
+      swapTokenSafety: this.deps.swapTokenSafety,
+      swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
     };
   }
 
