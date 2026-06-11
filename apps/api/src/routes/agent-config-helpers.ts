@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS, validateLlmModelSelection } from '@herobids/domain';
+import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
 
 const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [skill.id, skill.capabilityFamilies] as const));
@@ -204,10 +205,10 @@ export function extractModelSelection(modelPolicy: Record<string, unknown> | nul
   return { provider, lightModel, heavyModel };
 }
 
-export function validateAgentModelPolicy(
+export async function validateAgentModelPolicy(
   modelPolicy: Record<string, unknown> | null | undefined,
-  operatorProvider?: string,
-): Array<{ code: 'custom'; path: string[]; message: string }> {
+  context?: OperatorLlmCatalogContext,
+): Promise<Array<{ code: 'custom'; path: string[]; message: string }>> {
   const selection = extractModelSelection(modelPolicy);
   if (!selection.provider) {
     return [];
@@ -224,7 +225,11 @@ export function validateAgentModelPolicy(
     return issues;
   }
 
-  return validateAiModelSelection({ provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! }, operatorProvider);
+  if (context) {
+    return validateAiModelSelection({ provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! }, context);
+  }
+  // No catalog context — fall back to static domain validation
+  return validateLlmModelSelection({ provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! });
 }
 
 export function extractSubmittedModelSelection(payload: {

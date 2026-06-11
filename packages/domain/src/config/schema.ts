@@ -97,6 +97,13 @@ export const LlmThinkingConfigSchema = z.object({
   deepBudgetTokens: z.number().int().min(0).default(10_240),
 });
 
+export const LlmCatalogConfigSchema = z.object({
+  /** Short fetch timeout for catalog discovery — independent of llm.timeoutMs which is tuned for generation */
+  timeoutMs: z.number().min(100).default(3_000),
+  /** In-memory cache TTL for discovered catalogs (ms). Stale entries are retained as fallback; not deleted on expiry. */
+  cacheTtlMs: z.number().min(1000).default(86_400_000),
+});
+
 export const LlmRuntimeConfigSchema = z.object({
   provider: z.string().default('openrouter'),
   model: z.string().default('anthropic/claude-sonnet-4-5'),
@@ -104,6 +111,8 @@ export const LlmRuntimeConfigSchema = z.object({
   baseUrl: z.string().optional(),
   maxTokens: z.number().int().min(1).default(4096),
   timeoutMs: z.number().min(1000).default(60_000),
+  /** Catalog discovery settings — controls model listing for dynamic providers like Ollama */
+  catalog: LlmCatalogConfigSchema.default({}),
   /** Agent reasoning loop interval in ms. How often the agent calls the LLM to reassess and act. */
   tickIntervalMs: z.number().int().min(5_000).default(900_000),
   /** Agent heartbeat cadence in ms. Must be well below the health-monitor stale threshold. */

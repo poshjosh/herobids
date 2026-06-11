@@ -23,6 +23,7 @@ import { datasetRoutes } from './routes/datasets.js';
 import { exportRoutes } from './routes/exports.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
+import { makeCatalogContext } from './llm-model-catalog.js';
 import { connectionRoutes } from './routes/connections.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';
 import { setupRoutes } from './routes/setup.js';
@@ -97,7 +98,7 @@ await setupRoutes(app, db, appConfig.plans);
 await connectionRoutes(app, db, redisClient);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, appConfig.llm);
+await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm));
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
@@ -117,7 +118,7 @@ await dashboardRoutes(app, db, appConfig.plans);
 await billingRoutes(app, appConfig.billing, appConfig.plans, db);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, makeCatalogContext(appConfig.llm));
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient);
 await skillsRoutes(app, db);

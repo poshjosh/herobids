@@ -53,6 +53,12 @@ export function validateLlmModelSelection(selection: LlmModelSelection): Array<{
     return issues;
   }
 
+  // Ollama models are operator-installed and discovered at runtime.
+  // Domain defers model validation to the API layer, which has access to the live catalog.
+  if (selection.provider === 'ollama') {
+    return issues;
+  }
+
   const providerModels = getLlmProviderModels(selection.provider);
 
   if (!providerModels.includes(selection.lightModel)) {

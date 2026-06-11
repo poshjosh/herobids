@@ -7,6 +7,7 @@ import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutbo
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
+import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
@@ -91,7 +92,7 @@ const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
-export async function agentRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig, llmConfig?: { provider: string }): Promise<void> {
+export async function agentRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig, llmCatalogContext?: OperatorLlmCatalogContext): Promise<void> {
   // --- CRUD ---
 
   // Create agent
@@ -138,7 +139,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
 
     const effectiveModelPolicy = mergeModelPolicy(parsed.data.modelPolicy ?? null, parsed.data);
-    const modelIssues = validateAgentModelPolicy(effectiveModelPolicy, llmConfig?.provider);
+    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
@@ -286,7 +287,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
         dexWatchlistSymbols: parsed.data.dexWatchlistSymbols,
       },
     );
-    const modelIssues = validateAgentModelPolicy(effectiveModelPolicy, llmConfig?.provider);
+    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }

@@ -149,6 +149,62 @@ describe('PUT /agents/:id', () => {
     expect(res.json().scoutModel).toBeUndefined();
   });
 
+  it('rejects an ollama model that is not in the discovered catalog when catalog context is provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'deepseek-r1:latest' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildAgentDb({
+      ...stubAgent,
+      modelPolicy: {
+        provider: 'ollama',
+        lightModel: 'deepseek-r1:latest',
+        heavyModel: 'deepseek-r1:latest',
+      },
+    });
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(
+      app,
+      db,
+      redis,
+      undefined,
+      {
+        provider: 'ollama',
+        model: 'deepseek-r1:latest',
+        baseUrl: 'http://localhost:11434/v1',
+        catalogTimeoutMs: 3_000,
+        catalogCacheTtlMs: 86_400_000,
+      },
+    );
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: {
+        name: 'Updated',
+        prompt: 'New prompt',
+        provider: 'ollama',
+        lightModel: 'ghost-model:latest',
+        heavyModel: 'deepseek-r1:latest',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().details).toEqual([
+      {
+        code: 'custom',
+        path: ['lightModel'],
+        message: 'Selected economy model is not available for this provider',
+      },
+    ]);
+
+    vi.unstubAllGlobals();
+  });
+
   it('normalizes capital and canonical dailyLlmTokenBudget on PUT', async () => {
     const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
     let selectCount = 0;

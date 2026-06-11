@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import { aiRoutes } from './ai.js';
+import { clearOllamaModelCache } from '../ollama-model-discovery.js';
 
 // Mock @herobids/llm so the module can be imported in the test environment
 vi.mock('@herobids/llm', () => ({
@@ -60,6 +61,7 @@ const stubLlmConfig = {
   timeoutMs: 60_000,
   tickIntervalMs: 900_000,
   heartbeatIntervalMs: 5_000,
+  catalog: { timeoutMs: 3_000, cacheTtlMs: 86_400_000 },
 };
 
 beforeEach(() => {
@@ -128,23 +130,16 @@ describe('GET /ai/available-models', () => {
     delete process.env['LLM_API_KEY'];
   });
 
-  it('returns the operator ollama provider and static models without an API key', async () => {
+  it('returns 503 for operator ollama when no usable baseUrl is set', async () => {
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3-coder:30b' }, redis);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
-      providers: [
-        {
-          provider: 'ollama',
-          models: ['qwen3-coder:30b', 'qwen3.6:35b-a3b-q4_K_M'],
-        },
-      ],
-    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('no_ai_provider');
   });
 });
 
@@ -465,7 +460,7 @@ describe('PATCH /settings/ai-model', () => {
     delete process.env['LLM_API_KEY_OPENAI'];
   });
 
-  it('returns 200 when selecting static ollama models', async () => {
+  it('returns 400 when selecting ollama with no usable baseUrl configured', async () => {
     const db = {
       select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
       update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
@@ -473,7 +468,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3-coder:30b' }, redis);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -481,24 +476,26 @@ describe('PATCH /settings/ai-model', () => {
       payload: {
         provider: 'ollama',
         lightModel: 'qwen3-coder:30b',
-        heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
+        heavyModel: 'qwen3-coder:30b',
       },
     });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json().aiModelConfig).toEqual({
-      provider: 'ollama',
-      lightModel: 'qwen3-coder:30b',
-      heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
-    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().details).toEqual([
+      {
+        code: 'custom',
+        path: ['provider'],
+        message: 'Selected provider is not available on this platform',
+      },
+    ]);
   });
 
-  it('returns 400 when selecting an ollama model outside the static list', async () => {
+  it('returns 400 when selecting an ollama model not in the discovered or fallback set', async () => {
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3-coder:30b' }, redis);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -513,3 +510,227 @@ describe('PATCH /settings/ai-model', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+// ─── GET /ai/available-models — Ollama dynamic discovery ─────────────────────
+
+describe('GET /ai/available-models — Ollama dynamic discovery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env['LLM_API_KEY'];
+  });
+
+  it('returns dynamically discovered models when baseUrl is configured and /api/tags succeeds', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        models: [
+          { name: 'deepseek-r1:latest' },
+          { name: 'llama3:8b' },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'deepseek-r1:latest',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ providers: Array<{ provider: string; models: string[] }> }>();
+    expect(body.providers).toHaveLength(1);
+    expect(body.providers[0]!.provider).toBe('ollama');
+    expect(body.providers[0]!.models).toContain('deepseek-r1:latest');
+    expect(body.providers[0]!.models).toContain('llama3:8b');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('returns ollama with configured model as fallback when /api/tags is unavailable', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'qwen3-coder:30b',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    // Must NOT return 503 — ollama is configured and must be surfaced even on discovery failure
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ providers: Array<{ provider: string; models: string[] }> }>();
+    expect(body.providers[0]!.provider).toBe('ollama');
+    // Operator-configured model must always appear
+    expect(body.providers[0]!.models).toContain('qwen3-coder:30b');
+
+    vi.unstubAllGlobals();
+  });
+});
+
+// ─── PATCH /settings/ai-model — Ollama dynamic validation ────────────────────
+
+describe('PATCH /settings/ai-model — Ollama dynamic validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env['LLM_API_KEY'];
+  });
+
+  it('accepts a dynamically discovered ollama model that is not in the static list', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'deepseek-r1:latest' }, { name: 'llama3:8b' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'deepseek-r1:latest',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: { provider: 'ollama', lightModel: 'llama3:8b', heavyModel: 'deepseek-r1:latest' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects an ollama model absent from both discovered and fallback sets', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'deepseek-r1:latest' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'deepseek-r1:latest',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: { provider: 'ollama', lightModel: 'ghost-model:latest', heavyModel: 'deepseek-r1:latest' },
+    });
+
+    expect(res.statusCode).toBe(400);
+
+    vi.unstubAllGlobals();
+  });
+});
+
+// ─── Persisted Ollama selection revalidation ──────────────────────────────
+
+describe('persisted Ollama model revalidation', () => {
+  it('GET /settings/ai-model returns null when persisted Ollama model is no longer in discovered catalog', async () => {
+    clearOllamaModelCache();
+    // Discovery returns only deepseek-r1, but user has llama3:8b persisted
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'deepseek-r1:latest' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{
+        aiModelConfig: { provider: 'ollama', lightModel: 'llama3:8b', heavyModel: 'llama3:8b' },
+      }])),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'deepseek-r1:latest',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('POST /ai/generate-config falls back to operator config when persisted Ollama model is stale', async () => {
+    clearOllamaModelCache();
+    // Discovery returns only deepseek-r1, but user has llama3:8b persisted
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'deepseek-r1:latest' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { callLlmProvider } = await import('@herobids/llm');
+    const callMock = vi.mocked(callLlmProvider);
+    callMock.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '{"strategy":{"preset":"momentum","params":{}},"risk":{"maxPositionSizePct":5,"stopLossPct":2,"takeProfitPct":4},"execution":{"mode":"paper"}}',
+        model: 'deepseek-r1:latest',
+        tokensUsed: 50,
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{
+        aiModelConfig: { provider: 'ollama', lightModel: 'llama3:8b', heavyModel: 'llama3:8b' },
+      }])),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'deepseek-r1:latest',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/ai/generate-config',
+      payload: { text: 'Momentum strategy for BTC' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // The stale llama3:8b should NOT have been used; operator default deepseek-r1 should be
+    const callArgs = callMock.mock.calls[0]![0] as Record<string, unknown>;
+    expect(callArgs.model).toBe('deepseek-r1:latest');
+
+    vi.unstubAllGlobals();
+  });
+});
+

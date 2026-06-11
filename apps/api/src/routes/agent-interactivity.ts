@@ -6,6 +6,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, bots, fills } from '@herobids/db';
 import type { AlertsConfig } from '@herobids/domain';
+import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
@@ -58,6 +59,7 @@ export async function agentInteractivityRoutes(
   db: Database,
   redisClient: Redis,
   alertsConfig?: AlertsConfig,
+  llmCatalogContext?: OperatorLlmCatalogContext,
 ): Promise<void> {
   const telegramToken = alertsConfig?.telegram?.botToken ?? '';
 
@@ -120,7 +122,7 @@ export async function agentInteractivityRoutes(
         dexWatchlistSymbols: parsed.data.dexWatchlistSymbols,
       },
     );
-    const modelIssues = validateAgentModelPolicy(effectiveModelPolicy);
+    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
