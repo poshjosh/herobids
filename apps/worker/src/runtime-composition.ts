@@ -46,6 +46,7 @@ export interface RuntimeReminderContext {
   reminderId: string | null;
   message: string;
   requestedAt: string | null;
+  scheduledBy: 'scout' | 'judge';
 }
 
 export interface RuntimeMarketWakeContext {
@@ -944,7 +945,8 @@ export function applyRuntimeMessage(
     if (source === 'reminder') {
       const reminderId = typeof context['reminderId'] === 'string' ? context['reminderId'] : (wakeId.startsWith('reminder:') ? wakeId.slice('reminder:'.length) : null) || null;
       const message = typeof context['message'] === 'string' ? context['message'] : (reason.startsWith('reminder:') ? reason.slice('reminder:'.length) : reason);
-      state.metrics.currentReminder = { wakeId, reminderId, message, requestedAt };
+      const scheduledBy: 'scout' | 'judge' = context['scheduledBy'] === 'scout' ? 'scout' : 'judge';
+      state.metrics.currentReminder = { wakeId, reminderId, message, requestedAt, scheduledBy };
       state.metrics.currentMarketWake = null;
       const summary = `Reminder: ${message}`;
       pushRecentEvent(state, type, summary);
@@ -960,6 +962,7 @@ export function applyRuntimeMessage(
         reminderId,
         message,
         requestedAt,
+        scheduledBy: 'judge', // Legacy records predate scheduledBy; all were judge-created
       };
       state.metrics.currentMarketWake = null;
       const summary = `Reminder: ${message}`;

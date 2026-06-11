@@ -24,6 +24,7 @@ interface ReminderRecord {
   message: string;
   triggerAt: string;
   firedAt?: string;
+  scheduledBy?: 'scout' | 'judge';
 }
 
 // --- create_task ---
@@ -143,6 +144,7 @@ const scheduleReminderTool: AgentTool = {
       id,
       message,
       triggerAt,
+      scheduledBy: ctx.phase,
     };
     await ctx.redis.hset(`agent:reminders:${ctx.agentId}`, id, JSON.stringify(reminder));
 

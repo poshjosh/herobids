@@ -60,7 +60,7 @@ describe('ReminderCoordinator', () => {
         reason: 'reminder:Check BTC price',
         eventIds: ['rem-001'],
         source: 'reminder',
-        context: { reminderId: 'rem-001', message: 'Check BTC price' },
+        context: { reminderId: 'rem-001', message: 'Check BTC price', scheduledBy: 'judge' },
       }),
     );
   });
@@ -78,6 +78,33 @@ describe('ReminderCoordinator', () => {
     expect(call['source']).toBe('reminder');
     expect((call['context'] as Record<string, unknown>)['reminderId']).toBe('rem-typed');
     expect((call['context'] as Record<string, unknown>)['message']).toBe('Monitor SOL dip');
+  });
+
+  it('propagates scheduledBy:judge from reminder record to wake context', async () => {
+    const reminder = makeReminder({ id: 'rem-j', message: 'Judge reminder', scheduledBy: 'judge' });
+    redis = makeRedis({
+      'agent:reminders:agent-1': { 'rem-j': JSON.stringify(reminder) },
+    });
+
+    const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
+    await (coordinator as unknown as { tick(): Promise<void> }).tick();
+
+    const call = (eventPublisher.emitAgentMarketWake.mock.calls[0] as [string, Record<string, unknown>])[1];
+    expect((call['context'] as Record<string, unknown>)['scheduledBy']).toBe('judge');
+  });
+
+  it('defaults scheduledBy to judge for legacy records without the field', async () => {
+    // Simulate a record from before scheduledBy was added (no scheduledBy field)
+    const legacyRecord = { id: 'rem-legacy', message: 'Legacy reminder', triggerAt: new Date(Date.now() - 1000).toISOString() };
+    redis = makeRedis({
+      'agent:reminders:agent-1': { 'rem-legacy': JSON.stringify(legacyRecord) },
+    });
+
+    const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
+    await (coordinator as unknown as { tick(): Promise<void> }).tick();
+
+    const call = (eventPublisher.emitAgentMarketWake.mock.calls[0] as [string, Record<string, unknown>])[1];
+    expect((call['context'] as Record<string, unknown>)['scheduledBy']).toBe('judge');
   });
 
   it('removes the reminder from Redis after emitting the wake', async () => {

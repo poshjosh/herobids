@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { taskTools } from './tasks.js';
 
-function makeCtx(store: Record<string, Record<string, string>> = {}): Parameters<typeof taskTools[0]['execute']>[1] {
+function makeCtx(store: Record<string, Record<string, string>> = {}, phase: 'scout' | 'judge' = 'judge'): Parameters<typeof taskTools[0]['execute']>[1] {
   return {
     agentId: 'agent-1',
     sessionId: 'session-1',
+    phase,
     redis: {
       hset: vi.fn(async (key: string, field: string, value: string) => {
         store[key] ??= {};
@@ -98,9 +99,21 @@ describe('task tools', () => {
     // Verify stored in redis
     const raw = store[`agent:reminders:agent-1`]?.[reminderId];
     expect(raw).toBeDefined();
-    const record = JSON.parse(raw!) as { message: string; triggerAt: string };
+    const record = JSON.parse(raw!) as { message: string; triggerAt: string; scheduledBy: string };
     expect(record.message).toBe('check portfolio');
     expect(record.triggerAt).toBe(future);
+    expect(record.scheduledBy).toBe('judge');
+  });
+
+  it('schedule_reminder records scheduledBy:scout when phase is scout', async () => {
+    const scoutCtx = makeCtx(store, 'scout');
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const result = await scheduleReminder.execute({ message: 'scout check', triggerAt: future }, scoutCtx);
+    expect(result.success).toBe(true);
+    const reminderId = (result.data as { reminderId: string }).reminderId;
+    const raw = store[`agent:reminders:agent-1`]?.[reminderId];
+    const record = JSON.parse(raw!) as { scheduledBy: string };
+    expect(record.scheduledBy).toBe('scout');
   });
 
   it('schedule_reminder rejects past dates', async () => {

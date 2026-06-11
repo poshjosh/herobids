@@ -79,6 +79,8 @@ export interface ToolAnalyticsResult {
 export interface ToolContext {
   agentId: string;
   sessionId: string;
+  /** Which decision phase is executing this tool call */
+  phase: 'scout' | 'judge';
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;

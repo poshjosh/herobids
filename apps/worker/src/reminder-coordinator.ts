@@ -82,7 +82,7 @@ export class ReminderCoordinator {
           priority: 'normal',
           requestedAt: new Date().toISOString(),
           source: 'reminder',
-          context: { reminderId, message: reminder.message },
+          context: { reminderId, message: reminder.message, scheduledBy: reminder.scheduledBy ?? 'judge' },
         });
 
         // Remove the fired reminder from the active queue after it wakes the agent.

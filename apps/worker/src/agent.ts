@@ -46,6 +46,7 @@ import {
 } from './runtime-composition.js';
 import { shouldSkipTick, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
+import { resolvePreScoutDecision } from './scout-gating.js';
 import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
@@ -904,7 +905,7 @@ interface ToolCall {
   args: Record<string, unknown>;
 }
 
-async function executeTool(call: ToolCall): Promise<string | null> {
+async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): Promise<string | null> {
   // Hard runtime gate: reject any tool not declared in the active skill set.
   // The model was only told about allowed tools, but we enforce it here too so
   // a jailbreak or prompt injection cannot invoke undeclared capabilities.
@@ -953,6 +954,7 @@ async function executeTool(call: ToolCall): Promise<string | null> {
   const toolContext: ToolContext = {
     agentId: AGENT_ID!,
     sessionId: SESSION_ID!,
+    phase,
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
@@ -1333,6 +1335,9 @@ async function runTick(): Promise<void> {
       netPnlUsd: (sessionMetrics.portfolio.realizedPnlUsd ?? 0) + (sessionMetrics.portfolio.unrealizedPnlUsd ?? 0),
     });
 
+    // Snapshot before buildTickUserContext clears currentReminder.
+    const reminderScheduledBy = runtimeState.metrics.currentReminder?.scheduledBy ?? null;
+
     // Build context for this tick.
     const fullUserContext = buildTickUserContext(runtimeState, []);
     const incrementalContext = buildIncrementalContext({
@@ -1372,9 +1377,10 @@ async function runTick(): Promise<void> {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
+    const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy });
     let resolvedScoutDecision: ScoutDecision;
-    if (tickCount === 1) {
-      resolvedScoutDecision = { disposition: 'escalate', reason: 'first_tick_always_escalates' };
+    if (preScoutResolution.decision) {
+      resolvedScoutDecision = preScoutResolution.decision;
     } else {
       scoutTickCount++;
       // Scout tools: auto-derived from registry — all tools with 'read-*' categories
@@ -1423,7 +1429,7 @@ async function runTick(): Promise<void> {
           }
 
           try {
-            return await executeTool({ tool: toolCall.name, args: toolCall.args });
+            return await executeTool({ tool: toolCall.name, args: toolCall.args }, 'scout');
           } catch (err) {
             logger.warn({ err, tool: toolCall.name, phase: 'scout' }, 'Scout tool execution threw unexpectedly');
             return JSON.stringify({ ok: false, error: 'tool_failed', note: 'Tool timed out or failed. Skip or retry later.' });
@@ -1473,10 +1479,14 @@ async function runTick(): Promise<void> {
       }
     }
 
-    scoutEscalationCount++;
-    const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
-    logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout escalated to judge');
-    userContext = `${fullUserContext}\n\nScout escalation reason: ${resolvedScoutDecision.reason ?? 'unspecified'}`;
+    if (preScoutResolution.source === 'scout') {
+      scoutEscalationCount++;
+      const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
+      logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout escalated to judge');
+    } else {
+      logger.info({ reason: resolvedScoutDecision.reason, source: preScoutResolution.source }, 'Escalated to judge before scout dispatch');
+    }
+    userContext = `${fullUserContext}\n\nEscalation reason: ${resolvedScoutDecision.reason ?? 'unspecified'}`;
 
     addToHistory('user', userContext);
     const recentHistory = conversationHistory.slice(-10);

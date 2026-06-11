@@ -528,6 +528,35 @@ describe('runtime composition helpers', () => {
     expect(summary).toBe('Reminder: Check BTC price');
   });
 
+  it('decodes scheduledBy from typed reminder wake context', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    applyRuntimeMessage(state, {
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-reminder-typed-001',
+        reason: 'follow up with the user',
+        eventIds: ['rem-typed-001'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'reminder',
+        context: {
+          reminderId: 'rem-typed-001',
+          message: 'follow up with the user',
+          scheduledBy: 'scout',
+        },
+      },
+    });
+
+    expect(state.metrics.currentReminder).toEqual({
+      wakeId: 'wake-reminder-typed-001',
+      reminderId: 'rem-typed-001',
+      message: 'follow up with the user',
+      requestedAt: '2026-06-11T00:00:00.000Z',
+      scheduledBy: 'scout',
+    });
+  });
+
   it('renders reminder context as a dedicated dynamic block', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
