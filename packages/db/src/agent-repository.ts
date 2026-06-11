@@ -17,7 +17,7 @@ export interface InsertAgent {
   telegramChatId?: string;
   notificationPolicy?: {
     sendMessage?: {
-      email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt: string };
+      email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
     };
   } | null;
   executionMode?: string;
@@ -38,7 +38,7 @@ export interface UpdateAgent {
   telegramChatId?: string;
   notificationPolicy?: {
     sendMessage?: {
-      email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt: string };
+      email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
     };
   } | null;
   executionMode?: string;

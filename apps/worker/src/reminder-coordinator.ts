@@ -1,8 +1,8 @@
 import type { Redis } from 'ioredis';
 import pino from 'pino';
-import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
+import type { InstanceEventPublisher } from './agents/instance-event-publisher.js';
 import type { AgentRepository } from '@herobids/db';
-import type { ReminderRecord } from '../tools/tasks.js';
+import type { ReminderRecord } from './tools/tasks.js';
 
 const logger = pino({ name: 'reminder-coordinator' });
 
