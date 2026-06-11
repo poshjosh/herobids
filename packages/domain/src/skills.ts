@@ -175,6 +175,30 @@ export const PROGRAMMING_SKILL: SkillDefinition = {
 };
 
 /**
+ * `research` skill — internet search and URL reading.
+ */
+export const RESEARCH_SKILL: SkillDefinition = {
+  id: 'research',
+  name: 'Research',
+  description: 'Search the internet and read web pages for research and information gathering.',
+  instructions: `You have access to internet research tools.
+
+- Use \`search_web(query)\` to search the internet. Returns a list of results with titles, URLs, and text extracts.
+- Use \`browse_url(url)\` to fetch and read the contents of a specific web page. Only \`https://\` URLs are allowed.
+- Use \`send_message\` to share findings with the user.
+- Use \`publish_artifact\` when findings are substantial enough to warrant a structured output.`,
+  requiredTools: ['search_web', 'browse_url', 'send_message', 'publish_artifact'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000,
+  visibility: 'public',
+};
+
+/**
  * Preset → skill ID mapping.
  * When a user selects a preset in the UI, this is what gets stored as skillIds.
  */
@@ -191,4 +215,5 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   TRADING_SKILL,
   RISK_MONITORING_SKILL,
   PROGRAMMING_SKILL,
+  RESEARCH_SKILL,
 ];

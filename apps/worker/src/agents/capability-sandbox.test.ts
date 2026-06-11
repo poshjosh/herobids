@@ -11,7 +11,7 @@ describe('CapabilityPolicyEngine', () => {
 
     it('allows direct capabilities that are enabled', () => {
       const engine = new CapabilityPolicyEngine();
-      expect(engine.checkAccess('web_fetch', 'agent-1', 'sess-1')).toBeUndefined();
+      expect(engine.checkAccess('search_web', 'agent-1', 'sess-1')).toBeUndefined();
     });
 
     it('denies capabilities with tier=never (disabled takes precedence)', () => {
@@ -121,7 +121,8 @@ describe('CapabilityPolicyEngine', () => {
 
       expect(byCapability.get('submit_decision')?.tier).toBe('brokered');
       expect(byCapability.get('bot_query')?.tier).toBe('brokered');
-      expect(byCapability.get('web_fetch')?.tier).toBe('direct');
+      expect(byCapability.get('search_web')?.tier).toBe('direct');
+      expect(byCapability.get('browse_url')?.tier).toBe('direct');
       expect(byCapability.get('execute_code')?.tier).toBe('direct');
       expect(byCapability.get('publish_artifact')?.tier).toBe('brokered');
       expect(byCapability.get('venue_api')?.tier).toBe('never');

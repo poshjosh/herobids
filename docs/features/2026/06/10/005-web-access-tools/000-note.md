@@ -4,7 +4,7 @@ Your existing tool architecture (`AgentTool` interface + `ToolRegistry` + catego
 
 ### Option 1: Web Search Tool (recommended first step)
 
-Add a `web_search` tool that calls a search API. Best candidates:
+Add a `search_web` tool that calls a search API. Best candidates:
 
 | Provider | Pros | Cons |
 |----------|------|------|
@@ -35,7 +35,7 @@ You'd add a new category to `ToolCategory`:
 
 Then a new file like `apps/worker/src/tools/web-access.ts` implementing tools such as:
 
-- **`web_search(query, opts?)`** — search the internet, return top results with snippets
+- **`search_web(query, opts?)`** — search the internet, return top results with snippets
 - **`browse_url(url)`** — fetch and extract readable text from a URL (with byte/token limits)
 
 These would be `read-web` category tools, gated by your capability engine so you can control per-agent access and rate-limit external calls.
@@ -50,4 +50,4 @@ These would be `read-web` category tools, gated by your capability engine so you
 
 ### My Recommendation
 
-Start with **Tavily `web_search`** + a simple **`browse_url`** using `fetch` + `@mozilla/readability` + `linkedom`. This gives agents both broad search and targeted page reading without heavy dependencies or headless browsers. Add `crypto_news` later as a structured, lower-cost complement for market-relevant research.
+Start with **Tavily `search_web`** + a simple **`browse_url`** using `fetch` + `@mozilla/readability` + `linkedom`. This gives agents both broad search and targeted page reading without heavy dependencies or headless browsers. Add `crypto_news` later as a structured, lower-cost complement for market-relevant research.

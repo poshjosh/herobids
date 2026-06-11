@@ -385,6 +385,19 @@ export const WorkerConfigSchema = z.object({
   }).default({}),
 });
 
+export const WebAccessToolsConfigSchema = z.object({
+  tavily: z.object({
+    baseUrl: z.string().url().default('https://api.tavily.com'),
+    searchDepth: z.enum(['basic', 'advanced']).default('basic'),
+    maxResults: z.number().int().min(1).max(10).default(5),
+    timeoutMs: z.number().int().min(1000).default(15_000),
+  }).default({}),
+  browseUrl: z.object({
+    maxResponseBytes: z.number().int().min(1024).default(512 * 1024),
+    timeoutMs: z.number().int().min(1000).default(15_000),
+  }).default({}),
+});
+
 export const AgentRuntimeConfigSchema = z.object({
   failureBackoff: z.object({
     backoffThreshold: z.number().int().min(1).default(3),
@@ -426,6 +439,7 @@ export const AgentRuntimeConfigSchema = z.object({
       defaultTimeoutMs: z.number().int().min(1000).default(60_000),
       defaultMaxOutputBytes: z.number().int().min(1).default(51_200),
     }).default({}),
+    webAccess: WebAccessToolsConfigSchema.default({}),
   }).default({}),
 });
 

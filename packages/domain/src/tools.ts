@@ -26,6 +26,7 @@ export type ToolCategory =
   | 'read-memory'
   | 'read-market-data'
   | 'read-trade'
+  | 'read-web'
   | 'write-database'
   | 'write-memory'
   | 'write-messaging'
@@ -166,6 +167,7 @@ export interface ToolDefinition {
 
 export const KNOWN_AGENT_TOOL_NAMES = [
   'adjust_bot_config',
+  'browse_url',
   'check_regime',
   'check_watches',
   'create_bot',
@@ -188,6 +190,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'stop_bot',
   'submit_decision',
   'watch_token',
+  'search_web',
 ] as const;
 
 export type AgentToolName = typeof KNOWN_AGENT_TOOL_NAMES[number];

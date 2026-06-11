@@ -218,6 +218,15 @@ agentRuntime:
     codeExecute:
       defaultTimeoutMs: 60000      # execute_code timeout when no capability grant present
       defaultMaxOutputBytes: 51200  # execute_code max output when no capability grant present
+    webAccess:
+      tavily:
+        baseUrl: "https://api.tavily.com"
+        searchDepth: basic
+        maxResults: 5
+        timeoutMs: 15000
+      browseUrl:
+        maxResponseBytes: 524288   # 512 KB
+        timeoutMs: 15000
 
 llmValidation:
   requirePinnedModel: true

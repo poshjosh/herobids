@@ -9,6 +9,7 @@ import { codeTools } from './code.js';
 import { marketDataTools } from './market-data.js';
 import { priceTools } from './price.js';
 import { watchTools } from './watch.js';
+import { webAccessTools } from './web-access.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredToolNames = registry.list().map((tool) => tool.name).sort();
@@ -49,6 +50,7 @@ export function createToolRegistry(): ToolRegistry {
     ...marketDataTools,
     ...priceTools,
     ...watchTools,
+    ...webAccessTools,
   ];
 
   for (const tool of allTools) {

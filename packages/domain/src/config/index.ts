@@ -29,6 +29,7 @@ export {
   StripeConfigSchema,
   CreemConfigSchema,
   TelegramChannelConfigSchema,
+  WebAccessToolsConfigSchema,
 } from './schema.js';
 
 export type {

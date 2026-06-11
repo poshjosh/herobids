@@ -98,10 +98,16 @@ export const DEFAULT_CAPABILITY_GRANTS: CapabilityGrant[] = [
     limits: { maxPerMinute: 10, maxConcurrent: 1, timeoutMs: 30_000 },
   },
   {
-    capability: 'web_fetch',
+    capability: 'search_web',
     tier: 'direct',
     enabled: true,
-    limits: { maxPerMinute: 30, maxConcurrent: 5, timeoutMs: 30_000, maxResponseBytes: 5 * 1024 * 1024, maxTotalDownloadBytes: 50 * 1024 * 1024 },
+    limits: { maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 256 * 1024 },
+  },
+  {
+    capability: 'browse_url',
+    tier: 'direct',
+    enabled: true,
+    limits: { maxPerMinute: 10, maxConcurrent: 3, timeoutMs: 20_000, maxResponseBytes: 512 * 1024 },
   },
   {
     // execute_code runs locally inside the agent container (network-sandboxed by sandbox-exec.sh).
