@@ -69,6 +69,15 @@ export interface RawArtifact {
   createdAt: Date;
 }
 
+export const SUPPRESSED_PROTOCOL_MESSAGE_TYPES = [
+  'agent.heartbeat',
+  'agent.runtime.heartbeat',
+] as const;
+
+export function isSuppressedProtocolMessageType(type: string): boolean {
+  return SUPPRESSED_PROTOCOL_MESSAGE_TYPES.includes(type as (typeof SUPPRESSED_PROTOCOL_MESSAGE_TYPES)[number]);
+}
+
 // ---------------------------------------------------------------------------
 // Classification table for protocol message types
 // ---------------------------------------------------------------------------

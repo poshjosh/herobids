@@ -4,11 +4,20 @@ import {
   mapRuntimeSession,
   mapOutboundMessage,
   mapArtifact,
+  isSuppressedProtocolMessageType,
   type RawAgentMessage,
   type RawRuntimeSession,
   type RawOutboundMessage,
   type RawArtifact,
 } from './agent-activity-mapper.js';
+
+describe('isSuppressedProtocolMessageType', () => {
+  it('suppresses runtime heartbeat message types', () => {
+    expect(isSuppressedProtocolMessageType('agent.heartbeat')).toBe(true);
+    expect(isSuppressedProtocolMessageType('agent.runtime.heartbeat')).toBe(true);
+    expect(isSuppressedProtocolMessageType('agent.send_message')).toBe(false);
+  });
+});
 
 describe('mapProtocolMessage', () => {
   const baseMessage: RawAgentMessage = {

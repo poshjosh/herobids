@@ -83,7 +83,7 @@ describe('GET /dashboard/agent-activity', () => {
           actorId: AGENT_ID,
           agentId: AGENT_ID,
           botId: null,
-          type: 'agent.heartbeat',
+          type: 'agent.send_message',
           direction: 'inbound',
           schemaVersion: 'v1',
           sequence: null,
@@ -107,5 +107,62 @@ describe('GET /dashboard/agent-activity', () => {
     expect(body.entries).toHaveLength(1);
     expect(body.entries[0].id).toBe('msg-old');
     expect(body.hasMore).toBe(false);
+  });
+
+  it('suppresses heartbeat protocol rows from dashboard activity', async () => {
+    const { dashboardRoutes } = await import('./dashboard.js');
+    const now = new Date('2026-06-11T12:05:00Z');
+
+    const { db } = buildDb({
+      agentRows: [{ id: AGENT_ID, name: 'Agent A', userId: TEST_USER_ID }],
+      protocolRows: [
+        {
+          id: 'msg-heartbeat',
+          messageId: 'mid-heartbeat',
+          correlationId: 'c-heartbeat',
+          actorType: 'agent',
+          actorId: AGENT_ID,
+          agentId: AGENT_ID,
+          botId: null,
+          type: 'agent.runtime.heartbeat',
+          direction: 'inbound',
+          schemaVersion: 'v1',
+          sequence: null,
+          traceId: null,
+          processingStatus: 'processed',
+          errorDetail: null,
+          createdAt: now,
+        },
+        {
+          id: 'msg-visible',
+          messageId: 'mid-visible',
+          correlationId: 'c-visible',
+          actorType: 'agent',
+          actorId: AGENT_ID,
+          agentId: AGENT_ID,
+          botId: null,
+          type: 'agent.send_message',
+          direction: 'outbound',
+          schemaVersion: 'v1',
+          sequence: null,
+          traceId: null,
+          processingStatus: 'processed',
+          errorDetail: null,
+          createdAt: new Date(now.getTime() - 1_000),
+        },
+      ],
+      sessionRows: [],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await dashboardRoutes(app, db as any);
+
+    const res = await app.inject({ method: 'GET', url: '/dashboard/agent-activity?limit=10' });
+    expect(res.statusCode).toBe(200);
+
+    const body = JSON.parse(res.body);
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0].id).toBe('msg-visible');
   });
 });

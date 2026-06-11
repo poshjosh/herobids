@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { eq, and, or, isNull, inArray, desc, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, inArray, notInArray, desc, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import {
   users,
@@ -13,7 +13,12 @@ import {
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DashboardActivityQuerySchema } from '../schemas.js';
-import { mapProtocolMessage, mapRuntimeSession } from './agent-activity-mapper.js';
+import {
+  mapProtocolMessage,
+  mapRuntimeSession,
+  isSuppressedProtocolMessageType,
+  SUPPRESSED_PROTOCOL_MESSAGE_TYPES,
+} from './agent-activity-mapper.js';
 import type { AgentActivityEntry } from './agent-activity-types.js';
 
 // ---------------------------------------------------------------------------
@@ -320,7 +325,10 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     // Fetch recent protocol messages + sessions in parallel
     const [protocolRows, sessionRows] = await Promise.all([
       db.select().from(agentMessages)
-        .where(inArray(agentMessages.agentId, agentIds as [string, ...string[]]))
+        .where(and(
+          inArray(agentMessages.agentId, agentIds as [string, ...string[]]),
+          notInArray(agentMessages.type, SUPPRESSED_PROTOCOL_MESSAGE_TYPES),
+        ))
         .orderBy(desc(agentMessages.createdAt))
         .limit(limit + 1),
       db.select().from(agentRuntimeSessions)
@@ -332,6 +340,9 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     const entries: AgentActivityEntry[] = [];
 
     for (const row of protocolRows) {
+      if (isSuppressedProtocolMessageType(String((row as { type?: unknown }).type ?? ''))) {
+        continue;
+      }
       entries.push(mapProtocolMessage(row as Parameters<typeof mapProtocolMessage>[0]));
     }
 

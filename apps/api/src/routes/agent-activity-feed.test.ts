@@ -141,7 +141,7 @@ describe('GET /agents/:id/activity-feed', () => {
         {
           id: 'msg-1', messageId: 'mid-1', correlationId: 'c1',
           actorType: 'agent', actorId: AGENT_ID, agentId: AGENT_ID, botId: null,
-          type: 'agent.heartbeat', direction: 'inbound', schemaVersion: 'v1',
+          type: 'agent.decision.submit', direction: 'inbound', schemaVersion: 'v1',
           sequence: null, traceId: null, processingStatus: 'processed', errorDetail: null,
           createdAt: earlier,
         },
@@ -169,5 +169,44 @@ describe('GET /agents/:id/activity-feed', () => {
     expect(new Date(body.entries[0].timestamp).getTime()).toBeGreaterThan(
       new Date(body.entries[1].timestamp).getTime(),
     );
+  });
+
+  it('suppresses heartbeat protocol rows from the feed', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const now = new Date('2026-06-11T11:00:00Z');
+
+    const { db } = buildDb({
+      agentRows: [{ id: AGENT_ID, userId: TEST_USER_ID }],
+      protocolRows: [
+        {
+          id: 'msg-heartbeat', messageId: 'mid-heartbeat', correlationId: 'c-heartbeat',
+          actorType: 'agent', actorId: AGENT_ID, agentId: AGENT_ID, botId: null,
+          type: 'agent.runtime.heartbeat', direction: 'inbound', schemaVersion: 'v1',
+          sequence: null, traceId: null, processingStatus: 'processed', errorDetail: null,
+          createdAt: now,
+        },
+        {
+          id: 'msg-visible', messageId: 'mid-visible', correlationId: 'c-visible',
+          actorType: 'agent', actorId: AGENT_ID, agentId: AGENT_ID, botId: null,
+          type: 'agent.send_message', direction: 'inbound', schemaVersion: 'v1',
+          sequence: null, traceId: null, processingStatus: 'processed', errorDetail: null,
+          createdAt: new Date(now.getTime() - 1_000),
+        },
+      ],
+      sessionRows: [],
+      outboundRows: [],
+      artifactRows: [],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db as any);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/activity-feed?limit=10` });
+    expect(res.statusCode).toBe(200);
+
+    const body = JSON.parse(res.body);
+    expect(body.entries).toHaveLength(1);
+    expect(body.entries[0].id).toBe('msg-visible');
   });
 });

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, desc, sql } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, bots, decisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
@@ -22,7 +22,14 @@ import {
   resolveNotificationPolicy,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
-import { mapProtocolMessage, mapRuntimeSession, mapOutboundMessage, mapArtifact } from './agent-activity-mapper.js';
+import {
+  mapProtocolMessage,
+  mapRuntimeSession,
+  mapOutboundMessage,
+  mapArtifact,
+  isSuppressedProtocolMessageType,
+  SUPPRESSED_PROTOCOL_MESSAGE_TYPES,
+} from './agent-activity-mapper.js';
 import type { AgentActivityEntry } from './agent-activity-types.js';
 
 // --- Request Schemas ---
@@ -624,8 +631,15 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       db.select().from(agentMessages)
         .where(
           beforeFilter
-            ? and(eq(agentMessages.agentId, id), sql`${agentMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
-            : eq(agentMessages.agentId, id),
+            ? and(
+                eq(agentMessages.agentId, id),
+                notInArray(agentMessages.type, SUPPRESSED_PROTOCOL_MESSAGE_TYPES),
+                sql`${agentMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`,
+              )
+            : and(
+                eq(agentMessages.agentId, id),
+                notInArray(agentMessages.type, SUPPRESSED_PROTOCOL_MESSAGE_TYPES),
+              ),
         )
         .orderBy(desc(agentMessages.createdAt))
         .limit(limit),
@@ -655,6 +669,9 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const entries: AgentActivityEntry[] = [];
 
     for (const row of protocolRows) {
+      if (isSuppressedProtocolMessageType(String((row as { type?: unknown }).type ?? ''))) {
+        continue;
+      }
       entries.push(mapProtocolMessage(row as Parameters<typeof mapProtocolMessage>[0]));
     }
 

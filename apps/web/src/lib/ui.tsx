@@ -71,17 +71,23 @@ export function Card({
 // ---------------------------------------------------------------------------
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  active: { bg: 'var(--color-success-subtle)', text: 'var(--color-success)', dot: 'var(--color-success)' },
   running: { bg: 'var(--color-success-subtle)', text: 'var(--color-success)', dot: 'var(--color-success)' },
   stopped: { bg: 'var(--color-surface-3)', text: 'var(--color-text-muted)', dot: 'var(--color-text-muted)' },
   crashed: { bg: 'var(--color-danger-subtle)', text: 'var(--color-danger)', dot: 'var(--color-danger)' },
+  unhealthy: { bg: 'var(--color-warning-subtle)', text: 'var(--color-warning)', dot: 'var(--color-warning)' },
   paused: { bg: 'var(--color-warning-subtle)', text: 'var(--color-warning)', dot: 'var(--color-warning)' },
   starting: { bg: 'var(--color-brand-subtle)', text: 'var(--color-brand)', dot: 'var(--color-brand)' },
 };
+
+// Statuses that represent a live/running state — dot gets a pulse animation
+const LIVE_STATUSES = new Set(['active', 'running', 'starting']);
 
 export function StatusBadge({ status }: { status: string }) {
   const intl = useIntl();
   const colors = STATUS_COLORS[status] ?? STATUS_COLORS['stopped']!;
   const label = intl.formatMessage({ id: `status.${status}`, defaultMessage: status });
+  const isLive = LIVE_STATUSES.has(status);
   return (
     <span
       style={{
@@ -103,6 +109,7 @@ export function StatusBadge({ status }: { status: string }) {
           borderRadius: '50%',
           background: colors.dot,
           flexShrink: 0,
+          ...(isLive ? { animation: 'status-dot-pulse 1.8s ease-in-out infinite' } : {}),
         }}
       />
       {label}
