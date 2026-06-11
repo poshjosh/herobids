@@ -166,10 +166,12 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
   describe('emitAgentMarketWake', () => {
     const payload: AgentMarketWakePayload = {
       wakeId: 'wake-1',
-      reason: 'market_monitor_triggered',
+      reason: 'SOL crossed above 200',
       eventIds: ['evt-1', 'evt-2'],
       priority: 'normal',
       requestedAt: '2026-06-10T12:36:02.000Z',
+      source: 'watch_threshold',
+      context: { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, currentPrice: 204.5, stale: false, watchId: 'w-1', triggeredAt: '2026-06-10T12:36:00.000Z' },
     };
 
     it('publishes to the correct stream key', async () => {
@@ -184,12 +186,14 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
       expect(type).toBe(MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE);
     });
 
-    it('includes eventIds and priority in payload', async () => {
+    it('includes eventIds, priority, source, and context in payload', async () => {
       await publisher.emitAgentMarketWake('agent-1', payload);
       const { payload: published } = parsePublished(redis.xadd.mock.calls[0]);
       expect(published['eventIds']).toEqual(['evt-1', 'evt-2']);
       expect(published['priority']).toBe('normal');
-      expect(published['reason']).toBe('market_monitor_triggered');
+      expect(published['reason']).toBe('SOL crossed above 200');
+      expect(published['source']).toBe('watch_threshold');
+      expect((published['context'] as Record<string, unknown>)['symbol']).toBe('SOL');
     });
 
     it('each call generates a unique messageId', async () => {

@@ -152,7 +152,7 @@ describe('MarketRegimeChangedPayloadSchema', () => {
 describe('AgentMarketWakePayloadSchema', () => {
   const valid = {
     wakeId: 'wake-001',
-    reason: 'market_monitor_triggered',
+    reason: 'SOL crossed above 200',
     eventIds: ['evt-1', 'evt-2'],
     priority: 'normal' as const,
     requestedAt: '2026-06-10T12:36:02.000Z',
@@ -182,6 +182,36 @@ describe('AgentMarketWakePayloadSchema', () => {
 
   it('accepts empty eventIds array', () => {
     expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, eventIds: [] }).success).toBe(true);
+  });
+
+  it('accepts typed source and context fields', () => {
+    const typed = {
+      ...valid,
+      source: 'watch_threshold' as const,
+      context: { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, currentPrice: 204 },
+    };
+    expect(AgentMarketWakePayloadSchema.safeParse(typed).success).toBe(true);
+  });
+
+  it('accepts all valid source values', () => {
+    for (const source of ['reminder', 'watch_threshold', 'discovery_delta', 'regime_change']) {
+      expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, source }).success, `source=${source}`).toBe(true);
+    }
+  });
+
+  it('rejects invalid source value', () => {
+    expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, source: 'unknown_source' }).success).toBe(false);
+  });
+
+  it('accepts payload without source/context for backward compatibility', () => {
+    const legacyPayload = {
+      wakeId: 'wake-legacy',
+      reason: 'market_monitor_triggered',
+      eventIds: ['evt-1'],
+      priority: 'normal' as const,
+      requestedAt: '2026-06-10T12:36:02.000Z',
+    };
+    expect(AgentMarketWakePayloadSchema.safeParse(legacyPayload).success).toBe(true);
   });
 });
 
@@ -274,6 +304,23 @@ describe('validateMessage — market monitor envelope round-trips', () => {
   });
 
   it('accepts a valid agent.market.wake envelope', () => {
+    const result = validateMessage({
+      ...baseEnvelope,
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-1',
+        reason: 'SOL crossed above 200',
+        eventIds: ['e1', 'e2'],
+        priority: 'normal',
+        requestedAt: '2026-06-10T12:00:00.000Z',
+        source: 'watch_threshold',
+        context: { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, currentPrice: 204 },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a legacy agent.market.wake envelope without source/context', () => {
     const result = validateMessage({
       ...baseEnvelope,
       type: 'agent.market.wake',

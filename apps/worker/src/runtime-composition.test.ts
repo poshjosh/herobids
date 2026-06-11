@@ -567,7 +567,7 @@ describe('runtime composition helpers', () => {
     expect(secondTick).not.toContain('## Reminder Context');
   });
 
-  it('applyRuntimeMessage returns a generic Market wake summary for non-reminder wakes', () => {
+  it('applyRuntimeMessage returns a generic Market wake summary for non-reminder, non-typed wakes', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {
       type: 'agent.market.wake',
@@ -580,6 +580,139 @@ describe('runtime composition helpers', () => {
       },
     });
     expect(summary).toBe('Market wake: momentum signal detected');
+  });
+
+  it('applyRuntimeMessage renders Watch Trigger Context for watch_threshold wakes', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const summary = applyRuntimeMessage(state, {
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-w-001',
+        reason: 'SOL crossed above 200',
+        eventIds: ['evt-1'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'watch_threshold',
+        context: {
+          symbol: 'SOL',
+          chain: 'solana',
+          condition: 'above',
+          thresholdPrice: 200,
+          currentPrice: 204.5,
+          stale: false,
+          triggeredAt: '2026-06-11T00:00:00.000Z',
+          watchId: 'watch-1',
+        },
+      },
+    });
+    expect(summary).toBe('SOL crossed above 200');
+    expect(state.metrics.currentMarketWake).not.toBeNull();
+    expect(state.metrics.currentReminder).toBeNull();
+  });
+
+  it('renders ## Watch Trigger Context block for watch_threshold source wake', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const userContext = buildTickUserContext(state, [{
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-w-001',
+        reason: 'SOL crossed above 200',
+        eventIds: ['evt-1'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'watch_threshold',
+        context: {
+          symbol: 'SOL',
+          chain: 'solana',
+          condition: 'above',
+          thresholdPrice: 200,
+          currentPrice: 204.5,
+          stale: false,
+          triggeredAt: '2026-06-11T00:00:00.000Z',
+          watchId: 'watch-1',
+        },
+      },
+    }]);
+    expect(userContext).toContain('## Watch Trigger Context');
+    expect(userContext).toContain('Summary: SOL crossed above 200');
+    expect(userContext).toContain('Watch ID: watch-1');
+    expect(userContext).toContain('Condition: above 200');
+    expect(userContext).toContain('Current price: 204.5');
+  });
+
+  it('clears watch trigger context after the immediate tick', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const firstTick = buildTickUserContext(state, [{
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-w-001',
+        reason: 'SOL crossed above 200',
+        eventIds: ['evt-1'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'watch_threshold',
+        context: { symbol: 'SOL', chain: 'solana', condition: 'above', thresholdPrice: 200, currentPrice: 204, stale: false, triggeredAt: '2026-06-11T00:00:00.000Z', watchId: 'w-1' },
+      },
+    }]);
+    const secondTick = buildTickUserContext(state, []);
+    expect(firstTick).toContain('## Watch Trigger Context');
+    expect(secondTick).not.toContain('## Watch Trigger Context');
+  });
+
+  it('renders ## Discovery Trigger Context block for discovery_delta source wake', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const userContext = buildTickUserContext(state, [{
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-d-001',
+        reason: 'WIF entered top discovery set',
+        eventIds: ['evt-2'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'discovery_delta',
+        context: {
+          symbol: 'WIF',
+          network: 'solana',
+          address: '0xabc',
+          reason: 'entered_top_set',
+          rank: 3,
+          liquidityUsd: 1450000,
+          volume24hUsd: 8300000,
+          detectedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    }]);
+    expect(userContext).toContain('## Discovery Trigger Context');
+    expect(userContext).toContain('Summary: WIF entered top discovery set');
+    expect(userContext).toContain('Symbol: WIF (solana)');
+    expect(userContext).toContain('Reason: entered_top_set');
+    expect(userContext).toContain('Rank: 3');
+  });
+
+  it('renders ## Regime Change Context block for regime_change source wake', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const userContext = buildTickUserContext(state, [{
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-r-001',
+        reason: 'BTC regime changed to unfavorable',
+        eventIds: ['evt-3'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'regime_change',
+        context: {
+          benchmarkSymbol: 'BTC',
+          previousState: 'favorable',
+          currentState: 'unfavorable',
+          changedAt: '2026-06-11T00:00:00.000Z',
+        },
+      },
+    }]);
+    expect(userContext).toContain('## Regime Change Context');
+    expect(userContext).toContain('Summary: BTC regime changed to unfavorable');
+    expect(userContext).toContain('Benchmark: BTC');
+    expect(userContext).toContain('Previous state: favorable');
+    expect(userContext).toContain('Current state: unfavorable');
   });
 
   describe('goal normalization', () => {

@@ -7,6 +7,7 @@ import type {
   MarketDiscoveryDetectedPayload,
   MarketRegimeChangedPayload,
   AgentMarketWakePayload,
+  AgentMarketWakeSource,
 } from '@herobids/domain';
 
 const logger = pino({ name: 'market-monitor' });
@@ -59,6 +60,12 @@ interface PendingWake {
   scheduledAt: number;
   /** Monotonically incremented on every enqueue — used as a CAS token by flush. */
   generation: number;
+  /** Human-readable reason derived from the triggering event (first enqueue wins on coalesce). */
+  primaryReason?: string;
+  /** Typed wake source for the primary triggering event (first enqueue wins on coalesce). */
+  primarySource?: AgentMarketWakeSource;
+  /** Structured context specific to primarySource (first enqueue wins on coalesce). */
+  primaryContext?: Record<string, unknown>;
 }
 
 export interface MarketMonitor {
@@ -227,7 +234,22 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           await publisher.emitMarketWatchTriggered(agentId, payload);
           await recordDedupe(dedupeKey);
           await incrementRateCounter(agentId, 'watch_threshold');
-          await enqueueWake(agentId, eventId);
+          await enqueueWake(
+            agentId,
+            eventId,
+            `${watch.symbol} crossed ${watch.condition === 'above' ? 'above' : 'below'} ${watch.thresholdPrice}`,
+            'watch_threshold',
+            {
+              symbol: watch.symbol,
+              chain: watch.chain,
+              condition: watch.condition,
+              thresholdPrice: watch.thresholdPrice,
+              currentPrice: priceData.priceUsd,
+              stale: priceData.stale,
+              triggeredAt: payload.triggeredAt,
+              watchId: watch.watchId,
+            },
+          );
           metrics.eventsEmitted++;
           logger.info({ agentId, watchId: watch.watchId, symbol: watch.symbol }, 'Watch triggered');
         }
@@ -303,7 +325,22 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           if (rateLimited) continue;
           await publisher.emitMarketDiscoveryDetected(agentId, payload);
           await incrementRateCounter(agentId, 'discovery_delta');
-          await enqueueWake(agentId, eventId);
+          await enqueueWake(
+            agentId,
+            eventId,
+            `${token.symbol} entered top discovery set`,
+            'discovery_delta',
+            {
+              symbol: token.symbol,
+              network: token.network,
+              address: token.address,
+              reason: 'entered_top_set',
+              rank: token.rank,
+              liquidityUsd: token.liquidityUsd,
+              volume24hUsd: token.volume24hUsd,
+              detectedAt: payload.detectedAt,
+            },
+          );
         }
 
         logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: entered top set');
@@ -342,7 +379,22 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             if (rateLimited) continue;
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
-            await enqueueWake(agentId, eventId);
+            await enqueueWake(
+              agentId,
+              eventId,
+              `${token.symbol} confirmed by multiple discovery vectors`,
+              'discovery_delta',
+              {
+                symbol: token.symbol,
+                network: token.network,
+                address: token.address,
+                reason: 'multi_vector_confirmation',
+                rank: token.rank,
+                liquidityUsd: token.liquidityUsd,
+                volume24hUsd: token.volume24hUsd,
+                detectedAt: payload.detectedAt,
+              },
+            );
           }
 
           logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: multi vector confirmation');
@@ -389,7 +441,22 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             if (rateLimited) continue;
             await publisher.emitMarketDiscoveryDetected(agentId, payload);
             await incrementRateCounter(agentId, 'discovery_delta');
-            await enqueueWake(agentId, eventId);
+            await enqueueWake(
+              agentId,
+              eventId,
+              `${token.symbol} reappeared in discovery set`,
+              'discovery_delta',
+              {
+                symbol: token.symbol,
+                network: token.network,
+                address: token.address,
+                reason: 'reappeared_after_cooldown',
+                rank: token.rank,
+                liquidityUsd: token.liquidityUsd,
+                volume24hUsd: token.volume24hUsd,
+                detectedAt: payload.detectedAt,
+              },
+            );
           }
 
           logger.info({ symbol: token.symbol, network: token.network }, 'Discovery delta: reappeared after cooldown');
@@ -471,7 +538,19 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
         if (rateLimited) continue;
         await publisher.emitMarketRegimeChanged(agentId, payload);
         await incrementRateCounter(agentId, 'regime_change');
-        await enqueueWake(agentId, eventId);
+        await enqueueWake(
+          agentId,
+          eventId,
+          `${benchmarkSymbol} regime changed to ${currentState}`,
+          'regime_change',
+          {
+            benchmarkSymbol,
+            previousState,
+            currentState,
+            changedAt: payload.changedAt,
+            details: current.details,
+          },
+        );
       }
 
       logger.info({ benchmarkSymbol, previousState, currentState }, 'Regime changed');
@@ -492,7 +571,13 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     return run;
   }
 
-  async function enqueueWake(agentId: string, eventId: string): Promise<void> {
+  async function enqueueWake(
+    agentId: string,
+    eventId: string,
+    reason?: string,
+    source?: AgentMarketWakeSource,
+    context?: Record<string, unknown>,
+  ): Promise<void> {
     return withWakeMutationLock(async () => {
       const key = wakeKey(agentId);
       const wakeBucketTtlMs = Math.max(WAKE_COALESCING_WINDOW_MS * 3, WAKE_COOLDOWN_MS + WAKE_COALESCING_WINDOW_MS);
@@ -504,15 +589,16 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             existing.eventIds.push(eventId);
           }
           existing.generation = (existing.generation ?? 0) + 1;
+          // Primary source/context stay from the first enqueue (coalescing keeps first-wins semantics)
           await redis.set(key, JSON.stringify(existing), 'PX', wakeBucketTtlMs);
           metrics.wakeRequestsCoalesced++;
         } catch {
           // Malformed — overwrite
-          const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1 };
+          const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1, primaryReason: reason, primarySource: source, primaryContext: context };
           await redis.set(key, JSON.stringify(wake), 'PX', wakeBucketTtlMs);
         }
       } else {
-        const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1 };
+        const wake: PendingWake = { agentId, eventIds: [eventId], scheduledAt: Date.now() + WAKE_COALESCING_WINDOW_MS, generation: 1, primaryReason: reason, primarySource: source, primaryContext: context };
         await redis.set(key, JSON.stringify(wake), 'PX', wakeBucketTtlMs);
       }
     });
@@ -582,10 +668,12 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
         const payload: AgentMarketWakePayload = {
           wakeId: crypto.randomUUID(),
-          reason: 'market_monitor_triggered',
+          reason: wake.primaryReason ?? 'market monitor',
           eventIds: wake.eventIds,
           priority: 'normal',
           requestedAt: new Date().toISOString(),
+          ...(wake.primarySource !== undefined ? { source: wake.primarySource } : {}),
+          ...(wake.primaryContext !== undefined ? { context: wake.primaryContext } : {}),
         };
 
         await publisher.emitAgentMarketWake(wake.agentId, payload);

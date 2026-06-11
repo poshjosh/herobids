@@ -48,6 +48,14 @@ export interface RuntimeReminderContext {
   requestedAt: string | null;
 }
 
+export interface RuntimeMarketWakeContext {
+  wakeId: string;
+  source: 'watch_threshold' | 'discovery_delta' | 'regime_change';
+  reason: string;
+  requestedAt: string | null;
+  context: Record<string, unknown>;
+}
+
 export interface RuntimeVenueSignal {
   kind: 'perps' | 'dex';
   instrument: string;
@@ -85,6 +93,7 @@ export interface RuntimeSessionMetrics {
   lastPnlSummary: string | null;
   lastPositionSide: string | null;
   currentReminder: RuntimeReminderContext | null;
+  currentMarketWake: RuntimeMarketWakeContext | null;
   degradedCapabilities: Array<{ dependency: string; summary: string; guidance: string }>;
   managedBots: Array<{ id: string; status: string; strategyPreset?: string; symbol?: string }> | null;
   market: RuntimeMarketSnapshot;
@@ -392,6 +401,94 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     },
   },
   {
+    id: 'watch-trigger-context',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const wake = state.metrics.currentMarketWake;
+      if (!wake || wake.source !== 'watch_threshold') {
+        return null;
+      }
+      const ctx = wake.context;
+      return {
+        id: 'watchTriggerContext',
+        title: 'Watch Trigger Context',
+        provider: 'watch-trigger-context',
+        content: [
+          `Summary: ${wake.reason}`,
+          `Watch ID: ${typeof ctx['watchId'] === 'string' ? ctx['watchId'] : 'unavailable'}`,
+          `Symbol: ${typeof ctx['symbol'] === 'string' ? ctx['symbol'] : 'unavailable'} (${typeof ctx['chain'] === 'string' ? ctx['chain'] : 'unavailable'})`,
+          `Condition: ${typeof ctx['condition'] === 'string' ? ctx['condition'] : 'unavailable'} ${typeof ctx['thresholdPrice'] === 'number' ? ctx['thresholdPrice'] : 'unavailable'}`,
+          `Current price: ${typeof ctx['currentPrice'] === 'number' ? ctx['currentPrice'] : 'unavailable'}`,
+          `Stale: ${typeof ctx['stale'] === 'boolean' ? String(ctx['stale']) : 'unavailable'}`,
+          `Triggered at: ${typeof ctx['triggeredAt'] === 'string' ? ctx['triggeredAt'] : (wake.requestedAt ?? 'unavailable')}`,
+        ].join('\n'),
+      };
+    },
+  },
+  {
+    id: 'discovery-trigger-context',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const wake = state.metrics.currentMarketWake;
+      if (!wake || wake.source !== 'discovery_delta') {
+        return null;
+      }
+      const ctx = wake.context;
+      const rank = typeof ctx['rank'] === 'number' ? String(ctx['rank']) : 'unavailable';
+      const liquidity = typeof ctx['liquidityUsd'] === 'number' ? `$${(ctx['liquidityUsd'] as number).toLocaleString()}` : 'unavailable';
+      const volume = typeof ctx['volume24hUsd'] === 'number' ? `$${(ctx['volume24hUsd'] as number).toLocaleString()}` : 'unavailable';
+      return {
+        id: 'discoveryTriggerContext',
+        title: 'Discovery Trigger Context',
+        provider: 'discovery-trigger-context',
+        content: [
+          `Summary: ${wake.reason}`,
+          `Symbol: ${typeof ctx['symbol'] === 'string' ? ctx['symbol'] : 'unavailable'} (${typeof ctx['network'] === 'string' ? ctx['network'] : 'unavailable'})`,
+          `Reason: ${typeof ctx['reason'] === 'string' ? ctx['reason'] : 'unavailable'}`,
+          `Rank: ${rank}`,
+          `Liquidity: ${liquidity}`,
+          `Volume 24h: ${volume}`,
+          `Detected at: ${typeof ctx['detectedAt'] === 'string' ? ctx['detectedAt'] : (wake.requestedAt ?? 'unavailable')}`,
+        ].join('\n'),
+      };
+    },
+  },
+  {
+    id: 'regime-change-context',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const wake = state.metrics.currentMarketWake;
+      if (!wake || wake.source !== 'regime_change') {
+        return null;
+      }
+      const ctx = wake.context;
+      return {
+        id: 'regimeChangeContext',
+        title: 'Regime Change Context',
+        provider: 'regime-change-context',
+        content: [
+          `Summary: ${wake.reason}`,
+          `Benchmark: ${typeof ctx['benchmarkSymbol'] === 'string' ? ctx['benchmarkSymbol'] : 'unavailable'}`,
+          `Previous state: ${typeof ctx['previousState'] === 'string' ? ctx['previousState'] : 'unavailable'}`,
+          `Current state: ${typeof ctx['currentState'] === 'string' ? ctx['currentState'] : 'unavailable'}`,
+          `Changed at: ${typeof ctx['changedAt'] === 'string' ? ctx['changedAt'] : (wake.requestedAt ?? 'unavailable')}`,
+        ].join('\n'),
+      };
+    },
+  },
+  {
     id: 'degraded-capabilities',
     costTier: 'free',
     section: 'dynamic',
@@ -601,6 +698,7 @@ export function createRuntimeCompositionState(runtimeDescriptor: RuntimeDescript
       lastPnlSummary: null,
       lastPositionSide: null,
       currentReminder: null,
+      currentMarketWake: null,
       degradedCapabilities: [],
       managedBots: null,
       market: {
@@ -839,8 +937,21 @@ export function applyRuntimeMessage(
     const wakeId = typeof payload['wakeId'] === 'string' ? payload['wakeId'] : '';
     const reason = typeof payload['reason'] === 'string' ? payload['reason'] : '';
     const requestedAt = typeof payload['requestedAt'] === 'string' ? payload['requestedAt'] : null;
+    const source = typeof payload['source'] === 'string' ? payload['source'] : null;
+    const context = (payload['context'] as Record<string, unknown> | undefined) ?? {};
 
-    // Reminder wakes have wakeId and reason prefixed with "reminder:"
+    // Typed source check first — prefer structured payload over string-prefix convention
+    if (source === 'reminder') {
+      const reminderId = typeof context['reminderId'] === 'string' ? context['reminderId'] : (wakeId.startsWith('reminder:') ? wakeId.slice('reminder:'.length) : null) || null;
+      const message = typeof context['message'] === 'string' ? context['message'] : (reason.startsWith('reminder:') ? reason.slice('reminder:'.length) : reason);
+      state.metrics.currentReminder = { wakeId, reminderId, message, requestedAt };
+      state.metrics.currentMarketWake = null;
+      const summary = `Reminder: ${message}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+
+    // Legacy string-prefix fallback for reminder wakes (kept during migration)
     if (wakeId.startsWith('reminder:') && reason.startsWith('reminder:')) {
       const reminderId = wakeId.slice('reminder:'.length) || null;
       const message = reason.slice('reminder:'.length);
@@ -850,6 +961,7 @@ export function applyRuntimeMessage(
         message,
         requestedAt,
       };
+      state.metrics.currentMarketWake = null;
       const summary = `Reminder: ${message}`;
       pushRecentEvent(state, type, summary);
       return summary;
@@ -857,6 +969,14 @@ export function applyRuntimeMessage(
 
     state.metrics.currentReminder = null;
 
+    if (source === 'watch_threshold' || source === 'discovery_delta' || source === 'regime_change') {
+      state.metrics.currentMarketWake = { wakeId, source, reason, requestedAt, context };
+      const summary = reason || `Market wake: ${source}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+
+    state.metrics.currentMarketWake = null;
     const summary = reason ? `Market wake: ${reason}` : 'Market wake';
     pushRecentEvent(state, type, summary);
     return summary;
@@ -991,8 +1111,9 @@ export function buildTickUserContext(state: RuntimeCompositionState, incomingMes
   const progressSummary = computePerformanceSummary(state);
   const output = [dynamicContext, progressSummary].filter(Boolean).join('\n\n');
 
-  // Reminder context should only influence the tick immediately triggered by it.
+  // Reminder context and market wake context should only influence the tick immediately triggered by them.
   state.metrics.currentReminder = null;
+  state.metrics.currentMarketWake = null;
 
   return output;
 }

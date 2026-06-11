@@ -74,11 +74,15 @@ export class ReminderCoordinator {
       // Trigger is due — fire a wake and mark fired
       try {
         await this.eventPublisher.emitAgentMarketWake(agentId, {
+          // Legacy prefix form kept for backward compat with runtime instances that
+          // have not yet received the typed-source handling update.
           wakeId: `reminder:${reminderId}`,
           reason: `reminder:${reminder.message}`,
           eventIds: [reminderId],
           priority: 'normal',
           requestedAt: new Date().toISOString(),
+          source: 'reminder',
+          context: { reminderId, message: reminder.message },
         });
 
         // Remove the fired reminder from the active queue after it wakes the agent.
