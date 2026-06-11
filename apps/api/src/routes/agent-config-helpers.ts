@@ -220,7 +220,7 @@ type NotificationPolicyInput = {
 
 type StoredNotificationPolicy = {
   sendMessage?: {
-    email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt: string };
+    email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt?: string };
   };
 } | null;
 

@@ -33,7 +33,7 @@ export const agents = pgTable('agents', {
       email?: {
         enabled: boolean;
         source: 'explicit_prompt' | 'explicit_update';
-        enabledAt: string;
+        enabledAt?: string;
       };
     };
   } | null>(),
