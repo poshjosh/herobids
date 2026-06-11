@@ -59,8 +59,25 @@ describe('ReminderCoordinator', () => {
         wakeId: 'reminder:rem-001',
         reason: 'reminder:Check BTC price',
         eventIds: ['rem-001'],
+        source: 'reminder',
+        context: { reminderId: 'rem-001', message: 'Check BTC price' },
       }),
     );
+  });
+
+  it('emits typed reminder wake that the runtime can decode without the legacy prefix', async () => {
+    const reminder = makeReminder({ id: 'rem-typed', message: 'Monitor SOL dip' });
+    redis = makeRedis({
+      'agent:reminders:agent-1': { 'rem-typed': JSON.stringify(reminder) },
+    });
+
+    const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
+    await (coordinator as unknown as { tick(): Promise<void> }).tick();
+
+    const call = (eventPublisher.emitAgentMarketWake.mock.calls[0] as [string, Record<string, unknown>])[1];
+    expect(call['source']).toBe('reminder');
+    expect((call['context'] as Record<string, unknown>)['reminderId']).toBe('rem-typed');
+    expect((call['context'] as Record<string, unknown>)['message']).toBe('Monitor SOL dip');
   });
 
   it('removes the reminder from Redis after emitting the wake', async () => {

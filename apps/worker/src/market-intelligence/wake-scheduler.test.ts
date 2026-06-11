@@ -139,7 +139,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
       agentId,
       expect.objectContaining({
         eventIds: ['ev-1', 'ev-2', 'ev-3'],
-        reason: 'market_monitor_triggered',
+        reason: 'market monitor',
       }),
     );
 

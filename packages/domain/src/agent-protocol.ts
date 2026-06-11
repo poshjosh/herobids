@@ -316,6 +316,9 @@ export type MarketRegimeChangedPayload = z.infer<typeof MarketRegimeChangedPaylo
 export const WakePrioritySchema = z.enum(['low', 'normal', 'high']);
 export type WakePriority = z.infer<typeof WakePrioritySchema>;
 
+export const AgentMarketWakeSourceSchema = z.enum(['reminder', 'watch_threshold', 'discovery_delta', 'regime_change']);
+export type AgentMarketWakeSource = z.infer<typeof AgentMarketWakeSourceSchema>;
+
 export const AgentMarketWakePayloadSchema = z.object({
   wakeId: z.string().min(1),
   reason: z.string().min(1),
@@ -323,6 +326,8 @@ export const AgentMarketWakePayloadSchema = z.object({
   priority: WakePrioritySchema,
   requestedAt: z.string().datetime(),
   notBefore: z.string().datetime().optional(),
+  source: AgentMarketWakeSourceSchema.optional(),
+  context: z.record(z.unknown()).optional(),
 });
 
 export type AgentMarketWakePayload = z.infer<typeof AgentMarketWakePayloadSchema>;
