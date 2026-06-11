@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, formatSkillSelection, listSelectableSkills } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
@@ -23,7 +23,6 @@ interface FormState {
   telegramChatId: string;
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
-  dailyLlmTokenBudget: string;
   dailyLossLimit: string;
   maxBots: string;
   maxSlippageBps: string;
@@ -59,7 +58,6 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     telegramChatId: initialData.telegramChatId ?? '',
     costPreset: (initialData.costPreset as FormState['costPreset']) ?? '',
     dailySpendBudgetUsd: initialData.dailySpendBudgetUsd != null ? String(initialData.dailySpendBudgetUsd) : '',
-    dailyLlmTokenBudget: initialData.dailyLlmTokenBudget != null ? String(initialData.dailyLlmTokenBudget) : '',
     dailyLossLimit: initialData.dailyLossLimit ?? '',
     maxBots: initialData.maxBots != null ? String(initialData.maxBots) : '',
     maxSlippageBps: initialData.maxSlippageBps != null ? String(initialData.maxSlippageBps) : '',
@@ -77,7 +75,11 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     queryKey: ['agents', agentId, 'capability-readiness', 'trading'],
     queryFn: async () => agentsApi.capabilityReadiness(agentId, 'trading') as Promise<CapabilityReadiness>,
   });
-  const hasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
+  const currentHasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
+  const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
+  const hasTradingCapability = skillsQuery.isSuccess
+    ? hasCapabilityFamily(selectedSkills, 'trading')
+    : currentHasTradingCapability;
   const showTradingControls = hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim());
 
@@ -91,11 +93,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
         name: form.name.trim(),
         prompt: form.prompt.trim(),
         skillIds,
-        executionMode: form.executionMode || null,
+        executionMode: hasTradingCapability ? (form.executionMode || null) : null,
         telegramChatId: form.telegramChatId.trim() || null,
         costPreset: form.costPreset || null,
         dailySpendBudgetUsd: form.dailySpendBudgetUsd ? parseFloat(form.dailySpendBudgetUsd) : null,
-        dailyLlmTokenBudget: form.dailyLlmTokenBudget ? parseInt(form.dailyLlmTokenBudget, 10) : null,
         dailyLossLimit: form.dailyLossLimit.trim() || null,
         maxBots: form.maxBots ? parseInt(form.maxBots, 10) : null,
         maxSlippageBps: form.maxSlippageBps ? parseInt(form.maxSlippageBps, 10) : null,
@@ -164,18 +165,20 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
             </div>
           </div>
 
-          <div style={fieldGap}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={set('executionMode')}>
-              <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
-              <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-              <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
-              <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
-            </select>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-              {intl.formatMessage({ id: 'agents.edit.executionModeHelp' }, { mode: formatExecutionMode(form.executionMode, intl) })}
+          {hasTradingCapability && (
+            <div style={fieldGap}>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={set('executionMode')}>
+                <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
+                <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
+                <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+                <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
+              </select>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                {intl.formatMessage({ id: 'agents.edit.executionModeHelp' }, { mode: formatExecutionMode(form.executionMode, intl) })}
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.selectedSkills' })}</FieldLabel>
@@ -212,9 +215,9 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                     setModelOverrideEnabled(true);
                     if (inheritedModelSettings) {
                       setModelForm({
-                        provider: inheritedModelSettings.provider,
-                        lightModel: inheritedModelSettings.lightModel,
-                        heavyModel: inheritedModelSettings.heavyModel,
+                        provider: inheritedModelSettings.provider ?? '',
+                        lightModel: inheritedModelSettings.lightModel ?? '',
+                        heavyModel: inheritedModelSettings.heavyModel ?? '',
                       });
                     }
                   }}
@@ -272,7 +275,6 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                 capital: form.capital,
                 dailyLossLimit: form.dailyLossLimit,
                 maxSlippageBps: form.maxSlippageBps,
-                dailyLlmTokenBudget: form.dailyLlmTokenBudget,
               }}
               onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             />

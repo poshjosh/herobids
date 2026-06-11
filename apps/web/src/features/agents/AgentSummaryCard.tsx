@@ -45,17 +45,19 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
             <span style={{ fontWeight: '600', fontSize: '15px', color: 'var(--color-text-primary)' }}>{agent.name}</span>
             <StatusBadge status={agent.status} />
-            <span
-              style={{
-                padding: '3px 8px',
-                borderRadius: '20px',
-                background: 'var(--color-surface-2)',
-                fontSize: '12px',
-                color: 'var(--color-text-secondary)',
-              }}
-            >
-              {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
-            </span>
+            {hasTradingCapability && (
+              <span
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '20px',
+                  background: 'var(--color-surface-2)',
+                  fontSize: '12px',
+                  color: 'var(--color-text-secondary)',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
             {objective}
@@ -111,7 +113,7 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
         <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />
         <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
-        <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />
+        {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
       </div>
 
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>

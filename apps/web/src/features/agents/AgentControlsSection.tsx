@@ -12,7 +12,6 @@ export interface AgentControlsFormValue {
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
-  dailyLlmTokenBudget: string;
 }
 
 interface AgentControlsSectionProps {
@@ -133,19 +132,6 @@ export function AgentControlsSection({ value, onChange }: AgentControlsSectionPr
           placeholder={intl.formatMessage({ id: 'common.unlimited' })}
         />
       </div>
-
-      <div>
-        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.dailyLlmTokenBudget' })}</FieldLabel>
-        <input
-          style={inputStyle}
-          type="number"
-          min={1}
-          value={value.dailyLlmTokenBudget}
-          onChange={(event) => onChange({ dailyLlmTokenBudget: event.target.value })}
-          placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-        />
-      </div>
-
       {estimatedDailySpend != null && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {intl.formatMessage({ id: 'agents.controls.estimatedDailySpend' }, { amount: estimatedDailySpend.toFixed(2) })}

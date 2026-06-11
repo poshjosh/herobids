@@ -194,6 +194,40 @@ describe('PUT /agents/:id', () => {
     }));
   });
 
+  it('clears execution mode when trading skills are removed on PUT', async () => {
+    const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    let selectCount = 0;
+    const updatedAgent = {
+      ...stubAgent,
+      skillIds: ['task-management'],
+      executionMode: null,
+    };
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1 ? [{ ...stubAgent, skillIds: ['trading'], executionMode: 'paper' }] : [updatedAgent]);
+      }),
+      update: vi.fn().mockReturnValue({ set: updateSet }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, redis);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: {
+        name: 'Updated',
+        prompt: 'New prompt',
+        skillIds: ['task-management'],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionMode: null, skillIds: ['task-management'] }));
+  });
+
   it('returns 409 when agent is running', async () => {
     const db = buildAgentDb({ ...stubAgent, status: 'running' });
     const redis = buildMockRedis();

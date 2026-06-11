@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, type Skill, type TradingBindingSummary } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills } from './agent-display.js';
+import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -18,6 +18,7 @@ type CreateStep = 'intent' | 'review';
 
 interface IntentState {
   goal: string;
+  skillPreset: SkillPresetId;
   skillIds: string[];
   executionMode: 'paper' | 'shadow' | 'live';
   provider: string;
@@ -34,7 +35,6 @@ interface IntentState {
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
-  dailyLlmTokenBudget: string;
 }
 
 export function AgentsPage() {
@@ -137,6 +137,7 @@ function CreateAgentFlow({
   const [showSetup, setShowSetup] = useState(false);
   const [intent, setIntent] = useState<IntentState>({
     goal: '',
+    skillPreset: 'custom',
     skillIds: [],
     executionMode: 'paper',
     provider: '',
@@ -152,7 +153,6 @@ function CreateAgentFlow({
     capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
-    dailyLlmTokenBudget: '',
   });
   const [modelTouched, setModelTouched] = useState(false);
   const [telegramTouched, setTelegramTouched] = useState(false);
@@ -178,9 +178,9 @@ function CreateAgentFlow({
     if (savedModels) {
       setIntent((state) => ({
         ...state,
-        provider: savedModels.provider,
-        lightModel: savedModels.lightModel,
-        heavyModel: savedModels.heavyModel,
+        provider: savedModels.provider ?? '',
+        lightModel: savedModels.lightModel ?? '',
+        heavyModel: savedModels.heavyModel ?? '',
       }));
     }
   }, [aiSettingsQuery.data?.aiModelConfig, modelTouched]);
@@ -201,7 +201,7 @@ function CreateAgentFlow({
     { provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel },
     savedModelSettings,
   );
-  const requiresTradingSetup = hasCapabilityFamily(selectedSkills, 'trading');
+  const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   const tradingBindingsQuery = useQuery({
     queryKey: ['capabilities', 'trading', 'bindings'],
     queryFn: () => capabilitiesApi.tradingBindings(),
@@ -218,7 +218,7 @@ function CreateAgentFlow({
         name,
         prompt: buildPrompt(intent, selectedSkills, selectedTradingBinding),
         skillIds: [...intent.skillIds],
-        executionMode: intent.executionMode,
+        ...(requiresTradingSetup ? { executionMode: intent.executionMode } : {}),
         ...(!modelPayload.inherits && modelPayload.provider ? {
           provider: modelPayload.provider,
           ...(modelPayload.lightModel ? { lightModel: modelPayload.lightModel } : {}),
@@ -232,7 +232,6 @@ function CreateAgentFlow({
         ...(intent.capital.trim() ? { capital: intent.capital.trim() } : {}),
         ...(intent.dailyLossLimit.trim() ? { dailyLossLimit: intent.dailyLossLimit.trim() } : {}),
         ...(intent.maxSlippageBps ? { maxSlippageBps: parseInt(intent.maxSlippageBps, 10) } : {}),
-        ...(intent.dailyLlmTokenBudget ? { dailyLlmTokenBudget: parseInt(intent.dailyLlmTokenBudget, 10) } : {}),
       });
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -294,16 +293,47 @@ function CreateAgentFlow({
           </div>
 
           <div>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
-            <SkillPicker
-              skills={skills}
-              selectedSkillIds={intent.skillIds}
-              onChange={(skillIds) => setIntent((state) => ({ ...state, skillIds }))}
-              loading={skillsLoading}
-              errorMessage={skillsError}
-            />
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
+            <select
+              value={intent.skillPreset}
+              onChange={(e) => {
+                const skillPreset = e.target.value as SkillPresetId;
+                setIntent((state) => ({
+                  ...state,
+                  skillPreset,
+                  skillIds: resolveSkillPresetSkillIds(skillPreset, state.skillIds),
+                }));
+              }}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
+              <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
+              <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
+            </select>
             <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-              {intl.formatMessage({ id: 'agents.create.skillsHelp' })}
+              {intl.formatMessage({ id: 'agents.create.skillPreset.help' })}
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
+            {intent.skillPreset === 'custom' ? (
+              <SkillPicker
+                skills={skills}
+                selectedSkillIds={intent.skillIds}
+                onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
+                loading={skillsLoading}
+                errorMessage={skillsError}
+              />
+            ) : (
+              <div style={{ ...inputStyle, minHeight: '44px', display: 'flex', alignItems: 'center', color: 'var(--color-text-secondary)' }}>
+                {formatSkillSelection(selectedSkills, intl)}
+              </div>
+            )}
+            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              {intent.skillPreset === 'custom'
+                ? intl.formatMessage({ id: 'agents.create.skillsHelp' })
+                : intl.formatMessage({ id: 'agents.create.skillPreset.includes' }, { skills: formatSkillSelection(selectedSkills, intl) })}
             </div>
           </div>
 
@@ -336,18 +366,20 @@ function CreateAgentFlow({
             />
           </div>
 
-          <div>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
-            <select
-              value={intent.executionMode}
-              onChange={(e) => setIntent((state) => ({ ...state, executionMode: e.target.value as IntentState['executionMode'] }))}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-              <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
-              <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
-            </select>
-          </div>
+          {requiresTradingSetup && (
+            <div>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
+              <select
+                value={intent.executionMode}
+                onChange={(e) => setIntent((state) => ({ ...state, executionMode: e.target.value as IntentState['executionMode'] }))}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
+                <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+                <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
+              </select>
+            </div>
+          )}
 
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.telegramChatId' })}</FieldLabel>
@@ -374,7 +406,6 @@ function CreateAgentFlow({
               capital: intent.capital,
               dailyLossLimit: intent.dailyLossLimit,
               maxSlippageBps: intent.maxSlippageBps,
-              dailyLlmTokenBudget: intent.dailyLlmTokenBudget,
             }}
             onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
           />
@@ -477,7 +508,7 @@ function CreateAgentFlow({
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
-            <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />
+            {requiresTradingSetup && <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />}
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.models' })}
               value={modelPayload.inherits

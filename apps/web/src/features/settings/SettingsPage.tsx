@@ -7,7 +7,7 @@ import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields } from './ModelSelectionFields.js';
-import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
+import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
   en: 'English',
@@ -64,7 +64,7 @@ export function SettingsPage() {
     if (modelTouched) {
       return;
     }
-    setModelSettings(savedModelSettings ?? EMPTY_AI_MODEL_SELECTION);
+    setModelSettings(normalizeAiModelSelection(savedModelSettings));
   }, [modelTouched, savedModelSettings]);
 
   const telegramMutation = useMutation({
@@ -99,7 +99,7 @@ export function SettingsPage() {
     onSuccess: (updated) => {
       qc.setQueryData(['ai', 'settings'], updated);
       setModelTouched(false);
-      setModelSettings(updated.aiModelConfig ?? EMPTY_AI_MODEL_SELECTION);
+      setModelSettings(normalizeAiModelSelection(updated.aiModelConfig));
       setModelSaved(true);
       setTimeout(() => setModelSaved(false), 3000);
     },

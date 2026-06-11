@@ -17,6 +17,7 @@ import {
   optionalPositiveDecimalStringSchema,
   optionalPositiveIntegerSchema,
   resolveDailyLlmTokenBudget,
+  resolveExecutionModeForSkills,
   resolveNotificationPolicy,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
@@ -142,6 +143,16 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
+    const executionMode = resolveExecutionModeForSkills({
+      skillIds: parsed.data.skillIds ?? [],
+      submittedExecutionMode: parsed.data.executionMode,
+      executionModeProvided: parsed.data.executionMode !== undefined,
+      currentExecutionMode: null,
+    });
+    if (executionMode.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
+    }
+
     await db.insert(agents).values({
       id: agentId,
       userId: request.userId,
@@ -155,7 +166,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       notificationPolicy: parsed.data.notificationPolicy !== undefined
         ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
         : null,
-      executionMode: parsed.data.executionMode ?? null,
+      executionMode: executionMode.value,
       dailyTokenBudget: dailyLlmTokenBudget.value ?? null,
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
       maxBots: parsed.data.maxBots ?? null,
@@ -280,7 +291,18 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
+    const executionMode = resolveExecutionModeForSkills({
+      skillIds: mergedSkillIds,
+      submittedExecutionMode: parsed.data.executionMode,
+      executionModeProvided: parsed.data.executionMode !== undefined,
+      currentExecutionMode: agent.executionMode,
+    });
+    if (executionMode.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
+    }
+
     const {
+      executionMode: _executionMode,
       provider: _provider,
       lightModel: _lightModel,
       heavyModel: _heavyModel,
@@ -299,6 +321,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
 
     await db.update(agents).set({
       ...agentUpdates,
+      executionMode: executionMode.value,
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,

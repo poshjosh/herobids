@@ -10,7 +10,7 @@ function renderModal(options: {
   capabilityReadiness?: CapabilityReadiness;
   capital?: string;
   dailyLossLimit?: string;
-  maxSlippageBps?: string;
+  maxSlippageBps?: number | '';
 } = {}): string {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -47,7 +47,7 @@ function renderModal(options: {
             dailyTokenBudget: 45000,
             dailyLossLimit: options.dailyLossLimit ?? '250',
             maxBots: 2,
-            maxSlippageBps: options.maxSlippageBps ?? 25,
+            maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
             tickIntervalMs: null,
             capital: options.capital ?? '1500',
             createdAt: new Date().toISOString(),
@@ -78,7 +78,7 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain('Expected cadence: every 6 min');
     expect(html).toContain('Estimated daily LLM spend: ~$0.50');
     expect(html).toContain('value="1500"');
-    expect(html).toContain('value="45000"');
+    expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
   it('keeps the trading guardrails visible when capability readiness is already cached', () => {

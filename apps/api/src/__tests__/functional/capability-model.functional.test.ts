@@ -15,7 +15,7 @@ async function createAgent(app: Awaited<ReturnType<typeof buildApp>>['app'], tok
     method: 'POST',
     url: '/agents',
     headers: { Authorization: `Bearer ${token}` },
-    payload: { name, prompt, skillIds: [], executionMode: 'paper' },
+    payload: { name, prompt, skillIds: [] },
   });
 
   expect(res.statusCode).toBe(201);

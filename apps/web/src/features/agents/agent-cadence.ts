@@ -39,7 +39,7 @@ function resolvePresetTickIntervalMs(costPreset: string | null | undefined, dail
   }
 
   if (costPreset === 'custom') {
-    return deriveCustomTickIntervalMs(dailyBudgetUsd ?? PRESET_DAILY_BUDGETS.custom);
+    return deriveCustomTickIntervalMs(dailyBudgetUsd ?? 5);
   }
 
   return PRESET_TICK_INTERVALS[costPreset] ?? null;

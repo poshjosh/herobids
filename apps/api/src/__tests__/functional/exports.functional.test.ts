@@ -35,7 +35,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
       method: 'POST',
       url: '/agents',
       headers: { Authorization: `Bearer ${token}` },
-      payload: { name, prompt, skillIds: [], executionMode: 'paper' },
+      payload: { name, prompt, skillIds: [] },
     });
     expect(res.statusCode).toBe(201);
     return res.json<{ id: string }>().id;

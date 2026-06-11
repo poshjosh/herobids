@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, type Agent, type AgentArtifact, type AgentOutboundMessage } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, type Agent, type AgentArtifact, type AgentOutboundMessage } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { formatExecutionMode } from '../agents/agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, resolveSelectedSkills } from '../agents/agent-display.js';
 
 export function OutcomeBoardPage() {
   const navigate = useNavigate();
@@ -11,6 +11,10 @@ export function OutcomeBoardPage() {
   const query = useQuery({
     queryKey: ['agents'],
     queryFn: () => agentsApi.list(),
+  });
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => skillsApi.list(),
   });
 
   const agents = query.data ?? [];
@@ -61,7 +65,12 @@ export function OutcomeBoardPage() {
           <SectionLabel>{intl.formatMessage({ id: 'outcomes.recentOutcomes' })}</SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {agents.map((agent) => (
-              <OutcomeAgentCard key={agent.id} agent={agent} onOpen={() => navigate(`/agents/${agent.id}`)} />
+              <OutcomeAgentCard
+                key={agent.id}
+                agent={agent}
+                showExecutionMode={hasCapabilityFamily(resolveSelectedSkills(agent.skillIds, skillsQuery.data?.skills ?? []), 'trading')}
+                onOpen={() => navigate(`/agents/${agent.id}`)}
+              />
             ))}
           </div>
         </div>
@@ -89,7 +98,7 @@ function ScoreCard({ label, value, highlight }: { label: string; value: string |
   );
 }
 
-function OutcomeAgentCard({ agent, onOpen }: { agent: Agent; onOpen: () => void }) {
+function OutcomeAgentCard({ agent, onOpen, showExecutionMode }: { agent: Agent; onOpen: () => void; showExecutionMode: boolean }) {
   const intl = useIntl();
   const artifactsQuery = useQuery({
     queryKey: ['agents', agent.id, 'artifacts', 'outcome-board'],
@@ -111,9 +120,11 @@ function OutcomeAgentCard({ agent, onOpen }: { agent: Agent; onOpen: () => void 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
             <span style={{ fontSize: '15px', fontWeight: '600' }}>{agent.name}</span>
             <StatusBadge status={agent.status} />
-            <span style={{ padding: '3px 8px', borderRadius: '20px', background: 'var(--color-surface-2)', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-              {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
-            </span>
+            {showExecutionMode && (
+              <span style={{ padding: '3px 8px', borderRadius: '20px', background: 'var(--color-surface-2)', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                {intl.formatMessage({ id: 'agents.modeBadge' }, { mode: formatExecutionMode(agent.executionMode, intl) })}
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>

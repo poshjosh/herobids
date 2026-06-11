@@ -14,6 +14,7 @@ import {
   nullablePositiveDecimalStringSchema,
   nullablePositiveIntegerSchema,
   resolveDailyLlmTokenBudget,
+  resolveExecutionModeForSkills,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
 
@@ -124,7 +125,18 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
 
+    const executionMode = resolveExecutionModeForSkills({
+      skillIds: mergedSkillIds,
+      submittedExecutionMode: parsed.data.executionMode,
+      executionModeProvided: parsed.data.executionMode !== undefined,
+      currentExecutionMode: agent.executionMode,
+    });
+    if (executionMode.issue) {
+      return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
+    }
+
     const {
+      executionMode: _executionMode,
       provider: _provider,
       lightModel: _lightModel,
       heavyModel: _heavyModel,
@@ -138,6 +150,7 @@ export async function agentInteractivityRoutes(
 
     await db.update(agents).set({
       ...agentUpdates,
+      executionMode: executionMode.value,
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

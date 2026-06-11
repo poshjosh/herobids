@@ -226,6 +226,56 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(res.json().error).toBe('not_found');
   });
 
+  it('rejects explicit execution mode for non-trading agents on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'agent',
+        prompt: 'p',
+        skillIds: ['task-management'],
+        executionMode: 'paper',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['executionMode'] })],
+    });
+  });
+
+  it('clears execution mode when trading skills are removed on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['task-management'], modelPolicy: null, executionMode: null,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['task-management'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ executionMode: null, skillIds: ['task-management'] }));
+  });
+
   it('returns 400 for an invalid payload', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db } = buildDb({

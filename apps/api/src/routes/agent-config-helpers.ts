@@ -1,6 +1,10 @@
 import { z } from 'zod';
-import { Decimal } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS } from '@herobids/domain';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
+
+const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [skill.id, skill.capabilityFamilies] as const));
+
+type AgentExecutionMode = 'paper' | 'shadow' | 'live' | null | undefined;
 
 export const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
 
@@ -95,6 +99,42 @@ export function resolveDailyLlmTokenBudget(payload: {
   return {
     value: payload.dailyLlmTokenBudget ?? payload.dailyTokenBudget,
   };
+}
+
+export function hasSkillCapabilityFamily(skillIds: string[] | null | undefined, capabilityFamily: string): boolean {
+  return (skillIds ?? []).some((skillId) => CAPABILITY_FAMILIES_BY_SKILL_ID.get(skillId)?.includes(capabilityFamily));
+}
+
+export function resolveExecutionModeForSkills(input: {
+  skillIds: string[] | null | undefined;
+  submittedExecutionMode: AgentExecutionMode;
+  executionModeProvided: boolean;
+  currentExecutionMode?: AgentExecutionMode;
+}): {
+  value: Exclude<AgentExecutionMode, undefined>;
+  issue?: { code: 'custom'; path: string[]; message: string };
+} {
+  const hasTradingCapability = hasSkillCapabilityFamily(input.skillIds, 'trading');
+  if (!hasTradingCapability) {
+    if (input.executionModeProvided && input.submittedExecutionMode != null) {
+      return {
+        value: null,
+        issue: {
+          code: 'custom',
+          path: ['executionMode'],
+          message: 'Execution mode is only valid for agents with trading skills',
+        },
+      };
+    }
+
+    return { value: null };
+  }
+
+  if (input.executionModeProvided) {
+    return { value: input.submittedExecutionMode ?? null };
+  }
+
+  return { value: input.currentExecutionMode ?? null };
 }
 
 export function mergeModelPolicy(

@@ -13,7 +13,6 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
     capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
-    dailyLlmTokenBudget: '',
     ...value,
   };
 
@@ -25,12 +24,12 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
 }
 
 describe('AgentControlsSection rendering', () => {
-  it('renders preset, spend budget, max bots, and token budget labels', () => {
+  it('renders preset, spend budget, and max bots labels', () => {
     const html = renderControls();
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
     expect(html).toContain(messages['agents.controls.maxBots']);
-    expect(html).toContain(messages['agents.controls.dailyLlmTokenBudget']);
+    expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
   it('shows preset-derived cadence and daily spend when no explicit tick interval exists', () => {

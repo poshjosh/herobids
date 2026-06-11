@@ -14,6 +14,13 @@ export const CAPABILITY_FAMILY_LABELS: Record<string, string> = {
   trading: 'Trading',
 };
 
+export type SkillPresetId = 'trading' | 'personal-assistant' | 'custom';
+
+const SKILL_PRESET_SKILL_IDS: Record<Exclude<SkillPresetId, 'custom'>, string[]> = {
+  trading: ['bot-management', 'trading'],
+  'personal-assistant': ['task-management', 'web-access'],
+};
+
 function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallback: string): string {
   if (!intl) {
     return fallback;
@@ -49,6 +56,14 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
 
       return left.id.localeCompare(right.id);
     });
+}
+
+export function resolveSkillPresetSkillIds(preset: SkillPresetId, currentSkillIds: string[] = []): string[] {
+  if (preset === 'custom') {
+    return [...currentSkillIds];
+  }
+
+  return [...SKILL_PRESET_SKILL_IDS[preset]];
 }
 
 export function formatSkillSelection(skills: Array<{ name: string }>, intl?: IntlShape): string {

@@ -63,6 +63,26 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it('rejects explicit execution mode for a non-trading agent', async () => {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: {
+          name: 'Reminder Agent',
+          prompt: 'Remind me to pray at 07:45 Berlin time.',
+          skillIds: ['task-management', 'web-access'],
+          executionMode: 'paper',
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({
+        error: 'validation_error',
+        details: [expect.objectContaining({ path: ['executionMode'] })],
+      });
+    });
+
     it('returns 401 without auth', async () => {
       const res = await ctx.app.inject({
         method: 'POST',

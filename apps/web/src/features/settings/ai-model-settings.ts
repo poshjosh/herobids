@@ -1,4 +1,4 @@
-import type { AiModelSettings } from '../../lib/api-client.js';
+import type { AiModelSettings, AiModelSettingsUpdate } from '../../lib/api-client.js';
 
 export interface AiModelSelectionState {
   provider: string;
@@ -11,6 +11,14 @@ export const EMPTY_AI_MODEL_SELECTION: AiModelSelectionState = {
   lightModel: '',
   heavyModel: '',
 };
+
+export function normalizeAiModelSelection(settings: AiModelSettings | null | undefined): AiModelSelectionState {
+  return {
+    provider: settings?.provider ?? '',
+    lightModel: settings?.lightModel ?? '',
+    heavyModel: settings?.heavyModel ?? '',
+  };
+}
 
 export function shouldDisableAiModelSave(
   currentInput: AiModelSelectionState,
@@ -28,7 +36,7 @@ export function shouldDisableAiModelSave(
       : false);
 }
 
-export function createClearedAiModelSettings(): AiModelSettings {
+export function createClearedAiModelSettings(): AiModelSettingsUpdate {
   return {
     provider: null,
     lightModel: null,
