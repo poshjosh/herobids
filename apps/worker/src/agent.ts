@@ -52,7 +52,7 @@ import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilien
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
-import { buildDiscoveryNetworkMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
+import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
@@ -641,8 +641,8 @@ async function refreshVenueIntelligence(): Promise<void> {
   }
 
   if (trackedDexTargets.length > 0 && (tradingProviders.has('jupiter') || tradingProviders.has('1inch'))) {
-    // Key: `${network}:${SYMBOL}` to avoid cross-chain ticker collisions (e.g. USDC on Solana vs Ethereum).
-    let discoveryByNetworkSymbol = new Map<string, Awaited<ReturnType<ProviderRegistry['discovery']['discover']>>['data'][number]>();
+    // Key: `${network}:${address}` — address-based keying prevents same-symbol fakes from inheriting metadata.
+    let discoveryByNetworkAddress = new Map<string, Awaited<ReturnType<ProviderRegistry['discovery']['discover']>>['data'][number]>();
     let discoveryFreshness: ReturnType<typeof providerFreshness> | null = null;
     try {
       recordMarketDataAttempt('aggregated-discovery');
@@ -650,7 +650,7 @@ async function refreshVenueIntelligence(): Promise<void> {
       recordMarketDataRecovery('aggregated-discovery');
       discoveryFreshness = providerFreshness(discoveryResult.meta.freshness, discoveryResult.meta.provider);
       recordSignalStaleness('discovery', discoveryResult.meta.freshness.ageMs);
-      discoveryByNetworkSymbol = buildDiscoveryNetworkMap(discoveryResult.data);
+      discoveryByNetworkAddress = buildDiscoveryAddressMap(discoveryResult.data);
     } catch (err) {
       logger.warn({ err }, 'Failed to fetch DEX discovery context for venue intelligence');
       recordMarketDataRejection('aggregated-discovery', { priority: 'discovery' });
@@ -666,10 +666,9 @@ async function refreshVenueIntelligence(): Promise<void> {
           : searchResult.data;
         const topToken = filterSearchResults(filteredSearchResults, { limit: 1 })[0];
         const position = findDexPositionForTarget(sessionMetrics.openPositions, target);
-        // Look up using the search-result network so we only attach discovery context from
-        // the same chain as the token DexScreener actually returned.
+        // Join discovery metadata by network:address to prevent same-symbol fakes from inheriting metadata.
         const discoveryToken = topToken
-          ? (discoveryByNetworkSymbol.get(`${topToken.network.toLowerCase()}:${topToken.symbol.toUpperCase()}`) ?? null)
+          ? (discoveryByNetworkAddress.get(`${topToken.network.toLowerCase()}:${topToken.address.toLowerCase()}`) ?? null)
           : null;
         if (!topToken) {
           signals.push({
@@ -965,6 +964,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     publishToInbound,
     botRepo: toolBotRepo,
     marketDataRegistry: marketDataRegistry ?? undefined,
+    marketDataConfig: marketDataConfig ?? undefined,
     recordMarketDataAttempt,
     recordMarketDataRejection,
     capabilityEngine,

@@ -2,6 +2,18 @@
 
 Some of these may no longer be valid (they may have been done/implemented). 
 
+- [ ] high. Override tickets are still not fully scoped to the bot they were issued for. The schema and docstring say overrides are scoped to actor, bot, venue account, network, and token in token-safety-overrides.ts:8, and the row model stores botId in token-safety-override-repository.ts:22. But lookup still only keys on actor, venue account, network, and token in token-safety-override-repository.ts:57, and the adapter only passes those fields in token-safety-adapter.ts:57. That means the same actor can still reuse an override across multiple bots on the same venue account for the same token.
+What to change: modify the repository and adapter so fetch and consume are also scoped by botId, with explicit handling for null botId.
+Dependencies: none.
+Risk or open question: decide whether a null botId means actor-wide scope or only requests that also have null botId.
+Testing: unit test the repository matching rules, and integration test the adapter path with bot A vs bot B on the same venue account. No visual verification needed.
+
+- [ ] high. Swap asset identifiers are still inconsistent across the new safety path, so the runtime can reject valid swap configs or miscompute notional depending on whether configs use symbols or addresses. The config schema still treats swapAssets as generic identifiers and existing tests continue to use symbol values like SOL and USDC in schema.ts:832, schema.test.ts:25, and decision-intake.test.ts:220. But the worker now forwards baseAsset as a token address in index.ts:826, while the notional estimator still assumes quoteAsset is a symbol and checks it against a stablecoin symbol set in decision-intake.ts:341 and decision-intake.ts:356. Those two assumptions cannot both be true for the same field model.
+What to change: normalize swap config at the boundary into explicit symbol and address fields, or introduce separate baseTokenAddress and quoteTokenAddress fields and keep symbol fields for pricing logic.
+Dependencies: this touches config schema, worker wiring, and the engine notional helper.
+Risk or open question: existing persisted bot configs may need a migration or backward-compat normalization.
+Testing: unit test config parsing and notional estimation, plus integration test the worker safety resolution path for both Jupiter and 1inch style configs. No visual verification needed.
+
 - [ ] high - apps/web/src/lib/ui.tsx and apps/web/src/styles.css should respect prefers-reduced-motion. The new pulse animation is always on for live statuses, so users who opt out of motion still get an infinite blink. What to change: gate the animation behind a reduced-motion media query or disable the pulse for those users. Dependencies: none. Risk/open question: whether you want the pulse on only some live statuses or all of them. Testing: visual verification plus a manual accessibility check.
 
 - [ ] medium - apps/api/src/routes/agent-activity-feed.test.ts and apps/api/src/routes/dashboard-agent-activity.test.ts do not actually prove the new SQL filtering works. The mocked DB returns canned rows regardless of the where clause, so these tests can still pass if notInArray(...) is removed or broken. What to change: add an integration-style check against a real DB, or make the mock assert the predicate it receives; also keep one route case for the legacy agent.heartbeat format since it is part of the suppression list. Dependencies: none. Risk/open question: whether you prefer a full integration test or a stricter mock.

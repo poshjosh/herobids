@@ -118,12 +118,15 @@ export interface ToolContext {
           };
         };
       }>;
+      searchConfig: unknown;
     };
     binance: { candles: (symbol: string, opts?: { interval?: string; limit?: number }) => Promise<{ data: unknown[] }> };
   };
   /** Market data telemetry hooks */
   recordMarketDataAttempt?: (provider: string) => void;
   recordMarketDataRejection?: (provider: string, opts?: { priority?: 'execution' | 'discovery' }) => void;
+  /** Resolved market data config — enables shared token safety policy in search tools */
+  marketDataConfig?: Record<string, unknown>;
   /** Capability policy enforcement */
   capabilityEngine?: {
     checkAccess: (capability: string, agentId: string, sessionId: string) => string | undefined;

@@ -45,6 +45,7 @@ export const DecisionSubmitPayloadSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   artifacts: z.array(z.record(z.unknown())).optional(),
   metadata: z.record(z.unknown()).optional(),
+  safetyOverrideId: z.string().min(1).optional(),
 });
 
 export type DecisionSubmitPayload = z.infer<typeof DecisionSubmitPayloadSchema>;

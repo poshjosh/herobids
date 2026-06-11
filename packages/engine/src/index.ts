@@ -52,7 +52,7 @@ export type {
 export { computeDecisionContextHash, DecisionContextHashMismatchError, DECISION_CONTEXT_HASH_MISMATCH_CODE } from './decision-context-hash.js';
 
 export { submitDecisionForExecution } from './decision-intake.js';
-export type { DecisionIntakeDeps, DecisionIntakeResult, DecisionContext } from './decision-intake.js';
+export type { DecisionIntakeDeps, DecisionIntakeResult, DecisionContext, PreExecutionRejection } from './decision-intake.js';
 
 export { reconcile, reconcileWithThresholds, Reconciler, createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './reconciliation/index.js';
 export type {

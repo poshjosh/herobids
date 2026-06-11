@@ -128,7 +128,22 @@ export class AgentDecisionHandler {
 
     // 5. Submit through the shared decision intake pipeline.
     try {
-      const result = await submitDecisionForExecution(decision, context, position, intakeDeps);
+      const depsWithOverride: DecisionIntakeDeps = payload.safetyOverrideId
+        ? { ...intakeDeps, safetyOverrideId: payload.safetyOverrideId }
+        : intakeDeps;
+      const result = await submitDecisionForExecution(decision, context, position, depsWithOverride);
+
+      // Handle pre-execution rejection (e.g. swap token safety)
+      if (result.preExecutionRejection) {
+        await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
+          decisionId: payload.decisionId,
+          code: result.preExecutionRejection.code,
+          message: result.preExecutionRejection.message,
+          retryable: result.preExecutionRejection.retryable,
+          details: result.preExecutionRejection.details,
+        });
+        return;
+      }
 
       try {
         // 6. Emit accepted — deferred until hash and risk checks pass.

@@ -33,3 +33,5 @@ export { AgentRepository } from './agent-repository.js';
 export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';
 export { resolveRuntimeCapabilityDescriptor, buildRuntimeDescriptor } from './agent-runtime-descriptor.js';
 export type { RuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
+export { TokenSafetyOverrideRepository } from './token-safety-override-repository.js';
+export type { IssueOverrideParams, TokenSafetyOverrideRow } from './token-safety-override-repository.js';

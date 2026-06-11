@@ -1,7 +1,15 @@
 import { z } from 'zod';
 import pino from 'pino';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { evaluateRegime, type TokenInfo, type RegimeParams, type ProviderRegistry, type PriceCandle } from '@herobids/market-data';
+import {
+  evaluateRegime,
+  applyTokenSearchPolicy,
+  type TokenInfo,
+  type RegimeParams,
+  type ProviderRegistry,
+  type PriceCandle,
+  type MarketDataConfig,
+} from '@herobids/market-data';
 import {
   executeDiscoverTokensTool,
   executeFundingRatesTool,
@@ -78,6 +86,7 @@ async function enrichDiscoveryTokenPrices(
   }));
 }
 
+/** @deprecated Use searchTokensWithPolicy through the provider registry facade instead. Kept as fallback. */
 function filterSearchResults(
   rawResults: TokenInfo[],
   options?: { network?: string; minLiquidityUsd?: number; limit?: number },
@@ -110,17 +119,20 @@ const SearchTokensParamsSchema = z.object({
   query: z.string().min(1),
   network: z.string().optional(),
   minLiquidityUsd: z.number().positive().optional(),
+  minVolume24hUsd: z.number().positive().optional(),
+  minTokenAgeHours: z.number().positive().optional(),
+  includeBlocked: z.boolean().optional(),
   limit: z.number().int().positive().max(50).optional(),
 });
 
 const searchTokensTool: AgentTool = {
   name: 'search_tokens',
-  description: 'Search for tokens by name or symbol on DEX aggregators. Returns token details including liquidity, price, and network. Useful for token discovery and screening.',
+  description: 'Search for tokens by name or symbol on DEX aggregators. Returns token details including liquidity, price, safety metadata, and network. Age filtering (minTokenAgeHours) only blocks tokens with known creation time below the threshold; tokens with unavailable age data pass through with safety metadata noting the gap.',
   parametersSchema: SearchTokensParamsSchema,
   parameters: convertZodToJsonSchema(SearchTokensParamsSchema),
   category: 'read-market-data',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { query, network, minLiquidityUsd, limit } = params as z.infer<typeof SearchTokensParamsSchema>;
+    const { query, network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit } = params as z.infer<typeof SearchTokensParamsSchema>;
 
     if (!ctx.marketDataRegistry) {
       return {
@@ -132,6 +144,22 @@ const searchTokensTool: AgentTool = {
 
     try {
       ctx.recordMarketDataAttempt?.('dexscreener');
+
+      // Use shared token policy when marketDataConfig is available
+      if (ctx.marketDataConfig) {
+        const searchResult = await ctx.marketDataRegistry.dexscreener.search(query);
+        const candidates = applyTokenSearchPolicy(
+          searchResult.data as TokenInfo[],
+          ctx.marketDataConfig as MarketDataConfig,
+          { network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
+        );
+        return {
+          success: true,
+          data: { ok: true, tokens: candidates, freshness: searchResult.meta.freshness },
+        };
+      }
+
+      // Fallback to legacy filtering when no config available
       const searchResult = await ctx.marketDataRegistry.dexscreener.search(query);
       const results = filterSearchResults(searchResult.data as TokenInfo[], {
         network,

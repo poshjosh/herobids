@@ -12,6 +12,7 @@ const SubmitDecisionParamsSchema = z.object({
   limitPrice: z.string().regex(/^\d+(\.\d+)?$/).optional(),
   rationaleSummary: z.string().min(1),
   confidence: z.number().min(0).max(1).optional(),
+  safetyOverrideId: z.string().min(1).optional(),
 });
 
 const submitDecisionTool: AgentTool = {
@@ -38,6 +39,7 @@ const submitDecisionTool: AgentTool = {
       limitPrice: p.limitPrice,
       rationaleSummary: p.rationaleSummary,
       confidence: p.confidence,
+      safetyOverrideId: p.safetyOverrideId,
     });
 
     return {
