@@ -7,9 +7,14 @@ import {
   positions,
   journalEvents,
   venueAccounts,
+  agents,
+  agentMessages,
+  agentRuntimeSessions,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { DashboardActivityQuerySchema } from '../schemas.js';
+import { mapProtocolMessage, mapRuntimeSession } from './agent-activity-mapper.js';
+import type { AgentActivityEntry } from './agent-activity-types.js';
 
 // ---------------------------------------------------------------------------
 // Event categorisation helpers — maps canonical journal event types to a
@@ -284,5 +289,80 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
     });
 
     return reply.send({ events: normalised, hasMore });
+  });
+
+  // ─── GET /dashboard/agent-activity ──────────────────────────────────────
+  // Returns recent agent activity across all user's agents in the canonical
+  // normalized format. Used by Mission Control and the shared Activity page.
+  app.get('/dashboard/agent-activity', async (request, reply) => {
+    const parsed = DashboardActivityQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const userId = request.userId;
+    const { limit, before, beforeId } = parsed.data;
+
+    // Resolve the user's agent IDs
+    const agentRows = await db
+      .select({ id: agents.id, name: agents.name })
+      .from(agents)
+      .where(eq(agents.userId, userId));
+
+    if (agentRows.length === 0) {
+      return reply.send({ entries: [], hasMore: false });
+    }
+
+    const agentIds = agentRows.map((a) => a.id);
+    const agentNameMap = new Map(agentRows.map((a) => [a.id, a.name]));
+    const beforeCursor = before ? new Date(before) : null;
+
+    // Fetch recent protocol messages + sessions in parallel
+    const [protocolRows, sessionRows] = await Promise.all([
+      db.select().from(agentMessages)
+        .where(inArray(agentMessages.agentId, agentIds as [string, ...string[]]))
+        .orderBy(desc(agentMessages.createdAt))
+        .limit(limit + 1),
+      db.select().from(agentRuntimeSessions)
+        .where(inArray(agentRuntimeSessions.agentId, agentIds as [string, ...string[]]))
+        .orderBy(desc(agentRuntimeSessions.startedAt))
+        .limit(limit + 1),
+    ]);
+
+    const entries: AgentActivityEntry[] = [];
+
+    for (const row of protocolRows) {
+      entries.push(mapProtocolMessage(row as Parameters<typeof mapProtocolMessage>[0]));
+    }
+
+    for (const session of sessionRows) {
+      const sessionEntries = mapRuntimeSession(session as Parameters<typeof mapRuntimeSession>[0]);
+      entries.push(...sessionEntries);
+    }
+
+    // Sort and paginate
+    entries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const filtered = beforeCursor
+      ? entries.filter((entry) => {
+          if (new Date(entry.timestamp).getTime() < beforeCursor.getTime()) {
+            return true;
+          }
+          if (new Date(entry.timestamp).getTime() > beforeCursor.getTime()) {
+            return false;
+          }
+
+          return beforeId ? entry.id < beforeId : false;
+        })
+      : entries;
+    const hasMore = filtered.length > limit;
+    const trimmed = filtered.slice(0, limit);
+
+    // Decorate with agent name for display
+    const decorated = trimmed.map((entry) => ({
+      ...entry,
+      agentName: agentNameMap.get(entry.agentId) ?? null,
+    }));
+
+    return reply.send({ entries: decorated, hasMore });
   });
 }

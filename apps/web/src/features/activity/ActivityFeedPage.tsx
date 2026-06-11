@@ -1,12 +1,19 @@
+import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, EmptyState, ErrorState, LoadingRows, Button } from '../../lib/ui.js';
 import { ActivityItem } from './ActivityItem.js';
+import { AgentActivityItem } from './AgentActivityItem.js';
+import { mergeActivityFeedItems } from './activity-feed-items.js';
+
+type FeedMode = 'all' | 'bots' | 'agents';
 
 export function ActivityFeedPage() {
   const intl = useIntl();
-  const query = useInfiniteQuery({
+  const [mode, setMode] = useState<FeedMode>('all');
+
+  const botQuery = useInfiniteQuery({
     queryKey: ['dashboard', 'activity'],
     queryFn: ({ pageParam }) =>
       dashboard.activity({ limit: 50, before: pageParam?.timestamp, beforeId: pageParam?.id }),
@@ -17,10 +24,31 @@ export function ActivityFeedPage() {
       return { timestamp: lastEvent.timestamp, id: lastEvent.id };
     },
     initialPageParam: undefined as { timestamp: string; id: string } | undefined,
+    enabled: mode === 'all' || mode === 'bots',
   });
 
-  const allEvents = query.data?.pages.flatMap((p) => p.events) ?? [];
-  const hasMore = query.hasNextPage ?? false;
+  const agentQuery = useInfiniteQuery({
+    queryKey: ['dashboard', 'agent-activity'],
+    queryFn: ({ pageParam }) => dashboard.agentActivity({ limit: 50, before: pageParam?.timestamp, beforeId: pageParam?.id }),
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.hasMore) return undefined;
+      const lastEntry = lastPage.entries[lastPage.entries.length - 1];
+      if (!lastEntry) return undefined;
+      return { timestamp: lastEntry.timestamp, id: lastEntry.id };
+    },
+    initialPageParam: undefined as { timestamp: string; id: string } | undefined,
+    enabled: mode === 'all' || mode === 'agents',
+  });
+
+  const allBotEvents = botQuery.data?.pages.flatMap((p) => p.events) ?? [];
+  const agentEntries = agentQuery.data?.pages.flatMap((p) => p.entries) ?? [];
+  const hasBotMore = botQuery.hasNextPage ?? false;
+  const hasAgentMore = agentQuery.hasNextPage ?? false;
+  const mergedItems = mergeActivityFeedItems(agentEntries, allBotEvents);
+
+  const isLoading = (mode !== 'agents' && botQuery.isLoading) || (mode !== 'bots' && agentQuery.isLoading);
+  const isError = (mode !== 'agents' && botQuery.isError) || (mode !== 'bots' && agentQuery.isError);
+  const isEmpty = (mode === 'bots' ? allBotEvents.length === 0 : mode === 'agents' ? agentEntries.length === 0 : allBotEvents.length === 0 && agentEntries.length === 0);
 
   return (
     <PageShell>
@@ -29,36 +57,70 @@ export function ActivityFeedPage() {
         subtitle={intl.formatMessage({ id: 'activity.subtitle' })}
       />
 
-      {query.isLoading && <LoadingRows count={6} />}
-      {query.isError && (
+      {/* Mode tabs */}
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+        {(['all', 'agents', 'bots'] as const).map((m) => (
+          <Button
+            key={m}
+            variant={mode === m ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => setMode(m)}
+          >
+            {m === 'all'
+              ? intl.formatMessage({ id: 'activity.tab.all', defaultMessage: 'All' })
+              : m === 'agents'
+                ? intl.formatMessage({ id: 'activity.tab.agents', defaultMessage: 'Agents' })
+                : intl.formatMessage({ id: 'activity.tab.bots', defaultMessage: 'Bots' })}
+          </Button>
+        ))}
+      </div>
+
+      {isLoading && <LoadingRows count={6} />}
+      {isError && (
         <ErrorState
-          message={(query.error as Error).message}
-          onRetry={() => void query.refetch()}
+          message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
+          onRetry={() => {
+            if (mode !== 'agents') void botQuery.refetch();
+            if (mode !== 'bots') void agentQuery.refetch();
+          }}
         />
       )}
 
-      {query.isSuccess && allEvents.length === 0 && (
+      {!isLoading && !isError && isEmpty && (
         <EmptyState
           title={intl.formatMessage({ id: 'activity.noActivity.title' })}
           message={intl.formatMessage({ id: 'activity.noActivity.message' })}
         />
       )}
 
-      {query.isSuccess && allEvents.length > 0 && (
+      {!isLoading && !isError && !isEmpty && (
         <Card style={{ padding: 0 }}>
-          {allEvents.map((event, i) => (
-            <ActivityItem key={event.id} event={event} isLast={i === allEvents.length - 1 && !hasMore} />
+          {mode === 'all' && mergedItems.map((item, index) => (
+            item.kind === 'agent'
+              ? <AgentActivityItem key={`agent-${item.id}`} entry={item.entry} isLast={index === mergedItems.length - 1 && !hasBotMore} />
+              : <ActivityItem key={`bot-${item.id}`} event={item.event} isLast={index === mergedItems.length - 1 && !hasBotMore} />
           ))}
 
-          {hasMore && (
+          {mode === 'agents' && agentEntries.map((entry, index) => (
+            <AgentActivityItem key={entry.id} entry={entry} isLast={index === agentEntries.length - 1} />
+          ))}
+
+          {mode === 'bots' && allBotEvents.map((event, index) => (
+            <ActivityItem key={event.id} event={event} isLast={index === allBotEvents.length - 1 && !hasBotMore} />
+          ))}
+
+          {(mode === 'all' || mode === 'bots' || mode === 'agents') && (hasBotMore || hasAgentMore) && (
             <div style={{ padding: '16px', borderTop: '1px solid var(--color-border-subtle)', textAlign: 'center' }}>
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => void query.fetchNextPage()}
-                disabled={query.isFetchingNextPage}
+                onClick={() => {
+                  if (mode !== 'agents' && hasBotMore) void botQuery.fetchNextPage();
+                  if (mode !== 'bots' && hasAgentMore) void agentQuery.fetchNextPage();
+                }}
+                disabled={botQuery.isFetchingNextPage || agentQuery.isFetchingNextPage}
               >
-                {query.isFetchingNextPage
+                {botQuery.isFetchingNextPage || agentQuery.isFetchingNextPage
                   ? intl.formatMessage({ id: 'common.loading' })
                   : intl.formatMessage({ id: 'activity.loadOlderEvents' })}
               </Button>

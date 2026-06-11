@@ -2,12 +2,13 @@ import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness } from '../../lib/api-client.js';
+import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundMessage, type AgentArtifact, type CapabilityReadiness, type AgentActivityEntry } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,12 +24,12 @@ export function AgentDetailPage() {
       void qc.invalidateQueries({ queryKey: ['agents'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'capability-readiness', 'trading'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'prompt'] });
-      void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'activity-feed'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'artifacts'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'sessions'] });
     } else if ((event.type === 'decision.accepted' || event.type === 'decision.rejected') && event.agentId === id) {
-      void qc.invalidateQueries({ queryKey: ['agents', id, 'activity'] });
+      void qc.invalidateQueries({ queryKey: ['agents', id, 'activity-feed'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'messages'] });
       void qc.invalidateQueries({ queryKey: ['agents', id, 'artifacts'] });
     }
@@ -150,9 +151,9 @@ export function AgentDetailPage() {
     },
   });
 
-  const activityQuery = useQuery({
-    queryKey: ['agents', id, 'activity'],
-    queryFn: () => agentsApi.activity(id!, 20),
+  const activityFeedQuery = useQuery({
+    queryKey: ['agents', id, 'activity-feed'],
+    queryFn: () => agentsApi.activityFeed(id!, { limit: 30 }),
     enabled: !!id,
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
@@ -464,21 +465,21 @@ export function AgentDetailPage() {
         </Card>
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.protocolActivity' })}</SectionLabel>
-          {activityQuery.isLoading && <LoadingRows count={3} />}
-          {activityQuery.isSuccess && (activityQuery.data as unknown[]).length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noProtocolActivity' })}</p>
-          )}
-          {activityQuery.isSuccess && (activityQuery.data as unknown[]).length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-              {(activityQuery.data as Array<{ id: string; type: string; createdAt: string }>).map((msg) => (
-                <div key={msg.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
-                  <span>{msg.type}</span>
-                  <RelativeTime timestamp={msg.createdAt} />
-                </div>
-              ))}
-            </div>
-          )}
+          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>
+          {activityFeedQuery.isError
+            ? (
+              <ErrorState
+                message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
+                onRetry={() => void activityFeedQuery.refetch()}
+              />
+            )
+            : (
+              <AgentActivityTimeline
+                entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
+                isLoading={activityFeedQuery.isLoading}
+                isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
+              />
+            )}
         </Card>
 
         <Card>

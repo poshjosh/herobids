@@ -195,6 +195,57 @@ export interface ActivityFeedResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Activity (canonical observability contract)
+// ---------------------------------------------------------------------------
+
+export type AgentActivityCategory =
+  | 'runtime'
+  | 'decision'
+  | 'tool'
+  | 'tick'
+  | 'message'
+  | 'artifact'
+  | 'risk'
+  | 'system';
+
+export type AgentActivitySeverity = 'info' | 'warn' | 'critical';
+
+export type AgentActivityEventType =
+  | 'runtime.started'
+  | 'runtime.unhealthy'
+  | 'runtime.recovered'
+  | 'runtime.failed'
+  | 'decision.accepted'
+  | 'decision.rejected'
+  | 'message.authored'
+  | 'system.alert'
+  | 'artifact.published';
+
+export interface AgentActivityEntry {
+  id: string;
+  agentId: string;
+  timestamp: string;
+  category: AgentActivityCategory;
+  severity: AgentActivitySeverity;
+  eventType: AgentActivityEventType;
+  title: string;
+  summary: string;
+  detail: Record<string, unknown>;
+  sessionId: string | null;
+  direction: string | null;
+  processingStatus: string | null;
+  correlationId: string | null;
+  traceId: string | null;
+  /** Present only in dashboard agent-activity responses */
+  agentName?: string | null;
+}
+
+export interface AgentActivityFeedResponse {
+  entries: AgentActivityEntry[];
+  hasMore: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Skills
 // ---------------------------------------------------------------------------
 
@@ -228,6 +279,14 @@ export const dashboard = {
     if (params?.beforeId) qs.set('beforeId', params.beforeId);
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return request<ActivityFeedResponse>(`/dashboard/activity${query}`);
+  },
+  agentActivity: (params?: { limit?: number; before?: string; beforeId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.before) qs.set('before', params.before);
+    if (params?.beforeId) qs.set('beforeId', params.beforeId);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<AgentActivityFeedResponse>(`/dashboard/agent-activity${query}`);
   },
 };
 
@@ -558,6 +617,13 @@ export const agents = {
     request<{ status: string }>(`/agents/${id}/resume`, { method: 'POST' }),
   activity: (id: string, limit?: number) =>
     request<unknown[]>(`/agents/${id}/activity${limit ? `?limit=${limit}` : ''}`),
+  activityFeed: (id: string, params?: { limit?: number; before?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.before) qs.set('before', params.before);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<AgentActivityFeedResponse>(`/agents/${id}/activity-feed${query}`);
+  },
   artifacts: (id: string, limit?: number) =>
     request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
   prompt: (id: string) => request<AgentCompiledPrompt>(`/agents/${id}/prompt`),

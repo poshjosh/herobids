@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
@@ -6,7 +6,10 @@ import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
 import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
 import { ActivityItem } from '../activity/ActivityItem.js';
+import { AgentActivityItem } from '../activity/AgentActivityItem.js';
+import { mergeActivityFeedItems } from '../activity/activity-feed-items.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
+import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 
 export function MissionControlPage() {
   const navigate = useNavigate();
@@ -14,6 +17,19 @@ export function MissionControlPage() {
   const qc = useQueryClient();
   const [showSetup, setShowSetup] = useState(false);
   const [setupSuccess, setSetupSuccess] = useState<{ label: string; provider: string } | null>(null);
+
+  const handleEvent = useCallback((event: UserEvent) => {
+    if (event.type === 'agent.status') {
+      void qc.invalidateQueries({ queryKey: ['agents'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'agent-activity'] });
+    } else if (event.type === 'decision.accepted' || event.type === 'decision.rejected') {
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'agent-activity'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'activity'] });
+    } else if (event.type === 'risk.guardrail') {
+      void qc.invalidateQueries({ queryKey: ['dashboard', 'activity'] });
+    }
+  }, [qc]);
+  useEventStream(handleEvent);
 
   const agentsQuery = useQuery({
     queryKey: ['agents'],
@@ -25,7 +41,14 @@ export function MissionControlPage() {
     queryFn: () => dashboard.activity({ limit: 8 }),
   });
 
+  const agentActivityQuery = useQuery({
+    queryKey: ['dashboard', 'agent-activity', { limit: 8 }],
+    queryFn: () => dashboard.agentActivity({ limit: 8 }),
+    refetchInterval: 30_000,
+  });
+
   const agents = agentsQuery.data ?? [];
+  const mergedRecentActivity = mergeActivityFeedItems(agentActivityQuery.data?.entries ?? [], overviewQuery.data?.events ?? []);
   const counts = {
     active: agents.filter((agent) => agent.status === 'active' || agent.status === 'starting').length,
     paused: agents.filter((agent) => agent.status === 'paused').length,
@@ -130,25 +153,32 @@ export function MissionControlPage() {
           <SectionLabel>{intl.formatMessage({ id: 'missionControl.section.recentActivity' })}</SectionLabel>
 
           <Card style={{ padding: '0' }}>
-            {overviewQuery.isLoading && (
+            {(overviewQuery.isLoading || agentActivityQuery.isLoading) && (
               <div style={{ padding: '20px' }}>
                 <LoadingRows count={4} />
               </div>
             )}
-            {overviewQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) === 0 && (
+            {(overviewQuery.isError || agentActivityQuery.isError) && (
+              <ErrorState
+                message={intl.formatMessage({ id: 'common.errorTitle', defaultMessage: 'Something went wrong' })}
+                onRetry={() => {
+                  void overviewQuery.refetch();
+                  void agentActivityQuery.refetch();
+                }}
+              />
+            )}
+            {overviewQuery.isSuccess && agentActivityQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) === 0 && (agentActivityQuery.data?.entries.length ?? 0) === 0 && (
               <EmptyState
                 title={intl.formatMessage({ id: 'missionControl.noActivityYet.title' })}
                 message={intl.formatMessage({ id: 'missionControl.noActivityYet.message' })}
               />
             )}
-            {overviewQuery.isSuccess && (overviewQuery.data?.events.length ?? 0) > 0 && (
+            {overviewQuery.isSuccess && agentActivityQuery.isSuccess && ((overviewQuery.data?.events.length ?? 0) > 0 || (agentActivityQuery.data?.entries.length ?? 0) > 0) && (
               <div>
-                {overviewQuery.data!.events.map((event, i) => (
-                  <ActivityItem
-                    key={event.id}
-                    event={event}
-                    isLast={i === overviewQuery.data!.events.length - 1}
-                  />
+                {mergedRecentActivity.map((item, index) => (
+                  item.kind === 'agent'
+                    ? <AgentActivityItem key={`agent-${item.id}`} entry={item.entry} isLast={index === mergedRecentActivity.length - 1} />
+                    : <ActivityItem key={`bot-${item.id}`} event={item.event} isLast={index === mergedRecentActivity.length - 1} />
                 ))}
                 <div style={{ padding: '12px 20px', borderTop: '1px solid var(--color-border-subtle)' }}>
                   <Button

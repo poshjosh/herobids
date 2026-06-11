@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, bots, decisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
@@ -22,6 +22,8 @@ import {
   resolveNotificationPolicy,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
+import { mapProtocolMessage, mapRuntimeSession, mapOutboundMessage, mapArtifact } from './agent-activity-mapper.js';
+import type { AgentActivityEntry } from './agent-activity-types.js';
 
 // --- Request Schemas ---
 
@@ -600,5 +602,84 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       .limit(limit);
 
     return reply.send(await query);
+  });
+
+  // ─── GET /agents/:id/activity-feed ────────────────────────────────────────
+  // Canonical agent activity feed — merges protocol messages, runtime sessions,
+  // outbound messages, and artifacts into a normalized operator-facing timeline.
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; before?: string } }>('/agents/:id/activity-feed', async (request, reply) => {
+    const { id } = request.params;
+    const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
+    const before = request.query.before;
+
+    const [agent] = await db.select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    // Fetch all data sources in parallel
+    const beforeFilter = before ? new Date(before) : undefined;
+
+    const [protocolRows, sessionRows, outboundRows, artifactRows] = await Promise.all([
+      db.select().from(agentMessages)
+        .where(
+          beforeFilter
+            ? and(eq(agentMessages.agentId, id), sql`${agentMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
+            : eq(agentMessages.agentId, id),
+        )
+        .orderBy(desc(agentMessages.createdAt))
+        .limit(limit),
+      db.select().from(agentRuntimeSessions)
+        .where(eq(agentRuntimeSessions.agentId, id))
+        .orderBy(desc(agentRuntimeSessions.startedAt))
+        .limit(10),
+      db.select().from(agentOutboundMessages)
+        .where(
+          beforeFilter
+            ? and(eq(agentOutboundMessages.agentId, id), sql`${agentOutboundMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
+            : eq(agentOutboundMessages.agentId, id),
+        )
+        .orderBy(desc(agentOutboundMessages.createdAt))
+        .limit(limit),
+      db.select().from(agentArtifacts)
+        .where(
+          beforeFilter
+            ? and(eq(agentArtifacts.agentId, id), sql`${agentArtifacts.createdAt} < ${beforeFilter.toISOString()}::timestamptz`)
+            : eq(agentArtifacts.agentId, id),
+        )
+        .orderBy(desc(agentArtifacts.createdAt))
+        .limit(limit),
+    ]);
+
+    // Map each data source to normalized entries
+    const entries: AgentActivityEntry[] = [];
+
+    for (const row of protocolRows) {
+      entries.push(mapProtocolMessage(row as Parameters<typeof mapProtocolMessage>[0]));
+    }
+
+    for (const session of sessionRows) {
+      const sessionEntries = mapRuntimeSession(session as Parameters<typeof mapRuntimeSession>[0]);
+      for (const entry of sessionEntries) {
+        if (!beforeFilter || new Date(entry.timestamp) < beforeFilter) {
+          entries.push(entry);
+        }
+      }
+    }
+
+    for (const msg of outboundRows) {
+      entries.push(mapOutboundMessage(msg as Parameters<typeof mapOutboundMessage>[0]));
+    }
+
+    for (const artifact of artifactRows) {
+      entries.push(mapArtifact(artifact as Parameters<typeof mapArtifact>[0]));
+    }
+
+    // Sort by timestamp descending, then slice to limit
+    entries.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const fetchedOverLimit = entries.length > limit;
+    const trimmed = entries.slice(0, limit);
+
+    return reply.send({ entries: trimmed, hasMore: fetchedOverLimit });
   });
 }
