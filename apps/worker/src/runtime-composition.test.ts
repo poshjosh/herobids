@@ -581,4 +581,121 @@ describe('runtime composition helpers', () => {
     });
     expect(summary).toBe('Market wake: momentum signal detected');
   });
+
+  describe('goal normalization', () => {
+    it('strips operator context from legacy prompt in ## Your Goal', () => {
+      const pollutedGoal = 'Trade BTC aggressively\n\nOperator context:\n- Selected skills: Trading.\n- Trading capability selected.\n- Risk tolerance: aggressive.';
+      const state = createRuntimeCompositionState({ ...baseDescriptor, goal: pollutedGoal });
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }));
+
+      expect(prompt).toContain('## Your Goal\n\nTrade BTC aggressively');
+      expect(prompt).not.toContain('Operator context:');
+      expect(prompt).not.toContain('Risk tolerance:');
+    });
+
+    it('renders clean goal unchanged', () => {
+      const state = createRuntimeCompositionState({ ...baseDescriptor, goal: 'Monitor ETH and alert on dips' });
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }));
+
+      expect(prompt).toContain('## Your Goal\n\nMonitor ETH and alert on dips');
+    });
+
+    it('does not repeat goal in Core Platform runtime context block', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }));
+
+      // Goal should appear once (in ## Your Goal), not duplicated in Core Platform
+      const goalOccurrences = (prompt.match(/Trade carefully/g) ?? []).length;
+      expect(goalOccurrences).toBe(1);
+      expect(prompt).not.toContain('Goal: Trade carefully');
+    });
+  });
+
+  describe('reminder and task policy block', () => {
+    const taskManagementSkill = {
+      id: 'task-management',
+      name: 'Task Management',
+      description: 'Tasks and reminders',
+      instructions: 'Use create_task and schedule_reminder.',
+      requiredTools: ['create_task', 'list_tasks', 'complete_task', 'schedule_reminder'],
+      capabilityFamilies: [],
+      bindingRequirements: {},
+      contextRequirements: [],
+      requiredContextBlocks: ['corePlatformContext'],
+      promptRendererHints: ['core-system'],
+      requiredGuardrails: [],
+      suggestedTickIntervalMs: 900_000,
+      visibility: 'public' as const,
+    };
+
+    it('adds reminder policy when schedule_reminder is a visible tool', () => {
+      // Use only base + task-management to ensure schedule_reminder fits within budget
+      const descriptorWithReminder = {
+        ...baseDescriptor,
+        resolvedSkills: [baseDescriptor.resolvedSkills[0]!, taskManagementSkill],
+        grantedBindingsByFamily: {},
+        defaultBindingByFamily: {},
+        readinessByFamily: {},
+        budgets: { ...baseDescriptor.budgets, maxVisibleToolSchemas: 10 },
+      };
+      const state = createRuntimeCompositionState(descriptorWithReminder);
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }));
+
+      expect(prompt).toContain('## Reminder and Task Policy');
+      expect(prompt).toContain('schedule_reminder');
+      expect(prompt).toContain('act immediately rather than scheduling in the past');
+    });
+
+    it('omits reminder policy when schedule_reminder is not visible', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }));
+
+      expect(prompt).not.toContain('## Reminder and Task Policy');
+    });
+  });
+
+  describe('tool guidance', () => {
+    it('renders tool guidance lines in ## Available Tools when provided', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }), { send_message: 'Set messageClass to "alert" for urgent notifications.' });
+
+      expect(prompt).toContain('- send_message: Set messageClass to "alert" for urgent notifications.');
+    });
+
+    it('omits tool guidance section when not provided', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }));
+
+      expect(prompt).toContain('You can call the following tools:');
+      expect(prompt).not.toContain('Set messageClass');
+    });
+  });
 });

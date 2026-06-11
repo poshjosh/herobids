@@ -6,7 +6,7 @@ import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundM
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, extractAgentOperatorContext, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
 export function AgentDetailPage() {
@@ -208,7 +208,10 @@ export function AgentDetailPage() {
   if (!agent) return <PageShell><ErrorState message={intl.formatMessage({ id: 'agents.detail.notFound' })} /></PageShell>;
 
   const objective = extractAgentObjective(agent.prompt);
-  const operatorContext = extractAgentOperatorContext(agent.prompt);
+  const operatorContextItems: string[] = [
+    selectedSkills.length > 0 ? `Skills: ${formatSkillSelection(selectedSkills, intl)}` : null,
+    hasTradingCapability && agent.executionMode ? `Execution mode: ${formatExecutionMode(agent.executionMode, intl)}` : null,
+  ].filter((item): item is string => item !== null);
   const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
   const canStop = ['active', 'starting', 'paused', 'unhealthy'].includes(agent.status);
   const runtimeAlert = agent.status === 'crashed'
@@ -291,9 +294,9 @@ export function AgentDetailPage() {
         <Card>
           <SectionLabel>{intl.formatMessage({ id: 'agents.detail.objective' })}</SectionLabel>
           <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{objective}</p>
-          {operatorContext.length > 0 && (
+          {operatorContextItems.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-              {operatorContext.map((item) => (
+              {operatorContextItems.map((item) => (
                 <span
                   key={item}
                   style={{

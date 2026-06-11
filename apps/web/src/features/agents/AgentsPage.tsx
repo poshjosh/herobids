@@ -11,6 +11,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
+import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
@@ -215,26 +216,22 @@ function CreateAgentFlow({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const name = intent.name.trim();
-      const agent = await agentsApi.create({
-        name,
-        prompt: buildPrompt(intent, selectedSkills, selectedTradingBinding),
-        skillIds: [...intent.skillIds],
-        ...(requiresTradingSetup ? { executionMode: intent.executionMode } : {}),
-        ...(!modelPayload.inherits && modelPayload.provider ? {
-          provider: modelPayload.provider,
-          ...(modelPayload.lightModel ? { lightModel: modelPayload.lightModel } : {}),
-          ...(modelPayload.heavyModel ? { heavyModel: modelPayload.heavyModel } : {}),
-        } : {}),
-        ...(intent.costPreset ? { costPreset: intent.costPreset } : {}),
-        ...(intent.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(intent.dailySpendBudgetUsd) } : {}),
-        ...(intent.telegramChatId.trim() ? { telegramChatId: intent.telegramChatId.trim() } : {}),
-        ...(intent.tickIntervalMs ? { tickIntervalMs: parseInt(intent.tickIntervalMs, 10) } : {}),
-        ...(intent.maxBots ? { maxBots: parseInt(intent.maxBots, 10) } : {}),
-        ...(intent.capital.trim() ? { capital: intent.capital.trim() } : {}),
-        ...(intent.dailyLossLimit.trim() ? { dailyLossLimit: intent.dailyLossLimit.trim() } : {}),
-        ...(intent.maxSlippageBps ? { maxSlippageBps: parseInt(intent.maxSlippageBps, 10) } : {}),
-      });
+      const agent = await agentsApi.create(buildCreateAgentPayload({
+        name: intent.name,
+        goal: intent.goal,
+        skillIds: intent.skillIds,
+        requiresTradingSetup,
+        executionMode: intent.executionMode,
+        modelPayload,
+        costPreset: intent.costPreset,
+        dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
+        telegramChatId: intent.telegramChatId,
+        tickIntervalMs: intent.tickIntervalMs,
+        maxBots: intent.maxBots,
+        capital: intent.capital,
+        dailyLossLimit: intent.dailyLossLimit,
+        maxSlippageBps: intent.maxSlippageBps,
+      }));
 
       if (requiresTradingSetup && intent.tradingBindingId) {
         await agentsApi.tradingAction(agent.id, 'bind', { bindingId: intent.tradingBindingId });
@@ -253,8 +250,9 @@ function CreateAgentFlow({
         onSuccess={(result) => {
           setShowSetup(false);
           void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
-          if (result.tradingBinding) {
-            setIntent((state) => ({ ...state, tradingBindingId: result.tradingBinding!.id }));
+          const tradingBindingId = resolveCreateAgentBindingId(result.tradingBinding ?? null);
+          if (tradingBindingId) {
+            setIntent((state) => ({ ...state, tradingBindingId }));
           }
         }}
       />
@@ -581,25 +579,4 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function buildPrompt(intent: IntentState, selectedSkills: Skill[], selectedTradingBinding: TradingBindingSummary | null): string {
-  const goal = intent.goal.trim();
-  const operatorContext: string[] = [];
 
-  if (selectedSkills.length > 0) {
-    operatorContext.push(`Selected skills: ${formatSkillSelection(selectedSkills)}.`);
-  }
-
-  if (hasCapabilityFamily(selectedSkills, 'trading')) {
-    operatorContext.push('Trading capability selected.');
-    if (selectedTradingBinding) {
-      operatorContext.push(`Selected trading binding: ${selectedTradingBinding.label} (${selectedTradingBinding.provider}).`);
-    }
-    operatorContext.push(`Risk tolerance: ${intent.riskTolerance}.`);
-  }
-
-  if (operatorContext.length === 0) {
-    return goal;
-  }
-
-  return `${goal}\n\nOperator context:\n${operatorContext.map((line) => `- ${line}`).join('\n')}`;
-}

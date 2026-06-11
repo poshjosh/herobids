@@ -8,6 +8,9 @@ import { convertZodToJsonSchema } from './registry.js';
 const SendMessageParamsSchema = z.object({
   body: z.string().min(1).max(2000),
   subject: z.string().max(200).optional(),
+  messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
+  emailDelivery: z.enum(['if_allowed', 'never']).optional(),
+  contextRef: z.string().max(200).optional(),
 });
 
 const sendMessageTool: AgentTool = {
@@ -16,11 +19,15 @@ const sendMessageTool: AgentTool = {
   parametersSchema: SendMessageParamsSchema,
   parameters: convertZodToJsonSchema(SendMessageParamsSchema),
   category: 'write-messaging',
+  promptGuidance: 'Set messageClass to "alert" or "reminder" for urgency. Set emailDelivery to "if_allowed" to request email fanout (policy permitting). Use contextRef to link the message to a specific context.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { body, subject } = params as z.infer<typeof SendMessageParamsSchema>;
+    const { body, subject, messageClass, emailDelivery, contextRef } = params as z.infer<typeof SendMessageParamsSchema>;
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, {
       body,
       subject,
+      ...(messageClass ? { messageClass } : {}),
+      ...(emailDelivery ? { emailDelivery } : {}),
+      ...(contextRef ? { contextRef } : {}),
     });
 
     return { success: true, data: { ok: true, note: 'message queued for delivery' } };

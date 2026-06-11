@@ -39,6 +39,7 @@ export class ToolRegistry {
       name: t.name,
       description: t.description,
       inputSchema: t.parameters,
+      ...(t.promptGuidance ? { promptGuidance: t.promptGuidance } : {}),
     }));
   }
 

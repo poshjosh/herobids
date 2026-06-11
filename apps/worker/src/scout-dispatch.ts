@@ -1,3 +1,4 @@
+import { normalizeAgentGoal } from '@herobids/domain';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 
@@ -37,16 +38,16 @@ export function buildScoutSystemPrompt(params: {
   timing: PromptTimingContext;
 }): string {
   return [
-    `You are the scout for agent "${params.name ?? params.agentId}".`,
+    `You are the scout phase for agent "${params.name ?? params.agentId}".`,
     `## Your Goal`,
-    params.goal,
+    normalizeAgentGoal(params.goal),
     '## Operating Context',
     ...formatPromptTimingContextLines(params.timing),
     '## Available Tools',
-    `You can call the following read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
+    `Visible read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
     '## Instructions',
     `Decide whether agent "${params.name ?? params.agentId}" needs to act this tick.`,
-    'Use tools only when they help decide between hold versus escalate.',
+    'Use tools only when they help decide hold versus escalate.',
     'Respond with JSON only: {"disposition":"hold"|"escalate","reason":"short reason"}.',
   ].join('\n');
 }

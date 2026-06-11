@@ -57,7 +57,7 @@ describe('buildScoutSystemPrompt', () => {
       }),
     });
 
-    expect(prompt).toContain('You are the scout phase for agent market-watch-01.');
+    expect(prompt).toContain('You are the scout phase for agent "market-watch-01".');
     expect(prompt).toContain('## Operating Context');
     expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
     expect(prompt).toContain('Nominal tick interval: 15m');
@@ -65,6 +65,25 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).toContain('Visible read-only tools: check_regime, search_tokens.');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
     expect(prompt).toContain('Respond with JSON only');
+  });
+
+  it('strips Operator context from a legacy goal before rendering', () => {
+    const pollutedGoal = 'Trade carefully\n\nOperator context:\n- Selected skills: Trading.\n- Risk tolerance: aggressive.';
+    const prompt = buildScoutSystemPrompt({
+      agentId: 'agent-1',
+      name: 'market-watch-01',
+      goal: pollutedGoal,
+      readOnlyTools: [],
+      timing: createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }),
+    });
+
+    expect(prompt).toContain('## Your Goal\nTrade carefully');
+    expect(prompt).not.toContain('Operator context:');
+    expect(prompt).not.toContain('Risk tolerance:');
   });
 });
 

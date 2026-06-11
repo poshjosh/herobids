@@ -1359,7 +1359,14 @@ async function runTick(): Promise<void> {
       nominalTickIntervalMs: costProfile.tickIntervalMs,
       expectedNextTickAtMs: nextTickDueAt > 0 ? nextTickDueAt : promptNowMs + effectiveTickIntervalMs,
     });
-    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming);
+    const visibleToolDefs = toolRegistry.getDefinitions([...allowedTools()]);
+    const toolGuidanceByName: Record<string, string> = {};
+    for (const def of visibleToolDefs) {
+      if (def.promptGuidance) {
+        toolGuidanceByName[def.name] = def.promptGuidance;
+      }
+    }
+    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, toolGuidanceByName);
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(`agent:prompt:${AGENT_ID}`, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');

@@ -3,10 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
+import { buildUpdateAgentPayload } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 
 interface EditAgentModalProps {
@@ -52,7 +53,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
 
   const [form, setForm] = useState<FormState>({
     name: initialData.name,
-    prompt: initialData.prompt,
+    prompt: extractAgentObjective(initialData.prompt),
     skillIds: initialData.skillIds ?? [],
     executionMode: initialData.executionMode ?? '',
     telegramChatId: initialData.telegramChatId ?? '',
@@ -89,23 +90,23 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const mutation = useMutation({
     mutationFn: () => {
       const skillIds = Array.from(new Set([...preservedSkillIds, ...form.skillIds.filter((skillId) => selectableSkillIds.has(skillId))]));
-      return agentsApi.update(agentId, {
-        name: form.name.trim(),
-        prompt: form.prompt.trim(),
+      return agentsApi.update(agentId, buildUpdateAgentPayload({
+        name: form.name,
+        prompt: form.prompt,
         skillIds,
-        executionMode: hasTradingCapability ? (form.executionMode || null) : null,
-        telegramChatId: form.telegramChatId.trim() || null,
-        costPreset: form.costPreset || null,
-        dailySpendBudgetUsd: form.dailySpendBudgetUsd ? parseFloat(form.dailySpendBudgetUsd) : null,
-        dailyLossLimit: form.dailyLossLimit.trim() || null,
-        maxBots: form.maxBots ? parseInt(form.maxBots, 10) : null,
-        maxSlippageBps: form.maxSlippageBps ? parseInt(form.maxSlippageBps, 10) : null,
-        tickIntervalMs: form.tickIntervalMs ? parseInt(form.tickIntervalMs, 10) : null,
-        capital: form.capital.trim() || null,
-        provider: modelOverrideEnabled ? modelForm.provider || null : null,
-        lightModel: modelOverrideEnabled ? modelForm.lightModel || null : null,
-        heavyModel: modelOverrideEnabled ? modelForm.heavyModel || null : null,
-      });
+        executionMode: form.executionMode,
+        hasTradingCapability,
+        telegramChatId: form.telegramChatId,
+        costPreset: form.costPreset,
+        dailySpendBudgetUsd: form.dailySpendBudgetUsd,
+        dailyLossLimit: form.dailyLossLimit,
+        maxBots: form.maxBots,
+        maxSlippageBps: form.maxSlippageBps,
+        tickIntervalMs: form.tickIntervalMs,
+        capital: form.capital,
+        modelOverrideEnabled,
+        modelForm,
+      }));
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['agents', agentId] });

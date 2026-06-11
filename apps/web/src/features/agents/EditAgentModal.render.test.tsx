@@ -11,6 +11,7 @@ function renderModal(options: {
   capital?: string;
   dailyLossLimit?: string;
   maxSlippageBps?: number | '';
+  prompt?: string;
 } = {}): string {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -30,7 +31,7 @@ function renderModal(options: {
             id: 'agent-123',
             userId: 'user-1',
             name: 'Momentum scout',
-            prompt: 'Watch BTC and trade breakouts.',
+            prompt: options.prompt ?? 'Watch BTC and trade breakouts.',
             skillIds: [],
             status: 'stopped',
             pauseState: null,
@@ -109,5 +110,15 @@ describe('EditAgentModal rendering', () => {
     expect(html).not.toContain(messages['agents.create.tradingControls.title']);
     expect(html).not.toContain(messages['agents.controls.capital']);
     expect(html).not.toContain(messages['agents.controls.maxSlippage']);
+  });
+
+  it('renders only the canonical objective when the stored prompt contains legacy operator context', () => {
+    const html = renderModal({
+      prompt: 'Watch BTC and trade breakouts.\n\nOperator context:\n- Selected skills: Trading.\n- Risk tolerance: moderate.',
+    });
+
+    expect(html).toContain('Watch BTC and trade breakouts.');
+    expect(html).not.toContain('Operator context:');
+    expect(html).not.toContain('Risk tolerance: moderate.');
   });
 });

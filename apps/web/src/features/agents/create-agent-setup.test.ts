@@ -17,25 +17,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ProviderSetupResult, TradingBindingSummary } from '../../lib/api-client.js';
 import { createAgentUsesInheritedModels, resolveCreateAgentModelPayload } from './create-agent-models.js';
+import { resolveCreateAgentBindingId } from './agent-payloads.js';
 
 // ---------------------------------------------------------------------------
 // Auto-select logic
 // ---------------------------------------------------------------------------
 
 describe('Create Agent — inline setup auto-select logic', () => {
-  /**
-   * Mirrors the intent update in CreateAgentFlow's onSuccess handler:
-   *
-   *   if (result.tradingBinding) {
-   *     setIntent((state) => ({ ...state, tradingBindingId: result.tradingBinding!.id }));
-   *   }
-   *
-   * Extracted here as a pure function for deterministic testing without React state.
-   */
-  function resolveAutoSelect(result: ProviderSetupResult): string | null {
-    return result.tradingBinding?.id ?? null;
-  }
-
   it('returns the trading binding id when the setup result includes one', () => {
     const result: ProviderSetupResult = {
       credential: {
@@ -62,7 +50,7 @@ describe('Create Agent — inline setup auto-select logic', () => {
         createdAt: '2026-06-10T00:00:00Z',
       },
     };
-    expect(resolveAutoSelect(result)).toBe('binding-1');
+    expect(resolveCreateAgentBindingId(result.tradingBinding)).toBe('binding-1');
   });
 
   it('returns null when the setup result has no trading binding (capability not provisioned)', () => {
@@ -82,7 +70,7 @@ describe('Create Agent — inline setup auto-select logic', () => {
         createdAt: '2026-06-10T00:00:00Z',
       },
     };
-    expect(resolveAutoSelect(result)).toBeNull();
+    expect(resolveCreateAgentBindingId(result.tradingBinding)).toBeNull();
   });
 });
 

@@ -155,6 +155,12 @@ export interface AgentTool {
   parameters: Record<string, unknown>;
   /** Composite category (e.g., "execute-trade", "read-database") */
   category: ToolCategory;
+  /**
+   * Optional prompt-facing usage notes rendered near this tool's name in the
+   * system prompt. Keep concise — argument-level semantics that cannot be
+   * derived from the JSON schema alone.
+   */
+  promptGuidance?: string;
   execute(params: unknown, ctx: ToolContext): Promise<ToolResult>;
 }
 
@@ -163,6 +169,7 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  promptGuidance?: string;
 }
 
 export const KNOWN_AGENT_TOOL_NAMES = [

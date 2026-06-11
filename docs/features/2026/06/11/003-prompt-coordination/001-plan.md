@@ -236,10 +236,21 @@ Why this is required:
 ## Risks And Open Questions
 
 1. Legacy prompts already stored in the database may contain embedded operator metadata. The plan assumes compatibility handling in the worker and UI, not a mandatory data migration.
+
+Answer: Do not bother about backward compatibility, we will reset the database
+
+
 2. `send_message` currently has broker/protocol support that is richer than the exposed tool schema. Decide whether prompt truth should move toward the schema or the schema should expand toward the broker contract.
+
+Answer: use the richer
+
 3. The UI may need a new explicit operator-context summary component because it can no longer rely on parsing human-readable metadata out of the prompt string.
+
+Answer: This is ok
+
 4. Reminder-time normalization is still a separate concern from prompt coordination. This plan improves prompt behavior, but a full deadline parser may belong in a later feature if reminder goals remain important.
-5. If any non-web writer stores prompt text with operator metadata, it must be removed or normalized too; this plan currently targets the known web create flow.
+
+Answer: This is ok
 
 ---
 

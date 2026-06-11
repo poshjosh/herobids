@@ -36,7 +36,7 @@ export const BASE_SKILL: SkillDefinition = {
   description: 'Core tools: memory, messaging, and cost tracking. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
-- Use \`send_message\` to communicate with the user. Set \`messageClass\` to \`alert\` or \`reminder\` and \`emailDelivery\` to \`if_allowed\` to request email fanout (policy permitting).
+- Use \`send_message\` to communicate important updates, alerts, or status reports to the user.
 - Use \`publish_artifact\` to publish structured outputs.
 - Use \`set_memory\` to persist a value by key across ticks.
 - Use \`get_memory\` to retrieve a previously stored value by key.
