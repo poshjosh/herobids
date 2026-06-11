@@ -31,7 +31,7 @@ export async function setupRoutes(
    * capability = "trading" — a companion venue account + trading binding,
    * all in a single transaction.
    *
-   * This is the preferred path for Mission Control and Create Agent. The
+  * This is the preferred path for Mission Control and Create AI Agent. The
    * primitive /credentials and /connections endpoints remain available as
    * advanced / manual-operator tools.
    */

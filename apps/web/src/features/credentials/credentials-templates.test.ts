@@ -35,12 +35,9 @@ describe('PROVIDER_TEMPLATES map (bug 007)', () => {
     expect(PROVIDER_TEMPLATES['1inch']).toEqual(['apiKey']);
   });
 
-  it('maps "telegram" to ["botToken"]', () => {
-    expect(PROVIDER_TEMPLATES['telegram']).toEqual(['botToken']);
-  });
-
   it('returns undefined for unknown providers (no template to apply)', () => {
-    expect(PROVIDER_TEMPLATES['zapier']).toBeUndefined();
+    expect(PROVIDER_TEMPLATES['gmail']).toBeUndefined();
+    expect(PROVIDER_TEMPLATES['n8n']).toBeUndefined();
     expect(PROVIDER_TEMPLATES['custom']).toBeUndefined();
     expect(PROVIDER_TEMPLATES['nonexistent']).toBeUndefined();
   });
@@ -102,9 +99,9 @@ describe('applyProviderTemplate logic (bug 007)', () => {
     expect(result).toBeNull();
   });
 
-  it('applies template when all values are whitespace-only (treated as empty)', () => {
-    const result = applyProviderTemplate('telegram', [{ key: '', value: '   ' }]);
-    expect(result).toEqual([{ key: 'botToken', value: '' }]);
+  it('returns a blank row for a general provider with no predefined template', () => {
+    const result = applyProviderTemplate('gmail', [{ key: '', value: '   ' }]);
+    expect(result).toEqual([{ key: '', value: '' }]);
   });
 
   it('is case-insensitive for provider lookup', () => {

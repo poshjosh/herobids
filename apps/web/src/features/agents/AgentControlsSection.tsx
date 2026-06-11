@@ -20,6 +20,17 @@ interface AgentControlsSectionProps {
   onChange: (patch: Partial<AgentControlsFormValue>) => void;
 }
 
+export interface TradingGuardrailsFormValue {
+  capital: string;
+  dailyLossLimit: string;
+  maxSlippageBps: string;
+}
+
+interface TradingGuardrailsFieldsProps {
+  value: TradingGuardrailsFormValue;
+  onChange: (patch: Partial<TradingGuardrailsFormValue>) => void;
+}
+
 export function AgentControlsSection({ value, onChange }: AgentControlsSectionProps) {
   const intl = useIntl();
   const explicitCadence = hasExplicitTickInterval(value.tickIntervalMs || null);
@@ -111,53 +122,16 @@ export function AgentControlsSection({ value, onChange }: AgentControlsSectionPr
         )}
       </div>
 
-      <div style={rowStyle}>
-        <div>
-          <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxBots' })}</FieldLabel>
-          <input
-            style={inputStyle}
-            type="number"
-            min={1}
-            value={value.maxBots}
-            onChange={(event) => onChange({ maxBots: event.target.value })}
-            placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-          />
-        </div>
-        <div>
-          <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
-          <input
-            style={inputStyle}
-            value={value.capital}
-            onChange={(event) => onChange({ capital: event.target.value })}
-            placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-          />
-          <div style={helperTextStyle}>
-            {intl.formatMessage({ id: 'agents.controls.capital.help' })}
-          </div>
-        </div>
-      </div>
-
-      <div style={rowStyle}>
-        <div>
-          <FieldLabel>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit' })}</FieldLabel>
-          <input
-            style={inputStyle}
-            value={value.dailyLossLimit}
-            onChange={(event) => onChange({ dailyLossLimit: event.target.value })}
-            placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-          />
-        </div>
-        <div>
-          <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxSlippage' })}</FieldLabel>
-          <input
-            style={inputStyle}
-            type="number"
-            min={0}
-            value={value.maxSlippageBps}
-            onChange={(event) => onChange({ maxSlippageBps: event.target.value })}
-            placeholder={intl.formatMessage({ id: 'common.default' })}
-          />
-        </div>
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxBots' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={1}
+          value={value.maxBots}
+          onChange={(event) => onChange({ maxBots: event.target.value })}
+          placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+        />
       </div>
 
       <div>
@@ -177,6 +151,49 @@ export function AgentControlsSection({ value, onChange }: AgentControlsSectionPr
           {intl.formatMessage({ id: 'agents.controls.estimatedDailySpend' }, { amount: estimatedDailySpend.toFixed(2) })}
         </div>
       )}
+    </div>
+  );
+}
+
+export function TradingGuardrailsFields({ value, onChange }: TradingGuardrailsFieldsProps) {
+  const intl = useIntl();
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          value={value.capital}
+          onChange={(event) => onChange({ capital: event.target.value })}
+          placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+        />
+        <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+          {intl.formatMessage({ id: 'agents.controls.capital.help' })}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          value={value.dailyLossLimit}
+          onChange={(event) => onChange({ dailyLossLimit: event.target.value })}
+          placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+        />
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxSlippage' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={0}
+          value={value.maxSlippageBps}
+          onChange={(event) => onChange({ maxSlippageBps: event.target.value })}
+          placeholder={intl.formatMessage({ id: 'common.default' })}
+        />
+      </div>
     </div>
   );
 }

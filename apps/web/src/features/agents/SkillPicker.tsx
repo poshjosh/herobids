@@ -28,7 +28,16 @@ export function SkillPicker({ skills, selectedSkillIds, onChange, loading = fals
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        maxHeight: selectableSkills.length > 4 ? '280px' : undefined,
+        overflowY: selectableSkills.length > 4 ? 'auto' : undefined,
+        paddingRight: selectableSkills.length > 4 ? '4px' : undefined,
+      }}
+    >
       {selectableSkills.map((skill) => {
         const isSelected = selected.has(skill.id);
 

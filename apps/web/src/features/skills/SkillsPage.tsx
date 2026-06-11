@@ -1,14 +1,12 @@
-import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { skills as skillsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button } from '../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel } from '../../lib/ui.js';
 
 export function SkillsPage() {
   const query = useQuery({
     queryKey: ['skills'],
     queryFn: () => skillsApi.list(),
   });
-  const navigate = useNavigate();
 
   const items = query.data?.skills ?? [];
   const builtIn = items.filter((skill) => skill.visibility === 'built-in');
@@ -18,8 +16,7 @@ export function SkillsPage() {
     <PageShell>
       <PageHeader
         title="Skills"
-        subtitle="Capability bundles that tell agents what they can do"
-        action={<Button variant="primary" onClick={() => navigate('/agents?create=1')}>Create agent</Button>}
+        subtitle="Capability bundles that tell AI agents what they can do"
       />
 
       {query.isLoading && <LoadingRows count={3} />}

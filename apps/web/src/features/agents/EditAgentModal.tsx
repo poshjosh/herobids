@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent } from '../../lib/api-client.js';
+import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, listSelectableSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
-import { AgentControlsSection } from './AgentControlsSection.js';
+import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -73,6 +73,13 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     heavyModel: initialData.heavyModel ?? '',
   });
   const inheritedModelSettings = aiSettingsQuery.data?.aiModelConfig ?? null;
+  const tradingCapabilityQuery = useQuery({
+    queryKey: ['agents', agentId, 'capability-readiness', 'trading'],
+    queryFn: async () => agentsApi.capabilityReadiness(agentId, 'trading') as Promise<CapabilityReadiness>,
+  });
+  const hasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
+  const showTradingControls = hasTradingCapability
+    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim());
 
   const set = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -270,6 +277,22 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             />
           </div>
+
+          {showTradingControls && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
+              </div>
+              <TradingGuardrailsFields
+                value={{
+                  capital: form.capital,
+                  dailyLossLimit: form.dailyLossLimit,
+                  maxSlippageBps: form.maxSlippageBps,
+                }}
+                onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+              />
+            </div>
+          )}
         </form>
       </div>
 

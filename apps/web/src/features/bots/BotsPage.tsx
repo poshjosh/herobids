@@ -50,7 +50,7 @@ export function BotsPage() {
     <PageShell>
       <PageHeader
         title="Bots"
-        subtitle="Trading bots created by you or your agents"
+        subtitle="Trading bots created by you or your AI agents"
         action={<Button variant="primary" onClick={() => setShowCreate(true)}>Create Bot</Button>}
       />
 
@@ -62,7 +62,7 @@ export function BotsPage() {
       {query.isSuccess && items.length === 0 && (
         <EmptyState
           title="No bots yet"
-          message="Create one or let an agent create bots on your behalf."
+          message="Create one or let an AI agent create bots on your behalf."
           action={<Button variant="primary" onClick={() => setShowCreate(true)}>Create Bot</Button>}
         />
       )}
@@ -83,7 +83,7 @@ export function BotsPage() {
                     <StatusBadge status={bot.status} />
                   </div>
                   <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                    {bot.creatorType === 'agent' ? `agent: ${bot.creatorId.slice(0, 8)}` : 'you'}
+                    {bot.creatorType === 'agent' ? `AI agent: ${bot.creatorId.slice(0, 8)}` : 'you'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>

@@ -6,7 +6,8 @@ import { Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui
 import { PROVIDER_TEMPLATES } from '../credentials/CredentialsPage.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
-const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch'];
+const GENERAL_PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'gmail', 'n8n', 'custom'];
+const TRADING_PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch'];
 
 interface SecretEntry {
   id: string;
@@ -52,11 +53,13 @@ interface Props {
   defaultCapability?: 'trading';
 }
 
-export function ProviderSetupForm({ onClose, onSuccess, defaultCapability = 'trading' }: Props) {
+export function ProviderSetupForm({ onClose, onSuccess, defaultCapability }: Props) {
   const intl = useIntl();
   const [provider, setProvider] = useState('');
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createEntry()]);
+  const isTradingSetup = defaultCapability === 'trading';
+  const providerSuggestions = isTradingSetup ? TRADING_PROVIDER_SUGGESTIONS : GENERAL_PROVIDER_SUGGESTIONS;
 
   const applyTemplate = (value: string) => {
     setProvider(value);
@@ -103,7 +106,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability = 'tra
   const hasCompleteSecret = secretEntries.some((e) => e.key.trim() && e.value.trim());
 
   return (
-    <Modal title={intl.formatMessage({ id: 'setup.form.title' })} onClose={onClose}>
+    <Modal title={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingTitle' : 'setup.form.title' })} onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>{intl.formatMessage({ id: 'setup.form.provider' })}</FieldLabel>
@@ -111,11 +114,11 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability = 'tra
             list="setup-provider-suggestions"
             value={provider}
             onChange={(e) => applyTemplate(e.target.value)}
-            placeholder={intl.formatMessage({ id: 'setup.form.providerPlaceholder' })}
+            placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingProviderPlaceholder' : 'setup.form.providerPlaceholder' })}
             style={inputStyle}
           />
           <datalist id="setup-provider-suggestions">
-            {PROVIDER_SUGGESTIONS.map((p) => (
+            {providerSuggestions.map((p) => (
               <option key={p} value={p} />
             ))}
           </datalist>
@@ -126,7 +129,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability = 'tra
           <input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder={intl.formatMessage({ id: 'setup.form.labelPlaceholder' })}
+            placeholder={intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingLabelPlaceholder' : 'setup.form.labelPlaceholder' })}
             style={inputStyle}
           />
         </div>
@@ -186,7 +189,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability = 'tra
           >
             {mutation.isPending
               ? intl.formatMessage({ id: 'setup.form.saving' })
-              : intl.formatMessage({ id: 'setup.form.submit' })}
+              : intl.formatMessage({ id: isTradingSetup ? 'setup.form.tradingSubmit' : 'setup.form.submit' })}
           </Button>
         </div>
       </form>

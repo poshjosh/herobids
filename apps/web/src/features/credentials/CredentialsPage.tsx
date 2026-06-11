@@ -7,7 +7,7 @@ import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/Portfo
 import { formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
-const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'telegram', 'zapier', 'custom'];
+const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'gmail', 'n8n', 'custom'];
 
 /** Well-known secret key names per provider — used to pre-populate key fields when a template matches. */
 export const PROVIDER_TEMPLATES: Record<string, string[]> = {
@@ -15,7 +15,6 @@ export const PROVIDER_TEMPLATES: Record<string, string[]> = {
   jupiter: ['privateKey'],
   bybit: ['apiKey', 'apiSecret'],
   '1inch': ['apiKey'],
-  telegram: ['botToken'],
 };
 
 interface SecretEntry {

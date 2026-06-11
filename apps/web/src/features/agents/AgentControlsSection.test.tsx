@@ -25,11 +25,11 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
 }
 
 describe('AgentControlsSection rendering', () => {
-  it('renders preset, spend budget, capital, and token budget labels', () => {
+  it('renders preset, spend budget, max bots, and token budget labels', () => {
     const html = renderControls();
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
-    expect(html).toContain(messages['agents.controls.capital']);
+    expect(html).toContain(messages['agents.controls.maxBots']);
     expect(html).toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 

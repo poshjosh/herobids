@@ -1,9 +1,9 @@
 /**
  * Tests for the shared ProviderSetupForm component.
  *
- * ProviderSetupForm is the guided setup path for completing trading setup —
- * credential + connection + binding — in a single transactional API call.
- * It is rendered in exactly two surfaces: Mission Control and Create Agent.
+ * ProviderSetupForm is the guided setup path for provider linking.
+ * Mission Control uses it for general provider connections, while Create AI Agent
+ * uses the same form in trading mode to provision credential + connection + binding.
  *
  * These tests cover:
  *   - Initial render: all expected form labels and controls are present
@@ -19,14 +19,14 @@ import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import { ProviderSetupForm, canAutoApplyProviderTemplate } from './ProviderSetupForm.js';
 
-function renderForm(): string {
+function renderForm(defaultCapability?: 'trading'): string {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return renderToStaticMarkup(
     <QueryClientProvider client={qc}>
       <IntlProvider locale="en" messages={messages}>
-        <ProviderSetupForm onClose={() => undefined} onSuccess={() => undefined} />
+        <ProviderSetupForm onClose={() => undefined} onSuccess={() => undefined} defaultCapability={defaultCapability} />
       </IntlProvider>
     </QueryClientProvider>,
   );
@@ -40,6 +40,16 @@ describe('ProviderSetupForm rendering', () => {
   it('renders the form title from the i18n catalog', () => {
     const html = renderForm();
     expect(html).toContain(messages['setup.form.title']);
+  });
+
+  it('renders the trading title when a trading capability is requested', () => {
+    const html = renderForm('trading');
+    expect(html).toContain(messages['setup.form.tradingTitle']);
+  });
+
+  it('renders the trading-specific submit label when a trading capability is requested', () => {
+    const html = renderForm('trading');
+    expect(html).toContain(messages['setup.form.tradingSubmit']);
   });
 
   it('renders Provider field label', () => {
@@ -72,11 +82,19 @@ describe('ProviderSetupForm rendering', () => {
     expect(html).toContain(messages['setup.form.addSecret']);
   });
 
-  it('renders datalist options for all trading-capable providers', () => {
+  it('renders datalist options for general provider suggestions by default', () => {
     const html = renderForm();
+    for (const provider of ['hyperliquid', 'gmail', 'n8n', 'custom']) {
+      expect(html).toContain(`value="${provider}"`);
+    }
+  });
+
+  it('renders trading-only provider suggestions in trading mode', () => {
+    const html = renderForm('trading');
     for (const provider of ['hyperliquid', 'bybit', 'jupiter', '1inch']) {
       expect(html).toContain(`value="${provider}"`);
     }
+    expect(html).not.toContain('value="gmail"');
   });
 
   it('submit button is disabled on initial render because provider and label are empty', () => {

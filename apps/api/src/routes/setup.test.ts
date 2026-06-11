@@ -172,6 +172,32 @@ describe('POST /setup/provider-link', () => {
     expect(body['venueAccount']).toBeUndefined();
   });
 
+  it('accepts custom non-trading providers such as gmail when capability is omitted', async () => {
+    const { provisionTradingTarget } = await import('../trading-provisioner.js');
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, buildMockDb());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: {
+        provider: 'gmail',
+        label: 'My Gmail inbox',
+        secrets: { refreshToken: 'token-123' },
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(transactionCallCount).toBe(1);
+    expect(insertedValues).toHaveLength(2);
+    expect(provisionTradingTarget).not.toHaveBeenCalled();
+    const body = res.json<Record<string, unknown>>();
+    expect(body['credential']).toBeDefined();
+    expect(body['connection']).toBeDefined();
+    expect(body['tradingBinding']).toBeUndefined();
+  });
+
   it('creates credential, connection, venue account, and binding for capability=trading', async () => {
     const { provisionTradingTarget } = await import('../trading-provisioner.js');
     const app = Fastify();

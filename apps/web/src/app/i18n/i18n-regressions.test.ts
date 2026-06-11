@@ -95,7 +95,8 @@ describe('setup flow copy changes', () => {
 
   it('setup.form.title is defined and names the guided setup flow', () => {
     expect(enMessages['setup.form.title']).toBeTruthy();
-    expect(enMessages['setup.form.title']).toBe('Add trading provider');
+    expect(enMessages['setup.form.title']).toBe('Add provider connection');
+    expect(enMessages['setup.form.tradingTitle']).toBe('Add trading connection');
   });
 
   it('agents.create.setupTradingNow key exists for the inline escape-hatch button', () => {
@@ -117,6 +118,7 @@ describe('setup flow copy changes', () => {
       'aiModels.premium.label',
       'agents.create.models.title',
       'agents.create.models.description',
+      'agents.create.tradingControls.title',
       'agents.create.telegramChatId',
       'agents.review.models',
       'agents.edit.models.title',

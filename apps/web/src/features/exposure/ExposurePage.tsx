@@ -33,7 +33,7 @@ export function ExposurePage() {
       {overview && instancesWithPositions.length === 0 && (
         <EmptyState
           title="No open positions"
-          message="Positions will appear here once your agents start trading."
+          message="Positions will appear here once your AI agents start trading."
         />
       )}
 

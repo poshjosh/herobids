@@ -11,7 +11,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
-import { AgentControlsSection } from './AgentControlsSection.js';
+import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -148,7 +148,7 @@ function CreateAgentFlow({
     costPreset: '',
     dailySpendBudgetUsd: '',
     tickIntervalMs: '',
-    maxBots: '',
+    maxBots: '5',
     capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
@@ -247,6 +247,7 @@ function CreateAgentFlow({
   if (showSetup) {
     return (
       <ProviderSetupForm
+        defaultCapability="trading"
         onClose={() => setShowSetup(false)}
         onSuccess={(result) => {
           setShowSetup(false);
@@ -433,6 +434,20 @@ function CreateAgentFlow({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                  {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
+                </div>
+                <TradingGuardrailsFields
+                  value={{
+                    capital: intent.capital,
+                    dailyLossLimit: intent.dailyLossLimit,
+                    maxSlippageBps: intent.maxSlippageBps,
+                  }}
+                  onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
+                />
               </div>
             </div>
           )}

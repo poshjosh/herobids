@@ -13,6 +13,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   // Rebuild only when locale changes, not on every route re-render.
   const NAV_ITEMS = useMemo(() => [
     { path: '/mission-control', label: intl.formatMessage({ id: 'nav.missionControl' }), icon: '◈' },
+    { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
     { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
     { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◎' },
     { path: '/outcomes', label: intl.formatMessage({ id: 'nav.outcomes' }), icon: '▦' },
@@ -20,7 +21,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   ], [locale]);
 
   const MANAGE_ITEMS = useMemo(() => [
-    { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
     { path: '/connections', label: intl.formatMessage({ id: 'nav.connections' }), icon: '⊟' },
     { path: '/credentials', label: intl.formatMessage({ id: 'nav.credentials' }), icon: '⊛' },
     { path: '/billing', label: intl.formatMessage({ id: 'nav.billing' }), icon: '⊘' },
