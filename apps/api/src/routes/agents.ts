@@ -17,6 +17,7 @@ import {
   optionalPositiveDecimalStringSchema,
   optionalPositiveIntegerSchema,
   resolveDailyLlmTokenBudget,
+  resolveNotificationPolicy,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
 
@@ -35,6 +36,14 @@ const CreateAgentSchema = z.object({
   dailySpendBudgetUsd: z.number().positive().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).optional(),
   telegramChatId: z.string().optional(),
+  notificationPolicy: z.object({
+    sendMessage: z.object({
+      email: z.object({
+        enabled: z.boolean(),
+        source: z.enum(['explicit_prompt', 'explicit_update']),
+      }).optional(),
+    }).optional(),
+  }).nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
   dailyTokenBudget: optionalPositiveIntegerSchema(),
   dailyLlmTokenBudget: optionalPositiveIntegerSchema(),
@@ -58,6 +67,14 @@ const UpdateAgentSchema = z.object({
   dailySpendBudgetUsd: z.number().positive().nullable().optional(),
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
+  notificationPolicy: z.object({
+    sendMessage: z.object({
+      email: z.object({
+        enabled: z.boolean(),
+        source: z.enum(['explicit_prompt', 'explicit_update']),
+      }).optional(),
+    }).optional(),
+  }).nullable().optional(),
   // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyTokenBudget: nullablePositiveIntegerSchema(),
@@ -135,6 +152,9 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       telegramChatId: parsed.data.telegramChatId ?? null,
+      notificationPolicy: parsed.data.notificationPolicy !== undefined
+        ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
+        : null,
       executionMode: parsed.data.executionMode ?? null,
       dailyTokenBudget: dailyLlmTokenBudget.value ?? null,
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
@@ -269,11 +289,17 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       dexWatchlistSymbols: _dexWatchlistSymbols,
       dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
+      notificationPolicy: notificationPolicyInput,
       ...agentUpdates
     } = parsed.data;
 
+    const effectiveNotificationPolicy = notificationPolicyInput !== undefined
+      ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
+      : undefined;
+
     await db.update(agents).set({
       ...agentUpdates,
+      ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

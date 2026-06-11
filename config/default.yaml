@@ -277,6 +277,10 @@ alerts:
   telegram:
     botToken: ""                    # override: TELEGRAM_BOT_TOKEN
     channels: []                    # configured via env-specific yaml
+  email:
+    apiKey: ""                      # Resend API key — override: RESEND_API_KEY
+    fromEmail: ""                   # sender address (must be verified in Resend) — override: RESEND_FROM_EMAIL
+    timeoutMs: 10000                # request timeout in ms
 
 # Authentication — Google OAuth + JWT sessions.
 auth:

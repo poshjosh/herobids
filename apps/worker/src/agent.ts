@@ -11,7 +11,7 @@
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, RISK_MONITORING_SKILL, TRADING_SKILL, type ToolContext, initDefaultRuntimeBudgets, DEFAULT_RUNTIME_BUDGETS } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, initDefaultRuntimeBudgets, DEFAULT_RUNTIME_BUDGETS } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
@@ -214,8 +214,11 @@ const costProfile = resolveAgentCostProfile({
 const ALL_SKILLS_BY_ID: Record<string, SkillDefinition> = {
   base: BASE_SKILL,
   'bot-management': BOT_MANAGEMENT_SKILL,
+  programming: PROGRAMMING_SKILL,
   trading: TRADING_SKILL,
   'risk-monitoring': RISK_MONITORING_SKILL,
+  'web-access': WEB_ACCESS_SKILL,
+  'task-management': TASK_MANAGEMENT_SKILL,
 };
 
 function resolveSkills(ids: string[]): SkillDefinition[] {

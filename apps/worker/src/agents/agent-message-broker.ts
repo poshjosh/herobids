@@ -18,6 +18,7 @@ import {
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import type { TelegramClient } from '../alerting/telegram-client.js';
+import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -29,6 +30,8 @@ const logger = pino({ name: 'agent-message-broker' });
 
 /** Brokered send_message rate limit: max messages per agent per minute. */
 const SEND_MESSAGE_MAX_PER_MINUTE = 10;
+/** Stricter secondary rate limit for email fanout per agent per minute. */
+const EMAIL_FANOUT_MAX_PER_MINUTE = 3;
 /** Max body length enforced server-side (matches domain schema). */
 const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 
@@ -61,6 +64,8 @@ export type BotLimitCheckCallback = (userId: string) => Promise<void>;
 export class AgentMessageBroker {
   /** Per-agent send_message rate tracking: agentId → { count, windowStart } */
   private readonly sendMessageCounters = new Map<string, { count: number; windowStart: number }>();
+  /** Per-agent email fanout rate tracking: agentId → { count, windowStart } */
+  private readonly emailFanoutCounters = new Map<string, { count: number; windowStart: number }>();
   /**
    * Per-agent capability policy cache: agentId → { engine, policySig }.
    * policySig is the JSON fingerprint of the agent's toolPolicy at build time.
@@ -81,6 +86,7 @@ export class AgentMessageBroker {
     private readonly botLimitCheck?: BotLimitCheckCallback,
     private readonly botStop?: BotStopCallback,
     private readonly botRestart?: BotRestartCallback,
+    private readonly emailClient?: EmailClient,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -357,8 +363,9 @@ export class AgentMessageBroker {
 
     // Body guard — domain schema validates length but be defensive
     const body = payload.body.slice(0, SEND_MESSAGE_MAX_BODY_LENGTH);
+    const messageClass = payload.messageClass ?? 'routine';
 
-    // Persist to audit trail first
+    // Persist to audit trail first (inbox is always the primary path)
     const msgId = await this.agentRepo.insertOutboundMessage({
       agentId: agent.id,
       sessionId: activeSession.id,
@@ -366,6 +373,7 @@ export class AgentMessageBroker {
       subject: payload.subject,
       body,
       contextRef: payload.contextRef,
+      messageClass,
     });
 
     // Resolve user's Telegram destination
@@ -373,26 +381,102 @@ export class AgentMessageBroker {
     if (!telegramChatId) {
       logger.info({ agentId: agent.id }, 'send_message persisted but user has no Telegram chat ID — skipping delivery');
       await this.agentRepo.markOutboundMessageFailed(msgId, 'no_telegram_chat_id');
-      return;
-    }
-
-    if (!this.telegram) {
+    } else if (!this.telegram) {
       logger.debug({ agentId: agent.id }, 'send_message persisted but Telegram not configured — skipping delivery');
       await this.agentRepo.markOutboundMessageFailed(msgId, 'telegram_not_configured');
+    } else {
+      const text = formatAgentMessage(agent.name, payload.subject, body);
+      const result = await this.telegram.sendText(telegramChatId, text);
+
+      if (!result.ok) {
+        logger.warn({ agentId: agent.id, error: result.error }, 'send_message Telegram delivery failed');
+        await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message);
+      } else {
+        await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId);
+        logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered via Telegram');
+      }
+    }
+
+    // --- Email fanout (secondary, policy-gated) ---
+    await this.handleEmailFanout(agent.id, msgId, payload, body, messageClass, now);
+  }
+
+  /**
+   * Evaluate email fanout eligibility and send if all rules pass.
+   * Implements the broker enforcement algorithm from 001-send-message-email-policy.md.
+   */
+  private async handleEmailFanout(
+    agentId: string,
+    msgId: string,
+    payload: SendMessagePayload,
+    body: string,
+    messageClass: string,
+    now: number,
+  ): Promise<void> {
+    // Rule 4: email requires explicit per-message request
+    if (payload.emailDelivery !== 'if_allowed') {
+      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'feed_only');
       return;
     }
 
-    const text = formatAgentMessage(agent.name, payload.subject, body);
-    const result = await this.telegram.sendText(telegramChatId, text);
+    // Rule 5: only alert and reminder classes are email-eligible
+    if (messageClass !== 'alert' && messageClass !== 'reminder') {
+      logger.debug({ agentId, messageClass }, 'Email fanout suppressed: routine message class');
+      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
+      return;
+    }
+
+    // Rule 7: operator email infrastructure required
+    if (!this.emailClient) {
+      logger.debug({ agentId }, 'Email fanout skipped: email client not configured');
+      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_not_configured');
+      return;
+    }
+
+    // Rule 2: agent must have email enabled in notificationPolicy
+    const agent = await this.agentRepo.getAgent(agentId);
+    const notifPolicy = agent?.notificationPolicy as {
+      sendMessage?: { email?: { enabled?: boolean } };
+    } | null | undefined;
+    if (!notifPolicy?.sendMessage?.email?.enabled) {
+      logger.debug({ agentId }, 'Email fanout suppressed: notificationPolicy.sendMessage.email.enabled is false');
+      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
+      return;
+    }
+
+    // Rule 6: recipient is fixed to owning user's verified account email
+    const recipientEmail = await this.agentRepo.getUserEmailByAgentId(agentId);
+    if (!recipientEmail) {
+      logger.warn({ agentId }, 'Email fanout skipped: no verified account email for owning user');
+      await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_no_verified_recipient');
+      return;
+    }
+
+    // Rule 8: secondary stricter rate limit for email fanout
+    const emailCounter = this.emailFanoutCounters.get(agentId);
+    if (emailCounter && now - emailCounter.windowStart < 60_000) {
+      if (emailCounter.count >= EMAIL_FANOUT_MAX_PER_MINUTE) {
+        logger.warn({ agentId }, 'Email fanout suppressed: secondary rate limit exceeded');
+        await this.agentRepo.markOutboundMessageEmailSkipped(msgId, 'email_skipped_policy');
+        return;
+      }
+      emailCounter.count++;
+    } else {
+      this.emailFanoutCounters.set(agentId, { count: 1, windowStart: now });
+    }
+
+    // All rules passed — send email
+    const subject = payload.subject ?? (messageClass === 'reminder' ? 'Reminder from your agent' : 'Alert from your agent');
+    const result = await this.emailClient.send({ to: recipientEmail, subject, text: body });
 
     if (!result.ok) {
-      logger.warn({ agentId: agent.id, error: result.error }, 'send_message Telegram delivery failed');
-      await this.agentRepo.markOutboundMessageFailed(msgId, result.error.message);
+      logger.warn({ agentId, error: result.error }, 'Email fanout delivery failed');
+      await this.agentRepo.markOutboundMessageEmailFailed(msgId, result.error.message);
       return;
     }
 
-    await this.agentRepo.markOutboundMessageSent(msgId, String(result.data.messageId), telegramChatId);
-    logger.info({ agentId: agent.id, msgId }, 'Agent send_message delivered');
+    await this.agentRepo.markOutboundMessageEmailSent(msgId, result.data.messageId);
+    logger.info({ agentId, msgId, messageId: result.data.messageId }, 'Agent send_message email fanout sent');
   }
 
   private async handleManageBot(envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {

@@ -38,6 +38,13 @@ export interface RuntimeEventSummary {
   createdAt: string;
 }
 
+export interface RuntimeReminderContext {
+  wakeId: string;
+  reminderId: string | null;
+  message: string;
+  requestedAt: string | null;
+}
+
 export interface RuntimeVenueSignal {
   kind: 'perps' | 'dex';
   instrument: string;
@@ -74,6 +81,7 @@ export interface RuntimeSessionMetrics {
   decisionsRejected: number;
   lastPnlSummary: string | null;
   lastPositionSide: string | null;
+  currentReminder: RuntimeReminderContext | null;
   degradedCapabilities: Array<{ dependency: string; summary: string; guidance: string }>;
   managedBots: Array<{ id: string; status: string; strategyPreset?: string; symbol?: string }> | null;
   market: RuntimeMarketSnapshot;
@@ -344,11 +352,37 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     },
   },
   {
-    id: 'degraded-capabilities',
+    id: 'reminder-context',
     costTier: 'free',
     section: 'dynamic',
     requiredFamilies: [],
     trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const reminder = state.metrics.currentReminder;
+      if (!reminder) {
+        return null;
+      }
+
+      return {
+        id: 'reminderContext',
+        title: 'Reminder Context',
+        provider: 'reminder-context',
+        content: [
+          `Reminder ID: ${reminder.reminderId ?? 'unavailable'}`,
+          `Wake ID: ${reminder.wakeId}`,
+          `Message: ${reminder.message}`,
+          `Requested at: ${reminder.requestedAt ?? 'unavailable'}`,
+        ].join('\n'),
+      };
+    },
+  },
+  {
+    id: 'degraded-capabilities',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 2,
     preserveWhenTrimmed: true,
     build: (state) => {
       if (state.metrics.degradedCapabilities.length === 0) {
@@ -552,6 +586,7 @@ export function createRuntimeCompositionState(runtimeDescriptor: RuntimeDescript
       decisionsRejected: 0,
       lastPnlSummary: null,
       lastPositionSide: null,
+      currentReminder: null,
       degradedCapabilities: [],
       managedBots: null,
       market: {
@@ -783,6 +818,33 @@ export function applyRuntimeMessage(
     return summary;
   }
 
+  if (type === 'agent.market.wake') {
+    const wakeId = typeof payload['wakeId'] === 'string' ? payload['wakeId'] : '';
+    const reason = typeof payload['reason'] === 'string' ? payload['reason'] : '';
+    const requestedAt = typeof payload['requestedAt'] === 'string' ? payload['requestedAt'] : null;
+
+    // Reminder wakes have wakeId and reason prefixed with "reminder:"
+    if (wakeId.startsWith('reminder:') && reason.startsWith('reminder:')) {
+      const reminderId = wakeId.slice('reminder:'.length) || null;
+      const message = reason.slice('reminder:'.length);
+      state.metrics.currentReminder = {
+        wakeId,
+        reminderId,
+        message,
+        requestedAt,
+      };
+      const summary = `Reminder: ${message}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+
+    state.metrics.currentReminder = null;
+
+    const summary = reason ? `Market wake: ${reason}` : 'Market wake';
+    pushRecentEvent(state, type, summary);
+    return summary;
+  }
+
   if (type === 'instance.tool.result') {
     const tool = typeof payload['tool'] === 'string' ? payload['tool'] : 'tool';
     const data = payload['data'] as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
@@ -887,7 +949,12 @@ export function buildTickUserContext(state: RuntimeCompositionState, incomingMes
 
   const dynamicContext = buildContextSection(state, 'dynamic');
   const progressSummary = computePerformanceSummary(state);
-  return [dynamicContext, progressSummary].filter(Boolean).join('\n\n');
+  const output = [dynamicContext, progressSummary].filter(Boolean).join('\n\n');
+
+  // Reminder context should only influence the tick immediately triggered by it.
+  state.metrics.currentReminder = null;
+
+  return output;
 }
 
 export function getVisibleToolNames(state: RuntimeCompositionState): string[] {

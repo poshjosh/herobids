@@ -160,6 +160,16 @@ export const AlertsConfigSchema = z.object({
     /** Telegram channel routing rules */
     channels: z.array(TelegramChannelConfigSchema).default([]),
   }).default({}),
+  email: z.object({
+    /** Resend API key — override: RESEND_API_KEY */
+    apiKey: z.string().default(''),
+    /** Sender email address (must be verified in Resend) */
+    fromEmail: z.string().default(''),
+    /** Optional reply-to address */
+    replyToEmail: z.string().optional(),
+    /** Request timeout in ms */
+    timeoutMs: z.number().int().min(1000).default(10_000),
+  }).default({}),
 });
 
 export const AuthConfigSchema = z.object({

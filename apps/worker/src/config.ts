@@ -51,6 +51,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Alerts
   ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
+  RESEND_API_KEY: { path: 'alerts.email.apiKey', type: 'string' },
+  RESEND_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },
   // LLM runtime
   LLM_PROVIDER: { path: 'llm.provider', type: 'string' },
   LLM_MODEL: { path: 'llm.model', type: 'string' },

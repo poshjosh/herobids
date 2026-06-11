@@ -15,6 +15,11 @@ export interface InsertAgent {
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
   telegramChatId?: string;
+  notificationPolicy?: {
+    sendMessage?: {
+      email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt: string };
+    };
+  } | null;
   executionMode?: string;
   dailyTokenBudget?: number;
   dailyLossLimit?: string;
@@ -31,6 +36,11 @@ export interface UpdateAgent {
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
   telegramChatId?: string;
+  notificationPolicy?: {
+    sendMessage?: {
+      email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt: string };
+    };
+  } | null;
   executionMode?: string;
   dailyTokenBudget?: number;
   dailyLossLimit?: string;
@@ -102,6 +112,8 @@ export interface InsertAgentOutboundMessage {
   subject?: string;
   body: string;
   contextRef?: string;
+  /** Message class: 'routine' | 'alert' | 'reminder' */
+  messageClass?: string;
 }
 
 /**
@@ -128,6 +140,7 @@ export class AgentRepository {
       toolPolicy: input.toolPolicy ?? null,
       modelPolicy: input.modelPolicy ?? null,
       telegramChatId: input.telegramChatId ?? null,
+      notificationPolicy: input.notificationPolicy ?? null,
       executionMode: input.executionMode ?? null,
       dailyTokenBudget: input.dailyTokenBudget ?? null,
       dailyLossLimit: input.dailyLossLimit ?? null,
@@ -386,6 +399,7 @@ export class AgentRepository {
       subject: input.subject ?? null,
       body: input.body,
       contextRef: input.contextRef ?? null,
+      messageClass: input.messageClass ?? null,
       deliveryStatus: 'pending',
     });
     return id;
@@ -403,6 +417,26 @@ export class AgentRepository {
     await this.db.update(agentOutboundMessages).set({
       deliveryStatus: 'failed',
       deliveryError: error,
+    }).where(eq(agentOutboundMessages.id, id));
+  }
+
+  async markOutboundMessageEmailSent(id: string, emailMessageId: string): Promise<void> {
+    await this.db.update(agentOutboundMessages).set({
+      emailDeliveryStatus: 'email_sent',
+      emailMessageId,
+    }).where(eq(agentOutboundMessages.id, id));
+  }
+
+  async markOutboundMessageEmailSkipped(id: string, reason: string): Promise<void> {
+    await this.db.update(agentOutboundMessages).set({
+      emailDeliveryStatus: reason,
+    }).where(eq(agentOutboundMessages.id, id));
+  }
+
+  async markOutboundMessageEmailFailed(id: string, error: string): Promise<void> {
+    await this.db.update(agentOutboundMessages).set({
+      emailDeliveryStatus: 'email_failed_provider',
+      emailDeliveryError: error,
     }).where(eq(agentOutboundMessages.id, id));
   }
 
@@ -429,5 +463,16 @@ export class AgentRepository {
       .where(eq(agents.id, agentId))
       .limit(1);
     return rows[0]?.telegramChatId ?? null;
+  }
+
+  /** Look up the verified account email for the user that owns the given agent. */
+  async getUserEmailByAgentId(agentId: string): Promise<string | null> {
+    const rows = await this.db
+      .select({ email: users.email })
+      .from(agents)
+      .innerJoin(users, eq(agents.userId, users.id))
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    return rows[0]?.email ?? null;
   }
 }

@@ -212,6 +212,50 @@ export function hasModelFieldsWithoutProvider(payload: {
   return !selection.provider && (selection.lightModel !== null || selection.heavyModel !== null);
 }
 
+type NotificationPolicyInput = {
+  sendMessage?: {
+    email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update' };
+  };
+} | null;
+
+type StoredNotificationPolicy = {
+  sendMessage?: {
+    email?: { enabled: boolean; source: 'explicit_prompt' | 'explicit_update'; enabledAt: string };
+  };
+} | null;
+
+/**
+ * Resolve the notification policy from a create/update input.
+ * Writes `enabledAt` server-side when email is being enabled.
+ */
+export function resolveNotificationPolicy(
+  input: NonNullable<NotificationPolicyInput>,
+  current: StoredNotificationPolicy,
+): StoredNotificationPolicy {
+  const emailInput = input.sendMessage?.email;
+  if (!emailInput) {
+    return current ?? null;
+  }
+
+  const currentEnabledAt = current?.sendMessage?.email?.enabledAt;
+  const wasEnabled = current?.sendMessage?.email?.enabled === true;
+
+  // Write enabledAt only when transitioning from disabled → enabled
+  const enabledAt = (emailInput.enabled && !wasEnabled)
+    ? new Date().toISOString()
+    : (emailInput.enabled && currentEnabledAt ? currentEnabledAt : undefined);
+
+  return {
+    sendMessage: {
+      email: {
+        enabled: emailInput.enabled,
+        source: emailInput.source,
+        ...(enabledAt ? { enabledAt } : {}),
+      },
+    },
+  };
+}
+
 export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; dailyTokenBudget?: number | null }>(agent: T): T & {
   provider: string | null;
   lightModel: string | null;

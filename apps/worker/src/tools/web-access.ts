@@ -472,4 +472,205 @@ const browseUrlTool: AgentTool = {
   },
 };
 
-export const webAccessTools: AgentTool[] = [webSearchTool, browseUrlTool];
+// --- read_document ---
+
+function isSupportedDocumentContentType(contentType: string | null): boolean {
+  if (!contentType) return false;
+  const normalized = contentType.toLowerCase().split(';')[0]!.trim();
+  return normalized === 'application/pdf';
+}
+
+const ReadDocumentParamsSchema = z.object({
+  url: z.string().url(),
+});
+
+const readDocumentTool: AgentTool = {
+  name: 'read_document',
+  description: 'Fetch and extract text from a document URL (currently supports PDF). Only https:// URLs are allowed. Private IP addresses and loopback are blocked.',
+  parametersSchema: ReadDocumentParamsSchema,
+  parameters: convertZodToJsonSchema(ReadDocumentParamsSchema),
+  category: 'read-web',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    if (ctx.capabilityEngine) {
+      const denied = ctx.capabilityEngine.checkAccess('read_document', ctx.agentId, ctx.sessionId);
+      if (denied) {
+        logger.warn({ agentId: ctx.agentId, reason: denied }, 'read_document denied by capability policy');
+        return { success: false, error: `capability policy denied: ${denied}`, retryable: false };
+      }
+      ctx.capabilityEngine.recordStart('read_document', ctx.sessionId);
+    }
+
+    const startMs = Date.now();
+    let docSuccess = false;
+
+    try {
+      const { url } = params as z.infer<typeof ReadDocumentParamsSchema>;
+
+      // Enforce HTTPS
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') {
+        return { success: false, error: 'read_document only allows https:// URLs', retryable: false };
+      }
+
+      // SSRF: resolve hostname and block private IPs
+      const hostname = parsed.hostname;
+      const isPrivate = await isHostPrivate(hostname);
+      if (isPrivate) {
+        logger.warn({ agentId: ctx.agentId, hostname }, 'read_document blocked private/unresolvable hostname');
+        return { success: false, error: 'read_document blocked: hostname resolves to a private or reserved IP address', retryable: false };
+      }
+
+      const browseConfig = _runtimeConfig?.browseUrl;
+      const grant = ctx.capabilityEngine?.getGrant('read_document');
+      const maxResponseBytes = grant?.limits?.maxResponseBytes ?? browseConfig?.maxResponseBytes ?? 512 * 1024;
+      const timeoutMs = grant?.limits?.timeoutMs ?? browseConfig?.timeoutMs ?? 15_000;
+
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: { 'Accept': 'application/pdf,*/*;q=0.8', 'User-Agent': 'Herobids-Agent/1.0' },
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
+
+      if (response.status >= 300 && response.status < 400) {
+        return { success: false, error: `read_document blocked redirect (${response.status})`, retryable: false };
+      }
+
+      if (!response.ok) {
+        return { success: false, error: `read_document HTTP error: ${response.status}`, retryable: response.status >= 500 };
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!isSupportedDocumentContentType(contentType)) {
+        return {
+          success: false,
+          error: `read_document unsupported content type: ${contentType ?? 'unknown'}. Only PDF is supported.`,
+          retryable: false,
+        };
+      }
+
+      // Abort early if Content-Length exceeds byte cap
+      const contentLength = Number(response.headers.get('content-length') ?? NaN);
+      if (!Number.isNaN(contentLength) && contentLength > maxResponseBytes) {
+        controller.abort();
+        return { success: false, error: `read_document blocked: Content-Length (${contentLength}) exceeds maxResponseBytes (${maxResponseBytes})`, retryable: false };
+      }
+
+      // Stream body with byte cap
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return { success: false, error: 'read_document: no response body', retryable: false };
+      }
+
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      let truncated = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          if (totalBytes + value.length > maxResponseBytes) {
+            const remaining = maxResponseBytes - totalBytes;
+            chunks.push(value.slice(0, remaining));
+            totalBytes += remaining;
+            truncated = true;
+            break;
+          }
+          chunks.push(value);
+          totalBytes += value.length;
+        }
+      }
+      reader.cancel().catch(() => undefined);
+
+      // Extract text from the PDF bytes using a lightweight approach.
+      // We extract readable ASCII/UTF-8 strings from the binary content
+      // without requiring a full PDF library dependency.
+      const pdfBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+      const text = extractPdfText(pdfBuffer);
+
+      docSuccess = true;
+      return { success: true, data: { url, contentType: 'application/pdf', text, truncated, sizeBytes: totalBytes } };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = msg.includes('abort') || msg.includes('timeout');
+      logger.warn({ agentId: ctx.agentId, error: msg }, 'read_document failed');
+      return { success: false, error: `read_document failed: ${msg}`, retryable: isTimeout };
+    } finally {
+      if (ctx.capabilityEngine) {
+        ctx.capabilityEngine.recordEnd('read_document', ctx.sessionId, {
+          capability: 'read_document',
+          agentId: ctx.agentId,
+          sessionId: ctx.sessionId,
+          timestamp: new Date().toISOString(),
+          durationMs: Date.now() - startMs,
+          inputSummary: `url=${((params as Record<string, unknown>)['url'] ?? '').toString().slice(0, 100)}`,
+          outputSummary: docSuccess ? 'text extracted' : 'error',
+          success: docSuccess,
+        });
+      }
+    }
+  },
+};
+
+/**
+ * Lightweight PDF text extraction without a library.
+ * Scans the binary content for readable text streams between stream markers.
+ * Suitable for simple text-heavy PDFs. Complex layout or encrypted PDFs
+ * will return partial or garbled text — the agent should handle this gracefully.
+ */
+function extractPdfText(buffer: Buffer): string {
+  const content = buffer.toString('binary');
+  const lines: string[] = [];
+
+  // Match content between BT (begin text) and ET (end text) markers
+  const btEtRegex = /BT([\s\S]*?)ET/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = btEtRegex.exec(content)) !== null) {
+    const block = match[1] ?? '';
+    // Extract text from Tj and TJ operators
+    // Tj: (text) Tj
+    // TJ: [(text1)(text2)...] TJ
+    const tjRegex = /\(([^)]*)\)\s*Tj/g;
+    let tjMatch: RegExpExecArray | null;
+    while ((tjMatch = tjRegex.exec(block)) !== null) {
+      const raw = tjMatch[1] ?? '';
+      // Decode basic PDF string escapes
+      const decoded = raw.replace(/\\([0-7]{3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)))
+        .replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+        .replace(/\\\\/g, '\\').replace(/\\\(/g, '(').replace(/\\\)/g, ')');
+      const printable = decoded.replace(/[^\x20-\x7E\n\r\t]/g, '');
+      if (printable.trim()) lines.push(printable);
+    }
+
+    const tjArrayRegex = /\[([^\]]*)\]\s*TJ/g;
+    let tjArrMatch: RegExpExecArray | null;
+    while ((tjArrMatch = tjArrayRegex.exec(block)) !== null) {
+      const inner = tjArrMatch[1] ?? '';
+      const strRegex = /\(([^)]*)\)/g;
+      let strMatch: RegExpExecArray | null;
+      const parts: string[] = [];
+      while ((strMatch = strRegex.exec(inner)) !== null) {
+        const raw = strMatch[1] ?? '';
+        const decoded = raw.replace(/\\([0-7]{3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)))
+          .replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+          .replace(/\\\\/g, '\\').replace(/\\\(/g, '(').replace(/\\\)/g, ')');
+        const printable = decoded.replace(/[^\x20-\x7E\n\r\t]/g, '');
+        if (printable.trim()) parts.push(printable);
+      }
+      if (parts.length > 0) lines.push(parts.join(''));
+    }
+  }
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export const webAccessTools: AgentTool[] = [webSearchTool, browseUrlTool, readDocumentTool];

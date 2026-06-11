@@ -12,6 +12,7 @@ import { webAccessTools } from './web-access.js';
 
 const webSearchTool = webAccessTools.find((t) => t.name === 'search_web')!;
 const browseUrlTool = webAccessTools.find((t) => t.name === 'browse_url')!;
+const readDocumentTool = webAccessTools.find((t) => t.name === 'read_document')!;
 
 function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -353,5 +354,107 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('capability policy denied');
     expect(result.retryable).toBe(false);
+  });
+});
+
+// --- read_document tests ---
+
+describe('read_document', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+    vi.mocked(resolve6).mockResolvedValue([]);
+    fetchSpy = vi.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects non-https URLs', async () => {
+    const result = await readDocumentTool.execute({ url: 'http://example.com/doc.pdf' }, makeContext());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('https://');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('rejects unsupported content types', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response('not a pdf', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+    );
+
+    const result = await readDocumentTool.execute({ url: 'https://example.com/doc.txt' }, makeContext());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unsupported content type');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('rejects HTML content type', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response('<html/>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    );
+
+    const result = await readDocumentTool.execute({ url: 'https://example.com/page.html' }, makeContext());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unsupported content type');
+  });
+
+  it('blocks private IP addresses', async () => {
+    vi.mocked(resolve4).mockResolvedValue(['192.168.1.1']);
+
+    const result = await readDocumentTool.execute({ url: 'https://internal.company.local/doc.pdf' }, makeContext());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('private');
+  });
+
+  it('enforces Content-Length byte budget', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(null, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Length': String(2 * 1024 * 1024), // 2MB > 512KB default
+        },
+      }),
+    );
+
+    const result = await readDocumentTool.execute({ url: 'https://example.com/large.pdf' }, makeContext());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('maxResponseBytes');
+  });
+
+  it('returns text extracted from a minimal PDF', async () => {
+    // Minimal PDF fragment with BT/ET text block
+    const minimalPdf = Buffer.from(
+      '%PDF-1.4\n' +
+      'BT\n(Hello World) Tj\nET\n',
+      'binary',
+    );
+
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(minimalPdf));
+        controller.close();
+      },
+    });
+    fetchSpy.mockResolvedValueOnce(
+      new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf' },
+      }),
+    );
+
+    const result = await readDocumentTool.execute({ url: 'https://example.com/doc.pdf' }, makeContext());
+    expect(result.success).toBe(true);
+    const data = result.data as { text: string; contentType: string };
+    expect(data.contentType).toBe('application/pdf');
+    expect(data.text).toContain('Hello World');
   });
 });

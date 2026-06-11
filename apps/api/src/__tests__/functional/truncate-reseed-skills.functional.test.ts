@@ -1,10 +1,9 @@
 /**
  * Integration test: truncate-and-reseed preserves the current skill contract.
  *
- * After truncateAll() runs, the skills table must contain exactly the three
- * system skills (bot-management, trading, risk-monitoring) with requiredTools,
- * contextRequirements, and requiredGuardrails that mirror the live
- * SkillDefinition constants in packages/domain/src/skills.ts.
+ * After truncateAll() runs, the skills table must contain exactly the six
+ * system skills with requiredTools, contextRequirements, and requiredGuardrails
+ * that mirror the live SkillDefinition constants in packages/domain/src/skills.ts.
  *
  * Requires DATABASE_URL and REDIS_URL.  Skipped otherwise.
  */
@@ -13,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { SKIP, buildApp, truncateAll } from './helpers.js';
 import { sql } from 'drizzle-orm';
 import { skills } from '@herobids/db';
-import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL } from '@herobids/domain';
+import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL, WEB_ACCESS_SKILL, TASK_MANAGEMENT_SKILL, SYSTEM_SKILLS } from '@herobids/domain';
 
 describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
   let ctx: Awaited<ReturnType<typeof buildApp>>;
@@ -40,11 +39,11 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     return rows;
   }
 
-  it('seeds exactly three system skills after truncation', async () => {
+  it('seeds exactly six system skills after truncation', async () => {
     const skillRows = await fetchSkills();
-    expect(skillRows.length).toBe(3);
+    expect(skillRows.length).toBe(SYSTEM_SKILLS.length);
     const ids = skillRows.map((s) => s.id).sort();
-    expect(ids).toEqual(['bot-management', 'risk-monitoring', 'trading']);
+    expect(ids).toEqual(SYSTEM_SKILLS.map((s) => s.id).sort());
   });
 
   it('bot-management has the full management tool surface', async () => {

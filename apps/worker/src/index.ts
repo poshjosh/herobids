@@ -23,7 +23,7 @@ import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
-import { TelegramClient, PlatformAlertService } from './alerting/index.js';
+import { TelegramClient, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
@@ -38,6 +38,7 @@ import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/i
 import { UserEventPublisher } from './user-event-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
 import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
+import { ReminderCoordinator } from './reminder-coordinator.js';
 
 class CredentialResolutionError extends Error {
   constructor(message: string) {
@@ -225,6 +226,18 @@ const workerTelegram = appConfig.alerts.telegram.botToken
   : undefined;
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
+// Email client for agent send_message email fanout — disabled by default.
+const workerEmail = appConfig.alerts.email.apiKey && appConfig.alerts.email.fromEmail
+  ? new ResendEmailClient(
+      appConfig.alerts.email.apiKey,
+      appConfig.alerts.email.fromEmail,
+      {
+        replyToEmail: appConfig.alerts.email.replyToEmail,
+        timeoutMs: appConfig.alerts.email.timeoutMs,
+      },
+    )
+  : undefined;
+
 // Late-bound subscribe callback: set once agentStreamConsumer is constructed below.
 // sessionManager.reconcileStartingSessions() only runs after sessionManager.start()
 // (line ~749), by which point agentStreamConsumer is fully initialized.
@@ -281,10 +294,12 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback);
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback, workerEmail);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
+
+const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, eventPublisher);
 
 // Strategy factory keyed by config.strategy.type
 function createStrategy(strategyConfig: StrategyConfig): Strategy {
@@ -848,6 +863,7 @@ process.on('SIGTERM', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
+  reminderCoordinator.stop();
   marketMonitor.stop();
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
@@ -866,6 +882,7 @@ process.on('SIGINT', async () => {
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
+  reminderCoordinator.stop();
   marketMonitor.stop();
   await marketIntelCoordinator?.stop();
   await sessionManager.stop(); // stops loop only; containers keep running
@@ -903,4 +920,5 @@ botStopSubscriber.on('pmessage', (_pattern: string, channel: string, _message: s
 
 sessionManager.start();
 agentHealthMonitor.start();
+reminderCoordinator.start();
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

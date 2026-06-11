@@ -27,6 +27,16 @@ export const agents = pgTable('agents', {
   modelPolicy: jsonb('model_policy').$type<Record<string, unknown>>(),
   /** Telegram chat ID for send_message and platform safety alert delivery */
   telegramChatId: text('telegram_chat_id'),
+  /** Notification delivery policy — controls email fanout for send_message */
+  notificationPolicy: jsonb('notification_policy').$type<{
+    sendMessage?: {
+      email?: {
+        enabled: boolean;
+        source: 'explicit_prompt' | 'explicit_update';
+        enabledAt: string;
+      };
+    };
+  } | null>(),
   /** Execution mode for bots this agent creates: paper | shadow | live */
   executionMode: text('execution_mode'),
   /** Guard rails — broker-enforced, user-configured */

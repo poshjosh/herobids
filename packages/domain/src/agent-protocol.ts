@@ -109,6 +109,19 @@ export const SendMessagePayloadSchema = z.object({
   body: z.string().min(1).max(2000),
   /** Optional reference to a decision ID or context hash */
   contextRef: z.string().optional(),
+  /**
+   * Message urgency class.
+   * - routine: general updates, commentary, progress notes (default)
+   * - alert: urgent or important attention-needed message
+   * - reminder: time-based or scheduled reminder intended to prompt action
+   */
+  messageClass: z.enum(['routine', 'alert', 'reminder']).optional(),
+  /**
+   * Whether the agent is requesting email fanout in addition to inbox persistence.
+   * - never: inbox only (default)
+   * - if_allowed: agent requests email fanout; broker decides based on policy
+   */
+  emailDelivery: z.enum(['never', 'if_allowed']).optional(),
 });
 
 export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;

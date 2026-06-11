@@ -345,4 +345,109 @@ describe.skipIf(SKIP)('Agents functional', () => {
       expect(deleteRes.statusCode).toBe(409);
     });
   });
+
+  describe('notificationPolicy', () => {
+    it('creates an agent with notificationPolicy and returns it in the response', async () => {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: {
+          name: 'Notify Agent',
+          prompt: 'Alert me always.',
+          skillIds: [],
+          notificationPolicy: {
+            sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json<{ id: string; notificationPolicy: unknown }>();
+      expect(typeof body.id).toBe('string');
+      // Server writes enabledAt — verify the stored policy round-trips
+      const getRes = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${body.id}`,
+        headers: authHeader(),
+      });
+      expect(getRes.statusCode).toBe(200);
+      const agent = getRes.json<{ notificationPolicy: { sendMessage?: { email?: { enabled: boolean; enabledAt?: string } } } | null }>();
+      expect(agent.notificationPolicy?.sendMessage?.email?.enabled).toBe(true);
+      expect(typeof agent.notificationPolicy?.sendMessage?.email?.enabledAt).toBe('string');
+    });
+
+    it('updates notificationPolicy via PATCH and preserves enabledAt on re-save', async () => {
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: {
+          name: 'Notify PATCH Agent',
+          prompt: 'Alert me.',
+          notificationPolicy: {
+            sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+          },
+        },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      // Read the initial enabledAt
+      const firstGet = await ctx.app.inject({ method: 'GET', url: `/agents/${id}`, headers: authHeader() });
+      const first = firstGet.json<{ notificationPolicy: { sendMessage?: { email?: { enabled: boolean; enabledAt?: string } } } | null }>();
+      const firstEnabledAt = first.notificationPolicy?.sendMessage?.email?.enabledAt;
+      expect(typeof firstEnabledAt).toBe('string');
+
+      // PATCH with email still enabled — enabledAt must not change
+      const patchRes = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/agents/${id}`,
+        headers: authHeader(),
+        payload: {
+          notificationPolicy: {
+            sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+          },
+        },
+      });
+      expect(patchRes.statusCode).toBe(200);
+
+      const secondGet = await ctx.app.inject({ method: 'GET', url: `/agents/${id}`, headers: authHeader() });
+      const second = secondGet.json<{ notificationPolicy: { sendMessage?: { email?: { enabled: boolean; enabledAt?: string } } } | null }>();
+      expect(second.notificationPolicy?.sendMessage?.email?.enabledAt).toBe(firstEnabledAt);
+    });
+
+    it('disabling email in notificationPolicy clears the stored email block', async () => {
+      const createRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/agents',
+        headers: authHeader(),
+        payload: {
+          name: 'Notify Disable Agent',
+          prompt: 'Alert me.',
+          notificationPolicy: {
+            sendMessage: { email: { enabled: true, source: 'explicit_update' } },
+          },
+        },
+      });
+      const { id } = createRes.json<{ id: string }>();
+
+      const patchRes = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/agents/${id}`,
+        headers: authHeader(),
+        payload: {
+          notificationPolicy: {
+            sendMessage: { email: { enabled: false, source: 'explicit_update' } },
+          },
+        },
+      });
+      expect(patchRes.statusCode).toBe(200);
+
+      const getRes = await ctx.app.inject({ method: 'GET', url: `/agents/${id}`, headers: authHeader() });
+      const agent = getRes.json<{ notificationPolicy: { sendMessage?: { email?: { enabled: boolean; source?: string; enabledAt?: string } } } | null }>();
+      expect(agent.notificationPolicy?.sendMessage?.email?.enabled).toBe(false);
+      expect(agent.notificationPolicy?.sendMessage?.email?.source).toBe('explicit_update');
+      expect(agent.notificationPolicy?.sendMessage?.email?.enabledAt).toBeUndefined();
+    });
+  });
 });

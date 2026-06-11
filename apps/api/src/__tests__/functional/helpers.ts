@@ -24,7 +24,7 @@ import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig } from '@herobids/domain';
-import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL, LlmRuntimeConfigSchema } from '@herobids/domain';
+import { BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL, LlmRuntimeConfigSchema, SYSTEM_SKILLS } from '@herobids/domain';
 import { Queue } from 'bullmq';
 
 export const SKIP = !process.env['DATABASE_URL'] || !process.env['REDIS_URL'];
@@ -157,8 +157,7 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
   // Re-seed system skills after truncation (authorId = null = platform-owned).
   // Source instructions and tool sets from the live domain constants to keep
   // them in sync with what the functional contract tests assert.
-  const skillDefs = [BOT_MANAGEMENT_SKILL, TRADING_SKILL, RISK_MONITORING_SKILL];
-  for (const skill of skillDefs) {
+  for (const skill of SYSTEM_SKILLS) {
     await db.insert(skillsTable).values({
       id: skill.id,
       authorId: null,

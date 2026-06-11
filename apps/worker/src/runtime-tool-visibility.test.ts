@@ -83,7 +83,7 @@ describe('createRuntimeToolVisibilityController', () => {
 
   it('removes market-data tools when market-data becomes unavailable', () => {
     const mdTools = [...MARKET_DATA_TOOLS];
-    const descriptor = makeDescriptor([{ id: 'research', tools: [...mdTools, 'send_message'] }]);
+    const descriptor = makeDescriptor([{ id: 'web-access', tools: [...mdTools, 'send_message'] }]);
     const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
 
     controller.setDependencyAvailability('market-data', false);

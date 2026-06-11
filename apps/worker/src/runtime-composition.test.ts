@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyRuntimeMessage,
   buildSystemPrompt,
   buildTickUserContext,
   createRuntimeCompositionState,
@@ -445,5 +446,74 @@ describe('runtime composition helpers', () => {
     expect(userContext).toContain('## Degraded Capabilities');
     expect(userContext).toContain('Market-data tools are temporarily unavailable.');
     expect(userContext).toContain('Guidance: Skip market-data lookups for now or retry next tick after recovery.');
+  });
+
+  it('applyRuntimeMessage returns a Reminder summary for reminder wakes', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const summary = applyRuntimeMessage(state, {
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'reminder:rem-001',
+        reason: 'reminder:Check BTC price',
+        eventIds: ['rem-001'],
+        priority: 'normal',
+        requestedAt: new Date().toISOString(),
+      },
+    });
+    expect(summary).toBe('Reminder: Check BTC price');
+  });
+
+  it('renders reminder context as a dedicated dynamic block', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const userContext = buildTickUserContext(state, [{
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'reminder:rem-001',
+        reason: 'reminder:Check BTC price',
+        eventIds: ['rem-001'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+      },
+    }]);
+
+    expect(userContext).toContain('## Reminder Context');
+    expect(userContext).toContain('Reminder ID: rem-001');
+    expect(userContext).toContain('Message: Check BTC price');
+    expect(userContext).toContain('Requested at: 2026-06-11T00:00:00.000Z');
+  });
+
+  it('does not repeat reminder context on later ticks without a new reminder', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const firstTick = buildTickUserContext(state, [{
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'reminder:rem-001',
+        reason: 'reminder:Check BTC price',
+        eventIds: ['rem-001'],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+      },
+    }]);
+    const secondTick = buildTickUserContext(state, []);
+
+    expect(firstTick).toContain('## Reminder Context');
+    expect(secondTick).not.toContain('## Reminder Context');
+  });
+
+  it('applyRuntimeMessage returns a generic Market wake summary for non-reminder wakes', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const summary = applyRuntimeMessage(state, {
+      type: 'agent.market.wake',
+      payload: {
+        wakeId: 'wake-market-001',
+        reason: 'momentum signal detected',
+        eventIds: [],
+        priority: 'high',
+        requestedAt: new Date().toISOString(),
+      },
+    });
+    expect(summary).toBe('Market wake: momentum signal detected');
   });
 });

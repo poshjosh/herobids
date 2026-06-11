@@ -23,6 +23,75 @@ const setMemoryTool: AgentTool = {
   },
 };
 
+// --- get_memory ---
+
+const GetMemoryParamsSchema = z.object({
+  key: z.string().min(1),
+});
+
+const getMemoryTool: AgentTool = {
+  name: 'get_memory',
+  description: 'Retrieve a previously stored memory value by key. Returns { ok: true, found: true, value } if the key exists, or { ok: true, found: false } if it does not.',
+  parametersSchema: GetMemoryParamsSchema,
+  parameters: convertZodToJsonSchema(GetMemoryParamsSchema),
+  category: 'read-memory',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const { key } = params as z.infer<typeof GetMemoryParamsSchema>;
+    const raw = await ctx.redis.hget(`agent:memory:${ctx.agentId}`, key);
+
+    if (raw === null) {
+      return { success: true, data: { ok: true, found: false } };
+    }
+
+    try {
+      const value = JSON.parse(raw) as unknown;
+      return { success: true, data: { ok: true, found: true, value } };
+    } catch {
+      // Stored value was not valid JSON — return raw string
+      return { success: true, data: { ok: true, found: true, value: raw } };
+    }
+  },
+};
+
+// --- list_memory_keys ---
+
+const ListMemoryKeysParamsSchema = z.object({});
+
+const listMemoryKeysTool: AgentTool = {
+  name: 'list_memory_keys',
+  description: 'List all keys currently stored in agent memory. Returns a sorted array of key names.',
+  parametersSchema: ListMemoryKeysParamsSchema,
+  parameters: convertZodToJsonSchema(ListMemoryKeysParamsSchema),
+  category: 'read-memory',
+  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const all = await ctx.redis.hgetall(`agent:memory:${ctx.agentId}`);
+    const keys = all ? Object.keys(all).sort() : [];
+    return { success: true, data: { ok: true, keys } };
+  },
+};
+
+// --- delete_memory ---
+
+const DeleteMemoryParamsSchema = z.object({
+  keys: z.array(z.string().min(1)).min(1),
+});
+
+const deleteMemoryTool: AgentTool = {
+  name: 'delete_memory',
+  description: 'Delete one or more memory keys. Reports how many keys were actually removed (missing keys are ignored).',
+  parametersSchema: DeleteMemoryParamsSchema,
+  parameters: convertZodToJsonSchema(DeleteMemoryParamsSchema),
+  category: 'write-memory',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const { keys } = params as z.infer<typeof DeleteMemoryParamsSchema>;
+    const removed = await ctx.redis.hdel(`agent:memory:${ctx.agentId}`, ...keys);
+    return { success: true, data: { ok: true, removed } };
+  },
+};
+
 export const memoryTools: AgentTool[] = [
   setMemoryTool,
+  getMemoryTool,
+  listMemoryKeysTool,
+  deleteMemoryTool,
 ];

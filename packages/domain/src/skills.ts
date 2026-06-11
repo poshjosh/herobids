@@ -36,10 +36,13 @@ export const BASE_SKILL: SkillDefinition = {
   description: 'Core tools: memory, messaging, and cost tracking. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
-- Use \`send_message\` to communicate with the user.
+- Use \`send_message\` to communicate with the user. Set \`messageClass\` to \`alert\` or \`reminder\` and \`emailDelivery\` to \`if_allowed\` to request email fanout (policy permitting).
 - Use \`publish_artifact\` to publish structured outputs.
-- Use \`set_memory\` to persist notes across ticks.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory'],
+- Use \`set_memory\` to persist a value by key across ticks.
+- Use \`get_memory\` to retrieve a previously stored value by key.
+- Use \`list_memory_keys\` to list all stored memory keys.
+- Use \`delete_memory\` to remove one or more memory keys.`,
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -175,19 +178,44 @@ export const PROGRAMMING_SKILL: SkillDefinition = {
 };
 
 /**
- * `research` skill — internet search and URL reading.
+ * `web-access` skill — internet search, URL reading, and document fetching.
  */
-export const RESEARCH_SKILL: SkillDefinition = {
-  id: 'research',
-  name: 'Research',
-  description: 'Search the internet and read web pages for research and information gathering.',
+export const WEB_ACCESS_SKILL: SkillDefinition = {
+  id: 'web-access',
+  name: 'Web Access',
+  description: 'Search the internet, read web pages, and fetch documents for research and information gathering.',
   instructions: `You have access to internet research tools.
 
 - Use \`search_web(query)\` to search the internet. Returns a list of results with titles, URLs, and text extracts.
 - Use \`browse_url(url)\` to fetch and read the contents of a specific web page. Only \`https://\` URLs are allowed.
+- Use \`read_document(url)\` to fetch and extract text from a document URL (e.g. PDF). Only \`https://\` URLs are allowed.
 - Use \`send_message\` to share findings with the user.
 - Use \`publish_artifact\` when findings are substantial enough to warrant a structured output.`,
-  requiredTools: ['search_web', 'browse_url', 'send_message', 'publish_artifact'],
+  requiredTools: ['search_web', 'browse_url', 'read_document', 'send_message', 'publish_artifact'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000,
+  visibility: 'public',
+};
+
+/**
+ * `task-management` skill — durable task tracking and reminder scheduling.
+ */
+export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
+  id: 'task-management',
+  name: 'Task Management',
+  description: 'Create, track, and complete durable tasks; schedule one-shot reminders.',
+  instructions: `You have access to task management tools.
+
+- Use \`create_task\` to create a durable task with a title, optional notes, and optional due datetime.
+- Use \`list_tasks\` to list your current tasks and their status.
+- Use \`complete_task\` to mark a task as completed by its ID.
+- Use \`schedule_reminder\` to schedule a one-shot reminder at a specific datetime. The reminder will wake you at the scheduled time with structured context.`,
+  requiredTools: ['create_task', 'list_tasks', 'complete_task', 'schedule_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -215,5 +243,6 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   TRADING_SKILL,
   RISK_MONITORING_SKILL,
   PROGRAMMING_SKILL,
-  RESEARCH_SKILL,
+  WEB_ACCESS_SKILL,
+  TASK_MANAGEMENT_SKILL,
 ];

@@ -9,7 +9,7 @@ import { agents } from './agents.js';
  *  - 'platform': initiated by the platform as a mandatory safety alert
  *
  * This is the source for the UI message feed and authorship-separated audit trail.
- * Telegram delivery status and destination are included for traceability.
+ * Multi-channel delivery state is tracked independently per channel.
  */
 export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   id: text('id').primaryKey(),
@@ -24,14 +24,26 @@ export const agentOutboundMessages = pgTable('agent_outbound_messages', {
   body: text('body').notNull(),
   /** Optional reference to a decision or context hash */
   contextRef: text('context_ref'),
+  /** Message class from the agent payload: 'routine' | 'alert' | 'reminder' */
+  messageClass: text('message_class'),
   /** Telegram delivery status: pending | sent | failed */
   deliveryStatus: text('delivery_status').notNull().default('pending'),
   /** Telegram message_id returned on successful send */
   telegramMessageId: text('telegram_message_id'),
   /** Telegram chat ID the message was sent to */
   telegramChatId: text('telegram_chat_id'),
-  /** Error detail if delivery failed */
+  /** Error detail if Telegram delivery failed */
   deliveryError: text('delivery_error'),
+  /**
+   * Email delivery outcome:
+   *   feed_only | email_sent | email_skipped_policy | email_skipped_not_configured |
+   *   email_skipped_no_verified_recipient | email_failed_provider
+   */
+  emailDeliveryStatus: text('email_delivery_status'),
+  /** Resend message_id returned on successful email send */
+  emailMessageId: text('email_message_id'),
+  /** Error detail if email delivery failed */
+  emailDeliveryError: text('email_delivery_error'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_agent_outbound_messages_agent_id').on(t.agentId),

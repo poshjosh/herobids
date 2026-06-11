@@ -479,9 +479,19 @@ export interface AgentOutboundMessage {
   body: string;
   contextRef: string | null;
   deliveryStatus: 'pending' | 'sent' | 'failed';
+  emailDeliveryStatus:
+    | 'feed_only'
+    | 'email_sent'
+    | 'email_skipped_policy'
+    | 'email_skipped_not_configured'
+    | 'email_skipped_no_verified_recipient'
+    | 'email_failed_provider'
+    | null;
   telegramMessageId: string | null;
   telegramChatId: string | null;
   deliveryError: string | null;
+  emailMessageId: string | null;
+  emailDeliveryError: string | null;
   createdAt: string;
 }
 

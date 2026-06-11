@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- More tools (2026-06-11): added task, reminder, memory, and document-reading tools, plus email fanout for allowed agent messages.
+
 - Always-on market intelligence (2026-06-10): added leader-owned discovery polling, market monitor evaluation, wake coalescing, and market event protocol support.
 
 - Web access tools (2026-06-11): added `search_web` and `browse_url` for Tavily-backed internet search and HTML page reading, plus the `research` skill, capability grants, SSRF/content-type safeguards, and agent runtime config wiring.
