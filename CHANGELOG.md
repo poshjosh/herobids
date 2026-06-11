@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Agent observability (2026-06-11): added a canonical agent activity feed, a typed agent timeline, and agent-aware recent activity views in Mission Control and Activity.
+
 - More tools (2026-06-11): added task, reminder, memory, and document-reading tools, plus email fanout for allowed agent messages.
 
 - Always-on market intelligence (2026-06-10): added leader-owned discovery polling, market monitor evaluation, wake coalescing, and market event protocol support.
