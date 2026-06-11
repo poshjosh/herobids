@@ -937,19 +937,6 @@ export function buildContextBlocks(state: RuntimeCompositionState): RuntimeConte
   return [...staticBlocks, ...dynamicBlocks];
 }
 
-function buildReminderPolicyBlock(visibleToolNames: string[]): string {
-  if (!visibleToolNames.includes('schedule_reminder')) {
-    return '';
-  }
-
-  return [
-    '## Reminder and Task Policy',
-    '- Use `schedule_reminder` for one-shot reminders; use `create_task` for ongoing trackable work.',
-    '- When reminder context is present, act on it once and do not reschedule blindly.',
-    '- If the target time has already passed, act immediately rather than scheduling in the past.',
-  ].join('\n');
-}
-
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, toolGuidanceByName?: Record<string, string>): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => skill.instructions).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
@@ -966,7 +953,6 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
   ];
 
   const visibleToolNames = getVisibleToolNames(state);
-  const reminderPolicyBlock = buildReminderPolicyBlock(visibleToolNames);
 
   const toolGuidanceLines = toolGuidanceByName
     ? visibleToolNames
@@ -987,13 +973,12 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     ...formatPromptTimingContextLines(timing),
     '## Available Tools',
     toolsBlock,
-    reminderPolicyBlock,
     '## Guard Rails',
     ...guardRailLines,
     '## Instructions',
-    'Take the next concrete step toward your goal now.',
-    'If nothing further can be done this tick, respond with a short status update and no tool calls.',
-    staticContext ? `## Runtime Context\n${staticContext}` : '',
+    'Take the next concrete step toward your goal.',
+    'If nothing further can be done this tick, do not call any tool, rather respond with a short status update.',
+    staticContext ? `## Runtime Context\n\n${staticContext}` : '',
   ]
     .filter(Boolean)
     .join('\n\n');

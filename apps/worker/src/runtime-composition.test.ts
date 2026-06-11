@@ -623,57 +623,6 @@ describe('runtime composition helpers', () => {
     });
   });
 
-  describe('reminder and task policy block', () => {
-    const taskManagementSkill = {
-      id: 'task-management',
-      name: 'Task Management',
-      description: 'Tasks and reminders',
-      instructions: 'Use create_task and schedule_reminder.',
-      requiredTools: ['create_task', 'list_tasks', 'complete_task', 'schedule_reminder'],
-      capabilityFamilies: [],
-      bindingRequirements: {},
-      contextRequirements: [],
-      requiredContextBlocks: ['corePlatformContext'],
-      promptRendererHints: ['core-system'],
-      requiredGuardrails: [],
-      suggestedTickIntervalMs: 900_000,
-      visibility: 'public' as const,
-    };
-
-    it('adds reminder policy when schedule_reminder is a visible tool', () => {
-      // Use only base + task-management to ensure schedule_reminder fits within budget
-      const descriptorWithReminder = {
-        ...baseDescriptor,
-        resolvedSkills: [baseDescriptor.resolvedSkills[0]!, taskManagementSkill],
-        grantedBindingsByFamily: {},
-        defaultBindingByFamily: {},
-        readinessByFamily: {},
-        budgets: { ...baseDescriptor.budgets, maxVisibleToolSchemas: 10 },
-      };
-      const state = createRuntimeCompositionState(descriptorWithReminder);
-      const prompt = buildSystemPrompt(state, createPromptTimingContext({
-        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
-        nominalTickIntervalMs: 900_000,
-        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
-      }));
-
-      expect(prompt).toContain('## Reminder and Task Policy');
-      expect(prompt).toContain('schedule_reminder');
-      expect(prompt).toContain('act immediately rather than scheduling in the past');
-    });
-
-    it('omits reminder policy when schedule_reminder is not visible', () => {
-      const state = createRuntimeCompositionState(baseDescriptor);
-      const prompt = buildSystemPrompt(state, createPromptTimingContext({
-        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
-        nominalTickIntervalMs: 900_000,
-        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
-      }));
-
-      expect(prompt).not.toContain('## Reminder and Task Policy');
-    });
-  });
-
   describe('tool guidance', () => {
     it('renders tool guidance lines in ## Available Tools when provided', () => {
       const state = createRuntimeCompositionState(baseDescriptor);
