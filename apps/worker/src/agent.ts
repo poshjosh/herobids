@@ -44,7 +44,7 @@ import {
   type RuntimeCompositionState,
 } from './runtime-composition.js';
 import { shouldSkipTick, type TradingHoursConfig } from './tick-gates.js';
-import { buildScoutSystemPrompt, parseScoutDecision } from './scout-dispatch.js';
+import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
@@ -291,6 +291,7 @@ const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.
 let tickCount = 0;
 let scoutTickCount = 0;
 let scoutEscalationCount = 0;
+let lastEscalationTimestamp = 0;
 const marketDataRuntimeTelemetry = {
   providerAttempts: new Map<string, number>(),
   providerRejections: new Map<string, number>(),
@@ -1033,6 +1034,7 @@ let previousContextHash: string | null = null;
 let previousFullUserContext: string | null = null;
 let effectiveTickIntervalMs = costProfile.tickIntervalMs;
 let previousRegimePass: boolean | null = null;
+let scoutHoldDeadlineAtMs = 0;
 // Hoisted so both runTick() and the heartbeat interval can trigger a clean shutdown.
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let tickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1128,8 +1130,12 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
     return;
   }
 
+  const holdLimitedDelayMs = scoutHoldDeadlineAtMs > 0
+    ? Math.max(0, Math.min(delayMs, scoutHoldDeadlineAtMs - Date.now()))
+    : delayMs;
+
   const delayDecision = resolveNextTickDelay({
-    requestedDelayMs: delayMs,
+    requestedDelayMs: holdLimitedDelayMs,
     wakePending,
     tickInFlight,
     now: Date.now(),
@@ -1269,7 +1275,10 @@ async function runTick(): Promise<void> {
       },
     );
 
-    previousContextHash = skipDecision.contextHash ?? previousContextHash;
+    // Context hash is stored in a local variable; only persisted to previousContextHash
+    // after the judge actually runs (Fix B: prevents context_unchanged gate from locking
+    // the agent after a scout hold where no work was done).
+    const tickContextHash = skipDecision.contextHash ?? previousContextHash;
     recordRegimeEvaluation(
       runtimeState,
       skipDecision.regime ?? null,
@@ -1283,9 +1292,28 @@ async function runTick(): Promise<void> {
     }
 
     if (skipDecision.skip) {
-      logger.info({ tickCount, reason: skipDecision.reason, gate: skipDecision.gate }, 'Skipping agent tick before LLM dispatch');
-      await sendHeartbeat('ready');
-      return;
+      const maxHoldMs = agentRuntimePolicy.llm.scout.maxHoldDurationMs;
+      const holdDurationExceeded = maxHoldMs !== undefined
+        && skipDecision.reason === 'context_unchanged'
+        && lastEscalationTimestamp > 0
+        && Date.now() - lastEscalationTimestamp >= maxHoldMs;
+
+      if (!holdDurationExceeded) {
+        if (maxHoldMs !== undefined && lastEscalationTimestamp > 0 && Date.now() - lastEscalationTimestamp >= maxHoldMs) {
+          scoutHoldDeadlineAtMs = 0;
+        }
+        logger.info({ tickCount, reason: skipDecision.reason, gate: skipDecision.gate }, 'Skipping agent tick before LLM dispatch');
+        await sendHeartbeat('ready');
+        return;
+      }
+
+      logger.info({
+        tickCount,
+        reason: skipDecision.reason,
+        gate: skipDecision.gate,
+        maxHoldMs,
+        msSinceLastEscalation: Date.now() - lastEscalationTimestamp,
+      }, 'Bypassing agent tick skip — max scout hold duration exceeded');
     }
 
     await refreshVenueIntelligence().then(() => setDependencyAvailability('market-data', true)).catch(async (err) => {
@@ -1323,91 +1351,103 @@ async function runTick(): Promise<void> {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
-    // Scout tools: auto-derived from registry — all tools with 'read-*' categories
-    const readOnlyScoutTools = toolRegistry.getReadOnlyToolNames()
-      .filter((tool) => allowedTools().has(tool)); // Only visible tools
-    const readOnlyScoutDefinitions: LlmToolDefinition[] = toolRegistry.getDefinitions(readOnlyScoutTools).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    }));
+    let resolvedScoutDecision: ScoutDecision;
+    if (tickCount === 1) {
+      resolvedScoutDecision = { disposition: 'escalate', reason: 'first_tick_always_escalates' };
+    } else {
+      scoutTickCount++;
+      // Scout tools: auto-derived from registry — all tools with 'read-*' categories
+      const readOnlyScoutTools = toolRegistry.getReadOnlyToolNames()
+        .filter((tool) => allowedTools().has(tool)); // Only visible tools
+      const readOnlyScoutDefinitions: LlmToolDefinition[] = toolRegistry.getDefinitions(readOnlyScoutTools).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }));
 
-    const scoutSystemPrompt = buildScoutSystemPrompt({
-      agentId: AGENT_ID!,
-      goal: agentGoal,
-      readOnlyTools: readOnlyScoutTools,
-    });
+      const scoutSystemPrompt = buildScoutSystemPrompt({
+        agentId: AGENT_ID!,
+        goal: agentGoal,
+        readOnlyTools: readOnlyScoutTools,
+      });
 
-    scoutTickCount++;
-    const scoutLoopResult = await runStructuredToolLoop({
-      providerConfig: {
-        provider: resolvedProvider,
-        model: resolvedLightModel,
-        maxTokens: 256,
-        timeoutMs: LLM_TIMEOUT_MS,
-        baseUrl: LLM_BASE_URL,
-      },
-      requestBase: {
-        maxTokens: 256,
-        temperature: 0,
-        thinking: 'none',
-      },
-      initialMessages: [
-        { role: 'system', content: scoutSystemPrompt },
-        { role: 'user', content: userContext },
-      ],
-      tools: readOnlyScoutDefinitions,
-      maxTurns: 3,
-      retryPolicy: agentRuntimePolicy.llm.retry,
-      executeTool: async (toolCall) => {
-        const allowedReadOnlyTool = readOnlyScoutTools.includes(toolCall.name);
+      const scoutLoopResult = await runStructuredToolLoop({
+        providerConfig: {
+          provider: resolvedProvider,
+          model: resolvedLightModel,
+          maxTokens: 256,
+          timeoutMs: LLM_TIMEOUT_MS,
+          baseUrl: LLM_BASE_URL,
+        },
+        requestBase: {
+          maxTokens: 256,
+          temperature: 0,
+          thinking: 'none',
+        },
+        initialMessages: [
+          { role: 'system', content: scoutSystemPrompt },
+          { role: 'user', content: userContext },
+        ],
+        tools: readOnlyScoutDefinitions,
+        maxTurns: 3,
+        retryPolicy: agentRuntimePolicy.llm.retry,
+        executeTool: async (toolCall) => {
+          const allowedReadOnlyTool = readOnlyScoutTools.includes(toolCall.name);
 
-        if (!allowedReadOnlyTool) {
-          logger.warn({ tool: toolCall.name, phase: 'scout' }, 'Scout attempted write or unavailable tool — rejecting');
-          return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false });
+          if (!allowedReadOnlyTool) {
+            logger.warn({ tool: toolCall.name, phase: 'scout' }, 'Scout attempted write or unavailable tool — rejecting');
+            return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false });
+          }
+
+          try {
+            return await executeTool({ tool: toolCall.name, args: toolCall.args });
+          } catch (err) {
+            logger.warn({ err, tool: toolCall.name, phase: 'scout' }, 'Scout tool execution threw unexpectedly');
+            return JSON.stringify({ ok: false, error: 'tool_failed', note: 'Tool timed out or failed. Skip or retry later.' });
+          }
+        },
+        onAssistantTurn: ({ result }) => {
+          recordSessionCost(runtimeState, {
+            tokensUsed: result.data.tokensUsed,
+            thinkingTokens: result.data.thinkingTokens,
+            costUsd: estimateLlmCostUsd(resolvedLightModel, result.data.tokensUsed),
+          });
+        },
+        onRetry: ({ attempt, delayMs, classification }) => {
+          logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
+        },
+      });
+
+      if (!scoutLoopResult.ok) {
+        const scoutFailure = classifyRuntimeError('llm', scoutLoopResult.error);
+        if (scoutFailure.mode === 'fatal') {
+          await handleRuntimeFailure('llm', scoutLoopResult.error);
+          return;
         }
+        logger.warn({ error: scoutLoopResult.error }, 'Scout tool loop failed — falling back to judge');
+      }
 
-        try {
-          return await executeTool({ tool: toolCall.name, args: toolCall.args });
-        } catch (err) {
-          logger.warn({ err, tool: toolCall.name, phase: 'scout' }, 'Scout tool execution threw unexpectedly');
-          return JSON.stringify({ ok: false, error: 'tool_failed', note: 'Tool timed out or failed. Skip or retry later.' });
-        }
-      },
-      onAssistantTurn: ({ result }) => {
-        recordSessionCost(runtimeState, {
-          tokensUsed: result.data.tokensUsed,
-          thinkingTokens: result.data.thinkingTokens,
-          costUsd: estimateLlmCostUsd(resolvedLightModel, result.data.tokensUsed),
-        });
-      },
-      onRetry: ({ attempt, delayMs, classification }) => {
-        logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
-      },
-    });
+      if (scoutLoopResult.ok && scoutLoopResult.terminatedByLimit) {
+        logger.warn({ phase: 'scout' }, 'Scout tool loop reached its turn limit');
+      }
 
-    if (!scoutLoopResult.ok) {
-      const scoutFailure = classifyRuntimeError('llm', scoutLoopResult.error);
-      if (scoutFailure.mode === 'fatal') {
-        await handleRuntimeFailure('llm', scoutLoopResult.error);
+      resolvedScoutDecision = !scoutLoopResult.ok || scoutLoopResult.terminatedByLimit
+        ? { disposition: 'escalate', reason: 'scout_tool_loop_limit' }
+        : parseScoutDecision(scoutLoopResult.assistantResponse);
+    }
+
+    if (resolvedScoutDecision.disposition === 'hold') {
+      const maxHoldMs = agentRuntimePolicy.llm.scout.maxHoldDurationMs;
+      if (maxHoldMs != null && lastEscalationTimestamp > 0 && (Date.now() - lastEscalationTimestamp) >= maxHoldMs) {
+        resolvedScoutDecision = { disposition: 'escalate', reason: 'max_hold_duration_exceeded' };
+        logger.info({ maxHoldMs, msSinceLastEscalation: Date.now() - lastEscalationTimestamp }, 'Overriding scout hold — max hold duration exceeded');
+      } else {
+        const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
+        logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout held the tick');
+        handleTickSuccess();
+        await sendHeartbeat('ready');
         return;
       }
-      logger.warn({ error: scoutLoopResult.error }, 'Scout tool loop failed — falling back to judge');
-    }
-
-    if (scoutLoopResult.ok && scoutLoopResult.terminatedByLimit) {
-      logger.warn({ phase: 'scout' }, 'Scout tool loop reached its turn limit');
-    }
-
-    const resolvedScoutDecision = scoutLoopResult.ok && !scoutLoopResult.terminatedByLimit
-      ? parseScoutDecision(scoutLoopResult.assistantResponse)
-      : { disposition: 'escalate' as const, reason: 'scout_tool_loop_limit' };
-    if (resolvedScoutDecision.disposition === 'hold') {
-      const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
-      logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout held the tick');
-      handleTickSuccess();
-      await sendHeartbeat('ready');
-      return;
     }
 
     scoutEscalationCount++;
@@ -1489,15 +1529,25 @@ async function runTick(): Promise<void> {
     });
 
     if (!judgeLoopResult.ok) {
+      scoutHoldDeadlineAtMs = 0;
       await handleRuntimeFailure('llm', judgeLoopResult.error);
       return;
     }
 
     if (judgeLoopResult.terminatedByLimit) {
+      scoutHoldDeadlineAtMs = 0;
       logger.warn({ phase: 'judge' }, 'Judge tool loop reached its turn limit');
       await sendHeartbeat('degraded', 'llm.tool_loop_limit');
       return;
     }
+
+    // Only persist context hash after judge ran — prevents context_unchanged gate
+    // from locking the agent when the scout held and no work was done.
+    lastEscalationTimestamp = Date.now();
+    scoutHoldDeadlineAtMs = agentRuntimePolicy.llm.scout.maxHoldDurationMs != null
+      ? lastEscalationTimestamp + agentRuntimePolicy.llm.scout.maxHoldDurationMs
+      : 0;
+    previousContextHash = tickContextHash;
 
     handleTickSuccess();
     await sendHeartbeat('ready');

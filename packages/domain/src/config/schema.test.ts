@@ -179,6 +179,19 @@ describe('AgentRuntimePolicySchema', () => {
       expect(result.data.sandboxDefaults.memoryMb).toBe(512);
     }
   });
+
+  it('accepts an explicit scout maxHoldDurationMs override', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      llm: {
+        scout: { maxHoldDurationMs: 120_000 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.llm.scout.maxHoldDurationMs).toBe(120_000);
+    }
+  });
 });
 
 describe('StrategyConfigSchema', () => {
