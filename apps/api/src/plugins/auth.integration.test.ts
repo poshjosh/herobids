@@ -153,6 +153,11 @@ describe.skipIf(SKIP)('authPlugin JWT verification (integration)', () => {
     expect(res.statusCode).not.toBe(401);
   });
 
+  it('GET /events bypasses header auth so the WebSocket handler can validate ?token itself', async () => {
+    const res = await app.inject({ method: 'GET', url: '/events?token=test' });
+    expect(res.statusCode).not.toBe(401);
+  });
+
   it('expired JWT signature is rejected before hitting the DB', async () => {
     const userId = await seedUser('u-expired-jwt');
     const sessionId = await seedSession(userId);

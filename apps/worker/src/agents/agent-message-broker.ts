@@ -87,6 +87,7 @@ export class AgentMessageBroker {
     private readonly botStop?: BotStopCallback,
     private readonly botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
+    private readonly onAgentStatusChange?: (agentId: string, userId: string, status: 'starting' | 'active' | 'paused' | 'stopped' | 'crashed') => void,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -258,6 +259,26 @@ export class AgentMessageBroker {
             envelope.payload as unknown as BotQueryPayload,
           );
           break;
+
+        case AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED: {
+          // The agent container sends this before exiting — use the reasonCode to
+          // distinguish a planned shutdown from an unexpected crash so that
+          // docker-agent-manager.onContainerDie() sees status='stopped' and skips
+          // the crash path (it already has that guard). Retire any active runtime
+          // session here as well because onContainerDie() will return early once
+          // it sees a stopped status.
+          const payload = envelope.payload as { reasonCode?: string };
+          const plannedReasonCodes = new Set(['wall_clock_expired', 'stop_requested', 'pause_requested', 'SIGTERM', 'SIGINT']);
+          const status = plannedReasonCodes.has(payload.reasonCode ?? '') ? 'stopped' : 'crashed';
+          const currentAgent = await this.agentRepo.getAgent(effectiveAgentId).catch(() => null);
+          const wasAlreadyStopped = currentAgent?.status === 'stopped';
+          await this.agentRepo.updateAgent(effectiveAgentId, { status });
+          await this.agentRepo.retireActiveSessions(effectiveAgentId);
+          if (status === 'stopped' && !wasAlreadyStopped && currentAgent && this.onAgentStatusChange) {
+            this.onAgentStatusChange(effectiveAgentId, currentAgent.userId, 'stopped');
+          }
+          break;
+        }
 
         default:
           await this.agentRepo.markMessageProcessed(envelope.messageId, 'rejected', {

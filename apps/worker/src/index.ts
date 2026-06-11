@@ -294,7 +294,11 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback, workerEmail);
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback, workerEmail, (agentId, userId, status) => {
+  userEventPublisher.publishAgentStatus(userId, agentId, status).catch((err) => {
+    logger.error({ err, agentId }, 'Failed to publish agent status event');
+  });
+});
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);

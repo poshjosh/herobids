@@ -33,8 +33,8 @@ const PublishArtifactParamsSchema = z.object({
   artifactType: z.string().default('text'),
   contentType: z.string().default('text/plain'),
   summary: z.string().min(1).default('Artifact published'),
-  location: z.record(z.unknown()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  location: z.object({}).passthrough().optional(),
+  metadata: z.object({}).passthrough().optional(),
 });
 
 const publishArtifactTool: AgentTool = {

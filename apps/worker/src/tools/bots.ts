@@ -10,7 +10,7 @@ const logger = pino({ name: 'tools:bots' });
 
 const CreateBotParamsSchema = z.object({
   venueAccountId: z.string().min(1).optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.object({}).passthrough().optional(),
   rationale: z.string().max(500).optional(),
 });
 
@@ -227,7 +227,7 @@ const startBotTool: AgentTool = {
 
 const AdjustBotConfigParamsSchema = z.object({
   botId: z.string().min(1),
-  config: z.record(z.unknown()),
+  config: z.object({}).passthrough(),
 });
 
 function deepMergeConfig(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
