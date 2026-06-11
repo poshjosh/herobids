@@ -47,7 +47,7 @@
 #                         e.g. "Alice"
 #
 # Setup mode
-#   SETUP_MODE            auto | guided | advanced
+#   SETUP_MODE            auto | guided | advanced (guide is accepted as an alias)
 #                         auto (default) uses guided mode when a single
 #                         provider + label can be resolved, otherwise advanced
 #
@@ -105,6 +105,13 @@ log_warn()    { echo "[WARN]  $*" >&2; }
 log_error()   { echo "[ERROR] $*" >&2; }
 log_section() { echo; echo "=== $* ==="; }
 
+trim_whitespace() {
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
 die() {
   log_error "$*"
   exit 1
@@ -126,7 +133,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --mode)
-      [[ -z "${2:-}" ]] && die "--mode requires 'guided', 'advanced', or 'auto'"
+      [[ -z "${2:-}" ]] && die "--mode requires 'guided', 'guide', 'advanced', or 'auto'"
       SETUP_MODE_CLI="$2"
       shift 2
       ;;
@@ -162,6 +169,12 @@ log_info "Loaded: $ENV_FILE"
 
 if [[ -n "$SETUP_MODE_CLI" ]]; then
   SETUP_MODE="$SETUP_MODE_CLI"
+fi
+
+SETUP_MODE="$(trim_whitespace "${SETUP_MODE:-auto}")"
+SETUP_MODE="${SETUP_MODE:-auto}"
+if [[ "$SETUP_MODE" == "guide" ]]; then
+  SETUP_MODE="guided"
 fi
 
 # ---------------------------------------------------------------------------
@@ -228,7 +241,7 @@ case "$SETUP_MODE" in
   auto|guided|advanced)
     ;;
   *)
-    log_error "SETUP_MODE must be one of: auto | guided | advanced"
+    log_error "SETUP_MODE must be one of: auto | guided | advanced (got: $(printf '%q' "$SETUP_MODE"))"
     MISSING=1
     ;;
 esac

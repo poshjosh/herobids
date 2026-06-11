@@ -1,5 +1,7 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
+import type { PromptTimingContext } from './prompt-timing-context.js';
+import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
 
@@ -269,6 +271,18 @@ function formatVisibleTools(runtimeDescriptor: RuntimeDescriptor): string {
   return [...tools].join(', ') || 'none';
 }
 
+function hasTradingCapability(runtimeDescriptor: RuntimeDescriptor): boolean {
+  if ((runtimeDescriptor.grantedBindingsByFamily['trading']?.length ?? 0) > 0) {
+    return true;
+  }
+
+  if (runtimeDescriptor.readinessByFamily['trading']) {
+    return true;
+  }
+
+  return runtimeDescriptor.resolvedSkills.some((skill) => skill.capabilityFamilies.includes('trading'));
+}
+
 function renderReadinessLine(family: string, readiness: CapabilityReadiness): string {
   const bindingSuffix = readiness.bindingId ? ` binding=${readiness.bindingId}` : '';
   const reasonSuffix = readiness.reasons.length > 0 ? ` reasons=${readiness.reasons.join('; ')}` : '';
@@ -326,7 +340,9 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       content: [
         `Agent ID: ${state.runtimeDescriptor.agentId}`,
         `Goal: ${state.runtimeDescriptor.goal}`,
-        `Execution mode: ${state.runtimeDescriptor.executionMode}`,
+        ...(hasTradingCapability(state.runtimeDescriptor)
+          ? [`Execution mode: ${state.runtimeDescriptor.executionMode}`]
+          : []),
         `Tools visible: ${formatVisibleTools(state.runtimeDescriptor)}`,
         `Budgets: history=${state.runtimeDescriptor.budgets.maxHistoryMessages}, toolResults=${state.runtimeDescriptor.budgets.maxToolResultChars}, toolSchemas=${state.runtimeDescriptor.budgets.maxVisibleToolSchemas}`,
       ].join('\n'),
@@ -921,11 +937,20 @@ export function buildContextBlocks(state: RuntimeCompositionState): RuntimeConte
   return [...staticBlocks, ...dynamicBlocks];
 }
 
-export function buildSystemPrompt(state: RuntimeCompositionState): string {
+export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => skill.instructions).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
   const staticContext = buildContextSection(state, 'static');
-  const currentTimeIso = new Date().toISOString();
+  const tradingAgent = hasTradingCapability(state.runtimeDescriptor);
+  const guardRailLines = [
+    `- Daily token budget: ${state.runtimeDescriptor.guardrails.dailyTokenBudget ?? 'unlimited'} tokens`,
+    ...(tradingAgent
+      ? [
+          `- Daily loss limit: ${state.runtimeDescriptor.guardrails.dailyLossLimit ?? 'none'}`,
+          `- Max concurrent bots: ${state.runtimeDescriptor.guardrails.maxBots ?? 'unlimited'}`,
+        ]
+      : []),
+  ];
 
   return [
     `You are an autonomous agent named "${state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId}". Use the available tools to accomplish your goal.`,
@@ -933,16 +958,13 @@ export function buildSystemPrompt(state: RuntimeCompositionState): string {
     '## Your Goal',
     state.runtimeDescriptor.goal,
     '## Operating Context',
-    `Current time (UTC): ${currentTimeIso}`,
+    ...formatPromptTimingContextLines(timing),
     '## Available Tools',
     `You can call the following tools: ${allowedTools}.`,
-    '## Note',
-    `Execution mode: ${state.runtimeDescriptor.executionMode}`,
     '## Guard Rails',
-    `- Daily token budget: ${state.runtimeDescriptor.guardrails.dailyTokenBudget ?? 'unlimited'} tokens`,
-    `- Daily loss limit: ${state.runtimeDescriptor.guardrails.dailyLossLimit ?? 'none'}`,
-    `- Max concurrent bots: ${state.runtimeDescriptor.guardrails.maxBots ?? 'unlimited'}`,
+    ...guardRailLines,
     '## Instructions',
+    'Take the next concrete step toward your goal.',
     'If nothing further can be done this tick, respond with a short status update and no tool calls.',
     staticContext ? `## Runtime Context\n${staticContext}` : '',
   ]

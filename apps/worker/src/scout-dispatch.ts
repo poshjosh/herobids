@@ -1,3 +1,6 @@
+import type { PromptTimingContext } from './prompt-timing-context.js';
+import { formatPromptTimingContextLines } from './prompt-timing-context.js';
+
 export interface ScoutDecision {
   disposition: 'hold' | 'escalate';
   reason?: string;
@@ -31,13 +34,19 @@ export function buildScoutSystemPrompt(params: {
   name?: string;
   goal: string;
   readOnlyTools: string[];
+  timing: PromptTimingContext;
 }): string {
   return [
-    `You are the scout phase for agent ${params.name ?? params.agentId}.`,
-    `Goal: ${params.goal}`,
-    `Visible read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
-    'Decide whether the judge model needs to act this tick.',
-    'Use tools only when they help decide hold versus escalate.',
+    `You are the scout for agent "${params.name ?? params.agentId}".`,
+    `## Your Goal`,
+    params.goal,
+    '## Operating Context',
+    ...formatPromptTimingContextLines(params.timing),
+    '## Available Tools',
+    `You can call the following read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
+    '## Instructions',
+    `Decide whether agent "${params.name ?? params.agentId}" needs to act this tick.`,
+    'Use tools only when they help decide between hold versus escalate.',
     'Respond with JSON only: {"disposition":"hold"|"escalate","reason":"short reason"}.',
   ].join('\n');
 }

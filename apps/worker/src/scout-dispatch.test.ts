@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildScoutSystemPrompt, parseScoutDecision, resolveDefaultScoutModel } from './scout-dispatch.js';
+import { createPromptTimingContext } from './prompt-timing-context.js';
 
 const DEFAULTS = { anthropic: 'claude-3-5-haiku-latest', openai: 'gpt-4.1-mini', openrouter: 'openai/gpt-4.1-mini' };
 
@@ -49,12 +50,19 @@ describe('buildScoutSystemPrompt', () => {
       name: 'market-watch-01',
       goal: 'Trade carefully',
       readOnlyTools: ['check_regime', 'search_tokens'],
+      timing: createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }),
     });
 
-    expect(prompt).toContain('You are the scout phase for agent market-watch-01 (agent-1).');
+    expect(prompt).toContain('You are the scout phase for agent market-watch-01.');
+    expect(prompt).toContain('## Operating Context');
+    expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
+    expect(prompt).toContain('Nominal tick interval: 15m');
+    expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).toContain('Visible read-only tools: check_regime, search_tokens.');
-    expect(prompt).toContain('Prefer escalate when the goal is already actionable or time-based');
-    expect(prompt).toContain('Do not hold solely because there is no prior memory');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
     expect(prompt).toContain('Respond with JSON only');
   });

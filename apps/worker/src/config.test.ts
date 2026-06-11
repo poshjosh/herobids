@@ -75,6 +75,19 @@ billing:
     expect(config.database.url).toBe('postgres://override-host/overridden');
   });
 
+  it('applies resend email env overrides without requiring yaml defaults', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
+    process.env['RESEND_API_KEY'] = 're_test_key';
+    process.env['RESEND_FROM_EMAIL'] = 'alerts@example.com';
+    process.env['RESEND_REPLY_TO_EMAIL'] = 'support@example.com';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.alerts.email.apiKey).toBe('re_test_key');
+    expect(config.alerts.email.fromEmail).toBe('alerts@example.com');
+    expect(config.alerts.email.replyToEmail).toBe('support@example.com');
+  });
+
   it('env overlay deep-merges without clobbering sibling keys', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
 reconciliation:

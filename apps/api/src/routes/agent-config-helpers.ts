@@ -4,7 +4,10 @@ import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-mode
 
 const CAPABILITY_FAMILIES_BY_SKILL_ID = new Map(SYSTEM_SKILLS.map((skill) => [skill.id, skill.capabilityFamilies] as const));
 
-type AgentExecutionMode = 'paper' | 'shadow' | 'live' | null | undefined;
+const AGENT_EXECUTION_MODES = new Set(['paper', 'shadow', 'live'] as const);
+
+type AgentExecutionMode = 'paper' | 'shadow' | 'live';
+type NullableAgentExecutionMode = AgentExecutionMode | null | undefined;
 
 export const CostPresetSchema = z.enum(['minimal', 'standard', 'premium', 'custom']);
 
@@ -105,13 +108,21 @@ export function hasSkillCapabilityFamily(skillIds: string[] | null | undefined, 
   return (skillIds ?? []).some((skillId) => CAPABILITY_FAMILIES_BY_SKILL_ID.get(skillId)?.includes(capabilityFamily));
 }
 
+function normalizeExecutionMode(value: string | null | undefined): NullableAgentExecutionMode {
+  if (value == null) {
+    return value;
+  }
+
+  return AGENT_EXECUTION_MODES.has(value as AgentExecutionMode) ? value as AgentExecutionMode : null;
+}
+
 export function resolveExecutionModeForSkills(input: {
   skillIds: string[] | null | undefined;
-  submittedExecutionMode: AgentExecutionMode;
+  submittedExecutionMode: NullableAgentExecutionMode;
   executionModeProvided: boolean;
-  currentExecutionMode?: AgentExecutionMode;
+  currentExecutionMode?: string | null;
 }): {
-  value: Exclude<AgentExecutionMode, undefined>;
+  value: Exclude<NullableAgentExecutionMode, undefined>;
   issue?: { code: 'custom'; path: string[]; message: string };
 } {
   const hasTradingCapability = hasSkillCapabilityFamily(input.skillIds, 'trading');
@@ -131,10 +142,10 @@ export function resolveExecutionModeForSkills(input: {
   }
 
   if (input.executionModeProvided) {
-    return { value: input.submittedExecutionMode ?? null };
+    return { value: normalizeExecutionMode(input.submittedExecutionMode) ?? null };
   }
 
-  return { value: input.currentExecutionMode ?? null };
+  return { value: normalizeExecutionMode(input.currentExecutionMode) ?? null };
 }
 
 export function mergeModelPolicy(

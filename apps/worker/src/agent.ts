@@ -30,6 +30,7 @@ import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
 import { buildIncrementalContext } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
+import { createPromptTimingContext } from './prompt-timing-context.js';
 import {
   applyRuntimeMessage,
   buildSystemPrompt as composeSystemPrompt,
@@ -1352,7 +1353,13 @@ async function runTick(): Promise<void> {
     }
 
     // Build the prompt
-    const systemPrompt = composeSystemPrompt(runtimeState);
+    const promptNowMs = Date.now();
+    const promptTiming = createPromptTimingContext({
+      currentTimeMs: promptNowMs,
+      nominalTickIntervalMs: costProfile.tickIntervalMs,
+      expectedNextTickAtMs: nextTickDueAt > 0 ? nextTickDueAt : promptNowMs + effectiveTickIntervalMs,
+    });
+    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming);
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(`agent:prompt:${AGENT_ID}`, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
@@ -1377,6 +1384,7 @@ async function runTick(): Promise<void> {
         name: runtimeState.runtimeDescriptor.name,
         goal: runtimeState.runtimeDescriptor.goal,
         readOnlyTools: readOnlyScoutTools,
+        timing: promptTiming,
       });
 
       const scoutLoopResult = await runStructuredToolLoop({

@@ -10,6 +10,7 @@ import {
   setCapabilityDegradation,
   recordVenueSignals,
 } from './runtime-composition.js';
+import { createPromptTimingContext } from './prompt-timing-context.js';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -113,13 +114,22 @@ describe('runtime composition helpers', () => {
     vi.setSystemTime(new Date('2026-06-11T06:42:39.174Z'));
 
     const state = createRuntimeCompositionState(baseDescriptor);
-    const prompt = buildSystemPrompt(state);
+    const timing = createPromptTimingContext({
+      currentTimeMs: Date.now(),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.now() + 900_000,
+    });
+    const prompt = buildSystemPrompt(state, timing);
     const userContext = buildTickUserContext(state, []);
 
     expect(prompt).toContain('Trade carefully');
     expect(prompt).toContain('You are an autonomous agent named "market-watch-01".');
-    expect(prompt).toContain('Agent Name: market-watch-01');
     expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
+    expect(prompt).toContain('Nominal tick interval: 15m');
+    expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
+    expect(prompt).toContain('Execution mode: paper');
+    expect(prompt).toContain('Daily loss limit: 10');
+    expect(prompt).toContain('Max concurrent bots: 2');
     expect(prompt).toContain('Take the next concrete step toward your goal now.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
@@ -131,9 +141,35 @@ describe('runtime composition helpers', () => {
     expect(userContext).toContain('Open Positions');
   });
 
+  it('omits trading-only prompt fields for non-trading agents', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      resolvedSkills: [baseDescriptor.resolvedSkills[0]!],
+      grantedBindingsByFamily: {},
+      defaultBindingByFamily: {},
+      readinessByFamily: {},
+    });
+    const prompt = buildSystemPrompt(state, createPromptTimingContext({
+      currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+    }));
+
+    expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
+    expect(prompt).toContain('Nominal tick interval: 15m');
+    expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
+    expect(prompt).not.toContain('Execution mode:');
+    expect(prompt).not.toContain('Daily loss limit:');
+    expect(prompt).not.toContain('Max concurrent bots:');
+  });
+
   it('keeps static prompt content ahead of dynamic tick content', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
-    const prompt = buildSystemPrompt(state);
+    const prompt = buildSystemPrompt(state, createPromptTimingContext({
+      currentTimeMs: Date.now(),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.now() + 900_000,
+    }));
     const userContext = buildTickUserContext(state, []);
 
     expect(prompt.indexOf('## Core Platform')).toBeGreaterThan(-1);
