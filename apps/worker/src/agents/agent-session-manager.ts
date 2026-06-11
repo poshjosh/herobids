@@ -143,6 +143,7 @@ export class AgentSessionManager {
         const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id, agent.skillIds ?? []);
         const runtimeDescriptor = buildRuntimeDescriptor({
           agentId: agent.id,
+          name: agent.name,
           goal: agent.prompt,
           executionMode: agent.executionMode,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
@@ -158,6 +159,7 @@ export class AgentSessionManager {
         const lightModel = typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : undefined;
         const heavyModel = typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : undefined;
         const agentConfig: Record<string, unknown> = {
+          name: agent.name,
           ...(provider ? { provider } : {}),
           ...(lightModel ? { lightModel } : {}),
           ...(heavyModel ? { heavyModel } : {}),

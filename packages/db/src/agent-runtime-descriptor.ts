@@ -252,6 +252,7 @@ export async function resolveRuntimeCapabilityDescriptor(
 
 export function buildRuntimeDescriptor(input: {
   agentId: string;
+  name?: string | null;
   goal: string;
   executionMode?: string | null;
   toolPolicy?: Record<string, unknown> | null;
@@ -264,6 +265,7 @@ export function buildRuntimeDescriptor(input: {
   return {
     schemaVersion: 'v1',
     agentId: input.agentId,
+    name: input.name ?? input.agentId,
     goal: input.goal,
     executionMode: input.executionMode ?? 'paper',
     resolvedSkills: input.capabilityDescriptor.resolvedSkills,

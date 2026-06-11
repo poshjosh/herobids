@@ -16,6 +16,7 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
     const [agentRow] = await db
       .select({
         id: agents.id,
+        name: agents.name,
         prompt: agents.prompt,
         skillIds: agents.skillIds,
         toolPolicy: agents.toolPolicy,
@@ -35,6 +36,7 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
     const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId, agentRow.skillIds ?? []);
     const runtimeDescriptor = buildRuntimeDescriptor({
       agentId,
+      name: agentRow.name,
       goal: agentRow.prompt,
       executionMode: agentRow.executionMode,
       toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},

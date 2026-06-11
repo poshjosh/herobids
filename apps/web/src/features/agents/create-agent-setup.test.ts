@@ -154,18 +154,16 @@ describe('Create Agent — available trading bindings filter', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Model selection gate + review summary
+// Review gate + model summary
 // ---------------------------------------------------------------------------
 
-describe('Create Agent — model selection gate and review summary', () => {
+describe('Create Agent — review gate and model summary', () => {
   function canProceedToReview(intent: {
+    name: string;
     goal: string;
-    provider: string;
-    lightModel: string;
-    heavyModel: string;
   }): boolean {
     return Boolean(
-      intent.goal.trim() && intent.provider.trim() && intent.lightModel.trim() && intent.heavyModel.trim(),
+      intent.name.trim() && intent.goal.trim(),
     );
   }
 
@@ -178,10 +176,11 @@ describe('Create Agent — model selection gate and review summary', () => {
     return intent.modelInherited ? 'Inherits your saved model settings' : `${intent.provider}: ${intent.lightModel} / ${intent.heavyModel}`;
   }
 
-  it('blocks review until the provider and both models are selected', () => {
-    expect(canProceedToReview({ goal: 'Trade BTC', provider: '', lightModel: '', heavyModel: '' })).toBe(false);
-    expect(canProceedToReview({ goal: 'Trade BTC', provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' })).toBe(true);
-    expect(canProceedToReview({ goal: '  ', provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' })).toBe(false);
+  it('blocks review until both name and goal are present', () => {
+    expect(canProceedToReview({ name: '', goal: 'Trade BTC' })).toBe(false);
+    expect(canProceedToReview({ name: 'market-watch-01', goal: 'Trade BTC' })).toBe(true);
+    expect(canProceedToReview({ name: 'market-watch-01', goal: '  ' })).toBe(false);
+    expect(canProceedToReview({ name: '  ', goal: 'Trade BTC' })).toBe(false);
   });
 
   it('formats the review summary with the provider and both model tiers', () => {

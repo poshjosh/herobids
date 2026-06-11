@@ -28,11 +28,12 @@ export function resolveDefaultScoutModel(
 
 export function buildScoutSystemPrompt(params: {
   agentId: string;
+  name?: string;
   goal: string;
   readOnlyTools: string[];
 }): string {
   return [
-    `You are the scout phase for agent ${params.agentId}.`,
+    `You are the scout phase for agent ${params.name ?? params.agentId}.`,
     `Goal: ${params.goal}`,
     `Visible read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
     'Decide whether the judge model needs to act this tick.',

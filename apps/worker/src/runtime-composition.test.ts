@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
   applyRuntimeMessage,
   buildSystemPrompt,
@@ -11,9 +11,14 @@ import {
   recordVenueSignals,
 } from './runtime-composition.js';
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const baseDescriptor = {
   schemaVersion: 'v1' as const,
   agentId: 'agent-1',
+  name: 'market-watch-01',
   goal: 'Trade carefully',
   executionMode: 'paper',
   resolvedSkills: [
@@ -104,11 +109,18 @@ describe('runtime composition helpers', () => {
   });
 
   it('renders the runtime prompt from typed descriptor state', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-11T06:42:39.174Z'));
+
     const state = createRuntimeCompositionState(baseDescriptor);
     const prompt = buildSystemPrompt(state);
     const userContext = buildTickUserContext(state, []);
 
     expect(prompt).toContain('Trade carefully');
+    expect(prompt).toContain('You are an autonomous agent named "market-watch-01".');
+    expect(prompt).toContain('Agent Name: market-watch-01');
+    expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
+    expect(prompt).toContain('Take the next concrete step toward your goal now.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
     expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');
@@ -143,6 +155,23 @@ describe('runtime composition helpers', () => {
     expect(summary).toContain('Runtime config updated: binding_changed');
     expect(state.runtimeDescriptor.goal).toBe('Updated goal');
     expect(state.runtimeDescriptor.defaultBindingByFamily.trading).toBe('binding-2');
+  });
+
+  it('preserves the existing agent name when a runtime config update omits it', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const { name: _ignoredName, ...updatedDescriptor } = {
+      ...baseDescriptor,
+      goal: 'Updated goal',
+    };
+
+    const summary = buildTickUserContext(state, [{
+      type: 'agent.runtime.config_update',
+      payload: { reason: 'binding_changed', runtimeDescriptor: updatedDescriptor },
+    }]);
+
+    expect(summary).toContain('Runtime config updated: binding_changed');
+    expect(state.runtimeDescriptor.goal).toBe('Updated goal');
+    expect(state.runtimeDescriptor.name).toBe('market-watch-01');
   });
 
   it('renders portfolio, positions, and recent events from runtime messages', () => {

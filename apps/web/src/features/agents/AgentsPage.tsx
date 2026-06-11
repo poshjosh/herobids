@@ -17,6 +17,7 @@ type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
 
 interface IntentState {
+  name: string;
   goal: string;
   skillPreset: SkillPresetId;
   skillIds: string[];
@@ -136,6 +137,7 @@ function CreateAgentFlow({
   const [step, setStep] = useState<CreateStep>('intent');
   const [showSetup, setShowSetup] = useState(false);
   const [intent, setIntent] = useState<IntentState>({
+    name: '',
     goal: '',
     skillPreset: 'custom',
     skillIds: [],
@@ -213,7 +215,7 @@ function CreateAgentFlow({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const name = intent.goal.length > 60 ? `${intent.goal.slice(0, 57)}…` : intent.goal;
+      const name = intent.name.trim();
       const agent = await agentsApi.create({
         name,
         prompt: buildPrompt(intent, selectedSkills, selectedTradingBinding),
@@ -281,6 +283,19 @@ function CreateAgentFlow({
     return (
       <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.name' })}</FieldLabel>
+            <input
+              style={inputStyle}
+              type="text"
+              value={intent.name}
+              onChange={(e) => setIntent((state) => ({ ...state, name: e.target.value }))}
+              placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
+              maxLength={100}
+              required
+            />
+          </div>
+
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.goal' })}</FieldLabel>
             <textarea
@@ -488,7 +503,7 @@ function CreateAgentFlow({
             <Button
               variant="primary"
               type="button"
-              disabled={!intent.goal.trim()}
+              disabled={!intent.name.trim() || !intent.goal.trim()}
               onClick={() => setStep('review')}
             >
               {intl.formatMessage({ id: 'agents.create.review' })}
@@ -502,6 +517,12 @@ function CreateAgentFlow({
   return (
     <Modal title={intl.formatMessage({ id: 'agents.review.title' })} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <tbody>
+            <ReviewRow label={intl.formatMessage({ id: 'agents.create.name' })} value={intent.name.trim()} />
+          </tbody>
+        </table>
+
         <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
           {intent.goal}
         </div>
@@ -541,7 +562,7 @@ function CreateAgentFlow({
           <Button variant="ghost" onClick={() => setStep('intent')} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
-            <Button variant="primary" type="button" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+            <Button variant="primary" type="button" disabled={mutation.isPending || !intent.name.trim() || !intent.goal.trim()} onClick={() => mutation.mutate()}>
               {mutation.isPending ? intl.formatMessage({ id: 'agents.create.creating' }) : intl.formatMessage({ id: 'agents.createAgent' })}
             </Button>
           </div>

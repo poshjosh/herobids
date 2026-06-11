@@ -101,6 +101,7 @@ if (!LLM_API_KEY_RESOLVED && !LLM_BASE_URL) {
 }
 
 interface AgentConfig {
+  name?: string;
   prompt?: string;
   goal?: string;
   skillIds?: string[];
@@ -250,6 +251,7 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
   return {
     schemaVersion: 'v1',
     agentId: AGENT_ID!,
+    name: agentConfig.name ?? AGENT_ID!,
     goal: agentGoal,
     executionMode: agentConfig.executionMode ?? 'paper',
     resolvedSkills,
@@ -267,7 +269,12 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
   };
 }
 
-const runtimeDescriptor = agentConfig.runtimeDescriptor ?? buildFallbackRuntimeDescriptor();
+const runtimeDescriptor = agentConfig.runtimeDescriptor
+  ? {
+    ...agentConfig.runtimeDescriptor,
+    name: agentConfig.runtimeDescriptor.name ?? agentConfig.name ?? agentConfig.runtimeDescriptor.agentId,
+  }
+  : buildFallbackRuntimeDescriptor();
 const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor);
 runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour = Number.isFinite(SERVER_COST_USD_PER_HOUR)
   ? SERVER_COST_USD_PER_HOUR
@@ -1367,7 +1374,8 @@ async function runTick(): Promise<void> {
 
       const scoutSystemPrompt = buildScoutSystemPrompt({
         agentId: AGENT_ID!,
-        goal: agentGoal,
+        name: runtimeState.runtimeDescriptor.name,
+        goal: runtimeState.runtimeDescriptor.goal,
         readOnlyTools: readOnlyScoutTools,
       });
 

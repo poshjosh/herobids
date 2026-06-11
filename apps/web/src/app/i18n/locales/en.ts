@@ -258,6 +258,8 @@ export const messages: Record<string, string> = {
   'agents.risk.aggressive.label': 'Aggressive',
   'agents.risk.aggressive.description': 'Larger positions, higher potential returns and losses',
   'agents.create.title': 'Create AI agent',
+  'agents.create.name': 'Name',
+  'agents.create.namePlaceholder': 'e.g. market-watch-01',
   'agents.create.goal': 'What should the AI agent do?',
   'agents.create.goalPlaceholder': 'e.g. Grow my Solana portfolio conservatively over 30 days',
   'agents.create.skillPreset': 'Skill preset',

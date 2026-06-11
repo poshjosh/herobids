@@ -46,11 +46,15 @@ describe('buildScoutSystemPrompt', () => {
   it('renders a compact scout instruction block', () => {
     const prompt = buildScoutSystemPrompt({
       agentId: 'agent-1',
+      name: 'market-watch-01',
       goal: 'Trade carefully',
       readOnlyTools: ['check_regime', 'search_tokens'],
     });
 
+    expect(prompt).toContain('You are the scout phase for agent market-watch-01 (agent-1).');
     expect(prompt).toContain('Visible read-only tools: check_regime, search_tokens.');
+    expect(prompt).toContain('Prefer escalate when the goal is already actionable or time-based');
+    expect(prompt).toContain('Do not hold solely because there is no prior memory');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
     expect(prompt).toContain('Respond with JSON only');
   });

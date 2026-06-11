@@ -32,6 +32,7 @@ export interface RuntimeGuardrailDescriptor {
 export interface RuntimeDescriptor {
   schemaVersion: 'v1';
   agentId: string;
+  name?: string;
   goal: string;
   executionMode: string;
   resolvedSkills: SkillDefinition[];

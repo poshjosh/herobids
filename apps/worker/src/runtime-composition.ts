@@ -632,7 +632,10 @@ export function updateRuntimeDescriptor(
   state: RuntimeCompositionState,
   runtimeDescriptor: RuntimeDescriptor,
 ): void {
-  state.runtimeDescriptor = runtimeDescriptor;
+  state.runtimeDescriptor = {
+    ...runtimeDescriptor,
+    name: runtimeDescriptor.name ?? state.runtimeDescriptor.name ?? runtimeDescriptor.agentId,
+  };
 }
 
 export function recordRuntimeEvent(state: RuntimeCompositionState, type: string, summary: string): void {
@@ -922,20 +925,25 @@ export function buildSystemPrompt(state: RuntimeCompositionState): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => skill.instructions).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
   const staticContext = buildContextSection(state, 'static');
+  const currentTimeIso = new Date().toISOString();
 
   return [
+    `You are an autonomous agent named "${state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId}". Use the available tools to accomplish your goal.`,
     skillInstructions,
     '## Your Goal',
     state.runtimeDescriptor.goal,
+    '## Operating Context',
+    `Current time (UTC): ${currentTimeIso}`,
     '## Available Tools',
     `You can call the following tools: ${allowedTools}.`,
-    '## Agent Identity',
-    `Agent ID: ${state.runtimeDescriptor.agentId}`,
+    '## Note',
     `Execution mode: ${state.runtimeDescriptor.executionMode}`,
     '## Guard Rails',
     `- Daily token budget: ${state.runtimeDescriptor.guardrails.dailyTokenBudget ?? 'unlimited'} tokens`,
     `- Daily loss limit: ${state.runtimeDescriptor.guardrails.dailyLossLimit ?? 'none'}`,
     `- Max concurrent bots: ${state.runtimeDescriptor.guardrails.maxBots ?? 'unlimited'}`,
+    '## Instructions',
+    'If nothing further can be done this tick, respond with a short status update and no tool calls.',
     staticContext ? `## Runtime Context\n${staticContext}` : '',
   ]
     .filter(Boolean)
