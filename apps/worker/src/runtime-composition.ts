@@ -343,8 +343,6 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         ...(hasTradingCapability(state.runtimeDescriptor)
           ? [`Execution mode: ${state.runtimeDescriptor.executionMode}`]
           : []),
-        `Tools visible: ${formatVisibleTools(state.runtimeDescriptor)}`,
-        `Budgets: history=${state.runtimeDescriptor.budgets.maxHistoryMessages}, toolResults=${state.runtimeDescriptor.budgets.maxToolResultChars}, toolSchemas=${state.runtimeDescriptor.budgets.maxVisibleToolSchemas}`,
       ].join('\n'),
     }),
   },

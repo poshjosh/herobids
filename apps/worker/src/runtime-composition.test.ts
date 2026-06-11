@@ -130,7 +130,7 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Execution mode: paper');
     expect(prompt).toContain('Daily loss limit: 10');
     expect(prompt).toContain('Max concurrent bots: 2');
-    expect(prompt).toContain('Take the next concrete step toward your goal now.');
+    expect(prompt).toContain('Take the next concrete step toward your goal.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
     expect(prompt).not.toContain('{"tool": "<tool_name>", "args": {...}}');
