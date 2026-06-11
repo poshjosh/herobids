@@ -129,24 +129,35 @@ The existing `llm.timeoutMs` is sized for generation requests, not settings-page
 catalog fetches. A settings page hanging for 60 seconds on a dead local Ollama
 instance is too expensive.
 
-Discovery should use a short dedicated timeout and a short-lived in-memory cache.
+Discovery should use a short dedicated timeout and a soft-expiry in-memory cache (stale-on-failure — see Safety Review §5).
 
-### 5. Discovery failure should degrade to a safe fallback model set
+### 5. Discovery failure should degrade gracefully using stale cache
 
 If `ollama` is the operator provider and discovery fails, the API should still
 consider the provider configured. Returning 503 is misleading in that case.
 
-Safe fallback behavior:
+The cache uses **soft expiry**: entries are never deleted on TTL expiry — they
+are only marked stale. This means a previously-successful fetch remains
+available indefinitely as a fallback.
 
-- expose `ollama` as available
-- return at least the operator-configured `llm.model`
-- merge that configured model into the discovered set if discovery succeeds but
-  does not include it
+Fallback priority (highest to lowest):
+
+1. **Fresh cache** — TTL not yet elapsed; return immediately.
+2. **Re-fetch succeeds** — update cache, return new models.
+3. **Re-fetch fails, stale cache exists** — return stale models, log a warning.
+4. **No cache at all (cold-start failure)** — expose `ollama` as available with
+   at least the operator-configured `llm.model`.
+
+Additional rules:
+
+- merge the operator-configured `llm.model` into the model set in all cases so
+  the currently-configured model is never absent from the response
 - log a warning when discovery fails or when configured and discovered model
   sets disagree
 
-This keeps the UI usable, preserves the existing configured model, and avoids a
-false "no provider configured" result.
+This ensures that a transient Ollama outage never causes previously-discovered
+models to disappear from the settings page. The operator-configured model is a
+cold-start-only last resort, not a recurring degradation floor.
 
 ### 6. Keep validation strict for dynamic models
 
@@ -168,7 +179,12 @@ The safe approach is not to weaken validation globally. Instead:
 Replace the current implicit "static list for every provider" assumption with an
 explicit provider catalog mode.
 
-Example domain shape:
+This metadata must live in `apps/api/src/llm-model-catalog.ts`, not in
+`packages/domain`. Domain is zero-deps and contains only types, ports, and
+value objects. Knowledge about whether a catalog requires a live HTTP call is
+infrastructure policy, not domain knowledge.
+
+Example shape in `apps/api`:
 
 ```ts
 type LlmProviderCatalogMode = 'static' | 'dynamic';
@@ -203,31 +219,31 @@ Responsibilities:
 - validate the response payload with Zod
 - normalize model names into `string[]`
 - dedupe and sort results
-- cache results for a short TTL
+- cache results with soft-expiry TTL (stale entries are retained, not deleted)
 
 Do not mix this logic into route handlers.
 
 Suggested API:
 
 ```ts
-interface OllamaDiscoveryResult {
-  ok: true;
+import type { Result } from '@herobids/domain';
+
+type OllamaDiscoveryError = {
+  code: 'catalog.invalid_base_url' | 'catalog.timeout' | 'catalog.network_error' | 'catalog.invalid_response';
+  message: string;
+};
+
+type OllamaDiscoverySuccess = {
   models: string[];
   source: 'dynamic' | 'fallback';
-} | {
-  ok: false;
-  error: {
-    code: 'catalog.invalid_base_url' | 'catalog.timeout' | 'catalog.network_error' | 'catalog.invalid_response';
-    message: string;
-  };
-}
+};
 
 async function discoverOllamaModels(config: {
   baseUrl?: string;
   configuredModel: string;
   timeoutMs: number;
   cacheTtlMs: number;
-}): Promise<OllamaDiscoveryResult>
+}): Promise<Result<OllamaDiscoverySuccess, OllamaDiscoveryError>>
 ```
 
 ## C. Refactor the API catalog functions around resolved operator config
@@ -294,19 +310,27 @@ That metadata should be added only if there is a concrete UI requirement.
 
 ## Proposed Config Additions
 
-Add dedicated catalog settings under `llm`:
+Add dedicated catalog settings nested under `llm.catalog`, consistent with the
+shape defined in `001-minimal-config-shape.md`:
 
 ```yaml
 llm:
-  catalogTimeoutMs: 3000
-  catalogCacheTtlMs: 15000
+  catalog:
+    timeoutMs: 3000
+    cacheTtlMs: 86400000  # 24 hours
 ```
 
 Rationale:
 
 - discovery timeout should be much shorter than generation timeout
-- cache TTL should be short enough for local model changes to appear quickly
+- cache TTL controls how long a fresh entry is served without re-fetching;
+  stale entries are retained beyond the TTL as a fallback on failure
+- 24-hour TTL is appropriate because Ollama model lists change rarely and
+  intentionally (operator-driven); if a change must appear immediately the
+  operator can restart the API process to clear the in-memory cache
 - these are operator-tunable timeouts/TTLs and therefore belong in config
+- nesting under `llm.catalog` avoids flat key proliferation under `llm` and
+  groups all catalog-related config together
 
 These fields should live in:
 
@@ -321,10 +345,12 @@ No env overrides are needed initially unless an operational need appears.
 
 ## Phase 1 — Shared provider metadata
 
-- [ ] Add `ollama` to the known provider set in
-      `packages/domain/src/models/llm-models.ts`.
-- [ ] Introduce explicit provider metadata so `ollama` can be a known provider
-      with dynamic catalog behavior rather than a fake static list.
+- [x] `ollama` is already registered in `KNOWN_LLM_PROVIDERS` with a static
+      fallback model list in `packages/domain/src/models/llm-models.ts`. No
+      addition is needed.
+- [ ] Introduce explicit provider catalog-mode metadata in
+      `apps/api/src/llm-model-catalog.ts` (not in `packages/domain`) so the
+      API layer can distinguish dynamic providers from static ones.
 - [ ] Refactor shared helpers so static providers still use compile-time model
       lists without change.
 
@@ -344,10 +370,32 @@ No env overrides are needed initially unless an operational need appears.
       - `AbortController`
       - short timeout
       - `redirect: 'error'`
-      - Zod response validation
+      - Zod response validation against the schema below
       - dedupe + sort normalization
-- [ ] Add an in-memory TTL cache keyed by normalized catalog URL.
+- [ ] Add a soft-expiry in-memory cache keyed by normalized catalog URL:
+      - entries store `{ models, fetchedAt }` — never deleted on expiry
+      - fresh: `now - fetchedAt < ttl` → return immediately
+      - stale: attempt re-fetch; on failure return stale models and log a warning
+      - cold-start failure: fall back to operator-configured model only
+      - include in-flight deduplication so concurrent callers during a cache miss
+        share one pending fetch instead of each launching a separate request
 - [ ] Ensure the client never throws to callers; return structured results.
+
+Zod schema for the `/api/tags` response:
+
+```ts
+const OllamaTagsResponseSchema = z.object({
+  models: z.array(
+    z.object({
+      name: z.string().min(1),
+    }).passthrough(),
+  ),
+});
+```
+
+Only `name` is required. Additional fields (`modified_at`, `size`, `digest`,
+`details`) are present in the real response and are passed through without
+validation.
 
 ## Phase 4 — API catalog refactor
 
@@ -362,6 +410,12 @@ No env overrides are needed initially unless an operational need appears.
       providers.
 
 ## Phase 5 — Selection validation
+
+> **Breaking change**: `validateAiModelSelection` is currently synchronous.
+> Validating against a discovered catalog requires awaiting
+> `discoverOllamaModels`, making the function async. All call sites in
+> `apps/api/src/routes/ai.ts` (at least three route handlers) and their
+> associated tests must be updated concurrently.
 
 - [ ] Refactor API model-selection validation so `ollama` selections are
       validated against discovered models instead of a hard-coded static list.
@@ -436,8 +490,8 @@ Mitigation:
 Mitigation:
 
 - short timeout
-- short-lived cache
-- fallback to configured model
+- soft-expiry cache: stale models are served on failure rather than discarded
+- cold-start fallback to configured model only when no cached value exists
 - do not translate discovery outage into `no_ai_provider`
 
 ### Risk: weakening validation too far
@@ -453,8 +507,9 @@ Mitigation:
 
 Mitigation:
 
-- in-memory TTL cache per API process
+- in-memory soft-expiry cache per API process
 - short timeout
+- in-flight deduplication: concurrent callers share one pending fetch
 - route-level reuse when multiple providers are listed in one response
 
 ### Risk: model drift between API instances

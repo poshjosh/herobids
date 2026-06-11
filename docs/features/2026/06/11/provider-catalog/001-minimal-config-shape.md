@@ -13,7 +13,7 @@ to define the minimum config surface that lets the platform:
 
 Related backlog item:
 
-- [026-ollama-dynamic-model-discovery.md](./026-ollama-dynamic-model-discovery.md)
+- [002-ollama-dynamic-model-discovery.md](./002-ollama-dynamic-model-discovery.md)
 
 ---
 
@@ -39,12 +39,11 @@ llm:
     timeoutMs: 3000
     cacheTtlMs: 15000
     preserveConfiguredModel: true
+    baseFilters:
+      excludeCapabilities: []
+      excludeLifecycle: []
+      excludePatterns: []
     providers:
-      default:
-        filters:
-          excludeCapabilities: []
-          excludeLifecycle: []
-          excludePatterns: []
       ollama:
         filters:
           excludeCapabilities: ['embedding']
@@ -83,10 +82,12 @@ Expected values:
 
 - `static` — current-style static provider lists
 - `dynamic` — discover first, then filter
-- `hybrid` — optional future mode if the platform ever wants dynamic discovery
-  with static fallback
 
 For the long-term direction discussed here, `dynamic` is the intended default.
+
+Note: `mode: dynamic` applies only to providers that have an explicit catalog
+client. Hosted providers without a dynamic discovery endpoint continue using
+their static model lists regardless of this setting.
 
 ### `llm.catalog.timeoutMs`
 
@@ -121,21 +122,24 @@ would otherwise remove it.
 This is a safety valve to avoid breaking the UI or invalidating existing saved
 config during catalog churn.
 
-### `llm.catalog.providers.default.filters`
+### `llm.catalog.baseFilters`
 
 ```yaml
-default:
-  filters:
-    excludeCapabilities: []
-    excludeLifecycle: []
-    excludePatterns: []
+baseFilters:
+  excludeCapabilities: []
+  excludeLifecycle: []
+  excludePatterns: []
 ```
 
-Baseline filter policy shared by all providers unless a provider override adds
-more exclusions.
+Baseline filter policy applied before any provider-specific filters.
 
 This keeps the config surface small and avoids duplicating common filter rules
 for every provider.
+
+Provider-specific filters under `providers.*` are **additive**: they augment
+`baseFilters`, not replace them. An empty `excludePatterns: []` at the provider
+level means no additional patterns beyond the base, not "clear the base
+patterns."
 
 ### `excludeCapabilities`
 
@@ -210,12 +214,12 @@ export interface LlmCatalogProviderFilterConfig {
 }
 
 export interface LlmCatalogConfig {
-  mode: 'static' | 'dynamic' | 'hybrid';
+  mode: 'static' | 'dynamic';
   timeoutMs: number;
   cacheTtlMs: number;
   preserveConfiguredModel: boolean;
+  baseFilters: LlmCatalogFilterConfig;
   providers: {
-    default: LlmCatalogProviderFilterConfig;
     [provider: string]: LlmCatalogProviderFilterConfig;
   };
 }
