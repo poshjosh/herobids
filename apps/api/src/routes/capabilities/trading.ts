@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and, desc, inArray, isNull, sum, count } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, sum, count, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from '@herobids/db';
 import {
@@ -44,6 +44,11 @@ const MAX_ACTIVITY_OFFSET = 500;
 const MAX_ACTIVITY_WINDOW = 700;
 
 const TradingActivityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(0).max(MAX_ACTIVITY_LIMIT).default(50),
+  offset: z.coerce.number().int().min(0).max(MAX_ACTIVITY_OFFSET).default(0),
+});
+
+const TradingPositionsQuerySchema = z.object({
   limit: z.coerce.number().int().min(0).max(MAX_ACTIVITY_LIMIT).default(50),
   offset: z.coerce.number().int().min(0).max(MAX_ACTIVITY_OFFSET).default(0),
 });
@@ -689,6 +694,98 @@ export async function tradingCapabilityRoutes(
         feesByCurrency,
         openPositionCount: openResult[0]?.openCount ?? 0,
       });
+    },
+  );
+
+  app.get<{
+    Params: { agentId: string };
+    Querystring: { limit?: string; offset?: string };
+  }>(
+    '/agents/:agentId/capabilities/trading/positions',
+    async (request, reply) => {
+      const { agentId } = request.params;
+      const queryResult = TradingPositionsQuerySchema.safeParse(request.query);
+      if (!queryResult.success) {
+        return reply.status(400).send({ error: 'validation_error', details: queryResult.error.issues });
+      }
+      const { limit, offset } = queryResult.data;
+
+      const [agent] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, agentId), eq(agents.userId, request.userId)));
+      if (!agent) {
+        return reply.status(404).send({ error: 'agent.not_found' });
+      }
+
+      const bindingIds = allBindingIds(await selectAgentTradingGrantRows(db, agentId));
+      if (bindingIds.length === 0) {
+        return reply.send({ agentId, family: 'trading', items: [], limit, offset });
+      }
+
+      const botRows = await db
+        .select({ id: bots.id })
+        .from(bots)
+        .where(inArray(bots.tradingBindingId, bindingIds));
+      const botIds = botRows.map((bot) => bot.id);
+
+      if (botIds.length === 0) {
+        return reply.send({ agentId, family: 'trading', items: [], limit, offset });
+      }
+
+      const positionRows = await db
+        .select({
+          id: positions.id,
+          actorId: positions.actorId,
+          venue: positions.venue,
+          symbol: positions.symbol,
+          side: positions.side,
+          size: positions.size,
+          entryPrice: positions.entryPrice,
+          realizedPnl: positions.realizedPnl,
+          openedAt: positions.openedAt,
+          closedAt: positions.closedAt,
+          exitPrice: sql<string | null>`(
+            SELECT ${fills.price}
+            FROM ${fills}
+            WHERE ${fills.actorType} = 'bot'
+              AND ${fills.actorId} = ${positions.actorId}
+              AND ${fills.venueAccountId} = ${positions.venueAccountId}
+              AND ${fills.venue} = ${positions.venue}
+              AND ${fills.symbol} = ${positions.symbol}
+              AND ${fills.filledAt} <= ${positions.closedAt}
+            ORDER BY ${fills.filledAt} DESC
+            LIMIT 1
+          )`,
+        })
+        .from(positions)
+        .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)))
+        .orderBy(desc(positions.openedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const items = positionRows.map((row) => {
+        const isClosed = row.closedAt !== null;
+        const holdMs = isClosed
+          ? row.closedAt!.getTime() - row.openedAt.getTime()
+          : null;
+        return {
+          id: row.id,
+          symbol: row.symbol,
+          venue: row.venue,
+          side: row.side,
+          size: row.size,
+          entryPrice: row.entryPrice,
+          exitPrice: isClosed ? (row.exitPrice ?? null) : null,
+          realizedPnl: parseFloat(row.realizedPnl).toFixed(6),
+          status: isClosed ? 'closed' : 'open',
+          openedAt: row.openedAt.toISOString(),
+          closedAt: row.closedAt?.toISOString() ?? null,
+          holdMs,
+        };
+      });
+
+      return reply.send({ agentId, family: 'trading', items, limit, offset });
     },
   );
 

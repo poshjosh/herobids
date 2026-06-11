@@ -139,6 +139,8 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       venue_accounts,
       agent_credentials,
       bots,
+      fills,
+      positions,
       agent_runtime_sessions,
       agent_messages,
       agent_artifacts,

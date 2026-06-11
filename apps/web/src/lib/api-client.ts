@@ -559,6 +559,21 @@ export interface AgentCompiledPrompt {
   prompt: string;
 }
 
+export interface AgentPosition {
+  id: string;
+  symbol: string;
+  venue: string;
+  side: string;
+  size: string;
+  entryPrice: string;
+  exitPrice: string | null;
+  realizedPnl: string;
+  status: 'open' | 'closed';
+  openedAt: string;
+  closedAt: string | null;
+  holdMs: number | null;
+}
+
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
@@ -643,6 +658,13 @@ export const agents = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  tradingPositions: (id: string, params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ agentId: string; family: 'trading'; items: AgentPosition[]; limit: number; offset: number }>(`/agents/${id}/capabilities/trading/positions${query}`);
+  },
 };
 
 // ---------------------------------------------------------------------------

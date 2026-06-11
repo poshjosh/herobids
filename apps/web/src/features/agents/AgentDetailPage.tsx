@@ -9,6 +9,7 @@ import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
 import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
+import { AgentTradesTable } from './AgentTradesTable.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -403,6 +404,13 @@ export function AgentDetailPage() {
             )}
           </Card>
         </section>
+
+        {hasTradingCapability && (
+          <Card>
+            <SectionLabel>{intl.formatMessage({ id: 'agents.detail.tradesHistory' })}</SectionLabel>
+            <AgentTradesTable agentId={id!} executionMode={agent.executionMode ?? null} isActive={shouldPollRuntimePanels} />
+          </Card>
+        )}
 
         {agent.activeSession && (
           <Card>
