@@ -633,12 +633,12 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
           beforeFilter
             ? and(
                 eq(agentMessages.agentId, id),
-                notInArray(agentMessages.type, SUPPRESSED_PROTOCOL_MESSAGE_TYPES),
+                notInArray(agentMessages.type, [...SUPPRESSED_PROTOCOL_MESSAGE_TYPES]),
                 sql`${agentMessages.createdAt} < ${beforeFilter.toISOString()}::timestamptz`,
               )
             : and(
                 eq(agentMessages.agentId, id),
-                notInArray(agentMessages.type, SUPPRESSED_PROTOCOL_MESSAGE_TYPES),
+                notInArray(agentMessages.type, [...SUPPRESSED_PROTOCOL_MESSAGE_TYPES]),
               ),
         )
         .orderBy(desc(agentMessages.createdAt))

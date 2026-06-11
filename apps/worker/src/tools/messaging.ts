@@ -19,7 +19,6 @@ const sendMessageTool: AgentTool = {
   parametersSchema: SendMessageParamsSchema,
   parameters: convertZodToJsonSchema(SendMessageParamsSchema),
   category: 'write-messaging',
-  promptGuidance: 'Set messageClass to "alert" or "reminder" for urgency. Set emailDelivery to "if_allowed" to request email fanout (policy permitting). Use contextRef to link the message to a specific context.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { body, subject, messageClass, emailDelivery, contextRef } = params as z.infer<typeof SendMessageParamsSchema>;
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.SEND_MESSAGE, {

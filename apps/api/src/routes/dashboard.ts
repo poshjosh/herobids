@@ -327,7 +327,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
       db.select().from(agentMessages)
         .where(and(
           inArray(agentMessages.agentId, agentIds as [string, ...string[]]),
-          notInArray(agentMessages.type, SUPPRESSED_PROTOCOL_MESSAGE_TYPES),
+          notInArray(agentMessages.type, [...SUPPRESSED_PROTOCOL_MESSAGE_TYPES]),
         ))
         .orderBy(desc(agentMessages.createdAt))
         .limit(limit + 1),

@@ -349,9 +349,9 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       title: 'Core Platform',
       provider: 'core-platform',
       content: [
-        `Agent ID: ${state.runtimeDescriptor.agentId}`,
+        `\nAgent ID: ${state.runtimeDescriptor.agentId}`,
         ...(hasTradingCapability(state.runtimeDescriptor)
-          ? [`Execution mode: ${state.runtimeDescriptor.executionMode}`]
+          ? [`\nExecution mode: ${state.runtimeDescriptor.executionMode}`]
           : []),
       ].join('\n'),
     }),
@@ -1096,10 +1096,10 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     toolsBlock,
     '## Guard Rails',
     ...guardRailLines,
+    staticContext ? `## Runtime Context\n\n${staticContext}` : '',
     '## Instructions',
     'Take the next concrete step toward your goal.',
     'If nothing further can be done this tick, do not call any tool, rather respond with a short status update.',
-    staticContext ? `## Runtime Context\n\n${staticContext}` : '',
   ]
     .filter(Boolean)
     .join('\n\n');

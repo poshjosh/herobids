@@ -36,12 +36,12 @@ export const BASE_SKILL: SkillDefinition = {
   description: 'Core tools: memory, messaging, and cost tracking. Auto-injected into every agent.',
   instructions: `You have access to core tools.
 
-- Use \`send_message\` to communicate important updates, alerts, or status reports to the user.
-- Use \`publish_artifact\` to publish structured outputs.
 - Use \`set_memory\` to persist a value by key across ticks.
 - Use \`get_memory\` to retrieve a previously stored value by key.
 - Use \`list_memory_keys\` to list all stored memory keys.
-- Use \`delete_memory\` to remove one or more memory keys.`,
+- Use \`delete_memory\` to remove one or more memory keys.
+- Use \`publish_artifact\` to publish structured outputs.
+- Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" for urgency. Set emailDelivery to "if_allowed" to request email fanout (policy permitting). Use contextRef to link the message to a specific context.`,
   requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory'],
   capabilityFamilies: [],
   bindingRequirements: {},
