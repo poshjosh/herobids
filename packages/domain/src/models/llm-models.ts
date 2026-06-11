@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const KNOWN_LLM_PROVIDERS = ['openai', 'anthropic', 'openrouter', 'together', 'fireworks', 'mistral', 'cohere', 'google'] as const;
+export const KNOWN_LLM_PROVIDERS = ['openai', 'anthropic', 'openrouter', 'together', 'fireworks', 'mistral', 'cohere', 'google', 'ollama'] as const;
 
 export const LLM_PROVIDER_MODELS: Record<(typeof KNOWN_LLM_PROVIDERS)[number], string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
@@ -11,6 +11,7 @@ export const LLM_PROVIDER_MODELS: Record<(typeof KNOWN_LLM_PROVIDERS)[number], s
   mistral: ['mistral-large-latest', 'mistral-small-latest'],
   cohere: ['command-r-plus', 'command-r'],
   google: ['gemini-1.5-pro', 'gemini-1.5-flash'],
+  ollama: ['qwen3-coder:30b', 'qwen3.6:35b-a3b-q4_K_M'],
 };
 
 function isKnownLlmProvider(provider: string): provider is keyof typeof LLM_PROVIDER_MODELS {

@@ -14,6 +14,9 @@ function getConfiguredProviders(): string[] {
 
 export function getAvailableProviders(operatorProvider: string): string[] {
   const explicit = getConfiguredProviders();
+  if (operatorProvider === 'ollama' && !explicit.includes(operatorProvider)) {
+    return [...explicit, operatorProvider];
+  }
   if (resolveApiKey(operatorProvider) && !explicit.includes(operatorProvider)) {
     return [...explicit, operatorProvider];
   }

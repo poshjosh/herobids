@@ -127,6 +127,25 @@ describe('GET /ai/available-models', () => {
     // No other providers must appear — the generic key must not advertise all 8.
     delete process.env['LLM_API_KEY'];
   });
+
+  it('returns the operator ollama provider and static models without an API key', async () => {
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      providers: [
+        {
+          provider: 'ollama',
+          models: ['qwen3-coder:30b', 'qwen3.6:35b-a3b-q4_K_M'],
+        },
+      ],
+    });
+  });
 });
 
 // ─── POST /ai/generate-config ─────────────────────────────────────────────
@@ -444,5 +463,53 @@ describe('PATCH /settings/ai-model', () => {
 
     expect(res.statusCode).toBe(400);
     delete process.env['LLM_API_KEY_OPENAI'];
+  });
+
+  it('returns 200 when selecting static ollama models', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama' }, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: {
+        provider: 'ollama',
+        lightModel: 'qwen3-coder:30b',
+        heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().aiModelConfig).toEqual({
+      provider: 'ollama',
+      lightModel: 'qwen3-coder:30b',
+      heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
+    });
+  });
+
+  it('returns 400 when selecting an ollama model outside the static list', async () => {
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama' }, redis);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/settings/ai-model',
+      payload: {
+        provider: 'ollama',
+        lightModel: 'missing-model',
+        heavyModel: 'qwen3.6:35b-a3b-q4_K_M',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
   });
 });
