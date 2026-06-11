@@ -2,18 +2,27 @@
 # quick-setup.sh — Bootstrap a Herobids user account via the REST API.
 #
 # Reads configuration from scripts/.env.setup (or a custom path via --env),
-# then runs the following steps in sequence:
+# then runs one of two setup flows:
 #
-#   1. Authenticate   — POST /auth/login
-#                       On 401, fall back to POST /auth/register
-#   2. Credential     — POST /credentials  (encrypt and store venue API keys)
-#   3. Connection     — POST /connections  (link credential to a provider,
-#                       creates a companion venue account automatically)
-#   4. Telegram       — PATCH /auth/me { telegramChatId }
+#   Guided mode   (default when one provider + one label can be derived)
+#     1. Authenticate   — POST /auth/login
+#                         On 401, fall back to POST /auth/register
+#     2. Provider link  — POST /setup/provider-link
+#                         (creates credential + connection + trading binding)
+#     3. Telegram       — PATCH /auth/me { telegramChatId }
+#
+#   Advanced mode (fallback for separate labels or explicit resource reuse)
+#     1. Authenticate   — POST /auth/login
+#                         On 401, fall back to POST /auth/register
+#     2. Credential     — POST /credentials  (encrypt and store venue API keys)
+#     3. Connection     — POST /connections  (link credential to a provider)
+#     4. Telegram       — PATCH /auth/me { telegramChatId }
 #
 # Usage:
 #   scripts/shell/ops/quick-setup.sh
 #   scripts/shell/ops/quick-setup.sh --env /path/to/custom.env.setup
+#   scripts/shell/ops/quick-setup.sh --mode guided
+#   scripts/shell/ops/quick-setup.sh --mode advanced
 #   scripts/shell/ops/quick-setup.sh --dry-run   # validate config, no API calls
 #   scripts/shell/ops/quick-setup.sh --help
 #
@@ -36,6 +45,17 @@
 #   SETUP_PASSWORD        Password (≥ 8 characters)
 #   SETUP_DISPLAY_NAME    Display name used when registering a new account
 #                         e.g. "Alice"
+#
+# Setup mode
+#   SETUP_MODE            auto | guided | advanced
+#                         auto (default) uses guided mode when a single
+#                         provider + label can be resolved, otherwise advanced
+#
+# Guided setup inputs
+#   SETUP_PROVIDER        Optional unified provider identifier
+#                         e.g. hyperliquid | bybit | 1inch
+#   SETUP_LABEL           Optional unified label used for credential,
+#                         connection, and trading binding
 #
 # Credential  (venue API keys, stored encrypted)
 #   CREDENTIAL_VENUE      Venue identifier: hyperliquid | bybit | 1inch
@@ -73,6 +93,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env.setup"
 DRY_RUN=0
+SETUP_MODE_CLI=""
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -104,6 +125,11 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=1
       shift
       ;;
+    --mode)
+      [[ -z "${2:-}" ]] && die "--mode requires 'guided', 'advanced', or 'auto'"
+      SETUP_MODE_CLI="$2"
+      shift 2
+      ;;
     -h|--help)
       # Print only the leading comment block (stop at the first non-comment line)
       awk '/^[^#]/{exit} /^#/{sub(/^# ?/,""); print}' "$0"
@@ -134,6 +160,10 @@ set +a
 
 log_info "Loaded: $ENV_FILE"
 
+if [[ -n "$SETUP_MODE_CLI" ]]; then
+  SETUP_MODE="$SETUP_MODE_CLI"
+fi
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -141,6 +171,18 @@ log_info "Loaded: $ENV_FILE"
 log_section "Validating variables"
 
 MISSING=0
+SETUP_MODE="${SETUP_MODE:-auto}"
+EFFECTIVE_SETUP_MODE=""
+SETUP_PROVIDER_RESOLVED=""
+SETUP_LABEL_RESOLVED=""
+ADVANCED_CREDENTIAL_VENUE=""
+ADVANCED_CREDENTIAL_LABEL=""
+ADVANCED_CONNECTION_PROVIDER=""
+ADVANCED_CONNECTION_LABEL=""
+CREDENTIAL_ID=""
+CONNECTION_ID=""
+VENUE_ACCOUNT_ID=""
+TRADING_BINDING_ID=""
 
 require_var() {
   local var="$1"
@@ -150,18 +192,101 @@ require_var() {
   fi
 }
 
+resolve_guided_provider() {
+  if [[ -n "${SETUP_PROVIDER:-}" ]]; then
+    printf '%s' "$SETUP_PROVIDER"
+    return 0
+  fi
+
+  if [[ -n "${CREDENTIAL_VENUE:-}" && -n "${CONNECTION_PROVIDER:-}" && "$CREDENTIAL_VENUE" != "$CONNECTION_PROVIDER" ]]; then
+    return 1
+  fi
+
+  printf '%s' "${CREDENTIAL_VENUE:-${CONNECTION_PROVIDER:-}}"
+}
+
+resolve_guided_label() {
+  if [[ -n "${SETUP_LABEL:-}" ]]; then
+    printf '%s' "$SETUP_LABEL"
+    return 0
+  fi
+
+  if [[ -n "${CREDENTIAL_LABEL:-}" && -n "${CONNECTION_LABEL:-}" && "$CREDENTIAL_LABEL" != "$CONNECTION_LABEL" ]]; then
+    return 1
+  fi
+
+  printf '%s' "${CREDENTIAL_LABEL:-${CONNECTION_LABEL:-}}"
+}
+
 # Core
 require_var API_BASE_URL
 require_var SETUP_EMAIL
 require_var SETUP_PASSWORD
 require_var SETUP_DISPLAY_NAME
 
-# Credential
-require_var CREDENTIAL_VENUE
-require_var CREDENTIAL_LABEL
+case "$SETUP_MODE" in
+  auto|guided|advanced)
+    ;;
+  *)
+    log_error "SETUP_MODE must be one of: auto | guided | advanced"
+    MISSING=1
+    ;;
+esac
+
+if SETUP_PROVIDER_RESOLVED="$(resolve_guided_provider)"; then
+  :
+else
+  SETUP_PROVIDER_RESOLVED=""
+fi
+
+if SETUP_LABEL_RESOLVED="$(resolve_guided_label)"; then
+  :
+else
+  SETUP_LABEL_RESOLVED=""
+fi
+
+ADVANCED_CREDENTIAL_VENUE="${CREDENTIAL_VENUE:-${SETUP_PROVIDER:-${CONNECTION_PROVIDER:-}}}"
+ADVANCED_CREDENTIAL_LABEL="${CREDENTIAL_LABEL:-${SETUP_LABEL:-${CONNECTION_LABEL:-}}}"
+ADVANCED_CONNECTION_PROVIDER="${CONNECTION_PROVIDER:-${SETUP_PROVIDER:-${ADVANCED_CREDENTIAL_VENUE:-}}}"
+ADVANCED_CONNECTION_LABEL="${CONNECTION_LABEL:-${SETUP_LABEL:-${CREDENTIAL_LABEL:-}}}"
+
+case "$SETUP_MODE" in
+  auto)
+    if [[ -n "$SETUP_PROVIDER_RESOLVED" && -n "$SETUP_LABEL_RESOLVED" ]]; then
+      EFFECTIVE_SETUP_MODE="guided"
+    else
+      EFFECTIVE_SETUP_MODE="advanced"
+    fi
+    ;;
+  guided)
+    EFFECTIVE_SETUP_MODE="guided"
+    ;;
+  advanced)
+    EFFECTIVE_SETUP_MODE="advanced"
+    ;;
+esac
+
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+  if [[ -z "$SETUP_PROVIDER_RESOLVED" ]]; then
+    log_error "Guided mode requires one provider. Set SETUP_PROVIDER or make CREDENTIAL_VENUE and CONNECTION_PROVIDER match."
+    MISSING=1
+  fi
+  if [[ -z "$SETUP_LABEL_RESOLVED" ]]; then
+    log_error "Guided mode requires one label. Set SETUP_LABEL or make CREDENTIAL_LABEL and CONNECTION_LABEL match."
+    MISSING=1
+  fi
+
+  ADVANCED_CREDENTIAL_VENUE="$SETUP_PROVIDER_RESOLVED"
+  ADVANCED_CREDENTIAL_LABEL="$SETUP_LABEL_RESOLVED"
+  ADVANCED_CONNECTION_PROVIDER="$SETUP_PROVIDER_RESOLVED"
+  ADVANCED_CONNECTION_LABEL="$SETUP_LABEL_RESOLVED"
+fi
+
+# Credential / provider
+require_var ADVANCED_CREDENTIAL_VENUE
 
 # Venue-specific secrets
-case "${CREDENTIAL_VENUE:-}" in
+case "${ADVANCED_CREDENTIAL_VENUE:-}" in
   hyperliquid)
     require_var HL_API_KEY
     require_var HL_SECRET
@@ -176,16 +301,18 @@ case "${CREDENTIAL_VENUE:-}" in
     require_var ONEINCH_PRIVATE_KEY
     ;;
   "")
-    : # already caught by require_var CREDENTIAL_VENUE above
+    : # already caught by require_var ADVANCED_CREDENTIAL_VENUE above
     ;;
   *)
-    log_warn "No built-in secret template for venue '${CREDENTIAL_VENUE}'. Ensure any required secret variables are set."
+    log_warn "No built-in secret template for venue '${ADVANCED_CREDENTIAL_VENUE}'. Ensure any required secret variables are set."
     ;;
 esac
 
-# Connection
-require_var CONNECTION_PROVIDER
-require_var CONNECTION_LABEL
+if [[ "$EFFECTIVE_SETUP_MODE" == "advanced" ]]; then
+  require_var ADVANCED_CREDENTIAL_LABEL
+  require_var ADVANCED_CONNECTION_PROVIDER
+  require_var ADVANCED_CONNECTION_LABEL
+fi
 
 # Telegram
 require_var TELEGRAM_CHAT_ID
@@ -195,6 +322,14 @@ if [[ "$MISSING" -eq 1 ]]; then
 fi
 
 log_ok "All required variables present"
+
+if [[ "$SETUP_MODE" == "auto" && "$EFFECTIVE_SETUP_MODE" == "advanced" ]]; then
+  log_info "Auto mode selected advanced flow because a single guided provider/label could not be resolved."
+elif [[ "$SETUP_MODE" == "auto" ]]; then
+  log_info "Auto mode selected guided flow."
+else
+  log_info "Using ${EFFECTIVE_SETUP_MODE} flow."
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   log_info "Dry-run mode: validation passed, skipping API calls"
@@ -298,12 +433,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2 — Create credential
+# Shared secrets payload
 # ---------------------------------------------------------------------------
 
-log_section "Step 2: Create credential (venue=${CREDENTIAL_VENUE})"
-
-case "$CREDENTIAL_VENUE" in
+case "$ADVANCED_CREDENTIAL_VENUE" in
   hyperliquid)
     SECRETS_JSON="$(jq -n \
       --arg apiKey        "$HL_API_KEY" \
@@ -325,71 +458,113 @@ case "$CREDENTIAL_VENUE" in
     ;;
   *)
     SECRETS_JSON="{}"
-    log_warn "No secret template for '${CREDENTIAL_VENUE}' — sending empty secrets object"
+    log_warn "No secret template for '${ADVANCED_CREDENTIAL_VENUE}' — sending empty secrets object"
     ;;
 esac
 
-# Check for an existing credential with the same venue + label before creating.
-api_call GET /credentials
-if [[ "$HTTP_STATUS" -eq 200 ]]; then
-  CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg venue "$CREDENTIAL_VENUE" --arg label "$CREDENTIAL_LABEL" \
-    '.credentials[] | select(.venue==$venue and .label==$label) | .id' | head -1)"
-fi
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+  # -------------------------------------------------------------------------
+  # Step 2 — Guided provider link setup
+  # -------------------------------------------------------------------------
 
-if [[ -n "${CREDENTIAL_ID:-}" ]]; then
-  log_info "Credential already exists (id=${CREDENTIAL_ID}) — skipping creation"
-else
-  api_call POST /credentials "$(jq -n \
-    --arg venue   "$CREDENTIAL_VENUE" \
-    --arg label   "$CREDENTIAL_LABEL" \
+  log_section "Step 2: Guided provider link (provider=${SETUP_PROVIDER_RESOLVED})"
+
+  api_call POST /setup/provider-link "$(jq -n \
+    --arg provider "$SETUP_PROVIDER_RESOLVED" \
+    --arg label "$SETUP_LABEL_RESOLVED" \
+    --arg capability trading \
     --argjson secrets "$SECRETS_JSON" \
-    '{ venue: $venue, label: $label, secrets: $secrets }')"
+    '{ provider: $provider, label: $label, secrets: $secrets, capability: $capability }')"
 
   if [[ "$HTTP_STATUS" -eq 201 ]]; then
-    CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
-    log_ok "Credential created: id=${CREDENTIAL_ID}  label=${CREDENTIAL_LABEL}"
+    CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
+    CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
+    VENUE_ACCOUNT_ID="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
+    TRADING_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.tradingBinding.id // empty')"
+    log_ok "Guided setup created credential=${CREDENTIAL_ID} connection=${CONNECTION_ID}"
+    if [[ -n "$VENUE_ACCOUNT_ID" ]]; then
+      log_ok "Venue account created: id=${VENUE_ACCOUNT_ID}"
+    fi
+    if [[ -n "$TRADING_BINDING_ID" ]]; then
+      log_ok "Trading binding created: id=${TRADING_BINDING_ID}"
+    fi
   else
-    log_error "Credential creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-    die "Credential step failed."
+    log_error "Guided setup failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+    die "Guided setup step failed."
   fi
-fi
-
-# ---------------------------------------------------------------------------
-# Step 3 — Create connection
-# ---------------------------------------------------------------------------
-
-log_section "Step 3: Create connection (provider=${CONNECTION_PROVIDER})"
-
-# Check for an existing active connection with the same provider + label.
-api_call GET /connections
-if [[ "$HTTP_STATUS" -eq 200 ]]; then
-  CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r --arg provider "$CONNECTION_PROVIDER" --arg label "$CONNECTION_LABEL" \
-    '.connections[] | select(.provider==$provider and .label==$label and .status=="active") | .id' | head -1)"
-fi
-
-if [[ -n "${CONNECTION_ID:-}" ]]; then
-  log_info "Connection already exists (id=${CONNECTION_ID}) — skipping creation"
 else
-  api_call POST /connections "$(jq -n \
-    --arg provider     "$CONNECTION_PROVIDER" \
-    --arg label        "$CONNECTION_LABEL" \
-    --arg credentialId "$CREDENTIAL_ID" \
-    '{ provider: $provider, label: $label, credentialId: $credentialId }')"
+  # -------------------------------------------------------------------------
+  # Step 2 — Create credential
+  # -------------------------------------------------------------------------
 
-  if [[ "$HTTP_STATUS" -eq 201 ]]; then
-    CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
-    log_ok "Connection created: id=${CONNECTION_ID}  label=${CONNECTION_LABEL}"
+  log_section "Step 2: Create credential (venue=${ADVANCED_CREDENTIAL_VENUE})"
+
+  # Check for an existing credential with the same venue + label before creating.
+  api_call GET /credentials
+  if [[ "$HTTP_STATUS" -eq 200 ]]; then
+    CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg venue "$ADVANCED_CREDENTIAL_VENUE" --arg label "$ADVANCED_CREDENTIAL_LABEL" \
+      '.credentials[] | select(.venue==$venue and .label==$label) | .id' | head -1)"
+  fi
+
+  if [[ -n "$CREDENTIAL_ID" ]]; then
+    log_info "Credential already exists (id=${CREDENTIAL_ID}) — skipping creation"
   else
-    log_error "Connection creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-    die "Connection step failed."
+    api_call POST /credentials "$(jq -n \
+      --arg venue "$ADVANCED_CREDENTIAL_VENUE" \
+      --arg label "$ADVANCED_CREDENTIAL_LABEL" \
+      --argjson secrets "$SECRETS_JSON" \
+      '{ venue: $venue, label: $label, secrets: $secrets }')"
+
+    if [[ "$HTTP_STATUS" -eq 201 ]]; then
+      CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
+      log_ok "Credential created: id=${CREDENTIAL_ID}  label=${ADVANCED_CREDENTIAL_LABEL}"
+    else
+      log_error "Credential creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+      die "Credential step failed."
+    fi
+  fi
+
+  # -------------------------------------------------------------------------
+  # Step 3 — Create connection
+  # -------------------------------------------------------------------------
+
+  log_section "Step 3: Create connection (provider=${ADVANCED_CONNECTION_PROVIDER})"
+
+  # Check for an existing active connection with the same provider + label.
+  api_call GET /connections
+  if [[ "$HTTP_STATUS" -eq 200 ]]; then
+    CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r --arg provider "$ADVANCED_CONNECTION_PROVIDER" --arg label "$ADVANCED_CONNECTION_LABEL" \
+      '.connections[] | select(.provider==$provider and .label==$label and .status=="active") | .id' | head -1)"
+  fi
+
+  if [[ -n "$CONNECTION_ID" ]]; then
+    log_info "Connection already exists (id=${CONNECTION_ID}) — skipping creation"
+  else
+    api_call POST /connections "$(jq -n \
+      --arg provider "$ADVANCED_CONNECTION_PROVIDER" \
+      --arg label "$ADVANCED_CONNECTION_LABEL" \
+      --arg credentialId "$CREDENTIAL_ID" \
+      '{ provider: $provider, label: $label, credentialId: $credentialId }')"
+
+    if [[ "$HTTP_STATUS" -eq 201 ]]; then
+      CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
+      log_ok "Connection created: id=${CONNECTION_ID}  label=${ADVANCED_CONNECTION_LABEL}"
+    else
+      log_error "Connection creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+      die "Connection step failed."
+    fi
   fi
 fi
 
 # ---------------------------------------------------------------------------
-# Step 4 — Set Telegram chat ID
+# Final account setup — Set Telegram chat ID
 # ---------------------------------------------------------------------------
 
-log_section "Step 4: Set Telegram chat ID"
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+  log_section "Step 3: Set Telegram chat ID"
+else
+  log_section "Step 4: Set Telegram chat ID"
+fi
 
 # Check current value before patching — skip the write if already set.
 api_call GET /auth/me
@@ -419,6 +594,19 @@ fi
 
 log_section "Setup complete"
 log_ok "Email:       ${SETUP_EMAIL}"
-log_ok "Credential:  ${CREDENTIAL_ID}  (${CREDENTIAL_VENUE} / ${CREDENTIAL_LABEL})"
-log_ok "Connection:  ${CONNECTION_ID}  (${CONNECTION_PROVIDER} / ${CONNECTION_LABEL})"
+log_ok "Mode:        ${EFFECTIVE_SETUP_MODE}"
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+  log_ok "Credential:  ${CREDENTIAL_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
+  log_ok "Connection:  ${CONNECTION_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
+  if [[ -n "$VENUE_ACCOUNT_ID" ]]; then
+    log_ok "Venue acct:  ${VENUE_ACCOUNT_ID}"
+  fi
+  if [[ -n "$TRADING_BINDING_ID" ]]; then
+    log_ok "Binding:     ${TRADING_BINDING_ID}"
+  fi
+else
+  log_ok "Credential:  ${CREDENTIAL_ID}  (${ADVANCED_CREDENTIAL_VENUE} / ${ADVANCED_CREDENTIAL_LABEL})"
+  log_ok "Connection:  ${CONNECTION_ID}  (${ADVANCED_CONNECTION_PROVIDER} / ${ADVANCED_CONNECTION_LABEL})"
+  log_warn "Advanced mode only creates or reuses credential + connection. Trading binding provisioning remains a separate guided step."
+fi
 log_ok "Telegram:    ${TELEGRAM_CHAT_ID}"
