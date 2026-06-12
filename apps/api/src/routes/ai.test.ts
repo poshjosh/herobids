@@ -20,6 +20,22 @@ vi.mock('@herobids/llm', () => ({
 
 const TEST_USER_ID = 'user-1';
 
+interface AvailableModelsTestResponse {
+  providers: Array<{
+    provider: string;
+    models: Array<{
+      id: string;
+      pricing?: {
+        label: string;
+        source: string;
+        inputUsdPer1M?: string;
+        outputUsdPer1M?: string;
+        requestUsd?: string;
+      };
+    }>;
+  }>;
+}
+
 function decorateWithAuth(app: ReturnType<typeof Fastify>) {
   app.decorateRequest('userId', '');
   app.addHook('onRequest', async (request) => {
@@ -197,24 +213,15 @@ describe('GET /ai/available-models', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        models: string[];
-        pricing?: {
-          label: string;
-          source: string;
-          inputUsdPer1M?: string;
-          outputUsdPer1M?: string;
-          requestUsd?: string;
-        };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openrouter');
-    expect(body.providers[0]!.models).toContain('google/gemini-2.5-flash');
-    expect(body.providers[0]!.pricing).toEqual({
-      label: '$0.12-$2.5/$0.5-$10',
+    expect(body.providers[0]!.models.some((model) => model.id === 'google/gemini-2.5-flash')).toBe(true);
+    expect(body.providers[0]!.models.find((model) => model.id === 'google/gemini-2.5-flash')!.pricing).toEqual({
+      label: '$0.18 / $0.72',
       source: 'openrouter',
+      inputUsdPer1M: '0.180000',
+      outputUsdPer1M: '0.720000',
+      requestUsd: '0.0025',
     });
 
     vi.unstubAllGlobals();
@@ -247,23 +254,94 @@ describe('GET /ai/available-models', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: {
-          label: string;
-          source: string;
-          requestUsd?: string;
-          inputUsdPer1M?: string;
-          outputUsdPer1M?: string;
-        };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openrouter');
-    expect(body.providers[0]!.pricing).toEqual({
-      label: 'Usage-based',
-      source: 'openrouter',
+    expect(body.providers[0]!.models[0]!.pricing).toBeUndefined();
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
+  });
+
+  it('drops negative OpenRouter sentinel prices instead of surfacing them in model labels', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'openai/gpt-5.4',
+            pricing: {
+              prompt: '-1',
+              completion: '-1',
+              request: '-1',
+            },
+          },
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              prompt: '0.00000100',
+              completion: '0.00000300',
+              request: '0.001',
+            },
+          },
+        ],
+      }),
     });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<AvailableModelsTestResponse>();
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4')!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models.find((model) => model.id === 'anthropic/claude-sonnet-4-5')!.pricing).toEqual({
+      label: '$1 / $3',
+      source: 'openrouter',
+      inputUsdPer1M: '1.000000',
+      outputUsdPer1M: '3.000000',
+      requestUsd: '0.001',
+    });
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
+  });
+
+  it('does not surface $0 / $0 when token prices are zero but request pricing is invalid', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'openai/gpt-5.4-mini',
+            pricing: {
+              prompt: '0',
+              completion: '0',
+              request: '-1',
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4-mini' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<AvailableModelsTestResponse>();
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4-mini')!.pricing).toBeUndefined();
 
     vi.unstubAllGlobals();
     delete process.env['LLM_API_KEY_OPENROUTER'];
@@ -280,17 +358,9 @@ describe('GET /ai/available-models', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: {
-          label: string;
-          source: string;
-        };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openai');
-    expect(body.providers[0]!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models.every((model) => model.pricing === undefined)).toBe(true);
 
     delete process.env['LLM_API_KEY_OPENAI'];
   });
@@ -396,20 +466,9 @@ describe('GET /ai/available-models', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: {
-          label: string;
-          source: string;
-          inputUsdPer1M?: string;
-          outputUsdPer1M?: string;
-          requestUsd?: string;
-        };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openrouter');
-    expect(body.providers[0]!.pricing).toEqual({
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-4o')!.pricing).toEqual({
       label: 'Free',
       source: 'openrouter',
       inputUsdPer1M: '0.000000',
@@ -421,7 +480,7 @@ describe('GET /ai/available-models', () => {
     delete process.env['LLM_API_KEY_OPENROUTER'];
   });
 
-  it('preserves provider-level requestUsd when numerically uniform but formatted differently', async () => {
+  it('preserves model-level requestUsd formatting when present', async () => {
     process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -465,26 +524,16 @@ describe('GET /ai/available-models', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: {
-          label: string;
-          source: string;
-          inputUsdPer1M?: string;
-          outputUsdPer1M?: string;
-          requestUsd?: string;
-        };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openrouter');
-    expect(body.providers[0]!.pricing).toEqual({
-      label: '$0.2/$0.8',
+    expect(body.providers[0]!.models.find((model) => model.id === 'anthropic/claude-sonnet-4-5')!.pricing).toEqual({
+      label: '$0.2 / $0.8',
       source: 'openrouter',
       inputUsdPer1M: '0.200000',
       outputUsdPer1M: '0.800000',
       requestUsd: '0',
     });
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-4o')!.pricing?.requestUsd).toBe('0.0');
 
     vi.unstubAllGlobals();
     delete process.env['LLM_API_KEY_OPENROUTER'];
@@ -892,11 +941,11 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ providers: Array<{ provider: string; models: string[] }> }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers).toHaveLength(1);
     expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.models).toContain('deepseek-r1:latest');
-    expect(body.providers[0]!.models).toContain('llama3:8b');
+    expect(body.providers[0]!.models.map((model) => model.id)).toContain('deepseek-r1:latest');
+    expect(body.providers[0]!.models.map((model) => model.id)).toContain('llama3:8b');
 
     vi.unstubAllGlobals();
   });
@@ -919,10 +968,10 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     // Must NOT return 503 — ollama is configured and must be surfaced even on discovery failure
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ providers: Array<{ provider: string; models: string[] }> }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('ollama');
     // Operator-configured model must always appear
-    expect(body.providers[0]!.models).toContain('qwen3-coder:30b');
+    expect(body.providers[0]!.models.map((model) => model.id)).toContain('qwen3-coder:30b');
 
     vi.unstubAllGlobals();
   });
@@ -947,14 +996,9 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: { label: string; source: string };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.pricing).toEqual({ label: 'Free', source: 'local' });
+    expect(body.providers[0]!.models[0]!.pricing).toEqual({ label: 'Free', source: 'local' });
 
     vi.unstubAllGlobals();
   });
@@ -979,14 +1023,9 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: { label: string; source: string };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models[0]!.pricing).toBeUndefined();
 
     vi.unstubAllGlobals();
   });
@@ -1012,14 +1051,9 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: { label: string; source: string };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.pricing).toEqual({ label: 'Free', source: 'local' });
+    expect(body.providers[0]!.models[0]!.pricing).toEqual({ label: 'Free', source: 'local' });
 
     vi.unstubAllGlobals();
   });
@@ -1045,14 +1079,9 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{
-      providers: Array<{
-        provider: string;
-        pricing?: { label: string; source: string };
-      }>;
-    }>();
+    const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models[0]!.pricing).toBeUndefined();
 
     vi.unstubAllGlobals();
   });

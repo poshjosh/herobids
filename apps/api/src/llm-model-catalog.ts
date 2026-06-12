@@ -3,7 +3,7 @@ import { discoverOllamaModels, normalizeOllamaCatalogUrl } from './ollama-model-
 
 // --- Provider catalog metadata ---
 
-export interface ProviderPricingMetadata {
+export interface ModelPricingMetadata {
   label: string;
   source: 'openrouter' | 'local';
   inputUsdPer1M?: string;
@@ -11,10 +11,14 @@ export interface ProviderPricingMetadata {
   requestUsd?: string;
 }
 
+export interface ProviderModelEntry {
+  id: string;
+  pricing?: ModelPricingMetadata;
+}
+
 export interface ProviderCatalogEntry {
   provider: string;
-  models: string[];
-  pricing?: ProviderPricingMetadata;
+  models: ProviderModelEntry[];
 }
 
 type LlmProviderCatalogMode = 'static' | 'dynamic';
@@ -105,7 +109,7 @@ function parseUsdDecimal(raw: string | undefined): number | null {
     return null;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function parseOpenRouterPricing(pricing: OpenRouterModelPricing): ParsedOpenRouterPricing | null {
@@ -132,6 +136,10 @@ function asUsdPer1M(raw: string | undefined): string | undefined {
   return (value * 1_000_000).toFixed(6);
 }
 
+function asValidatedUsd(raw: string | undefined): string | undefined {
+  return parseUsdDecimal(raw) === null ? undefined : raw;
+}
+
 function hasOpenRouterCatalogEntries(catalog: OpenRouterCatalog): boolean {
   return catalog.modelIds.length > 0 || Object.keys(catalog.pricingByModel).length > 0;
 }
@@ -145,28 +153,11 @@ function isFreeOpenRouterPricing(pricing: OpenRouterModelPricing): boolean {
     return false;
   }
 
-  return parsed.requestUsd === undefined || parsed.requestUsd === 0;
-}
-
-function buildOpenRouterPricingRangeLabel(values: number[]): string {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  if (min === max) {
-    return `$${formatDecimalLabel(min)}`;
+  if (pricing.request === undefined) {
+    return true;
   }
-  return `$${formatDecimalLabel(min)}-$${formatDecimalLabel(max)}`;
-}
 
-function resolveUniformRequestUsd(pricings: OpenRouterModelPricing[]): string | undefined {
-  const normalized = pricings.map((pricing) => ({
-    raw: pricing.request ?? null,
-    parsed: pricing.request == null ? null : parseUsdDecimal(pricing.request),
-  }));
-  const first = normalized[0];
-  if (normalized.every((entry) => entry.parsed === first?.parsed)) {
-    return first?.raw ?? undefined;
-  }
-  return undefined;
+  return parseUsdDecimal(pricing.request) === 0;
 }
 
 function resolveOpenRouterBaseUrl(context: OperatorLlmCatalogContext): string {
@@ -198,7 +189,7 @@ function buildOpenRouterPricingLabel(inputUsdPer1M: string | undefined, outputUs
   const output = outputUsdPer1M ? Number(outputUsdPer1M) : null;
 
   if (isFiniteNumber(input) && isFiniteNumber(output)) {
-    return `$${formatDecimalLabel(input)}/$${formatDecimalLabel(output)}`;
+    return `$${formatDecimalLabel(input)} / $${formatDecimalLabel(output)}`;
   }
   return 'Usage-based';
 }
@@ -301,66 +292,55 @@ async function fetchOpenRouterCatalog(
   return { modelIds: [], pricingByModel: {} };
 }
 
-function mapOpenRouterPricingMetadata(
-  models: string[],
-  pricingByModel: Record<string, OpenRouterModelPricing>,
-): ProviderPricingMetadata | undefined {
-  const pricedModels = models
-    .map((model) => ({ model, pricing: pricingByModel[model] }))
-    .filter((entry): entry is { model: string; pricing: OpenRouterModelPricing } => entry.pricing != null);
-
-  if (pricedModels.length === 0) {
+function mapOpenRouterModelPricingMetadata(pricing: OpenRouterModelPricing | undefined): ModelPricingMetadata | undefined {
+  if (!pricing) {
     return undefined;
   }
 
-  if (pricedModels.every(({ pricing }) => isFreeOpenRouterPricing(pricing))) {
-    const firstPricing = pricedModels[0]!.pricing;
+  if (isFreeOpenRouterPricing(pricing)) {
     return {
       label: 'Free',
       source: 'openrouter',
-      inputUsdPer1M: asUsdPer1M(firstPricing.prompt),
-      outputUsdPer1M: asUsdPer1M(firstPricing.completion),
-      requestUsd: resolveUniformRequestUsd(pricedModels.map(({ pricing }) => pricing)),
+      inputUsdPer1M: asUsdPer1M(pricing.prompt),
+      outputUsdPer1M: asUsdPer1M(pricing.completion),
+      requestUsd: asValidatedUsd(pricing.request),
     };
   }
 
-  const parsedPricings = pricedModels
-    .map(({ pricing }) => ({
-      raw: pricing,
-      parsed: parseOpenRouterPricing(pricing),
-    }))
-    .filter((entry): entry is { raw: OpenRouterModelPricing; parsed: ParsedOpenRouterPricing } => entry.parsed != null);
-
-  if (parsedPricings.length === 0) {
-    return {
-      label: 'Usage-based',
-      source: 'openrouter',
-    };
+  const parsed = parseOpenRouterPricing(pricing);
+  if (!parsed) {
+    return undefined;
   }
 
-  const inputValues = parsedPricings.map((entry) => entry.parsed.promptPerToken * 1_000_000);
-  const outputValues = parsedPricings.map((entry) => entry.parsed.completionPerToken * 1_000_000);
-  const uniformPricing = inputValues.every((value) => value === inputValues[0])
-    && outputValues.every((value) => value === outputValues[0]);
-
-  if (uniformPricing) {
-    const first = parsedPricings[0]!;
-    return {
-      label: buildOpenRouterPricingLabel(
-        asUsdPer1M(first.raw.prompt),
-        asUsdPer1M(first.raw.completion),
-      ),
-      source: 'openrouter',
-      inputUsdPer1M: asUsdPer1M(first.raw.prompt),
-      outputUsdPer1M: asUsdPer1M(first.raw.completion),
-      requestUsd: resolveUniformRequestUsd(parsedPricings.map((entry) => entry.raw)),
-    };
+  if (
+    parsed.promptPerToken === 0
+    && parsed.completionPerToken === 0
+    && pricing.request !== undefined
+    && parseUsdDecimal(pricing.request) === null
+  ) {
+    return undefined;
   }
 
   return {
-    label: `${buildOpenRouterPricingRangeLabel(inputValues)}/${buildOpenRouterPricingRangeLabel(outputValues)}`,
+    label: buildOpenRouterPricingLabel(
+      asUsdPer1M(pricing.prompt),
+      asUsdPer1M(pricing.completion),
+    ),
     source: 'openrouter',
+    inputUsdPer1M: asUsdPer1M(pricing.prompt),
+    outputUsdPer1M: asUsdPer1M(pricing.completion),
+    requestUsd: asValidatedUsd(pricing.request),
   };
+}
+
+function mapProviderModels(
+  modelIds: string[],
+  resolvePricing: (modelId: string) => ModelPricingMetadata | undefined = () => undefined,
+): ProviderModelEntry[] {
+  return modelIds.map((modelId) => {
+    const pricing = resolvePricing(modelId);
+    return pricing ? { id: modelId, pricing } : { id: modelId };
+  });
 }
 
 export function clearOpenRouterPricingCache(): void {
@@ -488,8 +468,7 @@ export async function getProviderCatalogEntry(
     const models = catalog.modelIds.length > 0 ? catalog.modelIds : getLlmProviderModels(provider);
     return {
       provider,
-      models,
-      pricing: mapOpenRouterPricingMetadata(models, catalog.pricingByModel),
+      models: mapProviderModels(models, (modelId) => mapOpenRouterModelPricingMetadata(catalog.pricingByModel[modelId])),
     };
   }
 
@@ -498,17 +477,13 @@ export async function getProviderCatalogEntry(
   if (provider === 'ollama' && isLocalProviderEndpoint(context.baseUrl, context.catalogLocality)) {
     return {
       provider,
-      models,
-      pricing: {
-        label: 'Free',
-        source: 'local',
-      },
+      models: mapProviderModels(models, () => ({ label: 'Free', source: 'local' })),
     };
   }
 
   return {
     provider,
-    models,
+    models: mapProviderModels(models),
   };
 }
 

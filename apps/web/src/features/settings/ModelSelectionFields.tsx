@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { AiAvailableModelProvider } from '../../lib/api-client.js';
+import type { AiAvailableModelEntry, AiAvailableModelProvider } from '../../lib/api-client.js';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 
 export interface ModelSelectionValue {
@@ -23,16 +23,25 @@ interface ModelSelectionFieldsProps {
   onChange: (value: ModelSelectionValue) => void;
 }
 
-function getProviderModels(providers: AiAvailableModelProvider[], provider: string): string[] {
+function getProviderModels(providers: AiAvailableModelProvider[], provider: string): AiAvailableModelEntry[] {
   return providers.find((entry) => entry.provider === provider)?.models ?? [];
 }
 
+function getProviderModelIds(models: AiAvailableModelEntry[]): string[] {
+  return models.map((model) => model.id);
+}
+
 function formatProviderOptionLabel(provider: AiAvailableModelProvider): string {
-  const pricingLabel = provider.pricing?.label;
+  return provider.provider;
+}
+
+function formatModelOptionLabel(model: AiAvailableModelEntry): string {
+  const pricingLabel = model.pricing?.label;
   if (!pricingLabel) {
-    return provider.provider;
+    return model.id;
   }
-  return `${provider.provider} · ${pricingLabel}`;
+
+  return `${model.id} (${pricingLabel})`;
 }
 
 function pickFallbackModel(models: string[], preferredIndex: number): string {
@@ -46,17 +55,17 @@ export function normalizeModelSelection(
   value: ModelSelectionValue,
   providers: AiAvailableModelProvider[],
 ): ModelSelectionValue {
-  const providerModels = getProviderModels(providers, value.provider);
-  if (!value.provider || providerModels.length === 0) {
+  const providerModelIds = getProviderModelIds(getProviderModels(providers, value.provider));
+  if (!value.provider || providerModelIds.length === 0) {
     return value;
   }
 
-  const nextLightModel = providerModels.includes(value.lightModel)
+  const nextLightModel = providerModelIds.includes(value.lightModel)
     ? value.lightModel
-    : pickFallbackModel(providerModels, 0);
-  const nextHeavyModel = providerModels.includes(value.heavyModel)
+    : pickFallbackModel(providerModelIds, 0);
+  const nextHeavyModel = providerModelIds.includes(value.heavyModel)
     ? value.heavyModel
-    : pickFallbackModel(providerModels, 1);
+    : pickFallbackModel(providerModelIds, 1);
 
   if (nextLightModel === value.lightModel && nextHeavyModel === value.heavyModel) {
     return value;
@@ -153,8 +162,8 @@ export function ModelSelectionFields({
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               {providerModels.map((model) => (
-                <option key={model} value={model}>
-                  {model}
+                <option key={model.id} value={model.id}>
+                  {formatModelOptionLabel(model)}
                 </option>
               ))}
             </select>
@@ -171,8 +180,8 @@ export function ModelSelectionFields({
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               {providerModels.map((model) => (
-                <option key={model} value={model}>
-                  {model}
+                <option key={model.id} value={model.id}>
+                  {formatModelOptionLabel(model)}
                 </option>
               ))}
             </select>

@@ -5,13 +5,30 @@ import { ModelSelectionFields, normalizeModelSelection, type ModelSelectionValue
 const providers = [
   {
     provider: 'openai',
-    models: ['gpt-4o-mini', 'gpt-4o'],
-    pricing: {
-      label: 'Usage-based',
-      source: 'openrouter' as const,
-    },
+    models: [
+      {
+        id: 'gpt-4o-mini',
+        pricing: {
+          label: '$0.15 / $0.6',
+          source: 'openrouter' as const,
+        },
+      },
+      {
+        id: 'gpt-4o',
+        pricing: {
+          label: '$2.5 / $10',
+          source: 'openrouter' as const,
+        },
+      },
+    ],
   },
-  { provider: 'anthropic', models: ['claude-haiku-3-5', 'claude-sonnet-4-5'] },
+  {
+    provider: 'anthropic',
+    models: [
+      { id: 'claude-haiku-3-5' },
+      { id: 'claude-sonnet-4-5' },
+    ],
+  },
 ];
 
 function renderField(value: ModelSelectionValue): string {
@@ -40,9 +57,9 @@ describe('ModelSelectionFields', () => {
     expect(html).toContain('Provider');
     expect(html).toContain('Economy model');
     expect(html).toContain('Premium model');
-    expect(html).toContain('openai · Usage-based');
-    expect(html).toContain('gpt-4o-mini');
-    expect(html).toContain('gpt-4o');
+    expect(html).toContain('openai');
+    expect(html).toContain('gpt-4o-mini ($0.15 / $0.6)');
+    expect(html).toContain('gpt-4o ($2.5 / $10)');
   });
 
   it('keeps an already valid selection unchanged', () => {
