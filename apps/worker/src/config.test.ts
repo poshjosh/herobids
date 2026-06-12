@@ -653,6 +653,18 @@ marking:
       expect(config.llm.thinking.deepBudgetTokens).toBe(10240);
     });
 
+    it('loads explicit llm catalog locality from YAML', () => {
+      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+llm:
+  catalog:
+    locality: local
+`);
+
+      const config = loadConfig(tmpDir);
+
+      expect(config.llm.catalog.locality).toBe('local');
+    });
+
     it('loads explicit llm retry config from YAML', () => {
       writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
 llm:

@@ -3,6 +3,20 @@ import { discoverOllamaModels, normalizeOllamaCatalogUrl } from './ollama-model-
 
 // --- Provider catalog metadata ---
 
+export interface ProviderPricingMetadata {
+  label: string;
+  source: 'openrouter' | 'local';
+  inputUsdPer1M?: string;
+  outputUsdPer1M?: string;
+  requestUsd?: string;
+}
+
+export interface ProviderCatalogEntry {
+  provider: string;
+  models: string[];
+  pricing?: ProviderPricingMetadata;
+}
+
 type LlmProviderCatalogMode = 'static' | 'dynamic';
 
 interface LlmProviderMetadata {
@@ -31,12 +45,361 @@ export interface OperatorLlmCatalogContext {
   baseUrl?: string;
   catalogTimeoutMs: number;
   catalogCacheTtlMs: number;
+  catalogLocality: 'auto' | 'local' | 'remote';
 }
+
+interface OpenRouterModelPricing {
+  prompt?: string;
+  completion?: string;
+  request?: string;
+}
+
+interface OpenRouterModelRecord {
+  id: string;
+  pricing?: OpenRouterModelPricing;
+}
+
+interface OpenRouterModelsResponse {
+  data?: OpenRouterModelRecord[];
+}
+
+interface OpenRouterPricingCacheEntry {
+  catalog: OpenRouterCatalog;
+  fetchedAt: number;
+}
+
+interface OpenRouterCatalog {
+  modelIds: string[];
+  pricingByModel: Record<string, OpenRouterModelPricing>;
+}
+
+interface ParsedOpenRouterPricing {
+  promptPerToken: number;
+  completionPerToken: number;
+  requestUsd?: number;
+}
+
+const openRouterPricingCache = new Map<string, OpenRouterPricingCacheEntry>();
+const openRouterPricingInFlight = new Map<string, Promise<OpenRouterCatalog>>();
 
 // --- Internal helpers ---
 
 function resolveApiKey(provider: string): string | undefined {
   return process.env[`LLM_API_KEY_${provider.toUpperCase()}`] ?? process.env['LLM_API_KEY'];
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatDecimalLabel(value: number): string {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+    useGrouping: false,
+  });
+}
+
+function parseUsdDecimal(raw: string | undefined): number | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseOpenRouterPricing(pricing: OpenRouterModelPricing): ParsedOpenRouterPricing | null {
+  const promptPerToken = parseUsdDecimal(pricing.prompt);
+  const completionPerToken = parseUsdDecimal(pricing.completion);
+
+  if (promptPerToken === null || completionPerToken === null) {
+    return null;
+  }
+
+  const requestUsd = parseUsdDecimal(pricing.request);
+  return {
+    promptPerToken,
+    completionPerToken,
+    ...(requestUsd === null ? {} : { requestUsd }),
+  };
+}
+
+function asUsdPer1M(raw: string | undefined): string | undefined {
+  const value = parseUsdDecimal(raw);
+  if (value === null) {
+    return undefined;
+  }
+  return (value * 1_000_000).toFixed(6);
+}
+
+function hasOpenRouterCatalogEntries(catalog: OpenRouterCatalog): boolean {
+  return catalog.modelIds.length > 0 || Object.keys(catalog.pricingByModel).length > 0;
+}
+
+function isFreeOpenRouterPricing(pricing: OpenRouterModelPricing): boolean {
+  const parsed = parseOpenRouterPricing(pricing);
+  if (!parsed) {
+    return false;
+  }
+  if (parsed.promptPerToken !== 0 || parsed.completionPerToken !== 0) {
+    return false;
+  }
+
+  return parsed.requestUsd === undefined || parsed.requestUsd === 0;
+}
+
+function buildOpenRouterPricingRangeLabel(values: number[]): string {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) {
+    return `$${formatDecimalLabel(min)}`;
+  }
+  return `$${formatDecimalLabel(min)}-$${formatDecimalLabel(max)}`;
+}
+
+function resolveUniformRequestUsd(pricings: OpenRouterModelPricing[]): string | undefined {
+  const normalized = pricings.map((pricing) => ({
+    raw: pricing.request ?? null,
+    parsed: pricing.request == null ? null : parseUsdDecimal(pricing.request),
+  }));
+  const first = normalized[0];
+  if (normalized.every((entry) => entry.parsed === first?.parsed)) {
+    return first?.raw ?? undefined;
+  }
+  return undefined;
+}
+
+function resolveOpenRouterBaseUrl(context: OperatorLlmCatalogContext): string {
+  if (context.provider === 'openrouter' && context.baseUrl) {
+    return context.baseUrl;
+  }
+  return 'https://openrouter.ai/api/v1';
+}
+
+function toOpenRouterModelsUrl(baseUrl: string): string | null {
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    const cleanPath = parsed.pathname.replace(/\/+$/, '');
+    const rootPath = cleanPath.endsWith('/v1') ? cleanPath.slice(0, -3) : cleanPath;
+    const modelsUrl = new URL(parsed.origin);
+    modelsUrl.pathname = `${rootPath}/v1/models`;
+    return modelsUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function buildOpenRouterPricingLabel(inputUsdPer1M: string | undefined, outputUsdPer1M: string | undefined): string {
+  const input = inputUsdPer1M ? Number(inputUsdPer1M) : null;
+  const output = outputUsdPer1M ? Number(outputUsdPer1M) : null;
+
+  if (isFiniteNumber(input) && isFiniteNumber(output)) {
+    return `$${formatDecimalLabel(input)}/$${formatDecimalLabel(output)}`;
+  }
+  return 'Usage-based';
+}
+
+async function fetchOpenRouterCatalog(
+  context: OperatorLlmCatalogContext,
+): Promise<OpenRouterCatalog> {
+  const apiKey = resolveApiKey('openrouter');
+  if (!apiKey) {
+    return { modelIds: [], pricingByModel: {} };
+  }
+
+  const modelsUrl = toOpenRouterModelsUrl(resolveOpenRouterBaseUrl(context));
+  if (!modelsUrl) {
+    return { modelIds: [], pricingByModel: {} };
+  }
+
+  const now = Date.now();
+  const cached = openRouterPricingCache.get(modelsUrl);
+  if (cached && now - cached.fetchedAt < context.catalogCacheTtlMs) {
+    return cached.catalog;
+  }
+
+  let pending = openRouterPricingInFlight.get(modelsUrl);
+  if (!pending) {
+    pending = (async (): Promise<OpenRouterCatalog> => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), context.catalogTimeoutMs);
+
+      try {
+        const response = await fetch(modelsUrl, {
+          signal: controller.signal,
+          redirect: 'error',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.warn(`[llm-catalog] OpenRouter model catalog returned HTTP ${response.status}.`);
+          return { modelIds: [], pricingByModel: {} };
+        }
+
+        const payload = await response.json() as OpenRouterModelsResponse;
+        const modelRecords = Array.isArray(payload.data) ? payload.data : [];
+        const modelIds: string[] = [];
+        const pricingByModel: Record<string, OpenRouterModelPricing> = {};
+
+        for (const modelRecord of modelRecords) {
+          if (typeof modelRecord.id !== 'string' || modelRecord.id.length === 0) {
+            continue;
+          }
+          modelIds.push(modelRecord.id);
+          if (!modelRecord.pricing || typeof modelRecord.pricing !== 'object') {
+            continue;
+          }
+
+          pricingByModel[modelRecord.id] = {
+            prompt: typeof modelRecord.pricing.prompt === 'string' ? modelRecord.pricing.prompt : undefined,
+            completion: typeof modelRecord.pricing.completion === 'string' ? modelRecord.pricing.completion : undefined,
+            request: typeof modelRecord.pricing.request === 'string' ? modelRecord.pricing.request : undefined,
+          };
+        }
+
+        return {
+          modelIds: [...new Set(modelIds)].sort(),
+          pricingByModel,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[llm-catalog] OpenRouter pricing fetch failed: ${message}`);
+        return { modelIds: [], pricingByModel: {} };
+      } finally {
+        clearTimeout(timeout);
+      }
+    })().then((result) => {
+      openRouterPricingInFlight.delete(modelsUrl);
+      if (hasOpenRouterCatalogEntries(result)) {
+        openRouterPricingCache.set(modelsUrl, {
+          catalog: result,
+          fetchedAt: Date.now(),
+        });
+      }
+      return result;
+    });
+
+    openRouterPricingInFlight.set(modelsUrl, pending);
+  }
+
+  const fetched = await pending;
+  if (hasOpenRouterCatalogEntries(fetched)) {
+    return fetched;
+  }
+
+  if (cached) {
+    console.warn('[llm-catalog] OpenRouter pricing fetch failed. Serving stale pricing metadata.');
+    return cached.catalog;
+  }
+
+  return { modelIds: [], pricingByModel: {} };
+}
+
+function mapOpenRouterPricingMetadata(
+  models: string[],
+  pricingByModel: Record<string, OpenRouterModelPricing>,
+): ProviderPricingMetadata | undefined {
+  const pricedModels = models
+    .map((model) => ({ model, pricing: pricingByModel[model] }))
+    .filter((entry): entry is { model: string; pricing: OpenRouterModelPricing } => entry.pricing != null);
+
+  if (pricedModels.length === 0) {
+    return undefined;
+  }
+
+  if (pricedModels.every(({ pricing }) => isFreeOpenRouterPricing(pricing))) {
+    const firstPricing = pricedModels[0]!.pricing;
+    return {
+      label: 'Free',
+      source: 'openrouter',
+      inputUsdPer1M: asUsdPer1M(firstPricing.prompt),
+      outputUsdPer1M: asUsdPer1M(firstPricing.completion),
+      requestUsd: resolveUniformRequestUsd(pricedModels.map(({ pricing }) => pricing)),
+    };
+  }
+
+  const parsedPricings = pricedModels
+    .map(({ pricing }) => ({
+      raw: pricing,
+      parsed: parseOpenRouterPricing(pricing),
+    }))
+    .filter((entry): entry is { raw: OpenRouterModelPricing; parsed: ParsedOpenRouterPricing } => entry.parsed != null);
+
+  if (parsedPricings.length === 0) {
+    return {
+      label: 'Usage-based',
+      source: 'openrouter',
+    };
+  }
+
+  const inputValues = parsedPricings.map((entry) => entry.parsed.promptPerToken * 1_000_000);
+  const outputValues = parsedPricings.map((entry) => entry.parsed.completionPerToken * 1_000_000);
+  const uniformPricing = inputValues.every((value) => value === inputValues[0])
+    && outputValues.every((value) => value === outputValues[0]);
+
+  if (uniformPricing) {
+    const first = parsedPricings[0]!;
+    return {
+      label: buildOpenRouterPricingLabel(
+        asUsdPer1M(first.raw.prompt),
+        asUsdPer1M(first.raw.completion),
+      ),
+      source: 'openrouter',
+      inputUsdPer1M: asUsdPer1M(first.raw.prompt),
+      outputUsdPer1M: asUsdPer1M(first.raw.completion),
+      requestUsd: resolveUniformRequestUsd(parsedPricings.map((entry) => entry.raw)),
+    };
+  }
+
+  return {
+    label: `${buildOpenRouterPricingRangeLabel(inputValues)}/${buildOpenRouterPricingRangeLabel(outputValues)}`,
+    source: 'openrouter',
+  };
+}
+
+export function clearOpenRouterPricingCache(): void {
+  openRouterPricingCache.clear();
+  openRouterPricingInFlight.clear();
+}
+
+function isKnownLocalHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '127.0.0.1'
+    || normalized === '::1'
+    || normalized === '0.0.0.0'
+    || normalized === 'host.docker.internal';
+}
+
+function isLocalProviderEndpoint(baseUrl: string | undefined, locality: OperatorLlmCatalogContext['catalogLocality']): boolean {
+  if (locality === 'local') {
+    return true;
+  }
+
+  if (locality === 'remote') {
+    return false;
+  }
+
+  if (!baseUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+
+    return isKnownLocalHost(parsed.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function isProviderExplicitlyConfigured(provider: string): boolean {
@@ -62,7 +425,7 @@ export function makeCatalogContext(llmConfig: {
   provider: string;
   model: string;
   baseUrl?: string;
-  catalog: { timeoutMs: number; cacheTtlMs: number };
+  catalog: { timeoutMs: number; cacheTtlMs: number; locality: 'auto' | 'local' | 'remote' };
 }): OperatorLlmCatalogContext {
   return {
     provider: llmConfig.provider,
@@ -70,6 +433,7 @@ export function makeCatalogContext(llmConfig: {
     baseUrl: llmConfig.baseUrl,
     catalogTimeoutMs: llmConfig.catalog.timeoutMs,
     catalogCacheTtlMs: llmConfig.catalog.cacheTtlMs,
+    catalogLocality: llmConfig.catalog.locality,
   };
 }
 
@@ -89,6 +453,14 @@ export function getAvailableProviders(context: OperatorLlmCatalogContext): strin
 }
 
 export async function getProviderModels(provider: string, context: OperatorLlmCatalogContext): Promise<string[]> {
+  if (provider === 'openrouter') {
+    const catalog = await fetchOpenRouterCatalog(context);
+    if (catalog.modelIds.length > 0) {
+      return catalog.modelIds;
+    }
+    return getLlmProviderModels(provider);
+  }
+
   const meta = PROVIDER_METADATA[provider];
   if (meta?.catalogMode === 'dynamic') {
     const result = await discoverOllamaModels({
@@ -105,6 +477,39 @@ export async function getProviderModels(provider: string, context: OperatorLlmCa
     return [context.model];
   }
   return getLlmProviderModels(provider);
+}
+
+export async function getProviderCatalogEntry(
+  provider: string,
+  context: OperatorLlmCatalogContext,
+): Promise<ProviderCatalogEntry> {
+  if (provider === 'openrouter') {
+    const catalog = await fetchOpenRouterCatalog(context);
+    const models = catalog.modelIds.length > 0 ? catalog.modelIds : getLlmProviderModels(provider);
+    return {
+      provider,
+      models,
+      pricing: mapOpenRouterPricingMetadata(models, catalog.pricingByModel),
+    };
+  }
+
+  const models = await getProviderModels(provider, context);
+
+  if (provider === 'ollama' && isLocalProviderEndpoint(context.baseUrl, context.catalogLocality)) {
+    return {
+      provider,
+      models,
+      pricing: {
+        label: 'Free',
+        source: 'local',
+      },
+    };
+  }
+
+  return {
+    provider,
+    models,
+  };
 }
 
 export async function validateAiModelSelection(

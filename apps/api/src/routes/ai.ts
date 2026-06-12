@@ -8,7 +8,7 @@ import { callLlmProvider } from '@herobids/llm';
 import type { AppConfig } from '@herobids/domain';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
-import { getAvailableProviders, getProviderModels, makeCatalogContext, revalidatePersistedSelection, validateAiModelSelection } from '../llm-model-catalog.js';
+import { getAvailableProviders, getProviderCatalogEntry, makeCatalogContext, revalidatePersistedSelection, validateAiModelSelection } from '../llm-model-catalog.js';
 
 type LlmConfig = AppConfig['llm'];
 
@@ -102,10 +102,7 @@ export async function aiRoutes(
     }
 
     const providers = await Promise.all(
-      configured.map(async (p) => ({
-        provider: p,
-        models: await getProviderModels(p, context),
-      })),
+      configured.map((provider) => getProviderCatalogEntry(provider, context)),
     );
 
     return reply.send({ providers });

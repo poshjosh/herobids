@@ -131,6 +131,8 @@ export const LlmCatalogConfigSchema = z.object({
   timeoutMs: z.number().min(100).default(3_000),
   /** In-memory cache TTL for discovered catalogs (ms). Stale entries are retained as fallback; not deleted on expiry. */
   cacheTtlMs: z.number().min(1000).default(86_400_000),
+  /** Pricing-locality policy for self-hosted providers: auto = strict local-host heuristic, local = always local, remote = never local. */
+  locality: z.enum(['auto', 'local', 'remote']).default('auto'),
 });
 
 export const LlmRuntimeConfigSchema = z.object({

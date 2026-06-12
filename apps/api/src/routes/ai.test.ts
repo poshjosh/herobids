@@ -4,6 +4,7 @@ import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import { aiRoutes } from './ai.js';
 import { clearOllamaModelCache } from '../ollama-model-discovery.js';
+import { clearOpenRouterPricingCache } from '../llm-model-catalog.js';
 
 // Mock @herobids/llm so the module can be imported in the test environment
 vi.mock('@herobids/llm', () => ({
@@ -61,16 +62,18 @@ const stubLlmConfig = {
   timeoutMs: 60_000,
   tickIntervalMs: 900_000,
   heartbeatIntervalMs: 5_000,
-  catalog: { timeoutMs: 3_000, cacheTtlMs: 86_400_000 },
+  catalog: { timeoutMs: 3_000, cacheTtlMs: 86_400_000, locality: 'auto' as const },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearOpenRouterPricingCache();
   // Ensure no real API keys are set
   delete process.env['LLM_API_KEY'];
   delete process.env['LLM_API_KEY_TEST-PROVIDER'];
   delete process.env['LLM_API_KEY_OPENAI'];
   delete process.env['LLM_API_KEY_ANTHROPIC'];
+  delete process.env['LLM_API_KEY_OPENROUTER'];
 });
 
 // ─── GET /ai/available-models ─────────────────────────────────────────────
@@ -140,6 +143,351 @@ describe('GET /ai/available-models', () => {
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('no_ai_provider');
+  });
+
+  it('returns OpenRouter pricing metadata sourced from the fetched model payload', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              prompt: '0.00000015',
+              completion: '0.00000060',
+              request: '0.001',
+            },
+          },
+          {
+            id: 'openai/gpt-4o',
+            pricing: {
+              prompt: '0.00000250',
+              completion: '0.00001000',
+              request: '0.003',
+            },
+          },
+          {
+            id: 'meta-llama/llama-3.3-70b-instruct',
+            pricing: {
+              prompt: '0.00000012',
+              completion: '0.00000050',
+              request: '0.002',
+            },
+          },
+          {
+            id: 'google/gemini-2.5-flash',
+            pricing: {
+              prompt: '0.00000018',
+              completion: '0.00000072',
+              request: '0.0025',
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        models: string[];
+        pricing?: {
+          label: string;
+          source: string;
+          inputUsdPer1M?: string;
+          outputUsdPer1M?: string;
+          requestUsd?: string;
+        };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('openrouter');
+    expect(body.providers[0]!.models).toContain('google/gemini-2.5-flash');
+    expect(body.providers[0]!.pricing).toEqual({
+      label: '$0.12-$2.5/$0.5-$10',
+      source: 'openrouter',
+    });
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
+  });
+
+  it('does not label OpenRouter as Free when only partial pricing fields are zero', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              request: '0',
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: {
+          label: string;
+          source: string;
+          requestUsd?: string;
+          inputUsdPer1M?: string;
+          outputUsdPer1M?: string;
+        };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('openrouter');
+    expect(body.providers[0]!.pricing).toEqual({
+      label: 'Usage-based',
+      source: 'openrouter',
+    });
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
+  });
+
+  it('does not invent pricing labels for non-OpenRouter remote providers', async () => {
+    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai', model: 'gpt-4o' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: {
+          label: string;
+          source: string;
+        };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('openai');
+    expect(body.providers[0]!.pricing).toBeUndefined();
+
+    delete process.env['LLM_API_KEY_OPENAI'];
+  });
+
+  it('reuses cached OpenRouter pricing metadata across requests within TTL', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              prompt: '0.00000020',
+              completion: '0.00000080',
+              request: '0',
+            },
+          },
+          {
+            id: 'openai/gpt-4o',
+            pricing: {
+              prompt: '0.00000020',
+              completion: '0.00000080',
+              request: '0',
+            },
+          },
+          {
+            id: 'meta-llama/llama-3.3-70b-instruct',
+            pricing: {
+              prompt: '0.00000020',
+              completion: '0.00000080',
+              request: '0',
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'openrouter',
+      model: 'anthropic/claude-sonnet-4-5',
+      baseUrl: 'https://openrouter-cache-test.example/v1',
+    }, redis);
+
+    const first = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    const second = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
+  });
+
+  it('preserves explicit zero-valued numeric fields when all OpenRouter priced models are free', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              prompt: '0',
+              completion: '0',
+              request: '0',
+            },
+          },
+          {
+            id: 'openai/gpt-4o',
+            pricing: {
+              prompt: '0',
+              completion: '0',
+              request: '0',
+            },
+          },
+          {
+            id: 'meta-llama/llama-3.3-70b-instruct',
+            pricing: {
+              prompt: '0',
+              completion: '0',
+              request: '0',
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: {
+          label: string;
+          source: string;
+          inputUsdPer1M?: string;
+          outputUsdPer1M?: string;
+          requestUsd?: string;
+        };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('openrouter');
+    expect(body.providers[0]!.pricing).toEqual({
+      label: 'Free',
+      source: 'openrouter',
+      inputUsdPer1M: '0.000000',
+      outputUsdPer1M: '0.000000',
+      requestUsd: '0',
+    });
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
+  });
+
+  it('preserves provider-level requestUsd when numerically uniform but formatted differently', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              prompt: '0.00000020',
+              completion: '0.00000080',
+              request: '0',
+            },
+          },
+          {
+            id: 'openai/gpt-4o',
+            pricing: {
+              prompt: '0.00000020',
+              completion: '0.00000080',
+              request: '0.0',
+            },
+          },
+          {
+            id: 'meta-llama/llama-3.3-70b-instruct',
+            pricing: {
+              prompt: '0.00000020',
+              completion: '0.00000080',
+              request: '0.000',
+            },
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: {
+          label: string;
+          source: string;
+          inputUsdPer1M?: string;
+          outputUsdPer1M?: string;
+          requestUsd?: string;
+        };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('openrouter');
+    expect(body.providers[0]!.pricing).toEqual({
+      label: '$0.2/$0.8',
+      source: 'openrouter',
+      inputUsdPer1M: '0.200000',
+      outputUsdPer1M: '0.800000',
+      requestUsd: '0',
+    });
+
+    vi.unstubAllGlobals();
+    delete process.env['LLM_API_KEY_OPENROUTER'];
   });
 });
 
@@ -575,6 +923,136 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     expect(body.providers[0]!.provider).toBe('ollama');
     // Operator-configured model must always appear
     expect(body.providers[0]!.models).toContain('qwen3-coder:30b');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('marks ollama as Free only when the configured endpoint is local', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'qwen3-coder:30b',
+      baseUrl: 'http://localhost:11434/v1',
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: { label: string; source: string };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('ollama');
+    expect(body.providers[0]!.pricing).toEqual({ label: 'Free', source: 'local' });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('does not mark remote ollama endpoints as Free', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'qwen3-coder:30b',
+      baseUrl: 'https://remote-ollama.example.com/v1',
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: { label: string; source: string };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('ollama');
+    expect(body.providers[0]!.pricing).toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('marks ollama as Free when locality override is local even for a non-local host', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'qwen3-coder:30b',
+      baseUrl: 'https://proxy.example.com/v1',
+      catalog: { ...stubLlmConfig.catalog, locality: 'local' },
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: { label: string; source: string };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('ollama');
+    expect(body.providers[0]!.pricing).toEqual({ label: 'Free', source: 'local' });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('does not mark localhost ollama as Free when locality override is remote', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = buildEmptyDb();
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await aiRoutes(app, db, {
+      ...stubLlmConfig,
+      provider: 'ollama',
+      model: 'qwen3-coder:30b',
+      baseUrl: 'http://localhost:11434/v1',
+      catalog: { ...stubLlmConfig.catalog, locality: 'remote' },
+    }, redis);
+
+    const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      providers: Array<{
+        provider: string;
+        pricing?: { label: string; source: string };
+      }>;
+    }>();
+    expect(body.providers[0]!.provider).toBe('ollama');
+    expect(body.providers[0]!.pricing).toBeUndefined();
 
     vi.unstubAllGlobals();
   });

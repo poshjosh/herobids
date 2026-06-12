@@ -128,6 +128,13 @@ export const auth = {
 export interface AiAvailableModelProvider {
   provider: string;
   models: string[];
+  pricing?: {
+    label: string;
+    source: 'openrouter' | 'local';
+    inputUsdPer1M?: string;
+    outputUsdPer1M?: string;
+    requestUsd?: string;
+  };
 }
 
 export interface AiAvailableModelsResponse {

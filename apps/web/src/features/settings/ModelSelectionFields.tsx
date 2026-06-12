@@ -27,6 +27,14 @@ function getProviderModels(providers: AiAvailableModelProvider[], provider: stri
   return providers.find((entry) => entry.provider === provider)?.models ?? [];
 }
 
+function formatProviderOptionLabel(provider: AiAvailableModelProvider): string {
+  const pricingLabel = provider.pricing?.label;
+  if (!pricingLabel) {
+    return provider.provider;
+  }
+  return `${provider.provider} · ${pricingLabel}`;
+}
+
 function pickFallbackModel(models: string[], preferredIndex: number): string {
   if (models.length === 0) {
     return '';
@@ -117,7 +125,7 @@ export function ModelSelectionFields({
           <option value="">{providerPlaceholder}</option>
           {providerOptions.map((provider) => (
             <option key={provider.provider} value={provider.provider}>
-              {provider.provider}
+              {formatProviderOptionLabel(provider)}
             </option>
           ))}
         </select>
