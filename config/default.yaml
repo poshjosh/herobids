@@ -239,7 +239,7 @@ agentRuntime:
     maxHistoryMessages: 20
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
-    maxVisibleToolSchemas: 16
+    maxVisibleToolSchemas: 64
     maxContextBlockChars: 4000
   sandboxDefaults:
     cpuShares: 256             # Docker CpuShares (relative weight vs other containers)

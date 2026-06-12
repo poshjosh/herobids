@@ -1512,7 +1512,7 @@ async function runTick(): Promise<void> {
       },
       initialMessages: messages,
       tools: judgeToolDefinitions,
-      maxTurns: 3,
+      maxTurns: 5,
       retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
       onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
