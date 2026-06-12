@@ -1,16 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { describe, expect, it } from 'vitest';
-import { AgentActivityTimeline } from './AgentActivityTimeline.js';
+import { AgentActivityDetailFields, AgentActivityTimeline, formatDetailValue } from './AgentActivityTimeline.js';
 import type { AgentActivityEntry } from '../../lib/api-client.js';
-
-// ---------------------------------------------------------------------------
-// Helper: mirrors the inline value-formatting expression used in TimelineRow's
-// expanded detail panel (the fix for the "[object Object]" bug).
-// ---------------------------------------------------------------------------
-function formatDetailValue(value: unknown): string {
-  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
-}
 
 function renderTimeline(entries: AgentActivityEntry[], isLoading = false, isEmpty = false): string {
   return renderToStaticMarkup(
@@ -136,17 +128,17 @@ describe('formatDetailValue', () => {
     expect(formatDetailValue(false)).toBe('false');
   });
 
-  it('converts null to empty string', () => {
-    expect(formatDetailValue(null)).toBe('');
+  it('preserves null as a string', () => {
+    expect(formatDetailValue(null)).toBe('null');
   });
 
-  it('converts undefined to empty string', () => {
-    expect(formatDetailValue(undefined)).toBe('');
+  it('preserves undefined as a string', () => {
+    expect(formatDetailValue(undefined)).toBe('undefined');
   });
 });
 
-describe('AgentActivityTimeline — object-valued detail fields', () => {
-  it('renders without error when detail contains object values (the payload field from mapProtocolMessage)', () => {
+describe('AgentActivityDetailFields', () => {
+  it('renders the expanded detail view with object payloads serialized as JSON', () => {
     const entryWithObjectDetail: AgentActivityEntry = {
       ...baseEntry,
       id: 'e-obj',
@@ -156,23 +148,41 @@ describe('AgentActivityTimeline — object-valued detail fields', () => {
         payload: { toolName: 'list_positions', status: 'ok', count: 3 },
       },
     };
-    // Should not throw and should render title/summary in collapsed state
-    const html = renderTimeline([entryWithObjectDetail]);
-    expect(html).toContain('Decision rejected');
-    expect(html).toContain('Proposed entry was blocked by risk validation.');
+
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={{}}>
+        <div>
+          <AgentActivityDetailFields entry={entryWithObjectDetail} />
+        </div>
+      </IntlProvider>,
+    );
+
+    expect(html).toContain('payload');
+    expect(html).toContain('{&quot;toolName&quot;:&quot;list_positions&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;count&quot;:3}');
+    expect(html).not.toContain('[object Object]');
   });
 
-  it('renders without error when detail has mixed primitive and object values', () => {
-    const entryMixed: AgentActivityEntry = {
+  it('renders nullish detail values explicitly', () => {
+    const entryWithNullishDetail: AgentActivityEntry = {
       ...baseEntry,
-      id: 'e-mixed',
+      id: 'e-nullish',
       detail: {
-        errorCode: 'risk.exceeded',
-        errorMessage: 'Position limit hit',
-        context: { venue: 'hyperliquid', symbol: 'BTC-PERP' },
+        messageType: 'agent.runtime.tool_result',
+        actorType: 'agent',
+        payload: null,
+        extra: undefined,
       },
     };
-    const html = renderTimeline([entryMixed]);
-    expect(html).toContain('Decision rejected');
+
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={{}}>
+        <div>
+          <AgentActivityDetailFields entry={entryWithNullishDetail} />
+        </div>
+      </IntlProvider>,
+    );
+
+    expect(html).toContain('null');
+    expect(html).toContain('undefined');
   });
 });

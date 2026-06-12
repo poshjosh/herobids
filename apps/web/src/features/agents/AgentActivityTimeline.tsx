@@ -24,6 +24,32 @@ const SEVERITY_COLORS: Record<AgentActivitySeverity, string> = {
   critical: 'var(--color-danger)',
 };
 
+export function formatDetailValue(value: unknown): string {
+  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+}
+
+export function AgentActivityDetailFields({ entry }: { entry: AgentActivityEntry }) {
+  return (
+    <>
+      <DetailRow label="Event Type" value={entry.eventType} />
+      <DetailRow label="Category" value={entry.category} />
+      {entry.sessionId && <DetailRow label="Session" value={entry.sessionId.slice(0, 8)} />}
+      {entry.correlationId && <DetailRow label="Correlation ID" value={entry.correlationId.slice(0, 12)} />}
+      {entry.traceId && <DetailRow label="Trace ID" value={entry.traceId.slice(0, 12)} />}
+      {entry.direction && <DetailRow label="Direction" value={entry.direction} />}
+      {entry.processingStatus && <DetailRow label="Status" value={entry.processingStatus} />}
+      {/* Render detail fields */}
+      {Object.entries(entry.detail).map(([key, value]) => (
+        <DetailRow
+          key={key}
+          label={key}
+          value={formatDetailValue(value)}
+        />
+      ))}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Timeline row component
 // ---------------------------------------------------------------------------
@@ -119,21 +145,7 @@ function TimelineRow({ entry, isLast }: TimelineRowProps) {
             lineHeight: 1.5,
           }}
         >
-          <DetailRow label="Event Type" value={entry.eventType} />
-          <DetailRow label="Category" value={entry.category} />
-          {entry.sessionId && <DetailRow label="Session" value={entry.sessionId.slice(0, 8)} />}
-          {entry.correlationId && <DetailRow label="Correlation ID" value={entry.correlationId.slice(0, 12)} />}
-          {entry.traceId && <DetailRow label="Trace ID" value={entry.traceId.slice(0, 12)} />}
-          {entry.direction && <DetailRow label="Direction" value={entry.direction} />}
-          {entry.processingStatus && <DetailRow label="Status" value={entry.processingStatus} />}
-          {/* Render detail fields */}
-          {Object.entries(entry.detail).map(([key, value]) => (
-            <DetailRow
-              key={key}
-              label={key}
-              value={typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '')}
-            />
-          ))}
+          <AgentActivityDetailFields entry={entry} />
         </div>
       )}
     </div>
