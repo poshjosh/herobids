@@ -75,6 +75,18 @@ See `docs/best-practices/configuration.md` for full details.
 - Business logic in `packages/engine/` — pure where possible, no I/O imports.
 - Constructor injection for all dependencies (no service locators, no global singletons).
 
+### Actor Trading Model
+
+- The system defines four actor types: `agent`, `bot`, `user`, `system`.
+- Agents can trade directly via `submit_decision` — they do NOT need to create a bot first.
+- Bots are optional tools for agents (and users), useful for automated trading, strategy testing, parallel execution, etc.
+- The `DecisionIntakeResolver` must resolve execution context for any actor that submits a decision — not only bot actors.
+- Execution context resolution varies by actor type:
+  - **Bot** → `bots.venue_account_id` → `venue_accounts` (direct, via running TradingActor in actorRegistry)
+  - **Agent** → `capability_grants.binding_id` → `trading_bindings.source_venue_account_id` → `venue_accounts`
+  - **User** (future) → user-owned `trading_bindings` → `venue_accounts`
+- Today only bot-keyed resolution is implemented. Agent-native resolution is the gap that must be filled.
+
 ## Project Structure
 
 ```
