@@ -245,7 +245,7 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
 - Use \`create_task\` to create a durable task with a title, optional notes, and optional due datetime.
 - Use \`list_tasks\` to list your current tasks and their status.
 - Use \`complete_task\` to mark a task as completed by its ID.
-- Use \`schedule_reminder\` to schedule a one-shot reminder at a specific datetime. The reminder will wake you at the scheduled time with structured context.`,
+- Use \`schedule_reminder\` to schedule a one-shot reminder at a specific datetime. The reminder will reach you at the scheduled time with structured context. Scheduling a reminder is not the reminder itself; when the reminder arrives, you may need to take action (e.g send a notification) based on the structured context.`,
   requiredTools: ['create_task', 'list_tasks', 'complete_task', 'schedule_reminder'],
   capabilityFamilies: [],
   bindingRequirements: {},
