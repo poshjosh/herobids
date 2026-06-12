@@ -27,7 +27,7 @@ interface LlmProviderMetadata {
 const PROVIDER_METADATA: Record<string, LlmProviderMetadata> = {
   openai: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.openai },
   anthropic: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.anthropic },
-  openrouter: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.openrouter },
+  openrouter: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.openrouter },
   together: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.together },
   fireworks: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.fireworks },
   mistral: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.mistral },

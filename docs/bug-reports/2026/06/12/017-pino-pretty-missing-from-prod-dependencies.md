@@ -1,0 +1,11 @@
+- **Status:** FIXED
+- **Severity:** High
+- **Date:** 2026-06-12
+- **Summary:** API and worker Docker containers crash on startup because `pino-pretty` is not available at runtime.
+- **Root Cause:** `pino-pretty` was declared only in `devDependencies` in both `apps/api/package.json` and `apps/worker/package.json`. The Docker build uses `pnpm deploy --prod` which excludes dev dependencies. At the same time, the `.env` file sets `NODE_ENV=development` and `LOG_FORMAT=pretty`, which is picked up by the `env_file` directive in `docker-compose.yaml`. This causes both services to configure a `pino-pretty` transport at startup, which then fails with `unable to determine transport target for "pino-pretty"`.
+- **Fix:** Moved `pino-pretty: "^13.0.0"` from `devDependencies` to `dependencies` in both `apps/api/package.json` and `apps/worker/package.json`, then ran `pnpm install` to update the lockfile.
+- **Files Changed:**
+  - `apps/api/package.json`
+  - `apps/worker/package.json`
+  - `pnpm-lock.yaml`
+- **Verification:** Docker images for both `herobids-api` and `herobids-worker` rebuilt successfully. E2E test run re-attempted.
