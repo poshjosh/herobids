@@ -2,12 +2,62 @@ import type { MarkSource, Mark, MarkError } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err, price } from '@herobids/domain';
 
+/**
+ * Hardcoded CoinGecko coin IDs keyed by bare ticker.
+ * CoinGecko IDs are permanent — they never change once assigned.
+ */
+const COIN_ID_MAP: Record<string, string> = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  SOL: 'solana',
+  HYPE: 'hyperliquid',
+  DOGE: 'dogecoin',
+  AVAX: 'avalanche-2',
+  LINK: 'chainlink',
+  ARB: 'arbitrum',
+  OP: 'optimism',
+  SUI: 'sui',
+  JUP: 'jupiter-exchange-solana',
+  BONK: 'bonk',
+};
+
+const TICKER_ALIAS_MAP: Record<string, string> = {
+  WBTC: 'BTC',
+  WETH: 'ETH',
+  WSOL: 'SOL',
+};
+
+function normalizeTicker(symbol: string): string {
+  const upperSymbol = symbol.toUpperCase();
+  return TICKER_ALIAS_MAP[upperSymbol] ?? upperSymbol;
+}
+
+/**
+ * Resolve a CoinGecko coin ID from any instrument format.
+ *
+ * Supported input formats:
+ *   - Bare ticker (perps agent boundary): "BTC", "SOL", "HYPE"
+ *   - Qualified perpetual (CCXT-unified): "BTC/USD:USD", "ETH/USDT:USDT"
+ *   - Swap pair: "SOL/USDC", "ETH/USDC"
+ *   - Dash-suffixed: "BTC-PERP"
+ *
+ * Resolution order:
+ *   1. Direct match in COIN_ID_MAP (handles bare tickers)
+ *   2. Extract base from qualified form via split('/')[0], strip -PERP suffix
+ */
+export function resolveCoinId(instrument: string): string | undefined {
+  const direct = COIN_ID_MAP[normalizeTicker(instrument)];
+  if (direct) return direct;
+
+  // Extract bare ticker: "BTC/USD:USD" → "BTC", "BTC-PERP" → "BTC"
+  const base = normalizeTicker(instrument.split(/[/\-]/)[0] ?? '');
+  return COIN_ID_MAP[base];
+}
+
 export interface OracleMarkSourceConfig {
   /** Base URL for the pricing oracle. Default: 'https://api.coingecko.com/api/v3' */
   baseUrl?: string;
   timeoutMs?: number;
-  /** Mapping from instrument identifier to CoinGecko coin ID */
-  instrumentToCoinId: Record<string, string>;
   /** Quote currency for price lookup. Default: 'usd' */
   vsCurrency?: string;
 }
@@ -20,22 +70,20 @@ export interface OracleMarkSourceConfig {
 export class OracleMarkSource implements MarkSource {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
-  private readonly instrumentToCoinId: Record<string, string>;
   private readonly vsCurrency: string;
 
   constructor(config: OracleMarkSourceConfig) {
     this.baseUrl = (config.baseUrl ?? 'https://api.coingecko.com/api/v3').replace(/\/$/, '');
     this.timeoutMs = config.timeoutMs ?? 10_000;
-    this.instrumentToCoinId = config.instrumentToCoinId;
     this.vsCurrency = config.vsCurrency ?? 'usd';
   }
 
   async fetchMark(instrument: string): Promise<Result<Mark, MarkError>> {
-    const coinId = this.instrumentToCoinId[instrument];
+    const coinId = resolveCoinId(instrument);
     if (!coinId) {
       return err({
         code: 'mark.unknown_instrument',
-        message: `No CoinGecko mapping configured for instrument: ${instrument}`,
+        message: `No CoinGecko mapping for instrument: ${instrument}`,
       });
     }
 

@@ -283,25 +283,6 @@ marketData:
     expect(config.database.url).toBe('postgres://localhost/test');
   });
 
-  it('validates marking config with instrumentToCoinId', () => {
-    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
-marking:
-  stalenessThresholdMs: 60000
-  oracleBaseUrl: https://api.coingecko.com/api/v3
-  instrumentToCoinId:
-    BTC/USD:USD: bitcoin
-    ETH/USD:USD: ethereum
-`);
-
-    const config = loadConfig(tmpDir);
-
-    expect(config.marking.stalenessThresholdMs).toBe(60000);
-    expect(config.marking.instrumentToCoinId).toEqual({
-      'BTC/USD:USD': 'bitcoin',
-      'ETH/USD:USD': 'ethereum',
-    });
-  });
-
   it('rejects invalid stalenessThresholdMs below minimum', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
 marking:

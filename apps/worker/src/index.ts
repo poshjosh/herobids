@@ -237,7 +237,6 @@ const oracleMarkSource = new OracleMarkSource({
   baseUrl: appConfig.marking.oracleBaseUrl,
   timeoutMs: appConfig.marking.oracleTimeoutMs,
   vsCurrency: appConfig.marking.oracleVsCurrency,
-  instrumentToCoinId: appConfig.marking.instrumentToCoinId ?? {},
 });
 
 const agentIntakeResolver = new AgentIntakeResolver({

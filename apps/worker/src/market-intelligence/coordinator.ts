@@ -332,7 +332,9 @@ export function createMarketDataCoordinator(
   async function refreshRegime(): Promise<void> {
     for (const benchmarkSymbol of benchmarkSymbols) {
       try {
-        const candleResult = await providerRegistry.binance.candles(benchmarkSymbol, { interval: '1h', limit: 100 });
+        const { getRequiredRegimeCandleCount } = await import('@herobids/market-data');
+        const requiredCandles = getRequiredRegimeCandleCount({});
+        const candleResult = await providerRegistry.binance.candles(benchmarkSymbol, { interval: '1h', limit: requiredCandles });
         if (stopped) return;
         const candles = candleResult.data;
 

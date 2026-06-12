@@ -78,10 +78,6 @@ marking:
   oracleBaseUrl: https://api.coingecko.com/api/v3
   oracleTimeoutMs: 10000           # CoinGecko request timeout in ms
   oracleVsCurrency: usd            # quote currency for oracle price lookups
-  instrumentToCoinId:
-    BTC/USD:USD: bitcoin
-    ETH/USD:USD: ethereum
-    SOL/USD:USD: solana
 
 backtesting:
   warmupLookbackBars: 200

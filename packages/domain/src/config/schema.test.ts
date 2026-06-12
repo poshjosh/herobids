@@ -137,7 +137,6 @@ describe('MarkingConfigSchema', () => {
     if (result.success) {
       expect(result.data.stalenessThresholdMs).toBe(300_000);
       expect(result.data.oracleBaseUrl).toBeUndefined();
-      expect(result.data.instrumentToCoinId).toBeUndefined();
     }
   });
 
@@ -151,14 +150,13 @@ describe('MarkingConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts valid oracleBaseUrl and instrumentToCoinId', () => {
+  it('accepts valid oracleBaseUrl', () => {
     const result = MarkingConfigSchema.safeParse({
       oracleBaseUrl: 'https://api.coingecko.com/v3',
-      instrumentToCoinId: { 'SOL/USDC': 'solana', 'BTC/USD': 'bitcoin' },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.instrumentToCoinId).toEqual({ 'SOL/USDC': 'solana', 'BTC/USD': 'bitcoin' });
+      expect(result.data.oracleBaseUrl).toBe('https://api.coingecko.com/v3');
     }
   });
 });

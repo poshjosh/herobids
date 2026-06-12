@@ -80,7 +80,6 @@ export const MarkingConfigSchema = z.object({
   oracleBaseUrl: z.string().url().optional(),
   oracleTimeoutMs: z.number().min(1000).default(10_000),
   oracleVsCurrency: z.string().min(1).default('usd'),
-  instrumentToCoinId: z.record(z.string(), z.string()).optional(),
 });
 
 export const BacktestingConfigSchema = z.object({
