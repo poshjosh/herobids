@@ -73,7 +73,7 @@ A skill preset determines which tools and capabilities are available to the agen
 
 Examples:
 - `trading` — decision submission, market data reads, send_message
-- `reminder` — scheduled notifications, send_message
+- `personal-assistant` — task management, web research, send_message
 - `custom` — user-defined capability bundle
 
 Skill presets belong on agents. Strategy presets (e.g. `momentum`) belong on bot blueprints.

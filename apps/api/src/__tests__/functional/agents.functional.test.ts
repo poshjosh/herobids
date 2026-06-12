@@ -69,7 +69,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
         url: '/agents',
         headers: authHeader(),
         payload: {
-          name: 'Reminder Agent',
+          name: 'Personal Assistant Agent',
           prompt: 'Remind me to pray at 07:45 Berlin time.',
           skillIds: ['task-management', 'web-access'],
           executionMode: 'paper',

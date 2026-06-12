@@ -264,7 +264,7 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
 export const SKILL_PRESET_MAP: Record<string, string[]> = {
   trading: ['bot-management', 'trading'],
   'direct-trading': ['trading'],
-  reminder: [],     // base only — sends scheduled alerts
+  'personal-assistant': ['task-management', 'web-access'],
   custom: [],       // user configures skills manually
 };
 
