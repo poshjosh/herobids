@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
+import type { ProviderSetupResult } from '../../lib/api-client.js';
 import { agents as agentsApi, dashboard } from '../../lib/api-client.js';
 import { PageShell, PageHeader, EmptyState, ErrorState, LoadingRows, Button, Card, SectionLabel } from '../../lib/ui.js';
 import { AgentSummaryCard } from '../agents/AgentSummaryCard.js';
@@ -10,6 +11,22 @@ import { AgentActivityItem } from '../activity/AgentActivityItem.js';
 import { mergeActivityFeedItems } from '../activity/activity-feed-items.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
+
+export function MissionControlSetupForm({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: (result: ProviderSetupResult) => void;
+}) {
+  return (
+    <ProviderSetupForm
+      defaultCapability="trading"
+      onClose={onClose}
+      onSuccess={onSuccess}
+    />
+  );
+}
 
 export function MissionControlPage() {
   const navigate = useNavigate();
@@ -197,7 +214,7 @@ export function MissionControlPage() {
       </div>
 
       {showSetup && (
-        <ProviderSetupForm
+        <MissionControlSetupForm
           onClose={() => setShowSetup(false)}
           onSuccess={(result) => {
             setShowSetup(false);

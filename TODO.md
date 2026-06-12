@@ -18,6 +18,20 @@ Testing: unit test config parsing and notional estimation, plus integration test
 
 - [ ] Medium. agent-activity-feed.test.ts:61, agent-activity-feed.test.ts:73, agent-activity-feed.test.ts:135, agent-activity-feed.test.ts:178, agent-activity-feed.test.ts:219, agent-activity-feed.test.ts:265, agent-activity-feed.test.ts:305, agent-activity-feed.test.ts:336. The test file repeatedly does await import('./agents.js') inside every case. In the current suite this is already slow enough that the first test intermittently times out when the whole file is run, even though it passes in isolation. That makes the new feed coverage flaky and weakens confidence in the implementation. Hoist the import into beforeAll or module scope so route registration cost is paid once per file instead of once per test.
 
+- [ ] Medium — .env.example:36: the new LLM provider comment is already stale relative to the actual provider catalog. The example says only openrouter, openai, anthropic, and ollama are valid, but the runtime supports additional providers including together, fireworks, mistral, cohere, and google in llm-models.ts:3. This will steer operators toward an artificially smaller config surface and makes the example file disagree with the real validation/catalog source of truth.
+What to change: update the comment to either list the full supported set or avoid enumerating providers there and point readers to the catalog/config docs instead.
+Change type: modify documentation comment.
+Dependencies: none.
+Risks / open questions: listing providers inline will keep drifting unless you treat one file as the source of truth. The safer long-term option is to reference the catalog rather than duplicate it.
+Test guidance: no unit or integration test needed; this is a documentation consistency fix. No visual verification needed.
+
+- [ ] Low — MissionControlPage.tsx:15: the new exported MissionControlSetupForm wrapper appears to exist primarily for test convenience, which widens the production module API and adds an extra indirection without changing runtime behavior. The production page still depends on the wrapper being used correctly at MissionControlPage.tsx:217, so this is a maintainability tradeoff rather than a functional bug.
+What to change: either keep the wrapper but treat it as an intentional local abstraction with a short comment explaining why it exists, or move the wiring test up to the page/component boundary and collapse the wrapper back into the inline usage.
+Change type: modify structure or add clarifying comment.
+Dependencies: none.
+Risks / open questions: if the wrapper remains purely as test scaffolding, future readers may not know whether it is a real UI abstraction or just a seam for tests.
+Test guidance: if you remove the wrapper, replace it with a narrow component/integration test that proves the Mission Control setup path renders ProviderSetupForm in trading mode. No visual verification needed.
+
 - [ ] Low. agent-broker.test.ts:1457. The new audit-only broker test for agent.llm.completed includes terminatedByLimit: false, but that field is not part of the actual LlmCompletedPayloadSchema. Because Zod strips unknown keys by default, the test still passes, which means it is not actually guarding the real contract and can mask payload drift. Remove the unsupported field from the fixture, or make the test assert the accepted schema shape explicitly.
 
 - [ ] medium - apps/api/src/routes/agent-activity-feed.test.ts and apps/api/src/routes/dashboard-agent-activity.test.ts do not actually prove the new SQL filtering works. The mocked DB returns canned rows regardless of the where clause, so these tests can still pass if notInArray(...) is removed or broken. What to change: add an integration-style check against a real DB, or make the mock assert the predicate it receives; also keep one route case for the legacy agent.heartbeat format since it is part of the suppression list. Dependencies: none. Risk/open question: whether you prefer a full integration test or a stricter mock.
