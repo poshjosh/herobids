@@ -39,7 +39,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     return rows;
   }
 
-  it('seeds exactly six system skills after truncation', async () => {
+  it('reseeds all system skills after truncation', async () => {
     const skillRows = await fetchSkills();
     expect(skillRows.length).toBe(SYSTEM_SKILLS.length);
     const ids = skillRows.map((s) => s.id).sort();

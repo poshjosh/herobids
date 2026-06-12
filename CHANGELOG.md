@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Programming skill parity (2026-06-12): `execute_code` now supports JavaScript and Python with `npm`/`pip` dependency installation; added a separate `file-management` skill for workspace file manipulation (`read_file`, `write_file`, `list_files`, `delete_file`); agents can persist files across ticks within the same runtime.
+
+- Preset naming alignment (2026-06-12): the assistant skill preset is now canonically `personal-assistant` everywhere — `SKILL_PRESET_MAP` in domain, frontend type and option value, API test fixtures, and the domain language glossary. The old `reminder` preset key is removed.
+
 - Non-trading agent tick guard (2026-06-12): `hasTradingCapability` flag derived from resolved skill `capabilityFamilies` now gates all trading-specific tick work — regime evaluation, venue intelligence refresh, performance inputs, and their Binance/Hyperliquid/DexScreener calls — so agents with no trading skills never attempt market-data fetches and cannot be killed by provider timeouts.
 
 - Tick error handling (2026-06-12): `shouldSkipTick` no longer throws for non-critical helper failures — `fetchVolatilityCandles` and `evaluateRegime` errors fall back gracefully and surface `degraded`/`degradationReason` on `TickSkipDecision`. Added `tick-gate` as a first-class `RuntimeFailureSource` (classified as `degraded`, `tick_gate.degraded`). `FailureBackoffController` now tracks per-source consecutive-failure counters; advisory sources (`tick-gate`, `market-data`, `database`, `tool`) back off but never trigger shutdown — only `llm`, `redis`, `sandbox`, and `startup` are shutdown-eligible. `runTick` wraps the tick-gate phase in its own try/catch routed to `handleRuntimeFailure('tick-gate', ...)`.

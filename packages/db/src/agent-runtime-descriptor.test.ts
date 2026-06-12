@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from './index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
+import { PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL } from '@herobids/domain';
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -48,7 +49,34 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['programming']);
 
     expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual(['base', 'programming']);
-    expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(['execute_code', 'send_message', 'publish_artifact']);
+    expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(PROGRAMMING_SKILL.requiredTools);
+    expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(['execute_code']);
+  });
+
+  it('resolves the built-in file-management skill with workspace tools', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['file-management']);
+
+    expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual(['base', 'file-management']);
+    expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(FILE_MANAGEMENT_SKILL.requiredTools);
+    expect(new Set(descriptor.resolvedSkills[1]?.requiredTools)).toEqual(
+      new Set(['write_file', 'read_file', 'list_files', 'delete_file']),
+    );
+  });
+
+  it('resolves both programming and file-management when stacked', async () => {
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['programming', 'file-management']);
+
+    const skillIds = descriptor.resolvedSkills.map((skill) => skill.id);
+    expect(skillIds).toContain('programming');
+    expect(skillIds).toContain('file-management');
   });
 
   it('fails loudly for unknown required tools in stored skill rows', async () => {

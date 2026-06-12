@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
-import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS } from '@herobids/domain';
+import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL } from '@herobids/domain';
 import type { AgentTool, ToolContext } from '@herobids/domain';
 import { botManagementTools } from './bots.js';
 import { ToolRegistry } from './registry.js';
@@ -8,6 +8,7 @@ import { createToolRegistry } from './index.js';
 import { messagingTools } from './messaging.js';
 import { marketDataTools } from './market-data.js';
 import { tradingTools } from './trading.js';
+import { filesystemTools } from './filesystem.js';
 
 function createToolContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -110,6 +111,34 @@ describe('tool registry extracted tools', () => {
 
     for (const skill of [BASE_SKILL, ...SYSTEM_SKILLS]) {
       expect(skill.requiredTools.every((toolName) => knownToolNames.has(toolName))).toBe(true);
+    }
+  });
+
+  it('registry includes all five programming-related tools', () => {
+    const registry = createToolRegistry();
+    for (const name of ['execute_code', 'write_file', 'read_file', 'list_files', 'delete_file']) {
+      expect(registry.has(name)).toBe(true);
+    }
+  });
+
+  it('PROGRAMMING_SKILL requiredTools all resolve against registered tools', () => {
+    const registry = createToolRegistry();
+    for (const toolName of PROGRAMMING_SKILL.requiredTools) {
+      expect(registry.has(toolName)).toBe(true);
+    }
+  });
+
+  it('FILE_MANAGEMENT_SKILL requiredTools all resolve against registered tools', () => {
+    const registry = createToolRegistry();
+    for (const toolName of FILE_MANAGEMENT_SKILL.requiredTools) {
+      expect(registry.has(toolName)).toBe(true);
+    }
+  });
+
+  it('shared tool catalog includes all filesystem tool names', () => {
+    const knownToolNames = new Set(KNOWN_AGENT_TOOL_NAMES as readonly string[]);
+    for (const tool of filesystemTools) {
+      expect(knownToolNames.has(tool.name)).toBe(true);
     }
   });
 });

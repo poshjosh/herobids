@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, or, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { findUnknownSkillTools } from '@herobids/domain';
+import { findUnknownSkillTools, SYSTEM_SKILLS } from '@herobids/domain';
 import { skills } from '@herobids/db';
 
 // --- Schemas ---
@@ -53,6 +53,42 @@ function buildUnknownToolValidationError(requiredTools: string[]) {
 // --- Route module ---
 
 export async function skillsRoutes(app: FastifyInstance, db: Database): Promise<void> {
+  // Upsert system skills on startup so persisted rows stay in sync with code definitions.
+  const now = new Date();
+  for (const skill of SYSTEM_SKILLS) {
+    await db
+      .insert(skills)
+      .values({
+        id: skill.id,
+        authorId: null,
+        name: skill.name,
+        description: skill.description,
+        instructions: skill.instructions,
+        requiredTools: skill.requiredTools,
+        contextRequirements: skill.contextRequirements,
+        requiredGuardrails: skill.requiredGuardrails,
+        capabilityFamilies: skill.capabilityFamilies,
+        suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
+        visibility: skill.visibility,
+        tags: [],
+      })
+      .onConflictDoUpdate({
+        target: skills.id,
+        set: {
+          name: skill.name,
+          description: skill.description,
+          instructions: skill.instructions,
+          requiredTools: skill.requiredTools,
+          contextRequirements: skill.contextRequirements,
+          requiredGuardrails: skill.requiredGuardrails,
+          capabilityFamilies: skill.capabilityFamilies,
+          suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
+          visibility: skill.visibility,
+          updatedAt: now,
+        },
+      });
+  }
+  app.log.info(`[skills] synced ${SYSTEM_SKILLS.length} system skills`);
   // GET /skills — list own skills + public skills + built-in skills
   app.get('/skills', async (request, reply) => {
     // Return own skills + all public/built-in skills
