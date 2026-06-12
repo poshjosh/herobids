@@ -78,6 +78,7 @@ describe('runStructuredToolLoop', () => {
       ok: true,
       assistantResponse: 'Hold for now',
       toolCalls: [],
+      turnsUsed: 2,
       terminatedByLimit: false,
     });
     expect(toolExecutions).toEqual([{ tool: 'check_regime', args: { symbol: 'BTC' } }]);
@@ -144,6 +145,7 @@ describe('runStructuredToolLoop', () => {
       ok: true,
       assistantResponse: 'Still checking',
       toolCalls: [{ id: 'call_2', name: 'list_positions', args: {} }],
+      turnsUsed: 2,
       terminatedByLimit: true,
     });
   });
@@ -214,6 +216,7 @@ describe('runStructuredToolLoop', () => {
       ok: true,
       assistantResponse: 'Done',
       toolCalls: [],
+      turnsUsed: 2,
       terminatedByLimit: false,
     });
     expect(toolExecutions).toEqual(['check_regime', 'list_positions']);

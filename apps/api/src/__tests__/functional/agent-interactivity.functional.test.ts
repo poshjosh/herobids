@@ -212,7 +212,7 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       expect(res.json<{ error: string }>().error).toBe('prompt_not_available');
     });
 
-    it('returns the prompt when it exists in Redis', async () => {
+    it('returns the judge system prompt when it exists in Redis', async () => {
       const id = await createAgent();
       await ctx.redisClient.set(`agent:prompt:${id}`, 'You are a trading agent.');
 
@@ -223,7 +223,22 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json<{ prompt: string }>().prompt).toBe('You are a trading agent.');
+      expect(res.json<{ judgeSystem: string }>().judgeSystem).toBe('You are a trading agent.');
+    });
+
+    it('returns 200 with scout surface when only scout prompt exists', async () => {
+      const id = await createAgent();
+      await ctx.redisClient.set(`agent:prompt:scout:${id}`, 'Scout prompt only');
+
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${id}/prompt`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ judgeSystem: string | null; scoutSystem: string | null }>().judgeSystem).toBeNull();
+      expect(res.json<{ judgeSystem: string | null; scoutSystem: string | null }>().scoutSystem).toBe('Scout prompt only');
     });
   });
 

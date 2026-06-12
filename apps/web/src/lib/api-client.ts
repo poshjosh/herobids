@@ -563,7 +563,10 @@ export interface AgentOutboundMessage {
 
 export interface AgentCompiledPrompt {
   agentId: string;
-  prompt: string;
+  judgeSystem: string | null;
+  scoutSystem: string | null;
+  userContext: string | null;
+  judgeUserContext: string | null;
 }
 
 export interface AgentPosition {

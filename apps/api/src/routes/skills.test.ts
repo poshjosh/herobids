@@ -25,6 +25,15 @@ function makeChain(value: unknown[]) {
   return chain;
 }
 
+function makeInsertMock(onValues?: (v: unknown) => void) {
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  const values = vi.fn().mockImplementation((v: unknown) => {
+    onValues?.(v);
+    return { onConflictDoUpdate };
+  });
+  return { insert: vi.fn().mockReturnValue({ values }) };
+}
+
 const stubSkill = {
   id: SKILL_ID,
   authorId: TEST_USER_ID,
@@ -60,6 +69,7 @@ describe('GET /skills', () => {
   it('returns own skills + public + built-in skills', async () => {
     const rows = [stubSkill, stubBuiltinSkill];
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain(rows)),
     } as unknown as Database;
     const app = Fastify();
@@ -74,6 +84,7 @@ describe('GET /skills', () => {
 
   it('returns empty list when no skills exist', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
@@ -91,6 +102,7 @@ describe('GET /skills', () => {
   it('returns system skills (authorId=null) even when user has no own or public skills', async () => {
     const systemSkill = { ...stubBuiltinSkill };
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([systemSkill])),
     } as unknown as Database;
     const app = Fastify();
@@ -111,6 +123,7 @@ describe('GET /skills', () => {
   it('includes system skills alongside user-owned skills in the response', async () => {
     const rows = [stubSkill, stubBuiltinSkill];
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain(rows)),
     } as unknown as Database;
     const app = Fastify();
@@ -132,7 +145,7 @@ describe('POST /skills', () => {
   it('creates a skill and returns 201', async () => {
     let selectCount = 0;
     const db = {
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         return makeChain(selectCount === 1 ? [stubSkill] : []);
@@ -156,7 +169,7 @@ describe('POST /skills', () => {
   });
 
   it('returns 400 when required fields are missing', async () => {
-    const db = {} as unknown as Database;
+    const db = { ...makeInsertMock() } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
     await skillsRoutes(app, db);
@@ -172,12 +185,11 @@ describe('POST /skills', () => {
 
   it('uses private visibility by default', async () => {
     let insertedValues: Record<string, unknown> = {};
+    let isFirstInsert = true;
     const db = {
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
-          insertedValues = v;
-          return Promise.resolve();
-        }),
+      ...makeInsertMock((v) => {
+        if (!isFirstInsert) insertedValues = v as Record<string, unknown>;
+        isFirstInsert = false;
       }),
       select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
     } as unknown as Database;
@@ -195,7 +207,7 @@ describe('POST /skills', () => {
 
   it('accepts execute_code as a canonical required tool', async () => {
     const db = {
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([{ ...stubSkill, requiredTools: ['execute_code'] }])),
     } as unknown as Database;
     const app = Fastify();
@@ -217,7 +229,7 @@ describe('POST /skills', () => {
   });
 
   it('rejects legacy code_execute required tools', async () => {
-    const db = {} as unknown as Database;
+    const db = { ...makeInsertMock() } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
     await skillsRoutes(app, db);
@@ -243,6 +255,7 @@ describe('POST /skills', () => {
 describe('GET /skills/:id', () => {
   it('returns 200 for owned skill', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
     } as unknown as Database;
     const app = Fastify();
@@ -256,6 +269,7 @@ describe('GET /skills/:id', () => {
 
   it('returns 404 when skill not found or not accessible', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
@@ -274,6 +288,7 @@ describe('PUT /skills/:id', () => {
     let selectCount = 0;
     const updatedSkill = { ...stubSkill, name: 'Updated Name' };
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         return makeChain(selectCount === 1 ? [stubSkill] : [updatedSkill]);
@@ -295,6 +310,7 @@ describe('PUT /skills/:id', () => {
 
   it('returns 404 when skill not owned by user', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
@@ -311,6 +327,7 @@ describe('PUT /skills/:id', () => {
 
   it('rejects legacy code_execute on update', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
     } as unknown as Database;
     const app = Fastify();
@@ -333,6 +350,7 @@ describe('PUT /skills/:id', () => {
 describe('DELETE /skills/:id', () => {
   it('deletes own skill and returns 204', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([{ id: SKILL_ID, authorId: TEST_USER_ID }])),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     } as unknown as Database;
@@ -346,6 +364,7 @@ describe('DELETE /skills/:id', () => {
 
   it('returns 404 when skill not owned by user', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
@@ -364,11 +383,11 @@ describe('POST /skills/:id/fork', () => {
     const forkedSkill = { ...stubSkill, id: 'fork-1', name: 'My Skill (fork)', visibility: 'private', forkOf: SKILL_ID };
     let selectCount = 0;
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         return makeChain(selectCount === 1 ? [stubSkill] : [forkedSkill]);
       }),
-      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
     } as unknown as Database;
     const app = Fastify();
     decorateWithAuth(app);
@@ -385,15 +404,10 @@ describe('POST /skills/:id/fork', () => {
     let insertedValues: Record<string, unknown> = {};
     let selectCount = 0;
     const db = {
+      ...makeInsertMock((v) => { insertedValues = v as Record<string, unknown>; }),
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         return makeChain(selectCount === 1 ? [publicSkill] : [{ ...publicSkill, visibility: 'private' }]);
-      }),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
-          insertedValues = v;
-          return Promise.resolve();
-        }),
       }),
     } as unknown as Database;
     const app = Fastify();
@@ -407,6 +421,7 @@ describe('POST /skills/:id/fork', () => {
 
   it('returns 404 when source skill is not accessible', async () => {
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([])),
     } as unknown as Database;
     const app = Fastify();
@@ -420,6 +435,7 @@ describe('POST /skills/:id/fork', () => {
   it('rejects forking a source skill with legacy code_execute required tools', async () => {
     const legacySkill = { ...stubSkill, requiredTools: ['code_execute'] };
     const db = {
+      ...makeInsertMock(),
       select: vi.fn().mockImplementation(() => makeChain([legacySkill])),
     } as unknown as Database;
     const app = Fastify();

@@ -479,16 +479,27 @@ describe('GET /agents/:id/memory', () => {
 // ─── GET /agents/:id/prompt ───────────────────────────────────────────────
 
 describe('GET /agents/:id/prompt', () => {
-  it('returns 200 with prompt when key exists in Redis', async () => {
+  it('returns 200 with full prompt shape when keys exist in Redis', async () => {
     const db = buildAgentDb(stubAgent);
-    const redis = buildMockRedis({ get: vi.fn().mockResolvedValue('You are an agent...') });
+    const redis = buildMockRedis({
+      get: vi.fn()
+        .mockResolvedValueOnce('Judge system prompt')
+        .mockResolvedValueOnce('Scout system prompt')
+        .mockResolvedValueOnce('User context text')
+        .mockResolvedValueOnce('Judge user context text'),
+    });
     const app = Fastify();
     decorateWithAuth(app);
     await agentInteractivityRoutes(app, db, redis);
 
     const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/prompt` });
     expect(res.statusCode).toBe(200);
-    expect(res.json().prompt).toBe('You are an agent...');
+    const body = res.json();
+    expect(body.agentId).toBe(AGENT_ID);
+    expect(body.judgeSystem).toBe('Judge system prompt');
+    expect(body.scoutSystem).toBe('Scout system prompt');
+    expect(body.userContext).toBe('User context text');
+    expect(body.judgeUserContext).toBe('Judge user context text');
   });
 
   it('returns 404 when no prompt in Redis (agent not running)', async () => {
@@ -501,6 +512,28 @@ describe('GET /agents/:id/prompt', () => {
     const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/prompt` });
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toBe('prompt_not_available');
+  });
+
+  it('returns 200 when only scout prompt surfaces exist', async () => {
+    const db = buildAgentDb(stubAgent);
+    const redis = buildMockRedis({
+      get: vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce('Scout system prompt')
+        .mockResolvedValueOnce('Scout user context')
+        .mockResolvedValueOnce(null),
+    });
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, redis);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/prompt` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.judgeSystem).toBeNull();
+    expect(body.scoutSystem).toBe('Scout system prompt');
+    expect(body.userContext).toBe('Scout user context');
+    expect(body.judgeUserContext).toBeNull();
   });
 
   it('returns 404 when agent not owned by user', async () => {

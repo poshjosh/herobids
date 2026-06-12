@@ -29,11 +29,11 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
 
     // Open the setup form
     await ctaButton.click();
-    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Add provider connection$/ }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Add trading connection$/ }).first()).toBeVisible({ timeout: 5_000 });
 
     // Fill provider — typing 'hyperliquid' triggers the template auto-fill
-    await page.getByPlaceholder('e.g. hyperliquid, gmail, n8n').fill('hyperliquid');
-    await page.getByPlaceholder('e.g. My Gmail inbox').fill('My HL Account J13');
+    await page.getByPlaceholder('e.g. hyperliquid, bybit, 1inch').fill('hyperliquid');
+    await page.getByPlaceholder('e.g. My Hyperliquid account').fill('My HL Account J13');
 
     // Template populates 3 secret rows (apiKey, secret, walletAddress)
     await expect(page.locator('input[placeholder="Secret value"]')).toHaveCount(3, { timeout: 3_000 });
@@ -43,7 +43,7 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await page.locator('input[placeholder="Secret value"]').nth(2).fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit the form
-    await page.getByRole('dialog').getByRole('button', { name: 'Add provider connection' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Add trading connection' }).click();
 
     // Success banner appears with the account label and provider
     await expect(

@@ -244,12 +244,24 @@ export async function agentInteractivityRoutes(
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-    const prompt = await redisClient.get(`agent:prompt:${id}`);
-    if (!prompt) {
+    const [judgeSystem, scoutSystem, userContext, judgeUserContext] = await Promise.all([
+      redisClient.get(`agent:prompt:${id}`),
+      redisClient.get(`agent:prompt:scout:${id}`),
+      redisClient.get(`agent:prompt:user-context:${id}`),
+      redisClient.get(`agent:prompt:judge-user-context:${id}`),
+    ]);
+
+    if (!judgeSystem && !scoutSystem && !userContext && !judgeUserContext) {
       return reply.status(404).send({ error: 'prompt_not_available', message: 'No compiled prompt available. Agent may not be running.' });
     }
 
-    return reply.send({ agentId: id, prompt });
+    return reply.send({
+      agentId: id,
+      judgeSystem,
+      scoutSystem,
+      userContext,
+      judgeUserContext,
+    });
   });
 
   // GET /agents/:id/trades — fills (trades) attributed to bots owned by this agent

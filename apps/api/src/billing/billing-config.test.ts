@@ -83,6 +83,15 @@ describe('AppConfigSchema billing cross-validation', () => {
     redis: { url: 'redis://localhost:6379' },
     execution: { defaultSlippageBps: 50, orderTimeoutMs: 30000, maxRetries: 3 },
     risk: { globalMaxDrawdownPct: 20, maxOpenPositions: 10, maxPositionSizePct: 25 },
+    agentRuntime: {
+      defaultBudgets: {
+        maxHistoryMessages: 20,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4_000,
+        maxVisibleToolSchemas: 64,
+        maxContextBlockChars: 4_000,
+      },
+    },
   };
 
   it('rejects Stripe primary with no secretKey', () => {

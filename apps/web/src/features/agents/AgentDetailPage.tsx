@@ -18,6 +18,7 @@ export function AgentDetailPage() {
   const qc = useQueryClient();
 
   const [isEditing, setIsEditing] = useState(false);
+  const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext'>('judgeSystem');
 
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status' && event.agentId === id) {
@@ -325,7 +326,7 @@ export function AgentDetailPage() {
         </Card>
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.systemPrompt' })}</SectionLabel>
+          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.promptSurfaces' })}</SectionLabel>
           {promptQuery.isLoading && <LoadingRows count={1} />}
           {promptQuery.isError && (
             <ErrorState
@@ -338,27 +339,80 @@ export function AgentDetailPage() {
               {intl.formatMessage({ id: 'agents.detail.promptUnavailable' })}
             </p>
           )}
-          {promptQuery.isSuccess && promptQuery.data !== null && (
-            <pre
-              style={{
-                margin: 0,
-                padding: '12px 14px',
-                background: 'var(--color-surface-2)',
-                borderRadius: '8px',
-                border: '1px solid var(--color-border)',
-                fontSize: '12px',
-                lineHeight: '1.5',
-                color: 'var(--color-text-secondary)',
-                fontFamily: 'monospace',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                overflow: 'auto',
-                maxHeight: '360px',
-              }}
-            >
-              {promptQuery.data.prompt}
-            </pre>
-          )}
+          {promptQuery.isSuccess && promptQuery.data !== null && (() => {
+            const data = promptQuery.data;
+            const tabs: Array<{ key: typeof activePromptTab; label: string }> = [
+              { key: 'judgeSystem', label: intl.formatMessage({ id: 'agents.detail.promptTab.judgeSystem' }) },
+              { key: 'scoutSystem', label: intl.formatMessage({ id: 'agents.detail.promptTab.scoutSystem' }) },
+              { key: 'userContext', label: intl.formatMessage({ id: 'agents.detail.promptTab.userContext' }) },
+              { key: 'judgeUserContext', label: intl.formatMessage({ id: 'agents.detail.promptTab.judgeUserContext' }) },
+            ];
+            const activeContent = data[activePromptTab];
+            return (
+              <div>
+                <div
+                  role="tablist"
+                  aria-label={intl.formatMessage({ id: 'agents.detail.promptSurfaces' })}
+                  style={{ display: 'flex', gap: '4px', marginBottom: '10px', flexWrap: 'wrap' }}
+                >
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      id={`agent-prompt-tab-${tab.key}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={activePromptTab === tab.key}
+                      aria-controls={`agent-prompt-panel-${tab.key}`}
+                      onClick={() => setActivePromptTab(tab.key)}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--color-border)',
+                        background: activePromptTab === tab.key ? 'var(--color-surface-3)' : 'transparent',
+                        color: activePromptTab === tab.key ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: activePromptTab === tab.key ? 600 : 400,
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <div
+                  id={`agent-prompt-panel-${activePromptTab}`}
+                  role="tabpanel"
+                  aria-labelledby={`agent-prompt-tab-${activePromptTab}`}
+                >
+                  {activeContent == null ? (
+                    <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+                      {intl.formatMessage({ id: 'agents.detail.promptSurfaceUnavailable' })}
+                    </p>
+                  ) : (
+                    <pre
+                      style={{
+                        margin: 0,
+                        padding: '12px 14px',
+                        background: 'var(--color-surface-2)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--color-border)',
+                        fontSize: '12px',
+                        lineHeight: '1.5',
+                        color: 'var(--color-text-secondary)',
+                        fontFamily: 'monospace',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        overflow: 'auto',
+                        maxHeight: '360px',
+                      }}
+                    >
+                      {activeContent}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </Card>
 
         <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>

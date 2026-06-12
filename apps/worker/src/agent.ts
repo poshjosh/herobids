@@ -1457,15 +1457,22 @@ async function runTick(): Promise<void> {
         toolGuidanceByName[def.name] = def.promptGuidance;
       }
     }
+    const judgeSystemPromptKey = `agent:prompt:${AGENT_ID}`;
+    const scoutSystemPromptKey = `agent:prompt:scout:${AGENT_ID}`;
+    const scoutUserContextPromptKey = `agent:prompt:user-context:${AGENT_ID}`;
+    const judgeUserContextPromptKey = `agent:prompt:judge-user-context:${AGENT_ID}`;
     const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, toolGuidanceByName);
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
-    redis.set(`agent:prompt:${AGENT_ID}`, systemPrompt, 'EX', 3600).catch((err: unknown) => {
+    redis.set(judgeSystemPromptKey, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
     const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy });
     let resolvedScoutDecision: ScoutDecision;
     if (preScoutResolution.decision) {
+      redis.del(scoutSystemPromptKey, scoutUserContextPromptKey).catch((err: unknown) => {
+        logger.warn({ err }, 'Failed to clear skipped scout prompt surfaces from Redis');
+      });
       resolvedScoutDecision = preScoutResolution.decision;
     } else {
       scoutTickCount++;
@@ -1485,6 +1492,12 @@ async function runTick(): Promise<void> {
         readOnlyTools: readOnlyScoutTools,
         timing: promptTiming,
         venueLines: buildVenueLines(runtimeState),
+      });
+      redis.set(scoutSystemPromptKey, scoutSystemPrompt, 'EX', 3600).catch((err: unknown) => {
+        logger.warn({ err }, 'Failed to persist scout system prompt to Redis');
+      });
+      redis.set(scoutUserContextPromptKey, userContext, 'EX', 3600).catch((err: unknown) => {
+        logger.warn({ err }, 'Failed to persist scout user-context to Redis');
       });
 
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
@@ -1566,6 +1579,9 @@ async function runTick(): Promise<void> {
       if (!scoutLoopResult.ok) {
         const scoutFailure = classifyRuntimeError('llm', scoutLoopResult.error);
         if (scoutFailure.mode === 'fatal') {
+          redis.del(judgeUserContextPromptKey).catch((err: unknown) => {
+            logger.warn({ err }, 'Failed to clear stale judge prompt surfaces from Redis after fatal scout failure');
+          });
           await handleRuntimeFailure('llm', scoutLoopResult.error);
           return;
         }
@@ -1587,6 +1603,9 @@ async function runTick(): Promise<void> {
         resolvedScoutDecision = { disposition: 'escalate', reason: 'max_hold_duration_exceeded' };
         logger.info({ maxHoldMs, msSinceLastEscalation: Date.now() - lastEscalationTimestamp }, 'Overriding scout hold — max hold duration exceeded');
       } else {
+        redis.del(judgeUserContextPromptKey).catch((err: unknown) => {
+          logger.warn({ err }, 'Failed to clear skipped judge prompt surfaces from Redis');
+        });
         const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
         logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout held the tick');
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD, {
@@ -1615,6 +1634,9 @@ async function runTick(): Promise<void> {
       });
     }
     userContext = `${fullUserContext}\n\nEscalation reason: ${resolvedScoutDecision.reason ?? 'unspecified'}`;
+    redis.set(judgeUserContextPromptKey, userContext, 'EX', 3600).catch((err: unknown) => {
+      logger.warn({ err }, 'Failed to persist judge user-context to Redis');
+    });
 
     addToHistory('user', userContext);
     const recentHistory = conversationHistory.slice(-10);

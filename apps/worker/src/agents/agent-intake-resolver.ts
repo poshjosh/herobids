@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
 import type { PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';

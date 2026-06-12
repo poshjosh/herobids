@@ -532,6 +532,7 @@ export const AgentRuntimeConfigSchema = z.object({
 
 export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
   llm: z.object({
+    catalog: LlmCatalogConfigSchema.default({}),
     retry: LlmRetryConfigSchema.default({}),
     scout: LlmScoutConfigSchema.default({}),
     thinking: LlmThinkingConfigSchema.default({}),
