@@ -171,6 +171,8 @@ export class DockerAgentManager {
       ...(this.llmTradingHoursJson ? [`TRADING_HOURS_JSON=${this.llmTradingHoursJson}`] : []),
       ...(this.marketDataConfigJson ? [`MARKET_DATA_CONFIG_JSON=${this.marketDataConfigJson}`] : []),
       `AGENT_RUNTIME_CONFIG_JSON=${this.agentRuntimeConfigJson}`,
+      // Workspace root — tools use this to agree on the per-agent workspace path
+      'AGENT_WORKSPACE_ROOT=/workspace',
       // Market data config forwarded so agent tools use operator-controlled values
       // Both providers must be present — check_regime needs Binance, search_tokens needs DexScreener.
       ...(this.marketDataDexscreenerBaseUrl && this.marketDataBinanceBaseUrl ? [`MARKET_DATA_CONFIGURED=1`] : []),

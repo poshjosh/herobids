@@ -155,18 +155,49 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
 };
 
 /**
- * `programming` skill — runs sandboxed code execution tasks.
+ * `programming` skill — code execution tools.
  */
 export const PROGRAMMING_SKILL: SkillDefinition = {
   id: 'programming',
   name: 'Programming',
-  description: 'Run sandboxed code for analysis, calculations, and implementation support.',
-  instructions: `You have access to programming tools.
+  description: 'Code execution tools',
+  instructions: `You have access to programming tools for code-driven automation, external API calls etc.
 
-- Use \`execute_code\` to run sandboxed JavaScript for analysis, calculations, and implementation support.
-- Use \`send_message\` to report findings or ask for clarification when needed.
-- Use \`publish_artifact\` when a structured output is more useful than plain text.`,
-  requiredTools: ['execute_code', 'send_message', 'publish_artifact'],
+- You can use \`execute_code\` to run JavaScript or Python for custom automation, external API calls, analysis, data processing etc.
+- The tool supports JavaScript/Node.js and Python runtimes as well as optional dependency installation.
+- The tool returns stdout/stderr so you can inspect execution results directly.
+- Code can access the public internet.`,
+  requiredTools: ['execute_code'],
+  capabilityFamilies: [],
+  bindingRequirements: {},
+  contextRequirements: ['costs', 'session_elapsed'],
+  requiredContextBlocks: ['corePlatformContext'],
+  promptRendererHints: ['core-system'],
+  requiredGuardrails: ['token-budget'],
+  suggestedTickIntervalMs: 900_000,
+  visibility: 'public',
+};
+
+/**
+ * `file-management` skill — workspace file read, write, list, and delete.
+ */
+export const FILE_MANAGEMENT_SKILL: SkillDefinition = {
+  id: 'file-management',
+  name: 'File Management',
+  description: 'Manage a per-agent workspace for intermediate files and outputs.',
+  instructions: `You have access to workspace file-management tools.
+
+- You can use \`write_file\` to create or overwrite a file under the agent workspace.
+- You can use \`read_file\` to inspect file contents.
+- You can use \`list_files\` to inspect workspace directories and discover available files.
+- You can use \`delete_file\` to remove files you no longer need.
+
+Workspace rules:
+- Workspace files persist across ticks in the same runtime.
+- Workspace files do not persist across runtime restarts.
+- The \`sandbox\` directory is reserved for code execution internals.
+- For data that must survive runtime restarts, memory tools from the base skill are the durable storage path.`,
+  requiredTools: ['write_file', 'read_file', 'list_files', 'delete_file'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -243,6 +274,7 @@ export const SYSTEM_SKILLS: SkillDefinition[] = [
   TRADING_SKILL,
   RISK_MONITORING_SKILL,
   PROGRAMMING_SKILL,
+  FILE_MANAGEMENT_SKILL,
   WEB_ACCESS_SKILL,
   TASK_MANAGEMENT_SKILL,
 ];

@@ -27,7 +27,7 @@ RUN pnpm --filter @herobids/worker deploy --legacy --prod /deploy/agent
 # CAP_NET_ADMIN is required at container run-time for namespace creation.
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache iproute2 iptables ip6tables
+RUN apk add --no-cache iproute2 iptables ip6tables python3 py3-pip
 
 WORKDIR /app/apps/worker
 
@@ -36,6 +36,9 @@ COPY --from=deploy /deploy/agent ./
 # Copy the sandbox script so code_execute can call it inside the container
 COPY scripts/sandbox-exec.sh /usr/local/bin/sandbox-exec.sh
 RUN chmod +x /usr/local/bin/sandbox-exec.sh
+
+# Workspace root: persists for the lifetime of the container (across ticks)
+RUN mkdir -p /workspace /workspace/sandbox
 
 # Config is read via environment variables — no YAML file needed in agent container.
 # All sensitive values come from env (REDIS_URL, LLM_API_KEY, etc.).

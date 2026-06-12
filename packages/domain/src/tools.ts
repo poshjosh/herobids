@@ -19,6 +19,8 @@ import type { z } from 'zod';
  * - "write-messaging" — send_message
  * - "execute-trade" — submit_decision, create_bot
  * - "read-market-data" — search_tokens, check_regime
+ * - "read-filesystem" — read_file, list_files
+ * - "write-filesystem" — write_file, delete_file
  * - "execute-filesystem" — execute_code (writes then executes)
  */
 export type ToolCategory =
@@ -27,9 +29,11 @@ export type ToolCategory =
   | 'read-market-data'
   | 'read-trade'
   | 'read-web'
+  | 'read-filesystem'
   | 'write-database'
   | 'write-memory'
   | 'write-messaging'
+  | 'write-filesystem'
   | 'execute-trade'
   | 'execute-filesystem';
 
@@ -185,6 +189,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'complete_task',
   'create_bot',
   'create_task',
+  'delete_file',
   'delete_memory',
   'discover_tokens',
   'execute_code',
@@ -195,12 +200,14 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_memory',
   'get_price',
   'list_bots',
+  'list_files',
+  'list_memory_keys',
   'list_positions',
   'list_tasks',
   'list_watches',
-  'list_memory_keys',
   'publish_artifact',
   'read_document',
+  'read_file',
   'remove_watch',
   'schedule_reminder',
   'search_tokens',
@@ -211,6 +218,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'submit_decision',
   'watch_token',
   'search_web',
+  'write_file',
 ] as const;
 
 export type AgentToolName = typeof KNOWN_AGENT_TOOL_NAMES[number];

@@ -6,6 +6,7 @@ import { tradingTools } from './trading.js';
 import { botManagementTools } from './bots.js';
 import { analyticsTools } from './analytics.js';
 import { codeTools } from './code.js';
+import { filesystemTools } from './filesystem.js';
 import { marketDataTools } from './market-data.js';
 import { priceTools } from './price.js';
 import { watchTools } from './watch.js';
@@ -48,6 +49,7 @@ export function createToolRegistry(): ToolRegistry {
     ...botManagementTools,
     ...analyticsTools,
     ...codeTools,
+    ...filesystemTools,
     ...marketDataTools,
     ...priceTools,
     ...watchTools,
