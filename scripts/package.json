@@ -8,7 +8,8 @@
     "fund-hyperliquid:dry": "tsx ts/fund-hyperliquid.ts --dry-run",
     "smoke-test": "tsx ts/rollout-smoke-test.ts",
     "seed-admin": "tsx ts/seed-admin.ts",
-    "rate-limit-load-test": "tsx ts/rate-limit-load-test.ts"
+    "rate-limit-load-test": "tsx ts/rate-limit-load-test.ts",
+    "upsert-system-skills": "tsx ts/upsert-system-skills.ts"
   },
   "dependencies": {
     "@herobids/db": "workspace:*",
