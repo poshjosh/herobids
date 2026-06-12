@@ -4,7 +4,6 @@ import * as fs from 'node:fs';
 import { eq, count, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users, bots, agents, agentRuntimeSessions } from '@herobids/db';
-import type { AuthConfig } from '@herobids/domain';
 
 const VERSION = process.env['npm_package_version'] ?? '0.0.1';
 
@@ -79,11 +78,11 @@ async function checkRedis(redis: { ping(): Promise<string> }): Promise<'ok' | 't
   }
 }
 
-/** Middleware that returns 403 unless the caller is in the admin list. */
-function requireAdmin(adminUserIds: readonly string[]) {
-  return async (request: { userId: string }, reply: { status(c: number): { send(b: unknown): unknown } }): Promise<void> => {
-    if (!adminUserIds.includes(request.userId)) {
-      void reply.status(403).send({ error: 'forbidden', message: 'Admin access required' });
+/** Middleware that returns 403 unless the authenticated request is marked as admin. */
+function requireAdmin() {
+  return async (request: { userId: string; isAdmin: boolean }, reply: { status(c: number): { send(b: unknown): unknown } }): Promise<void> => {
+    if (!request.isAdmin) {
+      return reply.status(403).send({ error: 'forbidden', message: 'Admin access required' });
     }
   };
 }
@@ -92,12 +91,11 @@ export async function adminRoutes(
   app: FastifyInstance,
   db: Database,
   redis: { ping(): Promise<string> },
-  authConfig: AuthConfig,
 ): Promise<void> {
-  const adminUserIds = authConfig.adminUserIds;
+  const adminPreHandler = requireAdmin();
 
   // GET /admin/stats — system health and counts
-  app.get('/admin/stats', { preHandler: requireAdmin(adminUserIds) }, async (_request, reply) => {
+  app.get('/admin/stats', { preHandler: adminPreHandler }, async (_request, reply) => {
     const [postgresStatus, redisStatus] = await Promise.all([
       checkPostgres(db),
       checkRedis(redis),
@@ -129,13 +127,14 @@ export async function adminRoutes(
   });
 
   // GET /admin/users — all users with bot and agent counts
-  app.get('/admin/users', { preHandler: requireAdmin(adminUserIds) }, async (_request, reply) => {
+  app.get('/admin/users', { preHandler: adminPreHandler }, async (_request, reply) => {
     const rows = await db
       .select({
         id: users.id,
         email: users.email,
         displayName: users.displayName,
         planId: users.planId,
+        isAdmin: users.isAdmin,
         createdAt: users.createdAt,
         botCount: sql<number>`(SELECT COUNT(*) FROM bots WHERE bots.user_id = ${users.id})::int`,
         agentCount: sql<number>`(SELECT COUNT(*) FROM agents WHERE agents.user_id = ${users.id})::int`,
@@ -146,7 +145,7 @@ export async function adminRoutes(
   });
 
   // GET /admin/containers — running agent containers (requires Docker socket)
-  app.get('/admin/containers', { preHandler: requireAdmin(adminUserIds) }, async (_request, reply) => {
+  app.get('/admin/containers', { preHandler: adminPreHandler }, async (_request, reply) => {
     let containerData: unknown;
     try {
       // Filter to containers with the herobids agent label
@@ -182,5 +181,44 @@ export async function adminRoutes(
     }
 
     return reply.send({ containers: containerData, sessions });
+  });
+
+  // POST /admin/users/:id/promote — grant admin to a user
+  app.post<{ Params: { id: string } }>('/admin/users/:id/promote', { preHandler: adminPreHandler }, async (request, reply) => {
+    const { id } = request.params;
+    const now = new Date();
+    const updated = await db
+      .update(users)
+      .set({ isAdmin: true, updatedAt: now })
+      .where(eq(users.id, id))
+      .returning({ id: users.id, email: users.email, isAdmin: users.isAdmin });
+
+    if (!updated[0]) {
+      return reply.status(404).send({ error: 'not_found', message: 'User not found' });
+    }
+
+    return reply.send({ user: updated[0] });
+  });
+
+  // DELETE /admin/users/:id/admin — revoke admin from a user
+  app.delete<{ Params: { id: string } }>('/admin/users/:id/admin', { preHandler: adminPreHandler }, async (request, reply) => {
+    const { id } = request.params;
+
+    if (id === request.userId) {
+      return reply.status(400).send({ error: 'invalid_request', message: 'Cannot demote yourself' });
+    }
+
+    const now = new Date();
+    const updated = await db
+      .update(users)
+      .set({ isAdmin: false, updatedAt: now })
+      .where(eq(users.id, id))
+      .returning({ id: users.id, email: users.email, isAdmin: users.isAdmin });
+
+    if (!updated[0]) {
+      return reply.status(404).send({ error: 'not_found', message: 'User not found' });
+    }
+
+    return reply.send({ user: updated[0] });
   });
 }

@@ -61,7 +61,7 @@ export async function setupRoutes(
     }
 
     if (plansConfig) {
-      const credentialCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      const credentialCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!credentialCheck.ok) {
         return reply.status(403).send(
           errorPayload(credentialCheck.error.code, credentialCheck.error.message, credentialCheck.error.params),
@@ -69,7 +69,7 @@ export async function setupRoutes(
       }
 
       if (capability === 'trading') {
-        const venueAccountCheck = await checkVenueAccountLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+        const venueAccountCheck = await checkVenueAccountLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
         if (!venueAccountCheck.ok) {
           return reply.status(403).send(
             errorPayload(venueAccountCheck.error.code, venueAccountCheck.error.message, venueAccountCheck.error.params),

@@ -18,7 +18,6 @@ function makeAuthConfig(): AuthConfig {
     googleClientId: '',
     googleClientSecret: '',
     secureCookie: false,
-    adminUserIds: [],
   };
 }
 

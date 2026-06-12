@@ -34,7 +34,8 @@ export type PlanCheckResult = Result<void, {
 }>;
 
 /** Check if user can create a new venue account */
-export async function checkVenueAccountLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+export async function checkVenueAccountLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+  if (isAdmin) return ok(undefined);
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: venueAccounts.id }).from(venueAccounts).where(eq(venueAccounts.userId, userId));
   if (rows.length >= limits.maxVenueAccounts) {
@@ -50,7 +51,8 @@ export async function checkVenueAccountLimit(db: Database, config: PlansConfig, 
 }
 
 /** Check if user can create a new credential */
-export async function checkCredentialLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+export async function checkCredentialLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+  if (isAdmin) return ok(undefined);
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: userCredentials.id }).from(userCredentials).where(eq(userCredentials.userId, userId));
   if (rows.length >= limits.maxCredentials) {
@@ -66,7 +68,8 @@ export async function checkCredentialLimit(db: Database, config: PlansConfig, us
 }
 
 /** Check if user can create a new bot */
-export async function checkBotLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+export async function checkBotLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+  if (isAdmin) return ok(undefined);
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: bots.id }).from(bots)
     .where(eq(bots.userId, userId));
@@ -86,7 +89,8 @@ export async function checkBotLimit(db: Database, config: PlansConfig, userId: s
 export const checkTradingInstanceLimit = checkBotLimit;
 
 /** Check if user's plan allows live execution */
-export function checkLiveEnabled(config: PlansConfig, planId: string): PlanCheckResult {
+export function checkLiveEnabled(config: PlansConfig, planId: string, isAdmin: boolean = false): PlanCheckResult {
+  if (isAdmin) return ok(undefined);
   const limits = resolvePlanLimits(config, planId);
   if (!limits.liveEnabled) {
     return err({
@@ -101,7 +105,8 @@ export function checkLiveEnabled(config: PlansConfig, planId: string): PlanCheck
 }
 
 /** Check if user can create a new backtest run (concurrent limit) */
-export async function checkBacktestLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+export async function checkBacktestLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+  if (isAdmin) return ok(undefined);
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: backtestRuns.id }).from(backtestRuns)
     .where(and(eq(backtestRuns.userId, userId), inArray(backtestRuns.status, ['pending', 'running'])));
@@ -118,7 +123,8 @@ export async function checkBacktestLimit(db: Database, config: PlansConfig, user
 }
 
 /** Check if user can create a new agent */
-export async function checkAgentLimit(db: Database, config: PlansConfig, userId: string, planId: string): Promise<PlanCheckResult> {
+export async function checkAgentLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
+  if (isAdmin) return ok(undefined);
   const limits = resolvePlanLimits(config, planId);
   const rows = await db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId));
   if (rows.length >= limits.maxAgents) {

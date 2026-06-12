@@ -43,7 +43,6 @@ export function makeAuthConfig(overrides: Partial<AuthConfig> = {}): AuthConfig 
     googleClientId: 'test-google-client-id',
     googleClientSecret: 'test-google-client-secret',
     secureCookie: false,
-    adminUserIds: [],
     ...overrides,
   };
 }

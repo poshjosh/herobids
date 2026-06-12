@@ -29,8 +29,6 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   AUTH_EXCHANGE_CODE_TTL_SECS: { path: 'auth.exchangeCodeTtlSecs', type: 'number' },
   GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
-  // Admin
-  AUTH_ADMIN_USER_IDS: { path: 'auth.adminUserIds', type: 'string-array' },
   // Billing
   BILLING_PRIMARY_PROVIDER: { path: 'billing.primaryProvider', type: 'string' },
   STRIPE_SECRET_KEY: { path: 'billing.stripe.secretKey', type: 'string' },

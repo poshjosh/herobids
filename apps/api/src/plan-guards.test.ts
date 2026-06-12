@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { checkPortfolioLimit, checkVenueAccountLimit, checkCredentialLimit, checkTradingInstanceLimit, checkLiveEnabled } from './plan-guards.js';
+import { describe, it, expect, vi } from 'vitest';
+import { checkVenueAccountLimit, checkCredentialLimit, checkTradingInstanceLimit, checkLiveEnabled } from './plan-guards.js';
 import type { PlansConfig } from '@herobids/domain';
+import type { Database } from '@herobids/db';
 
 // Mock minimal plan config
 function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
@@ -47,6 +48,23 @@ describe('checkLiveEnabled', () => {
   it('falls back to default plan for unknown planId', () => {
     const result = checkLiveEnabled(config, 'nonexistent');
     expect(result.ok).toBe(false); // defaults to free which has liveEnabled: false
+  });
+
+  it('allows live execution for admins regardless of plan', () => {
+    const result = checkLiveEnabled(config, 'free', true);
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('checkVenueAccountLimit', () => {
+  it('short-circuits for admins before querying the db', async () => {
+    const db = { select: vi.fn() } as unknown as Database;
+    const config = makePlansConfig();
+
+    const result = await checkVenueAccountLimit(db, config, 'user-1', 'free', true);
+
+    expect(result.ok).toBe(true);
+    expect(db.select).not.toHaveBeenCalled();
   });
 });
 

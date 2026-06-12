@@ -151,7 +151,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
 
       // Plan enforcement: check concurrent backtest limit
       if (plansConfig) {
-        const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+        const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
         if (!planCheck.ok) {
           return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
         }
@@ -220,7 +220,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
 
     // Plan enforcement: check concurrent backtest limit
     if (plansConfig) {
-      const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      const planCheck = await checkBacktestLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!planCheck.ok) {
         return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }

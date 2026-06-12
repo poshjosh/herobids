@@ -125,7 +125,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
 
     // Plan enforcement
     if (plansConfig) {
-      const planCheck = await checkAgentLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      const planCheck = await checkAgentLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!planCheck.ok) {
         return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }

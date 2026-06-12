@@ -9,6 +9,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     userId: string;
     userPlanId: string;
+    isAdmin: boolean;
   }
 }
 
@@ -39,6 +40,7 @@ export async function authPlugin(app: FastifyInstance, opts: { config: AuthConfi
 
   app.decorateRequest('userId', '');
   app.decorateRequest('userPlanId', '');
+  app.decorateRequest('isAdmin', false);
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     // Skip auth for public routes
@@ -85,9 +87,9 @@ export async function authPlugin(app: FastifyInstance, opts: { config: AuthConfi
       return reply.status(401).send({ error: 'Session expired or revoked' });
     }
 
-    // Look up the user's active plan (denormalised on users.planId)
+    // Look up the user's active plan and admin status (denormalised on users)
     const [user] = await db
-      .select({ planId: users.planId })
+      .select({ planId: users.planId, isAdmin: users.isAdmin })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
@@ -98,6 +100,7 @@ export async function authPlugin(app: FastifyInstance, opts: { config: AuthConfi
 
     request.userId = userId;
     request.userPlanId = user.planId;
+    request.isAdmin = user.isAdmin;
   });
 }
 

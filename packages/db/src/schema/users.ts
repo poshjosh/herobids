@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean } from 'drizzle-orm/pg-core';
 
 /**
  * Users — authenticated user accounts.
@@ -20,6 +20,8 @@ export const users = pgTable('users', {
   telegramChatId: text('telegram_chat_id'),
   /** AI model preference chain: { primary, fallback1, fallback2 } each { provider, model } */
   aiModelConfig: jsonb('ai_model_config').$type<Record<string, unknown>>(),
+  /** Whether this user has admin/operator access */
+  isAdmin: boolean('is_admin').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

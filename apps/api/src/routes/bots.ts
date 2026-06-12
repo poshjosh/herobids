@@ -76,7 +76,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         if (!binding.sourceVenueAccountId) return { kind: 'missing_source_venue_account' as const };
 
         // Atomic count-and-insert: re-check the limit inside the lock.
-        const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId);
+        const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId, request.isAdmin);
         if (!planCheck.ok) return { kind: 'limit' as const, error: planCheck.error };
 
         try {
@@ -177,7 +177,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     if (plansConfig) {
       const newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'];
       if (newExecutionMode === 'live') {
-        const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free');
+        const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);
         if (!liveCheck.ok) {
           return reply.status(403).send({ error: liveCheck.error.code, message: liveCheck.error.message });
         }

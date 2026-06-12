@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- DB-driven admin access (2026-06-12): `users.is_admin` now controls admin access, with promote/demote endpoints and plan-limit bypass for admins.
+
 - Programming skill parity (2026-06-12): `execute_code` now supports JavaScript and Python with `npm`/`pip` dependency installation; added a separate `file-management` skill for workspace file manipulation (`read_file`, `write_file`, `list_files`, `delete_file`); agents can persist files across ticks within the same runtime.
 
 - Preset naming alignment (2026-06-12): the assistant skill preset is now canonically `personal-assistant` everywhere — `SKILL_PRESET_MAP` in domain, frontend type and option value, API test fixtures, and the domain language glossary. The old `reminder` preset key is removed.

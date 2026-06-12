@@ -4,10 +4,6 @@
  * Usage:
  *   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=changeme DATABASE_URL=... tsx ts/seed-admin.ts
  *
- * Optional:
- *   ADMIN_PLAN_ID=pro   — plan to assign (defaults to 'free').
- *                          Must match a plan key in config/default.yaml.
- *
  * Both ADMIN_EMAIL and ADMIN_PASSWORD must be set; the script does not generate
  * a random password because doing so would print a credential to stdout, which
  * risks leaking it through log shipping in CI or Docker environments.
@@ -16,6 +12,8 @@
  * seeding is optional (non-fatal absence of credentials).
  *
  * If a user with the given email already exists the script is idempotent and exits cleanly.
+ *
+ * The seeded user is created with is_admin = true. Admin users bypass all plan limits.
  */
 
 import crypto from 'node:crypto';
@@ -35,9 +33,7 @@ async function main() {
   const adminEmail = process.env['ADMIN_EMAIL'];
   const adminPassword = process.env['ADMIN_PASSWORD'];
   const databaseUrl = process.env['DATABASE_URL'];
-  // Honour ADMIN_PLAN_ID so operators can seed with a non-default plan.
-  // Defaults to 'free' to match the app's plans.defaultPlanId baseline.
-  const planId = process.env['ADMIN_PLAN_ID'] ?? 'free';
+  const planId = 'free';
 
   if (!adminEmail) {
     console.log('[seed-admin] ADMIN_EMAIL not set — skipping admin user seeding.');
@@ -59,47 +55,65 @@ async function main() {
 
   const db = createDatabase(databaseUrl);
 
-  // Check if user already exists
-  const [existing] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, adminEmail.toLowerCase().trim()))
-    .limit(1);
-
-  if (existing) {
-    console.log(`[seed-admin] Admin user already exists (id=${existing.id}) — skipping.`);
-    return;
-  }
-
-  const userId = crypto.randomUUID();
+  const normalizedEmail = adminEmail.toLowerCase().trim();
   const now = new Date();
   const passwordHash = await hashPassword(password);
 
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, normalizedEmail))
+    .limit(1);
+
+  const userId = existing?.id ?? crypto.randomUUID();
+
   await db.transaction(async (tx) => {
-    await tx.insert(users).values({
-      id: userId,
-      displayName: 'Admin',
-      email: adminEmail.toLowerCase().trim(),
-      avatarUrl: null,
-      planId,
-      createdAt: now,
-      updatedAt: now,
-    });
+    if (existing) {
+      await tx.update(users)
+        .set({ isAdmin: true, updatedAt: now })
+        .where(eq(users.id, userId));
+    } else {
+      await tx.insert(users).values({
+        id: userId,
+        displayName: 'Admin',
+        email: normalizedEmail,
+        avatarUrl: null,
+        planId,
+        isAdmin: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const [existingPlanHistory] = await tx
+      .select({ id: userPlans.id })
+      .from(userPlans)
+      .where(eq(userPlans.userId, userId))
+      .limit(1);
+
     await tx.insert(localIdentities).values({
       id: crypto.randomUUID(),
       userId,
       passwordHash,
       createdAt: now,
       updatedAt: now,
+    }).onConflictDoUpdate({
+      target: localIdentities.userId,
+      set: { passwordHash, updatedAt: now },
     });
-    await tx.insert(userPlans).values({
-      id: crypto.randomUUID(),
-      userId,
-      planId,
-    });
+
+    if (!existingPlanHistory) {
+      await tx.insert(userPlans).values({
+        id: crypto.randomUUID(),
+        userId,
+        planId,
+      });
+    }
   });
 
-  console.log(`[seed-admin] Admin user created (id=${userId}, email=${adminEmail}, planId=${planId}).`);
+  console.log(existing
+    ? `[seed-admin] Admin user promoted (id=${userId}, email=${normalizedEmail}, isAdmin=true).`
+    : `[seed-admin] Admin user created (id=${userId}, email=${normalizedEmail}, isAdmin=true).`);
 }
 
 main().catch((err: unknown) => {

@@ -50,6 +50,13 @@
       "when": 1781258116371,
       "tag": "0006_add_agent_messages_payload",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781268389787,
+      "tag": "0007_nosy_catseye",
+      "breakpoints": true
     }
   ]
 }

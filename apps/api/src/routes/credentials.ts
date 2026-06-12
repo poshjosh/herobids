@@ -134,7 +134,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
 
     // Plan enforcement
     if (plansConfig) {
-      const planCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free');
+      const planCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
       if (!planCheck.ok) {
         return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
       }
