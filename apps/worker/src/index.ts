@@ -28,6 +28,7 @@ import { TelegramClient, PlatformAlertService, ResendEmailClient } from './alert
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
+  AgentIntakeResolver,
   AgentRuntimeLauncher,
   AgentSessionManager,
   AgentStreamConsumer,
@@ -172,6 +173,14 @@ const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
 const userEventPublisher = new UserEventPublisher(redisClient);
 
+// ID generator using UUIDv7 (crypto.randomUUID as fallback)
+const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
+  orderId: () => crypto.randomUUID() as OrderId,
+  fillId: () => crypto.randomUUID() as FillId,
+  planId: () => crypto.randomUUID(),
+  decisionId: () => crypto.randomUUID(),
+};
+
 const runtimeMode = (process.env['AGENT_RUNTIME_MODE'] ?? 'stub') as 'docker' | 'stub';
 logger.info({ mode: runtimeMode }, 'Agent runtime mode');
 
@@ -223,36 +232,68 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
     })
   : new AgentRuntimeLauncher({ redis: redisClient });
 
+// Worker-scoped oracle mark source (stateless, safe to share)
+const oracleMarkSource = new OracleMarkSource({
+  baseUrl: appConfig.marking.oracleBaseUrl,
+  timeoutMs: appConfig.marking.oracleTimeoutMs,
+  vsCurrency: appConfig.marking.oracleVsCurrency,
+  instrumentToCoinId: appConfig.marking.instrumentToCoinId ?? {},
+});
+
+const agentIntakeResolver = new AgentIntakeResolver({
+  db,
+  positionRepo,
+  decisionRepo,
+  planRepo,
+  fillRepo,
+  orderRepo,
+  balanceSnapshotRepo,
+  backtestingRepo,
+  journal,
+  markSource: oracleMarkSource,
+  idGen,
+});
+
 const intakeResolver: DecisionIntakeResolver = {
-  getIntakeDeps: (instanceId: string) => {
+  getIntakeDeps: (instanceId: string, instrumentId?: string) => {
     const actor = actorRegistry.get(instanceId);
-    return actor?.isRunning ? actor.getIntakeDeps() : undefined;
+    if (actor?.isRunning) return actor.getIntakeDeps();
+    // Fallback: resolve as agent via capability grants
+    if (instrumentId) return agentIntakeResolver.getIntakeDeps(instanceId, instrumentId);
+    return undefined;
   },
-  getDecisionContext: (instanceId: string): DecisionContext | undefined => {
+  getDecisionContext: (instanceId: string, instrumentId?: string): DecisionContext | undefined | Promise<DecisionContext | undefined> => {
     const actor = actorRegistry.get(instanceId);
-    if (!actor?.isRunning) return undefined;
-    const snapshot = actor.getLastSnapshot();
-    if (!snapshot) return undefined;
-    const pos = actor.currentPosition;
-    const lastMark = actor.getLastMarkResult();
-    const referenceMark = (lastMark?.ok && !lastMark.data.stale)
-      ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
-      : { price: snapshot.price.toString(), source: 'snapshot' };
-    return {
-      snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp },
-      position: pos.side === 'flat' ? null : {
-        side: pos.side,
-        size: pos.size.toString(),
-        entryPrice: pos.entryPrice.toString(),
-        realizedPnl: pos.realizedPnl.toString(),
-      },
-      referenceMark,
-      strategyParams: {},
-    };
+    if (actor?.isRunning) {
+      const snapshot = actor.getLastSnapshot();
+      if (!snapshot) return undefined;
+      const pos = actor.currentPosition;
+      const lastMark = actor.getLastMarkResult();
+      const referenceMark = (lastMark?.ok && !lastMark.data.stale)
+        ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
+        : { price: snapshot.price.toString(), source: 'snapshot' };
+      return {
+        snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp },
+        position: pos.side === 'flat' ? null : {
+          side: pos.side,
+          size: pos.size.toString(),
+          entryPrice: pos.entryPrice.toString(),
+          realizedPnl: pos.realizedPnl.toString(),
+        },
+        referenceMark,
+        strategyParams: {},
+      };
+    }
+    // Fallback: resolve as agent
+    if (instrumentId) return agentIntakeResolver.getDecisionContext(instanceId, instrumentId);
+    return undefined;
   },
-  getPosition: (instanceId: string) => {
+  getPosition: (instanceId: string, instrumentId?: string) => {
     const actor = actorRegistry.get(instanceId);
-    return actor?.isRunning ? actor.currentPosition : undefined;
+    if (actor?.isRunning) return actor.currentPosition;
+    // Fallback: resolve as agent
+    if (instrumentId) return agentIntakeResolver.getPosition(instanceId, instrumentId);
+    return undefined;
   },
 };
 
@@ -393,14 +434,6 @@ function createStrategy(strategyConfig: StrategyConfig): Strategy {
 // Reconciliation config sourced from operator config
 const reconciliationConfig = appConfig.reconciliation;
 
-// ID generator using UUIDv7 (crypto.randomUUID as fallback)
-const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
-  orderId: () => crypto.randomUUID() as OrderId,
-  fillId: () => crypto.randomUUID() as FillId,
-  planId: () => crypto.randomUUID(),
-  decisionId: () => crypto.randomUUID(),
-};
-
 // Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
 // Initialised when at least one orderbook venue has a wsUrl configured.
 const publicStreamConfig = appConfig.streams.public;
@@ -411,14 +444,6 @@ const streamConnectors = buildPublicStreamConnectors(appConfig.venues);
 const publicStreamPool = streamConnectors.size > 0
   ? new PublicStreamPool(publicStreamConfig, streamConnectors)
   : undefined;
-
-// Worker-scoped oracle mark source (stateless, safe to share)
-const oracleMarkSource = new OracleMarkSource({
-  baseUrl: appConfig.marking.oracleBaseUrl,
-  timeoutMs: appConfig.marking.oracleTimeoutMs,
-  vsCurrency: appConfig.marking.oracleVsCurrency,
-  instrumentToCoinId: appConfig.marking.instrumentToCoinId ?? {},
-});
 
 const runtime = new WorkerRuntime(
   {

@@ -82,7 +82,8 @@ async function checkRedis(redis: { ping(): Promise<string> }): Promise<'ok' | 't
 function requireAdmin() {
   return async (request: { userId: string; isAdmin: boolean }, reply: { status(c: number): { send(b: unknown): unknown } }): Promise<void> => {
     if (!request.isAdmin) {
-      return reply.status(403).send({ error: 'forbidden', message: 'Admin access required' });
+      reply.status(403).send({ error: 'forbidden', message: 'Admin access required' });
+      return;
     }
   };
 }

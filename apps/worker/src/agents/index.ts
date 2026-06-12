@@ -2,6 +2,8 @@ export { AgentMessageBroker } from './agent-message-broker.js';
 export type { BotStartCallback, BotLimitCheckCallback } from './agent-message-broker.js';
 export { AgentDecisionHandler } from './agent-decision-handler.js';
 export type { DecisionIntakeResolver } from './agent-decision-handler.js';
+export { AgentIntakeResolver } from './agent-intake-resolver.js';
+export type { AgentIntakeResolverDeps } from './agent-intake-resolver.js';
 export { AgentSessionManager } from './agent-session-manager.js';
 export type { AgentSessionManagerConfig } from './agent-session-manager.js';
 export { AgentRuntimeLauncher } from './agent-runtime-launcher.js';

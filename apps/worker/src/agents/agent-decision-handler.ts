@@ -11,12 +11,12 @@ const logger = pino({ name: 'agent-decision-handler' });
 
 /**
  * Resolves the execution context needed by the decision intake pipeline.
- * Keyed by botId.
+ * Keyed by actorId (botId or agentId). Methods may be sync or async.
  */
 export interface DecisionIntakeResolver {
-  getIntakeDeps(botId: string): DecisionIntakeDeps | undefined;
-  getDecisionContext(botId: string): DecisionContext | undefined;
-  getPosition(botId: string): PositionState | undefined;
+  getIntakeDeps(instanceId: string, instrumentId?: string): DecisionIntakeDeps | undefined | Promise<DecisionIntakeDeps | undefined>;
+  getDecisionContext(instanceId: string, instrumentId?: string): DecisionContext | undefined | Promise<DecisionContext | undefined>;
+  getPosition(instanceId: string, instrumentId?: string): PositionState | undefined | Promise<PositionState | undefined>;
 }
 
 /**
@@ -59,19 +59,20 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // 3. Resolve execution deps from the running bot
-    const intakeDeps = this.intakeResolver.getIntakeDeps(resolveId);
+    // 3. Resolve execution deps — try bot registry first, then agent grants
+    const intakeDeps = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
     if (!intakeDeps) {
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'instance_not_running',
-        message: 'Bot is not currently active',
+        message: 'No execution context — ensure the bot is active or the agent has an active trading grant',
         retryable: true,
       });
       return;
     }
 
-    if (payload.instrumentId !== intakeDeps.symbol) {
+    // Instrument mismatch check — skip for agents (multi-symbol)
+    if (intakeDeps.actorType !== 'agent' && payload.instrumentId !== intakeDeps.symbol) {
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'instrument_mismatch',
@@ -85,18 +86,18 @@ export class AgentDecisionHandler {
       return;
     }
 
-    const context = this.intakeResolver.getDecisionContext(resolveId);
+    const context = await this.intakeResolver.getDecisionContext(resolveId, payload.instrumentId);
     if (!context) {
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'no_context',
-        message: 'No decision context available — bot may still be initializing',
+        message: 'No decision context available — bot may still be initializing or mark price unavailable',
         retryable: true,
       });
       return;
     }
 
-    const position = this.intakeResolver.getPosition(resolveId);
+    const position = await this.intakeResolver.getPosition(resolveId, payload.instrumentId);
     if (!position) {
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
