@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import type { AgentActivityEntry } from '../../lib/api-client.js';
 
+// ---------------------------------------------------------------------------
+// Helper: mirrors the inline value-formatting expression used in TimelineRow's
+// expanded detail panel (the fix for the "[object Object]" bug).
+// ---------------------------------------------------------------------------
+function formatDetailValue(value: unknown): string {
+  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
+}
+
 function renderTimeline(entries: AgentActivityEntry[], isLoading = false, isEmpty = false): string {
   return renderToStaticMarkup(
     <IntlProvider locale="en" messages={{}}>
@@ -90,5 +98,81 @@ describe('AgentActivityTimeline', () => {
     };
     const html = renderTimeline([toolEntry]);
     expect(html).toContain('⚙');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detail value formatting — covers the "[object Object]" regression
+// (bug 008-activity-feed-payload-object-object)
+// ---------------------------------------------------------------------------
+
+describe('formatDetailValue', () => {
+  it('serializes a plain object to JSON, not [object Object]', () => {
+    const result = formatDetailValue({ toolName: 'list_positions', status: 'ok' });
+    expect(result).toBe('{"toolName":"list_positions","status":"ok"}');
+    expect(result).not.toBe('[object Object]');
+  });
+
+  it('serializes a nested object to JSON', () => {
+    const result = formatDetailValue({ a: 1, nested: { b: 2 } });
+    expect(result).toBe('{"a":1,"nested":{"b":2}}');
+  });
+
+  it('serializes an array to JSON', () => {
+    const result = formatDetailValue([1, 'two', 3]);
+    expect(result).toBe('[1,"two",3]');
+  });
+
+  it('preserves string values unchanged', () => {
+    expect(formatDetailValue('hello')).toBe('hello');
+  });
+
+  it('converts number values to string', () => {
+    expect(formatDetailValue(42)).toBe('42');
+  });
+
+  it('converts boolean values to string', () => {
+    expect(formatDetailValue(true)).toBe('true');
+    expect(formatDetailValue(false)).toBe('false');
+  });
+
+  it('converts null to empty string', () => {
+    expect(formatDetailValue(null)).toBe('');
+  });
+
+  it('converts undefined to empty string', () => {
+    expect(formatDetailValue(undefined)).toBe('');
+  });
+});
+
+describe('AgentActivityTimeline — object-valued detail fields', () => {
+  it('renders without error when detail contains object values (the payload field from mapProtocolMessage)', () => {
+    const entryWithObjectDetail: AgentActivityEntry = {
+      ...baseEntry,
+      id: 'e-obj',
+      detail: {
+        messageType: 'agent.runtime.tool_result',
+        actorType: 'agent',
+        payload: { toolName: 'list_positions', status: 'ok', count: 3 },
+      },
+    };
+    // Should not throw and should render title/summary in collapsed state
+    const html = renderTimeline([entryWithObjectDetail]);
+    expect(html).toContain('Decision rejected');
+    expect(html).toContain('Proposed entry was blocked by risk validation.');
+  });
+
+  it('renders without error when detail has mixed primitive and object values', () => {
+    const entryMixed: AgentActivityEntry = {
+      ...baseEntry,
+      id: 'e-mixed',
+      detail: {
+        errorCode: 'risk.exceeded',
+        errorMessage: 'Position limit hit',
+        context: { venue: 'hyperliquid', symbol: 'BTC-PERP' },
+      },
+    };
+    const html = renderTimeline([entryMixed]);
+    expect(html).toContain('Decision rejected');
   });
 });

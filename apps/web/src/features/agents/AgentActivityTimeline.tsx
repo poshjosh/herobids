@@ -128,7 +128,11 @@ function TimelineRow({ entry, isLast }: TimelineRowProps) {
           {entry.processingStatus && <DetailRow label="Status" value={entry.processingStatus} />}
           {/* Render detail fields */}
           {Object.entries(entry.detail).map(([key, value]) => (
-            <DetailRow key={key} label={key} value={String(value)} />
+            <DetailRow
+              key={key}
+              label={key}
+              value={typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '')}
+            />
           ))}
         </div>
       )}
