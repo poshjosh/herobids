@@ -73,10 +73,14 @@ export async function getAuthenticatedUserId(page: Page, request: APIRequestCont
 export async function createAgent(
   page: Page,
   goal: string,
-  options: { skillIds?: string[] } = {},
+  options: { skillIds?: string[]; preset?: string } = {},
 ): Promise<string> {
   await page.goto('/agents');
-  await page.getByRole('button', { name: /new agent|create agent/i }).first().click();
+  await page.getByRole('button', { name: /new.*agent|create agent/i }).first().click();
+
+  // Fill name (required) — derive a short name from the goal
+  const nameField = page.locator('input[type="text"]').first();
+  await nameField.fill(goal.slice(0, 40));
 
   const goalField = page.locator('textarea').first();
   await goalField.fill(goal);
@@ -104,7 +108,7 @@ export async function createAgent(
 
   await page.getByRole('button', { name: /review/i }).click();
 
-  await page.getByRole('button', { name: /^Create agent$/i }).last().click();
+  await page.getByRole('button', { name: /^Create AI agent$/i }).last().click();
 
   await page.waitForURL(/\/(agents)\/[^/?#]+$/, { timeout: 15_000 });
 

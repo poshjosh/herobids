@@ -23,17 +23,17 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
 
     // Setup card is visible with title and CTA
-    await expect(page.getByText('Quick trading setup')).toBeVisible({ timeout: 5_000 });
-    const ctaButton = page.getByRole('button', { name: 'Add trading provider' });
+    await expect(page.getByText('Quick AI agent connect')).toBeVisible({ timeout: 5_000 });
+    const ctaButton = page.getByRole('button', { name: 'Add provider connection' });
     await expect(ctaButton).toBeVisible({ timeout: 5_000 });
 
     // Open the setup form
     await ctaButton.click();
-    await expect(page.getByRole('dialog').getByText('Add trading provider')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Add provider connection$/ }).first()).toBeVisible({ timeout: 5_000 });
 
     // Fill provider — typing 'hyperliquid' triggers the template auto-fill
-    await page.getByPlaceholder('e.g. hyperliquid, bybit, 1inch').fill('hyperliquid');
-    await page.getByPlaceholder('e.g. My Hyperliquid account').fill('My HL Account J13');
+    await page.getByPlaceholder('e.g. hyperliquid, gmail, n8n').fill('hyperliquid');
+    await page.getByPlaceholder('e.g. My Gmail inbox').fill('My HL Account J13');
 
     // Template populates 3 secret rows (apiKey, secret, walletAddress)
     await expect(page.locator('input[placeholder="Secret value"]')).toHaveCount(3, { timeout: 3_000 });
@@ -43,19 +43,19 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await page.locator('input[placeholder="Secret value"]').nth(2).fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit the form
-    await page.getByRole('button', { name: 'Set up trading provider' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Add provider connection' }).click();
 
     // Success banner appears with the account label and provider
     await expect(
-      page.getByText(/My HL Account J13 \(hyperliquid\) has been set up\./i),
+      page.getByText(/My HL Account J13 \(hyperliquid\) is ready for your AI agents\./i),
     ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
 
     // Dismiss the banner
     await page.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByText(/has been set up\./i)).not.toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText(/is ready for your AI agents\./).first()).not.toBeVisible({ timeout: 3_000 });
 
     // Setup card is still present after dismissal
-    await expect(page.getByText('Quick trading setup')).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText('Quick AI agent connect').first()).toBeVisible({ timeout: 3_000 });
   });
 });

@@ -150,7 +150,7 @@ const searchTokensTool: AgentTool = {
         const searchResult = await ctx.marketDataRegistry.dexscreener.search(query);
         const candidates = applyTokenSearchPolicy(
           searchResult.data as TokenInfo[],
-          ctx.marketDataConfig as MarketDataConfig,
+          ctx.marketDataConfig as unknown as MarketDataConfig,
           { network, minLiquidityUsd, minVolume24hUsd, minTokenAgeHours, includeBlocked, limit },
         );
         return {

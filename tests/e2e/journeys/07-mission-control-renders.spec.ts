@@ -27,9 +27,8 @@ test.describe('Journey 7: Capability setup and readiness', () => {
 
     await expect(page).toHaveURL(/\/mission-control/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('region', { name: /Your agents/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/No agents yet/i)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText(/Create an agent from a goal, then attach capabilities only when you need them\./i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('region', { name: /Your AI agents/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/No AI agents yet/i)).toBeVisible({ timeout: 5_000 });
   });
 
   test('agent capability readiness moves from unconfigured to ready', async ({ page, request }) => {

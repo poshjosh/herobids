@@ -179,18 +179,24 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
 
   describe('PATCH /settings/ai-model', () => {
     it('persists the model preference for the authenticated user', async () => {
-      const res = await ctx.app.inject({
-        method: 'PATCH',
-        url: '/settings/ai-model',
-        headers: authHeader(),
-        payload: {
-          provider: 'openai',
-          lightModel: 'gpt-4o-mini',
-          heavyModel: 'gpt-4o',
-        },
-      });
-      // 200 means the preference was saved
-      expect(res.statusCode).toBe(200);
+      // Provider availability is gated by an API key env var — set one for the test.
+      process.env['LLM_API_KEY_OPENAI'] = 'test-key';
+      try {
+        const res = await ctx.app.inject({
+          method: 'PATCH',
+          url: '/settings/ai-model',
+          headers: authHeader(),
+          payload: {
+            provider: 'openai',
+            lightModel: 'gpt-4o-mini',
+            heavyModel: 'gpt-4o',
+          },
+        });
+        // 200 means the preference was saved
+        expect(res.statusCode).toBe(200);
+      } finally {
+        delete process.env['LLM_API_KEY_OPENAI'];
+      }
     });
 
     it('returns 401 without auth', async () => {

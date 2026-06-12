@@ -53,7 +53,7 @@ import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilien
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
-import { buildDiscoveryNetworkMap, buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
+import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
@@ -977,7 +977,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     publishToInbound,
     botRepo: toolBotRepo,
     marketDataRegistry: marketDataRegistry ?? undefined,
-    marketDataConfig: marketDataConfig ?? undefined,
+    marketDataConfig: marketDataConfig as unknown as Record<string, unknown> ?? undefined,
     recordMarketDataAttempt,
     recordMarketDataRejection,
     capabilityEngine,

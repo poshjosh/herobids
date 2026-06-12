@@ -18,8 +18,10 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     await registerUser(page, EMAIL, PASSWORD, 'E2E User J14');
 
     await page.goto('/agents');
-    await page.getByRole('button', { name: /new agent|create agent/i }).first().click();
+    await page.getByRole('button', { name: /new.*agent|create agent/i }).first().click();
 
+    // Fill name (required field) and goal
+    await page.locator('input[type="text"]').first().fill('Crypto Trading Agent J14');
     // Fill in a trading-relevant goal
     await page.locator('textarea').first().fill('Monitor crypto prices and trade automatically.');
 
@@ -46,7 +48,7 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     await page.getByRole('button', { name: 'Set up trading now' }).click();
 
     // ProviderSetupForm replaces the create agent modal content
-    await expect(page.getByText('Add trading provider')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('div').filter({ hasText: /^Add trading connection$/ }).first()).toBeVisible({ timeout: 5_000 });
 
     // Fill in the setup form
     await page.getByPlaceholder('e.g. hyperliquid, bybit, 1inch').fill('hyperliquid');
@@ -60,10 +62,10 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     await page.locator('input[placeholder="Secret value"]').nth(2).fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit
-    await page.getByRole('button', { name: 'Set up trading provider' }).click();
+    await page.getByRole('button', { name: 'Add trading connection' }).click();
 
     // Setup form closes; back in the create agent modal with binding auto-selected
-    await expect(page.getByText('Add trading provider')).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('div').filter({ hasText: /^Add trading connection$/ }).first()).not.toBeVisible({ timeout: 15_000 });
 
     // The no-bindings state is gone — the new binding is now selected
     await expect(

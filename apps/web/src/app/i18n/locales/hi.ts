@@ -260,6 +260,8 @@ export const messages: Record<string, string> = {
   'agents.create.title': 'AI एजेंट बनाएं',
   'agents.create.goal': 'AI एजेंट को क्या करना चाहिए?',
   'agents.create.goalPlaceholder': 'उदा. 30 दिनों में मेरी Solana पोर्टफोलियो को सावधानी से बढ़ाएं',
+  'agents.create.name': 'नाम',
+  'agents.create.namePlaceholder': 'उदा. market-watch-01',
   'agents.create.skillPreset': 'कौशल प्रीसेट',
   'agents.create.skillPreset.help': 'किसी प्रीसेट से शुरू करें या कौशल हाथ से चुनने के लिए कस्टम चुनें।',
   'agents.create.skillPreset.trading': 'ट्रेडिंग',

@@ -50,7 +50,7 @@ test.describe('Journey 3: Messages section renders on agent detail page', () => 
     await expect(page.getByText(/Messages to User/i)).toBeVisible({ timeout: 5000 });
     await expect(page.getByText(/No messages sent yet/i)).toBeVisible({ timeout: 5000 });
 
-    await expect(page.getByText(/Protocol Activity/i)).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText(/No protocol messages yet/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Activity Timeline/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/No activity recorded yet/i)).toBeVisible({ timeout: 5000 });
   });
 });

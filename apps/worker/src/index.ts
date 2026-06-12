@@ -38,7 +38,7 @@ import {
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { UserEventPublisher } from './user-event-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { createProviderRegistry, type RedisEvalClient, type TokenInfo } from '@herobids/market-data';
+import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 
@@ -61,7 +61,7 @@ async function resolveSwapTokenData(
     return null;
   }
 
-  if (exactMatch.poolCreatedAt) {
+  if ((exactMatch as typeof exactMatch & { poolCreatedAt?: string }).poolCreatedAt) {
     return {
       ...exactMatch,
       ageResolution: 'available',
@@ -88,7 +88,7 @@ async function resolveSwapTokenData(
 
     return {
       ...exactMatch,
-      poolCreatedAt: discoveryMatch.poolCreatedAt ?? exactMatch.poolCreatedAt,
+      poolCreatedAt: discoveryMatch.poolCreatedAt ?? (exactMatch as typeof exactMatch & { poolCreatedAt?: string }).poolCreatedAt,
       ageResolution: discoveryMatch.poolCreatedAt ? 'available' : 'missing',
     };
   } catch {
