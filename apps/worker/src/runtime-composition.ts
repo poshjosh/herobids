@@ -100,6 +100,7 @@ export interface RuntimeSessionMetrics {
   market: RuntimeMarketSnapshot;
   portfolio: RuntimePortfolioSummary;
   openPositions: RuntimePositionSnapshot[];
+  activeWatches: Array<{ watchId: string; symbol: string; chain: string; condition: 'above' | 'below'; thresholdPrice: number; note?: string; lastConditionMet: boolean | null; lastCheckedAt?: string }>;
   recentEvents: RuntimeEventSummary[];
   venueSignals: RuntimeVenueSignal[];
   regime: {
@@ -620,6 +621,31 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     }),
   },
   {
+    id: 'active-watches',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: ['trading'],
+    trimOrder: 2,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const watches = state.metrics.activeWatches;
+      if (watches.length === 0) {
+        return null;
+      }
+      return {
+        id: 'activeWatches',
+        title: `Active Watches (${watches.length})`,
+        provider: 'active-watches',
+        content: watches.map((w) => {
+          const conditionLabel = w.lastConditionMet === true ? ' [TRIGGERED]' : w.lastConditionMet === false ? '' : '';
+          const noteLabel = w.note ? ` — ${w.note}` : '';
+          const checkedLabel = w.lastCheckedAt ? ` checked=${w.lastCheckedAt}` : '';
+          return `${w.symbol} (${w.chain}) ${w.condition} $${w.thresholdPrice}${conditionLabel}${noteLabel}${checkedLabel}`;
+        }).join('\n'),
+      };
+    },
+  },
+  {
     id: 'regime-summary',
     costTier: 'cheap',
     section: 'dynamic',
@@ -783,6 +809,7 @@ export function createRuntimeCompositionState(runtimeDescriptor: RuntimeDescript
         freshness: unavailableFreshness('portfolio summary pending'),
       },
       openPositions: [],
+      activeWatches: [],
       recentEvents: [],
       venueSignals: [],
       regime: {
@@ -875,6 +902,13 @@ export function setOpenPositions(state: RuntimeCompositionState, positions: Runt
 
 export function recordVenueSignals(state: RuntimeCompositionState, signals: RuntimeVenueSignal[]): void {
   state.metrics.venueSignals = signals;
+}
+
+export function recordActiveWatches(
+  state: RuntimeCompositionState,
+  watches: RuntimeSessionMetrics['activeWatches'],
+): void {
+  state.metrics.activeWatches = watches;
 }
 
 export function recordRegimeEvaluation(

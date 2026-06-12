@@ -43,6 +43,7 @@ import {
   recordSessionCost,
   setCapabilityDegradation,
   recordVenueSignals,
+  recordActiveWatches,
   type RuntimeCompositionState,
 } from './runtime-composition.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
@@ -1423,6 +1424,26 @@ async function runTick(): Promise<void> {
 
     // Snapshot before buildTickUserContext clears currentReminder.
     const reminderScheduledBy = runtimeState.metrics.currentReminder?.scheduledBy ?? null;
+
+    // Fetch active watches from Redis and surface them in tick context.
+    try {
+      const rawWatches = await redis.hgetall(`agent:watches:${AGENT_ID}`);
+      if (rawWatches) {
+        const parsedWatches = Object.values(rawWatches).flatMap((raw) => {
+          try {
+            return [JSON.parse(raw) as RuntimeCompositionState['metrics']['activeWatches'][number]];
+          } catch {
+            return [];
+          }
+        });
+        recordActiveWatches(runtimeState, parsedWatches);
+      } else {
+        recordActiveWatches(runtimeState, []);
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Failed to fetch active watches for context — skipping');
+      recordActiveWatches(runtimeState, []);
+    }
 
     // Build context for this tick.
     const fullUserContext = buildTickUserContext(runtimeState, []);

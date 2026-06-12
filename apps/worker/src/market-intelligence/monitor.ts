@@ -193,15 +193,15 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
         // Edge trigger: only fire on false -> true transition
         const isTriggered = watch.lastConditionMet === false && conditionMet;
 
-        if (conditionMet !== watch.lastConditionMet) {
-          // Update watch state
-          const updated: WatchEntry = { ...watch, lastConditionMet: conditionMet, lastCheckedAt: new Date().toISOString() };
-          await redis.hset(key, watch.watchId, JSON.stringify(updated));
+        // Always update lastCheckedAt so staleness is observable in the API/context.
+        // Only persist the full entry if the condition state changed (or on first check).
+        const conditionChanged = conditionMet !== watch.lastConditionMet;
+        const updated: WatchEntry = { ...watch, lastConditionMet: conditionMet, lastCheckedAt: new Date().toISOString() };
+        await redis.hset(key, watch.watchId, JSON.stringify(updated));
+        if (conditionChanged && !conditionMet) {
           // When condition resets to false, clear the dedupe key so the next
           // false→true crossing is not suppressed within the same day.
-          if (!conditionMet) {
-            await redis.del(`market-monitor:dedupe:watch:${watch.watchId}:cross:${watch.condition}`);
-          }
+          await redis.del(`market-monitor:dedupe:watch:${watch.watchId}:cross:${watch.condition}`);
         }
 
         if (isTriggered) {
