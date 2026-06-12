@@ -11,7 +11,7 @@
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, initDefaultRuntimeBudgets, DEFAULT_RUNTIME_BUDGETS } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, initDefaultRuntimeBudgets, DEFAULT_RUNTIME_BUDGETS, AGENT_RUNTIME_ACTIVITY_TYPES } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
@@ -301,6 +301,9 @@ const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.
 // Declared here (before functions that reference it at module-init call sites)
 // even though the main loop increments it later.
 let tickCount = 0;
+
+const SCOUT_MAX_TURNS = 3;
+const JUDGE_MAX_TURNS = 5;
 
 class TickGateUnexpectedError extends Error {
   constructor(public readonly cause: unknown) {
@@ -764,6 +767,33 @@ async function publishToInbound(type: string, payload: Record<string, unknown>):
   await redis.xadd(INBOUND_STREAM, '*', 'envelope', JSON.stringify(envelope));
 }
 
+/**
+ * Publish a typed runtime activity audit event into the inbound stream.
+ * Fire-and-forget — errors are swallowed so instrumentation never disrupts the tick.
+ */
+function emitActivityEvent(type: string, payload: Record<string, unknown>): void {
+  publishToInbound(type, payload).catch((err: unknown) => {
+    logger.warn({ err, type }, 'Failed to emit activity event');
+  });
+}
+
+function emitToolResultEvent(params: {
+  phase: 'scout' | 'judge';
+  toolName: string;
+  status: 'ok' | 'error';
+  correlationId: string;
+  summary?: string;
+}): void {
+  emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT, {
+    tickId: currentTickId,
+    phase: params.phase,
+    toolName: params.toolName,
+    status: params.status,
+    correlationId: params.correlationId,
+    summary: params.summary,
+  });
+}
+
 async function sendHeartbeat(status: 'starting' | 'ready' | 'busy' | 'degraded', reasonCode?: string): Promise<void> {
   try {
     await publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_HEARTBEAT, {
@@ -920,12 +950,31 @@ interface ToolCall {
 }
 
 async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): Promise<string | null> {
+  const toolCorrelationId = crypto.randomUUID();
+
+  const rejectToolCall = (message: string): string => {
+    emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL, {
+      tickId: currentTickId,
+      phase,
+      toolName: call.tool,
+      correlationId: toolCorrelationId,
+    });
+    emitToolResultEvent({
+      phase,
+      toolName: call.tool,
+      status: 'error',
+      correlationId: toolCorrelationId,
+      summary: message.slice(0, 500),
+    });
+    return JSON.stringify({ ok: false, error: message, retryable: false });
+  };
+
   // Hard runtime gate: reject any tool not declared in the active skill set.
   // The model was only told about allowed tools, but we enforce it here too so
   // a jailbreak or prompt injection cannot invoke undeclared capabilities.
   if (!allowedTools().has(call.tool)) {
     logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
-    return `tool rejected: ${call.tool} is not available in the current skill set`;
+    return rejectToolCall(`tool rejected: ${call.tool} is not available in the current skill set`);
   }
 
   logger.info({ tool: call.tool, args: call.args }, 'Executing tool');
@@ -933,7 +982,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
   const tool = toolRegistry.get(call.tool);
   if (!tool) {
     logger.warn({ tool: call.tool }, 'Unknown tool — not in registry');
-    return `unknown tool: ${call.tool}`;
+    return rejectToolCall(`unknown tool: ${call.tool}`);
   }
 
   const toolBotRepo = botRepo
@@ -991,11 +1040,26 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     // Validate parameters at the registry boundary before dispatching.
     // Tools receive pre-validated data and trust it without re-parsing.
     const validation = tool.parametersSchema.safeParse(call.args);
+    emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL, {
+      tickId: currentTickId,
+      phase,
+      toolName: call.tool,
+      correlationId: toolCorrelationId,
+    });
+
     if (!validation.success) {
+      const errorMessage = `invalid parameters: ${validation.error.issues.map(({ path, message }) => `${path.length > 0 ? path.join('.') : 'root'}: ${message}`).join('; ')}`;
       logger.warn({ tool: call.tool, errors: validation.error.flatten() }, 'Tool parameter validation failed');
+      emitToolResultEvent({
+        phase,
+        toolName: call.tool,
+        status: 'error',
+        correlationId: toolCorrelationId,
+        summary: errorMessage.slice(0, 500),
+      });
       return JSON.stringify({
         ok: false,
-        error: `invalid parameters: ${validation.error.issues.map(({ path, message }) => `${path.length > 0 ? path.join('.') : 'root'}: ${message}`).join('; ')}`,
+        error: errorMessage,
         retryable: false,
       });
     }
@@ -1003,21 +1067,41 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     const result = await tool.execute(validation.data, toolContext);
 
     if (!result.success) {
-      return JSON.stringify({
+      const errorResult = JSON.stringify({
         ok: false,
         error: result.error ?? 'tool execution failed',
         retryable: result.retryable,
       });
+      emitToolResultEvent({
+        phase,
+        toolName: call.tool,
+        status: 'error',
+        correlationId: toolCorrelationId,
+        summary: (result.error ?? 'tool execution failed').slice(0, 500),
+      });
+      return errorResult;
     }
 
     // For tools that return ToolResult, serialize the data
-    if (typeof result.data === 'string') {
-      return result.data;
-    }
-    return JSON.stringify(result.data);
+    const serialized = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    emitToolResultEvent({
+      phase,
+      toolName: call.tool,
+      status: 'ok',
+      correlationId: toolCorrelationId,
+      summary: serialized.slice(0, 500),
+    });
+    return serialized;
   } catch (err) {
     logger.error({ err, tool: call.tool }, 'Tool execution threw unexpected error');
     const message = err instanceof Error ? err.message : 'unknown error';
+    emitToolResultEvent({
+      phase,
+      toolName: call.tool,
+      status: 'error',
+      correlationId: toolCorrelationId,
+      summary: message.slice(0, 500),
+    });
     return JSON.stringify({ ok: false, error: message, retryable: false });
   }
 }
@@ -1055,6 +1139,8 @@ let running = true;
 // module-level applyToolVisibility() calls that reference them).
 // Prevents concurrent tick execution when an LLM call takes longer than TICK_INTERVAL_MS.
 let tickInFlight = false;
+/** Correlation ID for activity events within the current tick — set at the start of each tick. */
+let currentTickId = '';
 let previousContextHash: string | null = null;
 let previousFullUserContext: string | null = null;
 let effectiveTickIntervalMs = costProfile.tickIntervalMs;
@@ -1176,6 +1262,9 @@ async function runTick(): Promise<void> {
   refreshToolCircuits();
   logger.info({ tickCount }, 'Agent tick starting');
 
+  const tickId = crypto.randomUUID();
+  currentTickId = tickId;
+
   // Check session wall-clock expiry before each tick.
   if (sandboxEnforcer.isExpired(SESSION_ID!)) {
     await shutdown('wall_clock_expired');
@@ -1228,6 +1317,13 @@ async function runTick(): Promise<void> {
     if (tickGateState.hasWakeSignal) {
       logger.info({ tickCount }, 'Processing market wake signal');
     }
+
+    emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED, {
+      tickId,
+      trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+      positionSide: sessionMetrics.lastPositionSide ?? undefined,
+      hasWakeSignal: tickGateState.hasWakeSignal,
+    });
 
     let skipDecision: TickSkipDecision;
     try {
@@ -1287,6 +1383,13 @@ async function runTick(): Promise<void> {
           scoutHoldDeadlineAtMs = 0;
         }
         logger.info({ tickCount, reason: skipDecision.reason, gate: skipDecision.gate }, 'Skipping agent tick before LLM dispatch');
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+          tickId,
+          reason: skipDecision.reason ?? 'unknown',
+          gate: skipDecision.gate ?? undefined,
+          trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+          positionSide: sessionMetrics.lastPositionSide ?? undefined,
+        });
         await sendHeartbeat('ready');
         return;
       }
@@ -1381,6 +1484,13 @@ async function runTick(): Promise<void> {
         timing: promptTiming,
       });
 
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
+        tickId,
+        phase: 'scout',
+        model: resolvedLightModel,
+        maxTurns: SCOUT_MAX_TURNS,
+      });
+
       const scoutLoopResult = await runStructuredToolLoop({
         providerConfig: {
           provider: resolvedProvider,
@@ -1399,13 +1509,27 @@ async function runTick(): Promise<void> {
           { role: 'user', content: userContext },
         ],
         tools: readOnlyScoutDefinitions,
-        maxTurns: 3,
+        maxTurns: SCOUT_MAX_TURNS,
         retryPolicy: agentRuntimePolicy.llm.retry,
         executeTool: async (toolCall) => {
           const allowedReadOnlyTool = readOnlyScoutTools.includes(toolCall.name);
 
           if (!allowedReadOnlyTool) {
             logger.warn({ tool: toolCall.name, phase: 'scout' }, 'Scout attempted write or unavailable tool — rejecting');
+            const rejectedToolCorrelationId = crypto.randomUUID();
+            emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL, {
+              tickId: currentTickId,
+              phase: 'scout',
+              toolName: toolCall.name,
+              correlationId: rejectedToolCorrelationId,
+            });
+            emitToolResultEvent({
+              phase: 'scout',
+              toolName: toolCall.name,
+              status: 'error',
+              correlationId: rejectedToolCorrelationId,
+              summary: `tool rejected: ${toolCall.name}`,
+            });
             return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false });
           }
 
@@ -1426,6 +1550,14 @@ async function runTick(): Promise<void> {
         onRetry: ({ attempt, delayMs, classification }) => {
           logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
         },
+      });
+
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED, {
+        tickId,
+        phase: 'scout',
+        model: resolvedLightModel,
+        turnsUsed: scoutLoopResult.ok ? scoutLoopResult.turnsUsed : 0,
+        finishReason: !scoutLoopResult.ok ? 'error' : scoutLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
       });
 
       if (!scoutLoopResult.ok) {
@@ -1454,6 +1586,10 @@ async function runTick(): Promise<void> {
       } else {
         const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
         logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout held the tick');
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD, {
+          tickId,
+          reason: resolvedScoutDecision.reason ?? 'unspecified',
+        });
         handleTickSuccess();
         await sendHeartbeat('ready');
         return;
@@ -1464,8 +1600,16 @@ async function runTick(): Promise<void> {
       scoutEscalationCount++;
       const escalationRate = scoutTickCount > 0 ? scoutEscalationCount / scoutTickCount : 0;
       logger.info({ metric: 'agent.escalation_rate', escalationRate, reason: resolvedScoutDecision.reason }, 'Scout escalated to judge');
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED, {
+        tickId,
+        reason: resolvedScoutDecision.reason ?? 'unspecified',
+      });
     } else {
       logger.info({ reason: resolvedScoutDecision.reason, source: preScoutResolution.source }, 'Escalated to judge before scout dispatch');
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED, {
+        tickId,
+        reason: resolvedScoutDecision.reason ?? 'unspecified',
+      });
     }
     userContext = `${fullUserContext}\n\nEscalation reason: ${resolvedScoutDecision.reason ?? 'unspecified'}`;
 
@@ -1496,6 +1640,13 @@ async function runTick(): Promise<void> {
     previousRegimePass = skipDecision.regime?.pass ?? previousRegimePass;
     logger.info({ thinking: judgeThinking.thinking, reason: judgeThinking.reason }, 'Resolved tick thinking level');
 
+    emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
+      tickId,
+      phase: 'judge',
+      model: costProfile.heavyModel,
+      maxTurns: JUDGE_MAX_TURNS,
+    });
+
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
         provider: resolvedProvider,
@@ -1512,7 +1663,7 @@ async function runTick(): Promise<void> {
       },
       initialMessages: messages,
       tools: judgeToolDefinitions,
-      maxTurns: 5,
+      maxTurns: JUDGE_MAX_TURNS,
       retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
       onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
@@ -1540,6 +1691,14 @@ async function runTick(): Promise<void> {
       onRetry: ({ attempt, delayMs, classification }) => {
         logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
       },
+    });
+
+    emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED, {
+      tickId,
+      phase: 'judge',
+      model: costProfile.heavyModel,
+      turnsUsed: judgeLoopResult.ok ? judgeLoopResult.turnsUsed : 0,
+      finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
     });
 
     if (!judgeLoopResult.ok) {

@@ -15,7 +15,7 @@ describe('isSuppressedProtocolMessageType', () => {
   it('suppresses runtime heartbeat message types', () => {
     expect(isSuppressedProtocolMessageType('agent.heartbeat')).toBe(true);
     expect(isSuppressedProtocolMessageType('agent.runtime.heartbeat')).toBe(true);
-    expect(isSuppressedProtocolMessageType('agent.send_message')).toBe(false);
+    expect(isSuppressedProtocolMessageType('agent.message.send')).toBe(false);
   });
 });
 
@@ -28,13 +28,14 @@ describe('mapProtocolMessage', () => {
     actorId: 'agent-1',
     agentId: 'agent-1',
     botId: null,
-    type: 'platform.decision.rejected',
+    type: 'instance.decision.rejected',
     direction: 'outbound',
     schemaVersion: 'v1',
     sequence: null,
     traceId: 'trace-1',
     processingStatus: 'processed',
     errorDetail: { code: 'risk.exceeded', message: 'Position exceeds max notional' },
+    payload: null,
     createdAt: new Date('2026-06-11T12:00:00Z'),
   };
 
@@ -57,7 +58,7 @@ describe('mapProtocolMessage', () => {
     const toolFail: RawAgentMessage = {
       ...baseMessage,
       id: 'msg-2',
-      type: 'platform.tool_result',
+      type: 'instance.tool.result',
       processingStatus: 'failed',
       errorDetail: { code: 'tool.timeout', message: 'Tool timed out' },
     };
@@ -222,5 +223,190 @@ describe('mapArtifact', () => {
     };
     const entry = mapArtifact(artifact);
     expect(entry.summary).toBe('Published code_exec_summary (text/plain)');
+  });
+});
+
+describe('mapProtocolMessage — runtime activity event families', () => {
+  const base: RawAgentMessage = {
+    id: 'msg-ra-1',
+    messageId: 'mid-ra-1',
+    correlationId: 'corr-ra',
+    actorType: 'agent',
+    actorId: 'agent-1',
+    agentId: 'agent-1',
+    botId: null,
+    type: 'agent.tick.started',
+    direction: 'inbound',
+    schemaVersion: 'v1',
+    sequence: null,
+    traceId: null,
+    processingStatus: 'processed',
+    errorDetail: null,
+    payload: null,
+    createdAt: new Date('2026-06-11T13:00:00Z'),
+  };
+
+  it('classifies tick.started with payload', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.tick.started',
+      payload: { tickId: 't-1', trigger: 'scheduled', hasWakeSignal: false },
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.eventType).toBe('tick.started');
+    expect(entry.title).toBe('Tick started');
+    expect(entry.summary).toContain('scheduled');
+    expect(entry.detail['payload']).toBeDefined();
+  });
+
+  it('classifies tick.skipped with reason and gate', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.tick.skipped',
+      payload: { tickId: 't-2', reason: 'context_unchanged', gate: 'context' },
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.eventType).toBe('tick.skipped');
+    expect(entry.summary).toContain('context_unchanged');
+    expect(entry.summary).toContain('context');
+  });
+
+  it('classifies scout.held', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.scout.held',
+      payload: { tickId: 't-3', reason: 'no_action_needed' },
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.eventType).toBe('scout.held');
+    expect(entry.summary).toContain('no_action_needed');
+  });
+
+  it('classifies scout.escalated', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.scout.escalated',
+      payload: { tickId: 't-4', reason: 'open_position_detected' },
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.eventType).toBe('scout.escalated');
+    expect(entry.summary).toContain('open_position_detected');
+  });
+
+  it('classifies llm.dispatch with phase and model', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.dispatch',
+      payload: { tickId: 't-5', phase: 'scout', model: 'claude-haiku', maxTurns: 3 },
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.eventType).toBe('llm.dispatch');
+    expect(entry.summary).toContain('scout');
+    expect(entry.summary).toContain('claude-haiku');
+  });
+
+  it('classifies llm.completed with finish reason', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: { tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 2, finishReason: 'stop' },
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.eventType).toBe('llm.completed');
+    expect(entry.summary).toContain('judge');
+    expect(entry.summary).toContain('stop');
+  });
+
+  it('elevates llm.completed with finishReason=error to warn severity', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: { tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 0, finishReason: 'error' },
+    });
+    expect(entry.severity).toBe('warn');
+  });
+
+  it('elevates llm.completed with finishReason=turn_limit to warn severity', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: { tickId: 't-5', phase: 'judge', model: 'claude-sonnet', turnsUsed: 5, finishReason: 'turn_limit' },
+    });
+    expect(entry.severity).toBe('warn');
+  });
+
+  it('keeps scout turn-limit completions at info severity', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.llm.completed',
+      payload: { tickId: 't-5', phase: 'scout', model: 'claude-sonnet', turnsUsed: 3, finishReason: 'turn_limit' },
+    });
+    expect(entry.severity).toBe('info');
+  });
+
+  it('classifies tool.call with tool name', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.tool.call',
+      payload: { tickId: 't-6', phase: 'judge', toolName: 'list_bots', correlationId: 'c-1' },
+    });
+    expect(entry.category).toBe('tool');
+    expect(entry.eventType).toBe('tool.called');
+    expect(entry.summary).toContain('list_bots');
+    expect(entry.summary).toContain('judge');
+  });
+
+  it('classifies tool.result with ok status', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.tool.result',
+      payload: { tickId: 't-6', phase: 'judge', toolName: 'list_bots', status: 'ok', correlationId: 'c-1', summary: 'Found 2 bots.' },
+    });
+    expect(entry.category).toBe('tool');
+    expect(entry.eventType).toBe('tool.result');
+    expect(entry.summary).toContain('list_bots');
+    expect(entry.summary).toContain('ok');
+  });
+
+  it('elevates tool.result with error status to warn severity', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.tool.result',
+      payload: { tickId: 't-6', phase: 'judge', toolName: 'list_bots', status: 'error', correlationId: 'c-1', summary: 'tool rejected: list_bots' },
+    });
+    expect(entry.severity).toBe('warn');
+  });
+
+  it('renders gracefully when payload is null (legacy row)', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'agent.tick.started',
+      payload: null,
+    });
+    expect(entry.category).toBe('tick');
+    expect(entry.summary).toBe('Agent tick started.');
+  });
+
+  it('uses canonical instance.decision.accepted type', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'instance.decision.accepted',
+      payload: null,
+    });
+    expect(entry.category).toBe('decision');
+    expect(entry.eventType).toBe('decision.accepted');
+    expect(entry.title).toBe('Decision accepted');
+  });
+
+  it('uses canonical instance.tool.result type', () => {
+    const entry = mapProtocolMessage({
+      ...base,
+      type: 'instance.tool.result',
+      processingStatus: 'failed',
+      payload: null,
+    });
+    expect(entry.category).toBe('tool');
+    expect(entry.eventType).toBe('system.alert');
+    expect(entry.severity).toBe('warn');
   });
 });

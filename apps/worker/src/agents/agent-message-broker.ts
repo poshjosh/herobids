@@ -15,6 +15,7 @@ import {
   MessageEnvelopeSchema,
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
+  AGENT_RUNTIME_ACTIVITY_TYPES,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import type { TelegramClient } from '../alerting/telegram-client.js';
@@ -198,6 +199,7 @@ export class AgentMessageBroker {
       schemaVersion: envelope.schemaVersion,
       sequence: envelope.sequence,
       traceId: envelope.traceId,
+      payload: envelope.payload,
     });
 
     // 5. Route to appropriate handler
@@ -279,6 +281,17 @@ export class AgentMessageBroker {
           }
           break;
         }
+
+        case AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL:
+        case AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT:
+          // Audit-only events — persisted with payload, no business side effects.
+          break;
 
         default:
           await this.agentRepo.markMessageProcessed(envelope.messageId, 'rejected', {

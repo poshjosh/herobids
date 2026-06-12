@@ -24,7 +24,15 @@ export type AgentActivityEventType =
   | 'decision.rejected'
   | 'message.authored'
   | 'system.alert'
-  | 'artifact.published';
+  | 'artifact.published'
+  | 'tick.started'
+  | 'tick.skipped'
+  | 'scout.held'
+  | 'scout.escalated'
+  | 'llm.dispatch'
+  | 'llm.completed'
+  | 'tool.called'
+  | 'tool.result';
 
 export interface AgentActivityEntry {
   id: string;

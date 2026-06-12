@@ -33,6 +33,8 @@ export const agentMessages = pgTable('agent_messages', {
   processingStatus: text('processing_status').notNull().default('received'),
   /** Error details if processing failed */
   errorDetail: jsonb('error_detail').$type<{ code: string; message: string } | null>(),
+  /** Typed message payload for audit and feed rendering — null for legacy rows */
+  payload: jsonb('payload').$type<Record<string, unknown> | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_agent_messages_agent_id').on(t.agentId),

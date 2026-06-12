@@ -366,6 +366,92 @@ export const MARKET_MONITOR_MESSAGE_TYPES = {
   AGENT_WAKE: 'agent.market.wake',
 } as const;
 
+// --- Runtime Activity Audit Event Types ---
+
+/**
+ * Curated operator-meaningful runtime audit events published by the agent
+ * container into the inbound stream. These are persist-only with no business
+ * side effects — they exist solely to populate the activity feed.
+ */
+export const AGENT_RUNTIME_ACTIVITY_TYPES = {
+  TICK_STARTED: 'agent.tick.started',
+  TICK_SKIPPED: 'agent.tick.skipped',
+  SCOUT_HELD: 'agent.scout.held',
+  SCOUT_ESCALATED: 'agent.scout.escalated',
+  LLM_DISPATCH: 'agent.llm.dispatch',
+  LLM_COMPLETED: 'agent.llm.completed',
+  TOOL_CALL: 'agent.tool.call',
+  TOOL_RESULT: 'agent.tool.result',
+} as const;
+
+// --- Runtime Activity Payload Schemas ---
+
+export const TickStartedPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  trigger: z.string().min(1),
+  positionSide: z.string().optional(),
+  hasWakeSignal: z.boolean(),
+});
+export type TickStartedPayload = z.infer<typeof TickStartedPayloadSchema>;
+
+export const TickSkippedPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  reason: z.string().min(1),
+  gate: z.string().optional(),
+  trigger: z.string().optional(),
+  positionSide: z.string().optional(),
+});
+export type TickSkippedPayload = z.infer<typeof TickSkippedPayloadSchema>;
+
+export const ScoutHeldPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  reason: z.string().min(1),
+});
+export type ScoutHeldPayload = z.infer<typeof ScoutHeldPayloadSchema>;
+
+export const ScoutEscalatedPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  reason: z.string().min(1),
+});
+export type ScoutEscalatedPayload = z.infer<typeof ScoutEscalatedPayloadSchema>;
+
+export const LlmDispatchPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  phase: z.enum(['scout', 'judge']),
+  model: z.string().min(1),
+  maxTurns: z.number().int().min(1),
+});
+export type LlmDispatchPayload = z.infer<typeof LlmDispatchPayloadSchema>;
+
+export const LlmCompletedPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  phase: z.enum(['scout', 'judge']),
+  model: z.string().min(1),
+  turnsUsed: z.number().int().min(0),
+  finishReason: z.string().min(1),
+  tokensUsed: z.number().int().min(0).optional(),
+  thinkingTokens: z.number().int().min(0).optional(),
+});
+export type LlmCompletedPayload = z.infer<typeof LlmCompletedPayloadSchema>;
+
+export const RuntimeToolCallPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  phase: z.enum(['scout', 'judge']),
+  toolName: z.string().min(1),
+  correlationId: z.string().min(1),
+});
+export type RuntimeToolCallPayload = z.infer<typeof RuntimeToolCallPayloadSchema>;
+
+export const RuntimeToolResultPayloadSchema = z.object({
+  tickId: z.string().min(1),
+  phase: z.enum(['scout', 'judge']),
+  toolName: z.string().min(1),
+  status: z.enum(['ok', 'error']),
+  correlationId: z.string().min(1),
+  summary: z.string().max(500).optional(),
+});
+export type RuntimeToolResultPayload = z.infer<typeof RuntimeToolResultPayloadSchema>;
+
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: DecisionSubmitPayloadSchema,
@@ -390,6 +476,14 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED]: MarketDiscoveryDetectedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED]: MarketRegimeChangedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE]: AgentMarketWakePayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED]: TickStartedPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED]: TickSkippedPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD]: ScoutHeldPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED]: ScoutEscalatedPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH]: LlmDispatchPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED]: LlmCompletedPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL]: RuntimeToolCallPayloadSchema,
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT]: RuntimeToolResultPayloadSchema,
 };
 
 /**

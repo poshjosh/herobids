@@ -40,6 +40,7 @@ export interface StructuredToolLoopSuccess {
   ok: true;
   assistantResponse: string;
   toolCalls: LlmToolCall[];
+  turnsUsed: number;
   terminatedByLimit: boolean;
 }
 
@@ -55,8 +56,10 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
   const toolChoice = options.toolChoice ?? (options.tools.length > 0 ? 'auto' : 'none');
   let lastAssistantResponse = '';
   let lastToolCalls: LlmToolCall[] = [];
+  let turnsUsed = 0;
 
   for (let turnIndex = 0; turnIndex < options.maxTurns; turnIndex++) {
+    turnsUsed = turnIndex + 1;
     const turnResultWithRetry = await callLlmWithRetry(
       options.providerConfig,
       {
@@ -97,6 +100,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         ok: true,
         assistantResponse,
         toolCalls,
+        turnsUsed,
         terminatedByLimit: false,
       };
     }
@@ -128,6 +132,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
     ok: true,
       assistantResponse: lastAssistantResponse,
       toolCalls: lastToolCalls,
+      turnsUsed,
     terminatedByLimit: true,
   };
 }

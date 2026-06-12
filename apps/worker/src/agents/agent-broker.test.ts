@@ -1378,3 +1378,108 @@ describe('AgentMessageBroker', () => {
     });
   });
 });
+
+describe('AgentMessageBroker — runtime activity audit events', () => {
+  function makeAuditAgentRepo() {
+    return {
+      isMessageDuplicate: vi.fn().mockResolvedValue(false),
+      insertMessage: vi.fn().mockResolvedValue(undefined),
+      markMessageProcessed: vi.fn().mockResolvedValue(undefined),
+      getAgent: vi.fn().mockResolvedValue({ id: 'agent-123', status: 'active' }),
+      updateAgent: vi.fn().mockResolvedValue(undefined),
+      getActiveSession: vi.fn().mockResolvedValue({ id: 'sess-001' }),
+      retireActiveSessions: vi.fn().mockResolvedValue(undefined),
+      getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue(null),
+      insertArtifact: vi.fn().mockResolvedValue('art-id'),
+      getActiveLink: vi.fn().mockResolvedValue({ botId: 'ti-456' }),
+    };
+  }
+
+  const auditDecisionHandler = { handleDecisionSubmit: vi.fn() } as unknown as AgentDecisionHandler;
+  const auditSessionManager = {
+    handleHeartbeat: vi.fn(),
+    handlePauseRequest: vi.fn(),
+    handleStopRequest: vi.fn(),
+  } as unknown as AgentSessionManager;
+  const auditEventPublisher = {
+    emitDecisionAccepted: vi.fn(),
+    emitDecisionRejected: vi.fn(),
+    emitInstanceStatus: vi.fn(),
+    emitToolResult: vi.fn(),
+  } as unknown as InstanceEventPublisher;
+
+  let auditAgentRepo: ReturnType<typeof makeAuditAgentRepo>;
+  let auditBroker: AgentMessageBroker;
+
+  beforeEach(() => {
+    auditAgentRepo = makeAuditAgentRepo();
+    auditBroker = new AgentMessageBroker(
+      {} as any,
+      auditAgentRepo as any,
+      auditDecisionHandler,
+      auditSessionManager,
+      auditEventPublisher,
+    );
+  });
+
+  it('accepts and persists agent.tick.started without routing to any handler', async () => {
+    const envelope = {
+      schemaVersion: 'v1',
+      messageId: 'msg-tick-1',
+      correlationId: 'corr-tick-1',
+      initiatorType: 'agent',
+      initiatorId: 'agent-123',
+      type: 'agent.tick.started',
+      createdAt: new Date().toISOString(),
+      payload: { tickId: 'tick-001', trigger: 'scheduled', positionSide: 'none', hasWakeSignal: false },
+    };
+
+    const result = await auditBroker.processInbound(envelope);
+
+    expect(result.accepted).toBe(true);
+    expect(auditAgentRepo.insertMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-tick-1', type: 'agent.tick.started' }),
+    );
+    expect(auditAgentRepo.markMessageProcessed).toHaveBeenCalledWith('msg-tick-1', 'processed');
+    expect((auditDecisionHandler as any).handleDecisionSubmit).not.toHaveBeenCalled();
+    expect((auditSessionManager as any).handleHeartbeat).not.toHaveBeenCalled();
+  });
+
+  it('accepts agent.llm.completed as audit-only', async () => {
+    const envelope = {
+      schemaVersion: 'v1',
+      messageId: 'msg-llm-1',
+      correlationId: 'corr-llm-1',
+      initiatorType: 'agent',
+      initiatorId: 'agent-123',
+      type: 'agent.llm.completed',
+      createdAt: new Date().toISOString(),
+      payload: { tickId: 'tick-001', phase: 'scout', model: 'gpt-4o-mini', turnsUsed: 2, finishReason: 'stop', terminatedByLimit: false },
+    };
+
+    const result = await auditBroker.processInbound(envelope);
+
+    expect(result.accepted).toBe(true);
+    expect(auditAgentRepo.insertMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agent.llm.completed' }),
+    );
+  });
+
+  it('rejects unknown type even if it looks like an activity event', async () => {
+    const envelope = {
+      schemaVersion: 'v1',
+      messageId: 'msg-bad-1',
+      correlationId: 'corr-bad-1',
+      initiatorType: 'agent',
+      initiatorId: 'agent-123',
+      type: 'agent.tick.unknown',
+      createdAt: new Date().toISOString(),
+      payload: {},
+    };
+
+    const result = await auditBroker.processInbound(envelope);
+
+    expect(result.accepted).toBe(false);
+    expect(result.error).toBe('unknown_message_type');
+  });
+});

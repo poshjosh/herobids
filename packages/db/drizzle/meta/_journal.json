@@ -43,6 +43,13 @@
       "when": 1781209392179,
       "tag": "0005_handy_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781258116371,
+      "tag": "0006_add_agent_messages_payload",
+      "breakpoints": true
     }
   ]
 }

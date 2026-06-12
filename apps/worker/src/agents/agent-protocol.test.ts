@@ -14,7 +14,16 @@ import {
   GuardrailTriggeredPayloadSchema,
   ReconciliationNoticePayloadSchema,
   InstanceStatusPayloadSchema,
+  TickStartedPayloadSchema,
+  TickSkippedPayloadSchema,
+  ScoutHeldPayloadSchema,
+  ScoutEscalatedPayloadSchema,
+  LlmDispatchPayloadSchema,
+  LlmCompletedPayloadSchema,
+  RuntimeToolCallPayloadSchema,
+  RuntimeToolResultPayloadSchema,
   AGENT_MESSAGE_TYPES,
+  AGENT_RUNTIME_ACTIVITY_TYPES,
   INSTANCE_MESSAGE_TYPES,
   MESSAGE_PAYLOAD_SCHEMAS,
 } from '@herobids/domain';
@@ -345,6 +354,125 @@ describe('agent-protocol schema validation', () => {
       for (const type of Object.values(INSTANCE_MESSAGE_TYPES)) {
         expect(MESSAGE_PAYLOAD_SCHEMAS[type]).toBeDefined();
       }
+    });
+
+    it('maps all runtime activity types to schemas', () => {
+      for (const type of Object.values(AGENT_RUNTIME_ACTIVITY_TYPES)) {
+        expect(MESSAGE_PAYLOAD_SCHEMAS[type]).toBeDefined();
+      }
+    });
+  });
+
+  describe('Runtime activity payload schemas', () => {
+    it('validates TickStartedPayload', () => {
+      const result = TickStartedPayloadSchema.safeParse({
+        tickId: 'tick-001',
+        trigger: 'scheduled',
+        positionSide: 'long',
+        hasWakeSignal: false,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('requires tickId and hasWakeSignal in TickStartedPayload', () => {
+      expect(TickStartedPayloadSchema.safeParse({ trigger: 'scheduled', hasWakeSignal: false }).success).toBe(false);
+      expect(TickStartedPayloadSchema.safeParse({ tickId: 'tick-001', trigger: 'scheduled' }).success).toBe(false);
+    });
+
+    it('validates TickSkippedPayload', () => {
+      const result = TickSkippedPayloadSchema.safeParse({
+        tickId: 'tick-002',
+        reason: 'context_unchanged',
+        gate: 'context',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects TickSkippedPayload missing required fields', () => {
+      expect(TickSkippedPayloadSchema.safeParse({ reason: 'no_change' }).success).toBe(false);
+    });
+
+    it('validates ScoutHeldPayload', () => {
+      const result = ScoutHeldPayloadSchema.safeParse({
+        tickId: 'tick-003',
+        reason: 'no_action_needed',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('validates ScoutEscalatedPayload', () => {
+      const result = ScoutEscalatedPayloadSchema.safeParse({
+        tickId: 'tick-003',
+        reason: 'open_position_detected',
+        summary: 'Position opened, escalating to judge.',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('validates LlmDispatchPayload', () => {
+      const result = LlmDispatchPayloadSchema.safeParse({
+        tickId: 'tick-004',
+        phase: 'scout',
+        model: 'claude-3-5-haiku-latest',
+        maxTurns: 3,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects LlmDispatchPayload with invalid phase', () => {
+      const result = LlmDispatchPayloadSchema.safeParse({
+        tickId: 'tick-004',
+        phase: 'invalid',
+        model: 'claude',
+        maxTurns: 3,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('validates LlmCompletedPayload', () => {
+      const result = LlmCompletedPayloadSchema.safeParse({
+        tickId: 'tick-004',
+        phase: 'judge',
+        model: 'claude-sonnet-4-5',
+        turnsUsed: 2,
+        finishReason: 'stop',
+        tokensUsed: 1500,
+        thinkingTokens: 300,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('validates RuntimeToolCallPayload', () => {
+      const result = RuntimeToolCallPayloadSchema.safeParse({
+        tickId: 'tick-005',
+        phase: 'judge',
+        toolName: 'get_market_overview',
+        correlationId: 'corr-001',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('validates RuntimeToolResultPayload', () => {
+      const result = RuntimeToolResultPayloadSchema.safeParse({
+        tickId: 'tick-005',
+        phase: 'judge',
+        toolName: 'get_market_overview',
+        status: 'ok',
+        correlationId: 'corr-001',
+        summary: 'BTC at $60000, momentum bullish.',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects RuntimeToolResultPayload with invalid status', () => {
+      const result = RuntimeToolResultPayloadSchema.safeParse({
+        tickId: 'tick-005',
+        phase: 'judge',
+        toolName: 'get_market_overview',
+        status: 'pending',
+        correlationId: 'corr-001',
+      });
+      expect(result.success).toBe(false);
     });
   });
 });

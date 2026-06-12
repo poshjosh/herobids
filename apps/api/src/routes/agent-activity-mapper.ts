@@ -3,6 +3,7 @@
 // outbound messages, and artifacts into the canonical AgentActivityEntry shape.
 // ---------------------------------------------------------------------------
 
+import { AGENT_MESSAGE_TYPES, INSTANCE_MESSAGE_TYPES, AGENT_RUNTIME_ACTIVITY_TYPES } from '@herobids/domain';
 import type { AgentActivityEntry, AgentActivityCategory, AgentActivitySeverity, AgentActivityEventType } from './agent-activity-types.js';
 
 // ---------------------------------------------------------------------------
@@ -15,6 +16,24 @@ interface ActivityClassification {
   eventType: AgentActivityEventType;
   title: string;
   summaryFn: (row: RawAgentMessage) => string;
+}
+
+function isRuntimeActivityWarn(row: RawAgentMessage): boolean {
+  if (!row.payload) {
+    return false;
+  }
+
+  if (row.type === AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED) {
+    const finishReason = row.payload['finishReason'];
+    const phase = row.payload['phase'];
+    return finishReason === 'error' || (finishReason === 'turn_limit' && phase === 'judge');
+  }
+
+  if (row.type === AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT) {
+    return row.payload['status'] === 'error';
+  }
+
+  return false;
 }
 
 export interface RawAgentMessage {
@@ -32,6 +51,7 @@ export interface RawAgentMessage {
   traceId: string | null;
   processingStatus: string;
   errorDetail: { code: string; message: string } | null;
+  payload: Record<string, unknown> | null;
   createdAt: Date;
 }
 
@@ -92,49 +112,42 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
       ? 'Agent heartbeat reported a problem.'
       : 'Agent runtime reported healthy status.',
   },
-  'agent.session_ended': {
+  [AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED]: {
     category: 'runtime',
     severity: 'warn',
     eventType: 'runtime.failed',
     title: 'Session ended',
     summaryFn: (row) => row.errorDetail?.message ?? 'Agent session terminated.',
   },
-  'agent.decision.submit': {
+  [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: {
     category: 'decision',
     severity: 'info',
     eventType: 'decision.accepted',
     title: 'Decision submitted',
     summaryFn: () => 'Agent submitted a trading decision for evaluation.',
   },
-  'platform.decision.accepted': {
+  [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: {
     category: 'decision',
     severity: 'info',
     eventType: 'decision.accepted',
     title: 'Decision accepted',
     summaryFn: () => 'Trading decision was accepted and queued for execution.',
   },
-  'platform.decision.rejected': {
+  [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: {
     category: 'decision',
     severity: 'warn',
     eventType: 'decision.rejected',
     title: 'Decision rejected',
     summaryFn: (row) => row.errorDetail?.message ?? 'Decision was rejected by the platform.',
   },
-  'platform.guardrail_triggered': {
+  [INSTANCE_MESSAGE_TYPES.GUARDRAIL_TRIGGERED]: {
     category: 'risk',
     severity: 'warn',
     eventType: 'decision.rejected',
     title: 'Guardrail triggered',
     summaryFn: (row) => row.errorDetail?.message ?? 'A platform guardrail blocked or constrained agent activity.',
   },
-  'agent.tool_call': {
-    category: 'tool',
-    severity: 'info',
-    eventType: 'system.alert',
-    title: 'Tool called',
-    summaryFn: () => 'Agent invoked a tool.',
-  },
-  'platform.tool_result': {
+  [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: {
     category: 'tool',
     severity: 'info',
     eventType: 'system.alert',
@@ -143,54 +156,159 @@ const MESSAGE_CLASSIFICATIONS: Record<string, ActivityClassification> = {
       ? 'Tool result processing failed.'
       : 'Platform recorded a tool result.',
   },
-  'agent.send_message': {
+  [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: {
     category: 'message',
     severity: 'info',
     eventType: 'message.authored',
     title: 'Message authored',
     summaryFn: () => 'Agent authored a user-facing message.',
   },
-  'agent.artifact.publish': {
+  [AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT]: {
     category: 'artifact',
     severity: 'info',
     eventType: 'artifact.published',
     title: 'Artifact published',
     summaryFn: () => 'Agent published an artifact.',
   },
-  'agent.manage_bot': {
+  [AGENT_MESSAGE_TYPES.MANAGE_BOT]: {
     category: 'tool',
     severity: 'info',
     eventType: 'system.alert',
     title: 'Bot management',
     summaryFn: () => 'Agent issued a bot management action.',
   },
-  'platform.instance_status': {
+  [INSTANCE_MESSAGE_TYPES.STATUS]: {
     category: 'system',
     severity: 'info',
     eventType: 'system.alert',
     title: 'Instance status update',
     summaryFn: () => 'Platform updated runtime state.',
   },
-  'platform.context_snapshot': {
+  [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: {
     category: 'system',
     severity: 'info',
     eventType: 'system.alert',
     title: 'Context updated',
     summaryFn: () => 'Platform delivered a runtime context update to the agent.',
   },
-  'agent.pause_request': {
+  [AGENT_MESSAGE_TYPES.LIFECYCLE_PAUSE]: {
     category: 'runtime',
     severity: 'warn',
     eventType: 'runtime.failed',
     title: 'Pause requested',
     summaryFn: () => 'Agent requested to be paused.',
   },
-  'agent.stop_request': {
+  [AGENT_MESSAGE_TYPES.LIFECYCLE_STOP]: {
     category: 'runtime',
     severity: 'warn',
     eventType: 'runtime.failed',
     title: 'Stop requested',
     summaryFn: () => 'Agent requested to stop.',
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED]: {
+    category: 'tick',
+    severity: 'info',
+    eventType: 'tick.started',
+    title: 'Tick started',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'Agent tick started.';
+      const trigger = typeof p['trigger'] === 'string' ? p['trigger'] : 'scheduled';
+      const side = typeof p['positionSide'] === 'string' ? ` (position: ${p['positionSide']})` : '';
+      return `Tick started — trigger: ${trigger}${side}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED]: {
+    category: 'tick',
+    severity: 'info',
+    eventType: 'tick.skipped',
+    title: 'Tick skipped',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'Tick skipped.';
+      const reason = typeof p['reason'] === 'string' ? p['reason'] : 'unknown';
+      const gate = typeof p['gate'] === 'string' ? ` (gate: ${p['gate']})` : '';
+      return `Tick skipped — ${reason}${gate}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD]: {
+    category: 'tick',
+    severity: 'info',
+    eventType: 'scout.held',
+    title: 'Scout held',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'Scout decided to hold — no judge dispatch this tick.';
+      const reason = typeof p['reason'] === 'string' ? p['reason'] : 'unspecified';
+      return `Scout held — ${reason}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED]: {
+    category: 'tick',
+    severity: 'info',
+    eventType: 'scout.escalated',
+    title: 'Scout escalated',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'Scout escalated to judge.';
+      const reason = typeof p['reason'] === 'string' ? p['reason'] : 'unspecified';
+      return `Scout escalated to judge — ${reason}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH]: {
+    category: 'tick',
+    severity: 'info',
+    eventType: 'llm.dispatch',
+    title: 'LLM dispatched',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'LLM call dispatched.';
+      const phase = typeof p['phase'] === 'string' ? p['phase'] : 'unknown';
+      const model = typeof p['model'] === 'string' ? p['model'] : 'unknown';
+      return `${phase} LLM dispatched — model: ${model}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED]: {
+    category: 'tick',
+    severity: 'info',
+    eventType: 'llm.completed',
+    title: 'LLM completed',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'LLM call completed.';
+      const phase = typeof p['phase'] === 'string' ? p['phase'] : 'unknown';
+      const model = typeof p['model'] === 'string' ? p['model'] : 'unknown';
+      const turns = typeof p['turnsUsed'] === 'number' ? p['turnsUsed'] : '?';
+      const finish = typeof p['finishReason'] === 'string' ? p['finishReason'] : 'unknown';
+      return `${phase} LLM completed — model: ${model}, turns: ${turns}, finish: ${finish}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL]: {
+    category: 'tool',
+    severity: 'info',
+    eventType: 'tool.called',
+    title: 'Tool called',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'Agent invoked a tool.';
+      const toolName = typeof p['toolName'] === 'string' ? p['toolName'] : 'unknown';
+      const phase = typeof p['phase'] === 'string' ? p['phase'] : 'unknown';
+      return `${phase}: called ${toolName}.`;
+    },
+  },
+  [AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT]: {
+    category: 'tool',
+    severity: 'info',
+    eventType: 'tool.result',
+    title: 'Tool result',
+    summaryFn: (row) => {
+      const p = row.payload;
+      if (!p) return 'Tool result received.';
+      const toolName = typeof p['toolName'] === 'string' ? p['toolName'] : 'unknown';
+      const status = typeof p['status'] === 'string' ? p['status'] : 'unknown';
+      const summary = typeof p['summary'] === 'string' ? ` — ${p['summary']}` : '';
+      return `${toolName}: ${status}${summary}`;
+    },
   },
 };
 
@@ -203,7 +321,7 @@ export function mapProtocolMessage(row: RawAgentMessage): AgentActivityEntry {
 
   if (classification) {
     const severity: AgentActivitySeverity =
-      row.processingStatus === 'failed' || row.processingStatus === 'rejected'
+      row.processingStatus === 'failed' || row.processingStatus === 'rejected' || isRuntimeActivityWarn(row)
         ? 'warn'
         : classification.severity;
 
@@ -221,6 +339,7 @@ export function mapProtocolMessage(row: RawAgentMessage): AgentActivityEntry {
         actorType: row.actorType,
         ...(row.botId ? { botId: row.botId } : {}),
         ...(row.errorDetail ? { errorCode: row.errorDetail.code, errorMessage: row.errorDetail.message } : {}),
+        ...(row.payload ? { payload: row.payload } : {}),
       },
       sessionId: null,
       direction: row.direction,

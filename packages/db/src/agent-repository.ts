@@ -86,6 +86,7 @@ export interface InsertAgentMessage {
   schemaVersion?: string;
   sequence?: number;
   traceId?: string;
+  payload?: Record<string, unknown>;
 }
 
 // --- Agent Artifact ---
@@ -323,6 +324,7 @@ export class AgentRepository {
       sequence: input.sequence ?? null,
       traceId: input.traceId ?? null,
       processingStatus: 'received',
+      payload: input.payload ?? null,
     });
     return id;
   }
