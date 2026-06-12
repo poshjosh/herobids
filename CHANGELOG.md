@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Non-trading agent tick guard (2026-06-12): `hasTradingCapability` flag derived from resolved skill `capabilityFamilies` now gates all trading-specific tick work — regime evaluation, venue intelligence refresh, performance inputs, and their Binance/Hyperliquid/DexScreener calls — so agents with no trading skills never attempt market-data fetches and cannot be killed by provider timeouts.
+
+- Tick error handling (2026-06-12): `shouldSkipTick` no longer throws for non-critical helper failures — `fetchVolatilityCandles` and `evaluateRegime` errors fall back gracefully and surface `degraded`/`degradationReason` on `TickSkipDecision`. Added `tick-gate` as a first-class `RuntimeFailureSource` (classified as `degraded`, `tick_gate.degraded`). `FailureBackoffController` now tracks per-source consecutive-failure counters; advisory sources (`tick-gate`, `market-data`, `database`, `tool`) back off but never trigger shutdown — only `llm`, `redis`, `sandbox`, and `startup` are shutdown-eligible. `runTick` wraps the tick-gate phase in its own try/catch routed to `handleRuntimeFailure('tick-gate', ...)`.
+
 - Agent observability (2026-06-11): added a canonical agent activity feed, a typed agent timeline, and agent-aware recent activity views in Mission Control and Activity.
 
 - More tools (2026-06-11): added task, reminder, memory, and document-reading tools, plus email fanout for allowed agent messages.
@@ -32,6 +36,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - **Existing databases that ran the old migrations:** run `bash scripts/shell/ops/apply-db-squash-fixup.sh` once, then run `pnpm --filter @herobids/db run db:migrate`. The helper records the new baseline hash in `drizzle.__drizzle_migrations` so the squashed baseline is skipped and `0001_add_preferred_locale` can apply safely.
 
 ### Fixed
+
+- Worker tick reliability (2026-06-12): tightened tick-gate fallback handling, preserved degradation metadata across skip branches, and added agent-level coverage for non-trading tick guard behavior.
 
 - Agent runtime policy (2026-06-09): added a dedicated container runtime policy schema so forwarded LLM retry/scout/thinking settings are validated and preserved inside the agent runtime
 - Hyperliquid venue accounts (2026-06-09): account creation now caches the unauthenticated probe result instead of overstating authenticated/live capability when a credential is merely linked

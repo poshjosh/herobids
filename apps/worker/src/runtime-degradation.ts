@@ -29,7 +29,7 @@ export async function processRuntimeFailure(
     options.setDependencyAvailability('market-data', false);
   }
 
-  const failureState = options.failureBackoff.recordFailure();
+  const failureState = options.failureBackoff.recordFailure(source);
   let nextTickIntervalMs = options.effectiveTickIntervalMs;
 
   if (classification.mode === 'fatal' || failureState.shouldShutdown) {

@@ -128,6 +128,123 @@ describe('shouldSkipTick', () => {
 
     expect(tenth.skip).toBe(false);
   });
+
+  it('returns current interval without throwing when fetchVolatilityCandles fails', async () => {
+    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('AbortError: This operation was aborted'));
+
+    const result = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        currentTickIntervalMs: 60_000,
+        baseTickIntervalMs: 900_000,
+      },
+      { fetchVolatilityCandles },
+    );
+
+    expect(result.nextTickIntervalMs).toBe(60_000);
+    expect(result.degraded).toBe(true);
+    expect(result.degradationReason).toBe('adaptive_interval_unavailable');
+  });
+
+  it('returns base interval fallback when fetchVolatilityCandles fails and no current interval is set', async () => {
+    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('timeout'));
+
+    const result = await shouldSkipTick(
+      { tickNumber: 1, hasOpenPositions: false, baseTickIntervalMs: 600_000 },
+      { fetchVolatilityCandles },
+    );
+
+    expect(result.nextTickIntervalMs).toBe(600_000);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('preserves adaptive-interval degradation metadata on session skips', async () => {
+    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('timeout'));
+
+    const result = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        now: new Date('2026-06-08T12:00:00.000Z'),
+        tradingHours: { allowedHoursUtc: [9], weekendPause: false },
+        currentTickIntervalMs: 60_000,
+        baseTickIntervalMs: 900_000,
+      },
+      { fetchVolatilityCandles },
+    );
+
+    expect(result.skip).toBe(true);
+    expect(result.degraded).toBe(true);
+    expect(result.degradationReason).toBe('adaptive_interval_unavailable');
+  });
+
+  it('preserves adaptive-interval degradation metadata when positions are open', async () => {
+    const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('timeout'));
+
+    const result = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        currentTickIntervalMs: 60_000,
+        baseTickIntervalMs: 900_000,
+      },
+      { fetchVolatilityCandles },
+    );
+
+    expect(result.skip).toBe(false);
+    expect(result.degraded).toBe(true);
+    expect(result.degradationReason).toBe('adaptive_interval_unavailable');
+  });
+
+  it('makes no candle calls and returns deterministically when fetchVolatilityCandles is undefined', async () => {
+    const result = await shouldSkipTick(
+      { tickNumber: 1, hasOpenPositions: false, baseTickIntervalMs: 900_000 },
+      {},
+    );
+
+    expect(result.nextTickIntervalMs).toBe(900_000);
+    expect(result.degraded).toBeUndefined();
+  });
+
+  it('returns without throwing and marks regime degraded when evaluateRegime fails', async () => {
+    const evaluateRegime = vi.fn().mockRejectedValue(new Error('AbortError: This operation was aborted'));
+
+    const result = await shouldSkipTick(
+      { tickNumber: 1, hasOpenPositions: false },
+      { evaluateRegime },
+    );
+
+    expect(result.skip).toBe(false);
+    expect(result.degraded).toBe(true);
+    expect(result.degradationReason).toBe('regime_unavailable');
+    expect(result.regime).toBeUndefined();
+  });
+
+  it('still applies context-hash gate when evaluateRegime fails', async () => {
+    const evaluateRegime = vi.fn().mockRejectedValue(new Error('timeout'));
+    const first = await shouldSkipTick(
+      { tickNumber: 1, hasOpenPositions: false, positionSide: 'flat', latestPrice: 100, portfolioPnlUsd: 0 },
+      { evaluateRegime },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime },
+    );
+
+    expect(second.skip).toBe(true);
+    expect(second.gate).toBe('context_hash');
+    expect(second.degraded).toBe(true);
+    expect(second.degradationReason).toBe('regime_unavailable');
+  });
 });
 
 describe('trading-hours helpers', () => {

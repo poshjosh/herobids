@@ -38,6 +38,8 @@ export interface TickSkipDecision {
   contextHash?: string;
   nextTickIntervalMs: number;
   volatilityPct?: number;
+  degraded?: boolean;
+  degradationReason?: 'adaptive_interval_unavailable' | 'regime_unavailable';
 }
 
 const DEFAULT_BASE_INTERVAL_MS = 900_000;
@@ -162,13 +164,39 @@ export async function shouldSkipTick(
     adaptiveInterval: state.enabledGates?.adaptiveInterval ?? true,
   };
 
-  const adaptiveInterval = enabledGates.adaptiveInterval && dependencies.fetchVolatilityCandles
-    ? resolveAdaptiveIntervalMs({
-        candles: await dependencies.fetchVolatilityCandles(),
-        baseTickIntervalMs: state.baseTickIntervalMs,
-        currentTickIntervalMs: state.currentTickIntervalMs,
-      })
-    : { nextTickIntervalMs: state.currentTickIntervalMs ?? state.baseTickIntervalMs ?? DEFAULT_BASE_INTERVAL_MS };
+  let adaptiveIntervalDegraded = false;
+  let regimeDegraded = false;
+
+  const degradationInfo = (): Pick<TickSkipDecision, 'degraded' | 'degradationReason'> | Record<string, never> => {
+    if (adaptiveIntervalDegraded) {
+      return { degraded: true, degradationReason: 'adaptive_interval_unavailable' };
+    }
+    if (regimeDegraded) {
+      return { degraded: true, degradationReason: 'regime_unavailable' };
+    }
+    return {};
+  };
+
+  const adaptiveInterval =
+    enabledGates.adaptiveInterval && dependencies.fetchVolatilityCandles
+      ? await (async () => {
+          try {
+            return resolveAdaptiveIntervalMs({
+              candles: await dependencies.fetchVolatilityCandles!(),
+              baseTickIntervalMs: state.baseTickIntervalMs,
+              currentTickIntervalMs: state.currentTickIntervalMs,
+            });
+          } catch {
+            adaptiveIntervalDegraded = true;
+            return {
+              nextTickIntervalMs:
+                state.currentTickIntervalMs ??
+                state.baseTickIntervalMs ??
+                DEFAULT_BASE_INTERVAL_MS,
+            };
+          }
+        })()
+      : { nextTickIntervalMs: state.currentTickIntervalMs ?? state.baseTickIntervalMs ?? DEFAULT_BASE_INTERVAL_MS };
 
   if (enabledGates.session && !state.hasOpenPositions && !isWithinTradingHours(state.now ?? new Date(), state.tradingHours)) {
     return {
@@ -177,6 +205,7 @@ export async function shouldSkipTick(
       reason: 'outside_trading_hours',
       nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
       volatilityPct: adaptiveInterval.volatilityPct,
+      ...degradationInfo(),
     };
   }
 
@@ -201,6 +230,7 @@ export async function shouldSkipTick(
         contextHash,
         nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
         volatilityPct: adaptiveInterval.volatilityPct,
+        ...degradationInfo(),
       };
     }
 
@@ -209,83 +239,63 @@ export async function shouldSkipTick(
       contextHash,
       nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
       volatilityPct: adaptiveInterval.volatilityPct,
+      ...degradationInfo(),
     };
   }
 
-  if (!enabledGates.regime || !dependencies.evaluateRegime) {
-    const contextHash = computeDecisionContextHash({
-      positionSide: state.positionSide,
-      latestPrice: state.latestPrice,
-      portfolioPnlUsd: state.portfolioPnlUsd,
-      regimePass: null,
-    });
-    if (
-      enabledGates.contextHash
-      && state.previousContextHash
-      && state.tickNumber % FORCE_FULL_EVALUATION_EVERY_TICK !== 0
-      && contextHash === state.previousContextHash
-    ) {
-      return {
-        skip: true,
-        gate: 'context_hash',
-        reason: 'context_unchanged',
-        contextHash,
-        nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
-        volatilityPct: adaptiveInterval.volatilityPct,
-      };
+  let regime: RegimeResult | null = null;
+  if (enabledGates.regime && dependencies.evaluateRegime) {
+    try {
+      regime = await dependencies.evaluateRegime();
+    } catch {
+      regimeDegraded = true;
     }
-
-    return {
-      skip: false,
-      contextHash,
-      nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
-      volatilityPct: adaptiveInterval.volatilityPct,
-    };
   }
 
-  const regime = await dependencies.evaluateRegime();
   const contextHash = computeDecisionContextHash({
     positionSide: state.positionSide,
     latestPrice: state.latestPrice,
     portfolioPnlUsd: state.portfolioPnlUsd,
-    regimePass: regime.pass,
+    regimePass: regime?.pass ?? null,
   });
 
-  if (regime.pass) {
-    if (
-      enabledGates.contextHash
-      && state.previousContextHash
-      && state.tickNumber % FORCE_FULL_EVALUATION_EVERY_TICK !== 0
-      && contextHash === state.previousContextHash
-    ) {
-      return {
-        skip: true,
-        gate: 'context_hash',
-        reason: 'context_unchanged',
-        regime,
-        contextHash,
-        nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
-        volatilityPct: adaptiveInterval.volatilityPct,
-      };
-    }
-
+  if (regime !== null && !regime.pass) {
     return {
-      skip: false,
-      regime,
+      skip: true,
       gate: 'regime',
+      regime,
+      reason: `regime_unfavorable: ${regime.reasons.join('; ')}`,
       contextHash,
       nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
       volatilityPct: adaptiveInterval.volatilityPct,
+      ...degradationInfo(),
+    };
+  }
+
+  if (
+    enabledGates.contextHash
+    && state.previousContextHash
+    && state.tickNumber % FORCE_FULL_EVALUATION_EVERY_TICK !== 0
+    && contextHash === state.previousContextHash
+  ) {
+    return {
+      skip: true,
+      gate: 'context_hash',
+      reason: 'context_unchanged',
+      ...(regime !== null ? { regime } : {}),
+      contextHash,
+      nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
+      volatilityPct: adaptiveInterval.volatilityPct,
+      ...degradationInfo(),
     };
   }
 
   return {
-    skip: true,
-    gate: 'regime',
-    regime,
-    reason: `regime_unfavorable: ${regime.reasons.join('; ')}`,
+    skip: false,
+    ...(regime !== null ? { regime, gate: 'regime' as const } : {}),
     contextHash,
     nextTickIntervalMs: adaptiveInterval.nextTickIntervalMs,
     volatilityPct: adaptiveInterval.volatilityPct,
+    ...degradationInfo(),
   };
 }

@@ -44,7 +44,8 @@ import {
   recordVenueSignals,
   type RuntimeCompositionState,
 } from './runtime-composition.js';
-import { shouldSkipTick, type TradingHoursConfig } from './tick-gates.js';
+import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
+import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolvePreScoutDecision } from './scout-gating.js';
 import { classifyRuntimeError } from './runtime-errors.js';
@@ -298,6 +299,13 @@ const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.
 // Declared here (before functions that reference it at module-init call sites)
 // even though the main loop increments it later.
 let tickCount = 0;
+
+class TickGateUnexpectedError extends Error {
+  constructor(public readonly cause: unknown) {
+    super('Unexpected tick-gate failure');
+    this.name = 'TickGateUnexpectedError';
+  }
+}
 let scoutTickCount = 0;
 let scoutEscalationCount = 0;
 let lastEscalationTimestamp = 0;
@@ -488,6 +496,11 @@ if (marketDataConfig) {
   }
   applyToolVisibility();
 }
+
+const tradingTickWorkPlan = deriveTradingTickWorkPlan(
+  runtimeState.runtimeDescriptor.resolvedSkills,
+  marketDataRegistry != null,
+);
 
 // Price service — built on top of the provider registry.
 // Only available when market data is configured.
@@ -1253,49 +1266,59 @@ async function runTick(): Promise<void> {
 
     const tickSignals = extractTickSignals(incomingMessages);
 
-    const skipDecision = await shouldSkipTick(
-      {
-        tickNumber: tickCount,
-        hasOpenPositions,
-        tradingHours,
-        now: new Date(),
-        positionSide: tickSignals.positionSide ?? (hasOpenPositions ? sessionMetrics.lastPositionSide ?? 'open' : 'flat'),
-        latestPrice: tickSignals.latestPrice,
-        portfolioPnlUsd: tickSignals.portfolioPnlUsd,
-        previousContextHash,
-        baseTickIntervalMs: costProfile.tickIntervalMs,
-        currentTickIntervalMs: effectiveTickIntervalMs,
-        enabledGates: costProfile.enabledGates,
-      },
-      {
-        evaluateRegime: marketDataRegistry
-          ? async () => {
-            const params: RegimeParams = {};
-            return evaluateRegime(params, (symbol) =>
-              (recordMarketDataAttempt('binance'), marketDataRegistry!.binance.candles(symbol, { interval: '1h', limit: 200 })).then((providerResult) => providerResult.data),
-            );
-          }
-          : undefined,
-        fetchVolatilityCandles: marketDataRegistry
-          ? async () => {
-            recordMarketDataAttempt('binance');
-            return marketDataRegistry!.binance.candles('BTC', { interval: '1h', limit: 24 }).then((providerResult) => providerResult.data);
-          }
-          : undefined,
-      },
-    );
+    let skipDecision: TickSkipDecision;
+    try {
+      skipDecision = await shouldSkipTick(
+        {
+          tickNumber: tickCount,
+          hasOpenPositions,
+          tradingHours,
+          now: new Date(),
+          positionSide: tickSignals.positionSide ?? (hasOpenPositions ? sessionMetrics.lastPositionSide ?? 'open' : 'flat'),
+          latestPrice: tickSignals.latestPrice,
+          portfolioPnlUsd: tickSignals.portfolioPnlUsd,
+          previousContextHash,
+          baseTickIntervalMs: costProfile.tickIntervalMs,
+          currentTickIntervalMs: effectiveTickIntervalMs,
+          enabledGates: costProfile.enabledGates,
+        },
+        {
+          evaluateRegime: tradingTickWorkPlan.shouldEvaluateRegime
+            ? async () => {
+              const params: RegimeParams = {};
+              return evaluateRegime(params, (symbol) =>
+                (recordMarketDataAttempt('binance'), marketDataRegistry!.binance.candles(symbol, { interval: '1h', limit: 200 })).then((providerResult) => providerResult.data),
+              );
+            }
+            : undefined,
+          fetchVolatilityCandles: tradingTickWorkPlan.shouldFetchVolatilityCandles
+            ? async () => {
+              recordMarketDataAttempt('binance');
+              return marketDataRegistry!.binance.candles('BTC', { interval: '1h', limit: 24 }).then((providerResult) => providerResult.data);
+            }
+            : undefined,
+        },
+      );
+    } catch (err: unknown) {
+      throw new TickGateUnexpectedError(err);
+    }
 
     // Context hash is stored in a local variable; only persisted to previousContextHash
     // after the judge actually runs (Fix B: prevents context_unchanged gate from locking
     // the agent after a scout hold where no work was done).
     const tickContextHash = skipDecision.contextHash ?? previousContextHash;
-    recordRegimeEvaluation(
-      runtimeState,
-      skipDecision.regime ?? null,
-      skipDecision.regime
-        ? { state: 'fresh', provider: 'binance' }
-        : { state: 'unavailable', note: marketDataRegistry ? 'regime not evaluated' : 'market-data registry unavailable' },
-    );
+    if (tradingTickWorkPlan.shouldRecordRegimeEvaluation) {
+      recordRegimeEvaluation(
+        runtimeState,
+        skipDecision.regime ?? null,
+        skipDecision.regime
+          ? { state: 'fresh', provider: 'binance' }
+          : { state: 'unavailable', note: marketDataRegistry ? 'regime not evaluated' : 'market-data registry unavailable' },
+      );
+    }
+    if (skipDecision.degraded) {
+      logger.warn({ degradationReason: skipDecision.degradationReason }, 'Tick gate degraded — helper dependency unavailable, using fallback interval');
+    }
     if (skipDecision.nextTickIntervalMs !== effectiveTickIntervalMs) {
       logger.info({ fromMs: effectiveTickIntervalMs, toMs: skipDecision.nextTickIntervalMs, volatilityPct: skipDecision.volatilityPct }, 'Adjusted agent tick interval');
       effectiveTickIntervalMs = skipDecision.nextTickIntervalMs;
@@ -1326,14 +1349,21 @@ async function runTick(): Promise<void> {
       }, 'Bypassing agent tick skip — max scout hold duration exceeded');
     }
 
-    await refreshVenueIntelligence().then(() => setDependencyAvailability('market-data', true)).catch(async (err) => {
-      await handleRuntimeFailure('market-data', err);
+    if (tradingTickWorkPlan.shouldRefreshVenueIntelligence) {
+      await refreshVenueIntelligence().then(() => setDependencyAvailability('market-data', true)).catch(async (err) => {
+        await handleRuntimeFailure('market-data', err);
+        recordVenueSignals(runtimeState, []);
+      });
+    } else {
       recordVenueSignals(runtimeState, []);
-    });
-    recordPerformanceInputs(runtimeState, {
-      drawdownPct: sessionMetrics.portfolio.drawdownPct,
-      netPnlUsd: (sessionMetrics.portfolio.realizedPnlUsd ?? 0) + (sessionMetrics.portfolio.unrealizedPnlUsd ?? 0),
-    });
+    }
+
+    if (tradingTickWorkPlan.shouldRecordPerformanceInputs) {
+      recordPerformanceInputs(runtimeState, {
+        drawdownPct: sessionMetrics.portfolio.drawdownPct,
+        netPnlUsd: (sessionMetrics.portfolio.realizedPnlUsd ?? 0) + (sessionMetrics.portfolio.unrealizedPnlUsd ?? 0),
+      });
+    }
 
     // Snapshot before buildTickUserContext clears currentReminder.
     const reminderScheduledBy = runtimeState.metrics.currentReminder?.scheduledBy ?? null;
@@ -1585,6 +1615,12 @@ async function runTick(): Promise<void> {
     handleTickSuccess();
     await sendHeartbeat('ready');
   } catch (err: unknown) {
+    if (err instanceof TickGateUnexpectedError) {
+      throw err.cause instanceof Error ? err.cause : new Error(String(err.cause));
+    }
+    // Safety-net catch for the remaining tick phases: message ingestion, context building,
+    // prompt assembly, tool execution, and transport. Tick-gate and venue-intelligence
+    // failures are handled by their own inner catches above and do not reach here.
     const source =
       err instanceof Error && /redis|xreadgroup|xadd|connection is closed|econn/i.test(err.message)
         ? 'redis'

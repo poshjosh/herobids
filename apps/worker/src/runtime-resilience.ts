@@ -1,3 +1,7 @@
+// Sources that can trigger a shutdown when their per-source failure count reaches the threshold.
+// Advisory sources (tick-gate, market-data, database, tool) degrade the runtime but never shut it down.
+const SHUTDOWN_ELIGIBLE_SOURCES = new Set(['llm', 'redis', 'sandbox', 'startup']);
+
 export interface FailureBackoffControllerOptions {
   baseIntervalMs: number;
   backoffThreshold?: number;
@@ -7,12 +11,27 @@ export interface FailureBackoffControllerOptions {
 
 export class FailureBackoffController {
   private consecutiveFailures = 0;
+  private readonly sourceCounters = new Map<string, number>();
 
   constructor(private readonly options: FailureBackoffControllerOptions) {}
 
-  recordFailure(): { consecutiveFailures: number; nextIntervalMs: number; shouldShutdown: boolean } {
+  recordFailure(source?: string): { consecutiveFailures: number; nextIntervalMs: number; shouldShutdown: boolean } {
     this.consecutiveFailures += 1;
-    const shouldShutdown = this.consecutiveFailures >= (this.options.maxFailures ?? 5);
+
+    const sourceCount = source !== undefined
+      ? (() => {
+          const count = (this.sourceCounters.get(source) ?? 0) + 1;
+          this.sourceCounters.set(source, count);
+          return count;
+        })()
+      : this.consecutiveFailures;
+
+    const maxFailures = this.options.maxFailures ?? 5;
+    // Only shutdown-eligible sources (llm, redis, sandbox, startup) contribute to the shutdown gate.
+    // Advisory sources (tick-gate, market-data, database, tool) back off but never trigger shutdown.
+    const isShutdownEligible = source === undefined || SHUTDOWN_ELIGIBLE_SOURCES.has(source);
+    const shouldShutdown = isShutdownEligible && sourceCount >= maxFailures;
+
     const nextIntervalMs = this.consecutiveFailures >= (this.options.backoffThreshold ?? 3)
       ? Math.min(this.options.baseIntervalMs * 2, this.options.maxIntervalMs ?? 1_800_000)
       : this.options.baseIntervalMs;
@@ -26,6 +45,7 @@ export class FailureBackoffController {
   recordSuccess(): { recovered: boolean; nextIntervalMs: number } {
     const recovered = this.consecutiveFailures > 0;
     this.consecutiveFailures = 0;
+    this.sourceCounters.clear();
     return {
       recovered,
       nextIntervalMs: this.options.baseIntervalMs,

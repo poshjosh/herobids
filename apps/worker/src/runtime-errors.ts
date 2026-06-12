@@ -1,6 +1,6 @@
 import { callLlmProvider, type LlmProviderConfig, type LlmProviderError, type LlmRequest, type LlmResult } from '@herobids/llm';
 
-export type RuntimeFailureSource = 'llm' | 'redis' | 'database' | 'market-data' | 'tool' | 'sandbox' | 'startup';
+export type RuntimeFailureSource = 'llm' | 'redis' | 'database' | 'market-data' | 'tool' | 'sandbox' | 'startup' | 'tick-gate';
 export type RuntimeFailureMode = 'recoverable' | 'degraded' | 'fatal';
 
 export interface RuntimeFailureClassification {
@@ -119,6 +119,15 @@ export function classifyRuntimeError(
       source,
       mode: 'degraded',
       reasonCode: 'market_data.unavailable',
+      message: errorMessage(error),
+    };
+  }
+
+  if (source === 'tick-gate') {
+    return {
+      source,
+      mode: 'degraded',
+      reasonCode: 'tick_gate.degraded',
       message: errorMessage(error),
     };
   }

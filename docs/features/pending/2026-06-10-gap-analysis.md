@@ -2,6 +2,10 @@ Herobids has already cleared the biggest architectural reasons you started it: i
 
 The real gaps versus `aitradingbot` are narrower and more practical.
 
+- Done - DEX token-safety and canonical asset guardrails
+- Done - Always-on discovery/coordinator/monitor loop
+
+
 | Gap | What I found | Effort | Bang for buck | Take |
 |---|---|---:|---:|---|
 | Rich strategy-stack parity | Old repo had a full strategy layer around mechanical, hybrid, regime, sentiment, and playbook validation in mechanical-engine.ts, hybrid-engine.ts, sentiment.ts, and regime.ts. Herobids currently exports only `MomentumStrategy` and `LlmStrategy` in index.ts. | M-L | Very high | This is the biggest product gap if you want profitability beyond “LLM decides” and simple momentum. |

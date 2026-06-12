@@ -91,4 +91,26 @@ describe('processRuntimeFailure', () => {
     expect([...visibility.allowedTools()]).toEqual(['send_message', 'list_positions']);
     expect([...visibility.getDependencyDegradations()]).toEqual(['market-data']);
   });
+
+  it('does not shut down even after repeated tick-gate failures at the threshold', async () => {
+    const heartbeat = vi.fn().mockResolvedValue(undefined);
+    const shutdown = vi.fn().mockResolvedValue(undefined);
+    const runtimeDescriptor = buildRuntimeDescriptor();
+    const visibility = createRuntimeToolVisibilityController(() => runtimeDescriptor, new Set());
+    const failureBackoff = new FailureBackoffController({ baseIntervalMs: 60_000 });
+
+    for (let i = 0; i < 5; i++) {
+      const outcome = await processRuntimeFailure('tick-gate', new Error('AbortError: This operation was aborted'), {
+        failureBackoff,
+        effectiveTickIntervalMs: 60_000,
+        setDependencyAvailability: visibility.setDependencyAvailability,
+        sendHeartbeat: heartbeat,
+        shutdown,
+      });
+      expect(outcome.shouldShutdown).toBe(false);
+    }
+
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(heartbeat).toHaveBeenCalledWith('degraded', 'tick_gate.degraded');
+  });
 });

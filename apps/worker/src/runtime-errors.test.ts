@@ -48,6 +48,14 @@ describe('classifyRuntimeError', () => {
       reasonCode: 'sandbox.expired',
     });
   });
+
+  it('classifies tick-gate failures as degraded with tick_gate.degraded reason code', () => {
+    expect(classifyRuntimeError('tick-gate', new Error('AbortError: This operation was aborted'))).toMatchObject({
+      source: 'tick-gate',
+      mode: 'degraded',
+      reasonCode: 'tick_gate.degraded',
+    });
+  });
 });
 
 describe('callLlmWithRetry', () => {

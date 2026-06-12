@@ -20,6 +20,59 @@ describe('FailureBackoffController', () => {
     expect(controller.recordSuccess()).toEqual({ recovered: true, nextIntervalMs: 60_000 });
     expect(controller.recordFailure()).toMatchObject({ consecutiveFailures: 1, nextIntervalMs: 60_000, shouldShutdown: false });
   });
+
+  it('never triggers shutdown for advisory sources regardless of failure count', () => {
+    const controller = new FailureBackoffController({ baseIntervalMs: 60_000 });
+    for (let i = 0; i < 10; i++) {
+      expect(controller.recordFailure('tick-gate')).toMatchObject({ shouldShutdown: false });
+    }
+    for (let i = 0; i < 10; i++) {
+      expect(controller.recordFailure('market-data')).toMatchObject({ shouldShutdown: false });
+    }
+    for (let i = 0; i < 10; i++) {
+      expect(controller.recordFailure('tool')).toMatchObject({ shouldShutdown: false });
+    }
+    for (let i = 0; i < 10; i++) {
+      expect(controller.recordFailure('database')).toMatchObject({ shouldShutdown: false });
+    }
+  });
+
+  it('triggers shutdown for redis after the per-source failure threshold', () => {
+    const controller = new FailureBackoffController({ baseIntervalMs: 60_000 });
+    for (let i = 0; i < 4; i++) {
+      expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: false });
+    }
+    expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: true });
+  });
+
+  it('triggers shutdown for llm after the per-source failure threshold', () => {
+    const controller = new FailureBackoffController({ baseIntervalMs: 60_000 });
+    for (let i = 0; i < 4; i++) {
+      expect(controller.recordFailure('llm')).toMatchObject({ shouldShutdown: false });
+    }
+    expect(controller.recordFailure('llm')).toMatchObject({ shouldShutdown: true });
+  });
+
+  it('tick-gate failures do not count toward the redis shutdown threshold', () => {
+    const controller = new FailureBackoffController({ baseIntervalMs: 60_000 });
+    // Saturate with tick-gate failures (advisory — never shutdown)
+    for (let i = 0; i < 10; i++) controller.recordFailure('tick-gate');
+    // Redis failures are tracked in their own per-source counter
+    for (let i = 0; i < 4; i++) {
+      expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: false });
+    }
+    expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: true });
+  });
+
+  it('recordSuccess resets per-source counters so thresholds restart', () => {
+    const controller = new FailureBackoffController({ baseIntervalMs: 60_000 });
+    for (let i = 0; i < 5; i++) controller.recordFailure('redis');
+    controller.recordSuccess();
+    for (let i = 0; i < 4; i++) {
+      expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: false });
+    }
+    expect(controller.recordFailure('redis')).toMatchObject({ shouldShutdown: true });
+  });
 });
 
 describe('ToolCircuitBreaker', () => {
