@@ -12,6 +12,7 @@ function renderModal(options: {
   dailyLossLimit?: string;
   maxSlippageBps?: number | '';
   prompt?: string;
+  tickIntervalMs?: number | null;
 } = {}): string {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -49,7 +50,7 @@ function renderModal(options: {
             dailyLossLimit: options.dailyLossLimit ?? '250',
             maxBots: 2,
             maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
-            tickIntervalMs: null,
+            tickIntervalMs: options.tickIntervalMs ?? null,
             capital: options.capital ?? '1500',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -120,5 +121,13 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain('Watch BTC and trade breakouts.');
     expect(html).not.toContain('Operator context:');
     expect(html).not.toContain('Risk tolerance: moderate.');
+  });
+
+  it('shows a preservation notice for legacy non-minute cadences', () => {
+    const html = renderModal({ tickIntervalMs: 30_000 });
+
+    expect(html).toContain(messages['agents.controls.tickInterval.legacyNotice']);
+    expect(html).toContain('value="1"');
+    expect(html).toContain('Base cadence: every 30s');
   });
 });

@@ -1,13 +1,14 @@
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { deriveExpectedCadence, estimateDailySpend, hasExplicitTickInterval } from './agent-cadence.js';
+import { parseTickIntervalMinutesInput } from './tick-interval.js';
 
 export type AgentCostPresetValue = '' | 'minimal' | 'standard' | 'premium' | 'custom';
 
 export interface AgentControlsFormValue {
   costPreset: AgentCostPresetValue;
   dailySpendBudgetUsd: string;
-  tickIntervalMs: string;
+  tickIntervalMins: string;
   maxBots: string;
   capital: string;
   dailyLossLimit: string;
@@ -17,6 +18,9 @@ export interface AgentControlsFormValue {
 interface AgentControlsSectionProps {
   value: AgentControlsFormValue;
   onChange: (patch: Partial<AgentControlsFormValue>) => void;
+  tickIntervalError?: string | null;
+  tickIntervalNotice?: string | null;
+  effectiveTickIntervalMs?: number | null;
 }
 
 export interface TradingGuardrailsFormValue {
@@ -30,16 +34,28 @@ interface TradingGuardrailsFieldsProps {
   onChange: (patch: Partial<TradingGuardrailsFormValue>) => void;
 }
 
-export function AgentControlsSection({ value, onChange }: AgentControlsSectionProps) {
+export function AgentControlsSection({
+  value,
+  onChange,
+  tickIntervalError = null,
+  tickIntervalNotice = null,
+  effectiveTickIntervalMs = null,
+}: AgentControlsSectionProps) {
   const intl = useIntl();
-  const explicitCadence = hasExplicitTickInterval(value.tickIntervalMs || null);
+  const parsedTickInterval = parseTickIntervalMinutesInput(value.tickIntervalMins);
+  const tickIntervalMsValue = effectiveTickIntervalMs != null
+    ? String(effectiveTickIntervalMs)
+    : parsedTickInterval.kind === 'valid'
+      ? String(parsedTickInterval.tickIntervalMs)
+      : '';
+  const explicitCadence = hasExplicitTickInterval(tickIntervalMsValue || null);
   const cadence = deriveExpectedCadence(
-    value.tickIntervalMs || null,
+    tickIntervalMsValue || null,
     value.costPreset || null,
     value.dailySpendBudgetUsd || null,
   );
   const estimatedDailySpend = estimateDailySpend(
-    value.tickIntervalMs || null,
+    tickIntervalMsValue || null,
     value.costPreset || null,
     value.dailySpendBudgetUsd ? Number(value.dailySpendBudgetUsd) : null,
   );
@@ -55,6 +71,7 @@ export function AgentControlsSection({ value, onChange }: AgentControlsSectionPr
   };
   const rowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' };
   const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' };
+  const errorTextStyle: React.CSSProperties = { ...helperTextStyle, color: 'var(--color-danger)' };
 
   return (
     <div style={sectionStyle}>
@@ -107,12 +124,16 @@ export function AgentControlsSection({ value, onChange }: AgentControlsSectionPr
         <input
           style={inputStyle}
           type="number"
-          min={1000}
-          value={value.tickIntervalMs}
-          onChange={(event) => onChange({ tickIntervalMs: event.target.value })}
+          min={1}
+          step={1}
+          aria-invalid={tickIntervalError != null}
+          value={value.tickIntervalMins}
+          onChange={(event) => onChange({ tickIntervalMins: event.target.value })}
           placeholder={intl.formatMessage({ id: 'agents.controls.tickInterval.placeholder' })}
         />
-        {cadence && (
+        {tickIntervalError && <div style={errorTextStyle}>{tickIntervalError}</div>}
+        {!tickIntervalError && tickIntervalNotice && <div style={helperTextStyle}>{tickIntervalNotice}</div>}
+        {!tickIntervalError && cadence && (
           <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {explicitCadence
               ? intl.formatMessage({ id: 'agents.controls.tickInterval.slowdownCaveat' }, { cadence })

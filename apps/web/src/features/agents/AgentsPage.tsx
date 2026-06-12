@@ -13,6 +13,7 @@ import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
+import { getTickIntervalValidationMessageId } from './tick-interval.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -32,7 +33,7 @@ interface IntentState {
   // Configurable controls
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
-  tickIntervalMs: string;
+  tickIntervalMins: string;
   maxBots: string;
   capital: string;
   dailyLossLimit: string;
@@ -151,7 +152,7 @@ function CreateAgentFlow({
     riskTolerance: 'moderate',
     costPreset: '',
     dailySpendBudgetUsd: '',
-    tickIntervalMs: '',
+    tickIntervalMins: '',
     maxBots: '5',
     capital: '',
     dailyLossLimit: '',
@@ -199,6 +200,10 @@ function CreateAgentFlow({
   }, [meQuery.data?.telegramChatId, telegramTouched]);
 
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
+  const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(intent.tickIntervalMins);
+  const tickIntervalError = tickIntervalValidationMessageId
+    ? intl.formatMessage({ id: tickIntervalValidationMessageId })
+    : null;
   const savedModelSettings = aiSettingsQuery.data?.aiModelConfig ?? null;
   const modelPayload = resolveCreateAgentModelPayload(
     { provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel },
@@ -226,7 +231,7 @@ function CreateAgentFlow({
         costPreset: intent.costPreset,
         dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
         telegramChatId: intent.telegramChatId,
-        tickIntervalMs: intent.tickIntervalMs,
+        tickIntervalMins: intent.tickIntervalMins,
         maxBots: intent.maxBots,
         capital: intent.capital,
         dailyLossLimit: intent.dailyLossLimit,
@@ -414,12 +419,13 @@ function CreateAgentFlow({
             value={{
               costPreset: intent.costPreset,
               dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
-              tickIntervalMs: intent.tickIntervalMs,
+              tickIntervalMins: intent.tickIntervalMins,
               maxBots: intent.maxBots,
               capital: intent.capital,
               dailyLossLimit: intent.dailyLossLimit,
               maxSlippageBps: intent.maxSlippageBps,
             }}
+            tickIntervalError={tickIntervalError}
             onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
           />
 
@@ -501,7 +507,7 @@ function CreateAgentFlow({
             <Button
               variant="primary"
               type="button"
-              disabled={!intent.name.trim() || !intent.goal.trim()}
+              disabled={!intent.name.trim() || !intent.goal.trim() || tickIntervalError != null}
               onClick={() => setStep('review')}
             >
               {intl.formatMessage({ id: 'agents.create.review' })}
@@ -560,7 +566,17 @@ function CreateAgentFlow({
           <Button variant="ghost" onClick={() => setStep('intent')} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
-            <Button variant="primary" type="button" disabled={mutation.isPending || !intent.name.trim() || !intent.goal.trim()} onClick={() => mutation.mutate()}>
+            <Button
+              variant="primary"
+              type="button"
+              disabled={mutation.isPending || !intent.name.trim() || !intent.goal.trim() || tickIntervalError != null}
+              onClick={() => {
+                if (tickIntervalError != null) {
+                  return;
+                }
+                mutation.mutate();
+              }}
+            >
               {mutation.isPending ? intl.formatMessage({ id: 'agents.create.creating' }) : intl.formatMessage({ id: 'agents.createAgent' })}
             </Button>
           </div>

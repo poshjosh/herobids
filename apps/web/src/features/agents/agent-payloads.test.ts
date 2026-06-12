@@ -13,7 +13,7 @@ describe('agent payload builders', () => {
       costPreset: '',
       dailySpendBudgetUsd: '',
       telegramChatId: '  ',
-      tickIntervalMs: '',
+      tickIntervalMins: '',
       maxBots: '',
       capital: '',
       dailyLossLimit: '',
@@ -37,7 +37,7 @@ describe('agent payload builders', () => {
       costPreset: 'custom',
       dailySpendBudgetUsd: '1.25',
       telegramChatId: '1234',
-      tickIntervalMs: '60000',
+      tickIntervalMins: '1',
       maxBots: '5',
       capital: '1000',
       dailyLossLimit: '250',
@@ -52,7 +52,7 @@ describe('agent payload builders', () => {
       costPreset: 'custom',
       dailySpendBudgetUsd: 1.25,
       telegramChatId: '1234',
-      tickIntervalMs: 60000,
+      tickIntervalMs: 60_000,
       maxBots: 5,
       capital: '1000',
       dailyLossLimit: '250',
@@ -88,7 +88,7 @@ describe('agent payload builders', () => {
       dailyLossLimit: '',
       maxBots: '',
       maxSlippageBps: '',
-      tickIntervalMs: '',
+      tickIntervalMins: '',
       capital: '',
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
@@ -109,5 +109,68 @@ describe('agent payload builders', () => {
       lightModel: null,
       heavyModel: null,
     });
+  });
+
+  it('preserves an existing legacy millisecond cadence when the edit form leaves it untouched', () => {
+    expect(buildUpdateAgentPayload({
+      name: 'Momentum scout',
+      prompt: 'Watch BTC and trade breakouts.',
+      skillIds: ['trading'],
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxBots: '',
+      maxSlippageBps: '',
+      tickIntervalMins: '2',
+      preserveOriginalTickIntervalMs: true,
+      originalTickIntervalMs: 90_000,
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    }).tickIntervalMs).toBe(90_000);
+  });
+
+  it('rejects invalid tick intervals in create payloads instead of silently dropping them', () => {
+    expect(() => buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      skillIds: [],
+      requiresTradingSetup: false,
+      executionMode: 'paper',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '0',
+      maxBots: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+    })).toThrow('Invalid tick interval minutes input');
+  });
+
+  it('rejects invalid tick intervals in update payloads when not preserving a legacy value', () => {
+    expect(() => buildUpdateAgentPayload({
+      name: 'Momentum scout',
+      prompt: 'Watch BTC and trade breakouts.',
+      skillIds: ['trading'],
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxBots: '',
+      maxSlippageBps: '',
+      tickIntervalMins: '1.5',
+      preserveOriginalTickIntervalMs: false,
+      originalTickIntervalMs: 90_000,
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    })).toThrow('Invalid tick interval minutes input');
   });
 });

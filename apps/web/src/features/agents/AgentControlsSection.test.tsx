@@ -8,7 +8,7 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
   const state: AgentControlsFormValue = {
     costPreset: 'standard',
     dailySpendBudgetUsd: '',
-    tickIntervalMs: '',
+    tickIntervalMins: '',
     maxBots: '',
     capital: '',
     dailyLossLimit: '',
@@ -39,7 +39,7 @@ describe('AgentControlsSection rendering', () => {
   });
 
   it('shows explicit cadence override messaging when tick interval is set', () => {
-    const html = renderControls({ costPreset: 'premium', tickIntervalMs: '600000' });
+    const html = renderControls({ costPreset: 'premium', tickIntervalMins: '10' });
     expect(html).toContain('Base cadence: every 10 min');
     expect(html).toContain('Estimated daily LLM spend: ~$7.20');
   });

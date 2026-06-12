@@ -9,6 +9,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
 import { buildUpdateAgentPayload } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
+import { formatTickIntervalMinutesForInput, getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -27,7 +28,7 @@ interface FormState {
   dailyLossLimit: string;
   maxBots: string;
   maxSlippageBps: string;
-  tickIntervalMs: string;
+  tickIntervalMins: string;
   capital: string;
 }
 
@@ -50,6 +51,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const selectableSkills = listSelectableSkills(skillsQuery.data?.skills ?? []);
   const selectableSkillIds = new Set(selectableSkills.map((skill) => skill.id));
   const preservedSkillIds = (initialData.skillIds ?? []).filter((skillId) => !selectableSkillIds.has(skillId));
+  const initialTickIntervalIsLegacy = initialData.tickIntervalMs != null && !isWholeMinuteTickInterval(initialData.tickIntervalMs);
 
   const [form, setForm] = useState<FormState>({
     name: initialData.name,
@@ -62,9 +64,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     dailyLossLimit: initialData.dailyLossLimit ?? '',
     maxBots: initialData.maxBots != null ? String(initialData.maxBots) : '',
     maxSlippageBps: initialData.maxSlippageBps != null ? String(initialData.maxSlippageBps) : '',
-    tickIntervalMs: initialData.tickIntervalMs != null ? String(initialData.tickIntervalMs) : '',
+    tickIntervalMins: formatTickIntervalMinutesForInput(initialData.tickIntervalMs),
     capital: initialData.capital ?? '',
   });
+  const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [modelOverrideEnabled, setModelOverrideEnabled] = useState(hasExplicitModelOverride);
   const [modelForm, setModelForm] = useState({
     provider: initialData.provider ?? '',
@@ -78,6 +81,16 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   });
   const currentHasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
   const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
+  const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(form.tickIntervalMins);
+  const tickIntervalError = tickIntervalValidationMessageId
+    ? intl.formatMessage({ id: tickIntervalValidationMessageId })
+    : null;
+  const tickIntervalNotice = initialTickIntervalIsLegacy && !tickIntervalTouched && tickIntervalError == null
+    ? intl.formatMessage({ id: 'agents.controls.tickInterval.legacyNotice' })
+    : null;
+  const effectiveTickIntervalMs = initialTickIntervalIsLegacy && !tickIntervalTouched
+    ? (initialData.tickIntervalMs ?? null)
+    : null;
   const hasTradingCapability = skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability;
@@ -102,7 +115,9 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
         dailyLossLimit: form.dailyLossLimit,
         maxBots: form.maxBots,
         maxSlippageBps: form.maxSlippageBps,
-        tickIntervalMs: form.tickIntervalMs,
+        tickIntervalMins: form.tickIntervalMins,
+        preserveOriginalTickIntervalMs: !tickIntervalTouched,
+        originalTickIntervalMs: initialData.tickIntervalMs ?? null,
         capital: form.capital,
         modelOverrideEnabled,
         modelForm,
@@ -117,6 +132,9 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (tickIntervalError != null) {
+      return;
+    }
     mutation.mutate();
   };
 
@@ -271,13 +289,21 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               value={{
                 costPreset: form.costPreset,
                 dailySpendBudgetUsd: form.dailySpendBudgetUsd,
-                tickIntervalMs: form.tickIntervalMs,
+                tickIntervalMins: form.tickIntervalMins,
                 maxBots: form.maxBots,
                 capital: form.capital,
                 dailyLossLimit: form.dailyLossLimit,
                 maxSlippageBps: form.maxSlippageBps,
               }}
-              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+              tickIntervalError={tickIntervalError}
+              tickIntervalNotice={tickIntervalNotice}
+              effectiveTickIntervalMs={effectiveTickIntervalMs}
+              onChange={(patch) => {
+                if (patch.tickIntervalMins !== undefined) {
+                  setTickIntervalTouched(true);
+                }
+                setForm((prev) => ({ ...prev, ...patch }));
+              }}
             />
           </div>
 
@@ -307,7 +333,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           variant="primary"
           type="submit"
           form="edit-agent-form"
-          disabled={mutation.isPending || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
+          disabled={mutation.isPending || tickIntervalError != null || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
         >
           {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
         </Button>

@@ -1,4 +1,18 @@
 import type { ProviderSetupResult } from '../../lib/api-client.js';
+import { parseTickIntervalMinutesInput } from './tick-interval.js';
+
+function getTickIntervalMsOrThrow(value: string): number | undefined {
+  const parsedTickInterval = parseTickIntervalMinutesInput(value);
+  if (parsedTickInterval.kind === 'empty') {
+    return undefined;
+  }
+
+  if (parsedTickInterval.kind === 'invalid') {
+    throw new Error('Invalid tick interval minutes input');
+  }
+
+  return parsedTickInterval.tickIntervalMs;
+}
 
 export interface CreateAgentIntentPayloadInput {
   name: string;
@@ -15,7 +29,7 @@ export interface CreateAgentIntentPayloadInput {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   telegramChatId: string;
-  tickIntervalMs: string;
+  tickIntervalMins: string;
   maxBots: string;
   capital: string;
   dailyLossLimit: string;
@@ -34,7 +48,7 @@ export interface UpdateAgentPayloadInput {
   dailyLossLimit: string;
   maxBots: string;
   maxSlippageBps: string;
-  tickIntervalMs: string;
+  tickIntervalMins: string;
   capital: string;
   modelOverrideEnabled: boolean;
   modelForm: {
@@ -42,6 +56,8 @@ export interface UpdateAgentPayloadInput {
     lightModel: string;
     heavyModel: string;
   };
+  preserveOriginalTickIntervalMs?: boolean;
+  originalTickIntervalMs?: number | null;
 }
 
 export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
@@ -61,6 +77,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   tickIntervalMs?: number;
   capital?: string;
 } {
+  const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
+
   return {
     name: input.name.trim(),
     prompt: input.goal.trim(),
@@ -74,7 +92,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.costPreset ? { costPreset: input.costPreset } : {}),
     ...(input.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(input.dailySpendBudgetUsd) } : {}),
     ...(input.telegramChatId.trim() ? { telegramChatId: input.telegramChatId.trim() } : {}),
-    ...(input.tickIntervalMs ? { tickIntervalMs: parseInt(input.tickIntervalMs, 10) } : {}),
+    ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
     ...(input.maxBots ? { maxBots: parseInt(input.maxBots, 10) } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
     ...(input.dailyLossLimit.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
@@ -103,6 +121,13 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   lightModel: string | null;
   heavyModel: string | null;
 } {
+  const parsedTickInterval = input.preserveOriginalTickIntervalMs
+    ? undefined
+    : getTickIntervalMsOrThrow(input.tickIntervalMins);
+  const tickIntervalMs = input.preserveOriginalTickIntervalMs
+    ? (input.originalTickIntervalMs ?? null)
+    : parsedTickInterval ?? null;
+
   return {
     name: input.name.trim(),
     prompt: input.prompt.trim(),
@@ -114,7 +139,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     dailyLossLimit: input.dailyLossLimit.trim() || null,
     maxBots: input.maxBots ? parseInt(input.maxBots, 10) : null,
     maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
-    tickIntervalMs: input.tickIntervalMs ? parseInt(input.tickIntervalMs, 10) : null,
+    tickIntervalMs,
     capital: input.capital.trim() || null,
     provider: input.modelOverrideEnabled ? input.modelForm.provider || null : null,
     lightModel: input.modelOverrideEnabled ? input.modelForm.lightModel || null : null,
