@@ -101,6 +101,63 @@ describe('shouldSkipTick', () => {
     expect(second.reason).toBe('context_unchanged');
   });
 
+  it('does not skip when hasWakeSignal is true even if context hash matches (flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const wakeTickResult = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        hasWakeSignal: true,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(wakeTickResult.skip).toBe(false);
+  });
+
+  it('does not skip when hasWakeSignal is true even if context hash matches (open position)', async () => {
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+      },
+      {},
+    );
+
+    const wakeTickResult = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: true,
+        hasWakeSignal: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        previousContextHash: first.contextHash,
+      },
+      {},
+    );
+
+    expect(wakeTickResult.skip).toBe(false);
+  });
+
   it('forces a full evaluation every tenth tick even when the context hash matches', async () => {
     const regime = makeRegimeResult(true, ['All regime checks passed']);
     const first = await shouldSkipTick(

@@ -4,6 +4,10 @@ import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 export interface TickGateState {
   tickNumber: number;
   hasOpenPositions: boolean;
+  /** When true, the current tick was triggered by a wake signal (e.g. reminder,
+   * market event). The context_hash gate is bypassed so the LLM always runs to
+   * handle the wake payload, even if trading context is unchanged. */
+  hasWakeSignal?: boolean;
   tradingHours?: TradingHoursConfig;
   now?: Date;
   positionSide?: string | null;
@@ -219,6 +223,7 @@ export async function shouldSkipTick(
 
     if (
       enabledGates.contextHash
+      && !state.hasWakeSignal
       && state.previousContextHash
       && state.tickNumber % FORCE_FULL_EVALUATION_EVERY_TICK !== 0
       && contextHash === state.previousContextHash
@@ -274,6 +279,7 @@ export async function shouldSkipTick(
 
   if (
     enabledGates.contextHash
+    && !state.hasWakeSignal
     && state.previousContextHash
     && state.tickNumber % FORCE_FULL_EVALUATION_EVERY_TICK !== 0
     && contextHash === state.previousContextHash

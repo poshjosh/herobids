@@ -52,6 +52,7 @@ import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
+import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
@@ -1098,55 +1099,6 @@ function handleTickSuccess(): void {
   effectiveTickIntervalMs = recovery.nextIntervalMs;
 }
 
-function parseNumericValue(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const match = value.match(/-?\d+(?:\.\d+)?/);
-    if (match) {
-      const parsed = Number(match[0]);
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-  }
-  return null;
-}
-
-function extractTickSignals(incomingMessages: Array<Record<string, unknown>>): {
-  latestPrice: number | null;
-  portfolioPnlUsd: number | null;
-  positionSide: string | null;
-} {
-  let latestPrice: number | null = null;
-  let portfolioPnlUsd: number | null = null;
-  let positionSide: string | null = sessionMetrics.lastPositionSide;
-
-  for (let index = incomingMessages.length - 1; index >= 0; index--) {
-    const message = incomingMessages[index]!;
-    const type = message['type'];
-    const payload = message['payload'];
-    if (type !== 'instance.context.snapshot' || !payload || typeof payload !== 'object') {
-      continue;
-    }
-
-    const payloadRecord = payload as Record<string, unknown>;
-    latestPrice = parseNumericValue(payloadRecord['price']) ?? latestPrice;
-    portfolioPnlUsd = parseNumericValue(payloadRecord['pnl']) ?? portfolioPnlUsd;
-
-    const position = payloadRecord['position'];
-    if (position && typeof position === 'object') {
-      const rawSide = (position as Record<string, unknown>)['side'];
-      positionSide = typeof rawSide === 'string' ? rawSide : positionSide;
-    } else if (position === null) {
-      positionSide = 'flat';
-    }
-
-    break;
-  }
-
-  return { latestPrice, portfolioPnlUsd, positionSide };
-}
-
 function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
   clearTimeout(tickTimer);
   if (!running) {
@@ -1243,11 +1195,6 @@ async function runTick(): Promise<void> {
       applyRuntimeMessage(runtimeState, message);
     }
 
-    const hasWakeRequest = incomingMessages.some((msg) => msg['type'] === 'agent.market.wake');
-    if (hasWakeRequest) {
-      logger.info({ tickCount }, 'Processing market wake signal');
-    }
-
     if (incomingMessages.some((message) => message['type'] === 'agent.runtime.config_update')) {
       toolVisibility.snapshotToolBaselines();
       applyToolVisibility();
@@ -1265,24 +1212,27 @@ async function runTick(): Promise<void> {
       }
     }
 
-    const tickSignals = extractTickSignals(incomingMessages);
+    const tickGateState = buildTickGateState({
+      tickNumber: tickCount,
+      incomingMessages,
+      hasOpenPositions,
+      lastKnownPositionSide: sessionMetrics.lastPositionSide,
+      tradingHours,
+      now: new Date(),
+      previousContextHash,
+      baseTickIntervalMs: costProfile.tickIntervalMs,
+      currentTickIntervalMs: effectiveTickIntervalMs,
+      enabledGates: costProfile.enabledGates,
+    });
+
+    if (tickGateState.hasWakeSignal) {
+      logger.info({ tickCount }, 'Processing market wake signal');
+    }
 
     let skipDecision: TickSkipDecision;
     try {
       skipDecision = await shouldSkipTick(
-        {
-          tickNumber: tickCount,
-          hasOpenPositions,
-          tradingHours,
-          now: new Date(),
-          positionSide: tickSignals.positionSide ?? (hasOpenPositions ? sessionMetrics.lastPositionSide ?? 'open' : 'flat'),
-          latestPrice: tickSignals.latestPrice,
-          portfolioPnlUsd: tickSignals.portfolioPnlUsd,
-          previousContextHash,
-          baseTickIntervalMs: costProfile.tickIntervalMs,
-          currentTickIntervalMs: effectiveTickIntervalMs,
-          enabledGates: costProfile.enabledGates,
-        },
+        tickGateState,
         {
           evaluateRegime: tradingTickWorkPlan.shouldEvaluateRegime
             ? async () => {
