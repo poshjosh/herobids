@@ -42,18 +42,17 @@ services:
       dockerfile: apps/api/Dockerfile
     ports:
       - '3000:3000'
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
       # PORT must stay in sync with the healthcheck below and app.port in config/default.yaml.
       # Changing app.port without updating PORT here will leave the container permanently unhealthy.
       PORT: '3000'
-      # Dev-only defaults — override via .env or environment in production.
-      AUTH_JWT_SECRET: docker-local-dev-secret-change-in-production!!
       AUTH_PUBLIC_BASE_URL: http://localhost:3000
       AUTH_FRONTEND_ORIGIN: http://localhost:5173
-      # Dev-only default — override with a real 64-hex-char key in production.
-      CREDENTIAL_ENCRYPTION_KEY: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
     healthcheck:
       # Uses $${PORT:-3000} (double-$ so Compose does NOT expand it at parse time;
       # the container shell resolves ${PORT:-3000} at runtime against the PORT env
@@ -89,11 +88,12 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
-      # Dev-only default — override with a real 64-hex-char key in production.
-      CREDENTIAL_ENCRYPTION_KEY: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
       DOCKER_HOST: tcp://docker-proxy:2375
       DOCKER_NETWORK: herobids_default
       AGENT_IMAGE: herobids-agent:latest
@@ -101,15 +101,6 @@ services:
       # docker build -f docker/Dockerfile.agent -t herobids-agent:latest .
       # For local dev without Docker-in-Docker, override: AGENT_RUNTIME_MODE=stub docker compose up
       AGENT_RUNTIME_MODE: docker
-      # LLM — API keys (secrets) come from .env; provider/model/baseUrl defaults are in
-      # config/default.yaml but can be overridden via env vars if needed.
-      LLM_PROVIDER: ${LLM_PROVIDER:-}
-      LLM_MODEL: ${LLM_MODEL:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_API_KEY_ANTHROPIC: ${LLM_API_KEY_ANTHROPIC:-}
-      LLM_API_KEY_OPENROUTER: ${LLM_API_KEY_OPENROUTER:-}
-      LLM_API_KEY_OPENAI: ${LLM_API_KEY_OPENAI:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
