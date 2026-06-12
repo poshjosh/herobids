@@ -620,7 +620,7 @@ export const AppConfigSchema = z.object({
   marketData: MarketDataConfigSchema.optional(),
   marketIntelligence: MarketIntelligenceConfigSchema.default({}),
   worker: WorkerConfigSchema.default({}),
-  agentRuntime: AgentRuntimeConfigSchema.default({}),
+  agentRuntime: AgentRuntimeConfigSchema,
   llm: LlmRuntimeConfigSchema.default({}),
   llmValidation: LlmValidationConfigSchema.default({}),
   liveRollout: LiveRolloutConfigSchema.default({}),

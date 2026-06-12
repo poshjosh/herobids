@@ -6,13 +6,13 @@ import { convertZodToJsonSchema } from './registry.js';
 // --- submit_decision ---
 
 const SubmitDecisionParamsSchema = z.object({
-  instrumentId: z.string().min(1),
-  intent: z.enum(['go_long', 'go_short', 'go_flat', 'increase', 'decrease']),
-  targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string'),
-  limitPrice: z.string().regex(/^\d+(\.\d+)?$/).optional(),
-  rationaleSummary: z.string().min(1),
-  confidence: z.number().min(0).max(1).optional(),
-  safetyOverrideId: z.string().min(1).optional(),
+  instrumentId: z.string().min(1).describe('Venue-specific instrument identifier. Use base tickers for perpetuals venues (e.g. "BTC", "SOL") and pair symbols for swap venues (e.g. "SOL/USDC").'),
+  intent: z.enum(['go_long', 'go_short', 'go_flat', 'increase', 'decrease']).describe('Trading intent: go_long, go_short, go_flat (close), increase, or decrease position'),
+  targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string').describe('Target position size as a decimal string (e.g. "0.5", "100")'),
+  limitPrice: z.string().regex(/^\d+(\.\d+)?$/).optional().transform(v => v === '' ? undefined : v).describe('Optional limit price as a decimal string. Omit to execute at market.'),
+  rationaleSummary: z.string().min(1).describe('Brief explanation of why this trade is being taken'),
+  confidence: z.number().min(0).max(1).optional().describe('Confidence level 0-1. Used for position sizing hints.'),
+  safetyOverrideId: z.string().optional().transform(v => v === '' ? undefined : v).describe('One-time code to override a previous safety rejection. Only provide the exact code from a prior rejection response.'),
 });
 
 const submitDecisionTool: AgentTool = {

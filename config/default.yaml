@@ -185,7 +185,7 @@ marketData:
 
 llm:
   provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
-  model: qwen3-coder:30b        # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
+  model: qwen3.6:35b-a3b-q4_K_M # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
   # baseUrl: http://host.docker.internal:11434/v1  # Ollama: use host.docker.internal, NOT localhost inside Docker
   maxTokens: 4096               # Max tokens per LLM call
   timeoutMs: 60000              # LLM call timeout in ms

@@ -103,8 +103,8 @@ function chooseLatest(rows: RuntimeGrantRow[]): RuntimeGrantRow | undefined {
 }
 
 function chooseDefaultBindingId(rows: RuntimeGrantRow[]): string | null {
-  const ready = rows.find((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
-  return ready?.bindingId ?? chooseLatest(rows)?.bindingId ?? null;
+  const readyRows = rows.filter((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
+  return chooseLatest(readyRows)?.bindingId ?? chooseLatest(rows)?.bindingId ?? null;
 }
 
 function inferSkillFromRow(row: typeof skills.$inferSelect): SkillDefinition {

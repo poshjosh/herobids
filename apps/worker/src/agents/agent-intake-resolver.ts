@@ -1,6 +1,6 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { capabilityGrants, tradingBindings, venueAccounts } from '@herobids/db';
+import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
 import type { PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
 import type { MarkSource } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
@@ -113,9 +113,11 @@ export class AgentIntakeResolver {
         provider: tradingBindings.provider,
         venueAccountVenue: venueAccounts.venue,
         venueAccountId: venueAccounts.id,
+        connectionStatus: connections.status,
       })
       .from(capabilityGrants)
       .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
+      .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
       .leftJoin(venueAccounts, eq(tradingBindings.sourceVenueAccountId, venueAccounts.id))
       .where(
         and(
@@ -123,7 +125,12 @@ export class AgentIntakeResolver {
           eq(capabilityGrants.capabilityFamily, 'trading'),
           eq(capabilityGrants.status, 'active'),
           eq(tradingBindings.status, 'active'),
+          eq(connections.status, 'active'),
         ),
+      )
+      .orderBy(
+        // Match the descriptor default-selection rule: newest ready binding wins.
+        desc(capabilityGrants.grantedAt),
       )
       .limit(1);
 

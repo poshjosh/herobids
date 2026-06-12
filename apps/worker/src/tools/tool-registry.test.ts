@@ -72,6 +72,24 @@ describe('tool registry extracted tools', () => {
     expect(result.error).toBe('market_data_not_configured');
   });
 
+  it('keeps normalized optional params out of emitted required arrays', () => {
+    const submitDecisionTool = tradingTools.find((tool) => tool.name === 'submit_decision');
+    const createBotTool = botManagementTools.find((tool) => tool.name === 'create_bot');
+    const checkRegimeTool = marketDataTools.find((tool) => tool.name === 'check_regime');
+
+    expect(submitDecisionTool).toBeDefined();
+    expect(createBotTool).toBeDefined();
+    expect(checkRegimeTool).toBeDefined();
+
+    const submitDecisionRequired = ((submitDecisionTool!.parameters as { required?: string[] }).required ?? []).slice().sort();
+    const createBotRequired = ((createBotTool!.parameters as { required?: string[] }).required ?? []).slice().sort();
+    const checkRegimeRequired = ((checkRegimeTool!.parameters as { required?: string[] }).required ?? []).slice().sort();
+
+    expect(submitDecisionRequired).toEqual(['instrumentId', 'intent', 'rationaleSummary', 'targetSize']);
+    expect(createBotRequired).toEqual([]);
+    expect(checkRegimeRequired).toEqual([]);
+  });
+
   it('publishes a protocol-valid default summary for publish_artifact', async () => {
     const publishArtifactTool = messagingTools.find((tool) => tool.name === 'publish_artifact');
     expect(publishArtifactTool).toBeDefined();

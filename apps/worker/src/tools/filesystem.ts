@@ -14,8 +14,8 @@ const MAX_READ_BYTES = 1_048_576;
 // --- write_file ---
 
 const WriteFileParamsSchema = z.object({
-  path: z.string().min(1),
-  content: z.string(),
+  path: z.string().min(1).describe('Relative path within the workspace (e.g. "notes/log.txt")'),
+  content: z.string().describe('File content to write'),
 });
 
 const writeFileTool: AgentTool = {
@@ -58,7 +58,7 @@ const writeFileTool: AgentTool = {
 // --- read_file ---
 
 const ReadFileParamsSchema = z.object({
-  path: z.string().min(1),
+  path: z.string().min(1).describe('Relative path within the workspace to read'),
 });
 
 const readFileTool: AgentTool = {
@@ -105,7 +105,7 @@ const readFileTool: AgentTool = {
 // --- list_files ---
 
 const ListFilesParamsSchema = z.object({
-  path: z.string().optional().default(''),
+  path: z.string().optional().default('').describe('Relative directory path to list. Defaults to workspace root.'),
 });
 
 const listFilesTool: AgentTool = {
@@ -157,7 +157,7 @@ const listFilesTool: AgentTool = {
 // --- delete_file ---
 
 const DeleteFileParamsSchema = z.object({
-  path: z.string().min(1),
+  path: z.string().min(1).describe('Relative path of the file to delete'),
 });
 
 const deleteFileTool: AgentTool = {

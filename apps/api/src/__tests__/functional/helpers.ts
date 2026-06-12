@@ -23,8 +23,16 @@ import { skillsRoutes } from '../../routes/skills.js';
 import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
-import type { AuthConfig } from '@herobids/domain';
+import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { LlmRuntimeConfigSchema, SYSTEM_SKILLS } from '@herobids/domain';
+
+const TEST_BUDGETS: RuntimeBudgetPolicy = {
+  maxHistoryMessages: 20,
+  maxRecentToolMessages: 6,
+  maxToolResultChars: 4_000,
+  maxVisibleToolSchemas: 64,
+  maxContextBlockChars: 4_000,
+};
 import { Queue } from 'bullmq';
 
 export const SKIP = !process.env['DATABASE_URL'] || !process.env['REDIS_URL'];
@@ -95,8 +103,8 @@ export async function buildApp() {
 
   await authRoutes(app, authConfig, db, redisClient, 'free');
   await agentRoutes(app, db);
-  await connectionRoutes(app, db, redisClient);
-  await capabilityRoutes(app, db, { defaultPlanId: 'free', plans: {} } as any, redisClient);
+  await connectionRoutes(app, db, TEST_BUDGETS, redisClient);
+  await capabilityRoutes(app, db, { defaultPlanId: 'free', plans: {} } as any, TEST_BUDGETS, redisClient);
   await botRoutes(app, lifecycleQueue, db, { defaultPlanId: 'free', plans: {} } as any);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)

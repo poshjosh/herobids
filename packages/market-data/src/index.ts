@@ -43,6 +43,7 @@ export {
 	type DexScreenerConfig,
 } from './dexscreener.js';
 export { fetchBinanceCandles, resolveBinanceSymbol, type BinanceCandlesConfig } from './binance-candles.js';
+export { CANDLE_PROVIDERS, type CandleProviderKey, type CandleProviderDescriptor } from './candle-registry.js';
 export {
 	fetchGeckoTerminalCandles,
 	fetchGeckoTerminalNewPools,

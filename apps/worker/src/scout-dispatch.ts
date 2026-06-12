@@ -36,13 +36,19 @@ export function buildScoutSystemPrompt(params: {
   goal: string;
   readOnlyTools: string[];
   timing: PromptTimingContext;
+  venueLines?: string[];
 }): string {
+  const venueSection = params.venueLines && params.venueLines.length > 0
+    ? ['## Trading Venue', ...params.venueLines]
+    : [];
+
   return [
     `You are the scout phase for agent "${params.name ?? params.agentId}".`,
     `## Your Goal`,
     normalizeAgentGoal(params.goal),
     '## Operating Context',
     ...formatPromptTimingContextLines(params.timing),
+    ...venueSection,
     '## Available Tools',
     `Visible read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,
     '## Instructions',

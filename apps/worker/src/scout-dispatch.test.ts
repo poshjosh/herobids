@@ -85,6 +85,25 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).not.toContain('Operator context:');
     expect(prompt).not.toContain('Risk tolerance:');
   });
+
+  it('renders venue guidance when provided', () => {
+    const prompt = buildScoutSystemPrompt({
+      agentId: 'agent-1',
+      name: 'market-watch-01',
+      goal: 'Trade carefully',
+      readOnlyTools: ['check_regime'],
+      timing: createPromptTimingContext({
+        currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+      }),
+      venueLines: ['- jupiter (swap / DEX) — trade instruments use pair symbols (e.g. "SOL/USDC", "ETH/USDC")'],
+    });
+
+    expect(prompt).toContain('## Trading Venue');
+    expect(prompt).toContain('jupiter (swap / DEX)');
+    expect(prompt).toContain('trade instruments use pair symbols');
+  });
 });
 
 describe('parseScoutDecision', () => {

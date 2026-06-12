@@ -35,6 +35,7 @@ import {
   applyRuntimeMessage,
   buildSystemPrompt as composeSystemPrompt,
   buildTickUserContext,
+  buildVenueLines,
   createRuntimeCompositionState,
   getVisibleToolNames,
   recordPerformanceInputs,
@@ -1483,6 +1484,7 @@ async function runTick(): Promise<void> {
         goal: runtimeState.runtimeDescriptor.goal,
         readOnlyTools: readOnlyScoutTools,
         timing: promptTiming,
+        venueLines: buildVenueLines(runtimeState),
       });
 
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {

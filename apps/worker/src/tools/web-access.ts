@@ -187,8 +187,8 @@ async function isHostPrivate(hostname: string): Promise<boolean> {
 // --- search_web ---
 
 const WebSearchParamsSchema = z.object({
-  query: z.string().min(1).max(400),
-  maxResults: z.number().int().min(1).max(10).optional(),
+  query: z.string().min(1).max(400).describe('Search query string'),
+  maxResults: z.number().int().min(1).max(10).optional().describe('Maximum number of results to return (1-10)'),
 });
 
 const webSearchTool: AgentTool = {
@@ -298,7 +298,7 @@ const webSearchTool: AgentTool = {
 // --- browse_url ---
 
 const BrowseUrlParamsSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().describe('Full HTTPS URL to fetch (e.g. "https://example.com/page")'),
 });
 
 const browseUrlTool: AgentTool = {
@@ -481,7 +481,7 @@ function isSupportedDocumentContentType(contentType: string | null): boolean {
 }
 
 const ReadDocumentParamsSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().describe('Full HTTPS URL of the document to read (e.g. PDF)'),
 });
 
 const readDocumentTool: AgentTool = {

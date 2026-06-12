@@ -9,9 +9,9 @@ const logger = pino({ name: 'tools:bots' });
 // --- create_bot ---
 
 const CreateBotParamsSchema = z.object({
-  venueAccountId: z.string().min(1).optional(),
-  config: z.object({}).passthrough().optional(),
-  rationale: z.string().max(500).optional(),
+  venueAccountId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Venue account ID to use. Omit to use default trading binding.'),
+  config: z.object({}).passthrough().optional().describe('Bot configuration object (strategy preset, symbol, risk params, etc.)'),
+  rationale: z.string().max(500).optional().describe('Brief rationale for creating this bot. Used for audit.'),
 });
 
 const createBotTool: AgentTool = {
@@ -40,7 +40,7 @@ const createBotTool: AgentTool = {
 // --- list_bots ---
 
 const ListBotsParamsSchema = z.object({
-  days: z.number().int().positive().optional(),
+  days: z.number().int().positive().optional().describe('Only return bots created within this many days'),
 });
 
 const listBotsTool: AgentTool = {
@@ -78,7 +78,7 @@ const listBotsTool: AgentTool = {
 // --- get_bot_status ---
 
 const GetBotStatusParamsSchema = z.object({
-  botId: z.string().min(1),
+  botId: z.string().min(1).describe('ID of the bot to query'),
 });
 
 const getBotStatusTool: AgentTool = {
@@ -118,7 +118,7 @@ const getBotStatusTool: AgentTool = {
 // --- stop_bot ---
 
 const StopBotParamsSchema = z.object({
-  botId: z.string().min(1),
+  botId: z.string().min(1).describe('ID of the bot to stop'),
 });
 
 const stopBotTool: AgentTool = {
@@ -171,8 +171,8 @@ const stopBotTool: AgentTool = {
 // --- start_bot ---
 
 const StartBotParamsSchema = z.object({
-  botId: z.string().min(1),
-  rationale: z.string().max(500).optional(),
+  botId: z.string().min(1).describe('ID of the bot to start'),
+  rationale: z.string().max(500).optional().describe('Brief rationale for restarting this bot'),
 });
 
 const startBotTool: AgentTool = {
@@ -226,8 +226,8 @@ const startBotTool: AgentTool = {
 // --- adjust_bot_config ---
 
 const AdjustBotConfigParamsSchema = z.object({
-  botId: z.string().min(1),
-  config: z.object({}).passthrough(),
+  botId: z.string().min(1).describe('ID of the bot to reconfigure'),
+  config: z.object({}).passthrough().describe('Partial config object to merge with existing bot config'),
 });
 
 function deepMergeConfig(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {

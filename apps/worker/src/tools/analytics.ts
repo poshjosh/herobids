@@ -5,25 +5,24 @@ import { convertZodToJsonSchema } from './registry.js';
 // --- get_analytics ---
 
 const GetAnalyticsParamsSchema = z.object({
-  botId: z.string().min(1).optional(),
-  days: z.number().int().positive().max(90).default(7),
+  days: z.number().int().positive().max(90).default(7).describe('Lookback period in days (1-90). Defaults to 7.'),
 });
 
 const getAnalyticsTool: AgentTool = {
   name: 'get_analytics',
-  description: 'Get trading analytics for bots created by this agent. Returns total trades, win rate, P&L, fees, and per-bot breakdown. Optionally filter by bot ID and lookback period (max 90 days).',
+  description: 'Get trading analytics for all bots created by this agent. Returns total trades, win rate, P&L, fees, and per-bot breakdown over the specified lookback period.',
   parametersSchema: GetAnalyticsParamsSchema,
   parameters: convertZodToJsonSchema(GetAnalyticsParamsSchema),
   category: 'read-database',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { botId, days } = params as z.infer<typeof GetAnalyticsParamsSchema>;
+    const { days } = params as z.infer<typeof GetAnalyticsParamsSchema>;
 
     if (!ctx.botRepo) {
       return { success: false, error: 'direct db access not available' };
     }
 
     const analyticsSince = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const analytics = await ctx.botRepo.getAnalyticsByCreator('agent', ctx.agentId, analyticsSince, botId);
+    const analytics = await ctx.botRepo.getAnalyticsByCreator('agent', ctx.agentId, analyticsSince);
 
     const winRate = analytics.closedPositions > 0
       ? (analytics.winningPositions / analytics.closedPositions) * 100
@@ -49,24 +48,20 @@ const getAnalyticsTool: AgentTool = {
 
 // --- list_positions ---
 
-const ListPositionsParamsSchema = z.object({
-  botId: z.string().min(1).optional(),
-});
+const ListPositionsParamsSchema = z.object({});
 
 const listPositionsTool: AgentTool = {
   name: 'list_positions',
-  description: 'List open positions for bots created by this agent. Returns instrument, side, size, entry price, and open timestamp. Optionally filter by bot ID. Note: unrealized P&L is not available in the agent process.',
+  description: 'List open positions for all bots created by this agent. Returns instrument, side, size, entry price, and open timestamp.',
   parametersSchema: ListPositionsParamsSchema,
   parameters: convertZodToJsonSchema(ListPositionsParamsSchema),
   category: 'read-database',
-  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { botId } = params as z.infer<typeof ListPositionsParamsSchema>;
-
+  async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
     if (!ctx.botRepo) {
       return { success: false, error: 'direct db access not available' };
     }
 
-    const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId, botId);
+    const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId);
 
     return {
       success: true,

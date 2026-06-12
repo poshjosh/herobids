@@ -47,8 +47,9 @@ const SYMBOL_MAP: Record<string, string> = {
 };
 
 export function resolveBinanceSymbol(instrument: string): string {
-  const upper = instrument.toUpperCase();
-  return SYMBOL_MAP[upper] ?? `${upper}USDT`;
+  const stripped = instrument.split(/[/\-]/)[0]!.toUpperCase();
+  const base = stripped.replace(/USDT$|USD$|PERP$/i, '') || stripped;
+  return SYMBOL_MAP[base] ?? `${base}USDT`;
 }
 
 export async function fetchBinanceCandles(

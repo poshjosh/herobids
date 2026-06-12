@@ -9,12 +9,14 @@ describe('AgentIntakeResolver', () => {
       innerJoin: vi.fn().mockReturnThis(),
       leftJoin: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue([
         {
           sourceVenueAccountId: 'va-1',
           provider: 'hyperliquid',
           venueAccountVenue: 'hyperliquid',
           venueAccountId: 'va-1',
+          connectionStatus: 'active',
         },
       ]),
     };

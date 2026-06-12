@@ -300,6 +300,51 @@ function renderReadinessLine(family: string, readiness: CapabilityReadiness): st
   return `${family}: ${readiness.state} (${readiness.agentEligibility}${bindingSuffix}${reasonSuffix})`;
 }
 
+const PROVIDER_VENUE_DETAILS: Record<string, { type: string; tradeInstrumentHint: string }> = {
+  hyperliquid: {
+    type: 'perpetuals',
+    tradeInstrumentHint: 'trade instruments use base tickers (e.g. "BTC", "SOL")',
+  },
+  bybit: {
+    type: 'perpetuals',
+    tradeInstrumentHint: 'trade instruments use base tickers (e.g. "BTC", "ETH")',
+  },
+  jupiter: {
+    type: 'swap / DEX',
+    tradeInstrumentHint: 'trade instruments use pair symbols (e.g. "SOL/USDC", "ETH/USDC")',
+  },
+  '1inch': {
+    type: 'swap / DEX',
+    tradeInstrumentHint: 'trade instruments use pair symbols (e.g. "ETH/USDC", "WBTC/USDC")',
+  },
+};
+
+function formatTradingVenueLine(provider: string): string {
+  const details = PROVIDER_VENUE_DETAILS[provider.toLowerCase()];
+  if (!details) {
+    return `- ${provider} (unknown)`;
+  }
+  return `- ${provider} (${details.type}) — ${details.tradeInstrumentHint}`;
+}
+
+function getEffectiveTradingBindings(state: RuntimeCompositionState): typeof state.runtimeDescriptor.grantedBindingsByFamily[string] {
+  const bindings = state.runtimeDescriptor.grantedBindingsByFamily['trading'] ?? [];
+  const executableBindings = bindings.filter((binding) => binding.readiness.effectiveReady);
+  if (executableBindings.length <= 1) return executableBindings;
+
+  const defaultBindingId = state.runtimeDescriptor.defaultBindingByFamily['trading'];
+  if (defaultBindingId) {
+    const defaultBinding = executableBindings.find((binding) => binding.bindingId === defaultBindingId);
+    if (defaultBinding) return [defaultBinding];
+  }
+
+  const defaultBinding = executableBindings.find((binding) => binding.isDefault);
+  if (defaultBinding) return [defaultBinding];
+
+  // No explicit default metadata — surface all executable bindings rather than guessing.
+  return executableBindings;
+}
+
 function computePerformanceSummary(state: RuntimeCompositionState): string {
   const elapsedHours = Math.max(0, (Date.now() - state.sessionStartMs) / 3_600_000);
   const llmCost = state.metrics.sessionCosts.llmCostUsd;
@@ -357,6 +402,27 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     }),
   },
   {
+    id: 'trading-venue',
+    costTier: 'free',
+    section: 'static',
+    requiredFamilies: ['trading'],
+    trimOrder: 0,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const bindings = getEffectiveTradingBindings(state);
+      if (bindings.length === 0) return null;
+
+      const lines = bindings.map((b) => formatTradingVenueLine(b.provider));
+
+      return {
+        id: 'tradingVenue',
+        title: 'Trading Venue',
+        provider: 'trading-venue',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
     id: 'readiness-summary',
     costTier: 'free',
     section: 'dynamic',
@@ -390,13 +456,13 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
 
       return {
         id: 'reminderContext',
-        title: 'Reminder Context',
+        title: 'A reminder you set for yourself is now due',
         provider: 'reminder-context',
         content: [
-          `Reminder ID: ${reminder.reminderId ?? 'unavailable'}`,
-          `Wake ID: ${reminder.wakeId}`,
           `Message: ${reminder.message}`,
           `Requested at: ${reminder.requestedAt ?? 'unavailable'}`,
+          `Reminder ID: ${reminder.reminderId ?? 'unavailable'}`,
+          `Wake ID: ${reminder.wakeId}`,
         ].join('\n'),
       };
     },
@@ -1119,6 +1185,12 @@ export function buildTickUserContext(state: RuntimeCompositionState, incomingMes
   state.metrics.currentMarketWake = null;
 
   return output;
+}
+
+export function buildVenueLines(state: RuntimeCompositionState): string[] {
+  const bindings = getEffectiveTradingBindings(state);
+  if (bindings.length === 0) return [];
+  return bindings.map((b) => formatTradingVenueLine(b.provider));
 }
 
 export function getVisibleToolNames(state: RuntimeCompositionState): string[] {

@@ -4,6 +4,7 @@ import { marketDataTools } from './market-data.js';
 
 const discoverTokensTool = marketDataTools.find((tool) => tool.name === 'discover_tokens');
 const searchTokensTool = marketDataTools.find((tool) => tool.name === 'search_tokens');
+const checkRegimeTool = marketDataTools.find((tool) => tool.name === 'check_regime');
 
 function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -242,5 +243,36 @@ describe('search_tokens tool', () => {
       freshness: { isStale: false, ageMs: 0 },
       tokens: [expect.objectContaining({ symbol: 'SOL', network: 'solana' })],
     });
+  });
+});
+
+describe('check_regime tool', () => {
+  it('normalizes the benchmark symbol through the candle provider registry before fetching candles', async () => {
+    const candles = Array.from({ length: 220 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2026, 0, 1, index)).toISOString(),
+      open: 100 + index,
+      high: 101 + index,
+      low: 99 + index,
+      close: 100 + index,
+      volume: 1_000 + index,
+    }));
+    const candlesSpy = vi.fn().mockResolvedValue({
+      data: candles,
+      meta: { freshness: { isStale: false, ageMs: 0 }, provider: 'binance' },
+    });
+
+    const result = await checkRegimeTool!.execute(
+      { benchmarkSymbol: 'BTC/USD' },
+      makeContext({
+        marketDataRegistry: {
+          binance: {
+            candles: candlesSpy,
+          },
+        } as ToolContext['marketDataRegistry'],
+      }),
+    );
+
+    expect(candlesSpy).toHaveBeenCalledWith('BTCUSDT', { interval: '1h', limit: 200 });
+    expect(result.success).toBe(true);
   });
 });

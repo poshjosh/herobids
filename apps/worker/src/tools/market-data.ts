@@ -4,10 +4,10 @@ import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import {
   evaluateRegime,
   applyTokenSearchPolicy,
+  CANDLE_PROVIDERS,
   type TokenInfo,
   type RegimeParams,
   type ProviderRegistry,
-  type PriceCandle,
   type MarketDataConfig,
 } from '@herobids/market-data';
 import {
@@ -116,13 +116,13 @@ function filterSearchResults(
 // --- search_tokens ---
 
 const SearchTokensParamsSchema = z.object({
-  query: z.string().min(1),
-  network: z.string().optional(),
-  minLiquidityUsd: z.number().positive().optional(),
-  minVolume24hUsd: z.number().positive().optional(),
-  minTokenAgeHours: z.number().positive().optional(),
-  includeBlocked: z.boolean().optional(),
-  limit: z.number().int().positive().max(50).optional(),
+  query: z.string().min(1).describe('Token name or symbol to search for (e.g. "BONK", "jupiter")'),
+  network: z.string().optional().describe('Filter by blockchain network (e.g. "solana", "ethereum")'),
+  minLiquidityUsd: z.number().positive().optional().describe('Minimum liquidity in USD to include a token'),
+  minVolume24hUsd: z.number().positive().optional().describe('Minimum 24h volume in USD'),
+  minTokenAgeHours: z.number().positive().optional().describe('Minimum token age in hours. Tokens with unknown age pass through.'),
+  includeBlocked: z.boolean().optional().describe('Include tokens flagged by safety policies. Default false.'),
+  limit: z.number().int().positive().max(50).optional().describe('Maximum number of results to return (1-50)'),
 });
 
 const searchTokensTool: AgentTool = {
@@ -190,9 +190,9 @@ const searchTokensTool: AgentTool = {
 // --- discover_tokens ---
 
 const DiscoverTokensParamsSchema = z.object({
-  network: z.string().optional(),
-  limit: z.number().int().positive().max(50).optional(),
-  minLiquidityUsd: z.number().positive().optional(),
+  network: z.string().optional().describe('Filter discovery to a specific network (e.g. "solana")'),
+  limit: z.number().int().positive().max(50).optional().describe('Maximum number of tokens to return (1-50)'),
+  minLiquidityUsd: z.number().positive().optional().describe('Minimum liquidity in USD'),
 });
 
 const discoverTokensTool: AgentTool = {
@@ -239,16 +239,18 @@ const discoverTokensTool: AgentTool = {
 
 // --- check_regime ---
 
+const regimeCandleProvider = CANDLE_PROVIDERS.binance;
+
 const CheckRegimeParamsSchema = z.object({
-  benchmarkSymbol: z.string().min(1).optional(),
-  emaFast: z.number().int().positive().optional(),
-  emaSlow: z.number().int().positive().optional(),
-  emaTrend: z.number().int().positive().optional(),
-  adxMin: z.number().positive().optional(),
-  emaAlignment: z.enum(['bullish', 'bearish', 'any']).optional(),
-  marketStructure: z.enum(['higherHighs', 'lowerHighs', 'any']).optional(),
-  priceAboveVwap: z.boolean().optional(),
-  disableWhenChoppy: z.boolean().optional(),
+  benchmarkSymbol: z.string().optional().transform(v => v === '' ? undefined : v).describe(`Benchmark symbol for regime evaluation. ${regimeCandleProvider.symbolFormatHint}. Defaults to "BTC".`),
+  emaFast: z.number().int().positive().optional().describe('Fast EMA period (default 20)'),
+  emaSlow: z.number().int().positive().optional().describe('Slow EMA period (default 50)'),
+  emaTrend: z.number().int().positive().optional().describe('Trend EMA period (default 200)'),
+  adxMin: z.number().positive().optional().describe('Minimum ADX threshold to confirm trend (default 20)'),
+  emaAlignment: z.enum(['bullish', 'bearish', 'any']).optional().describe('Required EMA alignment direction'),
+  marketStructure: z.enum(['higherHighs', 'lowerHighs', 'any']).optional().describe('Required market structure pattern'),
+  priceAboveVwap: z.boolean().optional().describe('Require price above VWAP'),
+  disableWhenChoppy: z.boolean().optional().describe('Disable trading signal when ADX indicates chop'),
 });
 
 const checkRegimeTool: AgentTool = {
@@ -270,15 +272,14 @@ const checkRegimeTool: AgentTool = {
 
     try {
       const result = await evaluateRegime(regimeParams, (symbol) => {
-        ctx.recordMarketDataAttempt?.('binance');
-        return ctx.marketDataRegistry!.binance.candles(symbol, { interval: '1h', limit: 200 })
-          .then((response) => response.data as PriceCandle[]);
+        ctx.recordMarketDataAttempt?.(regimeCandleProvider.id);
+        return regimeCandleProvider.fetchCandles(ctx.marketDataRegistry!, symbol, { interval: '1h', limit: 200 });
       });
       return { success: true, data: { ok: true, ...result } };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error';
       if (message.includes('Rate limit exceeded')) {
-        ctx.recordMarketDataRejection?.('binance', { priority: 'execution' });
+        ctx.recordMarketDataRejection?.(regimeCandleProvider.id, { priority: 'execution' });
         return {
           success: false,
           error: 'rate_limit',
@@ -294,8 +295,8 @@ const checkRegimeTool: AgentTool = {
 // --- get_funding_rates ---
 
 const GetFundingRatesParamsSchema = z.object({
-  symbols: z.array(z.string().min(1)).optional(),
-  venue: z.string().optional(),
+  symbols: z.array(z.string().min(1)).optional().describe('List of base tickers to fetch funding for (e.g. ["BTC", "ETH"]). Omit for all.'),
+  venue: z.string().optional().describe('Venue to query (e.g. "hyperliquid"). Defaults to primary venue.'),
 });
 
 const getFundingRatesTool: AgentTool = {
@@ -331,8 +332,8 @@ const getFundingRatesTool: AgentTool = {
 // --- get_market_overview ---
 
 const GetMarketOverviewParamsSchema = z.object({
-  venue: z.string().optional(),
-  symbols: z.array(z.string().min(1)).optional(),
+  venue: z.string().optional().describe('Venue to query (e.g. "hyperliquid"). Defaults to primary venue.'),
+  symbols: z.array(z.string().min(1)).optional().describe('Specific symbols to include in overview. Omit for broad market.'),
 });
 
 const getMarketOverviewTool: AgentTool = {

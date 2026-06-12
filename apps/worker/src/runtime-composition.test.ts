@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
   applyRuntimeMessage,
+  buildVenueLines,
   buildSystemPrompt,
   buildTickUserContext,
   createRuntimeCompositionState,
@@ -128,6 +129,9 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).toContain('Execution mode: paper');
+    expect(prompt).toContain('Trading Venue');
+    expect(prompt).toContain('hyperliquid (perpetuals)');
+    expect(prompt).toContain('trade instruments use base tickers');
     expect(prompt).toContain('Daily loss limit: 10');
     expect(prompt).toContain('Max concurrent bots: 2');
     expect(prompt).toContain('Take the next concrete step toward your goal.');
@@ -159,8 +163,87 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).not.toContain('Execution mode:');
+    expect(prompt).not.toContain('Trading Venue');
     expect(prompt).not.toContain('Daily loss limit:');
     expect(prompt).not.toContain('Max concurrent bots:');
+  });
+
+  it('renders only the configured default executable trading venue', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      grantedBindingsByFamily: {
+        trading: [
+          {
+            family: 'trading',
+            bindingId: 'binding-1',
+            connectionId: 'conn-1',
+            provider: 'hyperliquid',
+            label: 'Old default flag',
+            readiness: {
+              family: 'trading',
+              state: 'ready',
+              bindingReadiness: 'ready',
+              agentEligibility: 'eligible',
+              effectiveReady: true,
+              bindingId: 'binding-1',
+              reasons: [],
+            },
+            isDefault: true,
+          },
+          {
+            family: 'trading',
+            bindingId: 'binding-2',
+            connectionId: 'conn-2',
+            provider: 'jupiter',
+            label: 'Actual default',
+            readiness: {
+              family: 'trading',
+              state: 'ready',
+              bindingReadiness: 'ready',
+              agentEligibility: 'eligible',
+              effectiveReady: true,
+              bindingId: 'binding-2',
+              reasons: [],
+            },
+            isDefault: false,
+          },
+        ],
+      },
+      defaultBindingByFamily: { trading: 'binding-2' },
+    });
+
+    expect(buildVenueLines(state)).toEqual([
+      '- jupiter (swap / DEX) — trade instruments use pair symbols (e.g. "SOL/USDC", "ETH/USDC")',
+    ]);
+  });
+
+  it('omits non-executable trading bindings from venue guidance', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      grantedBindingsByFamily: {
+        trading: [
+          {
+            family: 'trading',
+            bindingId: 'binding-1',
+            connectionId: 'conn-1',
+            provider: 'hyperliquid',
+            label: 'Revoked binding',
+            readiness: {
+              family: 'trading',
+              state: 'revoked',
+              bindingReadiness: 'revoked',
+              agentEligibility: 'ineligible',
+              effectiveReady: false,
+              bindingId: 'binding-1',
+              reasons: ['underlying connection has been revoked'],
+            },
+            isDefault: true,
+          },
+        ],
+      },
+    });
+
+    expect(buildVenueLines(state)).toEqual([]);
   });
 
   it('keeps static prompt content ahead of dynamic tick content', () => {
@@ -571,7 +654,7 @@ describe('runtime composition helpers', () => {
       },
     }]);
 
-    expect(userContext).toContain('## Reminder Context');
+    expect(userContext).toContain('## A reminder you set for yourself is now due');
     expect(userContext).toContain('Reminder ID: rem-001');
     expect(userContext).toContain('Message: Check BTC price');
     expect(userContext).toContain('Requested at: 2026-06-11T00:00:00.000Z');
@@ -592,8 +675,8 @@ describe('runtime composition helpers', () => {
     }]);
     const secondTick = buildTickUserContext(state, []);
 
-    expect(firstTick).toContain('## Reminder Context');
-    expect(secondTick).not.toContain('## Reminder Context');
+    expect(firstTick).toContain('## A reminder you set for yourself is now due');
+    expect(secondTick).not.toContain('## A reminder you set for yourself is now due');
   });
 
   it('applyRuntimeMessage returns a generic Market wake summary for non-reminder, non-typed wakes', () => {

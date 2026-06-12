@@ -30,9 +30,9 @@ interface ReminderRecord {
 // --- create_task ---
 
 const CreateTaskParamsSchema = z.object({
-  title: z.string().min(1).max(200),
-  notes: z.string().max(1000).optional(),
-  dueAt: z.string().datetime().optional(),
+  title: z.string().min(1).max(200).describe('Short title for the task'),
+  notes: z.string().max(1000).optional().describe('Additional notes or context for the task'),
+  dueAt: z.string().datetime().optional().describe('Due datetime in ISO 8601 UTC format'),
 });
 
 const createTaskTool: AgentTool = {
@@ -60,7 +60,7 @@ const createTaskTool: AgentTool = {
 // --- list_tasks ---
 
 const ListTasksParamsSchema = z.object({
-  status: z.enum(['pending', 'completed', 'all']).optional(),
+  status: z.enum(['pending', 'completed', 'all']).optional().describe('Filter by status: "pending" (default), "completed", or "all"'),
 });
 
 const listTasksTool: AgentTool = {
@@ -87,7 +87,7 @@ const listTasksTool: AgentTool = {
 // --- complete_task ---
 
 const CompleteTaskParamsSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).describe('UUID of the task to mark as completed'),
 });
 
 const completeTaskTool: AgentTool = {
@@ -118,8 +118,8 @@ const completeTaskTool: AgentTool = {
 // --- schedule_reminder ---
 
 const ScheduleReminderParamsSchema = z.object({
-  message: z.string().min(1).max(500),
-  triggerAt: z.string().datetime(),
+  message: z.string().min(1).max(500).describe('Reminder message that will be injected into your context at trigger time'),
+  triggerAt: z.string().datetime().describe('Absolute trigger datetime in ISO 8601 UTC format (must be in the future)'),
 });
 
 const scheduleReminderTool: AgentTool = {

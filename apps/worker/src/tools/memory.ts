@@ -5,8 +5,8 @@ import { convertZodToJsonSchema } from './registry.js';
 // --- set_memory ---
 
 const SetMemoryParamsSchema = z.object({
-  key: z.string().min(1),
-  value: z.unknown(),
+  key: z.string().min(1).describe('Key name for this memory entry'),
+  value: z.unknown().describe('Value to store (string, number, object, array, etc.)'),
 });
 
 const setMemoryTool: AgentTool = {
@@ -26,7 +26,7 @@ const setMemoryTool: AgentTool = {
 // --- get_memory ---
 
 const GetMemoryParamsSchema = z.object({
-  key: z.string().min(1),
+  key: z.string().min(1).describe('Key name to retrieve'),
 });
 
 const getMemoryTool: AgentTool = {
@@ -73,7 +73,7 @@ const listMemoryKeysTool: AgentTool = {
 // --- delete_memory ---
 
 const DeleteMemoryParamsSchema = z.object({
-  keys: z.array(z.string().min(1)).min(1),
+  keys: z.array(z.string().min(1)).min(1).describe('Array of key names to delete'),
 });
 
 const deleteMemoryTool: AgentTool = {

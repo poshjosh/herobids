@@ -1,5 +1,25 @@
+import { z } from 'zod';
 import type { AgentTool, ToolDefinition } from '@herobids/domain';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+
+function normalizeRequiredFields(
+  schema: Record<string, unknown>,
+  zodSchema: AgentTool['parametersSchema'],
+): Record<string, unknown> {
+  if (!(zodSchema instanceof z.ZodObject)) {
+    return schema;
+  }
+
+  const shape = zodSchema.shape as Record<string, z.ZodTypeAny>;
+  const normalizedRequired = Object.entries(shape)
+    .filter(([, fieldSchema]) => !fieldSchema.isOptional())
+    .map(([fieldName]) => fieldName);
+
+  return {
+    ...schema,
+    required: normalizedRequired,
+  };
+}
 
 /** Tool registry — maps tool names to implementations. */
 export class ToolRegistry {
@@ -52,9 +72,16 @@ export class ToolRegistry {
 }
 
 /** Helper to convert Zod schema to JSON Schema for LLM function calling */
-export function convertZodToJsonSchema(zodSchema: AgentTool['parametersSchema']): Record<string, unknown> {
-  return zodToJsonSchema(zodSchema, {
+export function convertZodToJsonSchema(
+  zodSchema: AgentTool['parametersSchema'],
+): Record<string, unknown> {
+  const schema = zodToJsonSchema(zodSchema, {
     target: 'openAi',
     $refStrategy: 'none',
   }) as Record<string, unknown>;
+
+  // The OpenAI-target JSON schema can over-mark top-level optional properties as
+  // required. Normalize the required list from the Zod object shape so plain
+  // optionals and effect-wrapped optionals preserve their intended contract.
+  return normalizeRequiredFields(schema, zodSchema);
 }
