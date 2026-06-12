@@ -13,9 +13,13 @@
 
 import { z } from 'zod';
 import crypto from 'node:crypto';
+import pino from 'pino';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
+import { summarizeActiveWatches, type RuntimeActiveWatch } from '../runtime-composition.js';
+
+const logger = pino({ name: 'watch-tools' });
 
 const EXPLICIT_SUPPORTED_CHAIN_SET = new Set<string>(EXPLICIT_SUPPORTED_CHAINS);
 
@@ -35,11 +39,48 @@ function watchesKey(agentId: string): string {
   return `agent:watches:${agentId}`;
 }
 
+function watchSummaryKey(agentId: string): string {
+  return `agent:watches:summary:${agentId}`;
+}
+
 function parseWatch(raw: string): WatchEntry | null {
   try {
     return JSON.parse(raw) as WatchEntry;
   } catch {
     return null;
+  }
+}
+
+function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
+  return {
+    watchId: watch.watchId,
+    symbol: watch.symbol,
+    chain: watch.chain,
+    condition: watch.condition,
+    thresholdPrice: watch.thresholdPrice,
+    note: watch.note,
+    lastConditionMet: watch.lastConditionMet,
+    lastCheckedAt: watch.lastCheckedAt,
+  };
+}
+
+async function refreshWatchSummaryCache(ctx: ToolContext): Promise<void> {
+  try {
+    const raw = await ctx.redis.hgetall(watchesKey(ctx.agentId));
+    const watches = Object.values(raw ?? {})
+      .map(parseWatch)
+      .filter((watch): watch is WatchEntry => watch !== null)
+      .map(toRuntimeActiveWatch);
+
+    const summary = summarizeActiveWatches(watches);
+    if (summary.totalCount === 0) {
+      await ctx.redis.hdel(watchSummaryKey(ctx.agentId), 'summary');
+      return;
+    }
+
+    await ctx.redis.hset(watchSummaryKey(ctx.agentId), 'summary', JSON.stringify(summary));
+  } catch (err) {
+    logger.warn({ err, agentId: ctx.agentId }, 'Failed to refresh active watch summary cache');
   }
 }
 
@@ -132,6 +173,7 @@ const watchTokenTool: AgentTool = {
     }
 
     await ctx.redis.hset(watchesKey(ctx.agentId), watch.watchId, JSON.stringify(watch));
+    await refreshWatchSummaryCache(ctx);
 
     return {
       success: true,
@@ -196,6 +238,8 @@ const removeWatchTool: AgentTool = {
     if (deleted === 0) {
       return { success: false, error: `watch ${watchId} not found`, retryable: false };
     }
+
+    await refreshWatchSummaryCache(ctx);
 
     return { success: true, data: { ok: true, watchId, removed: true } };
   },
@@ -312,6 +356,8 @@ const checkWatchesTool: AgentTool = {
       const ids = triggered.map((w) => w.watchId);
       await ctx.redis.hdel(watchesKey(ctx.agentId), ...ids);
     }
+
+    await refreshWatchSummaryCache(ctx);
 
     return {
       success: true,

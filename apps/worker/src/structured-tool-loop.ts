@@ -34,6 +34,13 @@ export interface StructuredToolLoopOptions {
     delayMs: number;
     classification: RuntimeFailureClassification;
   }) => void;
+  onBeforeTurn?: (info: { turnIndex: number; turnsRemaining: number }) =>
+    | string
+    | {
+        message?: string;
+        toolChoice?: LlmRequest['toolChoice'];
+      }
+    | undefined;
 }
 
 export interface StructuredToolLoopSuccess {
@@ -53,12 +60,27 @@ export type StructuredToolLoopResult = StructuredToolLoopSuccess | StructuredToo
 
 export async function runStructuredToolLoop(options: StructuredToolLoopOptions): Promise<StructuredToolLoopResult> {
   const messages = [...options.initialMessages];
-  const toolChoice = options.toolChoice ?? (options.tools.length > 0 ? 'auto' : 'none');
+  const defaultToolChoice = options.toolChoice ?? (options.tools.length > 0 ? 'auto' : 'none');
   let lastAssistantResponse = '';
   let lastToolCalls: LlmToolCall[] = [];
   let turnsUsed = 0;
 
   for (let turnIndex = 0; turnIndex < options.maxTurns; turnIndex++) {
+    let turnToolChoice = defaultToolChoice;
+    if (options.onBeforeTurn) {
+      const hint = options.onBeforeTurn({ turnIndex, turnsRemaining: options.maxTurns - turnIndex });
+      if (typeof hint === 'string') {
+        messages.push({ role: 'user', content: hint });
+      } else if (hint) {
+        if (hint.message) {
+          messages.push({ role: 'user', content: hint.message });
+        }
+        if (hint.toolChoice) {
+          turnToolChoice = hint.toolChoice;
+        }
+      }
+    }
+
     turnsUsed = turnIndex + 1;
     const turnResultWithRetry = await callLlmWithRetry(
       options.providerConfig,
@@ -66,7 +88,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         ...options.requestBase,
         messages,
         tools: options.tools,
-        toolChoice,
+        toolChoice: turnToolChoice,
       },
       {
         ...options.retryPolicy,
@@ -130,9 +152,9 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
 
   return {
     ok: true,
-      assistantResponse: lastAssistantResponse,
-      toolCalls: lastToolCalls,
-      turnsUsed,
+    assistantResponse: lastAssistantResponse,
+    toolCalls: lastToolCalls,
+    turnsUsed,
     terminatedByLimit: true,
   };
 }

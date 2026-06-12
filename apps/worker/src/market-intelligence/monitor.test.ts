@@ -32,6 +32,15 @@ function makeRedisMock(overrides: Record<string, unknown> = {}) {
       hstore.get(key)!.set(field, value);
       return 1;
     }),
+    hdel: vi.fn(async (key: string, ...fields: string[]) => {
+      const h = hstore.get(key);
+      if (!h) return 0;
+      let deleted = 0;
+      for (const field of fields) {
+        if (h.delete(field)) deleted++;
+      }
+      return deleted;
+    }),
     del: vi.fn(async (...keys: string[]) => {
       let deleted = 0;
       for (const key of keys) {
@@ -244,6 +253,22 @@ describe('createMarketMonitor — watch thresholds', () => {
     await monitor.evaluate();
 
     expect(publisher.emitMarketWatchTriggered).not.toHaveBeenCalled();
+  });
+
+  it('skips summary cache hashes when scanning active watches', async () => {
+    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
+    seedDiscoveryPrice('SOL', 'solana', 204);
+
+    redis._hstore.set('agent:watches:summary:agent-1', new Map([
+      ['summary', JSON.stringify({ totalCount: 1, uniqueCount: 1, overflowCount: 0, lines: ['ignored'] })],
+    ]));
+    redis._scanKeys.push('agent:watches:summary:agent-1');
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(redis.hgetall).toHaveBeenCalledTimes(1);
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
   });
 
   it('marks payload stale when discovery snapshot is stale', async () => {

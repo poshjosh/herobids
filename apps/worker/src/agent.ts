@@ -43,7 +43,10 @@ import {
   recordSessionCost,
   setCapabilityDegradation,
   recordVenueSignals,
-  recordActiveWatches,
+  recordActiveWatchSummary,
+  summarizeActiveWatches,
+  type RuntimeActiveWatch,
+  type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
 } from './runtime-composition.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
@@ -305,8 +308,8 @@ const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.
 // even though the main loop increments it later.
 let tickCount = 0;
 
-const SCOUT_MAX_TURNS = 3;
-const JUDGE_MAX_TURNS = 5;
+const SCOUT_MAX_TURNS = 10;
+const JUDGE_MAX_TURNS = 25;
 
 class TickGateUnexpectedError extends Error {
   constructor(public readonly cause: unknown) {
@@ -443,6 +446,91 @@ function refreshCapabilityPolicy(): void {
   capabilityEngine.replaceGrants(buildCapabilityGrants(runtimeState.runtimeDescriptor.toolPolicy));
 }
 
+function getTradingTickWorkPlan() {
+  return deriveTradingTickWorkPlan(runtimeState.runtimeDescriptor.resolvedSkills, marketDataRegistry != null);
+}
+
+function isRuntimeActiveWatchSummary(value: unknown): value is RuntimeActiveWatchSummary {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const summary = value as Partial<RuntimeActiveWatchSummary>;
+  return typeof summary.totalCount === 'number'
+    && typeof summary.uniqueCount === 'number'
+    && typeof summary.overflowCount === 'number'
+    && Array.isArray(summary.lines)
+    && summary.lines.every((line) => typeof line === 'string');
+}
+
+function parseRuntimeActiveWatch(raw: string): RuntimeActiveWatch | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<RuntimeActiveWatch> & {
+      thresholdPrice?: unknown;
+      lastConditionMet?: unknown;
+      lastCheckedAt?: unknown;
+    };
+
+    if (
+      typeof parsed.watchId !== 'string'
+      || typeof parsed.symbol !== 'string'
+      || typeof parsed.chain !== 'string'
+      || parsed.condition !== 'above' && parsed.condition !== 'below'
+      || typeof parsed.thresholdPrice !== 'number'
+      || (parsed.note !== undefined && typeof parsed.note !== 'string')
+      || (parsed.lastConditionMet !== null && parsed.lastConditionMet !== true && parsed.lastConditionMet !== false)
+      || (parsed.lastCheckedAt !== undefined && typeof parsed.lastCheckedAt !== 'string')
+    ) {
+      return null;
+    }
+
+    return {
+      watchId: parsed.watchId,
+      symbol: parsed.symbol,
+      chain: parsed.chain,
+      condition: parsed.condition,
+      thresholdPrice: parsed.thresholdPrice,
+      ...(parsed.note !== undefined ? { note: parsed.note } : {}),
+      lastConditionMet: parsed.lastConditionMet,
+      ...(parsed.lastCheckedAt !== undefined ? { lastCheckedAt: parsed.lastCheckedAt } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWatchSummary | null> {
+  try {
+    const summaryKey = `agent:watches:summary:${agentId}`;
+    const cachedSummary = await redis.hget(summaryKey, 'summary');
+    if (cachedSummary) {
+      try {
+        const parsed = JSON.parse(cachedSummary) as unknown;
+        if (isRuntimeActiveWatchSummary(parsed)) {
+          return parsed;
+        }
+        logger.warn({ agentId }, 'Cached active watch summary was malformed — rebuilding from source watches');
+      } catch (err) {
+        logger.warn({ err, agentId }, 'Failed to parse cached active watch summary — rebuilding from source watches');
+      }
+    }
+
+    const rawWatches = await redis.hgetall(`agent:watches:${agentId}`);
+    const watches = Object.values(rawWatches ?? {})
+      .map(parseRuntimeActiveWatch)
+      .filter((watch): watch is RuntimeActiveWatch => watch !== null);
+
+    if (watches.length === 0) {
+      return null;
+    }
+
+    return summarizeActiveWatches(watches);
+  } catch (err) {
+    logger.warn({ err, agentId }, 'Failed to load active watch summary for tick context');
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Redis Streams transport
 // ---------------------------------------------------------------------------
@@ -504,11 +592,6 @@ if (marketDataConfig) {
   }
   applyToolVisibility();
 }
-
-const tradingTickWorkPlan = deriveTradingTickWorkPlan(
-  runtimeState.runtimeDescriptor.resolvedSkills,
-  marketDataRegistry != null,
-);
 
 // Price service — built on top of the provider registry.
 // Only available when market data is configured.
@@ -1292,6 +1375,8 @@ async function runTick(): Promise<void> {
       applyToolVisibility();
     }
 
+    const tradingTickWorkPlan = getTradingTickWorkPlan();
+
     let hasOpenPositions = Boolean(sessionMetrics.lastPositionSide && sessionMetrics.lastPositionSide !== 'flat');
     if (botRepo) {
       try {
@@ -1425,24 +1510,10 @@ async function runTick(): Promise<void> {
     // Snapshot before buildTickUserContext clears currentReminder.
     const reminderScheduledBy = runtimeState.metrics.currentReminder?.scheduledBy ?? null;
 
-    // Fetch active watches from Redis and surface them in tick context.
-    try {
-      const rawWatches = await redis.hgetall(`agent:watches:${AGENT_ID}`);
-      if (rawWatches) {
-        const parsedWatches = Object.values(rawWatches).flatMap((raw) => {
-          try {
-            return [JSON.parse(raw) as RuntimeCompositionState['metrics']['activeWatches'][number]];
-          } catch {
-            return [];
-          }
-        });
-        recordActiveWatches(runtimeState, parsedWatches);
-      } else {
-        recordActiveWatches(runtimeState, []);
-      }
-    } catch (err) {
-      logger.warn({ err }, 'Failed to fetch active watches for context — skipping');
-      recordActiveWatches(runtimeState, []);
+    if (tradingTickWorkPlan.hasTradingCapability) {
+      recordActiveWatchSummary(runtimeState, await loadActiveWatchSummary(AGENT_ID));
+    } else {
+      recordActiveWatchSummary(runtimeState, null);
     }
 
     // Build context for this tick.
@@ -1532,12 +1603,12 @@ async function runTick(): Promise<void> {
         providerConfig: {
           provider: resolvedProvider,
           model: resolvedLightModel,
-          maxTokens: 256,
+          maxTokens: 1024,
           timeoutMs: LLM_TIMEOUT_MS,
           baseUrl: LLM_BASE_URL,
         },
         requestBase: {
-          maxTokens: 256,
+          maxTokens: 1024,
           temperature: 0,
           thinking: 'none',
         },
@@ -1586,6 +1657,18 @@ async function runTick(): Promise<void> {
         },
         onRetry: ({ attempt, delayMs, classification }) => {
           logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
+        },
+        onBeforeTurn: ({ turnsRemaining }) => {
+          if (turnsRemaining === 1) {
+            return {
+              message: 'This is your final tool call round — respond with JSON only, with disposition "hold" or "escalate" and a short reason. Do not request any more tools.',
+              toolChoice: 'none',
+            };
+          }
+          if (turnsRemaining === 2) {
+            return 'You have 2 tool call rounds left. Consolidate your remaining calls now.';
+          }
+          return undefined;
         },
       });
 

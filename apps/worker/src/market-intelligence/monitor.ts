@@ -9,6 +9,7 @@ import type {
   AgentMarketWakePayload,
   AgentMarketWakeSource,
 } from '@herobids/domain';
+import { summarizeActiveWatches } from '../runtime-composition.js';
 
 const logger = pino({ name: 'market-monitor' });
 
@@ -157,6 +158,28 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   // Watch threshold evaluation
   // -----------------------------------------------------------------------
 
+  async function refreshSummaryCache(agentId: string, watches: WatchEntry[]): Promise<void> {
+    try {
+      const summary = summarizeActiveWatches(watches.map((watch) => ({
+        watchId: watch.watchId,
+        symbol: watch.symbol,
+        chain: watch.chain,
+        condition: watch.condition,
+        thresholdPrice: watch.thresholdPrice,
+        note: watch.note,
+        lastConditionMet: watch.lastConditionMet,
+        lastCheckedAt: watch.lastCheckedAt,
+      })));
+      if (summary.totalCount === 0) {
+        await redis.hdel(`agent:watches:summary:${agentId}`, 'summary');
+      } else {
+        await redis.hset(`agent:watches:summary:${agentId}`, 'summary', JSON.stringify(summary));
+      }
+    } catch (err) {
+      logger.warn({ err, agentId }, 'Failed to refresh watch summary cache from monitor');
+    }
+  }
+
   async function evaluateWatches(): Promise<void> {
     if (stopped) return;
     // Find all agent watch keys
@@ -165,6 +188,8 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
     for (const key of watchKeys) {
       const agentId = key.replace('agent:watches:', '');
+      if (agentId.startsWith('summary:')) continue;
+
       const raw = await redis.hgetall(key);
       if (!raw || Object.keys(raw).length === 0) continue;
 
@@ -177,6 +202,8 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
       if (watches.length === 0) continue;
 
+      const refreshedWatches: WatchEntry[] = [];
+
       // Get latest price data from shared state
       const priceMap = await getLatestPrices(watches);
       if (stopped) return;
@@ -184,7 +211,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       for (const watch of watches) {
         const priceKey = `${watch.chain}:${watch.symbol}`;
         const priceData = priceMap.get(priceKey);
-        if (!priceData) continue;
+        if (!priceData) {
+          refreshedWatches.push(watch);
+          continue;
+        }
 
         const conditionMet = watch.condition === 'above'
           ? priceData.priceUsd >= watch.thresholdPrice
@@ -253,7 +283,12 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           metrics.eventsEmitted++;
           logger.info({ agentId, watchId: watch.watchId, symbol: watch.symbol }, 'Watch triggered');
         }
+
+        refreshedWatches.push(updated);
       }
+
+      // Refresh the cached summary so the agent sees updated watch state on next tick.
+      await refreshSummaryCache(agentId, refreshedWatches);
     }
   }
 
@@ -279,8 +314,8 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     if (prevRaw) {
       try {
         const prev = JSON.parse(prevRaw) as { tokens: Array<{ network: string; address: string; discoveryVectors?: string[] }> };
-        for (const t of prev.tokens ?? []) {
-          prevTokenKeys.add(`${t.network}:${t.address}`);
+        for (const prevToken of prev.tokens) {
+          prevTokenKeys.add(`${prevToken.network}:${prevToken.address}`);
         }
       } catch { /* no previous */ }
     }
@@ -763,7 +798,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
   async function getActiveAgentIds(): Promise<string[]> {
     // Target only agents that have active watches (expressed interest in market data)
     const watchKeys = await scanKeys('agent:watches:*');
-    return watchKeys.map((k) => k.replace('agent:watches:', ''));
+    return watchKeys
+      .map((k) => k.replace('agent:watches:', ''))
+      .filter((id) => !id.startsWith('summary:'));
   }
 
   async function checkDedupe(dedupeKey: string, _cooldownMs: number): Promise<boolean> {

@@ -10,6 +10,8 @@ import {
   recordSessionCost,
   setCapabilityDegradation,
   recordVenueSignals,
+  recordActiveWatches,
+  recordActiveWatchSummary,
 } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
 
@@ -103,6 +105,10 @@ const baseDescriptor = {
     maxContextBlockChars: 4_000,
   },
 };
+
+function makeWatch(overrides: Parameters<typeof recordActiveWatches>[1][number]): Parameters<typeof recordActiveWatches>[1][number] {
+  return overrides;
+}
 
 describe('runtime composition helpers', () => {
   it('caps visible tool names by runtime budget', () => {
@@ -215,6 +221,138 @@ describe('runtime composition helpers', () => {
     expect(buildVenueLines(state)).toEqual([
       '- jupiter (swap / DEX) — trade instruments use pair symbols (e.g. "SOL/USDC", "ETH/USDC")',
     ]);
+  });
+
+  it('renders a bounded deduplicated active watch summary without timestamps or triggered labels', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    recordActiveWatches(state, [
+      makeWatch({
+        watchId: 'watch-1',
+        symbol: 'BTC',
+        chain: 'hyperliquid',
+        condition: 'below',
+        thresholdPrice: 62_000,
+        note: 'Stop loss on breakout failure',
+        lastConditionMet: true,
+        lastCheckedAt: '2026-06-13T19:00:00.000Z',
+      }),
+      makeWatch({
+        watchId: 'watch-2',
+        symbol: 'BTC',
+        chain: 'hyperliquid',
+        condition: 'below',
+        thresholdPrice: 62_000,
+        note: 'Different note should still dedupe',
+        lastConditionMet: true,
+        lastCheckedAt: '2026-06-13T19:05:00.000Z',
+      }),
+      makeWatch({
+        watchId: 'watch-3',
+        symbol: 'BTC',
+        chain: 'hyperliquid',
+        condition: 'above',
+        thresholdPrice: 65_000,
+        note: 'Take profit',
+        lastConditionMet: false,
+        lastCheckedAt: '2026-06-13T19:10:00.000Z',
+      }),
+    ]);
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('Active Watches (3 total, 2 unique)');
+    expect(userContext).toContain('BTC (hyperliquid) below $62000 status=met x2 — Stop loss on breakout failure');
+    expect(userContext).toContain('BTC (hyperliquid) above $65000 status=not_met — Take profit');
+    expect(userContext).not.toContain('checked=');
+    expect(userContext).not.toContain('[TRIGGERED]');
+    expect(userContext).not.toContain('Different note should still dedupe');
+  });
+
+  it('renders the cached active watch summary when available', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    recordActiveWatchSummary(state, {
+      totalCount: 2,
+      uniqueCount: 1,
+      overflowCount: 0,
+      lines: ['BTC (hyperliquid) below $62000 status=met x2 — Stop loss on breakout failure'],
+    });
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('Active Watches (2 total, 1 unique)');
+    expect(userContext).toContain('BTC (hyperliquid) below $62000 status=met x2 — Stop loss on breakout failure');
+  });
+
+  it('truncates long watch notes in the prompt summary', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    recordActiveWatches(state, [
+      makeWatch({
+        watchId: 'watch-1',
+        symbol: 'ETH',
+        chain: 'hyperliquid',
+        condition: 'above',
+        thresholdPrice: 3_500,
+        note: 'This is a deliberately long note that should be truncated before it reaches the prompt context block',
+        lastConditionMet: null,
+      }),
+    ]);
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('ETH (hyperliquid) above $3500 status=unknown — This is a deliberately long note that s…');
+    expect(userContext).not.toContain('before it reaches the prompt context block');
+  });
+
+  it('caps active watch rendering to keep the prompt bounded', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    recordActiveWatches(state, Array.from({ length: 12 }, (_unused, index) => makeWatch({
+      watchId: `watch-${index + 1}`,
+      symbol: `TOKEN${index + 1}`,
+      chain: 'hyperliquid',
+      condition: 'above',
+      thresholdPrice: 100 + index,
+      lastConditionMet: index % 2 === 0,
+      lastCheckedAt: `2026-06-13T19:${String(index).padStart(2, '0')}:00.000Z`,
+    })));
+
+    const userContext = buildTickUserContext(state, []);
+    const visibleWatchLines = userContext.split('\n').filter((line) => line.startsWith('TOKEN'));
+
+    expect(userContext).toContain('Active Watches (12 total, 12 unique)');
+    expect(userContext).toContain('+ 2 more unique watches not shown');
+    expect(visibleWatchLines).toHaveLength(10);
+  });
+
+  it('keeps actionable watches visible ahead of lower priority watches', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    recordActiveWatches(state, [
+      makeWatch({
+        watchId: 'triggered-watch',
+        symbol: 'ZETA',
+        chain: 'hyperliquid',
+        condition: 'below',
+        thresholdPrice: 1,
+        note: 'Triggered stop loss',
+        lastConditionMet: true,
+      }),
+      ...Array.from({ length: 11 }, (_unused, index) => makeWatch({
+        watchId: `watch-${index + 1}`,
+        symbol: `AAA${index + 1}`,
+        chain: 'hyperliquid',
+        condition: 'above',
+        thresholdPrice: 100 + index,
+        note: `Lower priority ${index + 1}`,
+        lastConditionMet: false,
+      })),
+    ]);
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('Triggered stop loss');
+    expect(userContext).toContain('status=met');
+    expect(userContext).not.toContain('+ 3 more unique watches not shown');
+    expect(userContext).toContain('+ 2 more unique watches not shown');
+    expect(userContext).toContain('Active Watches (12 total, 12 unique)');
   });
 
   it('omits non-executable trading bindings from venue guidance', () => {

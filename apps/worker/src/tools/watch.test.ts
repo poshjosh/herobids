@@ -70,7 +70,22 @@ describe('watch_token', () => {
     const data = result.data as { ok: boolean; watchId: string };
     expect(data.ok).toBe(true);
     expect(typeof data.watchId).toBe('string');
-    expect(ctx.redis.hset).toHaveBeenCalledOnce();
+    expect(ctx.redis.hset).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the cached active watch summary after registration', async () => {
+    const ctx = makeCtx();
+
+    await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
+      ctx,
+    );
+
+    expect(ctx.redis.hset).toHaveBeenCalledWith(
+      'agent:watches:summary:agent-test-1',
+      'summary',
+      expect.stringContaining('SOL (solana) above $200 status=unknown'),
+    );
   });
 
   it('stores watch as JSON in the agent watches hash', async () => {
@@ -171,6 +186,19 @@ describe('remove_watch', () => {
 
     const listResult = await listWatchesTool.execute({}, ctx);
     expect((listResult.data as { watches: unknown[] }).watches).toHaveLength(0);
+  });
+
+  it('refreshes the cached active watch summary after removal', async () => {
+    const ctx = makeCtx();
+    const createResult = await watchTokenTool.execute(
+      { symbol: 'WIF', chain: 'solana', thresholdPrice: 5, condition: 'above' },
+      ctx,
+    );
+    const { watchId } = createResult.data as { watchId: string };
+
+    await removeWatchTool.execute({ watchId }, ctx);
+
+    expect(ctx.redis.hdel).toHaveBeenCalledWith('agent:watches:summary:agent-test-1', 'summary');
   });
 
   it('returns failure for non-existent watch ID', async () => {

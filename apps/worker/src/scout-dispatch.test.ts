@@ -64,7 +64,7 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).toContain('Visible read-only tools: check_regime, search_tokens.');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
-    expect(prompt).toContain('Respond with JSON only');
+    expect(prompt).toContain('Respond with JSON only. disposition must be "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.');
   });
 
   it('strips Operator context from a legacy goal before rendering', () => {

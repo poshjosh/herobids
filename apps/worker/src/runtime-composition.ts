@@ -65,6 +65,24 @@ export interface RuntimeVenueSignal {
   freshness: RuntimeFreshness;
 }
 
+export interface RuntimeActiveWatch {
+  watchId: string;
+  symbol: string;
+  chain: string;
+  condition: 'above' | 'below';
+  thresholdPrice: number;
+  note?: string;
+  lastConditionMet: boolean | null;
+  lastCheckedAt?: string;
+}
+
+export interface RuntimeActiveWatchSummary {
+  totalCount: number;
+  uniqueCount: number;
+  lines: string[];
+  overflowCount: number;
+}
+
 export interface RuntimeMarketSnapshot {
   symbol: string | null;
   price: number | null;
@@ -100,7 +118,8 @@ export interface RuntimeSessionMetrics {
   market: RuntimeMarketSnapshot;
   portfolio: RuntimePortfolioSummary;
   openPositions: RuntimePositionSnapshot[];
-  activeWatches: Array<{ watchId: string; symbol: string; chain: string; condition: 'above' | 'below'; thresholdPrice: number; note?: string; lastConditionMet: boolean | null; lastCheckedAt?: string }>;
+  activeWatches: RuntimeActiveWatch[];
+  activeWatchSummary: RuntimeActiveWatchSummary | null;
   recentEvents: RuntimeEventSummary[];
   venueSignals: RuntimeVenueSignal[];
   regime: {
@@ -137,6 +156,8 @@ export interface RuntimeContextProvider {
 
 const DEFAULT_SERVER_COST_PER_HOUR_USD = 0.02;
 const MAX_RECENT_EVENTS = 6;
+const MAX_ACTIVE_WATCHES_IN_CONTEXT = 10;
+const MAX_ACTIVE_WATCH_NOTE_CHARS = 40;
 
 function unavailableFreshness(note: string): RuntimeFreshness {
   return { state: 'unavailable', note };
@@ -144,6 +165,117 @@ function unavailableFreshness(note: string): RuntimeFreshness {
 
 function freshFreshness(provider?: string): RuntimeFreshness {
   return { state: 'fresh', provider };
+}
+
+function watchPriority(watch: RuntimeActiveWatch): number {
+  if (watch.lastConditionMet === true) {
+    return 0;
+  }
+  if (watch.lastConditionMet === null) {
+    return 1;
+  }
+  return 2;
+}
+
+function compareWatchEntries(left: RuntimeActiveWatch, right: RuntimeActiveWatch): number {
+  return watchPriority(left) - watchPriority(right)
+    || left.chain.localeCompare(right.chain)
+    || left.symbol.localeCompare(right.symbol)
+    || left.condition.localeCompare(right.condition)
+    || left.thresholdPrice - right.thresholdPrice;
+}
+
+function watchSummaryKey(watch: RuntimeActiveWatch): string {
+  return JSON.stringify([
+    watch.chain,
+    watch.symbol,
+    watch.condition,
+    watch.thresholdPrice,
+  ]);
+}
+
+function mergeWatchEntry(existing: { watch: RuntimeActiveWatch; count: number }, incoming: RuntimeActiveWatch): void {
+  existing.count += 1;
+
+  const existingPriority = watchPriority(existing.watch);
+  const incomingPriority = watchPriority(incoming);
+
+  if (incomingPriority < existingPriority) {
+    existing.watch = {
+      ...incoming,
+      note: incoming.note ?? existing.watch.note,
+      lastCheckedAt: incoming.lastCheckedAt ?? existing.watch.lastCheckedAt,
+    };
+    return;
+  }
+
+  if (!existing.watch.note && incoming.note) {
+    existing.watch = {
+      ...existing.watch,
+      note: incoming.note,
+    };
+  }
+
+  if (!existing.watch.lastCheckedAt && incoming.lastCheckedAt) {
+    existing.watch = {
+      ...existing.watch,
+      lastCheckedAt: incoming.lastCheckedAt,
+    };
+  }
+}
+
+function formatWatchNote(note: string | undefined): string {
+  if (!note) {
+    return '';
+  }
+
+  const compactNote = note.replace(/\s+/g, ' ').trim();
+  if (compactNote.length <= MAX_ACTIVE_WATCH_NOTE_CHARS) {
+    return compactNote;
+  }
+
+  return `${compactNote.slice(0, MAX_ACTIVE_WATCH_NOTE_CHARS - 1)}…`;
+}
+
+function formatWatchStatus(lastConditionMet: boolean | null): string {
+  if (lastConditionMet === true) {
+    return 'met';
+  }
+  if (lastConditionMet === false) {
+    return 'not_met';
+  }
+  return 'unknown';
+}
+
+export function summarizeActiveWatches(watches: RuntimeActiveWatch[]): RuntimeActiveWatchSummary {
+  const grouped = new Map<string, { watch: RuntimeActiveWatch; count: number }>();
+
+  for (const watch of watches) {
+    const key = watchSummaryKey(watch);
+    const existing = grouped.get(key);
+    if (existing) {
+      mergeWatchEntry(existing, watch);
+      continue;
+    }
+    grouped.set(key, { watch, count: 1 });
+  }
+
+  const orderedGroups = [...grouped.values()].sort((left, right) => compareWatchEntries(left.watch, right.watch));
+  const visibleGroups = orderedGroups.slice(0, MAX_ACTIVE_WATCHES_IN_CONTEXT);
+  const overflowCount = Math.max(0, orderedGroups.length - visibleGroups.length);
+
+  return {
+    totalCount: watches.length,
+    uniqueCount: grouped.size,
+    overflowCount,
+    lines: visibleGroups.map(({ watch, count }) => {
+      const status = formatWatchStatus(watch.lastConditionMet);
+      const countSuffix = count > 1 ? ` x${count}` : '';
+      const noteSuffix = formatWatchNote(watch.note);
+      const noteSegment = noteSuffix ? ` — ${noteSuffix}` : '';
+      return `${watch.symbol} (${watch.chain}) ${watch.condition} $${watch.thresholdPrice} status=${status}${countSuffix}${noteSegment}`;
+    }),
+  };
 }
 
 function formatCurrency(value: number | null | undefined): string {
@@ -628,20 +760,18 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     trimOrder: 2,
     preserveWhenTrimmed: true,
     build: (state) => {
-      const watches = state.metrics.activeWatches;
-      if (watches.length === 0) {
+      const summary = state.metrics.activeWatchSummary ?? summarizeActiveWatches(state.metrics.activeWatches);
+      if (summary.totalCount === 0) {
         return null;
       }
       return {
         id: 'activeWatches',
-        title: `Active Watches (${watches.length})`,
+        title: `Active Watches (${summary.totalCount} total, ${summary.uniqueCount} unique)`,
         provider: 'active-watches',
-        content: watches.map((w) => {
-          const conditionLabel = w.lastConditionMet === true ? ' [TRIGGERED]' : w.lastConditionMet === false ? '' : '';
-          const noteLabel = w.note ? ` — ${w.note}` : '';
-          const checkedLabel = w.lastCheckedAt ? ` checked=${w.lastCheckedAt}` : '';
-          return `${w.symbol} (${w.chain}) ${w.condition} $${w.thresholdPrice}${conditionLabel}${noteLabel}${checkedLabel}`;
-        }).join('\n'),
+        content: [
+          ...summary.lines,
+          ...(summary.overflowCount > 0 ? [`+ ${summary.overflowCount} more unique watches not shown`] : []),
+        ].join('\n'),
       };
     },
   },
@@ -810,6 +940,7 @@ export function createRuntimeCompositionState(runtimeDescriptor: RuntimeDescript
       },
       openPositions: [],
       activeWatches: [],
+      activeWatchSummary: null,
       recentEvents: [],
       venueSignals: [],
       regime: {
@@ -909,6 +1040,14 @@ export function recordActiveWatches(
   watches: RuntimeSessionMetrics['activeWatches'],
 ): void {
   state.metrics.activeWatches = watches;
+  state.metrics.activeWatchSummary = null;
+}
+
+export function recordActiveWatchSummary(
+  state: RuntimeCompositionState,
+  summary: RuntimeActiveWatchSummary | null,
+): void {
+  state.metrics.activeWatchSummary = summary;
 }
 
 export function recordRegimeEvaluation(

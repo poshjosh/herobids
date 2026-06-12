@@ -54,7 +54,7 @@ export function buildScoutSystemPrompt(params: {
     '## Instructions',
     `Decide whether agent "${params.name ?? params.agentId}" needs to act this tick.`,
     'Use tools only when they help decide hold versus escalate.',
-    'Respond with JSON only: {"disposition":"hold"|"escalate","reason":"short reason"}.',
+    'Respond with JSON only. disposition must be "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.',
   ].join('\n');
 }
 
