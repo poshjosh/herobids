@@ -3,7 +3,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import { agents, connections, tradingBindings, capabilityGrants } from '@herobids/db';
-import type { CapabilityReadiness, ReadinessState, PlansConfig } from '@herobids/domain';
+import type { CapabilityReadiness, ReadinessState, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { tradingCapabilityRoutes } from './trading.js';
 
 function deriveReadiness(
@@ -36,7 +36,8 @@ function chooseFallbackGrant<T extends { grantedAt: Date; grantId: string }>(row
 export async function capabilityRoutes(
   app: FastifyInstance,
   db: Database,
-  plansConfig?: PlansConfig,
+  plansConfig: PlansConfig | undefined,
+  budgets: RuntimeBudgetPolicy,
   redisClient?: Redis,
 ): Promise<void> {
   const knownFamilies = ['trading'] as const;
@@ -166,5 +167,5 @@ export async function capabilityRoutes(
     },
   );
 
-  await tradingCapabilityRoutes(app, db, plansConfig, redisClient);
+  await tradingCapabilityRoutes(app, db, plansConfig, budgets, redisClient);
 }

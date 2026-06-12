@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from './index.js';
-import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
+import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
 import { PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL } from '@herobids/domain';
 
 function makeChain(value: unknown[]) {
@@ -93,5 +93,34 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     await expect(resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['invalid-skill']))
       .rejects
       .toThrow('Skill invalid-skill references unknown requiredTools: totally_unknown_tool');
+  });
+});
+
+describe('buildRuntimeDescriptor', () => {
+  it('clones the runtime budget snapshot', () => {
+    const budgets = {
+      maxHistoryMessages: 20,
+      maxRecentToolMessages: 6,
+      maxToolResultChars: 4000,
+      maxVisibleToolSchemas: 37,
+      maxContextBlockChars: 4000,
+    };
+
+    const descriptor = buildRuntimeDescriptor({
+      agentId: 'agent-1',
+      goal: 'Test agent',
+      budgets,
+      capabilityDescriptor: {
+        resolvedSkills: [],
+        grantedBindingsByFamily: {},
+        readinessByFamily: {},
+        defaultBindingByFamily: {},
+      },
+    });
+
+    budgets.maxVisibleToolSchemas = 99;
+
+    expect(descriptor.budgets.maxVisibleToolSchemas).toBe(37);
+    expect(descriptor.budgets).not.toBe(budgets);
   });
 });

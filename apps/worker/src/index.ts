@@ -360,6 +360,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   // bug-008: reduced from default 10 000 ms to 2 000 ms so agents start within
   // ~2 s instead of up to 10 s after the API sets the session to 'starting'.
   healthCheckIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
+  budgets: appConfig.agentRuntime.defaultBudgets,
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
   onAgentStatusChange: (agentId, userId, status) => {
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {

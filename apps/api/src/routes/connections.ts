@@ -4,10 +4,11 @@ import type { Redis } from 'ioredis';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, userCredentials, agents } from '@herobids/db';
+import type { RuntimeBudgetPolicy } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 
-export async function connectionRoutes(app: FastifyInstance, db: Database, redisClient?: Redis): Promise<void> {
+export async function connectionRoutes(app: FastifyInstance, db: Database, budgets: RuntimeBudgetPolicy, redisClient?: Redis): Promise<void> {
   async function publishRuntimeRefresh(agentId: string): Promise<void> {
     if (!redisClient) {
       return;
@@ -44,6 +45,7 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, redis
       dailyLossLimit: agentRow.dailyLossLimit,
       maxBots: agentRow.maxBots,
       maxSlippageBps: agentRow.maxSlippageBps,
+      budgets,
       capabilityDescriptor,
     });
 

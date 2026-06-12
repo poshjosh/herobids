@@ -16,6 +16,13 @@ execution:
   defaultSlippageBps: 50
 risk:
   globalMaxDrawdownPct: 20
+agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
 `;
 
 const MINIMAL_MARKET_DATA_YAML = `
@@ -84,6 +91,26 @@ venues:
 
     expect(config.database.url).toBe('postgres://localhost/test');
     expect(config.venues['hyperliquid']?.baseUrl).toBe('https://api.hyperliquid.xyz');
+  });
+
+  it('throws when agentRuntime.defaultBudgets is missing', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
+venues:
+  hyperliquid:
+    baseUrl: https://api.hyperliquid.xyz
+`);
+
+    expect(() => loadConfig(tmpDir)).toThrow();
   });
 
   it('throws when default.yaml is missing', () => {
@@ -590,6 +617,13 @@ execution:
   shadowQuoteSlippageBps: 100
 risk:
   globalMaxDrawdownPct: 20
+agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
 `);
 
       const config = loadConfig(tmpDir);
@@ -714,8 +748,24 @@ llm:
     });
 
     it('loads explicit agentRuntime overrides from YAML', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
 agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
   failureBackoff:
     maxFailures: 10
   thinking:
@@ -732,8 +782,24 @@ agentRuntime:
     });
 
     it('rejects agentRuntime.thinking.drawdownThresholdPct above 0 (must be negative)', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
 agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
   thinking:
     drawdownThresholdPct: 5
 `);
@@ -742,8 +808,24 @@ agentRuntime:
     });
 
     it('rejects agentRuntime.contextDiff.maxChangedLines below 1', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
 agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
   contextDiff:
     maxChangedLines: 0
 `);
@@ -752,8 +834,24 @@ agentRuntime:
     });
 
     it('rejects agentRuntime.sandboxDefaults.memoryMb below minimum (64)', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+      writeFileSync(resolve(tmpDir, 'default.yaml'), `
+app:
+  port: 3000
+database:
+  url: postgres://localhost/test
+redis:
+  url: redis://localhost:6379
+execution:
+  defaultSlippageBps: 50
+risk:
+  globalMaxDrawdownPct: 20
 agentRuntime:
+  defaultBudgets:
+    maxHistoryMessages: 20
+    maxRecentToolMessages: 6
+    maxToolResultChars: 4000
+    maxVisibleToolSchemas: 64
+    maxContextBlockChars: 4000
   sandboxDefaults:
     memoryMb: 32
 `);

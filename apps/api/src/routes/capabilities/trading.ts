@@ -15,7 +15,7 @@ import {
   positions,
   agentRuntimeSessions,
 } from '@herobids/db';
-import type { CapabilityReadiness, ReadinessState, PlansConfig } from '@herobids/domain';
+import type { CapabilityReadiness, ReadinessState, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { z } from 'zod';
 import {
   createGrant,
@@ -175,7 +175,8 @@ async function selectTradingBindingResourceRows(db: Database, userId: string): P
 export async function tradingCapabilityRoutes(
   app: FastifyInstance,
   db: Database,
-  _plansConfig?: PlansConfig,
+  _plansConfig: PlansConfig | undefined,
+  budgets: RuntimeBudgetPolicy,
   redisClient?: Redis,
 ): Promise<void> {
   async function publishRuntimeRefresh(agentId: string, userId: string, reason: 'grant_changed' | 'binding_changed' | 'readiness_changed'): Promise<void> {
@@ -214,6 +215,7 @@ export async function tradingCapabilityRoutes(
       dailyLossLimit: agentRow.dailyLossLimit,
       maxBots: agentRow.maxBots,
       maxSlippageBps: agentRow.maxSlippageBps,
+      budgets,
       capabilityDescriptor,
     });
 

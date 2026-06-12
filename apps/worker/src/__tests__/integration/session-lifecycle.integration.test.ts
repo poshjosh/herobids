@@ -29,6 +29,13 @@ const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(c
 const SKIP = !process.env['DATABASE_URL'] || !process.env['REDIS_URL'];
 const DB_URL = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+const TEST_RUNTIME_BUDGETS = {
+  maxHistoryMessages: 20,
+  maxRecentToolMessages: 6,
+  maxToolResultChars: 4000,
+  maxVisibleToolSchemas: 37,
+  maxContextBlockChars: 4000,
+};
 
 function parseRedisUrl(url: string) {
   const u = new URL(url);
@@ -121,7 +128,11 @@ describe.skipIf(SKIP)('Worker: session lifecycle (stub runtime)', () => {
       agentRepo,
       eventPublisher,
       launcher,
-      { heartbeatTimeoutMs: 2000, healthCheckIntervalMs: 500 },
+      {
+        heartbeatTimeoutMs: 2000,
+        healthCheckIntervalMs: 500,
+        budgets: TEST_RUNTIME_BUDGETS,
+      },
     );
   });
 

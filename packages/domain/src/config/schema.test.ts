@@ -164,8 +164,17 @@ describe('MarkingConfigSchema', () => {
 });
 
 describe('AgentRuntimePolicySchema', () => {
+  const REQUIRED_RUNTIME_BUDGETS = {
+    maxHistoryMessages: 20,
+    maxRecentToolMessages: 6,
+    maxToolResultChars: 4_000,
+    maxVisibleToolSchemas: 64,
+    maxContextBlockChars: 4_000,
+  };
+
   it('accepts the worker-forwarded llm subtree and applies defaults', () => {
     const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
       llm: {
         retry: { maxRetries: 4 },
       },
@@ -182,6 +191,7 @@ describe('AgentRuntimePolicySchema', () => {
 
   it('applies the default llm catalog locality policy', () => {
     const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
       llm: {},
     });
 
@@ -193,6 +203,7 @@ describe('AgentRuntimePolicySchema', () => {
 
   it('accepts an explicit llm catalog locality override', () => {
     const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
       llm: {
         catalog: { locality: 'remote' },
       },
@@ -206,6 +217,7 @@ describe('AgentRuntimePolicySchema', () => {
 
   it('accepts an explicit scout maxHoldDurationMs override', () => {
     const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
       llm: {
         scout: { maxHoldDurationMs: 120_000 },
       },
@@ -215,6 +227,14 @@ describe('AgentRuntimePolicySchema', () => {
     if (result.success) {
       expect(result.data.llm.scout.maxHoldDurationMs).toBe(120_000);
     }
+  });
+
+  it('rejects missing defaultBudgets', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      llm: {},
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

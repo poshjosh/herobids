@@ -1,8 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
-import { connectionRoutes } from './connections.js';
+import { connectionRoutes as registerConnectionRoutesImpl } from './connections.js';
 
 const TEST_USER_ID = 'user-1';
+const TEST_RUNTIME_BUDGETS = {
+  maxHistoryMessages: 20,
+  maxRecentToolMessages: 6,
+  maxToolResultChars: 4000,
+  maxVisibleToolSchemas: 37,
+  maxContextBlockChars: 4000,
+};
+
+async function connectionRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown) {
+  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never);
+}
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
   app.decorateRequest('userId', '');
@@ -362,5 +373,10 @@ describe('DELETE /connections/:id', () => {
 
     expect(res.statusCode).toBe(204);
     expect(redisClient.xadd).toHaveBeenCalled();
+
+    const envelope = JSON.parse((redisClient.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string) as {
+      payload: { runtimeDescriptor: { budgets: { maxVisibleToolSchemas: number } } };
+    };
+    expect(envelope.payload.runtimeDescriptor.budgets.maxVisibleToolSchemas).toBe(37);
   });
 });

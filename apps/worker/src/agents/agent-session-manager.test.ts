@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentSessionManager } from './agent-session-manager.js';
 
+const TEST_RUNTIME_BUDGETS = {
+  maxHistoryMessages: 20,
+  maxRecentToolMessages: 6,
+  maxToolResultChars: 4000,
+  maxVisibleToolSchemas: 37,
+  maxContextBlockChars: 4000,
+};
+
 describe('AgentSessionManager', () => {
   function buildManager(overrides: Record<string, unknown> = {}) {
     const runtimeDescriptor = {
@@ -19,13 +27,7 @@ describe('AgentSessionManager', () => {
         maxBots: null,
         maxSlippageBps: null,
       },
-      budgets: {
-        maxHistoryMessages: 20,
-        maxRecentToolMessages: 6,
-        maxToolResultChars: 4000,
-        maxVisibleToolSchemas: 16,
-        maxContextBlockChars: 4000,
-      },
+      budgets: TEST_RUNTIME_BUDGETS,
     };
     const makeAgent = (agentId: string) => ({
       id: agentId,
@@ -78,7 +80,9 @@ describe('AgentSessionManager', () => {
       agentRepo as any,
       eventPublisher as any,
       runtimeLauncher as any,
-      undefined,
+      {
+        budgets: TEST_RUNTIME_BUDGETS,
+      },
       reconnectHandler as any,
     );
 
@@ -106,6 +110,7 @@ describe('AgentSessionManager', () => {
       runtimeDescriptor: expect.objectContaining({
         agentId: 'agent-1',
         goal: 'Test agent',
+        budgets: TEST_RUNTIME_BUDGETS,
         resolvedSkills: expect.any(Array),
         readinessByFamily: expect.any(Object),
         grantedBindingsByFamily: expect.any(Object),
@@ -437,7 +442,7 @@ describe('AgentSessionManager', () => {
       agentRepo as any,
       {} as any,
       runtimeLauncher as any,
-      { streamSubscribe },
+      { streamSubscribe, budgets: TEST_RUNTIME_BUDGETS },
     );
 
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -464,7 +469,7 @@ describe('AgentSessionManager', () => {
       agentRepo as any,
       {} as any,
       runtimeLauncher as any,
-      { streamSubscribe },
+      { streamSubscribe, budgets: TEST_RUNTIME_BUDGETS },
     );
 
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -486,7 +491,7 @@ describe('AgentSessionManager', () => {
       agentRepo as any,
       {} as any,
       runtimeLauncher as any,
-      { streamSubscribe },
+      { streamSubscribe, budgets: TEST_RUNTIME_BUDGETS },
     );
 
     (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([

@@ -3,12 +3,12 @@ import type { Database } from './index.js';
 import { capabilityGrants, connections, skills, tradingBindings } from './schema/index.js';
 import {
   BASE_SKILL,
-  DEFAULT_RUNTIME_BUDGETS,
   SYSTEM_SKILLS,
   findUnknownSkillTools,
 } from '@herobids/domain';
 import type {
   CapabilityReadiness,
+  RuntimeBudgetPolicy,
   RuntimeDescriptor,
   RuntimeFamilyBindingDescriptor,
   SkillDefinition,
@@ -260,6 +260,7 @@ export function buildRuntimeDescriptor(input: {
   dailyLossLimit?: string | null;
   maxBots?: number | null;
   maxSlippageBps?: number | null;
+  budgets: RuntimeBudgetPolicy;
   capabilityDescriptor: RuntimeCapabilityDescriptor;
 }): RuntimeDescriptor {
   return {
@@ -279,6 +280,6 @@ export function buildRuntimeDescriptor(input: {
       maxBots: input.maxBots ?? null,
       maxSlippageBps: input.maxSlippageBps ?? null,
     },
-    budgets: DEFAULT_RUNTIME_BUDGETS,
+    budgets: { ...input.budgets },
   };
 }

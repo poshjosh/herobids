@@ -1,4 +1,4 @@
-import type { MessageEnvelope, HeartbeatPayload, PauseRequestPayload, StopRequestPayload } from '@herobids/domain';
+import type { MessageEnvelope, HeartbeatPayload, PauseRequestPayload, StopRequestPayload, RuntimeBudgetPolicy } from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
 import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -15,6 +15,8 @@ export interface AgentSessionManagerConfig {
   heartbeatTimeoutMs: number;
   /** Interval in ms to check for stale sessions. Default: 10000 */
   healthCheckIntervalMs: number;
+  /** Resolved runtime budget policy from operator config. */
+  budgets: RuntimeBudgetPolicy;
   /**
    * Called after a session's container is successfully launched.
    * Used to subscribe the agent's inbound Redis stream so that heartbeats
@@ -31,11 +33,6 @@ export interface AgentSessionManagerConfig {
   onAgentStatusChange?: (agentId: string, userId: string, status: string) => void;
 }
 
-const DEFAULT_CONFIG: AgentSessionManagerConfig = {
-  heartbeatTimeoutMs: 30_000,
-  healthCheckIntervalMs: 10_000,
-};
-
 /**
  * AgentSessionManager — owns session lifecycle, heartbeats, cleanup, and reconnect policy.
  *
@@ -50,11 +47,15 @@ export class AgentSessionManager {
     private readonly agentRepo: AgentRepository,
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly runtimeLauncher: AgentRuntimeLauncher,
-    config?: Partial<AgentSessionManagerConfig>,
+    config: Pick<AgentSessionManagerConfig, 'budgets'> & Partial<Omit<AgentSessionManagerConfig, 'budgets'>>,
     private readonly reconnectHandler?: AgentReconnectHandler,
     private readonly platformAlerts?: PlatformAlertService,
   ) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = {
+      heartbeatTimeoutMs: 30_000,
+      healthCheckIntervalMs: 10_000,
+      ...config,
+    };
   }
 
   /** Start the launch reconciliation loop. */
@@ -151,6 +152,7 @@ export class AgentSessionManager {
           dailyLossLimit: agent.dailyLossLimit,
           maxBots: agent.maxBots,
           maxSlippageBps: agent.maxSlippageBps,
+          budgets: this.config.budgets,
           capabilityDescriptor,
         });
         const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;

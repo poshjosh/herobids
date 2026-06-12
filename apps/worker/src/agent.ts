@@ -11,7 +11,7 @@
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, initDefaultRuntimeBudgets, DEFAULT_RUNTIME_BUDGETS, AGENT_RUNTIME_ACTIVITY_TYPES } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
@@ -156,10 +156,11 @@ function parseToolPolicy(rawPolicy: string): Record<string, unknown> {
 }
 
 // Parse operator agentRuntime config forwarded from worker.
-// Missing config falls back to schema defaults; malformed config is fatal.
+// Missing or malformed config is fatal.
 function parseAgentRuntimePolicy(raw: string | undefined): AgentRuntimePolicy {
   if (!raw) {
-    return AgentRuntimePolicySchema.parse({});
+    logger.fatal('Missing AGENT_RUNTIME_CONFIG_JSON');
+    process.exit(1);
   }
 
   let parsed: unknown;
@@ -179,7 +180,6 @@ function parseAgentRuntimePolicy(raw: string | undefined): AgentRuntimePolicy {
 }
 
 const agentRuntimePolicy = parseAgentRuntimePolicy(AGENT_RUNTIME_CONFIG_RAW);
-initDefaultRuntimeBudgets(agentRuntimePolicy.defaultBudgets);
 
 // SandboxEnforcer enforces the session wall-clock limit and network limits in-process.
 // Container-level limits (memory, cpu, storage) are enforced by Docker cgroups/ulimits.
@@ -270,7 +270,7 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
       maxBots: agentConfig.maxBots ?? null,
       maxSlippageBps: agentConfig.maxSlippageBps ?? null,
     },
-    budgets: { ...DEFAULT_RUNTIME_BUDGETS },
+    budgets: { ...agentRuntimePolicy.defaultBudgets },
   };
 }
 
@@ -278,6 +278,7 @@ const runtimeDescriptor = agentConfig.runtimeDescriptor
   ? {
     ...agentConfig.runtimeDescriptor,
     name: agentConfig.runtimeDescriptor.name ?? agentConfig.name ?? agentConfig.runtimeDescriptor.agentId,
+    budgets: { ...agentRuntimePolicy.defaultBudgets },
   }
   : buildFallbackRuntimeDescriptor();
 const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor);

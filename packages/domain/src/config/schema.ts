@@ -504,12 +504,12 @@ export const AgentRuntimeConfigSchema = z.object({
     maxChangedLines: z.number().int().min(1).default(12),
   }).default({}),
   defaultBudgets: z.object({
-    maxHistoryMessages: z.number().int().min(1).default(20),
-    maxRecentToolMessages: z.number().int().min(1).default(6),
-    maxToolResultChars: z.number().int().min(1).default(4_000),
-    maxVisibleToolSchemas: z.number().int().min(1).default(16),
-    maxContextBlockChars: z.number().int().min(1).default(4_000),
-  }).default({}),
+    maxHistoryMessages: z.number().int().min(1),
+    maxRecentToolMessages: z.number().int().min(1),
+    maxToolResultChars: z.number().int().min(1),
+    maxVisibleToolSchemas: z.number().int().min(1),
+    maxContextBlockChars: z.number().int().min(1),
+  }),
   sandboxDefaults: z.object({
     cpuShares: z.number().int().min(1).default(256),
     memoryMb: z.number().int().min(64).default(512),

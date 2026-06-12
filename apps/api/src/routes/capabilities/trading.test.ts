@@ -1,11 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
-import { capabilityRoutes } from './index.js';
-import { tradingCapabilityRoutes } from './trading.js';
+import { capabilityRoutes as registerCapabilityRoutesImpl } from './index.js';
+import { tradingCapabilityRoutes as registerTradingCapabilityRoutesImpl } from './trading.js';
 
 const TEST_USER_ID = 'user-1';
 const TEST_AGENT_ID = 'agent-1';
 const TEST_BINDING_ID = 'binding-1';
+const TEST_RUNTIME_BUDGETS = {
+  maxHistoryMessages: 20,
+  maxRecentToolMessages: 6,
+  maxToolResultChars: 4000,
+  maxVisibleToolSchemas: 37,
+  maxContextBlockChars: 4000,
+};
+
+async function tradingCapabilityRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown) {
+  await registerTradingCapabilityRoutesImpl(app, db as never, undefined, TEST_RUNTIME_BUDGETS, redisClient as never);
+}
+
+async function capabilityRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown) {
+  await registerCapabilityRoutesImpl(app, db as never, undefined, TEST_RUNTIME_BUDGETS, redisClient as never);
+}
 
 const DEFAULT_ACTIVE_BINDING = {
   id: 'binding-1',
@@ -276,7 +291,7 @@ describe('trading capability routes', () => {
     decorateWithAuth(app);
     const redisClient = { xadd: vi.fn().mockResolvedValue('msg-1') };
     const db = buildDb([[AGENT_ROW], [], [AGENT_ROW]]);
-    await tradingCapabilityRoutes(app, db, undefined, redisClient as any);
+    await tradingCapabilityRoutes(app, db, redisClient as any);
 
     const res = await app.inject({
       method: 'POST',
@@ -292,9 +307,13 @@ describe('trading capability routes', () => {
       expect.any(String),
     );
 
-    const envelope = JSON.parse((redisClient.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string) as { type: string; payload: { reason: string } };
+    const envelope = JSON.parse((redisClient.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string) as {
+      type: string;
+      payload: { reason: string; runtimeDescriptor: { budgets: { maxVisibleToolSchemas: number } } };
+    };
     expect(envelope.type).toBe('agent.runtime.config_update');
     expect(envelope.payload.reason).toBe('grant_changed');
+    expect(envelope.payload.runtimeDescriptor.budgets.maxVisibleToolSchemas).toBe(37);
   });
 
   it('keeps historical trading state available after a grant is revoked', async () => {
