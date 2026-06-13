@@ -453,10 +453,13 @@ interface AgentPositionsResponse {
   offset: number;
 }
 
-type WatchOutcome = 'success' | 'timeout' | 'crashed' | 'silent_rejection' | 'rejected' | 'position_mismatch';
+type WatchOutcome = 'success' | 'timeout' | 'crashed' | 'silent_rejection' | 'rejected' | 'position_mismatch' | 'bookkeeping_failure';
 
 // Tracks which activity entry IDs we have already printed so polling stays incremental.
 const seenActivityIds = new Set<string>();
+
+// Captured during Phase 3.6 so the bookkeeping audit can verify settlement.
+let flatDecisionId: string | null = null;
 
 async function fetchAgentActivityEntries(token: string, agentId: string, limit = 50): Promise<AgentActivityEntry[] | null> {
   const res = await apiRequest<AgentActivityFeedResponse>(
@@ -754,7 +757,8 @@ async function waitForClose(token: string, agentId: string): Promise<WatchOutcom
           warn(`go_flat decision ${flatDecision.id} was ${flatDecision.status}`);
           return 'rejected';
         }
-        ok(`go_flat decision recorded — id=${flatDecision.id} status=${flatDecision.status ?? 'pending'}`);
+        ok(`go_flat decision recorded — id=${flatDecision.id} status=${flatDecision.status ?? 'no-plan-yet'}`);
+        flatDecisionId = flatDecision.id;
       }
     }
 
@@ -770,6 +774,110 @@ async function waitForClose(token: string, agentId: string): Promise<WatchOutcom
   }
 
   return 'timeout';
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3.7: Bookkeeping audit
+// ---------------------------------------------------------------------------
+
+async function runBookkeepingAudit(
+  token: string,
+  agentId: string,
+  testStartedAt: string,
+): Promise<WatchOutcome> {
+  section('Phase 3.7: Bookkeeping audit');
+
+  // 1. Verify position record has closedAt set in DB (via positions API)
+  const positionsRes = await apiRequest<AgentPositionsResponse>(
+    'GET', `/agents/${agentId}/capabilities/trading/positions`,
+    { token },
+  );
+  if (positionsRes.status !== 200 || !Array.isArray(positionsRes.body.items)) {
+    warn('Could not query positions for bookkeeping audit');
+    return 'bookkeeping_failure';
+  }
+  const closedPositions = positionsRes.body.items.filter(p => p.closedAt !== null);
+  if (closedPositions.length === 0) {
+    warn('No position record has closedAt set — DB was not updated after go_flat');
+    return 'bookkeeping_failure';
+  }
+  ok(`Position marked closed in DB — closedAt=${closedPositions[0]?.closedAt ?? 'unknown'}`);
+
+  // 2. Wait for go_flat decision to leave pending state (up to 30 s)
+  if (flatDecisionId) {
+    const deadline = Date.now() + 30_000;
+    let settled = false;
+    while (Date.now() < deadline) {
+      const decisionsRes = await apiRequest<DecisionRow[]>(
+        'GET', `/agents/${agentId}/decisions?limit=20`,
+        { token },
+      );
+      if (decisionsRes.status === 200 && Array.isArray(decisionsRes.body)) {
+        const flatDecision = decisionsRes.body.find(d => d.id === flatDecisionId);
+        if (flatDecision?.status && flatDecision.status !== 'pending') {
+          ok(`go_flat decision settled — status=${flatDecision.status}`);
+          settled = true;
+          break;
+        }
+      }
+      await sleep(3_000);
+    }
+    if (!settled) {
+      warn(`go_flat decision ${flatDecisionId} did not leave pending state within 30s — execution engine may be stalled`);
+      return 'bookkeeping_failure';
+    }
+  } else {
+    warn('go_flat decision ID not captured — skipping decision settlement check');
+  }
+
+  // 3. Report journal event count after full open+close cycle
+  const journalRes = await apiRequest<JournalQueryResponse>(
+    'GET', `/journal?${new URLSearchParams({ actorId: agentId, limit: '50' }).toString()}`,
+    { token },
+  );
+  if (journalRes.status === 200 && Array.isArray(journalRes.body.events)) {
+    const count = journalRes.body.events.length;
+    if (count > 5) {
+      ok(`Journal event count after full open+close cycle: ${count}`);
+    } else {
+      warn(`Journal only has ${count} event(s) — close events may not have been persisted`);
+    }
+  }
+
+  // 4. Scan worker logs for errors since test start
+  try {
+    const logErrors = execSync(
+      `docker compose logs --since "${testStartedAt}" worker 2>&1 | grep -E 'ERROR|FATAL|uncaughtException' | head -10 || true`,
+      { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+    ).trim();
+    if (logErrors) {
+      warn('Worker error log lines since test start:');
+      for (const line of logErrors.split('\n')) {
+        warn(`  ${line}`);
+      }
+    } else {
+      ok('Worker logs: no ERROR/FATAL lines since test start');
+    }
+  } catch (err) {
+    warn(`Worker log check failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // 5. Check Redis for dangling agent reminders
+  try {
+    const reminderData = execSync(
+      `docker compose exec -T redis redis-cli HGETALL "agent:reminders:${agentId}" 2>&1`,
+      { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+    ).trim();
+    if (!reminderData) {
+      ok('Redis: agent reminder hash is empty — reminder was consumed');
+    } else {
+      warn(`Redis: agent:reminders:${agentId} is non-empty — reminder may not have been consumed: ${reminderData.slice(0, 200)}`);
+    }
+  } catch (err) {
+    warn(`Redis reminder check skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return 'success';
 }
 
 // ---------------------------------------------------------------------------
@@ -834,6 +942,7 @@ function sleep(ms: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  const testStartedAt = new Date().toISOString();
   console.log(`\n${BOLD}=== Agent Trade Test ===${RESET}`);
   console.log(`  API:            ${API_BASE_URL}`);
   console.log(`  Venue:          ${VENUE}`);
@@ -869,6 +978,11 @@ async function main(): Promise<void> {
     outcome = await waitForClose(token, agentId);
   }
 
+  // Phase 3.7: Bookkeeping audit
+  if (outcome === 'success') {
+    outcome = await runBookkeepingAudit(token, agentId, testStartedAt);
+  }
+
   // Phase 4
   await teardown(token, agentId);
 
@@ -899,6 +1013,12 @@ async function main(): Promise<void> {
     console.log('  Possible causes:');
     console.log('    · list_positions only queries actorType=bot (missing agent positions)');
     console.log('    · Position persisted with incorrect actorId');
+    process.exit(1);
+  } else if (outcome === 'bookkeeping_failure') {
+    console.log(`${BOLD}${RED}FAIL${RESET} — trade executed but post-trade bookkeeping checks failed.`);
+    console.log('  Possible causes:');
+    console.log('    · Position record not marked closed in DB (closedAt is null after go_flat)');
+    console.log('    · go_flat decision stalled in pending state (execution engine may be hung)');
     process.exit(1);
   } else {
     console.log(`${BOLD}${RED}FAIL${RESET} — no trade was observed within ${TIMEOUT_MS / 1000}s.`);

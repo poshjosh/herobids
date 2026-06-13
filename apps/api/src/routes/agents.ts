@@ -12,6 +12,7 @@ import {
   agentSkills,
   bots,
   decisions,
+  executionPlans,
   skillEntitlements,
   skillRevisions,
   skillUsageEvents,
@@ -808,7 +809,26 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       decisionOwners.push(and(eq(decisions.actorType, 'bot'), inArray(decisions.actorId, agentBotIds)));
     }
 
-    const agentDecisions = await db.select().from(decisions)
+    const agentDecisions = await db.select({
+      id: decisions.id,
+      venueAccountId: decisions.venueAccountId,
+      instrumentId: decisions.instrumentId,
+      intent: decisions.intent,
+      targetSize: decisions.targetSize,
+      limitPrice: decisions.limitPrice,
+      contextHash: decisions.contextHash,
+      actorType: decisions.actorType,
+      actorId: decisions.actorId,
+      metadata: decisions.metadata,
+      createdAt: decisions.createdAt,
+      // Derived from execution_plans — decisions are append-only with no status column
+      status: sql<string | null>`(
+        SELECT ep.status FROM ${executionPlans} ep
+        WHERE ep.decision_id = ${decisions.id}
+        ORDER BY ep.created_at DESC
+        LIMIT 1
+      )`.as('status'),
+    }).from(decisions)
       .where(or(...decisionOwners))
       .orderBy(desc(decisions.createdAt))
       .limit(limit);
