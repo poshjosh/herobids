@@ -97,6 +97,15 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>
+
+        {user?.isAdmin && (
+          <>
+            <SectionLabel>Admin</SectionLabel>
+            <NavGroup>
+              <NavItem path="/admin" label="Dashboard" icon="⊟" active={isActive('/admin')} onNavigate={onClose} />
+            </NavGroup>
+          </>
+        )}
       </div>
 
       {/* User footer */}

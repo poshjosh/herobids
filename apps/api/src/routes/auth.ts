@@ -375,6 +375,7 @@ export async function authRoutes(
       email: user.email,
       avatarUrl: user.avatarUrl,
       planId: user.planId,
+      isAdmin: user.isAdmin,
       planEntitlements: profilePlanEntitlements(user.planId, user.isAdmin),
       preferredLocale: user.preferredLocale ?? null,
       telegramChatId: user.telegramChatId ?? null,

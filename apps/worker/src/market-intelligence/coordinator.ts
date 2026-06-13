@@ -5,6 +5,7 @@ import { createLeaderElection, type LeaderElection } from './leader-election.js'
 import type { ProviderRegistry } from '@herobids/market-data';
 import type { InstanceEventPublisher } from '../agents/instance-event-publisher.js';
 import type { MarketMonitor } from './monitor.js';
+import { recordProviderSuccess, recordProviderFailure, recordFreshnessMode, recordRateLimitThrottle, isRateLimitThrottle } from './provider-counters.js';
 
 const logger = pino({ name: 'market-data-coordinator' });
 
@@ -64,6 +65,11 @@ export function createMarketDataCoordinator(
       return;
     }
     stopped = false;
+    // Publish coordinator config to Redis so the admin API can read known symbols
+    void redis.set(
+      'market-intel:coordinator-config',
+      JSON.stringify({ benchmarkSymbols, networks, discoveryPollMs, regimePollMs }),
+    );
     leaderElection = createLeaderElection(redis, { workerId: config.workerId });
     leaderElection.start(onLeaderAcquired, onLeaderLost);
   }
@@ -230,10 +236,26 @@ export function createMarketDataCoordinator(
       await writeDiscoveryState(snapshot);
       if (stopped) return;
 
+      // Record success and freshness counters for the discovery providers.
+      // dexscreener and geckoterminal run together in a single discover() call,
+      // so both share the same freshness observation from the aggregated result.
+      const discoveryFreshnessMode = result.meta.freshness.source === 'upstream' ? 'fresh' : 'cached';
+      void recordProviderSuccess(redis, 'dexscreener', 'discovery');
+      void recordProviderSuccess(redis, 'geckoterminal', 'discovery');
+      void recordFreshnessMode(redis, 'dexscreener', 'discovery', discoveryFreshnessMode);
+      void recordFreshnessMode(redis, 'geckoterminal', 'discovery', discoveryFreshnessMode);
+
       logger.debug({ snapshotId, tokenCount: tokens.length }, 'Discovery snapshot refreshed');
     } catch (err) {
       if (stopped) return;
       logger.error({ err }, 'Discovery refresh failed — marking stale');
+      if (isRateLimitThrottle(err)) {
+        void recordRateLimitThrottle(redis, 'dexscreener', 'discovery');
+        void recordRateLimitThrottle(redis, 'geckoterminal', 'discovery');
+      } else {
+        void recordProviderFailure(redis, 'dexscreener', 'discovery');
+        void recordProviderFailure(redis, 'geckoterminal', 'discovery');
+      }
       await markDiscoveryStale(snapshotId, capturedAt);
     }
   }
@@ -367,10 +389,17 @@ export function createMarketDataCoordinator(
 
         if (stopped) return;
         await writeRegimeSnapshot(benchmarkSymbol, snapshot);
+        void recordProviderSuccess(redis, 'binance', 'regime');
+        void recordFreshnessMode(redis, 'binance', 'regime', candleResult.meta.freshness.source === 'upstream' ? 'fresh' : 'cached');
         logger.debug({ benchmarkSymbol, pass: regimeResult.pass }, 'Regime snapshot refreshed');
       } catch (err) {
         if (stopped) return;
         logger.error({ err, benchmarkSymbol }, 'Regime refresh failed');
+        if (isRateLimitThrottle(err)) {
+          void recordRateLimitThrottle(redis, 'binance', 'regime');
+        } else {
+          void recordProviderFailure(redis, 'binance', 'regime');
+        }
         await redis.set('market-intel:last-error', JSON.stringify({
           source: 'regime',
           benchmarkSymbol,

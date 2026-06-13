@@ -124,7 +124,7 @@ await aiRoutes(app, db, appConfig.llm, redisClient);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
-await adminRoutes(app, db, redisClient);
+await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 
 // WebSocket event stream — uses a fresh Redis subscriber per connection.
 // ioredis enters subscriber mode on the first subscribe call so each connection

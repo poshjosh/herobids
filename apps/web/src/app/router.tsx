@@ -18,6 +18,7 @@ import { AgentDetailPage } from '../features/agents/AgentDetailPage.js';
 import { AgentCapabilityPage } from '../features/agents/AgentCapabilityPage.js';
 import { SkillsPage } from '../features/skills/SkillsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
+import { AdminPage } from '../features/admin/AdminPage.js';
 
 export const router = createBrowserRouter([
   {
@@ -48,6 +49,7 @@ export const router = createBrowserRouter([
       { path: 'exposure', element: <ExposurePage /> },
       { path: 'billing', element: <BillingPage /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: 'admin', element: <AdminPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

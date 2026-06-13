@@ -94,6 +94,7 @@ export interface MeResponse {
   email: string;
   avatarUrl: string | null;
   planId: string;
+  isAdmin: boolean;
   planEntitlements: PlanEntitlements | null;
   preferredLocale: string | null;
   telegramChatId: string | null;
@@ -1053,3 +1054,133 @@ export interface PlatformEventEnvelope {
   eventType: string;
   payload: Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+
+export interface AdminStatsResponse {
+  version: string;
+  postgres: 'ok' | 'timeout' | 'error';
+  redis: 'ok' | 'timeout' | 'error';
+  memory: { totalBytes: number; freeBytes: number; usedBytes: number };
+  disk: { totalBytes: number; freeBytes: number; usedBytes: number } | null;
+  counts: {
+    users: number;
+    bots: number;
+    agents: number;
+    runningSessions: number;
+    runningContainers: number | null;
+    failedWebhooks: number;
+    newUsersLast24h: number;
+    newAgentsLast24h: number;
+  };
+}
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  displayName: string | null;
+  planId: string;
+  isAdmin: boolean;
+  createdAt: string;
+  botCount: number;
+  agentCount: number;
+}
+
+export interface AdminWebhookRow {
+  id: string;
+  eventType: string;
+  status: string;
+  error: string | null;
+  processedAt: string;
+}
+
+export interface AdminContainer {
+  Id: string;
+  Names: string[];
+  Image: string;
+  Status: string;
+  State: string;
+  Created: number;
+}
+
+export interface AdminSession {
+  id: string;
+  agentId: string;
+  cpuPct: number | null;
+  memoryBytes: number | null;
+  status: string;
+}
+
+export interface AdminMarketDataOverview {
+  discovery: {
+    snapshotId: string;
+    leaderWorkerId: string;
+    capturedAt: string;
+    networks: string[];
+    tokenCount: number;
+    pollIntervalMs: number;
+    nextPollDueAt: string;
+    sourceStats: Record<string, { ok: boolean; freshness: string; tokenCount: number; networkCounts: Record<string, number> }>;
+  } | null;
+  regimeSnapshots: Record<string, {
+    benchmarkSymbol: string;
+    evaluatedAt: string;
+    freshness: { state: string; ageMs: number };
+    pass: boolean;
+    reasons: string[];
+  } | null>;
+  lastError: { source: string; benchmarkSymbol?: string; occurredAt: string } | null;
+}
+
+export interface AdminProviderCounters {
+  success?: number;
+  failure?: number;
+  lastSuccessAt?: string | null;
+  freshnessModeFresh?: number;
+  freshnessModeCached?: number;
+  rateLimitWaitCount?: number;
+  rateLimitThrottleCount?: number;
+}
+
+export interface AdminProviderRequestClass {
+  requestClass: string;
+  requestsPerMinute: number;
+  burstCapacity: number;
+  maxWaitMs: number;
+  cacheTtlMs: number;
+  /** Per-request-class counters keyed as "provider:requestClass" in the worker. */
+  counters: AdminProviderCounters;
+}
+
+export interface AdminProviderRow {
+  name: string;
+  configured: boolean;
+  enabled: boolean;
+  unwired: boolean;
+  requestClasses: AdminProviderRequestClass[];
+}
+
+export const admin = {
+  stats: () => request<AdminStatsResponse>('/admin/stats'),
+  users: (params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ users: AdminUserRow[]; total: number; limit: number; offset: number }>(`/admin/users${query}`);
+  },
+  containers: () => request<{ containers: AdminContainer[] | null; sessions: AdminSession[]; error?: string }>('/admin/containers'),
+  promoteUser: (id: string) => request<{ user: { id: string; email: string; isAdmin: boolean } }>(`/admin/users/${id}/promote`, { method: 'POST' }),
+  revokeAdmin: (id: string) => request<{ user: { id: string; email: string; isAdmin: boolean } }>(`/admin/users/${id}/admin`, { method: 'DELETE' }),
+  webhooks: (params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ webhooks: AdminWebhookRow[]; total: number; limit: number; offset: number }>(`/admin/billing/webhooks${query}`);
+  },
+  marketDataOverview: () => request<AdminMarketDataOverview>('/admin/market-data/overview'),
+  marketDataProviders: () => request<{ providers: AdminProviderRow[] }>('/admin/market-data/providers'),
+};

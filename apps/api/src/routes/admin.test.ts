@@ -17,7 +17,11 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId: string, isAdm
   });
 }
 
-const mockRedis = { ping: vi.fn().mockResolvedValue('PONG') };
+const mockRedis = {
+  ping: vi.fn().mockResolvedValue('PONG'),
+  get: vi.fn().mockResolvedValue(null),
+  hgetall: vi.fn().mockResolvedValue({}),
+};
 
 function makeThenable<T>(value: T): Promise<T> & { then: Promise<T>['then'] } {
   const promise = Promise.resolve(value);
@@ -99,7 +103,7 @@ describe('GET /admin/stats', () => {
   });
 
   it('reports redis as error when ping fails', async () => {
-    const failingRedis = { ping: vi.fn().mockRejectedValue(new Error('connection refused')) };
+    const failingRedis = { ping: vi.fn().mockRejectedValue(new Error('connection refused')), get: vi.fn().mockResolvedValue(null), hgetall: vi.fn().mockResolvedValue({}) };
     const db = buildDb([[{ n: 0 }], [{ n: 0 }], [{ n: 0 }]]);
     const app = Fastify();
     decorateWithAuth(app, ADMIN_USER_ID, true);
@@ -126,17 +130,23 @@ describe('GET /admin/users', () => {
   });
 
   it('returns user list for admin', async () => {
-    const db = buildDb([[
-      { id: 'u-1', email: 'a@example.com', displayName: 'Alice', planId: 'free', createdAt: new Date(), botCount: 2, agentCount: 1 },
-    ]]);
+    const db = buildDb([
+      [
+        { id: 'u-1', email: 'a@example.com', displayName: 'Alice', planId: 'free', createdAt: new Date(), botCount: 2, agentCount: 1 },
+      ],
+      [{ total: 1 }],
+    ]);
     const app = Fastify();
     decorateWithAuth(app, ADMIN_USER_ID, true);
     await adminRoutes(app, db, mockRedis);
 
     const res = await app.inject({ method: 'GET', url: '/admin/users' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ users: unknown[] }>();
+    const body = res.json<{ users: unknown[]; total: number; limit: number; offset: number }>();
     expect(body.users).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.limit).toBe(1);
+    expect(body.offset).toBe(0);
   });
 });
 
@@ -219,3 +229,197 @@ describe('admin user mutations', () => {
     expect(res.json()).toMatchObject({ error: 'invalid_request' });
   });
 });
+
+// ─── /admin/billing/webhooks ──────────────────────────────────────────────────
+
+describe('GET /admin/billing/webhooks', () => {
+  it('returns 403 for non-admin users', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, REGULAR_USER_ID);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/billing/webhooks' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns failed webhook list for admin', async () => {
+    const db = buildDb([
+      [
+        {
+          id: 'evt_abc',
+          eventType: 'customer.subscription.updated',
+          status: 'failed',
+          error: 'Stripe signature mismatch',
+          processedAt: new Date('2026-06-01T12:00:00Z'),
+        },
+      ],
+      [{ total: 1 }],
+    ]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/billing/webhooks' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ webhooks: unknown[]; total: number; limit: number; offset: number }>();
+    expect(body.webhooks).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.limit).toBe(1);
+    expect(body.offset).toBe(0);
+  });
+});
+
+// ─── /admin/market-data/overview ─────────────────────────────────────────────
+
+describe('GET /admin/market-data/overview', () => {
+  it('returns 403 for non-admin users', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, REGULAR_USER_ID);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/overview' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns null discovery and empty regimes when Redis has no data', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/overview' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, unknown>>();
+    expect(body['discovery']).toBeNull();
+    expect(body['lastError']).toBeNull();
+    expect(body['regimeSnapshots']).toBeDefined();
+  });
+
+  it('returns discovery meta and regime snapshots when Redis has data', async () => {
+    const discoveryMeta = {
+      snapshotId: 'snap-1',
+      capturedAt: new Date().toISOString(),
+      nextPollDueAt: new Date().toISOString(),
+      tokenCount: 10,
+      networks: ['solana'],
+      pollIntervalMs: 30000,
+      sourceStats: {},
+    };
+    const regimeSnapshot = {
+      benchmarkSymbol: 'BTC',
+      evaluatedAt: new Date().toISOString(),
+      freshness: { state: 'fresh', ageMs: 0 },
+      pass: true,
+      reasons: [],
+    };
+    const coordinatorConfig = { benchmarkSymbols: ['BTC'], networks: ['solana'] };
+    const customRedis = {
+      ping: vi.fn().mockResolvedValue('PONG'),
+      get: vi.fn().mockImplementation((key: string) => {
+        if (key === 'market-intel:discovery:meta') return Promise.resolve(JSON.stringify(discoveryMeta));
+        if (key === 'market-intel:regime:BTC') return Promise.resolve(JSON.stringify(regimeSnapshot));
+        if (key === 'market-intel:coordinator-config') return Promise.resolve(JSON.stringify(coordinatorConfig));
+        return Promise.resolve(null);
+      }),
+      hgetall: vi.fn().mockResolvedValue({}),
+    };
+
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, customRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/overview' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, unknown>>();
+    expect(body['discovery']).toMatchObject({ snapshotId: 'snap-1' });
+    expect((body['regimeSnapshots'] as Record<string, unknown>)['BTC']).toMatchObject({ pass: true });
+  });
+});
+
+// ─── /admin/market-data/providers ────────────────────────────────────────────
+
+describe('GET /admin/market-data/providers', () => {
+  it('returns 403 for non-admin users', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, REGULAR_USER_ID);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/providers' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns provider list with default config when no marketDataConfig provided', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    await adminRoutes(app, db, mockRedis);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/providers' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ providers: Array<{ name: string }> }>();
+    expect(body.providers.length).toBeGreaterThan(0);
+    expect(body.providers.some((p) => p.name === 'dexscreener')).toBe(true);
+    expect(body.providers.some((p) => p.name === 'binance')).toBe(true);
+  });
+
+  it('reads per-class counters from the Redis hash representation', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    const redisWithCounters = {
+      ping: vi.fn().mockResolvedValue('PONG'),
+      get: vi.fn().mockResolvedValue(null),
+      hgetall: vi.fn().mockResolvedValue({
+        'binance:regime:success': '3',
+        'binance:regime:freshnessModeCached': '2',
+        'binance:regime:lastSuccessAt': '2026-06-13T12:00:00.000Z',
+      }),
+    };
+    await adminRoutes(app, db, redisWithCounters);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/providers' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ providers: Array<{ name: string; requestClasses: Array<{ requestClass: string; counters: Record<string, unknown> }> }> }>();
+    const binance = body.providers.find((provider) => provider.name === 'binance');
+    expect(binance?.requestClasses[0]?.requestClass).toBe('regime');
+    expect(binance?.requestClasses[0]?.counters).toMatchObject({
+      success: 3,
+      freshnessModeCached: 2,
+      lastSuccessAt: '2026-06-13T12:00:00.000Z',
+    });
+  });
+
+  it('falls back to the legacy JSON counter payload when the v2 hash is empty', async () => {
+    const db = buildDb([]);
+    const app = Fastify();
+    decorateWithAuth(app, ADMIN_USER_ID, true);
+    const legacyCounters = {
+      'binance:regime': {
+        success: 4,
+        rateLimitThrottleCount: 1,
+      },
+    };
+    const redisWithLegacyCounters = {
+      ping: vi.fn().mockResolvedValue('PONG'),
+      get: vi.fn().mockResolvedValue(JSON.stringify(legacyCounters)),
+      hgetall: vi.fn().mockResolvedValue({}),
+    };
+    await adminRoutes(app, db, redisWithLegacyCounters);
+
+    const res = await app.inject({ method: 'GET', url: '/admin/market-data/providers' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ providers: Array<{ name: string; requestClasses: Array<{ requestClass: string; counters: Record<string, unknown> }> }> }>();
+    const binance = body.providers.find((provider) => provider.name === 'binance');
+    expect(binance?.requestClasses[0]?.counters).toMatchObject({
+      success: 4,
+      rateLimitThrottleCount: 1,
+    });
+  });
+});
+
