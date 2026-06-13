@@ -2,12 +2,13 @@ import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
-import type { AuthConfig } from '@herobids/domain';
+import type { AuthConfig, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { users, oauthIdentities, localIdentities, sessions, userPlans } from '@herobids/db';
 import { eq, and } from 'drizzle-orm';
 import { createSessionToken } from '../plugins/auth.js';
 import { errorPayload } from '../error-payload.js';
+import { resolvePlanEntitlements } from '../plan-guards.js';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
 // Supported locales mirror apps/web/src/app/i18n/resolveLocale.ts — keep in sync.
@@ -86,7 +87,21 @@ interface GoogleUserInfo {
   picture?: string;
 }
 
-export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: Database, redis: Redis, defaultPlanId = 'free') {
+export async function authRoutes(
+  app: FastifyInstance,
+  config: AuthConfig,
+  db: Database,
+  redis: Redis,
+  defaultPlanId = 'free',
+  plansConfig?: PlansConfig,
+) {
+  function profilePlanEntitlements(planId: string, isAdmin: boolean) {
+    if (!plansConfig) {
+      return null;
+    }
+    return resolvePlanEntitlements(plansConfig, { planId, isAdmin }).entitlements;
+  }
+
   /**
    * POST /auth/register — Create a new local (email + password) account.
    * Returns a JWT directly (no exchange code needed — direct POST, not a redirect).
@@ -360,6 +375,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       email: user.email,
       avatarUrl: user.avatarUrl,
       planId: user.planId,
+      planEntitlements: profilePlanEntitlements(user.planId, user.isAdmin),
       preferredLocale: user.preferredLocale ?? null,
       telegramChatId: user.telegramChatId ?? null,
       createdAt: user.createdAt.toISOString(),
@@ -416,6 +432,7 @@ export async function authRoutes(app: FastifyInstance, config: AuthConfig, db: D
       email: updated.email,
       avatarUrl: updated.avatarUrl,
       planId: updated.planId,
+      planEntitlements: profilePlanEntitlements(updated.planId, updated.isAdmin),
       preferredLocale: updated.preferredLocale ?? null,
       telegramChatId: updated.telegramChatId ?? null,
       createdAt: updated.createdAt.toISOString(),

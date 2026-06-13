@@ -76,12 +76,44 @@ describe('auth routes', () => {
 
     it('returns user profile when authenticated', async () => {
       const { authRoutes } = await import('./auth.js');
+      const plansConfig = {
+        defaultPlanId: 'free',
+        plans: {
+          free: {
+            entitlements: {
+              skills: {
+                canCreatePrivateSkills: false,
+                canViewMarketplaceSkills: true,
+                canPublishToMarketplace: true,
+                autoPublishNonDraftSkills: true,
+                canPriceSkills: false,
+                canLikeMarketplaceSkills: true,
+              },
+              agents: {
+                canViewOwnPrompts: true,
+              },
+              limits: {
+                maxAgents: 5,
+                maxBots: 5,
+                maxConnections: 5,
+                maxCredentials: 5,
+                maxBindings: 5,
+                maxVenueAccounts: 5,
+                maxConcurrentBacktests: 3,
+                liveEnabled: false,
+              },
+            },
+            usage: {},
+          },
+        },
+      };
       const mockUser = {
         id: 'user-1',
         displayName: 'Test User',
         email: 'test@example.com',
         avatarUrl: null,
         planId: 'free',
+        isAdmin: false,
         preferredLocale: 'ar',
         telegramChatId: null,
         createdAt: new Date('2026-01-01'),
@@ -98,7 +130,7 @@ describe('auth routes', () => {
       };
       const app = Fastify();
       decorateWithAuth(app, 'user-1', 'free');
-      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database);
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any, 'free', plansConfig as any);
 
       const res = await app.inject({ method: 'GET', url: '/auth/me' });
 
@@ -108,6 +140,7 @@ describe('auth routes', () => {
       expect(body.email).toBe('test@example.com');
       expect(body.planId).toBe('free');
       expect(body.preferredLocale).toBe('ar');
+      expect(body.planEntitlements.skills.autoPublishNonDraftSkills).toBe(true);
     });
   });
 

@@ -5,8 +5,9 @@ import { z } from 'zod';
 import { eq, and, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
-import type { AlertsConfig } from '@herobids/domain';
+import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
+import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
@@ -65,11 +66,28 @@ export async function agentInteractivityRoutes(
   redisClient: Redis,
   alertsConfig?: AlertsConfig,
   llmCatalogContext?: OperatorLlmCatalogContext,
+  plansConfig?: PlansConfig,
 ): Promise<void> {
+  function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
+    if (!plansConfig) {
+      return { canViewOwnPrompts: true };
+    }
+    return resolvePlanAgentEntitlements(plansConfig, planId, isAdmin);
+  }
+
+  function resolveSkillPlanPolicy(planId: string, isAdmin: boolean): { canViewMarketplaceSkills: boolean } {
+    if (!plansConfig) {
+      return { canViewMarketplaceSkills: true };
+    }
+    const plan = resolvePlanSkillEntitlements(plansConfig, planId, isAdmin);
+    return { canViewMarketplaceSkills: plan.canViewMarketplaceSkills };
+  }
+
   async function resolveSkillAssignmentsForUser(
     userId: string,
     skillIds: string[],
     preservedSkillIds: Set<string> = new Set(),
+    canViewMarketplaceSkills = true,
   ): Promise<{ assignments?: SkillAssignmentResolution[]; error?: { code: string; message: string; details?: unknown } }> {
     if (skillIds.length === 0) {
       return { assignments: [] };
@@ -101,7 +119,7 @@ export async function agentInteractivityRoutes(
       if (skill.authorId === null || skill.authorId === userId || preservedSkillIds.has(skill.id) || entitledSkillIds.has(skill.id)) {
         return false;
       }
-      return !(skill.publicationStatus === 'published' && skill.priceCents === 0);
+      return !(canViewMarketplaceSkills && skill.publicationStatus === 'published' && skill.priceCents === 0);
     });
 
     if (nonSelectable.length > 0) {
@@ -302,7 +320,12 @@ export async function agentInteractivityRoutes(
     }
 
     const assignmentResolution = parsed.data.skillIds !== undefined
-      ? await resolveSkillAssignmentsForUser(request.userId, parsed.data.skillIds, new Set(existingSkillIds))
+      ? await resolveSkillAssignmentsForUser(
+        request.userId,
+        parsed.data.skillIds,
+        new Set(existingSkillIds),
+        resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin).canViewMarketplaceSkills,
+      )
       : null;
     if (assignmentResolution?.error) {
       return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
@@ -421,6 +444,15 @@ export async function agentInteractivityRoutes(
     const [agent] = await db.select({ id: agents.id }).from(agents)
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const planPolicy = resolveAgentPlanPolicy(request.userPlanId || 'free', request.isAdmin);
+    if (!planPolicy.canViewOwnPrompts) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.agents_prompt_visibility_disabled',
+        message: 'Your plan does not include prompt visibility',
+      });
+    }
 
     const [judgeSystem, scoutSystem, userContext, judgeUserContext] = await Promise.all([
       redisClient.get(`agent:prompt:${id}`),

@@ -5,6 +5,7 @@ import type { PlansConfig } from '@herobids/domain';
 import { skillsRoutes } from './skills.js';
 
 const TEST_USER_ID = 'user-1';
+let insertedValues: Array<Record<string, unknown>> = [];
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, isAdmin = false) {
   app.decorateRequest('userId', '');
@@ -20,13 +21,16 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, isAdmin = false) {
 function makeInsertMock() {
   const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
   const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockImplementation(() => ({ onConflictDoUpdate, onConflictDoNothing }));
+  const values = vi.fn().mockImplementation((value: Record<string, unknown>) => {
+    insertedValues.push(value);
+    return { onConflictDoUpdate, onConflictDoNothing };
+  });
   return vi.fn().mockReturnValue({ values });
 }
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const method of ['from', 'where', 'orderBy', 'limit', 'innerJoin']) {
+  for (const method of ['from', 'where', 'orderBy', 'limit', 'innerJoin', 'groupBy']) {
     chain[method] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -57,17 +61,28 @@ function makePlansConfig(): PlansConfig {
     defaultPlanId: 'free',
     plans: {
       free: {
-        maxPortfolios: 3,
-        maxVenueAccounts: 5,
-        maxCredentials: 5,
-        maxTradingInstances: 5,
-        maxConcurrentBacktests: 3,
-        maxAgents: 5,
-        liveEnabled: false,
-        skills: {
-          autoPublishCreatedSkills: true,
-          canKeepSkillsPrivate: false,
-          canChargeForSkills: false,
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: true,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 5,
+            maxConnections: 5,
+            maxCredentials: 5,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 3,
+            liveEnabled: false,
+          },
         },
         usage: {
           includedCreditCents: 0,
@@ -81,9 +96,67 @@ function makePlansConfig(): PlansConfig {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  insertedValues = [];
 });
 
 describe('skillsRoutes (normalized contract)', () => {
+  it('auto-publishes non-draft skills for the free plan on create', async () => {
+    const createdRow = {
+      id: 'skill-created',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      likeCount: 0,
+      forkCount: 0,
+      popularityScore: 0,
+      trendingScore: 0,
+      currentRevisionId: null,
+      name: 'Auto Public Skill',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: [],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    let selectCalls = 0;
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCalls += 1;
+        return makeChain(selectCalls === 1 ? [createdRow] : []);
+      }),
+      selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: {
+        name: 'Auto Public Skill',
+        description: 'desc',
+        instructions: 'inst',
+        publicationStatus: 'private',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().publicationStatus).toBe('published');
+
+    const createdInsert = insertedValues.find((value) => value['authorId'] === TEST_USER_ID && value['name'] === 'Auto Public Skill');
+    expect(createdInsert).toBeDefined();
+    expect(createdInsert!['publicationStatus']).toBe('published');
+    expect(createdInsert!['autoPublishedByPlan']).toBe(true);
+  });
+
   it('rejects invalid create payloads with 400 validation_error', async () => {
     const app = Fastify();
     decorateWithAuth(app);
@@ -119,6 +192,19 @@ describe('skillsRoutes (normalized contract)', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().skills).toEqual([]);
+  });
+
+  it('blocks marketplace scope when plan disallows marketplace visibility', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, false);
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.skills.canViewMarketplaceSkills = false;
+    await skillsRoutes(app, makeDbMock(), plans);
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=marketplace' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('plan.skills_marketplace_hidden');
   });
 
   it('returns the normalized metrics payload shape expected by the web client', async () => {
@@ -163,5 +249,134 @@ describe('skillsRoutes (normalized contract)', () => {
       trendingScore: 0.5,
       updatedAt: '2026-06-13T12:00:00.000Z',
     });
+  });
+
+  it('blocks publish when plan disallows marketplace publishing', async () => {
+    const skillRow = {
+      id: 'skill-1',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'draft',
+      priceCents: 0,
+      currentRevisionId: null,
+      publishedAt: null,
+      delistedAt: null,
+      archivedAt: null,
+      autoPublishedByPlan: false,
+      likeCount: 0,
+      forkCount: 0,
+      popularityScore: 0,
+      trendingScore: 0,
+      name: 'Skill',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: [],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => makeChain([skillRow])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.skills.canPublishToMarketplace = false;
+    await skillsRoutes(app, db, plans);
+
+    const res = await app.inject({ method: 'POST', url: '/skills/skill-1/publish', payload: {} });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('plan.skills_marketplace_publish_disabled');
+  });
+
+  it('blocks delist when plan disallows private skills', async () => {
+    const skillRow = {
+      id: 'skill-1',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      priceCents: 0,
+      currentRevisionId: null,
+      publishedAt: new Date(),
+      delistedAt: null,
+      archivedAt: null,
+      autoPublishedByPlan: false,
+      likeCount: 0,
+      forkCount: 0,
+      popularityScore: 0,
+      trendingScore: 0,
+      name: 'Skill',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: [],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => makeChain([skillRow])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.skills.canCreatePrivateSkills = false;
+    await skillsRoutes(app, db, plans);
+
+    const res = await app.inject({ method: 'POST', url: '/skills/skill-1/delist' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('plan.skills_private_disabled');
+  });
+
+  it('blocks likes when plan disallows marketplace likes', async () => {
+    const skillRow = {
+      id: 'skill-1',
+      authorId: 'other-user',
+      publicationStatus: 'published',
+      priceCents: 0,
+      currentRevisionId: null,
+      publishedAt: new Date(),
+      delistedAt: null,
+      archivedAt: null,
+      autoPublishedByPlan: false,
+      likeCount: 0,
+      forkCount: 0,
+      popularityScore: 0,
+      trendingScore: 0,
+      name: 'Skill',
+      description: 'desc',
+      instructions: 'inst',
+      requiredTools: [],
+      contextRequirements: [],
+      requiredGuardrails: [],
+      capabilityFamilies: [],
+      suggestedTickIntervalMs: 900_000,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => makeChain([skillRow])),
+    } as unknown as Database;
+    const app = Fastify();
+    decorateWithAuth(app);
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.skills.canLikeMarketplaceSkills = false;
+    await skillsRoutes(app, db, plans);
+
+    const res = await app.inject({ method: 'POST', url: '/skills/skill-1/like' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('plan.skills_like_disabled');
   });
 });

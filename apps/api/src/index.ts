@@ -86,7 +86,7 @@ app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOStrin
 await telegramWebhookHandler(app, appConfig.alerts);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
-await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId);
+await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans);
 
 // ── Capability routes (primary public surface) ────────────────────────────
 await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultBudgets, redisClient);
@@ -95,7 +95,7 @@ await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultB
 await setupRoutes(app, db, appConfig.plans);
 
 // ── Platform primitives ───────────────────────────────────────────────────
-await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient);
+await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
 await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm));
@@ -118,7 +118,7 @@ await dashboardRoutes(app, db, appConfig.plans);
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.usageBilling);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, makeCatalogContext(appConfig.llm));
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, makeCatalogContext(appConfig.llm), appConfig.plans);
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient);
 await skillsRoutes(app, db, appConfig.plans);

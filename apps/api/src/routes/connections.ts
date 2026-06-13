@@ -1,14 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, userCredentials, agents } from '@herobids/db';
-import type { RuntimeBudgetPolicy } from '@herobids/domain';
+import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
+import { checkConnectionLimit } from '../plan-guards.js';
 
-export async function connectionRoutes(app: FastifyInstance, db: Database, budgets: RuntimeBudgetPolicy, redisClient?: Redis): Promise<void> {
+export async function connectionRoutes(
+  app: FastifyInstance,
+  db: Database,
+  budgets: RuntimeBudgetPolicy,
+  redisClient?: Redis,
+  plansConfig?: PlansConfig,
+): Promise<void> {
   async function publishRuntimeRefresh(agentId: string): Promise<void> {
     if (!redisClient) {
       return;
@@ -106,22 +113,43 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, budge
     const id = crypto.randomUUID();
     const now = new Date();
 
-    try {
-      await db.insert(connections).values({
-        id,
-        userId: request.userId,
-        credentialId: parsed.data.credentialId ?? null,
-        provider: parsed.data.provider,
-        label: parsed.data.label,
-        status: 'active',
-        meta: null,
-        createdAt: now,
-        updatedAt: now,
+    if (plansConfig) {
+      const result = await db.transaction(async (tx) => {
+        // Serialise connection create checks per user to avoid over-limit races.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(12, hashtext(${request.userId}))`);
+
+        const planCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+        if (!planCheck.ok) {
+          return { kind: 'limit' as const, error: planCheck.error };
+        }
+
+        try {
+          await tx.insert(connections).values({
+            id,
+            userId: request.userId,
+            credentialId: parsed.data.credentialId ?? null,
+            provider: parsed.data.provider,
+            label: parsed.data.label,
+            status: 'active',
+            meta: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+        } catch (err: unknown) {
+          if ((err as { code?: string }).code === '23503') {
+            return { kind: 'fk' as const };
+          }
+          throw err;
+        }
+
+        return { kind: 'ok' as const };
       });
-    } catch (err: unknown) {
-      // FK violation — credential deleted between validation and insert
-      const pgErr = err as { code?: string };
-      if (pgErr.code === '23503') {
+
+      if (result.kind === 'limit') {
+        return reply.status(403).send(errorPayload(result.error.code, result.error.message, result.error.params));
+      }
+
+      if (result.kind === 'fk') {
         return reply.status(400).send(
           errorPayload(
             'credential.not_found',
@@ -130,7 +158,33 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, budge
           ),
         );
       }
-      throw err;
+    } else {
+      try {
+        await db.insert(connections).values({
+          id,
+          userId: request.userId,
+          credentialId: parsed.data.credentialId ?? null,
+          provider: parsed.data.provider,
+          label: parsed.data.label,
+          status: 'active',
+          meta: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (err: unknown) {
+        // FK violation — credential deleted between validation and insert
+        const pgErr = err as { code?: string };
+        if (pgErr.code === '23503') {
+          return reply.status(400).send(
+            errorPayload(
+              'credential.not_found',
+              `Credential ${parsed.data.credentialId} was removed before the connection could be created`,
+              { credentialId: parsed.data.credentialId },
+            ),
+          );
+        }
+        throw err;
+      }
     }
 
     const [conn] = await db

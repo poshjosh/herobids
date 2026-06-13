@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
+import {
+  agents,
+  agentRuntimeSessions,
+  agentSkills,
+  bots,
+  decisions,
+  skillEntitlements,
+  skillRevisions,
+  skills,
+} from '@herobids/db';
+import type { PlansConfig } from '@herobids/domain';
 
 const TEST_USER_ID = 'user-1';
 
@@ -16,31 +27,105 @@ function buildDb(options: {
   agentRows?: Array<Record<string, unknown>>;
   activeLinkRows?: Array<Record<string, unknown>>;
   txAgentRows?: Array<Record<string, unknown>>;
+  skillRows?: Array<Record<string, unknown>>;
+  skillEntitlementRows?: Array<Record<string, unknown>>;
+  skillRevisionRows?: Array<Record<string, unknown>>;
+  agentSkillRows?: Array<Record<string, unknown>>;
+  botRows?: Array<Record<string, unknown>>;
+  sessionRows?: Array<Record<string, unknown>>;
 } = {}) {
   const insertedValues: Array<Record<string, unknown>> = [];
   const updateSets: Array<Record<string, unknown>> = [];
   const deletedTargets: unknown[] = [];
-  const selectResponses = [
-    ...(options.agentRows ? [options.agentRows] : [[]]),
-    ...(options.activeLinkRows ? [options.activeLinkRows] : [[]]),
-    ...(options.txAgentRows ? [options.txAgentRows] : [[]]),
+
+  const builtinSkillRows: Array<Record<string, unknown>> = [
+    {
+      id: 'task-management',
+      authorId: null,
+      publicationStatus: 'published',
+      priceCents: 0,
+      currentRevisionId: 'rev-task-management',
+    },
+    {
+      id: 'trading',
+      authorId: null,
+      publicationStatus: 'published',
+      priceCents: 0,
+      currentRevisionId: 'rev-trading',
+    },
+    {
+      id: 'bot-management',
+      authorId: null,
+      publicationStatus: 'published',
+      priceCents: 0,
+      currentRevisionId: 'rev-bot-management',
+    },
   ];
 
-  const makeSelectChain = () => {
+  const agentRows = options.agentRows ?? [];
+  const postMutationAgentRows = options.activeLinkRows ?? agentRows;
+  const decisionRows = options.txAgentRows ?? [];
+  const skillRows = options.skillRows ?? builtinSkillRows;
+  const skillEntitlementRows = options.skillEntitlementRows ?? [];
+  const skillRevisionRows = options.skillRevisionRows ?? skillRows.map((row, index) => ({
+    skillId: row['id'],
+    revisionId: row['currentRevisionId'] ?? `rev-${String(row['id'])}`,
+    version: typeof row['version'] === 'number' ? row['version'] : index + 1,
+  }));
+  const agentSkillRows = options.agentSkillRows ?? (
+    Array.isArray(agentRows[0]?.['skillIds'])
+      ? (agentRows[0]!['skillIds'] as unknown[]).map((skillId, orderIndex) => ({ skillId, orderIndex }))
+      : []
+  );
+  const botRows = options.botRows ?? options.activeLinkRows ?? [];
+  const sessionRows = options.sessionRows ?? [];
+
+  let agentsSelectCount = 0;
+
+  const rowsForTable = (table: unknown): Array<Record<string, unknown>> => {
+    if (table === agents) {
+      agentsSelectCount += 1;
+      return agentsSelectCount === 1 ? agentRows : postMutationAgentRows;
+    }
+    if (table === bots) {
+      return botRows;
+    }
+    if (table === decisions) {
+      return decisionRows;
+    }
+    if (table === skills) {
+      return skillRows;
+    }
+    if (table === skillEntitlements) {
+      return skillEntitlementRows;
+    }
+    if (table === skillRevisions) {
+      return skillRevisionRows;
+    }
+    if (table === agentSkills) {
+      return agentSkillRows;
+    }
+    if (table === agentRuntimeSessions) {
+      return sessionRows;
+    }
+    return [];
+  };
+
+  const makeSelectChain = (rows: Array<Record<string, unknown>>) => {
     const chain: Record<string, unknown> = {};
     chain.where = vi.fn().mockReturnValue(chain);
     chain.orderBy = vi.fn().mockReturnValue(chain);
-    chain.limit = vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() ?? []));
+    chain.limit = vi.fn().mockImplementation(() => Promise.resolve(rows));
     (chain as { then: unknown }).then = (
       resolve: (v: unknown) => unknown,
       reject?: (v: unknown) => unknown,
-    ) => Promise.resolve(selectResponses.shift() ?? []).then(resolve, reject);
+    ) => Promise.resolve(rows).then(resolve, reject);
     return chain;
   };
 
   const db: any = {
     select: vi.fn().mockReturnValue({
-      from: vi.fn().mockImplementation(() => makeSelectChain()),
+      from: vi.fn().mockImplementation((table: unknown) => makeSelectChain(rowsForTable(table))),
     }),
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockImplementation((values: Record<string, unknown>) => {
@@ -55,7 +140,9 @@ function buildDb(options: {
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockImplementation((values: Record<string, unknown>) => {
         insertedValues.push(values);
-        return Promise.resolve();
+        return {
+          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        };
       }),
     }),
     transaction: vi.fn().mockImplementation(async (callback: (tx: any) => Promise<unknown>) => callback(db)),
@@ -69,6 +156,173 @@ function buildDb(options: {
 
   return { db, insertedValues, updateSets, deletedTargets };
 }
+
+function makePlansConfig(): PlansConfig {
+  return {
+    defaultPlanId: 'free',
+    plans: {
+      free: {
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: true,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 5,
+            maxConnections: 5,
+            maxCredentials: 5,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 3,
+            liveEnabled: false,
+          },
+        },
+        usage: {},
+      },
+    },
+  };
+}
+
+describe('agent route plan enforcement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 403 when agent limit is reached', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.limits.maxAgents = 1;
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'existing-agent-1' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, plans);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'blocked agent',
+        prompt: 'test',
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('plan.limit_exceeded');
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it('blocks assigning free marketplace skills when marketplace access is disabled', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.skills.canViewMarketplaceSkills = false;
+    const { db, insertedValues } = buildDb({
+      agentRows: [],
+      skillRows: [{
+        id: 'market-skill-1',
+        authorId: 'other-user',
+        publicationStatus: 'published',
+        priceCents: 0,
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, plans);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'agent',
+        prompt: 'test',
+        skillIds: ['market-skill-1'],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    expect(res.json().message).toContain('not selectable');
+    expect(insertedValues).toHaveLength(0);
+  });
+
+  it('blocks updating an agent with marketplace skills when marketplace access is disabled', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const plans = makePlansConfig();
+    plans.plans['free']!.entitlements.skills.canViewMarketplaceSkills = false;
+
+    const selectResponses: Array<Array<Record<string, unknown>>> = [
+      [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        toolPolicy: null,
+        modelPolicy: null,
+        executionMode: null,
+      }],
+      [],
+      [{
+        id: 'market-skill-1',
+        authorId: 'other-user',
+        publicationStatus: 'published',
+        priceCents: 0,
+      }],
+      [],
+    ];
+
+    const makeSelectChain = () => {
+      const chain: Record<string, unknown> = {};
+      chain.where = vi.fn().mockReturnValue(chain);
+      chain.orderBy = vi.fn().mockReturnValue(chain);
+      chain.limit = vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() ?? []));
+      (chain as { then: unknown }).then = (
+        resolve: (v: unknown) => unknown,
+        reject?: (v: unknown) => unknown,
+      ) => Promise.resolve(selectResponses.shift() ?? []).then(resolve, reject);
+      return chain;
+    };
+
+    const updateSet = vi.fn();
+    const db: any = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockImplementation(() => makeSelectChain()),
+      }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockImplementation((values: Record<string, unknown>) => {
+          updateSet(values);
+          return { where: vi.fn().mockResolvedValue(undefined) };
+        }),
+      }),
+      insert: vi.fn(),
+      transaction: vi.fn().mockImplementation(async (callback: (tx: any) => Promise<unknown>) => callback(db)),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, plans);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { skillIds: ['market-skill-1'] },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    expect(updateSet).not.toHaveBeenCalled();
+  });
+});
 
 describe('agent routes lifecycle', () => {
   beforeEach(() => {
@@ -295,6 +549,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     const { db, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: ['trading'], toolPolicy: null, modelPolicy: null, executionMode: 'paper' }],
       activeLinkRows: [updatedAgent],
+      agentSkillRows: [{ skillId: 'task-management', orderIndex: 0 }],
     });
 
     const app = Fastify();
@@ -308,7 +563,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({ executionMode: null, skillIds: ['task-management'] }));
+    expect(updateSets).toContainEqual(expect.objectContaining({ executionMode: null }));
   });
 
   it('returns 400 for an invalid payload', async () => {
@@ -576,7 +831,9 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
   ) {
     const agentRows = agentRow ? [agentRow] : [];
     const sessionRows = sessionRow ? [sessionRow] : [];
-    let selectCallIndex = 0;
+    const skillRows = Array.isArray(agentRow?.['skillIds'])
+      ? (agentRow['skillIds'] as unknown[]).map((skillId, orderIndex) => ({ skillId, orderIndex }))
+      : [];
 
     function makeQueryable(rows: Record<string, unknown>[]) {
       const resolved = Promise.resolve(rows);
@@ -592,10 +849,18 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
 
     const db: any = {
       select: vi.fn().mockImplementation(() => {
-        const rows = selectCallIndex++ === 0 ? agentRows : sessionRows;
         return {
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue(makeQueryable(rows)),
+          from: vi.fn().mockImplementation((table: unknown) => {
+            if (table === agents) {
+              return { where: vi.fn().mockReturnValue(makeQueryable(agentRows)) };
+            }
+            if (table === agentRuntimeSessions) {
+              return { where: vi.fn().mockReturnValue(makeQueryable(sessionRows)) };
+            }
+            if (table === agentSkills) {
+              return { where: vi.fn().mockReturnValue(makeQueryable(skillRows)) };
+            }
+            return { where: vi.fn().mockReturnValue(makeQueryable([])) };
           }),
         };
       }),
@@ -622,8 +887,8 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
     expect(res.statusCode).toBe(200);
     // The stale session must not leak into the response — regression for bug 005.
     expect(res.json().activeSession).toBeNull();
-    // The session SELECT should not have been called at all for terminal agents.
-    expect(db.select).toHaveBeenCalledTimes(1);
+    // Two SELECTs: agent lookup + skill assignment lookup.
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 
   it('returns the activeSession for an active agent that has an unhealthy session', async () => {
@@ -647,8 +912,8 @@ describe('GET /agents/:id — activeSession suppression for terminal-state agent
     expect(res.statusCode).toBe(200);
     expect(res.json().activeSession).toMatchObject({ id: 'session-42', status: 'unhealthy' });
     expect(res.json()).toMatchObject({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
-    // Two SELECTs: agent lookup + session lookup.
-    expect(db.select).toHaveBeenCalledTimes(2);
+    // Three SELECTs: agent lookup + session lookup + skill assignment lookup.
+    expect(db.select).toHaveBeenCalledTimes(3);
   });
 
   it('returns 404 when the agent is not found', async () => {

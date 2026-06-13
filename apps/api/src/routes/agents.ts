@@ -18,7 +18,7 @@ import {
   skills,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { checkAgentLimit } from '../plan-guards.js';
+import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
@@ -124,12 +124,13 @@ function isSkillSelectableForUser(input: {
   userId: string;
   entitledSkillIds: Set<string>;
   preservedSkillIds?: Set<string>;
+  canViewMarketplaceSkills: boolean;
 }): boolean {
   if (input.skill.authorId === null) return true;
   if (input.skill.authorId === input.userId) return true;
   if (input.preservedSkillIds?.has(input.skill.id)) return true;
   if (input.entitledSkillIds.has(input.skill.id)) return true;
-  return input.skill.publicationStatus === 'published' && input.skill.priceCents === 0;
+  return input.canViewMarketplaceSkills && input.skill.publicationStatus === 'published' && input.skill.priceCents === 0;
 }
 
 async function resolveSkillAssignmentsForUser(
@@ -137,6 +138,7 @@ async function resolveSkillAssignmentsForUser(
   userId: string,
   skillIds: string[],
   preservedSkillIds: Set<string> = new Set(),
+  canViewMarketplaceSkills = true,
 ): Promise<{ assignments?: SkillAssignmentResolution[]; error?: { code: string; message: string; details?: unknown } }> {
   if (skillIds.length === 0) {
     return { assignments: [] };
@@ -165,7 +167,7 @@ async function resolveSkillAssignmentsForUser(
   const entitledSkillIds = new Set(entitlementRows.map((row) => row.skillId));
   const nonSelectable = uniqueSkillIds.filter((skillId) => {
     const skill = skillById.get(skillId)!;
-    return !isSkillSelectableForUser({ skill, userId, entitledSkillIds, preservedSkillIds });
+    return !isSkillSelectableForUser({ skill, userId, entitledSkillIds, preservedSkillIds, canViewMarketplaceSkills });
   });
 
   if (nonSelectable.length > 0) {
@@ -312,6 +314,13 @@ async function listSkillIdsByAgentId(db: Database, agentIds: string[]): Promise<
 }
 
 export async function agentRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig, llmCatalogContext?: OperatorLlmCatalogContext): Promise<void> {
+  function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
+    if (!plansConfig) {
+      return { canViewMarketplaceSkills: true };
+    }
+    return resolvePlanSkillEntitlements(plansConfig, planId, isAdmin);
+  }
+
   // --- CRUD ---
 
   // Create agent
@@ -373,7 +382,14 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
 
-    const assignmentResolution = await resolveSkillAssignmentsForUser(db, request.userId, parsed.data.skillIds ?? []);
+    const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
+    const assignmentResolution = await resolveSkillAssignmentsForUser(
+      db,
+      request.userId,
+      parsed.data.skillIds ?? [],
+      new Set(),
+      skillPlanPolicy.canViewMarketplaceSkills,
+    );
     if (assignmentResolution.error) {
       return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
     }
@@ -534,11 +550,13 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
 
+    const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
     const assignmentResolution = await resolveSkillAssignmentsForUser(
       db,
       request.userId,
       mergedSkillIds,
       new Set(existingSkillIds),
+      skillPlanPolicy.canViewMarketplaceSkills,
     );
     if (assignmentResolution.error) {
       return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });

@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { userCredentials, connections } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from './credentials.js';
 import { provisionTradingTarget } from '../trading-provisioner.js';
-import { checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
+import { checkBindingLimit, checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 
@@ -60,24 +61,6 @@ export async function setupRoutes(
       return reply.status(400).send(credentialValidationPayload(venueErrors));
     }
 
-    if (plansConfig) {
-      const credentialCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-      if (!credentialCheck.ok) {
-        return reply.status(403).send(
-          errorPayload(credentialCheck.error.code, credentialCheck.error.message, credentialCheck.error.params),
-        );
-      }
-
-      if (capability === 'trading') {
-        const venueAccountCheck = await checkVenueAccountLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-        if (!venueAccountCheck.ok) {
-          return reply.status(403).send(
-            errorPayload(venueAccountCheck.error.code, venueAccountCheck.error.message, venueAccountCheck.error.params),
-          );
-        }
-      }
-    }
-
     const encryptionKey = getEncryptionKey();
     const credentialId = crypto.randomUUID();
     const connectionId = crypto.randomUUID();
@@ -88,7 +71,34 @@ export async function setupRoutes(
 
     let tradingResult: { venueAccountId: string; bindingId: string } | null = null;
 
-    await db.transaction(async (tx) => {
+    const txResult = await db.transaction(async (tx) => {
+      if (plansConfig) {
+        // Serialise setup quota checks per user to avoid over-limit races.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${request.userId}))`);
+
+        const credentialCheck = await checkCredentialLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+        if (!credentialCheck.ok) {
+          return { kind: 'limit' as const, error: credentialCheck.error };
+        }
+
+        const connectionCheck = await checkConnectionLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+        if (!connectionCheck.ok) {
+          return { kind: 'limit' as const, error: connectionCheck.error };
+        }
+
+        if (capability === 'trading') {
+          const venueAccountCheck = await checkVenueAccountLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+          if (!venueAccountCheck.ok) {
+            return { kind: 'limit' as const, error: venueAccountCheck.error };
+          }
+
+          const bindingCheck = await checkBindingLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+          if (!bindingCheck.ok) {
+            return { kind: 'limit' as const, error: bindingCheck.error };
+          }
+        }
+      }
+
       await tx.insert(userCredentials).values({
         id: credentialId,
         userId: request.userId,
@@ -122,7 +132,15 @@ export async function setupRoutes(
           now,
         });
       }
+
+      return { kind: 'ok' as const };
     });
+
+    if (txResult.kind === 'limit') {
+      return reply.status(403).send(
+        errorPayload(txResult.error.code, txResult.error.message, txResult.error.params),
+      );
+    }
 
     const response: Record<string, unknown> = {
       credential: {

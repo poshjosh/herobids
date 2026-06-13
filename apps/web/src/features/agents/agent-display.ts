@@ -52,9 +52,10 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
 
       const publicationOrder: Record<Skill['publicationStatus'], number> = {
         published: 0,
-        draft: 1,
-        delisted: 2,
-        archived: 3,
+        private: 1,
+        draft: 2,
+        delisted: 3,
+        archived: 4,
       };
       const publicationDelta = publicationOrder[left.publicationStatus] - publicationOrder[right.publicationStatus];
       if (publicationDelta !== 0) {

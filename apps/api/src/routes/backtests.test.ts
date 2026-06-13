@@ -33,12 +33,30 @@ function makePlansConfig(): PlansConfig {
     defaultPlanId: 'free',
     plans: {
       free: {
-        maxPortfolios: 3,
-        maxVenueAccounts: 5,
-        maxCredentials: 5,
-        maxTradingInstances: 3,
-        maxConcurrentBacktests: 1,
-        liveEnabled: false,
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: true,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 3,
+            maxConnections: 5,
+            maxCredentials: 5,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 1,
+            liveEnabled: false,
+          },
+        },
+        usage: {},
       },
     },
   };

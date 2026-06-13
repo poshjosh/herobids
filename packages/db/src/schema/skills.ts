@@ -11,7 +11,7 @@ export const skills = pgTable('skills', {
   id: text('id').primaryKey(),
   /** null = system-owned; userId = user-authored */
   authorId: text('author_id').references(() => users.id),
-  /** draft | published | delisted | archived */
+  /** draft | private | published | delisted | archived */
   publicationStatus: text('publication_status').notNull().default('draft'),
   publishedAt: timestamp('published_at', { withTimezone: true }),
   delistedAt: timestamp('delisted_at', { withTimezone: true }),

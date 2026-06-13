@@ -9,8 +9,12 @@ const AGENT_ID = 'agent-1';
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
   app.decorateRequest('userId', '');
+  app.decorateRequest('userPlanId', '');
+  app.decorateRequest('isAdmin', false);
   app.addHook('onRequest', async (request) => {
     request.userId = userId;
+    request.userPlanId = 'free';
+    request.isAdmin = false;
   });
 }
 
@@ -642,6 +646,55 @@ describe('GET /agents/:id/prompt', () => {
 
     const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/prompt` });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 403 when the plan disallows viewing own prompts', async () => {
+    const db = buildAgentDb(stubAgent);
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(
+      app,
+      db,
+      redis,
+      undefined,
+      undefined,
+      {
+        defaultPlanId: 'free',
+        plans: {
+          free: {
+            entitlements: {
+              skills: {
+                canCreatePrivateSkills: false,
+                canViewMarketplaceSkills: true,
+                canPublishToMarketplace: true,
+                autoPublishNonDraftSkills: true,
+                canPriceSkills: false,
+                canLikeMarketplaceSkills: true,
+              },
+              agents: {
+                canViewOwnPrompts: false,
+              },
+              limits: {
+                maxAgents: 5,
+                maxBots: 5,
+                maxConnections: 5,
+                maxCredentials: 5,
+                maxBindings: 5,
+                maxVenueAccounts: 5,
+                maxConcurrentBacktests: 3,
+                liveEnabled: false,
+              },
+            },
+            usage: {},
+          },
+        },
+      },
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${AGENT_ID}/prompt` });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('plan.agents_prompt_visibility_disabled');
   });
 });
 

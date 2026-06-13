@@ -1,10 +1,27 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { skills as skillsApi, type Skill, type SkillMetrics } from '../../lib/api-client.js';
+import { skills as skillsApi, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner } from '../../lib/ui.js';
+import { useSession } from '../../app/providers/SessionProvider.js';
 
 export function SkillsPage() {
+  const { user } = useSession();
   const queryClient = useQueryClient();
+  const skillsEntitlements = user?.planEntitlements?.skills ?? null;
+  const canViewMarketplace = skillsEntitlements?.canViewMarketplaceSkills ?? true;
+  const privateSkillsDisabled = Boolean(skillsEntitlements && !skillsEntitlements.canCreatePrivateSkills);
+  const autoPublishesNonDraftSkills = skillsEntitlements?.autoPublishNonDraftSkills ?? false;
+  const canPublishToMarketplace = skillsEntitlements?.canPublishToMarketplace ?? true;
+  const canCreatePrivateSkills = skillsEntitlements?.canCreatePrivateSkills ?? true;
+
+  const [showCreateComposer, setShowCreateComposer] = useState(false);
+  const [createDraft, setCreateDraft] = useState<CreateSkillRequest>({
+    name: '',
+    description: '',
+    instructions: '',
+    publicationStatus: 'draft',
+  });
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const selectableQuery = useQuery({
     queryKey: ['skills', 'selectable'],
@@ -19,6 +36,7 @@ export function SkillsPage() {
   const marketplaceQuery = useQuery({
     queryKey: ['skills', 'marketplace'],
     queryFn: () => skillsApi.list({ scope: 'marketplace', sort: 'popular' }),
+    enabled: canViewMarketplace,
   });
 
   const adminQuery = useQuery({
@@ -30,20 +48,56 @@ export function SkillsPage() {
     void queryClient.invalidateQueries({ queryKey: ['skills'] });
   };
 
+  const createMutation = useMutation({
+    mutationFn: () => skillsApi.create({
+      ...createDraft,
+      name: (createDraft.name ?? '').trim(),
+      description: (createDraft.description ?? '').trim(),
+      instructions: (createDraft.instructions ?? '').trim(),
+    }),
+    onSuccess: () => {
+      setCreateError(null);
+      setCreateDraft({
+        name: '',
+        description: '',
+        instructions: '',
+        publicationStatus: 'draft',
+      });
+      setShowCreateComposer(false);
+      refreshSkills();
+    },
+    onError: (error: Error) => {
+      setCreateError(error.message);
+    },
+  });
+
   const builtIn = (selectableQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'system');
   const mySkills = mineQuery.data?.skills ?? [];
-  const marketplaceSkills = (marketplaceQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'user');
+  const marketplaceSkills = canViewMarketplace
+    ? (marketplaceQuery.data?.skills ?? []).filter((skill) => skill.sourceKind === 'user')
+    : [];
   const adminSkills = adminQuery.data?.skills ?? [];
   const adminAccessDenied = adminQuery.data === null;
   const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0 || adminSkills.length > 0;
-  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || marketplaceQuery.isLoading;
-  const queryError = selectableQuery.error ?? mineQuery.error ?? marketplaceQuery.error;
+  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading);
+  const queryError = selectableQuery.error ?? mineQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
 
   return (
     <PageShell>
       <PageHeader
         title="Skills"
         subtitle="Capability bundles that tell AI agents what they can do"
+        action={(
+          <Button
+            variant={showCreateComposer ? 'secondary' : 'primary'}
+            onClick={() => {
+              setCreateError(null);
+              setShowCreateComposer((current) => !current);
+            }}
+          >
+            {showCreateComposer ? 'Cancel' : 'Create skill'}
+          </Button>
+        )}
       />
 
       {isLoading && <LoadingRows count={3} />}
@@ -53,7 +107,9 @@ export function SkillsPage() {
           onRetry={() => {
             void selectableQuery.refetch();
             void mineQuery.refetch();
-            void marketplaceQuery.refetch();
+            if (canViewMarketplace) {
+              void marketplaceQuery.refetch();
+            }
           }}
         />
       )}
@@ -65,12 +121,92 @@ export function SkillsPage() {
         />
       )}
 
+      {showCreateComposer && (
+        <Card style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>Create skill</div>
+          <label style={fieldLabelStyle}>
+            Name
+            <input
+              value={createDraft.name ?? ''}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))}
+              style={inputStyle}
+              placeholder="Momentum screener"
+            />
+          </label>
+          <label style={fieldLabelStyle}>
+            Description
+            <textarea
+              value={createDraft.description ?? ''}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))}
+              style={textareaStyle}
+              rows={3}
+              placeholder="Short summary of what this skill does"
+            />
+          </label>
+          <label style={fieldLabelStyle}>
+            Instructions
+            <textarea
+              value={createDraft.instructions ?? ''}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, instructions: event.target.value }))}
+              style={textareaStyle}
+              rows={6}
+              placeholder="Detailed instructions used by the agent"
+            />
+          </label>
+          <label style={fieldLabelStyle}>
+            Visibility
+            <select
+              value={createDraft.publicationStatus ?? 'draft'}
+              onChange={(event) => {
+                const publicationStatus = event.target.value as 'draft' | 'private' | 'published';
+                setCreateDraft((current) => ({ ...current, publicationStatus }));
+              }}
+              style={inputStyle}
+            >
+              <option value="draft">Draft</option>
+              <option value="private" disabled={!canCreatePrivateSkills}>Private</option>
+              <option value="published" disabled={!canPublishToMarketplace}>Marketplace (public)</option>
+            </select>
+          </label>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+            {autoPublishesNonDraftSkills
+              ? 'Your current plan auto-publishes any non-draft skill.'
+              : 'Choose private or marketplace visibility according to your plan entitlements.'}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Button
+              variant="primary"
+              onClick={() => createMutation.mutate()}
+              disabled={
+                createMutation.isPending
+                || !(createDraft.name ?? '').trim()
+                || !(createDraft.description ?? '').trim()
+                || !(createDraft.instructions ?? '').trim()
+              }
+            >
+              {createMutation.isPending ? 'Creating...' : 'Create skill'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowCreateComposer(false);
+                setCreateError(null);
+              }}
+              disabled={createMutation.isPending}
+            >
+              Close
+            </Button>
+          </div>
+          {createError && <ErrorBanner message={createError} />}
+        </Card>
+      )}
+
       {builtIn.length > 0 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <SectionLabel>Built-in skills</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
             {builtIn.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="built-in" onChanged={refreshSkills} />
+              <SkillCard key={skill.id} skill={skill} mode="built-in" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
             ))}
           </div>
         </section>
@@ -81,10 +217,18 @@ export function SkillsPage() {
           <SectionLabel>Your skills</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
             {mySkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="mine" onChanged={refreshSkills} />
+              <SkillCard key={skill.id} skill={skill} mode="mine" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
             ))}
           </div>
         </section>
+      )}
+
+      {!isLoading && !queryError && privateSkillsDisabled && (
+        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+          {autoPublishesNonDraftSkills
+            ? 'Your current plan auto-publishes non-draft skills and does not allow private skills.'
+            : 'Your current plan does not allow private skills.'}
+        </div>
       )}
 
       {marketplaceSkills.length > 0 && (
@@ -92,10 +236,16 @@ export function SkillsPage() {
           <SectionLabel>Marketplace</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
             {marketplaceSkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="marketplace" onChanged={refreshSkills} />
+              <SkillCard key={skill.id} skill={skill} mode="marketplace" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
             ))}
           </div>
         </section>
+      )}
+
+      {!isLoading && !queryError && !canViewMarketplace && (
+        <div style={{ marginTop: '8px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+          Marketplace access is not available on your current plan.
+        </div>
       )}
 
       {!isLoading && !queryError && adminSkills.length > 0 && (
@@ -103,7 +253,7 @@ export function SkillsPage() {
           <SectionLabel>Admin skill catalog</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
             {adminSkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="admin" onChanged={refreshSkills} />
+              <SkillCard key={skill.id} skill={skill} mode="admin" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
             ))}
           </div>
         </section>
@@ -128,18 +278,34 @@ function SkillCard({
   skill,
   mode,
   onChanged,
+  skillsEntitlements,
 }: {
   skill: Skill;
   mode: 'built-in' | 'mine' | 'marketplace' | 'admin';
   onChanged: () => void;
+  skillsEntitlements: {
+    canCreatePrivateSkills: boolean;
+    canViewMarketplaceSkills: boolean;
+    canPublishToMarketplace: boolean;
+    autoPublishNonDraftSkills: boolean;
+    canPriceSkills: boolean;
+    canLikeMarketplaceSkills: boolean;
+  } | null;
 }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [showMetrics, setShowMetrics] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [stagedRevisionId, setStagedRevisionId] = useState<string | null>(null);
+  const [editedName, setEditedName] = useState(skill.name);
+  const [editedDescription, setEditedDescription] = useState(skill.description);
+  const [editedInstructions, setEditedInstructions] = useState(skill.instructions);
+  const hasUnpublishedRevision = stagedRevisionId !== null || skill.hasStagedRevision;
 
   const publishMutation = useMutation({
-    mutationFn: () => skillsApi.publish(skill.id, { priceCents: skill.priceCents }),
+    mutationFn: () => skillsApi.publish(skill.id, { revisionId: stagedRevisionId ?? undefined }),
     onSuccess: () => {
       setActionError(null);
+      setStagedRevisionId(null);
       onChanged();
     },
     onError: (error: Error) => setActionError(error.message),
@@ -163,6 +329,31 @@ function SkillCard({
     onError: (error: Error) => setActionError(error.message),
   });
 
+  const forkMutation = useMutation({
+    mutationFn: () => skillsApi.fork(skill.id),
+    onSuccess: () => {
+      setActionError(null);
+      onChanged();
+    },
+    onError: (error: Error) => setActionError(error.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => skillsApi.update(skill.id, {
+      name: editedName.trim(),
+      description: editedDescription.trim(),
+      instructions: editedInstructions.trim(),
+      changeSummary: 'Updated from web editor',
+    }),
+    onSuccess: (updatedSkill) => {
+      setActionError(null);
+      setStagedRevisionId(updatedSkill.stagedRevisionId ?? null);
+      setIsEditing(false);
+      onChanged();
+    },
+    onError: (error: Error) => setActionError(error.message),
+  });
+
   const metricsQuery = useQuery({
     queryKey: ['skills', 'metrics', skill.id],
     queryFn: () => skillsApi.metrics(skill.id),
@@ -172,10 +363,17 @@ function SkillCard({
   const statusLabel = skill.sourceKind === 'system' ? 'system' : skill.publicationStatus;
   const priceLabel = skill.priceCents === 0 ? 'free' : `$${(skill.priceCents / 100).toFixed(2)}`;
   const canManage = mode === 'mine' && skill.sourceKind === 'user';
-  const canLike = mode === 'marketplace' && skill.sourceKind === 'user';
-  const canPublish = canManage && skill.publicationStatus !== 'published' && skill.publicationStatus !== 'archived';
-  const canDelist = canManage && skill.publicationStatus === 'published';
-  const isActionPending = publishMutation.isPending || delistMutation.isPending || likeMutation.isPending;
+  const canLikeByPlan = skillsEntitlements?.canLikeMarketplaceSkills ?? true;
+  const canPublishByPlan = skillsEntitlements?.canPublishToMarketplace ?? true;
+  const canCreatePrivateSkills = skillsEntitlements?.canCreatePrivateSkills ?? true;
+  const canLike = mode === 'marketplace' && skill.sourceKind === 'user' && canLikeByPlan;
+  const canFork = mode === 'built-in' || mode === 'marketplace';
+  const canPublish = canManage
+    && canPublishByPlan
+    && skill.publicationStatus !== 'archived'
+    && (skill.publicationStatus !== 'published' || hasUnpublishedRevision);
+  const canDelist = canManage && canCreatePrivateSkills && skill.publicationStatus === 'published';
+  const isActionPending = publishMutation.isPending || delistMutation.isPending || likeMutation.isPending || forkMutation.isPending || updateMutation.isPending;
   const metrics = metricsQuery.data as SkillMetrics | undefined;
 
   return (
@@ -202,7 +400,7 @@ function SkillCard({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
         {canPublish && (
           <Button size="sm" variant="primary" onClick={() => publishMutation.mutate()} disabled={isActionPending}>
-            Publish
+            {hasUnpublishedRevision ? 'Publish staged revision' : 'Publish'}
           </Button>
         )}
         {canDelist && (
@@ -215,10 +413,111 @@ function SkillCard({
             {skill.isLikedByViewer ? 'Unlike' : 'Like'} ({skill.likeCount})
           </Button>
         )}
+        {canFork && (
+          <Button size="sm" variant="secondary" onClick={() => forkMutation.mutate()} disabled={isActionPending}>
+            {forkMutation.isPending ? 'Forking...' : 'Fork'}
+          </Button>
+        )}
+        {canManage && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setActionError(null);
+              setIsEditing((current) => !current);
+            }}
+            disabled={isActionPending}
+          >
+            {isEditing ? 'Close editor' : 'Edit'}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={() => setShowMetrics((previous) => !previous)}>
           {showMetrics ? 'Hide metrics' : 'Show metrics'}
         </Button>
       </div>
+
+      {isEditing && canManage && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+          <label style={fieldLabelStyle}>
+            Name
+            <input
+              value={editedName}
+              onChange={(event) => setEditedName(event.target.value)}
+              style={inputStyle}
+            />
+          </label>
+          <label style={fieldLabelStyle}>
+            Description
+            <textarea
+              value={editedDescription}
+              onChange={(event) => setEditedDescription(event.target.value)}
+              rows={3}
+              style={textareaStyle}
+            />
+          </label>
+          <label style={fieldLabelStyle}>
+            Instructions
+            <textarea
+              value={editedInstructions}
+              onChange={(event) => setEditedInstructions(event.target.value)}
+              rows={5}
+              style={textareaStyle}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => updateMutation.mutate()}
+              disabled={
+                updateMutation.isPending
+                || !editedName.trim()
+                || !editedDescription.trim()
+                || !editedInstructions.trim()
+              }
+            >
+              {updateMutation.isPending ? 'Saving...' : 'Save update'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setEditedName(skill.name);
+                setEditedDescription(skill.description);
+                setEditedInstructions(skill.instructions);
+                setIsEditing(false);
+              }}
+              disabled={updateMutation.isPending}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {canManage && !canPublishByPlan && (
+        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          Your plan does not allow marketplace publishing.
+        </div>
+      )}
+
+      {hasUnpublishedRevision && canManage && (
+        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          You have an unpublished staged revision ready to publish.
+        </div>
+      )}
+
+      {canManage && !canCreatePrivateSkills && (
+        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          Private skills are unavailable on your current plan.
+        </div>
+      )}
+
+      {mode === 'marketplace' && skill.sourceKind === 'user' && !canLikeByPlan && (
+        <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          Liking marketplace skills is unavailable on your current plan.
+        </div>
+      )}
 
       {showMetrics && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -247,4 +546,28 @@ const pillStyle: React.CSSProperties = {
   background: 'var(--color-surface-2)',
   color: 'var(--color-text-secondary)',
   fontSize: '12px',
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '6px',
+  fontSize: '12px',
+  color: 'var(--color-text-secondary)',
+};
+
+const inputStyle: React.CSSProperties = {
+  border: '1px solid var(--color-border)',
+  borderRadius: '8px',
+  background: 'var(--color-surface-2)',
+  color: 'var(--color-text-primary)',
+  fontSize: '13px',
+  padding: '8px 10px',
+};
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle,
+  resize: 'vertical',
+  minHeight: '88px',
+  fontFamily: 'inherit',
 };

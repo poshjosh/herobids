@@ -246,10 +246,33 @@ export const PlanUsagePackagingSchema = z.object({
 });
 
 export const PlanSkillsEntitlementsSchema = z.object({
-  autoPublishCreatedSkills: z.boolean().default(false),
-  canKeepSkillsPrivate: z.boolean().default(true),
-  canChargeForSkills: z.boolean().default(false),
-  maxPublishedSkills: z.number().int().min(1).optional(),
+  canCreatePrivateSkills: z.boolean().default(true),
+  canViewMarketplaceSkills: z.boolean().default(true),
+  canPublishToMarketplace: z.boolean().default(true),
+  autoPublishNonDraftSkills: z.boolean().default(false),
+  canPriceSkills: z.boolean().default(false),
+  canLikeMarketplaceSkills: z.boolean().default(true),
+});
+
+export const PlanAgentsEntitlementsSchema = z.object({
+  canViewOwnPrompts: z.boolean().default(true),
+});
+
+export const PlanLimitsEntitlementsSchema = z.object({
+  maxAgents: z.number().min(0).default(5),
+  maxBots: z.number().min(1).default(5),
+  maxConnections: z.number().min(1).default(5),
+  maxCredentials: z.number().min(1).default(5),
+  maxBindings: z.number().min(1).default(5),
+  maxVenueAccounts: z.number().min(1).default(5),
+  maxConcurrentBacktests: z.number().min(1).default(3),
+  liveEnabled: z.boolean().default(false),
+});
+
+export const PlanEntitlementsSchema = z.object({
+  skills: PlanSkillsEntitlementsSchema.default({}),
+  agents: PlanAgentsEntitlementsSchema.default({}),
+  limits: PlanLimitsEntitlementsSchema.default({}),
 });
 
 export const PlansConfigSchema = z.object({
@@ -257,30 +280,34 @@ export const PlansConfigSchema = z.object({
   defaultPlanId: z.string().default('free'),
   /** Plan definitions keyed by plan ID */
   plans: z.record(z.string(), z.object({
-    maxPortfolios: z.number().min(1).default(3),
-    maxVenueAccounts: z.number().min(1).default(5),
-    maxCredentials: z.number().min(1).default(5),
-    maxTradingInstances: z.number().min(1).default(5),
-    maxConcurrentBacktests: z.number().min(1).default(3),
-    maxAgents: z.number().min(0).default(5),
-    liveEnabled: z.boolean().default(false),
-    /** Skills policy entitlements for this plan */
-    skills: PlanSkillsEntitlementsSchema.default({}),
+    /** Unified entitlements model for this plan */
+    entitlements: PlanEntitlementsSchema.default({}),
     /** Usage packaging for this plan */
     usage: PlanUsagePackagingSchema.default({}),
   })).default({
     free: {
-      maxPortfolios: 3,
-      maxVenueAccounts: 5,
-      maxCredentials: 5,
-      maxTradingInstances: 5,
-      maxConcurrentBacktests: 3,
-      maxAgents: 5,
-      liveEnabled: false,
-      skills: {
-        autoPublishCreatedSkills: true,
-        canKeepSkillsPrivate: false,
-        canChargeForSkills: false,
+      entitlements: {
+        skills: {
+          canCreatePrivateSkills: false,
+          canViewMarketplaceSkills: true,
+          canPublishToMarketplace: true,
+          autoPublishNonDraftSkills: true,
+          canPriceSkills: false,
+          canLikeMarketplaceSkills: true,
+        },
+        agents: {
+          canViewOwnPrompts: true,
+        },
+        limits: {
+          maxAgents: 5,
+          maxBots: 5,
+          maxConnections: 5,
+          maxCredentials: 5,
+          maxBindings: 5,
+          maxVenueAccounts: 5,
+          maxConcurrentBacktests: 3,
+          liveEnabled: false,
+        },
       },
       usage: {
         includedCreditCents: 0,
@@ -865,7 +892,10 @@ export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
 export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
 export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
+export type PlanEntitlements = z.infer<typeof PlanEntitlementsSchema>;
 export type PlanSkillsEntitlements = z.infer<typeof PlanSkillsEntitlementsSchema>;
+export type PlanAgentsEntitlements = z.infer<typeof PlanAgentsEntitlementsSchema>;
+export type PlanLimitsEntitlements = z.infer<typeof PlanLimitsEntitlementsSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 

@@ -10,12 +10,14 @@ import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, f
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentTradesTable } from './AgentTradesTable.js';
+import { useSession } from '../../app/providers/SessionProvider.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const intl = useIntl();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useSession();
 
   const [isEditing, setIsEditing] = useState(false);
   const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext'>('judgeSystem');
@@ -47,6 +49,7 @@ export function AgentDetailPage() {
 
   const shouldPollRuntimePanels = Boolean(query.data?.activeSession)
     || ['active', 'starting', 'paused', 'unhealthy'].includes(query.data?.status ?? '');
+  const canViewPrompts = user?.planEntitlements?.agents.canViewOwnPrompts ?? true;
 
   const agent = query.data;
 
@@ -173,7 +176,7 @@ export function AgentDetailPage() {
         throw error;
       }
     },
-    enabled: !!id,
+    enabled: !!id && canViewPrompts,
     refetchInterval: shouldPollRuntimePanels ? 15_000 : false,
   });
 
@@ -327,19 +330,24 @@ export function AgentDetailPage() {
 
         <Card>
           <SectionLabel>{intl.formatMessage({ id: 'agents.detail.promptSurfaces' })}</SectionLabel>
-          {promptQuery.isLoading && <LoadingRows count={1} />}
-          {promptQuery.isError && (
+          {!canViewPrompts && (
+            <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+              Prompt visibility is not available on your current plan.
+            </p>
+          )}
+          {canViewPrompts && promptQuery.isLoading && <LoadingRows count={1} />}
+          {canViewPrompts && promptQuery.isError && (
             <ErrorState
               message={localizeApiError(intl, promptQuery.error, 'common.errorTitle')}
               onRetry={() => void promptQuery.refetch()}
             />
           )}
-          {promptQuery.isSuccess && promptQuery.data === null && (
+          {canViewPrompts && promptQuery.isSuccess && promptQuery.data === null && (
             <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
               {intl.formatMessage({ id: 'agents.detail.promptUnavailable' })}
             </p>
           )}
-          {promptQuery.isSuccess && promptQuery.data !== null && (() => {
+          {canViewPrompts && promptQuery.isSuccess && promptQuery.data !== null && (() => {
             const data = promptQuery.data;
             const tabs: Array<{ key: typeof activePromptTab; label: string }> = [
               { key: 'judgeSystem', label: intl.formatMessage({ id: 'agents.detail.promptTab.judgeSystem' }) },

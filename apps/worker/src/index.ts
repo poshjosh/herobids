@@ -400,13 +400,17 @@ const botRestartCallback = async (botId: string, userId: string, venueAccountId:
 // Uses the user's actual planId so free-tier users can't create unlimited bots via agents.
 const botLimitCheckCallback = async (userId: string): Promise<void> => {
   if (!appConfig.plans) return;
-  const userRows = await db.select({ planId: users.planId }).from(users).where(eq(users.id, userId)).limit(1);
+  const userRows = await db.select({ planId: users.planId, isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).limit(1);
+  if (userRows[0]?.isAdmin) {
+    return;
+  }
   const planId = userRows[0]?.planId ?? appConfig.plans.defaultPlanId;
-  const planLimits = appConfig.plans.plans[planId] ?? appConfig.plans.plans[appConfig.plans.defaultPlanId];
-  if (!planLimits) return;
+  const plan = appConfig.plans.plans[planId] ?? appConfig.plans.plans[appConfig.plans.defaultPlanId];
+  if (!plan) return;
+  const maxBots = plan.entitlements.limits.maxBots;
   const botRows = await db.select({ id: bots.id }).from(bots).where(eq(bots.userId, userId));
-  if (botRows.length >= planLimits.maxTradingInstances) {
-    throw new Error(`Bot limit reached (${planLimits.maxTradingInstances} on your plan). Stop or delete a bot before creating a new one.`);
+  if (botRows.length >= maxBots) {
+    throw new Error(`Bot limit reached (${maxBots} on your plan). Stop or delete a bot before creating a new one.`);
   }
 };
 

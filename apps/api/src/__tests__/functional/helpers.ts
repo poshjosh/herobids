@@ -73,6 +73,71 @@ export async function buildApp() {
 
   const app = Fastify({ logger: false });
   const authConfig = makeAuthConfig();
+  const testPlansConfig = {
+    defaultPlanId: 'free',
+    plans: {
+      free: {
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: true,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 5,
+            maxConnections: 5,
+            maxCredentials: 5,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 3,
+            liveEnabled: false,
+          },
+        },
+        usage: {
+          includedCreditCents: 0,
+          topUpsEnabled: false,
+          topUpPackIds: [],
+        },
+      },
+      prompt_hidden: {
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: false,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 5,
+            maxConnections: 5,
+            maxCredentials: 5,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 3,
+            liveEnabled: false,
+          },
+        },
+        usage: {
+          includedCreditCents: 0,
+          topUpsEnabled: false,
+          topUpPackIds: [],
+        },
+      },
+    },
+  };
 
   await authPlugin(app, { config: authConfig, db });
 
@@ -101,15 +166,15 @@ export async function buildApp() {
 
   await credentialRoutes(app, lifecycleQueue, db);
 
-  await authRoutes(app, authConfig, db, redisClient, 'free');
+  await authRoutes(app, authConfig, db, redisClient, 'free', testPlansConfig as any);
   await agentRoutes(app, db);
-  await connectionRoutes(app, db, TEST_BUDGETS, redisClient);
-  await capabilityRoutes(app, db, { defaultPlanId: 'free', plans: {} } as any, TEST_BUDGETS, redisClient);
-  await botRoutes(app, lifecycleQueue, db, { defaultPlanId: 'free', plans: {} } as any);
+  await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any);
+  await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient);
+  await botRoutes(app, lifecycleQueue, db, testPlansConfig as any);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)
   await telegramWebhookHandler(app);
-  await agentInteractivityRoutes(app, db, redisClient);
+  await agentInteractivityRoutes(app, db, redisClient, undefined, undefined, testPlansConfig as any);
 
   await analyticsRoutes(app, db);
 
@@ -123,34 +188,11 @@ export async function buildApp() {
   });
   await aiRoutes(app, db, stubLlmConfig, redisClient);
 
-  await skillsRoutes(app, db, {
-    defaultPlanId: 'free',
-    plans: {
-      free: {
-        maxPortfolios: 3,
-        maxVenueAccounts: 5,
-        maxCredentials: 5,
-        maxTradingInstances: 5,
-        maxConcurrentBacktests: 3,
-        maxAgents: 5,
-        liveEnabled: false,
-        skills: {
-          autoPublishCreatedSkills: true,
-          canKeepSkillsPrivate: false,
-          canChargeForSkills: false,
-        },
-        usage: {
-          includedCreditCents: 0,
-          topUpsEnabled: false,
-          topUpPackIds: [],
-        },
-      },
-    },
-  });
+  await skillsRoutes(app, db, testPlansConfig as any);
   await datasetRoutes(app, db, redisClient);
   await exportRoutes(app, db);
 
-  await setupRoutes(app, db);
+  await setupRoutes(app, db, testPlansConfig as any);
 
   await app.ready();
 

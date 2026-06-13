@@ -94,9 +94,40 @@ export interface MeResponse {
   email: string;
   avatarUrl: string | null;
   planId: string;
+  planEntitlements: PlanEntitlements | null;
   preferredLocale: string | null;
   telegramChatId: string | null;
   createdAt: string;
+}
+
+export interface PlanSkillsEntitlements {
+  canCreatePrivateSkills: boolean;
+  canViewMarketplaceSkills: boolean;
+  canPublishToMarketplace: boolean;
+  autoPublishNonDraftSkills: boolean;
+  canPriceSkills: boolean;
+  canLikeMarketplaceSkills: boolean;
+}
+
+export interface PlanAgentsEntitlements {
+  canViewOwnPrompts: boolean;
+}
+
+export interface PlanLimitsEntitlements {
+  maxAgents: number;
+  maxBots: number;
+  maxConnections: number;
+  maxCredentials: number;
+  maxBindings: number;
+  maxVenueAccounts: number;
+  maxConcurrentBacktests: number;
+  liveEnabled: boolean;
+}
+
+export interface PlanEntitlements {
+  skills: PlanSkillsEntitlements;
+  agents: PlanAgentsEntitlements;
+  limits: PlanLimitsEntitlements;
 }
 
 export const auth = {
@@ -175,11 +206,7 @@ export const ai = {
 export interface DashboardOverview {
   user: { id: string; displayName: string; email: string; avatarUrl: string | null; planId: string };
   plan: {
-    maxBots: number;
-    maxVenueAccounts: number;
-    maxCredentials: number;
-    maxConcurrentBacktests: number;
-    liveEnabled: boolean;
+    entitlements: PlanEntitlements;
   } | null;
   bots: BotSummary[];
   summary: { totalBots: number; runningBots: number; totalOpenPositions: number };
@@ -264,7 +291,8 @@ export interface Skill {
   id: string;
   authorId: string | null;
   sourceKind: 'system' | 'user';
-  publicationStatus: 'draft' | 'published' | 'delisted' | 'archived';
+  publicationStatus: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
+  hasStagedRevision: boolean;
   priceCents: number;
   likeCount: number;
   forkCount: number;
@@ -303,10 +331,48 @@ export interface SkillMetrics {
   updatedAt: string;
 }
 
+export interface CreateSkillRequest {
+  name: string;
+  description: string;
+  instructions: string;
+  requiredTools?: string[];
+  contextRequirements?: string[];
+  requiredGuardrails?: string[];
+  capabilityFamilies?: string[];
+  suggestedTickIntervalMs?: number;
+  tags?: string[];
+  priceCents?: number;
+  publicationStatus?: 'draft' | 'private' | 'published';
+  changeSummary?: string;
+}
+
+export interface UpdateSkillRequest {
+  name?: string;
+  description?: string;
+  instructions?: string;
+  requiredTools?: string[];
+  contextRequirements?: string[];
+  requiredGuardrails?: string[];
+  capabilityFamilies?: string[];
+  suggestedTickIntervalMs?: number | null;
+  tags?: string[];
+  priceCents?: number;
+  changeSummary?: string;
+}
+
+export interface UpdateSkillResponse extends Skill {
+  stagedRevisionId?: string | null;
+}
+
 export const skills = {
+  create: (payload: CreateSkillRequest) =>
+    request<Skill>('/skills', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   list: (params?: {
     scope?: 'mine' | 'marketplace' | 'selectable' | 'admin';
-    publicationStatus?: 'draft' | 'published' | 'delisted' | 'archived';
+    publicationStatus?: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
     sort?: 'popular' | 'trending' | 'newest' | 'price_asc' | 'price_desc';
     priceMin?: number;
     priceMax?: number;
@@ -334,10 +400,20 @@ export const skills = {
       throw error;
     }
   },
-  publish: (id: string, payload?: { priceCents?: number }) =>
+  publish: (id: string, payload?: { revisionId?: string }) =>
     request<Skill>(`/skills/${id}/publish`, {
       method: 'POST',
       body: JSON.stringify(payload ?? {}),
+    }),
+  update: (id: string, payload: UpdateSkillRequest) =>
+    request<UpdateSkillResponse>(`/skills/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  fork: (id: string) =>
+    request<Skill>(`/skills/${id}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     }),
   delist: (id: string) =>
     request<Skill>(`/skills/${id}/delist`, {

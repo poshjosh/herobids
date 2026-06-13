@@ -58,6 +58,12 @@ function buildMockDb(credentialRows: unknown[] = [], venueAccountRows: unknown[]
     transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       transactionCallCount++;
       return fn({
+        execute: vi.fn().mockResolvedValue([]),
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => allSelectResults[selectCallIdx++] ?? []),
+          }),
+        })),
         insert: vi.fn().mockImplementation(() => ({
           values: vi.fn().mockImplementation((v) => {
             insertedValues.push(v as Record<string, unknown>);
@@ -320,13 +326,30 @@ describe('POST /setup/provider-link', () => {
       defaultPlanId: 'free',
       plans: {
         free: {
-          maxPortfolios: 1,
-          maxVenueAccounts: 1,
-          maxCredentials: 0, // at limit
-          maxTradingInstances: 1,
-          maxConcurrentBacktests: 1,
-          maxAgents: 1,
-          liveEnabled: false,
+          entitlements: {
+            skills: {
+              canCreatePrivateSkills: false,
+              canViewMarketplaceSkills: true,
+              canPublishToMarketplace: true,
+              autoPublishNonDraftSkills: true,
+              canPriceSkills: false,
+              canLikeMarketplaceSkills: true,
+            },
+            agents: {
+              canViewOwnPrompts: true,
+            },
+            limits: {
+              maxAgents: 1,
+              maxBots: 1,
+              maxConnections: 1,
+              maxCredentials: 0,
+              maxBindings: 1,
+              maxVenueAccounts: 1,
+              maxConcurrentBacktests: 1,
+              liveEnabled: false,
+            },
+          },
+          usage: {},
         },
       },
     };
@@ -344,5 +367,85 @@ describe('POST /setup/provider-link', () => {
     });
 
     expect(res.statusCode).toBe(403);
+  });
+
+  it('enforces trading binding plan limit for capability=trading', async () => {
+    const plansConfig = {
+      defaultPlanId: 'free',
+      plans: {
+        free: {
+          entitlements: {
+            skills: {
+              canCreatePrivateSkills: false,
+              canViewMarketplaceSkills: true,
+              canPublishToMarketplace: true,
+              autoPublishNonDraftSkills: true,
+              canPriceSkills: false,
+              canLikeMarketplaceSkills: true,
+            },
+            agents: {
+              canViewOwnPrompts: true,
+            },
+            limits: {
+              maxAgents: 1,
+              maxBots: 1,
+              maxConnections: 5,
+              maxCredentials: 5,
+              maxBindings: 1,
+              maxVenueAccounts: 5,
+              maxConcurrentBacktests: 1,
+              liveEnabled: false,
+            },
+          },
+          usage: {},
+        },
+      },
+    };
+
+    let selectCallIdx = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() => {
+            selectCallIdx++;
+            if (selectCallIdx === 4) {
+              return [{ id: 'binding-1' }];
+            }
+            return [];
+          }),
+        }),
+      })),
+      insert: vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockResolvedValue(undefined),
+      })),
+      transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+        execute: vi.fn().mockResolvedValue([]),
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              selectCallIdx++;
+              if (selectCallIdx === 4) {
+                return [{ id: 'binding-1' }];
+              }
+              return [];
+            }),
+          }),
+        })),
+        insert: vi.fn().mockImplementation(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
+      })),
+    } as any;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await setupRoutes(app, db, plansConfig as any);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/setup/provider-link',
+      payload: { ...VALID_HL_PAYLOAD, capability: 'trading' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: string }>().error).toBe('plan.limit_exceeded');
   });
 });

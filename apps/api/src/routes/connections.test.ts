@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { connectionRoutes as registerConnectionRoutesImpl } from './connections.js';
+import type { PlansConfig } from '@herobids/domain';
 
 const TEST_USER_ID = 'user-1';
 const TEST_RUNTIME_BUDGETS = {
@@ -11,8 +12,42 @@ const TEST_RUNTIME_BUDGETS = {
   maxContextBlockChars: 4000,
 };
 
-async function connectionRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown) {
-  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never);
+async function connectionRoutes(app: ReturnType<typeof Fastify>, db: unknown, redisClient?: unknown, plansConfig?: PlansConfig) {
+  await registerConnectionRoutesImpl(app, db as never, TEST_RUNTIME_BUDGETS, redisClient as never, plansConfig);
+}
+
+function makePlansConfig(maxConnections = 5): PlansConfig {
+  return {
+    defaultPlanId: 'free',
+    plans: {
+      free: {
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: true,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 5,
+            maxConnections,
+            maxCredentials: 5,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 3,
+            liveEnabled: false,
+          },
+        },
+        usage: {},
+      },
+    },
+  };
 }
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
@@ -126,6 +161,41 @@ describe('POST /connections', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toBe('validation_error');
+  });
+
+  it('returns 403 when connection limit is reached', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    let selectCallCount = 0;
+    const txInsert = vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    const db = {
+      transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+        execute: vi.fn().mockResolvedValue([]),
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              selectCallCount++;
+              if (selectCallCount === 1) {
+                return Promise.resolve([{ id: 'conn-1' }]);
+              }
+              return Promise.resolve([]);
+            }),
+          }),
+        })),
+        insert: txInsert,
+      })),
+    } as any;
+    await connectionRoutes(app, db, undefined, makePlansConfig(1));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/connections',
+      payload: { provider: 'hyperliquid', label: 'My Connection' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: string }>().error).toBe('plan.limit_exceeded');
+    expect(txInsert).not.toHaveBeenCalled();
   });
 
   it('returns 400 when credentialId references a nonexistent credential', async () => {
@@ -333,6 +403,33 @@ describe('DELETE /connections/:id', () => {
   });
 
   it('publishes a runtime refresh after revoking a connection with active trading grants', async () => {
+    const dbModule = await import('@herobids/db');
+    vi.spyOn(dbModule, 'resolveRuntimeCapabilityDescriptor').mockResolvedValue({
+      grantedBindingsByFamily: {},
+      readinessByFamily: {},
+      resolvedSkills: [],
+      defaultBindingByFamily: {},
+    } as never);
+    vi.spyOn(dbModule, 'buildRuntimeDescriptor').mockReturnValue({
+      agentId: 'agent-1',
+      schemaVersion: 'v1',
+      name: 'agent-1',
+      goal: 'Trade carefully',
+      executionMode: 'paper',
+      toolPolicy: {},
+      budgets: TEST_RUNTIME_BUDGETS,
+      grantedBindingsByFamily: {},
+      readinessByFamily: {},
+      resolvedSkills: [],
+      defaultBindingByFamily: {},
+      guardrails: {
+        dailyTokenBudget: null,
+        dailyLossLimit: null,
+        maxBots: null,
+        maxSlippageBps: null,
+      },
+    } as never);
+
     const app = Fastify();
     decorateWithAuth(app);
     const redisClient = { xadd: vi.fn().mockResolvedValue('msg-1') };
@@ -341,6 +438,7 @@ describe('DELETE /connections/:id', () => {
       [{ agentId: 'agent-1' }],
       [{
         id: 'agent-1',
+        name: 'agent-1',
         prompt: 'Trade carefully',
         skillIds: [],
         toolPolicy: null,
@@ -358,6 +456,8 @@ describe('DELETE /connections/:id', () => {
         const chain: Record<string, unknown> = {};
         chain.from = vi.fn().mockImplementation(() => chain);
         chain.innerJoin = vi.fn().mockImplementation(() => chain);
+        chain.leftJoin = vi.fn().mockImplementation(() => chain);
+        chain.groupBy = vi.fn().mockImplementation(() => chain);
         chain.where = vi.fn().mockImplementation(() => Promise.resolve(selectSequence[callIdx++] ?? []));
         return chain;
       }),

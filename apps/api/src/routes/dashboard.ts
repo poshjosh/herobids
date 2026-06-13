@@ -170,7 +170,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
 
     // Resolve plan limits
     const planId = request.userPlanId || user.planId || 'free';
-    const planDef = plansConfig?.plans?.[planId];
+    const planDef = plansConfig?.plans?.[planId] ?? (plansConfig ? plansConfig.plans[plansConfig.defaultPlanId] : undefined);
 
     const botsSummary = botRows.map((bot) => {
       const va = venueAccountMap.get(bot.venueAccountId);
@@ -202,7 +202,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Database, plansC
         avatarUrl: user.avatarUrl,
         planId,
       },
-      plan: planDef ?? null,
+      plan: planDef ? { entitlements: planDef.entitlements } : null,
       bots: botsSummary,
       summary: {
         totalBots: botsSummary.length,

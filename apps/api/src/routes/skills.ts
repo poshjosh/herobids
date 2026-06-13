@@ -9,7 +9,7 @@ import { findUnknownSkillTools, SYSTEM_SKILLS } from '@herobids/domain';
 import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
 
-const PublicationStatusSchema = z.enum(['draft', 'published', 'delisted', 'archived']);
+const PublicationStatusSchema = z.enum(['draft', 'private', 'published', 'delisted', 'archived']);
 
 const CreateSkillSchema = z.object({
   name: z.string().min(1).max(100),
@@ -22,7 +22,7 @@ const CreateSkillSchema = z.object({
   suggestedTickIntervalMs: z.number().int().min(1_000).max(86_400_000).optional(),
   tags: z.array(z.string()).optional().default([]),
   priceCents: z.number().int().min(0).optional().default(0),
-  publicationStatus: z.enum(['draft', 'published']).optional().default('draft'),
+  publicationStatus: z.enum(['draft', 'private', 'published']).optional().default('draft'),
   changeSummary: z.string().max(500).optional(),
 });
 
@@ -89,7 +89,8 @@ type SkillView = {
   id: string;
   authorId: string | null;
   sourceKind: 'system' | 'user';
-  publicationStatus: 'draft' | 'published' | 'delisted' | 'archived';
+  publicationStatus: 'draft' | 'private' | 'published' | 'delisted' | 'archived';
+  hasStagedRevision: boolean;
   priceCents: number;
   likeCount: number;
   forkCount: number;
@@ -117,21 +118,88 @@ function sourceKindForSkill(row: typeof skills.$inferSelect): 'system' | 'user' 
   return row.authorId === null ? 'system' : 'user';
 }
 
-function resolvePlanPolicy(plansConfig: PlansConfig | undefined, planId: string): PlanSkillsEntitlements {
+function resolvePlanPolicy(plansConfig: PlansConfig | undefined, planId: string, isAdmin: boolean): PlanSkillsEntitlements {
   if (!plansConfig) {
     return {
-      autoPublishCreatedSkills: false,
-      canKeepSkillsPrivate: true,
-      canChargeForSkills: false,
+      canCreatePrivateSkills: true,
+      canViewMarketplaceSkills: true,
+      canPublishToMarketplace: true,
+      autoPublishNonDraftSkills: false,
+      canPriceSkills: isAdmin,
+      canLikeMarketplaceSkills: true,
     };
   }
-  return resolvePlanSkillEntitlements(plansConfig, planId);
+  return resolvePlanSkillEntitlements(plansConfig, planId, isAdmin);
+}
+
+function resolveCreationPublicationStatus(
+  requestedStatus: 'draft' | 'private' | 'published',
+  planPolicy: PlanSkillsEntitlements,
+): {
+  publicationStatus: 'draft' | 'private' | 'published';
+  autoPublishedByPlan: boolean;
+  requiresMarketplacePublish: boolean;
+} {
+  if (requestedStatus === 'draft') {
+    return {
+      publicationStatus: 'draft',
+      autoPublishedByPlan: false,
+      requiresMarketplacePublish: false,
+    };
+  }
+
+  if (planPolicy.autoPublishNonDraftSkills) {
+    return {
+      publicationStatus: 'published',
+      autoPublishedByPlan: true,
+      requiresMarketplacePublish: true,
+    };
+  }
+
+  if (requestedStatus === 'published') {
+    if (planPolicy.canPublishToMarketplace) {
+      return {
+        publicationStatus: 'published',
+        autoPublishedByPlan: false,
+        requiresMarketplacePublish: true,
+      };
+    }
+
+    if (planPolicy.canCreatePrivateSkills) {
+      return {
+        publicationStatus: 'private',
+        autoPublishedByPlan: false,
+        requiresMarketplacePublish: false,
+      };
+    }
+
+    return {
+      publicationStatus: 'published',
+      autoPublishedByPlan: false,
+      requiresMarketplacePublish: true,
+    };
+  }
+
+  if (!planPolicy.canCreatePrivateSkills) {
+    return {
+      publicationStatus: 'published',
+      autoPublishedByPlan: true,
+      requiresMarketplacePublish: true,
+    };
+  }
+
+  return {
+    publicationStatus: 'private',
+    autoPublishedByPlan: false,
+    requiresMarketplacePublish: false,
+  };
 }
 
 function evaluateSelectability(
   row: typeof skills.$inferSelect,
   viewerUserId: string,
   viewerContext: ViewerSkillContext,
+  canViewMarketplaceSkills: boolean,
 ): SelectabilityResult {
   if (row.authorId === null) {
     return { isSelectable: true, selectabilityReason: 'system_skill' };
@@ -151,6 +219,10 @@ function evaluateSelectability(
 
   if (row.publicationStatus !== 'published') {
     return { isSelectable: false, selectabilityReason: 'not_published' };
+  }
+
+  if (!canViewMarketplaceSkills) {
+    return { isSelectable: false, selectabilityReason: 'marketplace_hidden' };
   }
 
   if (row.priceCents === 0) {
@@ -211,29 +283,46 @@ async function getLatestRevisionBySkillId(db: Database, skillId: string) {
   return rows[0] ?? null;
 }
 
-async function buildSkillViews(db: Database, rows: Array<typeof skills.$inferSelect>, viewerUserId: string): Promise<SkillView[]> {
+async function buildSkillViews(
+  db: Database,
+  rows: Array<typeof skills.$inferSelect>,
+  viewerUserId: string,
+  planPolicy: PlanSkillsEntitlements,
+): Promise<SkillView[]> {
   if (rows.length === 0) return [];
 
   const skillIds = rows.map((row) => row.id);
   const revisionIds = rows.map((row) => row.currentRevisionId).filter((id): id is string => id !== null);
-  const [revisionRows, viewerContext] = await Promise.all([
+  const [revisionRows, viewerContext, latestVersionRows] = await Promise.all([
     revisionIds.length > 0
       ? db.select().from(skillRevisions).where(inArray(skillRevisions.id, revisionIds))
       : Promise.resolve([]),
     loadViewerContext(db, viewerUserId, skillIds),
+    db.select({
+      skillId: skillRevisions.skillId,
+      latestVersion: sql<number>`MAX(${skillRevisions.version})`,
+    }).from(skillRevisions)
+      .where(inArray(skillRevisions.skillId, skillIds))
+      .groupBy(skillRevisions.skillId),
   ]);
 
   const revisionById = new Map(revisionRows.map((row) => [row.id, row] as const));
+  const latestVersionBySkillId = new Map(
+    latestVersionRows.map((row) => [row.skillId, Number(row.latestVersion ?? 0)] as const),
+  );
   const views: SkillView[] = [];
 
   for (const row of rows) {
     const currentRevision = row.currentRevisionId ? revisionById.get(row.currentRevisionId) : null;
-    const selectability = evaluateSelectability(row, viewerUserId, viewerContext);
+    const latestVersion = latestVersionBySkillId.get(row.id) ?? 0;
+    const currentRevisionVersion = currentRevision?.version ?? 0;
+    const selectability = evaluateSelectability(row, viewerUserId, viewerContext, planPolicy.canViewMarketplaceSkills);
     views.push({
       id: row.id,
       authorId: row.authorId,
       sourceKind: sourceKindForSkill(row),
       publicationStatus: row.publicationStatus as SkillView['publicationStatus'],
+      hasStagedRevision: latestVersion > currentRevisionVersion,
       priceCents: row.priceCents,
       likeCount: row.likeCount,
       forkCount: row.forkCount,
@@ -476,6 +565,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     }
 
     const query = parsed.data;
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+
+    if (query.scope === 'marketplace' && !request.isAdmin && !planPolicy.canViewMarketplaceSkills) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_marketplace_hidden',
+        message: 'Your plan does not include marketplace access',
+      });
+    }
+
     if (query.scope === 'admin' && !request.isAdmin) {
       return reply.status(403).send({ error: 'forbidden' });
     }
@@ -503,7 +602,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       whereClauses.push(or(
         sql`${skills.authorId} IS NULL`,
         eq(skills.authorId, request.userId),
-        eq(skills.publicationStatus, 'published'),
+        planPolicy.canViewMarketplaceSkills ? eq(skills.publicationStatus, 'published') : sql`false`,
         explicitlySelectableIds.length > 0 ? inArray(skills.id, explicitlySelectableIds) : sql`false`,
       )!);
     }
@@ -544,7 +643,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     }
 
     const rows = await rowsQuery;
-    let views = await buildSkillViews(db, rows, request.userId);
+    let views = await buildSkillViews(db, rows, request.userId, planPolicy);
 
     if (query.scope === 'selectable') {
       views = views.filter((skill) => skill.isSelectable);
@@ -572,8 +671,8 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(400).send(unknownToolError);
     }
 
-    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free');
-    if (parsed.data.priceCents > 0 && !planPolicy.canChargeForSkills) {
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    if (parsed.data.priceCents > 0 && !planPolicy.canPriceSkills) {
       return reply.status(403).send({
         error: 'plan_limit',
         code: 'plan.skills_pricing_disabled',
@@ -581,11 +680,14 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       });
     }
 
-    const requestedStatus = parsed.data.publicationStatus;
-    const autoPublishedByPlan = planPolicy.autoPublishCreatedSkills;
-    const publicationStatus = (autoPublishedByPlan || !planPolicy.canKeepSkillsPrivate)
-      ? 'published'
-      : requestedStatus;
+    const publication = resolveCreationPublicationStatus(parsed.data.publicationStatus, planPolicy);
+    if (publication.requiresMarketplacePublish && !planPolicy.canPublishToMarketplace) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_marketplace_publish_disabled',
+        message: 'Your plan does not allow publishing skills to the marketplace',
+      });
+    }
 
     const id = crypto.randomUUID();
     const revisionId = crypto.randomUUID();
@@ -595,11 +697,11 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       await tx.insert(skills).values({
         id,
         authorId: request.userId,
-        publicationStatus,
-        publishedAt: publicationStatus === 'published' ? createdAt : null,
+        publicationStatus: publication.publicationStatus,
+        publishedAt: publication.publicationStatus === 'published' ? createdAt : null,
         currentRevisionId: revisionId,
         priceCents: parsed.data.priceCents,
-        autoPublishedByPlan,
+        autoPublishedByPlan: publication.autoPublishedByPlan,
         name: parsed.data.name,
         description: parsed.data.description,
         instructions: parsed.data.instructions,
@@ -633,7 +735,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     });
 
     const [createdSkill] = await db.select().from(skills).where(eq(skills.id, id));
-    const [view] = await buildSkillViews(db, [createdSkill!], request.userId);
+    const [view] = await buildSkillViews(db, [createdSkill!], request.userId, planPolicy);
     return reply.status(201).send(view);
   });
 
@@ -643,18 +745,26 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     if (!row) return reply.status(404).send({ error: 'not_found' });
 
     if (!request.isAdmin) {
-      const [view] = await buildSkillViews(db, [row], request.userId);
+      const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+      const [view] = await buildSkillViews(db, [row], request.userId, planPolicy);
       const canView = view.sourceKind === 'system'
         || row.authorId === request.userId
         || view.isSelectable
-        || (row.publicationStatus === 'published' && row.priceCents === 0);
+        || (row.publicationStatus === 'published' && row.priceCents === 0 && planPolicy.canViewMarketplaceSkills);
       if (!canView) {
         return reply.status(404).send({ error: 'not_found' });
       }
       return reply.send(view);
     }
 
-    const [adminView] = await buildSkillViews(db, [row], request.userId);
+    const [adminView] = await buildSkillViews(db, [row], request.userId, {
+      canCreatePrivateSkills: true,
+      canViewMarketplaceSkills: true,
+      canPublishToMarketplace: true,
+      autoPublishNonDraftSkills: false,
+      canPriceSkills: true,
+      canLikeMarketplaceSkills: true,
+    });
     return reply.send(adminView);
   });
 
@@ -679,9 +789,9 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free');
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
     const nextPriceCents = parsed.data.priceCents ?? row.priceCents;
-    if (nextPriceCents > 0 && !planPolicy.canChargeForSkills) {
+    if (nextPriceCents > 0 && !planPolicy.canPriceSkills) {
       return reply.status(403).send({
         error: 'plan_limit',
         code: 'plan.skills_pricing_disabled',
@@ -757,7 +867,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     });
 
     const [updatedRow] = await db.select().from(skills).where(eq(skills.id, row.id)).limit(1);
-    const [view] = await buildSkillViews(db, [updatedRow!], request.userId);
+    const [view] = await buildSkillViews(db, [updatedRow!], request.userId, planPolicy);
     return reply.send({ ...view, stagedRevisionId });
   });
 
@@ -774,8 +884,16 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free');
-    if (row.priceCents > 0 && !planPolicy.canChargeForSkills) {
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    if (!planPolicy.canPublishToMarketplace) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_marketplace_publish_disabled',
+        message: 'Your plan does not allow publishing skills to the marketplace',
+      });
+    }
+
+    if (row.priceCents > 0 && !planPolicy.canPriceSkills) {
       return reply.status(403).send({
         error: 'plan_limit',
         code: 'plan.skills_pricing_disabled',
@@ -812,7 +930,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     }).where(eq(skills.id, row.id));
 
     const [publishedRow] = await db.select().from(skills).where(eq(skills.id, row.id)).limit(1);
-    const [view] = await buildSkillViews(db, [publishedRow!], request.userId);
+    const [view] = await buildSkillViews(db, [publishedRow!], request.userId, planPolicy);
     return reply.send(view);
   });
 
@@ -824,6 +942,15 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    if (!planPolicy.canCreatePrivateSkills) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_private_disabled',
+        message: 'Your plan does not allow private skills',
+      });
+    }
+
     await db.update(skills).set({
       publicationStatus: 'delisted',
       delistedAt: new Date(),
@@ -831,7 +958,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     }).where(eq(skills.id, row.id));
 
     const [delistedRow] = await db.select().from(skills).where(eq(skills.id, row.id)).limit(1);
-    const [view] = await buildSkillViews(db, [delistedRow!], request.userId);
+    const [view] = await buildSkillViews(db, [delistedRow!], request.userId, planPolicy);
     return reply.send(view);
   });
 
@@ -872,10 +999,11 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    const [sourceView] = await buildSkillViews(db, [source], request.userId);
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    const [sourceView] = await buildSkillViews(db, [source], request.userId, planPolicy);
     const canFork = source.authorId === null
       || source.authorId === request.userId
-      || source.publicationStatus === 'published'
+      || (source.publicationStatus === 'published' && planPolicy.canViewMarketplaceSkills)
       || sourceView.isSelectable;
     if (!canFork) {
       return reply.status(404).send({ error: 'not_found' });
@@ -893,10 +1021,17 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(400).send(unknownToolError);
     }
 
-    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free');
-    const publicationStatus = (planPolicy.autoPublishCreatedSkills || !planPolicy.canKeepSkillsPrivate)
-      ? 'published'
-      : 'draft';
+    const publication = resolveCreationPublicationStatus(
+      planPolicy.autoPublishNonDraftSkills ? 'published' : 'draft',
+      planPolicy,
+    );
+    if (publication.requiresMarketplacePublish && !planPolicy.canPublishToMarketplace) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_marketplace_publish_disabled',
+        message: 'Your plan does not allow publishing skills to the marketplace',
+      });
+    }
 
     const forkId = crypto.randomUUID();
     const forkRevisionId = crypto.randomUUID();
@@ -905,11 +1040,11 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       await tx.insert(skills).values({
         id: forkId,
         authorId: request.userId,
-        publicationStatus,
-        publishedAt: publicationStatus === 'published' ? now : null,
+        publicationStatus: publication.publicationStatus,
+        publishedAt: publication.publicationStatus === 'published' ? now : null,
         currentRevisionId: forkRevisionId,
         priceCents: 0,
-        autoPublishedByPlan: planPolicy.autoPublishCreatedSkills,
+        autoPublishedByPlan: publication.autoPublishedByPlan,
         name: `${sourceRevision.name} (fork)`,
         description: sourceRevision.description,
         instructions: sourceRevision.instructions,
@@ -964,7 +1099,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     await recomputeSkillScores(db, source.id);
 
     const [forked] = await db.select().from(skills).where(eq(skills.id, forkId)).limit(1);
-    const [view] = await buildSkillViews(db, [forked!], request.userId);
+    const [view] = await buildSkillViews(db, [forked!], request.userId, planPolicy);
     return reply.status(201).send(view);
   });
 
@@ -972,6 +1107,23 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     const [row] = await db.select().from(skills).where(eq(skills.id, request.params.id)).limit(1);
     if (!row) {
       return reply.status(404).send({ error: 'not_found' });
+    }
+
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    if (!planPolicy.canViewMarketplaceSkills) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_marketplace_hidden',
+        message: 'Your plan does not include marketplace access',
+      });
+    }
+
+    if (!planPolicy.canLikeMarketplaceSkills) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_like_disabled',
+        message: 'Your plan does not allow liking marketplace skills',
+      });
     }
 
     if (row.authorId === null || row.publicationStatus !== 'published') {
@@ -999,6 +1151,23 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    if (!planPolicy.canViewMarketplaceSkills) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_marketplace_hidden',
+        message: 'Your plan does not include marketplace access',
+      });
+    }
+
+    if (!planPolicy.canLikeMarketplaceSkills) {
+      return reply.status(403).send({
+        error: 'plan_limit',
+        code: 'plan.skills_like_disabled',
+        message: 'Your plan does not allow liking marketplace skills',
+      });
+    }
+
     await db.delete(skillLikes).where(and(
       eq(skillLikes.skillId, row.id),
       eq(skillLikes.userId, request.userId),
@@ -1015,7 +1184,10 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    if (!request.isAdmin && row.authorId !== request.userId && row.publicationStatus !== 'published') {
+    const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
+    if (!request.isAdmin && row.authorId !== request.userId && (
+      row.publicationStatus !== 'published' || !planPolicy.canViewMarketplaceSkills
+    )) {
       return reply.status(404).send({ error: 'not_found' });
     }
 

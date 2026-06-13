@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { agents } from '@herobids/db';
+import { agents, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
@@ -239,6 +239,26 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json<{ judgeSystem: string | null; scoutSystem: string | null }>().judgeSystem).toBeNull();
       expect(res.json<{ judgeSystem: string | null; scoutSystem: string | null }>().scoutSystem).toBe('Scout prompt only');
+    });
+
+    it('returns 403 when plan does not allow prompt visibility', async () => {
+      const id = await createAgent();
+      const [owner] = await ctx.db
+        .select({ userId: agents.userId })
+        .from(agents)
+        .where(eq(agents.id, id));
+      expect(owner).toBeDefined();
+
+      await ctx.db.update(users).set({ planId: 'prompt_hidden' }).where(eq(users.id, owner!.userId));
+
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${id}/prompt`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json<{ code: string }>().code).toBe('plan.agents_prompt_visibility_disabled');
     });
   });
 

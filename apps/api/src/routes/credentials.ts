@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 import type { Database } from '@herobids/db';
 import { userCredentials, PgJournal } from '@herobids/db';
@@ -132,14 +132,6 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(400).send(credentialValidationPayload(venueSecretErrors));
     }
 
-    // Plan enforcement
-    if (plansConfig) {
-      const planCheck = await checkCredentialLimit(db, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-      if (!planCheck.ok) {
-        return reply.status(403).send(errorPayload(planCheck.error.code, planCheck.error.message, planCheck.error.params));
-      }
-    }
-
     const encryptionKey = getEncryptionKey();
     const id = crypto.randomUUID();
     const now = new Date();
@@ -148,16 +140,34 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
     const secretsJson = JSON.stringify(normalizedSecrets);
     const { encryptedData, encryptionMeta } = encryptCredential(secretsJson, encryptionKey);
 
-    await db.insert(userCredentials).values({
-      id,
-      userId: request.userId,
-      venue: parsed.data.venue,
-      label: parsed.data.label,
-      encryptedData,
-      encryptionMeta,
-      createdAt: now,
-      updatedAt: now,
+    const txResult = await db.transaction(async (tx) => {
+      if (plansConfig) {
+        // Serialise credential create checks per user to avoid over-limit races.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(13, hashtext(${request.userId}))`);
+
+        const planCheck = await checkCredentialLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
+        if (!planCheck.ok) {
+          return { kind: 'limit' as const, error: planCheck.error };
+        }
+      }
+
+      await tx.insert(userCredentials).values({
+        id,
+        userId: request.userId,
+        venue: parsed.data.venue,
+        label: parsed.data.label,
+        encryptedData,
+        encryptionMeta,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return { kind: 'ok' as const };
     });
+
+    if (txResult.kind === 'limit') {
+      return reply.status(403).send(errorPayload(txResult.error.code, txResult.error.message, txResult.error.params));
+    }
 
     auditAppend(journal, credentialCreatedEvent({
       credentialId: id,

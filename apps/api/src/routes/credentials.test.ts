@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
+import type { PlansConfig } from '@herobids/domain';
 import { credentialRoutes } from './credentials.js';
 import { encryptCredential } from '../crypto.js';
 
@@ -53,6 +54,7 @@ vi.mock('@herobids/db', () => {
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
   and: vi.fn((...args) => ({ _and: args })),
+  sql: vi.fn().mockImplementation((strings: TemplateStringsArray) => ({ _sql: strings.join('') })),
 }));
 
 vi.mock('../crypto.js', () => ({
@@ -85,6 +87,27 @@ function buildMockDb() {
   lastUpdateSet = undefined;
   deleteWasCalled = false;
 
+  const tx = {
+    execute: vi.fn().mockResolvedValue([]),
+    insert: vi.fn().mockReturnValue({
+      values: vi.fn().mockImplementation((v) => { lastInsertValues = v; return Promise.resolve(); }),
+    }),
+    select: vi.fn().mockImplementation((_cols?) => ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue(mockDbRows),
+      }),
+    })),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockImplementation((s) => {
+        lastUpdateSet = s;
+        return { where: vi.fn().mockResolvedValue(undefined) };
+      }),
+    }),
+    delete: vi.fn().mockReturnValue({
+      where: vi.fn().mockImplementation(() => { deleteWasCalled = true; return Promise.resolve(); }),
+    }),
+  };
+
   return {
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockImplementation((v) => { lastInsertValues = v; return Promise.resolve(); }),
@@ -103,6 +126,7 @@ function buildMockDb() {
     delete: vi.fn().mockReturnValue({
       where: vi.fn().mockImplementation(() => { deleteWasCalled = true; return Promise.resolve(); }),
     }),
+    transaction: vi.fn().mockImplementation(async (fn: (innerTx: typeof tx) => Promise<unknown>) => fn(tx)),
   } as any;
 }
 
@@ -112,6 +136,40 @@ function buildMockQueue() {
   return { add: mockQueueAdd } as any;
 }
 
+function makePlansConfig(): PlansConfig {
+  return {
+    defaultPlanId: 'free',
+    plans: {
+      free: {
+        entitlements: {
+          skills: {
+            canCreatePrivateSkills: false,
+            canViewMarketplaceSkills: true,
+            canPublishToMarketplace: true,
+            autoPublishNonDraftSkills: true,
+            canPriceSkills: false,
+            canLikeMarketplaceSkills: true,
+          },
+          agents: {
+            canViewOwnPrompts: true,
+          },
+          limits: {
+            maxAgents: 5,
+            maxBots: 5,
+            maxConnections: 5,
+            maxCredentials: 1,
+            maxBindings: 5,
+            maxVenueAccounts: 5,
+            maxConcurrentBacktests: 3,
+            liveEnabled: false,
+          },
+        },
+        usage: {},
+      },
+    },
+  };
+}
+
 describe('credential audit events', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -119,6 +177,28 @@ describe('credential audit events', () => {
   });
 
   describe('POST /credentials (create)', () => {
+    it('returns 403 when credential limit is reached', async () => {
+      mockDbRows = [{ id: 'cred-existing' }];
+      const app = Fastify();
+      const db = buildMockDb();
+      decorateWithAuth(app);
+      await credentialRoutes(app, buildMockQueue(), db, makePlansConfig());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/credentials',
+        payload: {
+          venue: 'hyperliquid',
+          label: 'prod-key',
+          secrets: { apiKey: 'secret-key', secret: 'secret-value', walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('plan.limit_exceeded');
+      expect(lastInsertValues).toBeUndefined();
+    });
+
     it('emits credential.created event with metadata only', async () => {
       const app = Fastify();
       const db = buildMockDb();
