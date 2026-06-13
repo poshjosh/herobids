@@ -85,7 +85,6 @@ See `docs/best-practices/configuration.md` for full details.
   - **Bot** → `bots.venue_account_id` → `venue_accounts` (direct, via running TradingActor in actorRegistry)
   - **Agent** → `capability_grants.binding_id` → `trading_bindings.source_venue_account_id` → `venue_accounts`
   - **User** (future) → user-owned `trading_bindings` → `venue_accounts`
-- Today only bot-keyed resolution is implemented. Agent-native resolution is the gap that must be filled.
 
 ## Project Structure
 
