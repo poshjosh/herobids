@@ -162,6 +162,7 @@ export const messages: Record<string, string> = {
   'common.remove': 'Remove',
   'common.saveChanges': 'Save changes',
   'common.state': 'State',
+  'common.status': 'Status',
   'common.binding': 'Binding',
   'common.unlimited': 'Unlimited',
   'common.updated': 'Updated',

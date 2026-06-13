@@ -1588,6 +1588,7 @@ async function runTick(): Promise<void> {
 
     const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy });
     let resolvedScoutDecision: ScoutDecision;
+    let isSoftLimited = false;
     if (preScoutResolution.decision) {
       redis.del(scoutSystemPromptKey, scoutUserContextPromptKey).catch((err: unknown) => {
         logger.warn({ err }, 'Failed to clear skipped scout prompt surfaces from Redis');
@@ -1647,7 +1648,7 @@ async function runTick(): Promise<void> {
       }
 
       // Soft-limited accounts proceed but with degraded behavior (scout-only, no escalation).
-      const isSoftLimited = usageBillingService ? await usageBillingService.isSoftLimited() : false;
+      isSoftLimited = usageBillingService ? await usageBillingService.isSoftLimited() : false;
       if (isSoftLimited) {
         logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — proceeding with degraded tick (scout only)');
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {

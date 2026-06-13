@@ -297,12 +297,12 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
         method: 'POST',
         url: '/skills',
         headers: authHeader(),
-        payload: { name: 'Old Name', description: 'D', instructions: 'I' },
+        payload: { name: 'Old Name', description: 'D', instructions: 'I', publicationStatus: 'draft' },
       });
       const { id } = createRes.json<{ id: string }>();
 
       const res = await ctx.app.inject({
-        method: 'PUT',
+        method: 'PATCH',
         url: `/skills/${id}`,
         headers: authHeader(),
         payload: { name: 'New Name' },
@@ -319,7 +319,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
         method: 'POST',
         url: '/skills',
         headers: authHeader(),
-        payload: { name: 'To Delete', description: 'D', instructions: 'I' },
+        payload: { name: 'To Delete', description: 'D', instructions: 'I', publicationStatus: 'draft' },
       });
       const { id } = createRes.json<{ id: string }>();
 

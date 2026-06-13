@@ -22,7 +22,7 @@ const CreateSkillSchema = z.object({
   suggestedTickIntervalMs: z.number().int().min(1_000).max(86_400_000).optional(),
   tags: z.array(z.string()).optional().default([]),
   priceCents: z.number().int().min(0).optional().default(0),
-  publicationStatus: z.enum(['draft', 'private', 'published']).optional().default('draft'),
+  publicationStatus: z.enum(['draft', 'private', 'published']).optional(),
   changeSummary: z.string().max(500).optional(),
 });
 
@@ -94,6 +94,7 @@ type SkillView = {
   priceCents: number;
   likeCount: number;
   forkCount: number;
+  forkOf: string | null;
   popularityScore: number;
   trendingScore: number;
   isLikedByViewer: boolean;
@@ -133,7 +134,7 @@ function resolvePlanPolicy(plansConfig: PlansConfig | undefined, planId: string,
 }
 
 function resolveCreationPublicationStatus(
-  requestedStatus: 'draft' | 'private' | 'published',
+  requestedStatus: 'draft' | 'private' | 'published' | undefined,
   planPolicy: PlanSkillsEntitlements,
 ): {
   publicationStatus: 'draft' | 'private' | 'published';
@@ -326,6 +327,7 @@ async function buildSkillViews(
       priceCents: row.priceCents,
       likeCount: row.likeCount,
       forkCount: row.forkCount,
+      forkOf: row.forkOf ?? null,
       popularityScore: row.popularityScore,
       trendingScore: row.trendingScore,
       isLikedByViewer: viewerContext.likedSkillIds.has(row.id),
@@ -623,7 +625,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       whereClauses.push(sql`${query.tag} = ANY(${skills.tags})`);
     }
 
-    let rowsQuery = db.select().from(skills);
+    let rowsQuery = db.select().from(skills).$dynamic();
     if (whereClauses.length === 1) {
       rowsQuery = rowsQuery.where(whereClauses[0]!);
     } else if (whereClauses.length > 1) {
@@ -747,6 +749,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
     if (!request.isAdmin) {
       const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
       const [view] = await buildSkillViews(db, [row], request.userId, planPolicy);
+      if (!view) return reply.status(500).send({ error: 'internal' });
       const canView = view.sourceKind === 'system'
         || row.authorId === request.userId
         || view.isSelectable
@@ -813,7 +816,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
 
     await db.transaction(async (tx) => {
       if (contentChanged) {
-        const latestRevision = await getLatestRevisionBySkillId(tx as Database, row.id);
+        const latestRevision = await getLatestRevisionBySkillId(tx as unknown as Database, row.id);
         const version = (latestRevision?.version ?? 0) + 1;
         stagedRevisionId = crypto.randomUUID();
         await tx.insert(skillRevisions).values({
@@ -1001,6 +1004,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
 
     const planPolicy = resolvePlanPolicy(plansConfig, request.userPlanId || 'free', request.isAdmin);
     const [sourceView] = await buildSkillViews(db, [source], request.userId, planPolicy);
+    if (!sourceView) return reply.status(500).send({ error: 'internal' });
     const canFork = source.authorId === null
       || source.authorId === request.userId
       || (source.publicationStatus === 'published' && planPolicy.canViewMarketplaceSkills)

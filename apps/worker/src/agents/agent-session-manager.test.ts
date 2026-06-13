@@ -61,6 +61,7 @@ describe('AgentSessionManager', () => {
         ...runtimeDescriptor,
         agentId,
       })),
+      recordSessionStartedSkillUsage: vi.fn().mockResolvedValue(undefined),
     };
 
     const runtimeLauncher = {
@@ -105,7 +106,6 @@ describe('AgentSessionManager', () => {
       agentId: 'agent-1',
       agentConfig: expect.objectContaining({
         prompt: 'Test agent',
-        skillIds: [],
       }),
       runtimeDescriptor: expect.objectContaining({
         agentId: 'agent-1',
@@ -186,7 +186,6 @@ describe('AgentSessionManager', () => {
     expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
       agentConfig: expect.objectContaining({
         prompt: 'Trade BTC conservatively',
-        skillIds: ['bot-management'],
       }),
       runtimeDescriptor: expect.objectContaining({
         agentId: 'agent-1',

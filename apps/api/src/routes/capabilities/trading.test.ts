@@ -63,6 +63,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
   and: vi.fn((...args) => ({ _and: args })),
   or: vi.fn((...args) => ({ _or: args })),
+  asc: vi.fn((col) => ({ _asc: col })),
   desc: vi.fn((col) => ({ _desc: col })),
   inArray: vi.fn((col, vals) => ({ _inArray: vals })),
   isNull: vi.fn((col) => ({ _isNull: col })),

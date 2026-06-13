@@ -30,7 +30,7 @@ function makeInsertMock() {
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const method of ['from', 'where', 'orderBy', 'limit', 'innerJoin', 'groupBy']) {
+  for (const method of ['from', 'where', 'orderBy', 'limit', 'innerJoin', 'groupBy', '$dynamic']) {
     chain[method] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (

@@ -162,6 +162,7 @@ export const messages: Record<string, string> = {
   'common.remove': 'إزالة',
   'common.saveChanges': 'حفظ التغييرات',
   'common.state': 'الحالة',
+  'common.status': 'الحالة',
   'common.binding': 'الربط',
   'common.unlimited': 'غير محدود',
   'common.updated': 'تم التحديث',

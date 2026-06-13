@@ -190,6 +190,7 @@ export class AgentSessionManager {
               await this.eventPublisher.emitInstanceStatus(agent.id, {
                 status: 'stopped',
                 reason: code,
+                updatedAt: new Date().toISOString(),
               });
               continue;
             }

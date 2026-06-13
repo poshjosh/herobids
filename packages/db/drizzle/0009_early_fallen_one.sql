@@ -7,6 +7,7 @@ CREATE TABLE "agent_skills" (
 	"assignment_source" text DEFAULT 'user_select' NOT NULL
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "uq_agent_skills_agent_skill" ON "agent_skills" USING btree ("agent_id","skill_id");--> statement-breakpoint
 CREATE TABLE "skill_entitlements" (
 	"skill_id" text NOT NULL,
 	"user_id" text NOT NULL,
@@ -157,7 +158,6 @@ ALTER TABLE "skill_usage_events" ADD CONSTRAINT "skill_usage_events_skill_revisi
 ALTER TABLE "skill_usage_events" ADD CONSTRAINT "skill_usage_events_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "skill_usage_events" ADD CONSTRAINT "skill_usage_events_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "skill_usage_events" ADD CONSTRAINT "skill_usage_events_session_id_agent_runtime_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."agent_runtime_sessions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_agent_skills_agent_skill" ON "agent_skills" USING btree ("agent_id","skill_id");--> statement-breakpoint
 CREATE INDEX "idx_agent_skills_skill_revision_id" ON "agent_skills" USING btree ("skill_revision_id");--> statement-breakpoint
 CREATE INDEX "idx_agent_skills_agent_id" ON "agent_skills" USING btree ("agent_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_skill_entitlements_skill_user" ON "skill_entitlements" USING btree ("skill_id","user_id");--> statement-breakpoint

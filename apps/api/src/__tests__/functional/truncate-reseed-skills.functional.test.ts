@@ -55,7 +55,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(skill).toBeDefined();
     expect(skill!.id).toBe('bot-management');
     expect(skill!.authorId).toBeNull();
-    expect(skill!.visibility).toBe('public');
+    expect(skill!.publicationStatus).toBe('published');
     expect(skill!.instructions).toBe(BOT_MANAGEMENT_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
@@ -96,7 +96,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(skill).toBeDefined();
     expect(skill!.id).toBe('trading');
     expect(skill!.authorId).toBeNull();
-    expect(skill!.visibility).toBe('public');
+    expect(skill!.publicationStatus).toBe('published');
     expect(skill!.instructions).toBe(TRADING_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];
@@ -137,7 +137,7 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(skill).toBeDefined();
     expect(skill!.id).toBe('risk-monitoring');
     expect(skill!.authorId).toBeNull();
-    expect(skill!.visibility).toBe('public');
+    expect(skill!.publicationStatus).toBe('published');
     expect(skill!.instructions).toBe(RISK_MONITORING_SKILL.instructions);
 
     const tools = skill!.requiredTools as string[];

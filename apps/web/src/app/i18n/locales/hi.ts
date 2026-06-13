@@ -162,6 +162,7 @@ export const messages: Record<string, string> = {
   'common.remove': 'हटाएं',
   'common.saveChanges': 'परिवर्तन सहेजें',
   'common.state': 'स्थिति',
+  'common.status': 'स्थिति',
   'common.binding': 'बाइंडिंग',
   'common.unlimited': 'असीमित',
   'common.updated': 'अपडेट किया गया',

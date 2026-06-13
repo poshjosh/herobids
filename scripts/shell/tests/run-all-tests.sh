@@ -209,7 +209,8 @@ if [[ "${RUN_E2E}" == "true" ]]; then
 INSERT INTO "skills" (
   "id", "author_id", "name", "description", "instructions",
   "required_tools", "context_requirements", "required_guardrails",
-  "capability_families", "suggested_tick_interval_ms", "visibility", "tags",
+  "capability_families", "suggested_tick_interval_ms", "publication_status",
+  "current_revision_id", "price_cents", "auto_published_by_plan", "tags",
   "created_at", "updated_at"
 ) VALUES
   (
@@ -230,7 +231,7 @@ INSERT INTO "skills" (
     ARRAY['create_bot', 'stop_bot', 'start_bot', 'adjust_bot_config', 'list_bots', 'get_bot_status', 'get_analytics', 'list_positions', 'send_message'],
     ARRAY['bot_statuses', 'positions', 'costs'],
     ARRAY['token-budget', 'daily-loss', 'bot-limit'],
-    ARRAY['trading'], 900000, 'public', ARRAY[]::text[], now(), now()
+    ARRAY['trading'], 900000, 'published', 'bot-management:system:1', 0, false, ARRAY[]::text[], now(), now()
   ),
   (
     'trading', NULL,
@@ -251,7 +252,7 @@ INSERT INTO "skills" (
     ARRAY['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
     ARRAY['positions', 'fills', 'analytics', 'costs'],
     ARRAY['token-budget', 'daily-loss'],
-    ARRAY['trading'], 300000, 'public', ARRAY[]::text[], now(), now()
+    ARRAY['trading'], 300000, 'published', 'trading:system:1', 0, false, ARRAY[]::text[], now(), now()
   ),
   (
     'risk-monitoring', NULL,
@@ -268,7 +269,7 @@ INSERT INTO "skills" (
     ARRAY['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
     ARRAY['positions', 'fills', 'analytics'],
     ARRAY['token-budget', 'daily-loss'],
-    ARRAY['trading'], 300000, 'public', ARRAY[]::text[], now(), now()
+    ARRAY['trading'], 300000, 'published', 'risk-monitoring:system:1', 0, false, ARRAY[]::text[], now(), now()
   ),
   (
     'programming', NULL,
@@ -282,7 +283,7 @@ INSERT INTO "skills" (
     ARRAY['execute_code', 'send_message', 'publish_artifact'],
     ARRAY['costs', 'session_elapsed'],
     ARRAY['token-budget'],
-    ARRAY[]::text[], 900000, 'public', ARRAY[]::text[], now(), now()
+    ARRAY[]::text[], 900000, 'published', 'programming:system:1', 0, false, ARRAY[]::text[], now(), now()
   ),
   (
     'web-access', NULL,
@@ -298,7 +299,7 @@ INSERT INTO "skills" (
     ARRAY['search_web', 'browse_url', 'read_document', 'send_message', 'publish_artifact'],
     ARRAY['costs', 'session_elapsed'],
     ARRAY['token-budget'],
-    ARRAY[]::text[], 900000, 'public', ARRAY[]::text[], now(), now()
+    ARRAY[]::text[], 900000, 'published', 'web-access:system:1', 0, false, ARRAY[]::text[], now(), now()
   ),
   (
     'task-management', NULL,
@@ -313,7 +314,7 @@ INSERT INTO "skills" (
     ARRAY['create_task', 'list_tasks', 'complete_task', 'schedule_reminder'],
     ARRAY['costs', 'session_elapsed'],
     ARRAY['token-budget'],
-    ARRAY[]::text[], 900000, 'public', ARRAY[]::text[], now(), now()
+    ARRAY[]::text[], 900000, 'published', 'task-management:system:1', 0, false, ARRAY[]::text[], now(), now()
   )
 ON CONFLICT ("id") DO UPDATE SET
   "name"                       = EXCLUDED."name",
@@ -324,9 +325,35 @@ ON CONFLICT ("id") DO UPDATE SET
   "required_guardrails"        = EXCLUDED."required_guardrails",
   "capability_families"        = EXCLUDED."capability_families",
   "suggested_tick_interval_ms" = EXCLUDED."suggested_tick_interval_ms",
-  "visibility"                 = EXCLUDED."visibility",
+  "publication_status"         = EXCLUDED."publication_status",
+  "current_revision_id"        = EXCLUDED."current_revision_id",
   "updated_at"                 = now()
 WHERE "skills"."author_id" IS NULL;
+
+DELETE FROM "skill_revisions"
+WHERE "skill_id" IN (SELECT "id" FROM "skills" WHERE "author_id" IS NULL)
+  AND "id" NOT LIKE '%:system:%';
+
+INSERT INTO "skill_revisions" (
+  "id", "skill_id", "version", "name", "description", "instructions",
+  "required_tools", "context_requirements", "required_guardrails",
+  "capability_families", "suggested_tick_interval_ms", "tags",
+  "change_summary", "created_by_user_id", "created_at"
+)
+SELECT
+  (s."id" || ':system:1') AS "id",
+  s."id" AS "skill_id",
+  1 AS "version",
+  s."name", s."description", s."instructions",
+  s."required_tools", s."context_requirements", s."required_guardrails",
+  s."capability_families", s."suggested_tick_interval_ms",
+  COALESCE(s."tags", '{}'::text[]) AS "tags",
+  'reseed' AS "change_summary",
+  NULL AS "created_by_user_id",
+  COALESCE(s."created_at", now()) AS "created_at"
+FROM "skills" s
+WHERE s."author_id" IS NULL
+ON CONFLICT ("id") DO NOTHING;
 PSQL
 fi
 

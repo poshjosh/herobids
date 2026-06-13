@@ -54,7 +54,7 @@ export class UsageBillingService {
   private accountLoaded = false;
 
   constructor(
-    private readonly db: Database,
+    db: Database,
     private readonly config: UsageBillingServiceConfig,
   ) {
     this.repo = new UsageBillingRepository(db);
