@@ -57,6 +57,13 @@
       "when": 1781268389787,
       "tag": "0007_nosy_catseye",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781330327078,
+      "tag": "0008_agent_usage_billing",
+      "breakpoints": true
     }
   ]
 }

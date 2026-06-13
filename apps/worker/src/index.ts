@@ -10,7 +10,7 @@ import type { TradingActorDeps } from './trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, bots, venueAccounts, userCredentials, users } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, bots, venueAccounts, userCredentials, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
@@ -366,6 +366,9 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
       logger.error({ err, agentId }, 'Failed to publish agent status event');
     });
   },
+  usageBillingRepo: appConfig.usageBilling?.enabled ? new UsageBillingRepository(db) : undefined,
+  plansConfig: appConfig.plans,
+  usageBillingConfig: appConfig.usageBilling,
 }, agentReconnectHandler, platformAlerts);
 
 // Queue used by the broker callback to enqueue bot start jobs

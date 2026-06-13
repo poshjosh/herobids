@@ -35,7 +35,8 @@ export type NormalizedEventType =
   | 'subscription.created'
   | 'subscription.updated'
   | 'subscription.canceled'
-  | 'payment.failed';
+  | 'payment.failed'
+  | 'top_up.completed';
 
 export interface NormalizedWebhookEvent {
   id: string;

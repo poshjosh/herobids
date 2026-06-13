@@ -190,6 +190,10 @@ export class DockerAgentManager {
       ...(process.env['LLM_API_KEY_OPENAI'] ? [`LLM_API_KEY_OPENAI=${process.env['LLM_API_KEY_OPENAI']}`] : []),
       // Tavily API key for search_web tool — optional; tool handles missing key gracefully
       ...(process.env['TAVILY_API_KEY'] ? [`TAVILY_API_KEY=${process.env['TAVILY_API_KEY']}`] : []),
+      // Usage billing — forwarded to agent containers so they can record LLM events
+      ...(process.env['USAGE_BILLING_ENABLED'] ? [`USAGE_BILLING_ENABLED=${process.env['USAGE_BILLING_ENABLED']}`] : []),
+      ...(process.env['USAGE_BILLING_RATE_CARD'] ? [`USAGE_BILLING_RATE_CARD=${process.env['USAGE_BILLING_RATE_CARD']}`] : []),
+      ...(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ? [`USAGE_BILLING_RUNTIME_WINDOW_MS=${process.env['USAGE_BILLING_RUNTIME_WINDOW_MS']}`] : []),
     ];
 
     const body = {

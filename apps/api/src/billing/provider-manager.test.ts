@@ -1,4 +1,58 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { BillingProvider } from '@herobids/domain';
+import type { PaymentProvider, CheckoutParams, PortalParams, NormalizedWebhookEvent } from './provider-port.js';
+import { PaymentProviderManager } from './provider-manager.js';
+
+function stubProvider(name: BillingProvider): PaymentProvider {
+  return {
+    name,
+    createCheckoutUrl: async (params: CheckoutParams) => `checkout:${name}:${params.planId}`,
+    createPortalUrl: async (params: PortalParams) => `portal:${name}:${params.customerId}`,
+    cancelSubscription: async () => undefined,
+    upgradeSubscription: async () => undefined,
+    verifyWebhook: (_payload: string, _headers: Record<string, string>): NormalizedWebhookEvent => ({
+      id: `evt_${name}`,
+      type: 'subscription.created',
+      provider: name,
+      subscriptionId: `sub_${name}`,
+      customerId: `cus_${name}`,
+      productOrPriceId: `price_${name}`,
+      status: 'active',
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-06-13T00:00:00.000Z'),
+    }),
+  };
+}
+
+describe('PaymentProviderManager', () => {
+  it('routes checkout through any configured provider', async () => {
+    const primary = stubProvider('mock');
+    const fallback = stubProvider('stripe');
+    const extra = stubProvider('creem');
+    const manager = new PaymentProviderManager(primary, fallback, new Map([
+      ['mock', primary],
+      ['stripe', fallback],
+      ['creem', extra],
+    ]));
+
+    const result = await manager.createCheckoutUrlViaProvider({
+      userId: 'user-1',
+      email: 'user@example.com',
+      planId: 'top_up_starter_500',
+      priceId: 'creem_pack_starter_500',
+      successUrl: 'https://success.example',
+      cancelUrl: 'https://cancel.example',
+      metadata: {},
+    }, 'creem');
+
+    expect(result).toEqual({ url: 'checkout:creem:top_up_starter_500', provider: 'creem' });
+  });
+});import { describe, it, expect, vi } from 'vitest';
 import { PaymentProviderManager } from './provider-manager.js';
 import { ProviderUnavailableError } from './provider-port.js';
 import type { PaymentProvider, NormalizedWebhookEvent } from './provider-port.js';

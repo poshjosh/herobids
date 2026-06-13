@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Agent usage billing (2026-06-13): added usage metering, spend caps, included credits, top-up credits, and worker-side billing enforcement for LLM and runtime usage.
+
+- Commercial usage ledger (2026-06-13): added billing usage summary, event, breakdown, and period views on the existing billing surface, separate from trading fill history.
+
 - DB-driven admin access (2026-06-12): `users.is_admin` now controls admin access, with promote/demote endpoints and plan-limit bypass for admins.
 
 - Programming skill parity (2026-06-12): `execute_code` now supports JavaScript and Python with `npm`/`pip` dependency installation; added a separate `file-management` skill for workspace file manipulation (`read_file`, `write_file`, `list_files`, `delete_file`); agents can persist files across ticks within the same runtime.

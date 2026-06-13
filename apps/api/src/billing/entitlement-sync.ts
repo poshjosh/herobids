@@ -1,5 +1,6 @@
-import type { BillingConfig } from '@herobids/domain';
+import type { BillingConfig, PlansConfig } from '@herobids/domain';
 import type { BillingRepository } from '@herobids/db';
+import { UsageBillingRepository } from '@herobids/db';
 import type { NormalizedWebhookEvent } from './provider-port.js';
 
 /**
@@ -16,6 +17,9 @@ export class EntitlementSync {
     private readonly billingRepo: BillingRepository,
     private readonly config: BillingConfig,
     private readonly defaultPlanId: string,
+    private readonly usageBillingRepo?: UsageBillingRepository,
+    private readonly defaultRateCardName?: string,
+    private readonly plansConfig?: PlansConfig,
   ) {}
 
   /**
@@ -50,9 +54,65 @@ export class EntitlementSync {
       case 'subscription.canceled':
       case 'payment.failed':
         return this.handleSubscriptionChange(event);
+      case 'top_up.completed':
+        return this.handleTopUpCompleted(event);
       default:
         return false;
     }
+  }
+
+  private async handleTopUpCompleted(event: NormalizedWebhookEvent): Promise<boolean> {
+    if (!this.usageBillingRepo) {
+      return false;
+    }
+
+    const userId = event.metadata['referenceId'] ?? event.metadata['herobidsUserId'];
+    const centsRaw = event.metadata['topUpCents'];
+    const topUpCents = centsRaw ? Number.parseInt(centsRaw, 10) : Number.NaN;
+    if (!userId || !Number.isFinite(topUpCents) || topUpCents <= 0) {
+      throw new Error(`Invalid top-up webhook metadata for event ${event.id}`);
+    }
+
+    const planId = await this.usageBillingRepo.getUserPlanId(userId) ?? this.defaultPlanId;
+    const planUsage = this.plansConfig?.plans[planId]?.usage;
+    const planSoftCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;
+    const planHardCapMicrousd = planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null;
+
+    const existingAccount = await this.usageBillingRepo.getAccountByUserId(userId);
+    const account = await this.usageBillingRepo.getOrCreateBillingAccountForUser(userId, planId, {
+      softCapMicrousd: existingAccount?.softCapMicrousd ?? planSoftCapMicrousd,
+      hardCapMicrousd: existingAccount?.hardCapMicrousd ?? planHardCapMicrousd,
+    });
+
+    const rateCardName = this.defaultRateCardName ?? 'default';
+    const activeRateCard = await this.usageBillingRepo.ensureActiveRateCard(rateCardName);
+
+    const accountPlanUsage = this.plansConfig?.plans[account.activePlanId]?.usage;
+    const includedCreditMicrousd = (accountPlanUsage?.includedCreditCents ?? 0) * 10_000;
+    const effectiveSoftCapMicrousd = account.softCapMicrousd ?? planSoftCapMicrousd;
+    const effectiveHardCapMicrousd = account.hardCapMicrousd ?? planHardCapMicrousd;
+
+    const period = await this.usageBillingRepo.getOrCreateOpenPeriod(
+      account.id,
+      new Date(),
+      account.activePlanId,
+      activeRateCard.id,
+      includedCreditMicrousd,
+      effectiveSoftCapMicrousd,
+      effectiveHardCapMicrousd,
+    );
+
+    await this.usageBillingRepo.openTopUpCreditFromWebhook({
+      accountId: account.id,
+      periodId: period.id,
+      amountMicrousd: topUpCents * 10_000,
+      sourceId: `${event.provider}:${event.id}`,
+      description: event.metadata['topUpPackId']
+        ? `Credit top-up (${event.metadata['topUpPackId']})`
+        : 'Credit top-up',
+    });
+    await this.usageBillingRepo.recomputeSpendState(account.id);
+    return true;
   }
 
   private async handleSubscriptionChange(event: NormalizedWebhookEvent): Promise<boolean> {

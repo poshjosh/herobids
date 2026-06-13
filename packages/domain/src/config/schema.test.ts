@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
+  UsageBillingConfigSchema,
   BotConfigSchema,
   PublicStreamConfigSchema,
   MarkingConfigSchema,
@@ -8,6 +9,42 @@ import {
   MomentumParamsSchema,
   LlmParamsSchema,
 } from './schema.js';
+
+describe('UsageBillingConfigSchema', () => {
+  it('rejects unknown provider keys in top-up mappings', () => {
+    expect(() => UsageBillingConfigSchema.parse({
+      topUpProductsByProvider: {
+        unknown: [
+          { packId: 'starter_500', externalId: 'external_1', cents: 500 },
+        ],
+      },
+    })).toThrow();
+  });
+
+  it('rejects duplicate pack IDs across providers', () => {
+    expect(() => UsageBillingConfigSchema.parse({
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'price_1', cents: 500 },
+        ],
+        creem: [
+          { packId: 'starter_500', externalId: 'product_1', cents: 500 },
+        ],
+      },
+    })).toThrow();
+  });
+
+  it('rejects duplicate pack IDs within a single provider', () => {
+    expect(() => UsageBillingConfigSchema.parse({
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'price_1', cents: 500 },
+          { packId: 'starter_500', externalId: 'price_2', cents: 750 },
+        ],
+      },
+    })).toThrow();
+  });
+});
 
 describe('BotConfigSchema', () => {
   const validBase = {

@@ -48,6 +48,8 @@ export interface LlmRequest {
 }
 
 export interface LlmResponse {
+  /** Provider response identifier when available */
+  responseId?: string;
   content: string;
   toolCalls: LlmToolCall[];
   model: string;
@@ -55,7 +57,12 @@ export interface LlmResponse {
   tokensUsed: number;
   latencyMs: number;
   cached: boolean;
+  /** Thinking / reasoning tokens (Anthropic extended thinking or OpenAI reasoning) */
   thinkingTokens?: number;
+  /** Input (prompt) tokens, when reported separately by the provider */
+  inputTokens?: number;
+  /** Output (completion) tokens, when reported separately by the provider */
+  outputTokens?: number;
 }
 
 export interface LlmProviderError {
@@ -158,6 +165,7 @@ async function callOpenAiCompatibleProvider(
     }
 
     const data = await response.json() as {
+      id?: string;
       choices?: Array<{
         message?: {
           content?: string | null;
@@ -170,7 +178,7 @@ async function callOpenAiCompatibleProvider(
           }>;
         };
       }>;
-      usage?: { total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number } };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number } };
       model?: string;
     };
 
@@ -185,6 +193,7 @@ async function callOpenAiCompatibleProvider(
     return {
       ok: true,
       data: {
+        responseId: data.id,
         content,
         toolCalls,
         model: data.model ?? config.model,
@@ -193,6 +202,8 @@ async function callOpenAiCompatibleProvider(
         latencyMs: Date.now() - startMs,
         cached: false,
         thinkingTokens: data.usage?.output_tokens_details?.reasoning_tokens ?? 0,
+        inputTokens: data.usage?.prompt_tokens,
+        outputTokens: data.usage?.completion_tokens,
       },
     };
   } catch (err) {
@@ -291,6 +302,7 @@ async function callAnthropicProvider(
     }
 
     const data = await response.json() as {
+      id?: string;
       content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>;
       usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number };
       model?: string;
@@ -315,6 +327,7 @@ async function callAnthropicProvider(
     return {
       ok: true,
       data: {
+        responseId: data.id,
         content,
         toolCalls,
         model: data.model ?? config.model,
@@ -323,6 +336,8 @@ async function callAnthropicProvider(
         latencyMs: Date.now() - startMs,
         cached: false,
         thinkingTokens: data.usage?.thinking_tokens ?? 0,
+        inputTokens,
+        outputTokens,
       },
     };
   } catch (err) {

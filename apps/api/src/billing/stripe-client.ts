@@ -36,13 +36,14 @@ export class StripeClient {
   async createCheckoutSession(params: {
     customerId: string;
     priceId: string;
+    mode?: 'subscription' | 'payment';
     successUrl: string;
     cancelUrl: string;
     metadata?: Record<string, string>;
   }): Promise<StripeCheckoutSession> {
     const body = new URLSearchParams();
     body.set('customer', params.customerId);
-    body.set('mode', 'subscription');
+    body.set('mode', params.mode ?? 'subscription');
     body.set('line_items[0][price]', params.priceId);
     body.set('line_items[0][quantity]', '1');
     body.set('success_url', params.successUrl);

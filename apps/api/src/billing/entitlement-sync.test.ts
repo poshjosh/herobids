@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { resolvePlanIdFromPriceId, resolvePlanIdFromProductId } from './entitlement-sync.js';
-import type { BillingConfig } from '@herobids/domain';
+import { describe, it, expect, vi } from 'vitest';
+import { resolvePlanIdFromPriceId, resolvePlanIdFromProductId, EntitlementSync } from './entitlement-sync.js';
+import { PlansConfigSchema, type BillingConfig } from '@herobids/domain';
+import type { BillingRepository, UsageBillingRepository } from '@herobids/db';
+import type { NormalizedWebhookEvent } from './provider-port.js';
 
 function makeBillingConfig(overrides: Partial<BillingConfig> = {}): BillingConfig {
   return {
@@ -79,5 +81,180 @@ describe('resolvePlanIdFromProductId', () => {
 
   it('returns null for empty product ID', () => {
     expect(resolvePlanIdFromProductId(config, '')).toBeNull();
+  });
+});
+
+describe('EntitlementSync top-up events', () => {
+  function makeTopUpEvent(overrides: Partial<NormalizedWebhookEvent> = {}): NormalizedWebhookEvent {
+    return {
+      id: 'evt_topup_1',
+      type: 'top_up.completed',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_1',
+      status: 'succeeded',
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {
+        referenceId: 'user-1',
+        topUpCents: '500',
+        topUpPackId: 'starter_500',
+      },
+      createdAt: new Date('2026-06-13T00:00:00.000Z'),
+      ...overrides,
+    };
+  }
+
+  it('credits usage account and records event as processed', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const usageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(null),
+      getUserPlanId: vi.fn().mockResolvedValue('pro'),
+      getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'pro',
+        softCapMicrousd: null,
+        hardCapMicrousd: null,
+      }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      openTopUpCreditFromWebhook: vi.fn().mockResolvedValue(undefined),
+      recomputeSpendState: vi.fn().mockResolvedValue(undefined),
+    } as unknown as UsageBillingRepository;
+
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'free',
+      plans: {
+        pro: {
+          usage: {
+            includedCreditCents: 250,
+            softCapCents: 300,
+            hardCapCents: 500,
+          },
+        },
+      },
+    });
+
+    const sync = new EntitlementSync(billingRepo, makeBillingConfig(), 'free', usageBillingRepo, 'default', plansConfig);
+    const result = await sync.processEvent(makeTopUpEvent());
+
+    expect(result).toEqual({ processed: true });
+    expect(usageBillingRepo.ensureActiveRateCard).toHaveBeenCalledWith('default');
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
+      softCapMicrousd: 3_000_000,
+      hardCapMicrousd: 5_000_000,
+    });
+    expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
+      'acc_user_1',
+      expect.any(Date),
+      'pro',
+      'rc_default_v1',
+      2_500_000,
+      3_000_000,
+      5_000_000,
+    );
+    expect(usageBillingRepo.openTopUpCreditFromWebhook).toHaveBeenCalledWith({
+      accountId: 'acc_user_1',
+      periodId: 'period_1',
+      amountMicrousd: 5_000_000,
+      sourceId: 'stripe:evt_topup_1',
+      description: 'Credit top-up (starter_500)',
+    });
+    expect(billingRepo.recordEventProcessed).toHaveBeenCalledWith('stripe:evt_topup_1', 'stripe.top_up.completed');
+  });
+
+  it('records failed event when top-up metadata is invalid', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const usageBillingRepo = {
+      getAccountByUserId: vi.fn(),
+      getUserPlanId: vi.fn(),
+      getOrCreateBillingAccountForUser: vi.fn(),
+      ensureActiveRateCard: vi.fn(),
+      getOrCreateOpenPeriod: vi.fn(),
+      openTopUpCreditFromWebhook: vi.fn(),
+      recomputeSpendState: vi.fn(),
+    } as unknown as UsageBillingRepository;
+
+    const sync = new EntitlementSync(billingRepo, makeBillingConfig(), 'free', usageBillingRepo, 'default');
+    const result = await sync.processEvent(makeTopUpEvent({ metadata: { referenceId: 'user-1', topUpCents: 'NaN' } }));
+
+    expect(result.processed).toBe(false);
+    expect(result.error).toContain('Invalid top-up webhook metadata');
+    expect(billingRepo.recordEventFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles an existing billing account to the current plan before applying a top-up', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const existingAccount = {
+      id: 'acc_user_1',
+      activePlanId: 'free',
+      softCapMicrousd: null,
+      hardCapMicrousd: null,
+    };
+
+    const usageBillingRepo = {
+      getAccountByUserId: vi.fn().mockResolvedValue(existingAccount),
+      getUserPlanId: vi.fn().mockResolvedValue('pro'),
+      getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'pro',
+        softCapMicrousd: 3_000_000,
+        hardCapMicrousd: 5_000_000,
+      }),
+      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
+      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
+      openTopUpCreditFromWebhook: vi.fn().mockResolvedValue(undefined),
+      recomputeSpendState: vi.fn().mockResolvedValue(undefined),
+    } as unknown as UsageBillingRepository;
+
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'free',
+      plans: {
+        pro: {
+          usage: {
+            includedCreditCents: 250,
+            softCapCents: 300,
+            hardCapCents: 500,
+          },
+        },
+      },
+    });
+
+    const sync = new EntitlementSync(billingRepo, makeBillingConfig(), 'free', usageBillingRepo, 'default', plansConfig);
+    const result = await sync.processEvent(makeTopUpEvent());
+
+    expect(result).toEqual({ processed: true });
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
+      softCapMicrousd: 3_000_000,
+      hardCapMicrousd: 5_000_000,
+    });
+    expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
+      'acc_user_1',
+      expect.any(Date),
+      'pro',
+      'rc_default_v1',
+      2_500_000,
+      3_000_000,
+      5_000_000,
+    );
   });
 });

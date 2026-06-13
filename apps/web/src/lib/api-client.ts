@@ -497,7 +497,132 @@ export const billing = {
       method: 'POST',
       body: JSON.stringify({ planId, priceId }),
     }),
+  usageSummary: () => request<UsageSummaryResponse>('/billing/usage-summary'),
+  usageEvents: (filters: UsageEventFilters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.limit != null) params.set('limit', String(filters.limit));
+    if (filters.offset != null) params.set('offset', String(filters.offset));
+    if (filters.meterKey) params.set('meterKey', filters.meterKey);
+    if (filters.agentId) params.set('agentId', filters.agentId);
+    if (filters.sessionId) params.set('sessionId', filters.sessionId);
+    if (filters.periodId) params.set('periodId', filters.periodId);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    const qs = params.toString();
+    return request<UsageEventsResponse>(`/billing/usage-events${qs ? `?${qs}` : ''}`);
+  },
+  usageBreakdown: (filters: UsageBreakdownFilters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.periodId) params.set('periodId', filters.periodId);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    const qs = params.toString();
+    return request<UsageBreakdownResponse>(`/billing/usage-breakdown${qs ? `?${qs}` : ''}`);
+  },
+  periods: () => request<UsagePeriodsResponse>('/billing/periods'),
+  updateSpendCaps: (caps: { softCapCents?: number | null; hardCapCents?: number | null }) =>
+    request<{ success: boolean; status: UsageBillingAccount['status'] }>('/billing/spend-caps', {
+      method: 'POST',
+      body: JSON.stringify(caps),
+    }),
+  createTopUpCheckoutSession: (packId: string) =>
+    request<{ url: string; provider: string }>('/billing/top-up-checkout-session', {
+      method: 'POST',
+      body: JSON.stringify({ packId }),
+    }),
 };
+
+export interface UsageBillingAccount {
+  id: string;
+  status: 'active' | 'soft_limited' | 'hard_limited' | 'suspended';
+  currency: string;
+  activePlanId: string;
+}
+
+export interface UsagePeriodSummary {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  includedCreditMicrousd: number;
+  usageChargeMicrousd: number;
+  creditAppliedMicrousd: number;
+  balanceMicrousd: number;
+  softCapMicrousd: number | null;
+  hardCapMicrousd: number | null;
+}
+
+export interface UsageWarning {
+  thresholdPct: number;
+  reached: boolean;
+}
+
+export interface UsageSummaryResponse {
+  account: UsageBillingAccount | null;
+  currentPeriod: UsagePeriodSummary | null;
+  warnings: UsageWarning[];
+  topUpsEnabled?: boolean;
+  topUpPacks?: Array<{ provider: string; packId: string; cents: number }>;
+  byMeter: Record<string, { quantity: number; chargeMicrousd: number }>;
+}
+
+export interface UsageEventRecord {
+  id: string;
+  occurredAt: string;
+  meterKey: string;
+  quantity: number;
+  unit: string;
+  chargeMicrousd: number;
+  currency: string;
+  provider: string | null;
+  model: string | null;
+  metadata: Record<string, unknown>;
+  agent: { id: string; name: string } | null;
+  session: { id: string; status: string | null } | null;
+}
+
+export interface UsageEventFilters {
+  limit?: number;
+  offset?: number;
+  meterKey?: string;
+  agentId?: string;
+  sessionId?: string;
+  periodId?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface UsageEventsResponse {
+  records: UsageEventRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface UsageBreakdownFilters {
+  periodId?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface UsageBreakdownResponse {
+  byAgent: Array<{ agentId: string; agentName: string; quantity: number; chargeMicrousd: number }>;
+  byMeter: Array<{ meterKey: string; quantity: number; chargeMicrousd: number }>;
+  bySkill: Array<{ skillId: string; quantity: number }>;
+}
+
+export interface UsagePeriod {
+  id: string;
+  status: string;
+  periodStart: string;
+  periodEnd: string;
+  usageChargeMicrousd: number;
+  includedCreditMicrousd: number;
+  balanceMicrousd: number;
+}
+
+export interface UsagePeriodsResponse {
+  periods: UsagePeriod[];
+}
 
 // --- Agents ---
 

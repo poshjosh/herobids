@@ -126,4 +126,32 @@ export class MockProvider implements PaymentProvider {
       createdAt: now,
     };
   }
+
+  createSyntheticTopUpEvent(params: {
+    userId: string;
+    packId: string;
+    cents: number;
+  }): NormalizedWebhookEvent {
+    return {
+      id: `mock_evt_${crypto.randomUUID()}`,
+      type: 'top_up.completed',
+      provider: 'mock',
+      subscriptionId: '',
+      customerId: `mock_cus_${params.userId}`,
+      productOrPriceId: params.packId,
+      status: 'paid',
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {
+        referenceId: params.userId,
+        topUpPackId: params.packId,
+        topUpCents: String(params.cents),
+        checkoutKind: 'top_up',
+      },
+      createdAt: new Date(),
+    };
+  }
 }

@@ -340,6 +340,10 @@ plans:
       maxConcurrentBacktests: 3
       maxAgents: 5
       liveEnabled: false
+      usage:
+        includedCreditCents: 0
+        topUpsEnabled: false
+        topUpPackIds: []
 
 # Billing — multi-provider subscription billing.
 # Use 'mock' for local dev/CI (no credentials needed — checkout auto-fulfills instantly).
@@ -359,6 +363,16 @@ billing:
     webhookSecret: ""                        # override: CREEM_WEBHOOK_SECRET
     apiBaseUrl: https://api.creem.io/v1      # auto-switches to test-api if key starts with creem_test_
     planProducts: {}                          # map of planId → [{creemProductId, interval, displayLabel, amountCents}]
+
+# Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
+usageBilling:
+  enabled: false                             # master switch for commercial billing enforcement
+  defaultCurrency: USD
+  runtimeChargeWindowMs: 60000              # coarse agent runtime metering window in ms
+  warningThresholdsPct: [50, 80, 100]       # % of hard cap at which to emit spend warnings
+  defaultRateCardName: default              # rate card to use when opening new billing periods
+  creditTopUpsEnabled: false                # whether users can purchase credit top-ups
+  topUpProductsByProvider: {}              # provider → [{packId, externalId, cents}]
 
 # ---------------------------------------------------------------------------
 # Env-only overrides — read directly from process.env, not part of AppConfigSchema

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import type { BillingConfig, BillingProvider, PlansConfig } from '@herobids/domain';
+import type { BillingConfig, BillingProvider, PlansConfig, UsageBillingConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { BillingRepository, users, fills, bots, agents } from '@herobids/db';
+import { BillingRepository, UsageBillingRepository, users, fills, bots, agents, agentRuntimeSessions, billingPeriods } from '@herobids/db';
 import { eq, and, desc, gte, lte, inArray, or, type SQL } from 'drizzle-orm';
 import { createProviderManager } from '../billing/provider-manager.js';
 import { EntitlementSync } from '../billing/entitlement-sync.js';
@@ -29,10 +29,19 @@ export async function billingRoutes(
   billingConfig: BillingConfig,
   plansConfig: PlansConfig,
   db: Database,
+  usageBillingConfig?: UsageBillingConfig,
 ) {
   const billingRepo = new BillingRepository(db);
+  const usageBillingRepo = new UsageBillingRepository(db);
   const providerManager = createProviderManager(billingConfig, billingRepo);
-  const entitlementSync = new EntitlementSync(billingRepo, billingConfig, plansConfig.defaultPlanId);
+  const entitlementSync = new EntitlementSync(
+    billingRepo,
+    billingConfig,
+    plansConfig.defaultPlanId,
+    usageBillingRepo,
+    usageBillingConfig?.defaultRateCardName,
+    plansConfig,
+  );
 
   // -------------------------------------------------------------------------
   // GET /billing/summary — current user's billing state
@@ -450,8 +459,8 @@ export async function billingRoutes(
     });
   });
 
-  // GET /billing/ledger — paginated fill records as cost ledger
-  app.get<{ Querystring: { limit?: string; offset?: string; botId?: string; agentId?: string; from?: string; to?: string } }>('/billing/ledger', async (request, reply) => {
+  // GET /trading/fills — paginated fill records (trading cost ledger; renamed from /billing/ledger)
+  app.get<{ Querystring: { limit?: string; offset?: string; botId?: string; agentId?: string; from?: string; to?: string } }>('/trading/fills', async (request, reply) => {
     const userId = request.userId;
     const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
     const offset = parseInt(request.query.offset ?? '0', 10);
@@ -525,6 +534,441 @@ export async function billingRoutes(
 
     return reply.send({ records, limit, offset });
   });
+
+  // ---------------------------------------------------------------------------
+  // GET /billing/usage-summary — current period headline numbers
+  // ---------------------------------------------------------------------------
+  app.get('/billing/usage-summary', async (request, reply) => {
+    const userId = request.userId;
+
+    const account = await usageBillingRepo.getAccountByUserId(userId);
+    if (!account) {
+      return reply.send({
+        account: null,
+        currentPeriod: null,
+        warnings: [],
+        byMeter: {},
+      });
+    }
+
+    const summary = await usageBillingRepo.getUsageSummary(account.id);
+    const period = summary?.period ?? null;
+    const byMeterRows = period
+      ? await usageBillingRepo.getByMeterBreakdown(account.id, {
+          from: period.periodStart,
+          to: period.periodEnd,
+        })
+      : [];
+
+    const warningThresholds = usageBillingConfig?.warningThresholdsPct ?? [50, 80, 100];
+    const netOutOfPocket = period ? Math.max(0, -period.balanceMicrousd) : 0;
+    const hardCap = period?.hardCapMicrousd;
+    const planUsage = plansConfig.plans[account.activePlanId]?.usage;
+    const allowedPackIds = new Set(planUsage?.topUpPackIds ?? []);
+    const topUpsEnabled = Boolean(planUsage?.topUpsEnabled) && Boolean(usageBillingConfig?.creditTopUpsEnabled);
+    const topUpPacks = topUpsEnabled && usageBillingConfig
+      ? Object.entries(usageBillingConfig.topUpProductsByProvider).flatMap(([provider, packs]) =>
+          providerManager.getProvider(provider as BillingProvider)
+            ? packs
+                .filter((pack) => allowedPackIds.has(pack.packId))
+                .map((pack) => ({
+                  provider,
+                  packId: pack.packId,
+                  cents: pack.cents,
+                }))
+            : [],
+        )
+      : [];
+    const warnings = warningThresholds.map((pct) => ({
+      thresholdPct: pct,
+      reached: hardCap != null ? netOutOfPocket >= (hardCap * pct) / 100 : false,
+    }));
+
+    return reply.send({
+      account: {
+        id: account.id,
+        status: account.status,
+        currency: account.currency,
+        activePlanId: account.activePlanId,
+      },
+      currentPeriod: period
+        ? {
+            id: period.id,
+            periodStart: period.periodStart.toISOString(),
+            periodEnd: period.periodEnd.toISOString(),
+            includedCreditMicrousd: period.includedCreditMicrousd,
+            usageChargeMicrousd: period.usageChargeMicrousd,
+            creditAppliedMicrousd: period.creditAppliedMicrousd,
+            balanceMicrousd: period.balanceMicrousd,
+            softCapMicrousd: period.softCapMicrousd ?? null,
+            hardCapMicrousd: period.hardCapMicrousd ?? null,
+          }
+        : null,
+      warnings,
+      topUpsEnabled,
+      topUpPacks,
+      byMeter: Object.fromEntries(
+        byMeterRows.map((r) => [r.meterKey, { quantity: r.totalQuantity, chargeMicrousd: r.chargeMicrousd }]),
+      ),
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /billing/usage-events — paginated commercial usage events
+  // ---------------------------------------------------------------------------
+  app.get<{
+    Querystring: {
+      limit?: string;
+      offset?: string;
+      meterKey?: string;
+      agentId?: string;
+      sessionId?: string;
+      periodId?: string;
+      from?: string;
+      to?: string;
+    };
+  }>('/billing/usage-events', async (request, reply) => {
+    const userId = request.userId;
+
+    const account = await usageBillingRepo.getAccountByUserId(userId);
+    if (!account) {
+      return reply.send({ records: [], total: 0, limit: 50, offset: 0 });
+    }
+
+    const limitRaw = Number.parseInt(request.query.limit ?? '50', 10);
+    const offsetRaw = Number.parseInt(request.query.offset ?? '0', 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+    const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
+
+    if (request.query.meterKey && !BILLABLE_METER_KEYS.has(request.query.meterKey)) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_meter_key', 'meterKey must be one of the known billable meters', {
+        meterKey: request.query.meterKey,
+      }));
+    }
+
+    const fromDate = parseIsoDate(request.query.from);
+    if (request.query.from && !fromDate) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_from', 'from must be a valid ISO-8601 date-time string'));
+    }
+    const toDate = parseIsoDate(request.query.to);
+    if (request.query.to && !toDate) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_to', 'to must be a valid ISO-8601 date-time string'));
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_range', 'from must be less than or equal to to'));
+    }
+
+    if (request.query.periodId) {
+      const [period] = await db
+        .select({ id: billingPeriods.id })
+        .from(billingPeriods)
+        .where(and(eq(billingPeriods.id, request.query.periodId), eq(billingPeriods.accountId, account.id)))
+        .limit(1);
+      if (!period) {
+        return reply.status(404).send(errorPayload('billing.usage.period_not_found', 'Billing period not found', { periodId: request.query.periodId }));
+      }
+    }
+
+    // Validate agentId ownership
+    if (request.query.agentId) {
+      const [agent] = await db.select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, request.query.agentId), eq(agents.userId, userId)))
+        .limit(1);
+      if (!agent) {
+        return reply.status(404).send(errorPayload('billing.usage.agent_not_found', 'Agent not found', { agentId: request.query.agentId }));
+      }
+    }
+
+    // Validate sessionId ownership (session agent must belong to user)
+    if (request.query.sessionId) {
+      const [session] = await db
+        .select({ id: agentRuntimeSessions.id })
+        .from(agentRuntimeSessions)
+        .innerJoin(agents, eq(agentRuntimeSessions.agentId, agents.id))
+        .where(
+          and(
+            eq(agentRuntimeSessions.id, request.query.sessionId),
+            eq(agents.userId, userId),
+          ),
+        )
+        .limit(1);
+      if (!session) {
+        return reply.status(404).send(errorPayload('billing.usage.session_not_found', 'Session not found', { sessionId: request.query.sessionId }));
+      }
+    }
+
+    const { rows, total } = await usageBillingRepo.listUsageEvents(account.id, {
+      limit,
+      offset,
+      meterKey: request.query.meterKey,
+      agentId: request.query.agentId,
+      sessionId: request.query.sessionId,
+      periodId: request.query.periodId,
+      from: fromDate ?? undefined,
+      to: toDate ?? undefined,
+    });
+
+    return reply.send({
+      records: rows.map((r) => ({
+        id: r.event.id,
+        occurredAt: r.event.occurredAt.toISOString(),
+        meterKey: r.event.meterKey,
+        quantity: r.event.quantity,
+        unit: r.event.unit,
+        chargeMicrousd: r.chargeMicrousd,
+        currency: r.currency,
+        provider: r.event.provider ?? null,
+        model: r.event.model ?? null,
+        metadata: r.event.metadata ?? {},
+        agent: r.event.agentId
+          ? { id: r.event.agentId, name: r.agentName ?? r.event.agentId }
+          : null,
+        session: r.event.sessionId
+          ? { id: r.event.sessionId, status: r.sessionStatus ?? null }
+          : null,
+      })),
+      total,
+      limit,
+      offset,
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /billing/usage-breakdown — spend by agent and by meter
+  // ---------------------------------------------------------------------------
+  app.get<{
+    Querystring: {
+      periodId?: string;
+      from?: string;
+      to?: string;
+    };
+  }>('/billing/usage-breakdown', async (request, reply) => {
+    const userId = request.userId;
+
+    const account = await usageBillingRepo.getAccountByUserId(userId);
+    if (!account) {
+      return reply.send({ byAgent: [], byMeter: [], bySkill: [] });
+    }
+
+    const fromDate = parseIsoDate(request.query.from);
+    if (request.query.from && !fromDate) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_from', 'from must be a valid ISO-8601 date-time string'));
+    }
+    const toDate = parseIsoDate(request.query.to);
+    if (request.query.to && !toDate) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_to', 'to must be a valid ISO-8601 date-time string'));
+    }
+    if (fromDate && toDate && fromDate > toDate) {
+      return reply.status(400).send(errorPayload('billing.usage.invalid_range', 'from must be less than or equal to to'));
+    }
+
+    if (request.query.periodId) {
+      const [period] = await db
+        .select({ id: billingPeriods.id })
+        .from(billingPeriods)
+        .where(and(eq(billingPeriods.id, request.query.periodId), eq(billingPeriods.accountId, account.id)))
+        .limit(1);
+      if (!period) {
+        return reply.status(404).send(errorPayload('billing.usage.period_not_found', 'Billing period not found', { periodId: request.query.periodId }));
+      }
+    }
+
+    const filters = {
+      periodId: request.query.periodId,
+      from: fromDate ?? undefined,
+      to: toDate ?? undefined,
+    };
+
+    const [byAgentRows, byMeterRows] = await Promise.all([
+      usageBillingRepo.getByAgentBreakdown(account.id, filters),
+      usageBillingRepo.getByMeterBreakdown(account.id, filters),
+    ]);
+
+    return reply.send({
+      byAgent: byAgentRows
+        .filter((r) => r.agentId != null)
+        .map((r) => ({
+          agentId: r.agentId,
+          agentName: r.agentName ?? r.agentId,
+          quantity: r.totalQuantity,
+          chargeMicrousd: r.chargeMicrousd,
+        })),
+      byMeter: byMeterRows.map((r) => ({
+        meterKey: r.meterKey,
+        quantity: r.totalQuantity,
+        chargeMicrousd: r.chargeMicrousd,
+      })),
+      bySkill: [],
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /billing/periods — current and historical billing periods
+  // ---------------------------------------------------------------------------
+  app.get('/billing/periods', async (request, reply) => {
+    const userId = request.userId;
+
+    const account = await usageBillingRepo.getAccountByUserId(userId);
+    if (!account) {
+      return reply.send({ periods: [] });
+    }
+
+    const periods = await usageBillingRepo.listPeriods(account.id);
+
+    return reply.send({
+      periods: periods.map((p) => ({
+        id: p.id,
+        status: p.status,
+        periodStart: p.periodStart.toISOString(),
+        periodEnd: p.periodEnd.toISOString(),
+        usageChargeMicrousd: p.usageChargeMicrousd,
+        includedCreditMicrousd: p.includedCreditMicrousd,
+        balanceMicrousd: p.balanceMicrousd,
+      })),
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // POST /billing/spend-caps — set soft and hard spend caps for the account
+  // ---------------------------------------------------------------------------
+  app.post<{ Body: { softCapCents?: number | null; hardCapCents?: number | null } }>(
+    '/billing/spend-caps',
+    async (request, reply) => {
+      const userId = request.userId;
+      const { softCapCents, hardCapCents } = request.body as {
+        softCapCents?: number | null;
+        hardCapCents?: number | null;
+      };
+
+      const account = await usageBillingRepo.getAccountByUserId(userId);
+      if (!account) {
+        return reply.status(404).send(errorPayload('billing.account_not_found', 'Billing account not found'));
+      }
+
+      // Validate caps are non-negative and hardCap >= softCap when both set
+      if (softCapCents != null && softCapCents < 0) {
+        return reply.status(400).send(errorPayload('billing.caps.invalid', 'softCapCents must be non-negative'));
+      }
+      if (hardCapCents != null && hardCapCents < 0) {
+        return reply.status(400).send(errorPayload('billing.caps.invalid', 'hardCapCents must be non-negative'));
+      }
+      if (softCapCents != null && hardCapCents != null && hardCapCents < softCapCents) {
+        return reply.status(400).send(errorPayload('billing.caps.invalid', 'hardCapCents must be greater than or equal to softCapCents'));
+      }
+
+      // Convert cents to microusd (1 cent = 10_000 microusd)
+      await usageBillingRepo.setSpendCaps(account.id, {
+        softCapMicrousd: softCapCents != null ? softCapCents * 10_000 : null,
+        hardCapMicrousd: hardCapCents != null ? hardCapCents * 10_000 : null,
+      });
+      const status = await usageBillingRepo.recomputeSpendState(account.id);
+
+      return reply.send({ success: true, status });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // POST /billing/top-up-checkout-session — purchase a credit top-up pack
+  // ---------------------------------------------------------------------------
+  app.post<{ Body: { packId: string } }>(
+    '/billing/top-up-checkout-session',
+    async (request, reply) => {
+      if (!usageBillingConfig?.creditTopUpsEnabled) {
+        return reply.status(400).send(errorPayload('billing.top_up.not_enabled', 'Credit top-ups are not enabled'));
+      }
+
+      const { packId } = request.body as { packId?: string };
+      if (!packId || typeof packId !== 'string') {
+        return reply.status(400).send(errorPayload('billing.top_up.pack_id_required', 'packId is required'));
+      }
+
+      const userId = request.userId;
+      const account = await usageBillingRepo.getAccountByUserId(userId);
+      const planId = account?.activePlanId ?? (await usageBillingRepo.getUserPlanId(userId)) ?? plansConfig.defaultPlanId;
+      const planUsage = plansConfig.plans[planId]?.usage;
+      if (!planUsage?.topUpsEnabled) {
+        return reply.status(400).send(errorPayload('billing.top_up_required', 'Top-ups are not enabled for the current plan', { planId }));
+      }
+
+      // Find the pack in operator config
+      let matchedPack: { packId: string; externalId: string; cents: number } | null = null;
+      let matchedProvider: string | null = null;
+      for (const [provider, packs] of Object.entries(usageBillingConfig.topUpProductsByProvider)) {
+        if (!providerManager.getProvider(provider as BillingProvider)) {
+          continue;
+        }
+        const pack = packs.find((p) => p.packId === packId);
+        if (pack) {
+          matchedPack = pack;
+          matchedProvider = provider;
+          break;
+        }
+      }
+
+      if (!matchedPack || !matchedProvider) {
+        return reply.status(400).send(errorPayload('billing.top_up.unknown_pack', 'Unknown top-up pack', { packId }));
+      }
+
+      if (!planUsage.topUpPackIds.includes(packId)) {
+        return reply.status(400).send(errorPayload('billing.top_up.pack_not_allowed_for_plan', 'This top-up pack is not available on the current plan', {
+          packId,
+          planId,
+        }));
+      }
+
+      const [user] = await db
+        .select({ email: users.email, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return reply.status(404).send(errorPayload('billing.user_not_found', 'User not found'));
+      }
+
+      // Create a one-time checkout session for the top-up pack via the matched provider
+      const { url, provider } = await providerManager.createCheckoutUrlViaProvider({
+        userId,
+        email: user.email,
+        planId: `top_up_${packId}`,
+        priceId: matchedPack.externalId,
+        successUrl: billingConfig.checkoutSuccessUrl,
+        cancelUrl: billingConfig.checkoutCancelUrl,
+        metadata: {
+          displayName: user.displayName,
+          topUpPackId: packId,
+          topUpCents: String(matchedPack.cents),
+          checkoutKind: 'top_up',
+        },
+      }, matchedProvider as BillingProvider);
+
+      if (provider === 'mock') {
+        const mockProvider = providerManager.getProvider('mock') as MockProvider;
+        const syntheticTopUpEvent = mockProvider.createSyntheticTopUpEvent({
+          userId,
+          packId,
+          cents: matchedPack.cents,
+        });
+        await entitlementSync.processEvent(syntheticTopUpEvent);
+      }
+
+      return reply.send({ url, provider });
+    },
+  );
+}
+
+const BILLABLE_METER_KEYS = new Set([
+  'llm.input_tokens',
+  'llm.output_tokens',
+  'llm.reasoning_tokens',
+  'agent.runtime_ms',
+]);
+
+function parseIsoDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 // --- Helpers ---

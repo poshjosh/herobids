@@ -8,6 +8,7 @@
     "fund-hyperliquid:dry": "tsx ts/fund-hyperliquid.ts --dry-run",
     "smoke-test": "tsx ts/rollout-smoke-test.ts",
     "seed-admin": "tsx ts/seed-admin.ts",
+    "seed-usage-rate-card": "tsx ts/seed-usage-rate-card.ts",
     "rate-limit-load-test": "tsx ts/rate-limit-load-test.ts",
     "upsert-system-skills": "tsx ts/upsert-system-skills.ts",
     "agent-trade-test": "tsx ts/agent-trade-test.ts"

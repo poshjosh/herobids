@@ -4,9 +4,9 @@ Repeatedly run scripts/shell/tests/agent-trade-test.sh, each run fix anomalies/p
 
 STEPS
 
-1. Shutdown the stack, For example by running command: `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml down`.
+1. Shutdown the stack; for that, this command is recommended: `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml down -v --remove-orphans && docker system prune -f`
 
-2. Start the stack, For example by running command: `scripts/shell/run/build-and-run.sh`.
+2. Start the stack, for that, this command is recommended: `scripts/shell/run/build-and-run.sh`.
 
 3. Read scripts/shell/tests/agent-trade-test.sh to understand the next step, then determine a suitable value for <timeout>, or use 600000.
 
@@ -28,7 +28,11 @@ STEPS
 
    e. Address the code review observations, if any are valid, by making the appropriate code changes.
 
-   f. Goto Step 1.
+   f. Verify that tests pass.
+
+   g. Git add and commit the changes you made, if any. 
+
+   h. Goto Step 1.
 
 8. If there are no observed anomalies/problems, STOP.
 

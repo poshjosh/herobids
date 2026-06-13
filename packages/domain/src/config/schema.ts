@@ -232,6 +232,19 @@ export const AuthConfigSchema = z.object({
   secureCookie: z.boolean().default(false),
 });
 
+export const PlanUsagePackagingSchema = z.object({
+  /** Monthly included credits in cents */
+  includedCreditCents: z.number().int().min(0).default(0),
+  /** Soft spend cap in cents — warn but allow continued usage */
+  softCapCents: z.number().int().min(0).optional(),
+  /** Hard spend cap in cents — block further usage */
+  hardCapCents: z.number().int().min(0).optional(),
+  /** Whether credit top-ups can be purchased on this plan */
+  topUpsEnabled: z.boolean().default(false),
+  /** Credit top-up pack IDs available on this plan */
+  topUpPackIds: z.array(z.string()).default([]),
+});
+
 export const PlansConfigSchema = z.object({
   /** Default plan applied to new users */
   defaultPlanId: z.string().default('free'),
@@ -244,6 +257,8 @@ export const PlansConfigSchema = z.object({
     maxConcurrentBacktests: z.number().min(1).default(3),
     maxAgents: z.number().min(0).default(5),
     liveEnabled: z.boolean().default(false),
+    /** Usage packaging for this plan */
+    usage: PlanUsagePackagingSchema.default({}),
   })).default({
     free: {
       maxPortfolios: 3,
@@ -253,8 +268,65 @@ export const PlansConfigSchema = z.object({
       maxConcurrentBacktests: 3,
       maxAgents: 5,
       liveEnabled: false,
+      usage: {
+        includedCreditCents: 0,
+        topUpsEnabled: false,
+        topUpPackIds: [],
+      },
     },
   }),
+});
+
+export const UsageBillingConfigSchema = z.object({
+  /** Master switch — set false to disable commercial billing (metering still writes for auditing) */
+  enabled: z.boolean().default(false),
+  /** Default currency for all billing accounts */
+  defaultCurrency: z.string().default('USD'),
+  /** Window size in ms for coarse agent runtime metering */
+  runtimeChargeWindowMs: z.number().int().min(1000).default(60_000),
+  /** Spend thresholds (as % of hard cap) at which to emit warnings */
+  warningThresholdsPct: z.array(z.number().int().min(1).max(100)).default([50, 80, 100]),
+  /** Default rate card name to activate when opening new billing periods */
+  defaultRateCardName: z.string().default('default'),
+  /** Whether credit top-up purchases are available globally */
+  creditTopUpsEnabled: z.boolean().default(false),
+  /** Provider top-up product mappings: provider → array of top-up packs */
+  topUpProductsByProvider: z.record(
+    z.enum(['creem', 'stripe', 'mock']),
+    z.array(z.object({
+      packId: z.string().min(1),
+      externalId: z.string().min(1),
+      cents: z.number().int().min(1),
+    })),
+  ).default({}),
+}).superRefine((data, ctx) => {
+  const packIdOwners = new Map<string, string>();
+
+  for (const [provider, packs] of Object.entries(data.topUpProductsByProvider)) {
+    const providerPackIds = new Set<string>();
+    packs.forEach((pack, index) => {
+      if (providerPackIds.has(pack.packId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `topUpProductsByProvider packId '${pack.packId}' must be unique within provider '${provider}'`,
+          path: ['topUpProductsByProvider', provider, index, 'packId'],
+        });
+        return;
+      }
+      providerPackIds.add(pack.packId);
+
+      const existingProvider = packIdOwners.get(pack.packId);
+      if (existingProvider && existingProvider !== provider) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `topUpProductsByProvider packId '${pack.packId}' must be unique across providers (already used by '${existingProvider}')`,
+          path: ['topUpProductsByProvider', provider, index, 'packId'],
+        });
+        return;
+      }
+      packIdOwners.set(pack.packId, provider);
+    });
+  }
 });
 
 export const BillingProviderSchema = z.enum(['creem', 'stripe', 'mock']);
@@ -628,6 +700,7 @@ export const AppConfigSchema = z.object({
   auth: AuthConfigSchema.default({}),
   plans: PlansConfigSchema.default({}),
   billing: BillingConfigSchema.default({}),
+  usageBilling: UsageBillingConfigSchema.default({}),
 }).superRefine((data, ctx) => {
   const oneInchConfig = data.venues['1inch'];
   if (
@@ -776,6 +849,8 @@ export type BillingConfig = z.infer<typeof BillingConfigSchema>;
 export type StripeConfig = z.infer<typeof StripeConfigSchema>;
 export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
+export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
+export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 

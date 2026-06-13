@@ -21,10 +21,11 @@ export class PaymentProviderManager {
   constructor(
     primary: PaymentProvider,
     fallback: PaymentProvider | null,
+    providers?: Map<BillingProvider, PaymentProvider>,
   ) {
     this.primary = primary;
     this.fallback = fallback;
-    this.providers = new Map();
+    this.providers = providers ? new Map(providers) : new Map();
     this.providers.set(primary.name, primary);
     if (fallback) {
       this.providers.set(fallback.name, fallback);
@@ -55,6 +56,19 @@ export class PaymentProviderManager {
       }
       throw err;
     }
+  }
+
+  /**
+   * Create a checkout URL via a specific provider (e.g. for top-up packs defined per-provider).
+   * If the target provider is unavailable, does NOT fall back — the priceId is provider-specific.
+   */
+  async createCheckoutUrlViaProvider(params: CheckoutParams, targetProvider: BillingProvider): Promise<{ url: string; provider: BillingProvider }> {
+    const provider = this.providers.get(targetProvider);
+    if (!provider) {
+      throw new Error(`No provider registered for '${targetProvider}'`);
+    }
+    const url = await provider.createCheckoutUrl(params);
+    return { url, provider: targetProvider };
   }
 
   async createPortalUrl(params: PortalParams, owningProvider: BillingProvider): Promise<string> {
@@ -113,5 +127,5 @@ export function createProviderManager(
     ? providers.get(billingConfig.fallbackProvider) ?? null
     : null;
 
-  return new PaymentProviderManager(primary, fallback);
+  return new PaymentProviderManager(primary, fallback, providers);
 }

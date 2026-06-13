@@ -51,6 +51,7 @@ export class StripeProvider implements PaymentProvider {
       const session = await this.client.createCheckoutSession({
         customerId: customer.externalCustomerId,
         priceId,
+        mode: params.metadata['checkoutKind'] === 'top_up' ? 'payment' : 'subscription',
         successUrl: params.successUrl,
         cancelUrl: params.cancelUrl,
         metadata: {
@@ -131,6 +132,28 @@ export class StripeProvider implements PaymentProvider {
       return this.normalizeInvoiceEvent(event);
     }
 
+    if (event.type === 'checkout.session.completed') {
+      const checkout = event.data.object as unknown as StripeCheckoutWebhook;
+      if (checkout.metadata?.['checkoutKind'] === 'top_up') {
+        return {
+          id: event.id,
+          type: 'top_up.completed',
+          provider: 'stripe',
+          subscriptionId: typeof checkout.subscription === 'string' ? checkout.subscription : '',
+          customerId: typeof checkout.customer === 'string' ? checkout.customer : '',
+          productOrPriceId: checkout.metadata?.['topUpPackId'] ?? '',
+          status: 'paid',
+          currentPeriodStart: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          canceledAt: null,
+          trialEnd: null,
+          metadata: checkout.metadata ?? {},
+          createdAt: new Date(event.created * 1000),
+        };
+      }
+    }
+
     const sub = event.data.object as unknown as StripeSubscription;
     const stripeCustomerId = typeof sub.customer === 'string' ? sub.customer : '';
 
@@ -190,7 +213,17 @@ function mapStripeEventType(eventType: string): NormalizedWebhookEvent['type'] {
       return 'subscription.canceled';
     case 'invoice.payment_failed':
       return 'payment.failed';
+    case 'checkout.session.completed':
+      // Subscription checkout completion is projected via subscription webhook events.
+      // Top-up checkout completion is handled earlier in normalizeEvent().
+      throw new UnknownWebhookEventTypeError(eventType);
     default:
       throw new UnknownWebhookEventTypeError(eventType);
   }
+}
+
+interface StripeCheckoutWebhook {
+  customer?: string;
+  subscription?: string | null;
+  metadata?: Record<string, string>;
 }

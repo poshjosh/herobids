@@ -1,6 +1,14 @@
-import type { MessageEnvelope, HeartbeatPayload, PauseRequestPayload, StopRequestPayload, RuntimeBudgetPolicy } from '@herobids/domain';
+import type {
+  MessageEnvelope,
+  HeartbeatPayload,
+  PauseRequestPayload,
+  StopRequestPayload,
+  RuntimeBudgetPolicy,
+  PlansConfig,
+  UsageBillingConfig,
+} from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
-import type { AgentRepository } from '@herobids/db';
+import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { AgentReconnectHandler } from './agent-reconnect-handler.js';
 import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
@@ -31,6 +39,11 @@ export interface AgentSessionManagerConfig {
    * Used to publish real-time UI events to the user's event channel.
    */
   onAgentStatusChange?: (agentId: string, userId: string, status: string) => void;
+  /** Optional usage billing repo — used to check spend state before session launch */
+  usageBillingRepo?: UsageBillingRepository;
+  /** Optional plan and usage-billing configs — used to apply plan packaging to billing periods */
+  plansConfig?: PlansConfig;
+  usageBillingConfig?: UsageBillingConfig;
 }
 
 /**
@@ -141,6 +154,50 @@ export class AgentSessionManager {
           logger.error({ sessionId: session.id, agentId: session.agentId }, 'Agent not found during session launch — skipping');
           continue;
         }
+        const userPlanIdForEnforcement = this.config.usageBillingRepo
+          ? await this.config.usageBillingRepo.getUserPlanId(agent.userId)
+          : null;
+        const resolvedPlanIdForEnforcement = userPlanIdForEnforcement ?? this.config.plansConfig?.defaultPlanId ?? 'free';
+        const planUsageForEnforcement = this.config.plansConfig?.plans[resolvedPlanIdForEnforcement]?.usage;
+
+        // Session-start billing enforcement: block hard-limited or suspended accounts.
+        if (this.config.usageBillingRepo) {
+          try {
+            const billingAccount = await this.config.usageBillingRepo.getAccountByUserId(agent.userId);
+            if (billingAccount && (billingAccount.status === 'hard_limited' || billingAccount.status === 'suspended')) {
+              const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && Boolean(planUsageForEnforcement?.topUpsEnabled);
+              const code = billingAccount.status === 'suspended'
+                ? 'billing.account_suspended'
+                : (topUpsEnabled ? 'billing.top_up_required' : 'billing.limit_exceeded');
+              const message = billingAccount.status === 'suspended'
+                ? 'Account suspended — agent session start blocked'
+                : (topUpsEnabled
+                  ? 'Usage limit reached — top-up required before agent can start'
+                  : 'Usage limit reached — agent session start blocked');
+
+              logger.warn({ agentId: agent.id, userId: agent.userId, billingStatus: billingAccount.status }, 'Session launch blocked by billing spend state');
+              await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
+              await this.agentRepo.markSessionStopped(session.id, new Date());
+              await this.eventPublisher.emitGuardrailTriggered(agent.id, {
+                scope: 'agent_guardrail',
+                code,
+                message,
+                details: {
+                  sessionId: session.id,
+                  billingStatus: billingAccount.status,
+                },
+              });
+              await this.eventPublisher.emitInstanceStatus(agent.id, {
+                status: 'stopped',
+                reason: code,
+              });
+              continue;
+            }
+          } catch (err) {
+            logger.warn({ err }, 'Failed to check billing spend state before session launch — proceeding');
+          }
+        }
+
         const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id, agent.skillIds ?? []);
         const runtimeDescriptor = buildRuntimeDescriptor({
           agentId: agent.id,
@@ -157,11 +214,45 @@ export class AgentSessionManager {
         });
         const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
         const userModelDefaults = await this.agentRepo.getUserAiModelConfig(agent.userId);
+        const userPlanId = userPlanIdForEnforcement;
+        const resolvedPlanId = userPlanId ?? this.config.plansConfig?.defaultPlanId ?? 'free';
+        const planUsage = this.config.plansConfig?.plans[resolvedPlanId]?.usage;
+
+        if (this.config.usageBillingRepo && this.config.usageBillingConfig?.enabled) {
+          const includedCreditMicrousd = (planUsage?.includedCreditCents ?? 0) * 10_000;
+          const softCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;
+          const hardCapMicrousd = planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null;
+
+          const billingAccount = await this.config.usageBillingRepo.getOrCreateBillingAccountForUser(
+            agent.userId,
+            resolvedPlanId,
+            {
+              softCapMicrousd,
+              hardCapMicrousd,
+            },
+          );
+          const activeRateCard = await this.config.usageBillingRepo.ensureActiveRateCard(this.config.usageBillingConfig.defaultRateCardName);
+          await this.config.usageBillingRepo.getOrCreateOpenPeriod(
+            billingAccount.id,
+            new Date(),
+            resolvedPlanId,
+            activeRateCard.id,
+            includedCreditMicrousd,
+            softCapMicrousd,
+            hardCapMicrousd,
+          );
+        }
+
         const provider = typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : undefined;
         const lightModel = typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : undefined;
         const heavyModel = typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : undefined;
         const agentConfig: Record<string, unknown> = {
           name: agent.name,
+          userId: agent.userId,
+          usageBillingPlanId: resolvedPlanId,
+          usageBillingIncludedCreditMicrousd: (planUsage?.includedCreditCents ?? 0) * 10_000,
+          usageBillingSoftCapMicrousd: planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null,
+          usageBillingHardCapMicrousd: planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null,
           ...(provider ? { provider } : {}),
           ...(lightModel ? { lightModel } : {}),
           ...(heavyModel ? { heavyModel } : {}),

@@ -108,6 +108,24 @@ export class CreemProvider implements PaymentProvider {
 
   private normalizeEvent(event: CreemWebhookPayload): NormalizedWebhookEvent {
     const sub = event.object ?? {};
+    if (event.event_type === 'checkout.completed' && sub.metadata?.['checkoutKind'] === 'top_up') {
+      return {
+        id: event.id ?? crypto.randomUUID(),
+        type: 'top_up.completed',
+        provider: 'creem',
+        subscriptionId: '',
+        customerId: sub.customer_id ?? '',
+        productOrPriceId: sub.product_id ?? '',
+        status: 'paid',
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        trialEnd: null,
+        metadata: sub.metadata ?? {},
+        createdAt: event.created_at ? new Date(event.created_at) : new Date(),
+      };
+    }
     const type = mapCreemEventType(event.event_type);
 
     return {

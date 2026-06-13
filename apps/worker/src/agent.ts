@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES } from '@herobids/domain';
 import { createDatabase, BotRepository } from '@herobids/db';
+import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
@@ -130,6 +131,11 @@ interface AgentConfig {
   telegramChatId?: string;
   runtimeDescriptor?: RuntimeDescriptor;
   userModelDefaults?: UserModelDefaults | null;
+  userId?: string;
+  usageBillingPlanId?: string;
+  usageBillingIncludedCreditMicrousd?: number;
+  usageBillingSoftCapMicrousd?: number | null;
+  usageBillingHardCapMicrousd?: number | null;
 }
 
 let agentConfig: AgentConfig;
@@ -568,6 +574,24 @@ if (!DATABASE_URL) {
   }
   applyToolVisibility();
 }
+
+const USAGE_BILLING_ENABLED = process.env['USAGE_BILLING_ENABLED'] === 'true';
+const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
+const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ?? '60000', 10);
+
+const usageBillingService = createUsageBillingService(db, {
+  userId: agentConfig.userId ?? '',
+  agentId: AGENT_ID!,
+  sessionId: SESSION_ID!,
+  skillId: agentConfig.skillIds?.[0] ?? null,
+  planId: agentConfig.usageBillingPlanId,
+  includedCreditMicrousd: agentConfig.usageBillingIncludedCreditMicrousd,
+  softCapMicrousd: agentConfig.usageBillingSoftCapMicrousd,
+  hardCapMicrousd: agentConfig.usageBillingHardCapMicrousd,
+  defaultRateCardName: DEFAULT_RATE_CARD_NAME,
+  runtimeChargeWindowMs: RUNTIME_CHARGE_WINDOW_MS,
+  enabled: USAGE_BILLING_ENABLED && !!agentConfig.userId,
+});
 
 // ---------------------------------------------------------------------------
 // Market data (optional — enables search_tokens and check_regime tools)
@@ -1333,6 +1357,7 @@ async function shutdown(reason: string): Promise<void> {
   clearTimeout(tickTimer);
   stopWakeSignalPolling();
   nextTickDueAt = 0;
+  usageBillingService?.closeRuntimeWindow();
   await sendHeartbeat('degraded', reason).catch(() => { /* ignore */ });
   await publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED, {
     sessionId: SESSION_ID!,
@@ -1599,6 +1624,39 @@ async function runTick(): Promise<void> {
         maxTurns: SCOUT_MAX_TURNS,
       });
 
+      // Check commercial spend state before dispatching LLM calls.
+      // Hard-limited accounts skip the tick to avoid accumulating charges.
+      if (usageBillingService && await usageBillingService.isHardLimited()) {
+        logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping tick');
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
+          tickId,
+          phase: 'scout',
+          model: resolvedLightModel,
+          maxTurns: 0,
+        });
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+          tickId,
+          reason: 'billing.limit_exceeded',
+          gate: 'billing',
+          trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+          positionSide: sessionMetrics.lastPositionSide ?? undefined,
+        });
+        return;
+      }
+
+      // Soft-limited accounts proceed but with degraded behavior (scout-only, no escalation).
+      const isSoftLimited = usageBillingService ? await usageBillingService.isSoftLimited() : false;
+      if (isSoftLimited) {
+        logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — proceeding with degraded tick (scout only)');
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+          tickId,
+          reason: 'billing.soft_limit_reached',
+          gate: 'billing',
+          trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+          positionSide: sessionMetrics.lastPositionSide ?? undefined,
+        });
+      }
+
       const scoutLoopResult = await runStructuredToolLoop({
         providerConfig: {
           provider: resolvedProvider,
@@ -1648,11 +1706,22 @@ async function runTick(): Promise<void> {
             return JSON.stringify({ ok: false, error: 'tool_failed', note: 'Tool timed out or failed. Skip or retry later.' });
           }
         },
-        onAssistantTurn: ({ result }) => {
+        onAssistantTurn: ({ result, turnIndex }) => {
           recordSessionCost(runtimeState, {
             tokensUsed: result.data.tokensUsed,
             thinkingTokens: result.data.thinkingTokens,
             costUsd: estimateLlmCostUsd(resolvedLightModel, result.data.tokensUsed),
+          });
+          usageBillingService?.recordLlmUsage({
+            provider: result.data.provider,
+            model: result.data.model,
+            responseId: result.data.responseId,
+            inputTokens: result.data.inputTokens,
+            outputTokens: result.data.outputTokens,
+            thinkingTokens: result.data.thinkingTokens,
+            tokensUsed: result.data.tokensUsed,
+            phase: 'scout',
+            turnIndex,
           });
         },
         onRetry: ({ attempt, delayMs, classification }) => {
@@ -1701,9 +1770,15 @@ async function runTick(): Promise<void> {
         : parseScoutDecision(scoutLoopResult.assistantResponse);
     }
 
+    // Soft-limited: suppress escalation to planner/judge to reduce token spend
+    if (isSoftLimited && resolvedScoutDecision.disposition === 'escalate') {
+      logger.info({ agentId: AGENT_ID, reason: resolvedScoutDecision.reason }, 'Soft-limit active — suppressing escalation to judge');
+      resolvedScoutDecision = { disposition: 'hold', reason: 'billing.soft_limit_reached' };
+    }
+
     if (resolvedScoutDecision.disposition === 'hold') {
       const maxHoldMs = agentRuntimePolicy.llm.scout.maxHoldDurationMs;
-      if (maxHoldMs != null && lastEscalationTimestamp > 0 && (Date.now() - lastEscalationTimestamp) >= maxHoldMs) {
+      if (!isSoftLimited && maxHoldMs != null && lastEscalationTimestamp > 0 && (Date.now() - lastEscalationTimestamp) >= maxHoldMs) {
         resolvedScoutDecision = { disposition: 'escalate', reason: 'max_hold_duration_exceeded' };
         logger.info({ maxHoldMs, msSinceLastEscalation: Date.now() - lastEscalationTimestamp }, 'Overriding scout hold — max hold duration exceeded');
       } else {
@@ -1795,11 +1870,22 @@ async function runTick(): Promise<void> {
       maxTurns: JUDGE_MAX_TURNS,
       retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
-      onAssistantTurn: ({ result, assistantResponse, toolCalls }) => {
+      onAssistantTurn: ({ result, assistantResponse, toolCalls, turnIndex }) => {
         recordSessionCost(runtimeState, {
           tokensUsed: result.data.tokensUsed,
           thinkingTokens: result.data.thinkingTokens,
           costUsd: estimateLlmCostUsd(costProfile.heavyModel, result.data.tokensUsed),
+        });
+        usageBillingService?.recordLlmUsage({
+          provider: result.data.provider,
+          model: result.data.model,
+          responseId: result.data.responseId,
+          inputTokens: result.data.inputTokens,
+          outputTokens: result.data.outputTokens,
+          thinkingTokens: result.data.thinkingTokens,
+          tokensUsed: result.data.tokensUsed,
+          phase: 'judge',
+          turnIndex,
         });
         logger.info({ tokensUsed: result.data.tokensUsed, thinkingTokens: result.data.thinkingTokens ?? 0, latencyMs: result.data.latencyMs, toolCalls: toolCalls.length }, 'LLM response received');
         logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
@@ -1907,6 +1993,7 @@ async function main(): Promise<void> {
       void shutdown('wall_clock_expired');
       return;
     }
+    usageBillingService?.flushRuntimeWindow();
     void sendHeartbeat('ready').catch((err: unknown) => logger.warn({ err }, 'Heartbeat error'));
   }, HEARTBEAT_INTERVAL_MS);
 

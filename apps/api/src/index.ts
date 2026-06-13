@@ -115,7 +115,7 @@ await dashboardRoutes(app, db, appConfig.plans);
 // ── Core platform services ─────────────────────────────────────────────────
 // Billing routes — always registered; the summary endpoint is needed even when
 // billing is disabled so the web UI can render the "not enabled" state.
-await billingRoutes(app, appConfig.billing, appConfig.plans, db);
+await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.usageBilling);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db);
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, makeCatalogContext(appConfig.llm));
