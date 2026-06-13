@@ -22,6 +22,7 @@ import { createMarketDataCoordinator } from './coordinator.js';
 
 function makeRedisMock() {
   const store = new Map<string, string>();
+  const hashStore = new Map<string, Map<string, string>>();
 
   const pipeline = {
     set: vi.fn((key: string, value: string) => {
@@ -31,8 +32,26 @@ function makeRedisMock() {
     exec: vi.fn().mockResolvedValue([]),
   };
 
+  const multi = {
+    hincrby: vi.fn((key: string, field: string, by: number) => {
+      let hash = hashStore.get(key);
+      if (!hash) { hash = new Map(); hashStore.set(key, hash); }
+      const prev = parseInt(hash.get(field) ?? '0', 10);
+      hash.set(field, String(prev + by));
+      return multi;
+    }),
+    hset: vi.fn((key: string, field: string, value: string) => {
+      let hash = hashStore.get(key);
+      if (!hash) { hash = new Map(); hashStore.set(key, hash); }
+      hash.set(field, value);
+      return multi;
+    }),
+    exec: vi.fn().mockResolvedValue([]),
+  };
+
   return {
     _store: store,
+    _hashStore: hashStore,
     get: vi.fn(async (key: string) => store.get(key) ?? null),
     set: vi.fn(async (key: string, value: string) => {
       store.set(key, value);
@@ -47,8 +66,17 @@ function makeRedisMock() {
       }
       return deleted;
     }),
+    hincrby: vi.fn(async (key: string, field: string, by: number) => {
+      let hash = hashStore.get(key);
+      if (!hash) { hash = new Map(); hashStore.set(key, hash); }
+      const prev = parseInt(hash.get(field) ?? '0', 10);
+      const next = prev + by;
+      hash.set(field, String(next));
+      return next;
+    }),
     scan: vi.fn(async () => ['0', []]),
     pipeline: vi.fn(() => pipeline),
+    multi: vi.fn(() => multi),
   } as any;
 }
 
