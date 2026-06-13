@@ -1511,7 +1511,7 @@ async function runTick(): Promise<void> {
     const reminderScheduledBy = runtimeState.metrics.currentReminder?.scheduledBy ?? null;
 
     if (tradingTickWorkPlan.hasTradingCapability) {
-      recordActiveWatchSummary(runtimeState, await loadActiveWatchSummary(AGENT_ID));
+      recordActiveWatchSummary(runtimeState, await loadActiveWatchSummary(AGENT_ID!));
     } else {
       recordActiveWatchSummary(runtimeState, null);
     }
