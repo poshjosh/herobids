@@ -845,7 +845,7 @@ export class AgentMessageBroker {
     if (payload.action === 'list_positions') {
       let positions: Array<{
         actorType: string;
-        actorId: string;
+        actorId: string | null;
         symbol: string;
         side: string;
         size: string;

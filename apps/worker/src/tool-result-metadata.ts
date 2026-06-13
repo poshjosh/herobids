@@ -1,4 +1,5 @@
 export interface ToolResultMetadata {
+  [key: string]: unknown;
   positionCount?: number;
   hasOpenPositions?: boolean;
 }
