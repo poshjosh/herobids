@@ -27,6 +27,17 @@ if ! command -v docker &> /dev/null; then
     error_exit "docker could not be found. Please install Docker"
 fi
 
+# Load scripts/.env if present (provides ADMIN_EMAIL, ADMIN_PASSWORD, etc. for the seed admin ts script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/../../.env"
+if [[ -f "$ENV_FILE" ]]; then
+    log "Loading env from scripts/.env..."
+    set -a
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+    set +a
+fi
+
 log "Starting Herobids build process..."
 
 # 1. Run pnpm build

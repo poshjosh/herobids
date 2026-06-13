@@ -1,6 +1,6 @@
 # 011 — API startup crash: skill revision duplicate key on re-deploy
 
-- **Status:** FIXED
+- **Status:** FIXED (applied 2026-06-13)
 - **Severity:** High
 - **Date:** 2026-06-13
 - **Summary:** `herobids-api-1` container exited unhealthy on every `docker compose up` because the skill-seeding loop crashed with a PostgreSQL unique constraint violation (`uq_skill_revisions_skill_version`).

@@ -476,7 +476,12 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
   const now = new Date();
 
   for (const skill of SYSTEM_SKILLS) {
-    const revisionId = `${skill.id}:system:1`;
+    const [existingRevision] = await db
+      .select({ id: skillRevisions.id })
+      .from(skillRevisions)
+      .where(and(eq(skillRevisions.skillId, skill.id), eq(skillRevisions.version, 1)))
+      .limit(1);
+    const revisionId = existingRevision?.id ?? `${skill.id}:system:1`;
     await db
       .insert(skills)
       .values({
