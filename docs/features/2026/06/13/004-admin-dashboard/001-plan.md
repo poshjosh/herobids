@@ -16,6 +16,8 @@ admin one place to answer a small set of practical questions quickly:
 3. what runtimes or containers are currently active
 4. are there obvious billing-provider issues to investigate
 5. what machine and runtime resources are currently in use
+6. is market data fresh, healthy, and staying within its configured rate
+   budgets
 
 ## Objective
 
@@ -29,6 +31,10 @@ That means this plan is intentionally narrower than a full operator console. It
 does not try to solve cross-user commercial analytics, deep runtime
 orchestration, or broad support workflows in the first release.
 
+Market data provisioning is the one deliberate extension to that earlier
+boundary. For this slice, v1 includes all rows from the market-data candidate
+table except the final three rows that were explicitly marked `No`.
+
 ## Product Principles
 
 1. keep v1 read-heavy and operationally safe
@@ -38,6 +44,10 @@ orchestration, or broad support workflows in the first release.
 5. keep support mutations very narrow in v1
 6. do not promise cross-user financial or runtime analytics that require medium
    complexity joins or new audit machinery
+7. treat market-data observability as infrastructure health, not trading
+   analytics
+8. prefer existing Redis snapshots, config, and provider-registry surfaces
+   before adding new telemetry storage
 
 ## V1 Information Architecture
 
@@ -145,6 +155,42 @@ V1 exclusions for this section:
 2. container memory-limit introspection
 3. resource-cost overlays by agent
 
+### 6. Market Data Provisioning
+
+Purpose:
+
+- show whether market-data provisioning is healthy, fresh, and operating within
+   configured rate budgets
+
+V1 content:
+
+1. discovery snapshot freshness state
+2. discovery snapshot captured time
+3. discovery next poll due time
+4. discovery token count total
+5. discovery token count by network
+6. latest market-data error source and time
+7. regime snapshot freshness by benchmark
+8. regime pass or fail by benchmark
+9. provider configured, enabled, and unwired status
+10. rate-limit budgets by provider and request class
+11. burst capacity by provider and request class
+12. max wait by provider and request class
+13. cache TTL by provider and request class
+14. discovery source contribution
+15. freshness mode counts by provider and request class
+16. rate-limit wait counts by provider and request class
+17. rate-limit throttle counts by provider and request class
+18. provider success count
+19. provider failure count
+20. provider last successful fetch time
+
+V1 exclusions for this section:
+
+1. stream connected versus polling fallback status
+2. stream reconnect and stream failure counts
+3. price-service source mix across execution, oracle, and cached lookups
+
 ## Confirmed V1 Scope
 
 The following list is the intended implementation boundary for v1.
@@ -176,6 +222,21 @@ The following list is the intended implementation boundary for v1.
 4. new users in recent window
 5. new agents in recent window
 6. optional plan override route and UI entry point if needed immediately
+7. discovery source contribution
+
+### Market-data rows included in v1
+
+1. discovery snapshot freshness, state, captured time, and next poll due time
+2. discovery token count total and by network
+3. latest market-data error source and time
+4. regime snapshot freshness and pass or fail by benchmark
+5. provider configured, enabled, and unwired status
+6. rate-limit budgets by provider and request class, including requests per
+   minute, burst capacity, max wait, and cache TTL
+7. freshness mode counts by provider and request class
+8. rate-limit wait counts and throttle counts by provider and request class
+9. provider success and failure counts
+10. provider last successful fetch time
 
 ### Explicitly deferred from v1
 
@@ -194,6 +255,9 @@ The following list is the intended implementation boundary for v1.
 13. manual credit grants or manual ledger adjustments
 14. runtime stop or restart controls
 15. admin-action audit system
+16. stream connected versus polling fallback status
+17. stream reconnect and stream failure counts
+18. price-service source mix across execution, oracle, and cached lookups
 
 ## Current-State Baseline
 
@@ -210,6 +274,13 @@ close to existing:
    through admin container responses
 5. host memory and disk stats are already returned by the existing admin stats
    route
+6. market-data discovery snapshots, freshness state, network counts, and recent
+   market-data errors are already published into Redis by the worker
+7. regime snapshots are already published into Redis by benchmark symbol
+8. market-data provider budgets and cache policy are already explicit in config
+   and provider-registry wiring
+9. provider-level success, failure, freshness-mode, and throttle counters are
+   not yet materialized and require small observability plumbing for v1
 
 ## Scope
 
@@ -221,6 +292,8 @@ close to existing:
 4. failed billing webhook listing
 5. recent-window counts for new users and new agents
 6. optional low-risk plan override support
+7. a dedicated market-data provisioning section backed by Redis snapshots,
+   config-derived provider metadata, and small new observability counters
 
 ### Out of scope
 
@@ -230,6 +303,8 @@ close to existing:
 4. runtime orchestration controls
 5. broad support tooling and audit workflows
 6. any new domain model that exists only to support the dashboard
+7. market-trading analytics, price tape views, or P&L charts disguised as
+   market-data health
 
 ## Backend Plan
 
@@ -244,6 +319,8 @@ Recommended approach:
 3. keep `GET /admin/containers` as the main runtime detail primitive
 4. add one small billing-webhook inspection route
 5. add plan override only if support pressure justifies it immediately
+6. add a compact `/admin/market-data/*` surface for provisioning health and
+   observability
 
 ### Recommended v1 routes
 
@@ -277,17 +354,29 @@ Recommended approach:
    - only if support needs it now
    - keep the route narrow and explicitly audited in logs
 
+8. `GET /admin/market-data/overview`
+    - return discovery freshness, captured time, next poll due, token counts,
+       latest market-data error, and regime snapshot summaries
+
+9. `GET /admin/market-data/providers`
+    - return provider configured, enabled, and unwired status
+    - return configured requests per minute, burst capacity, max wait, and cache
+       TTL by provider and request class
+    - return provider success count, failure count, last successful fetch time,
+       freshness-mode counts, rate-limit wait counts, and throttle counts
+
 ## Frontend Plan
 
 ### Page structure
 
-Create a standalone admin dashboard entry in `apps/web` with five sections:
+Create a standalone admin dashboard entry in `apps/web` with six sections:
 
 1. Overview
 2. Users and Accounts
 3. Billing and Usage
 4. Agents and Runtime
 5. Resources
+6. Market Data Provisioning
 
 ### UI shape
 
@@ -299,6 +388,8 @@ Prefer cards plus simple tables.
 4. Agents and Runtime: container plus session table from existing admin data
 5. Resources: memory and disk cards, plus CPU or memory columns already present
    on runtime rows
+6. Market Data Provisioning: discovery/regime health cards plus one provider
+   table for status, budgets, freshness counters, and rate-limit counters
 
 ### UX constraints
 
@@ -313,7 +404,8 @@ Prefer cards plus simple tables.
 
 Outcome:
 
-- the existing admin endpoints cleanly support the v1 dashboard payloads
+- the existing admin endpoints plus a compact market-data admin surface cleanly
+   support the v1 dashboard payloads
 
 Steps:
 
@@ -322,6 +414,12 @@ Steps:
 2. add `GET /admin/billing/webhooks`
 3. decide whether plan override is in scope now; if not, leave it out of v1
 4. add focused route tests for the new read models and admin auth
+5. add `GET /admin/market-data/overview`
+6. add `GET /admin/market-data/providers`
+7. add small worker-side observability plumbing for provider success and
+   failure counts, last successful fetch time, freshness-mode counts,
+   rate-limit wait counts, and throttle counts
+8. add focused tests for the market-data admin read models
 
 ### Phase 2. Admin dashboard UI
 
@@ -339,6 +437,8 @@ Steps:
    `GET /admin/stats`
 6. wire promote and revoke admin actions
 7. wire plan override only if Phase 1 included it
+8. render Market Data Provisioning from `GET /admin/market-data/overview` and
+   `GET /admin/market-data/providers`
 
 ### Phase 3. Hardening
 
@@ -352,6 +452,8 @@ Steps:
 2. add pagination where a table can grow materially
 3. ensure all admin routes are explicitly guarded by admin auth
 4. validate with `pnpm lint`
+5. confirm the market-data section remains health-oriented and does not drift
+   into trading analytics
 
 ## Non-Goals
 
@@ -367,16 +469,22 @@ Do not include these in this plan's first version:
 8. runtime lifecycle controls
 9. host CPU collection
 10. durable admin-action audit product
+11. stream connected versus polling fallback status
+12. stream reconnect and stream failure dashboards
+13. price-service source-mix dashboards
 
 ## Exit Criteria
 
 1. an admin can open one dedicated page and see platform health, user basics,
-   runtime basics, billing webhook failures, and system resources
+   runtime basics, billing webhook failures, system resources, and market-data
+   provisioning health
 2. the v1 implementation stays inside the `Yes` plus `Low-effort Partial`
-   boundary
+   boundary, except for the explicitly approved market-data rows from the
+   candidate table
 3. no medium-effort cross-user billing analytics are required for completion
 4. all new routes remain inside the existing admin auth model
-5. focused tests cover new route auth and the low-effort aggregate fields
+ 5. focused tests cover new route auth, low-effort aggregate fields, and the
+   market-data provisioning read models
 
 ## Risks
 
@@ -386,6 +494,10 @@ Do not include these in this plan's first version:
    is not standardized clearly
 3. a plan override route, if included, increases support power without a durable
    audit trail, so it should remain optional and narrow
+4. market-data v1 now includes some new observability counters, so the project
+   must resist drifting into a full telemetry platform
+5. provider-level counters can be misleading if their reset and retention model
+   is not defined clearly
 
 ## Open Decisions
 
@@ -394,3 +506,5 @@ Do not include these in this plan's first version:
 2. what recent window should Overview use for new users and new agents
 3. should failed billing webhooks show all rows by default, or only failed rows
    with a toggle to reveal processed events
+4. what retention window should provider success, failure, wait, and throttle
+   counters represent in the UI
