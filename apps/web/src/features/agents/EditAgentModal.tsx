@@ -38,7 +38,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const hasExplicitModelOverride = Boolean(initialData.provider || initialData.lightModel || initialData.heavyModel);
   const skillsQuery = useQuery({
     queryKey: ['skills'],
-    queryFn: () => skillsApi.list(),
+    queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
   const availableModelsQuery = useQuery({
     queryKey: ['ai', 'available-models'],

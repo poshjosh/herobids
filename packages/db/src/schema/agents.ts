@@ -1,5 +1,4 @@
 import { pgTable, text, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
 import { users } from './users.js';
 
 /**
@@ -13,10 +12,6 @@ export const agents = pgTable('agents', {
   name: text('name').notNull(),
   /** High-level goal injected into every agent prompt tick */
   prompt: text('prompt').notNull(),                          // was: goal
-  // preset REMOVED — replaced by skillIds text[]
-  /** Ordered list of skill IDs active for this agent.
-   *  The base skill is auto-injected at runtime and not stored here. */
-  skillIds: text('skill_ids').array().notNull().default(sql`'{}'::text[]`),
   /** Current status: stopped | starting | active | paused | crashed */
   status: text('status').notNull().default('stopped'),
   /** Pause state detail (reason, requested_by, paused_at) */

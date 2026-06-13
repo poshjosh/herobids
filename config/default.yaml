@@ -340,6 +340,10 @@ plans:
       maxConcurrentBacktests: 3
       maxAgents: 5
       liveEnabled: false
+      skills:
+        autoPublishCreatedSkills: true
+        canKeepSkillsPrivate: false
+        canChargeForSkills: false
       usage:
         includedCreditCents: 0
         topUpsEnabled: false

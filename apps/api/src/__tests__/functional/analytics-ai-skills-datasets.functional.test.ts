@@ -228,7 +228,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
   });
 
   describe('POST /skills', () => {
-    it('creates a private skill and returns 201', async () => {
+    it('creates a plan-published skill and returns 201', async () => {
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/skills',
@@ -241,8 +241,8 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
       });
 
       expect(res.statusCode).toBe(201);
-      const body = res.json<{ id: string; visibility: string; authorId: string }>();
-      expect(body.visibility).toBe('private');
+      const body = res.json<{ id: string; publicationStatus: string; authorId: string }>();
+      expect(body.publicationStatus).toBe('published');
       expect(typeof body.id).toBe('string');
       expect(body.authorId).toBeTruthy();
     });
@@ -350,7 +350,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
           name: 'Source Skill',
           description: 'Original',
           instructions: 'Do X.',
-          visibility: 'public',
+          publicationStatus: 'published',
         },
       });
       const { id: sourceId } = createRes.json<{ id: string }>();
@@ -362,9 +362,9 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
       });
 
       expect(forkRes.statusCode).toBe(201);
-      const fork = forkRes.json<{ visibility: string; forkOf: string; name: string }>();
-      // Fork must be private regardless of source visibility
-      expect(fork.visibility).toBe('private');
+      const fork = forkRes.json<{ publicationStatus: string; forkOf: string; name: string }>();
+      // Free plan auto-publishes created skills.
+      expect(fork.publicationStatus).toBe('published');
       expect(fork.forkOf).toBe(sourceId);
       expect(fork.name).toContain('fork');
     });

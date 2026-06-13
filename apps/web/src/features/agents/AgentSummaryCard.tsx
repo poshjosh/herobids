@@ -17,7 +17,7 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
   const objective = extractAgentObjective(agent.prompt);
   const skillsQuery = useQuery({
     queryKey: ['skills'],
-    queryFn: () => skillsApi.list(),
+    queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
   const selectedSkills = resolveSelectedSkills(agent.skillIds, skillsQuery.data?.skills ?? []);
   const hasTradingCapability = hasCapabilityFamily(selectedSkills, 'trading');

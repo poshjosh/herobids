@@ -34,6 +34,11 @@ export { billingPeriods } from './billing-periods.js';
 export { billingLedgerEntries } from './billing-ledger-entries.js';
 export { agents } from './agents.js';
 export { skills } from './skills.js';
+export { skillRevisions } from './skill-revisions.js';
+export { agentSkills } from './agent-skills.js';
+export { skillLikes } from './skill-likes.js';
+export { skillUsageEvents } from './skill-usage-events.js';
+export { skillEntitlements } from './skill-entitlements.js';
 export { agentCredentials } from './agent-credentials.js';
 // agentInstanceLinks REMOVED — replaced by bots.creatorType/creatorId
 export { agentRuntimeSessions } from './agent-runtime-sessions.js';

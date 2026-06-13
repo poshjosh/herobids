@@ -528,7 +528,7 @@ export class AgentMessageBroker {
 
       // Resolve the binding using the same runtime descriptor the agent sees in its prompt.
       // Preserve explicit venue-account targeting when the agent selected one.
-      const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id, agent.skillIds ?? []);
+      const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
       const grantedTradingBindings = capabilityDescriptor.grantedBindingsByFamily['trading'] ?? [];
       const requestedBindings = payload.venueAccountId
         ? grantedTradingBindings.filter((candidate) => candidate.sourceVenueAccountId === payload.venueAccountId)

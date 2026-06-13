@@ -114,7 +114,6 @@ interface AgentConfig {
   name?: string;
   prompt?: string;
   goal?: string;
-  skillIds?: string[];
   executionMode?: string;
   provider?: string;
   lightModel?: string;
@@ -204,7 +203,10 @@ try {
 }
 
 const agentGoal = agentConfig.prompt ?? agentConfig.goal ?? 'No goal provided';
-const skillIds = agentConfig.skillIds ?? [];
+const skillIds = agentConfig.runtimeDescriptor?.resolvedSkills
+  .map((skill) => skill.id)
+  .filter((skillId) => skillId !== 'base')
+  ?? [];
 const initialToolPolicy = agentConfig.runtimeDescriptor?.toolPolicy ?? parseToolPolicy(TOOL_POLICY_RAW);
 const tradingHours = parseTradingHours(TRADING_HOURS_RAW);
 const { provider: resolvedProvider, heavyModel: resolvedHeavyModel, lightModel: resolvedLightModel } = resolveEffectiveLlmSelection({
@@ -583,7 +585,7 @@ const usageBillingService = createUsageBillingService(db, {
   userId: agentConfig.userId ?? '',
   agentId: AGENT_ID!,
   sessionId: SESSION_ID!,
-  skillId: agentConfig.skillIds?.[0] ?? null,
+  skillId: runtimeDescriptor.resolvedSkills.find((skill) => skill.id !== 'base')?.id ?? null,
   planId: agentConfig.usageBillingPlanId,
   includedCreditMicrousd: agentConfig.usageBillingIncludedCreditMicrousd,
   softCapMicrousd: agentConfig.usageBillingSoftCapMicrousd,

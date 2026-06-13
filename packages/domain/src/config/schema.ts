@@ -245,6 +245,13 @@ export const PlanUsagePackagingSchema = z.object({
   topUpPackIds: z.array(z.string()).default([]),
 });
 
+export const PlanSkillsEntitlementsSchema = z.object({
+  autoPublishCreatedSkills: z.boolean().default(false),
+  canKeepSkillsPrivate: z.boolean().default(true),
+  canChargeForSkills: z.boolean().default(false),
+  maxPublishedSkills: z.number().int().min(1).optional(),
+});
+
 export const PlansConfigSchema = z.object({
   /** Default plan applied to new users */
   defaultPlanId: z.string().default('free'),
@@ -257,6 +264,8 @@ export const PlansConfigSchema = z.object({
     maxConcurrentBacktests: z.number().min(1).default(3),
     maxAgents: z.number().min(0).default(5),
     liveEnabled: z.boolean().default(false),
+    /** Skills policy entitlements for this plan */
+    skills: PlanSkillsEntitlementsSchema.default({}),
     /** Usage packaging for this plan */
     usage: PlanUsagePackagingSchema.default({}),
   })).default({
@@ -268,6 +277,11 @@ export const PlansConfigSchema = z.object({
       maxConcurrentBacktests: 3,
       maxAgents: 5,
       liveEnabled: false,
+      skills: {
+        autoPublishCreatedSkills: true,
+        canKeepSkillsPrivate: false,
+        canChargeForSkills: false,
+      },
       usage: {
         includedCreditCents: 0,
         topUpsEnabled: false,
@@ -851,6 +865,7 @@ export type CreemConfig = z.infer<typeof CreemConfigSchema>;
 export type TelegramChannelConfig = z.infer<typeof TelegramChannelConfigSchema>;
 export type UsageBillingConfig = z.infer<typeof UsageBillingConfigSchema>;
 export type PlanUsagePackaging = z.infer<typeof PlanUsagePackagingSchema>;
+export type PlanSkillsEntitlements = z.infer<typeof PlanSkillsEntitlementsSchema>;
 
 // --- Trading Instance Config (stored in Postgres JSONB, per-instance) ---
 

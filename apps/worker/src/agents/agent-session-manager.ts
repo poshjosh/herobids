@@ -198,7 +198,7 @@ export class AgentSessionManager {
           }
         }
 
-        const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id, agent.skillIds ?? []);
+        const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
         const runtimeDescriptor = buildRuntimeDescriptor({
           agentId: agent.id,
           name: agent.name,
@@ -270,7 +270,6 @@ export class AgentSessionManager {
             }
             : {}),
           prompt: agent.prompt,
-          skillIds: agent.skillIds,
           ...(agent.executionMode != null && { executionMode: agent.executionMode }),
           ...(agent.dailyTokenBudget != null && { dailyTokenBudget: agent.dailyTokenBudget }),
           ...(agent.dailyLossLimit != null && { dailyLossLimit: agent.dailyLossLimit }),
@@ -344,7 +343,8 @@ export class AgentSessionManager {
       //    killed on shutdown), a restarted worker will see heartbeats from containers it did
       //    not launch itself. Re-bootstrapping the reconnect handler here re-establishes the
       //    live trading context (bots, positions, market subscriptions) for the recovered runtime.
-      const shouldBootstrapRecovery = session.status === 'starting' || session.status === 'launching' || session.status === 'unhealthy'
+      const startedFromNonRunning = session.status === 'starting' || session.status === 'launching' || session.status === 'unhealthy';
+      const shouldBootstrapRecovery = startedFromNonRunning
         || (session.status === 'running' && !this.runtimeLauncher.hasRuntime(payload.sessionId));
 
     // Only accept heartbeats for running/starting/launching sessions.
@@ -355,6 +355,11 @@ export class AgentSessionManager {
     const markedRunning = await this.agentRepo.markSessionRunning(payload.sessionId, new Date());
     if (!markedRunning) {
       return;
+    }
+
+    if (startedFromNonRunning) {
+      await this.agentRepo.recordSessionStartedSkillUsage(session.agentId, payload.sessionId)
+        .catch((err: unknown) => logger.warn({ err, sessionId: payload.sessionId }, 'Failed to persist session_started skill usage events'));
     }
 
     if (payload.cpuPct !== undefined || payload.memoryBytes !== undefined) {

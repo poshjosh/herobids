@@ -1,6 +1,6 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, asc } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { capabilityGrants, connections, skills, tradingBindings } from './schema/index.js';
+import { agentSkills, capabilityGrants, connections, skillRevisions, skills, tradingBindings } from './schema/index.js';
 import {
   BASE_SKILL,
   SYSTEM_SKILLS,
@@ -107,41 +107,54 @@ function chooseDefaultBindingId(rows: RuntimeGrantRow[]): string | null {
   return chooseLatest(readyRows)?.bindingId ?? chooseLatest(rows)?.bindingId ?? null;
 }
 
-function inferSkillFromRow(row: typeof skills.$inferSelect): SkillDefinition {
-  const skill = SYSTEM_SKILLS_BY_ID[row.id];
-  if (skill) {
-    return skill;
+function inferSkillFromRevisionRow(row: {
+  skillId: string;
+  name: string;
+  description: string;
+  instructions: string;
+  requiredTools: string[];
+  contextRequirements: string[];
+  requiredGuardrails: string[];
+  capabilityFamilies: string[];
+  suggestedTickIntervalMs: number | null;
+}): SkillDefinition {
+  const systemSkill = SYSTEM_SKILLS_BY_ID[row.skillId];
+  if (systemSkill) {
+    return systemSkill;
   }
 
-  const requiredTools = assertKnownRequiredTools(row.id, row.requiredTools);
+  const requiredTools = assertKnownRequiredTools(row.skillId, row.requiredTools);
 
-  const requiresTrading = requiredTools.includes('create_bot')
+  const inferredTradingCapability = requiredTools.includes('create_bot')
     || requiredTools.includes('submit_decision')
-    || row.requiredTools.includes('manage_bot')
-    || row.requiredTools.includes('bot_query')
+    || requiredTools.includes('manage_bot')
+    || requiredTools.includes('bot_query')
     || requiredTools.includes('list_positions')
     || requiredTools.includes('get_analytics')
     || row.contextRequirements.some((requirement) => ['bot_statuses', 'positions', 'fills', 'analytics'].includes(requirement));
 
-  const capabilityFamilies = requiresTrading ? ['trading'] : [];
-  const requiredContextBlocks = ['corePlatformContext', ...(requiresTrading ? ['tradingContext'] : [])];
+  const capabilityFamilies = row.capabilityFamilies.length > 0
+    ? row.capabilityFamilies
+    : inferredTradingCapability ? ['trading'] : [];
+  const hasTrading = capabilityFamilies.includes('trading');
+  const requiredContextBlocks = ['corePlatformContext', ...(hasTrading ? ['tradingContext'] : [])];
 
   return {
-    id: row.id,
+    id: row.skillId,
     name: row.name,
     description: row.description,
     instructions: row.instructions,
     requiredTools,
     capabilityFamilies,
-    bindingRequirements: (requiresTrading
+    bindingRequirements: (hasTrading
       ? { trading: { minBindings: 1, requireReady: true } }
       : {}) as Record<string, { minBindings: number; requireReady: boolean }>,
     contextRequirements: row.contextRequirements,
     requiredContextBlocks,
-    promptRendererHints: requiresTrading ? ['readiness-summary', 'trading'] : ['core-system'],
+    promptRendererHints: hasTrading ? ['readiness-summary', 'trading'] : ['core-system'],
     requiredGuardrails: row.requiredGuardrails,
     suggestedTickIntervalMs: row.suggestedTickIntervalMs ?? 900_000,
-    visibility: row.visibility === 'public' ? 'public' : 'private',
+    visibility: 'private',
   };
 }
 
@@ -155,26 +168,40 @@ export interface RuntimeCapabilityDescriptor {
 export async function resolveRuntimeCapabilityDescriptor(
   db: Database,
   agentId: string,
-  skillIds: string[],
 ): Promise<RuntimeCapabilityDescriptor> {
-  const storedSkills = skillIds.length > 0
-    ? await db.select().from(skills).where(inArray(skills.id, skillIds))
-    : [];
+  const assignedSkillRows = await db
+    .select({
+      skillId: skills.id,
+      name: skillRevisions.name,
+      description: skillRevisions.description,
+      instructions: skillRevisions.instructions,
+      requiredTools: skillRevisions.requiredTools,
+      contextRequirements: skillRevisions.contextRequirements,
+      requiredGuardrails: skillRevisions.requiredGuardrails,
+      capabilityFamilies: skillRevisions.capabilityFamilies,
+      suggestedTickIntervalMs: skillRevisions.suggestedTickIntervalMs,
+    })
+    .from(agentSkills)
+    .innerJoin(skills, eq(agentSkills.skillId, skills.id))
+    .innerJoin(skillRevisions, eq(agentSkills.skillRevisionId, skillRevisions.id))
+    .where(eq(agentSkills.agentId, agentId))
+    .orderBy(asc(agentSkills.orderIndex), asc(agentSkills.skillId));
 
-  const seenSkillIds = new Set<string>();
+  const normalizedAssignedRows = assignedSkillRows.filter((row): row is typeof assignedSkillRows[number] & {
+    skillId: string;
+    requiredTools: string[];
+  } => typeof row.skillId === 'string' && Array.isArray(row.requiredTools));
+
   const resolvedSkills: SkillDefinition[] = [BASE_SKILL];
-  for (const skillId of skillIds) {
-    const systemSkill = SYSTEM_SKILLS_BY_ID[skillId];
-    if (systemSkill && !seenSkillIds.has(systemSkill.id)) {
-      resolvedSkills.push(systemSkill);
-      seenSkillIds.add(systemSkill.id);
-      continue;
-    }
 
-    const storedSkill = storedSkills.find((row) => row.id === skillId);
-    if (storedSkill && !seenSkillIds.has(storedSkill.id)) {
-      resolvedSkills.push(inferSkillFromRow(storedSkill));
-      seenSkillIds.add(storedSkill.id);
+  if (normalizedAssignedRows.length > 0) {
+    const seenSkillIds = new Set<string>();
+    for (const row of normalizedAssignedRows) {
+      if (seenSkillIds.has(row.skillId)) {
+        continue;
+      }
+      resolvedSkills.push(inferSkillFromRevisionRow(row));
+      seenSkillIds.add(row.skillId);
     }
   }
 

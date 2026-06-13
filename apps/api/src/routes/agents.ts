@@ -1,9 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, notInArray, desc, sql, or } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql, or, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, bots, decisions } from '@herobids/db';
+import {
+  agents,
+  agentArtifacts,
+  agentMessages,
+  agentOutboundMessages,
+  agentRuntimeSessions,
+  agentSkills,
+  bots,
+  decisions,
+  skillEntitlements,
+  skillRevisions,
+  skillUsageEvents,
+  skills,
+} from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { checkAgentLimit } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
@@ -101,6 +114,203 @@ const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+type SkillAssignmentResolution = {
+  skillId: string;
+  skillRevisionId: string;
+};
+
+function isSkillSelectableForUser(input: {
+  skill: typeof skills.$inferSelect;
+  userId: string;
+  entitledSkillIds: Set<string>;
+  preservedSkillIds?: Set<string>;
+}): boolean {
+  if (input.skill.authorId === null) return true;
+  if (input.skill.authorId === input.userId) return true;
+  if (input.preservedSkillIds?.has(input.skill.id)) return true;
+  if (input.entitledSkillIds.has(input.skill.id)) return true;
+  return input.skill.publicationStatus === 'published' && input.skill.priceCents === 0;
+}
+
+async function resolveSkillAssignmentsForUser(
+  db: Database,
+  userId: string,
+  skillIds: string[],
+  preservedSkillIds: Set<string> = new Set(),
+): Promise<{ assignments?: SkillAssignmentResolution[]; error?: { code: string; message: string; details?: unknown } }> {
+  if (skillIds.length === 0) {
+    return { assignments: [] };
+  }
+
+  const uniqueSkillIds = [...new Set(skillIds)];
+  const [skillRows, entitlementRows] = await Promise.all([
+    db.select().from(skills).where(inArray(skills.id, uniqueSkillIds)),
+    db.select({ skillId: skillEntitlements.skillId })
+      .from(skillEntitlements)
+      .where(and(eq(skillEntitlements.userId, userId), sql`${skillEntitlements.revokedAt} IS NULL`)),
+  ]);
+
+  const skillById = new Map(skillRows.map((row) => [row.id, row] as const));
+  const missingSkillIds = uniqueSkillIds.filter((skillId) => !skillById.has(skillId));
+  if (missingSkillIds.length > 0) {
+    return {
+      error: {
+        code: 'validation_error',
+        message: 'Some selected skills do not exist',
+        details: [{ code: 'custom', path: ['skillIds'], message: `Unknown skillIds: ${missingSkillIds.join(', ')}` }],
+      },
+    };
+  }
+
+  const entitledSkillIds = new Set(entitlementRows.map((row) => row.skillId));
+  const nonSelectable = uniqueSkillIds.filter((skillId) => {
+    const skill = skillById.get(skillId)!;
+    return !isSkillSelectableForUser({ skill, userId, entitledSkillIds, preservedSkillIds });
+  });
+
+  if (nonSelectable.length > 0) {
+    return {
+      error: {
+        code: 'validation_error',
+        message: 'Some selected skills are not selectable for this user',
+        details: [{ code: 'custom', path: ['skillIds'], message: `Non-selectable skillIds: ${nonSelectable.join(', ')}` }],
+      },
+    };
+  }
+
+  const revisionRows = await db.select({
+    skillId: skillRevisions.skillId,
+    revisionId: skillRevisions.id,
+    version: skillRevisions.version,
+  }).from(skillRevisions).where(inArray(skillRevisions.skillId, uniqueSkillIds));
+
+  const latestRevisionBySkillId = new Map<string, { revisionId: string; version: number }>();
+  for (const row of revisionRows) {
+    const current = latestRevisionBySkillId.get(row.skillId);
+    if (!current || row.version > current.version) {
+      latestRevisionBySkillId.set(row.skillId, { revisionId: row.revisionId, version: row.version });
+    }
+  }
+
+  const assignments: SkillAssignmentResolution[] = [];
+  const missingRevisionSkills: string[] = [];
+  for (const skillId of uniqueSkillIds) {
+    const skill = skillById.get(skillId)!;
+    const resolvedRevisionId = skill.currentRevisionId ?? latestRevisionBySkillId.get(skillId)?.revisionId ?? null;
+    if (!resolvedRevisionId) {
+      missingRevisionSkills.push(skillId);
+      continue;
+    }
+    assignments.push({ skillId, skillRevisionId: resolvedRevisionId });
+  }
+
+  if (missingRevisionSkills.length > 0) {
+    return {
+      error: {
+        code: 'invalid_state',
+        message: 'Some selected skills do not have revisions',
+        details: [{ code: 'custom', path: ['skillIds'], message: `Skills missing revisions: ${missingRevisionSkills.join(', ')}` }],
+      },
+    };
+  }
+
+  return { assignments };
+}
+
+async function syncAgentSkillAssignments(
+  db: Database,
+  agentId: string,
+  userId: string,
+  assignments: SkillAssignmentResolution[],
+): Promise<void> {
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    const existingRows = await tx.select({
+      skillId: agentSkills.skillId,
+      skillRevisionId: agentSkills.skillRevisionId,
+    }).from(agentSkills).where(eq(agentSkills.agentId, agentId));
+
+    const existingBySkillId = new Map(existingRows.map((row) => [row.skillId, row.skillRevisionId] as const));
+    const nextSkillIds = assignments.map((assignment) => assignment.skillId);
+
+    if (nextSkillIds.length === 0) {
+      await tx.delete(agentSkills).where(eq(agentSkills.agentId, agentId));
+    } else {
+      await tx.delete(agentSkills).where(and(
+        eq(agentSkills.agentId, agentId),
+        notInArray(agentSkills.skillId, nextSkillIds),
+      ));
+    }
+
+    for (const [orderIndex, assignment] of assignments.entries()) {
+      const previousRevisionId = existingBySkillId.get(assignment.skillId);
+      await tx.insert(agentSkills).values({
+        agentId,
+        skillId: assignment.skillId,
+        skillRevisionId: assignment.skillRevisionId,
+        orderIndex,
+        assignedAt: now,
+        assignedByUserId: userId,
+        assignmentSource: 'user_select',
+      }).onConflictDoUpdate({
+        target: [agentSkills.agentId, agentSkills.skillId],
+        set: {
+          skillRevisionId: assignment.skillRevisionId,
+          orderIndex,
+          assignedAt: now,
+          assignedByUserId: userId,
+          assignmentSource: 'user_select',
+        },
+      });
+
+      if (previousRevisionId !== assignment.skillRevisionId) {
+        await tx.insert(skillUsageEvents).values({
+          id: crypto.randomUUID(),
+          skillId: assignment.skillId,
+          skillRevisionId: assignment.skillRevisionId,
+          userId,
+          agentId,
+          sessionId: null,
+          eventType: 'agent_assigned',
+          occurredAt: now,
+          metadata: { source: 'agent_update' },
+          createdAt: now,
+        });
+      }
+    }
+  });
+}
+
+async function listSkillIdsForAgent(db: Database, agentId: string): Promise<string[]> {
+  const rows = await db.select({ skillId: agentSkills.skillId })
+    .from(agentSkills)
+    .where(eq(agentSkills.agentId, agentId))
+    .orderBy(asc(agentSkills.orderIndex), asc(agentSkills.skillId));
+  return rows.map((row) => row.skillId);
+}
+
+async function listSkillIdsByAgentId(db: Database, agentIds: string[]): Promise<Map<string, string[]>> {
+  if (agentIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db.select({
+    agentId: agentSkills.agentId,
+    skillId: agentSkills.skillId,
+  }).from(agentSkills)
+    .where(inArray(agentSkills.agentId, agentIds))
+    .orderBy(asc(agentSkills.agentId), asc(agentSkills.orderIndex), asc(agentSkills.skillId));
+
+  const skillIdsByAgentId = new Map<string, string[]>();
+  for (const row of rows) {
+    const current = skillIdsByAgentId.get(row.agentId) ?? [];
+    current.push(row.skillId);
+    skillIdsByAgentId.set(row.agentId, current);
+  }
+
+  return skillIdsByAgentId;
+}
+
 export async function agentRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig, llmCatalogContext?: OperatorLlmCatalogContext): Promise<void> {
   // --- CRUD ---
 
@@ -163,12 +373,16 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
 
+    const assignmentResolution = await resolveSkillAssignmentsForUser(db, request.userId, parsed.data.skillIds ?? []);
+    if (assignmentResolution.error) {
+      return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
+    }
+
     await db.insert(agents).values({
       id: agentId,
       userId: request.userId,
       name: parsed.data.name,
       prompt: parsed.data.prompt,
-      skillIds: parsed.data.skillIds ?? [],
       status: 'stopped',
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
@@ -187,8 +401,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       updatedAt: now,
     });
 
+    await syncAgentSkillAssignments(db, agentId, request.userId, assignmentResolution.assignments ?? []);
+
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-    return reply.status(201).send(decorateAgentResponse(agent!));
+    const skillIds = await listSkillIdsForAgent(db, agentId);
+    return reply.status(201).send(decorateAgentResponse({ ...agent!, skillIds }));
   });
 
   // List user's agents
@@ -196,7 +413,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const rows = await db.select().from(agents)
       .where(eq(agents.userId, request.userId))
       .orderBy(agents.createdAt);
-    return reply.send(rows.map((agent) => decorateAgentResponse(agent)));
+    const skillIdsByAgentId = await listSkillIdsByAgentId(db, rows.map((row) => row.id));
+    return reply.send(rows.map((agent) => decorateAgentResponse({
+      ...agent,
+      skillIds: skillIdsByAgentId.get(agent.id) ?? [],
+    })));
   });
 
   // Get single agent
@@ -218,7 +439,8 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       ))
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
-    return reply.send({ ...decorateAgentResponse(agent), activeSession: session ?? null });
+    const skillIds = await listSkillIdsForAgent(db, id);
+    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), activeSession: session ?? null });
   });
 
   // Update agent
@@ -262,7 +484,8 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
 
     // Re-derive toolPolicy from the effective skillIds — same logic as the create path —
     // so that capability grants stay consistent whenever skills are added or removed via PATCH.
-    const mergedSkillIds = parsed.data.skillIds ?? agent.skillIds ?? [];
+    const existingSkillIds = await listSkillIdsForAgent(db, id);
+    const mergedSkillIds = parsed.data.skillIds ?? existingSkillIds;
     // If toolPolicy is explicitly provided in the PATCH body, replace the stored policy entirely
     // (allow callers to remove overrides). If omitted, preserve the existing stored policy.
     const basePolicy: Record<string, unknown> = parsed.data.toolPolicy !== undefined
@@ -311,6 +534,16 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
 
+    const assignmentResolution = await resolveSkillAssignmentsForUser(
+      db,
+      request.userId,
+      mergedSkillIds,
+      new Set(existingSkillIds),
+    );
+    if (assignmentResolution.error) {
+      return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
+    }
+
     const {
       executionMode: _executionMode,
       provider: _provider,
@@ -321,9 +554,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       dexWatchlistSymbols: _dexWatchlistSymbols,
       dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
+      skillIds: _skillIds,
       notificationPolicy: notificationPolicyInput,
       ...agentUpdates
     } = parsed.data;
+    void _skillIds;
 
     const effectiveNotificationPolicy = notificationPolicyInput !== undefined
       ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
@@ -339,8 +574,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       updatedAt: new Date(),
     }).where(eq(agents.id, id));
 
+    await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);
+
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
-    return reply.send(decorateAgentResponse(updated!));
+    const skillIds = await listSkillIdsForAgent(db, id);
+    return reply.send(decorateAgentResponse({ ...updated!, skillIds }));
   });
 
   // Delete agent

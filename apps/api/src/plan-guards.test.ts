@@ -14,7 +14,13 @@ function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
         maxCredentials: 3,
         maxTradingInstances: 2,
         maxConcurrentBacktests: 1,
+        maxAgents: 3,
         liveEnabled: false,
+        skills: {
+          autoPublishCreatedSkills: true,
+          canKeepSkillsPrivate: false,
+          canChargeForSkills: false,
+        },
       },
       pro: {
         maxPortfolios: 10,
@@ -22,7 +28,13 @@ function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
         maxCredentials: 20,
         maxTradingInstances: 10,
         maxConcurrentBacktests: 5,
+        maxAgents: 20,
         liveEnabled: true,
+        skills: {
+          autoPublishCreatedSkills: false,
+          canKeepSkillsPrivate: true,
+          canChargeForSkills: true,
+        },
       },
     },
     ...overrides,

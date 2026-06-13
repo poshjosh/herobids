@@ -1,7 +1,16 @@
 import crypto from 'node:crypto';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, asc } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, users } from './schema/index.js';
+import {
+  agentArtifacts,
+  agentMessages,
+  agentOutboundMessages,
+  agentRuntimeSessions,
+  agentSkills,
+  agents,
+  skillUsageEvents,
+  users,
+} from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
 import { normalizePersistedAiModelConfig, type PersistedAiModelConfig } from '@herobids/domain';
 
@@ -11,7 +20,6 @@ export interface InsertAgent {
   userId: string;
   name: string;
   prompt: string;
-  skillIds?: string[];
   toolPolicy?: Record<string, unknown>;
   modelPolicy?: Record<string, unknown>;
   telegramChatId?: string;
@@ -30,7 +38,6 @@ export interface InsertAgent {
 export interface UpdateAgent {
   name?: string;
   prompt?: string;
-  skillIds?: string[];
   status?: string;
   pauseState?: { reason: string; requestedBy: string; pausedAt: string } | null;
   toolPolicy?: Record<string, unknown>;
@@ -123,8 +130,8 @@ export interface InsertAgentOutboundMessage {
 export class AgentRepository {
   constructor(private readonly db: Database) {}
 
-  async getRuntimeCapabilityDescriptor(agentId: string, skillIds: string[]) {
-    return resolveRuntimeCapabilityDescriptor(this.db, agentId, skillIds);
+  async getRuntimeCapabilityDescriptor(agentId: string) {
+    return resolveRuntimeCapabilityDescriptor(this.db, agentId);
   }
 
   // --- Agents ---
@@ -136,7 +143,6 @@ export class AgentRepository {
       userId: input.userId,
       name: input.name,
       prompt: input.prompt,
-      skillIds: input.skillIds ?? [],
       status: 'stopped',
       toolPolicy: input.toolPolicy ?? null,
       modelPolicy: input.modelPolicy ?? null,
@@ -304,6 +310,39 @@ export class AgentRepository {
     )).returning({ id: agentRuntimeSessions.id });
 
     return updated.length > 0;
+  }
+
+  async recordSessionStartedSkillUsage(agentId: string, sessionId: string): Promise<void> {
+    const [agent] = await this.db.select({ userId: agents.userId })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    if (!agent) {
+      return;
+    }
+
+    const assignments = await this.db.select({
+      skillId: agentSkills.skillId,
+      skillRevisionId: agentSkills.skillRevisionId,
+    }).from(agentSkills)
+      .where(eq(agentSkills.agentId, agentId))
+      .orderBy(asc(agentSkills.orderIndex), asc(agentSkills.skillId));
+
+    const now = new Date();
+    for (const assignment of assignments) {
+      await this.db.insert(skillUsageEvents).values({
+        id: crypto.randomUUID(),
+        skillId: assignment.skillId,
+        skillRevisionId: assignment.skillRevisionId,
+        userId: agent.userId,
+        agentId,
+        sessionId,
+        eventType: 'session_started',
+        occurredAt: now,
+        metadata: { source: 'runtime_heartbeat_transition' },
+        createdAt: now,
+      });
+    }
   }
 
   // --- Agent Messages ---

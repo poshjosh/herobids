@@ -1,0 +1,2 @@
+ALTER TABLE "agent_skills" ADD COLUMN "order_index" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_agent_skills_agent_order" ON "agent_skills" USING btree ("agent_id","order_index");

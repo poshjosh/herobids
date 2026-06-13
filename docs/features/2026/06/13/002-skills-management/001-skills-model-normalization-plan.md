@@ -630,11 +630,30 @@ These should be resolved before implementing paid skills end to end:
 
 1. Should non-zero price block selection until entitlement exists, or is price
    initially display-only metadata?
+
+yes block selection. users cannot open the skill to view it fully unless they are entitled to. 
+
 2. Should marketplace viewers see full `instructions`, or only a preview before
    acquisition?
+
+full instructions
+
 3. Should built-in skills ever be likeable, or should they remain outside
    marketplace engagement entirely?
+
+you decide which is easier to implement
+
 4. Should delisted paid skills remain selectable for prior acquirers only, or
    also for any user who previously attached them to an agent?
+
+yes
+
 5. Should the migration retain a temporary compatibility response field named
    `visibility`, or should clients be updated in one cutover?
+
+no
+
+IMPORTANT
+
+- no need for backward compatibility at all
+- the marketplace is just a public square for now

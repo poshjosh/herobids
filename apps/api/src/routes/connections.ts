@@ -19,7 +19,6 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, budge
         id: agents.id,
         name: agents.name,
         prompt: agents.prompt,
-        skillIds: agents.skillIds,
         toolPolicy: agents.toolPolicy,
         executionMode: agents.executionMode,
         dailyTokenBudget: agents.dailyTokenBudget,
@@ -34,7 +33,7 @@ export async function connectionRoutes(app: FastifyInstance, db: Database, budge
       return;
     }
 
-    const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId, agentRow.skillIds ?? []);
+    const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId);
     const runtimeDescriptor = buildRuntimeDescriptor({
       agentId,
       name: agentRow.name,

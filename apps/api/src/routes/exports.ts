@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, agents, fills, journalEvents, agentRuntimeSessions, positions } from '@herobids/db';
+import { bots, agents, agentSkills, fills, journalEvents, agentRuntimeSessions, positions } from '@herobids/db';
 
 // --- Rate limiter (5 req / 60 s per user) ---
 
@@ -63,6 +63,14 @@ const ReportQuerySchema = z.object({
 const TRADES_CSV_HEADERS = 'date,side,symbol,quantity,price,pnl,fee,sessionId';
 
 type FillRow = typeof fills.$inferSelect;
+
+async function listSkillIdsForAgent(db: Database, agentId: string): Promise<string[]> {
+  const rows = await db.select({ skillId: agentSkills.skillId })
+    .from(agentSkills)
+    .where(eq(agentSkills.agentId, agentId))
+    .orderBy(asc(agentSkills.orderIndex), asc(agentSkills.skillId));
+  return rows.map((row) => row.skillId);
+}
 
 function fillsToCsv(rows: FillRow[]): string {
   const lines = [TRADES_CSV_HEADERS];
@@ -714,13 +722,14 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
       const [agent] = await db.select().from(agents)
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
+      const skillIds = await listSkillIdsForAgent(db, id);
 
       // Strip sensitive fields from agent config (toolPolicy, modelPolicy may contain tokens)
       const agentData = sanitizeConfig({
         id: agent.id,
         name: agent.name,
         prompt: agent.prompt,
-        skillIds: agent.skillIds,
+        skillIds,
         executionMode: agent.executionMode,
         dailyTokenBudget: agent.dailyTokenBudget,
         dailyLossLimit: agent.dailyLossLimit,
@@ -750,6 +759,7 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
       const [agent] = await db.select().from(agents)
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
+      const skillIds = await listSkillIdsForAgent(db, id);
 
       const agentBots = await db.select({ id: bots.id }).from(bots)
         .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
@@ -773,7 +783,7 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         id: agent.id,
         name: agent.name,
         prompt: agent.prompt,
-        skillIds: agent.skillIds,
+        skillIds,
         executionMode: agent.executionMode,
         dailyTokenBudget: agent.dailyTokenBudget,
         dailyLossLimit: agent.dailyLossLimit,

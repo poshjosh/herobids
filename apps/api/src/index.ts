@@ -121,7 +121,7 @@ await blueprintRoutes(app, db);
 await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, makeCatalogContext(appConfig.llm));
 await analyticsRoutes(app, db);
 await aiRoutes(app, db, appConfig.llm, redisClient);
-await skillsRoutes(app, db);
+await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
 await adminRoutes(app, db, redisClient);

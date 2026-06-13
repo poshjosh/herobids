@@ -14,7 +14,7 @@ export function OutcomeBoardPage() {
   });
   const skillsQuery = useQuery({
     queryKey: ['skills'],
-    queryFn: () => skillsApi.list(),
+    queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
 
   const agents = query.data ?? [];

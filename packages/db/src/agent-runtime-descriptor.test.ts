@@ -17,8 +17,7 @@ function makeChain(value: unknown[]) {
 
 function createSkillRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    id: 'custom-skill',
-    authorId: 'user-1',
+    skillId: 'custom-skill',
     name: 'Custom Skill',
     description: 'Custom instructions',
     instructions: 'Do the custom thing',
@@ -27,11 +26,6 @@ function createSkillRow(overrides: Partial<Record<string, unknown>> = {}) {
     requiredGuardrails: [],
     capabilityFamilies: [],
     suggestedTickIntervalMs: 900_000,
-    visibility: 'private',
-    tags: [],
-    forkOf: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
     ...overrides,
   };
 }
@@ -42,11 +36,23 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
     const db = {
       select: vi.fn().mockImplementation(() => {
         selectCount++;
-        return makeChain([]);
+        return makeChain(selectCount === 1
+          ? [createSkillRow({
+              skillId: 'programming',
+              name: PROGRAMMING_SKILL.name,
+              description: PROGRAMMING_SKILL.description,
+              instructions: PROGRAMMING_SKILL.instructions,
+              requiredTools: PROGRAMMING_SKILL.requiredTools,
+              contextRequirements: PROGRAMMING_SKILL.contextRequirements,
+              requiredGuardrails: PROGRAMMING_SKILL.requiredGuardrails,
+              capabilityFamilies: PROGRAMMING_SKILL.capabilityFamilies,
+              suggestedTickIntervalMs: PROGRAMMING_SKILL.suggestedTickIntervalMs,
+            })]
+          : []);
       }),
     } as unknown as Database;
 
-    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['programming']);
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1');
 
     expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual(['base', 'programming']);
     expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(PROGRAMMING_SKILL.requiredTools);
@@ -54,11 +60,27 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
   });
 
   it('resolves the built-in file-management skill with workspace tools', async () => {
+    let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => makeChain([])),
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1
+          ? [createSkillRow({
+              skillId: 'file-management',
+              name: FILE_MANAGEMENT_SKILL.name,
+              description: FILE_MANAGEMENT_SKILL.description,
+              instructions: FILE_MANAGEMENT_SKILL.instructions,
+              requiredTools: FILE_MANAGEMENT_SKILL.requiredTools,
+              contextRequirements: FILE_MANAGEMENT_SKILL.contextRequirements,
+              requiredGuardrails: FILE_MANAGEMENT_SKILL.requiredGuardrails,
+              capabilityFamilies: FILE_MANAGEMENT_SKILL.capabilityFamilies,
+              suggestedTickIntervalMs: FILE_MANAGEMENT_SKILL.suggestedTickIntervalMs,
+            })]
+          : []);
+      }),
     } as unknown as Database;
 
-    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['file-management']);
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1');
 
     expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual(['base', 'file-management']);
     expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(FILE_MANAGEMENT_SKILL.requiredTools);
@@ -68,11 +90,40 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
   });
 
   it('resolves both programming and file-management when stacked', async () => {
+    let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => makeChain([])),
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1
+          ? [
+              createSkillRow({
+                skillId: 'programming',
+                name: PROGRAMMING_SKILL.name,
+                description: PROGRAMMING_SKILL.description,
+                instructions: PROGRAMMING_SKILL.instructions,
+                requiredTools: PROGRAMMING_SKILL.requiredTools,
+                contextRequirements: PROGRAMMING_SKILL.contextRequirements,
+                requiredGuardrails: PROGRAMMING_SKILL.requiredGuardrails,
+                capabilityFamilies: PROGRAMMING_SKILL.capabilityFamilies,
+                suggestedTickIntervalMs: PROGRAMMING_SKILL.suggestedTickIntervalMs,
+              }),
+              createSkillRow({
+                skillId: 'file-management',
+                name: FILE_MANAGEMENT_SKILL.name,
+                description: FILE_MANAGEMENT_SKILL.description,
+                instructions: FILE_MANAGEMENT_SKILL.instructions,
+                requiredTools: FILE_MANAGEMENT_SKILL.requiredTools,
+                contextRequirements: FILE_MANAGEMENT_SKILL.contextRequirements,
+                requiredGuardrails: FILE_MANAGEMENT_SKILL.requiredGuardrails,
+                capabilityFamilies: FILE_MANAGEMENT_SKILL.capabilityFamilies,
+                suggestedTickIntervalMs: FILE_MANAGEMENT_SKILL.suggestedTickIntervalMs,
+              }),
+            ]
+          : []);
+      }),
     } as unknown as Database;
 
-    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['programming', 'file-management']);
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1');
 
     const skillIds = descriptor.resolvedSkills.map((skill) => skill.id);
     expect(skillIds).toContain('programming');
@@ -85,51 +136,57 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
       select: vi.fn().mockImplementation(() => {
         selectCount++;
         return makeChain(selectCount === 1
-          ? [createSkillRow({ id: 'invalid-skill', requiredTools: ['totally_unknown_tool'] })]
+          ? [createSkillRow({ skillId: 'invalid-skill', requiredTools: ['totally_unknown_tool'] })]
           : []);
       }),
     } as unknown as Database;
 
-    await expect(resolveRuntimeCapabilityDescriptor(db, 'agent-1', ['invalid-skill']))
+    await expect(resolveRuntimeCapabilityDescriptor(db, 'agent-1'))
       .rejects
       .toThrow('Skill invalid-skill references unknown requiredTools: totally_unknown_tool');
   });
 
   it('chooses the newest ready trading binding as the default', async () => {
+    let selectCount = 0;
     const db = {
-      select: vi.fn().mockImplementation(() => makeChain([
-        {
-          family: 'trading',
-          grantStatus: 'active',
-          grantedAt: new Date('2026-06-11T06:00:00Z'),
-          bindingId: 'binding-1',
-          bindingStatus: 'active',
-          connectionId: 'conn-1',
-          connectionStatus: 'active',
-          provider: 'hyperliquid',
-          label: 'Older ready binding',
-          bindingRef: null,
-          bindingProfile: null,
-          sourceVenueAccountId: 'va-1',
-        },
-        {
-          family: 'trading',
-          grantStatus: 'active',
-          grantedAt: new Date('2026-06-11T07:00:00Z'),
-          bindingId: 'binding-2',
-          bindingStatus: 'active',
-          connectionId: 'conn-2',
-          connectionStatus: 'active',
-          provider: 'jupiter',
-          label: 'Newest ready binding',
-          bindingRef: null,
-          bindingProfile: null,
-          sourceVenueAccountId: 'va-2',
-        },
-      ])),
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        return makeChain(selectCount === 1
+          ? [createSkillRow({ skillId: 'trading', requiredTools: ['submit_decision'], capabilityFamilies: ['trading'] })]
+          : [
+              {
+                family: 'trading',
+                grantStatus: 'active',
+                grantedAt: new Date('2026-06-11T06:00:00Z'),
+                bindingId: 'binding-1',
+                bindingStatus: 'active',
+                connectionId: 'conn-1',
+                connectionStatus: 'active',
+                provider: 'hyperliquid',
+                label: 'Older ready binding',
+                bindingRef: null,
+                bindingProfile: null,
+                sourceVenueAccountId: 'va-1',
+              },
+              {
+                family: 'trading',
+                grantStatus: 'active',
+                grantedAt: new Date('2026-06-11T07:00:00Z'),
+                bindingId: 'binding-2',
+                bindingStatus: 'active',
+                connectionId: 'conn-2',
+                connectionStatus: 'active',
+                provider: 'jupiter',
+                label: 'Newest ready binding',
+                bindingRef: null,
+                bindingProfile: null,
+                sourceVenueAccountId: 'va-2',
+              },
+            ]);
+      }),
     } as unknown as Database;
 
-    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1', []);
+    const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1');
 
     expect(descriptor.defaultBindingByFamily.trading).toBe('binding-2');
     expect(descriptor.grantedBindingsByFamily.trading).toEqual([

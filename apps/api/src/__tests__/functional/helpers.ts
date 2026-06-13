@@ -7,7 +7,7 @@
 
 import Fastify from 'fastify';
 import { sql } from 'drizzle-orm';
-import { createDatabase, skills as skillsTable } from '@herobids/db';
+import { createDatabase, skillRevisions, skills as skillsTable } from '@herobids/db';
 import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
@@ -123,7 +123,30 @@ export async function buildApp() {
   });
   await aiRoutes(app, db, stubLlmConfig, redisClient);
 
-  await skillsRoutes(app, db);
+  await skillsRoutes(app, db, {
+    defaultPlanId: 'free',
+    plans: {
+      free: {
+        maxPortfolios: 3,
+        maxVenueAccounts: 5,
+        maxCredentials: 5,
+        maxTradingInstances: 5,
+        maxConcurrentBacktests: 3,
+        maxAgents: 5,
+        liveEnabled: false,
+        skills: {
+          autoPublishCreatedSkills: true,
+          canKeepSkillsPrivate: false,
+          canChargeForSkills: false,
+        },
+        usage: {
+          includedCreditCents: 0,
+          topUpsEnabled: false,
+          topUpPackIds: [],
+        },
+      },
+    },
+  });
   await datasetRoutes(app, db, redisClient);
   await exportRoutes(app, db);
 
@@ -145,6 +168,7 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       user_credentials,
       venue_accounts,
       agent_credentials,
+      agent_skills,
       bots,
       fills,
       positions,
@@ -152,6 +176,10 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       agent_messages,
       agent_artifacts,
       agent_outbound_messages,
+      skill_usage_events,
+      skill_likes,
+      skill_entitlements,
+      skill_revisions,
       decisions,
       agents,
       sessions,
@@ -167,9 +195,15 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
   // Source instructions and tool sets from the live domain constants to keep
   // them in sync with what the functional contract tests assert.
   for (const skill of SYSTEM_SKILLS) {
+    const revisionId = `${skill.id}:system:1`;
     await db.insert(skillsTable).values({
       id: skill.id,
       authorId: null,
+      publicationStatus: 'published',
+      publishedAt: new Date(),
+      currentRevisionId: revisionId,
+      priceCents: 0,
+      autoPublishedByPlan: false,
       name: skill.name,
       description: skill.description,
       instructions: skill.instructions,
@@ -178,8 +212,25 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
       requiredGuardrails: skill.requiredGuardrails,
       capabilityFamilies: skill.capabilityFamilies,
       suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-      visibility: skill.visibility,
       tags: [],
+    }).onConflictDoNothing();
+
+    await db.insert(skillRevisions).values({
+      id: revisionId,
+      skillId: skill.id,
+      version: 1,
+      name: skill.name,
+      description: skill.description,
+      instructions: skill.instructions,
+      requiredTools: skill.requiredTools,
+      contextRequirements: skill.contextRequirements,
+      requiredGuardrails: skill.requiredGuardrails,
+      capabilityFamilies: skill.capabilityFamilies,
+      suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
+      tags: [],
+      changeSummary: 'system seed',
+      createdByUserId: null,
+      createdAt: new Date(),
     }).onConflictDoNothing();
   }
 }

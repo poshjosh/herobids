@@ -263,6 +263,18 @@ export interface AgentActivityFeedResponse {
 export interface Skill {
   id: string;
   authorId: string | null;
+  sourceKind: 'system' | 'user';
+  publicationStatus: 'draft' | 'published' | 'delisted' | 'archived';
+  priceCents: number;
+  likeCount: number;
+  forkCount: number;
+  popularityScore: number;
+  trendingScore: number;
+  isLikedByViewer: boolean;
+  isSelectable: boolean;
+  selectabilityReason: string;
+  currentRevisionId: string | null;
+  currentRevisionVersion: number | null;
   name: string;
   description: string;
   instructions: string;
@@ -270,15 +282,73 @@ export interface Skill {
   contextRequirements: string[];
   requiredGuardrails: string[];
   capabilityFamilies: string[];
-  visibility: 'private' | 'public' | 'built-in';
+  suggestedTickIntervalMs: number | null;
   tags: string[];
-  forkOf: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface SkillMetrics {
+  skillId: string;
+  usage90d: number;
+  likes90d: number;
+  forks90d: number;
+  usage30d: number;
+  likes30d: number;
+  forks30d: number;
+  likeCount: number;
+  forkCount: number;
+  popularityScore: number;
+  trendingScore: number;
+  updatedAt: string;
+}
+
 export const skills = {
-  list: () => request<{ skills: Skill[] }>('/skills'),
+  list: (params?: {
+    scope?: 'mine' | 'marketplace' | 'selectable' | 'admin';
+    publicationStatus?: 'draft' | 'published' | 'delisted' | 'archived';
+    sort?: 'popular' | 'trending' | 'newest' | 'price_asc' | 'price_desc';
+    priceMin?: number;
+    priceMax?: number;
+    likedByMe?: boolean;
+    tag?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.scope) qs.set('scope', params.scope);
+    if (params?.publicationStatus) qs.set('publicationStatus', params.publicationStatus);
+    if (params?.sort) qs.set('sort', params.sort);
+    if (params?.priceMin !== undefined) qs.set('priceMin', String(params.priceMin));
+    if (params?.priceMax !== undefined) qs.set('priceMax', String(params.priceMax));
+    if (params?.likedByMe !== undefined) qs.set('likedByMe', String(params.likedByMe));
+    if (params?.tag) qs.set('tag', params.tag);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ skills: Skill[] }>(`/skills${query}`);
+  },
+  listAdminIfAllowed: async () => {
+    try {
+      return await request<{ skills: Skill[] }>('/skills?scope=admin');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        return null;
+      }
+      throw error;
+    }
+  },
+  publish: (id: string, payload?: { priceCents?: number }) =>
+    request<Skill>(`/skills/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    }),
+  delist: (id: string) =>
+    request<Skill>(`/skills/${id}/delist`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  like: (id: string) =>
+    request<{ liked: boolean; likeCount: number }>(`/skills/${id}/like`, { method: 'POST', body: JSON.stringify({}) }),
+  unlike: (id: string) =>
+    request<{ liked: boolean; likeCount: number }>(`/skills/${id}/like`, { method: 'DELETE' }),
+  metrics: (id: string) => request<SkillMetrics>(`/skills/${id}/metrics`),
 };
 
 export const dashboard = {

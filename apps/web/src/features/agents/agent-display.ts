@@ -37,18 +37,28 @@ function formatMessageOrFallback(intl: IntlShape | undefined, id: string, fallba
 
 export function listSelectableSkills(skills: Skill[]): Skill[] {
   return skills
-    .filter((skill) => skill.id !== 'base')
+    .filter((skill) => skill.id !== 'base' && skill.isSelectable)
     .slice()
     .sort((left, right) => {
-      const visibilityOrder: Record<Skill['visibility'], number> = {
-        'built-in': 0,
-        public: 1,
-        private: 2,
+      const sourceOrder: Record<Skill['sourceKind'], number> = {
+        system: 0,
+        user: 1,
       };
 
-      const visibilityDelta = visibilityOrder[left.visibility] - visibilityOrder[right.visibility];
-      if (visibilityDelta !== 0) {
-        return visibilityDelta;
+      const sourceDelta = sourceOrder[left.sourceKind] - sourceOrder[right.sourceKind];
+      if (sourceDelta !== 0) {
+        return sourceDelta;
+      }
+
+      const publicationOrder: Record<Skill['publicationStatus'], number> = {
+        published: 0,
+        draft: 1,
+        delisted: 2,
+        archived: 3,
+      };
+      const publicationDelta = publicationOrder[left.publicationStatus] - publicationOrder[right.publicationStatus];
+      if (publicationDelta !== 0) {
+        return publicationDelta;
       }
 
       const nameDelta = left.name.localeCompare(right.name);

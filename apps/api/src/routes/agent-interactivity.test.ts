@@ -252,6 +252,8 @@ describe('PUT /agents/:id', () => {
 
   it('clears execution mode when trading skills are removed on PUT', async () => {
     const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    const insertOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
     let selectCount = 0;
     const updatedAgent = {
       ...stubAgent,
@@ -261,9 +263,41 @@ describe('PUT /agents/:id', () => {
     const db = {
       select: vi.fn().mockImplementation(() => {
         selectCount++;
-        return makeChain(selectCount === 1 ? [{ ...stubAgent, skillIds: ['trading'], executionMode: 'paper' }] : [updatedAgent]);
+        if (selectCount === 1) {
+          return makeChain([{ ...stubAgent, executionMode: 'paper' }]);
+        }
+        if (selectCount === 2) {
+          return makeChain([{ skillId: 'trading' }]);
+        }
+        if (selectCount === 3) {
+          return makeChain([{
+            id: 'task-management',
+            authorId: TEST_USER_ID,
+            publicationStatus: 'published',
+            priceCents: 0,
+            currentRevisionId: 'task-management:v1',
+          }]);
+        }
+        if (selectCount === 4) {
+          return makeChain([]);
+        }
+        if (selectCount === 5) {
+          return makeChain([]);
+        }
+        if (selectCount === 6) {
+          return makeChain([{ skillId: 'trading', skillRevisionId: 'trading:v1' }]);
+        }
+        if (selectCount === 7) {
+          return makeChain([updatedAgent]);
+        }
+        return makeChain([{ skillId: 'task-management' }]);
       }),
       update: vi.fn().mockReturnValue({ set: updateSet }),
+      delete: vi.fn().mockReturnValue({ where: deleteWhere }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({ onConflictDoUpdate: insertOnConflictDoUpdate }),
+      }),
+      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(db)),
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
@@ -281,7 +315,7 @@ describe('PUT /agents/:id', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionMode: null, skillIds: ['task-management'] }));
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionMode: null }));
   });
 
   it('returns 409 when agent is running', async () => {
@@ -344,6 +378,69 @@ describe('PUT /agents/:id', () => {
       payload: { name: 'Updated', prompt: 'New prompt' },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('preserves an already-assigned non-selectable skill when updating unrelated fields', async () => {
+    let selectCount = 0;
+    const updatedAgent = {
+      ...stubAgent,
+      name: 'Updated',
+    };
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount++;
+        if (selectCount === 1) {
+          return makeChain([{ ...stubAgent, name: 'Old', executionMode: null }]);
+        }
+        if (selectCount === 2) {
+          return makeChain([{ skillId: 'paid-skill' }]);
+        }
+        if (selectCount === 3) {
+          return makeChain([{
+            id: 'paid-skill',
+            authorId: 'other-user',
+            publicationStatus: 'delisted',
+            priceCents: 500,
+            currentRevisionId: 'paid-skill:v2',
+          }]);
+        }
+        if (selectCount === 4) {
+          return makeChain([]);
+        }
+        if (selectCount === 5) {
+          return makeChain([]);
+        }
+        if (selectCount === 6) {
+          return makeChain([{ skillId: 'paid-skill', skillRevisionId: 'paid-skill:v2' }]);
+        }
+        if (selectCount === 7) {
+          return makeChain([updatedAgent]);
+        }
+        return makeChain([{ skillId: 'paid-skill' }]);
+      }),
+      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }),
+      }),
+      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(db)),
+    } as unknown as Database;
+    const redis = buildMockRedis();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentInteractivityRoutes(app, db, redis);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/agents/${AGENT_ID}`,
+      payload: { name: 'Updated', prompt: stubAgent.prompt, skillIds: ['paid-skill'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(expect.objectContaining({
+      name: 'Updated',
+      skillIds: ['paid-skill'],
+    }));
   });
 });
 

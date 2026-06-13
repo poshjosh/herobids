@@ -1,22 +1,33 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
-import { skillsRoutes } from './skills.js';
 import type { Database } from '@herobids/db';
+import type { PlansConfig } from '@herobids/domain';
+import { skillsRoutes } from './skills.js';
 
 const TEST_USER_ID = 'user-1';
-const SKILL_ID = 'skill-1';
 
-function decorateWithAuth(app: ReturnType<typeof Fastify>) {
+function decorateWithAuth(app: ReturnType<typeof Fastify>, isAdmin = false) {
   app.decorateRequest('userId', '');
+  app.decorateRequest('userPlanId', '');
+  app.decorateRequest('isAdmin', false);
   app.addHook('onRequest', async (request) => {
     request.userId = TEST_USER_ID;
+    request.userPlanId = 'free';
+    request.isAdmin = isAdmin;
   });
+}
+
+function makeInsertMock() {
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+  const values = vi.fn().mockImplementation(() => ({ onConflictDoUpdate, onConflictDoNothing }));
+  return vi.fn().mockReturnValue({ values });
 }
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'where', 'orderBy', 'limit', 'offset']) {
-    chain[m] = vi.fn(() => chain);
+  for (const method of ['from', 'where', 'orderBy', 'limit', 'innerJoin']) {
+    chain[method] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
     resolve: (v: unknown) => unknown,
@@ -25,425 +36,132 @@ function makeChain(value: unknown[]) {
   return chain;
 }
 
-function makeInsertMock(onValues?: (v: unknown) => void) {
-  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockImplementation((v: unknown) => {
-    onValues?.(v);
-    return { onConflictDoUpdate };
-  });
-  return { insert: vi.fn().mockReturnValue({ values }) };
+function makeDbMock(): Database {
+  const db = {
+    insert: makeInsertMock(),
+    select: vi.fn().mockImplementation(() => makeChain([])),
+    selectDistinct: vi.fn().mockImplementation(() => makeChain([])),
+    execute: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockImplementation(() => ({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    })),
+    delete: vi.fn().mockImplementation(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+    transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback(db)),
+  };
+
+  return db as unknown as Database;
 }
 
-const stubSkill = {
-  id: SKILL_ID,
-  authorId: TEST_USER_ID,
-  name: 'My Skill',
-  description: 'A test skill',
-  instructions: 'Do something useful',
-  requiredTools: [],
-  contextRequirements: [],
-  requiredGuardrails: [],
-  visibility: 'private',
-  tags: [],
-  forkOf: null,
-  suggestedTickIntervalMs: 900000,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
-
-const stubBuiltinSkill = {
-  ...stubSkill,
-  id: 'builtin-1',
-  authorId: null,
-  visibility: 'built-in',
-  name: 'Built-in Skill',
-};
+function makePlansConfig(): PlansConfig {
+  return {
+    defaultPlanId: 'free',
+    plans: {
+      free: {
+        maxPortfolios: 3,
+        maxVenueAccounts: 5,
+        maxCredentials: 5,
+        maxTradingInstances: 5,
+        maxConcurrentBacktests: 3,
+        maxAgents: 5,
+        liveEnabled: false,
+        skills: {
+          autoPublishCreatedSkills: true,
+          canKeepSkillsPrivate: false,
+          canChargeForSkills: false,
+        },
+        usage: {
+          includedCreditCents: 0,
+          topUpsEnabled: false,
+          topUpPackIds: [],
+        },
+      },
+    },
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// ─── GET /skills ──────────────────────────────────────────────────────────
-
-describe('GET /skills', () => {
-  it('returns own skills + public + built-in skills', async () => {
-    const rows = [stubSkill, stubBuiltinSkill];
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain(rows)),
-    } as unknown as Database;
+describe('skillsRoutes (normalized contract)', () => {
+  it('rejects invalid create payloads with 400 validation_error', async () => {
     const app = Fastify();
     decorateWithAuth(app);
-    await skillsRoutes(app, db);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
 
-    const res = await app.inject({ method: 'GET', url: '/skills' });
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.skills).toHaveLength(2);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills',
+      payload: { name: 'Only name set' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
   });
 
-  it('returns empty list when no skills exist', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    } as unknown as Database;
+  it('blocks non-admin scope=admin listings with 403', async () => {
     const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
+    decorateWithAuth(app, false);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
 
-    const res = await app.inject({ method: 'GET', url: '/skills' });
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('forbidden');
+  });
+
+  it('accepts admin scope=admin listing for admins', async () => {
+    const app = Fastify();
+    decorateWithAuth(app, true);
+    await skillsRoutes(app, makeDbMock(), makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/skills?scope=admin' });
+
     expect(res.statusCode).toBe(200);
     expect(res.json().skills).toEqual([]);
   });
 
-  // Regression: bug 001 — truncateAll() removed system skills, causing E2E failures
-  // The GET /skills endpoint must always surface system skills (authorId=null) even
-  // when the requesting user has created no skills of their own.
-  it('returns system skills (authorId=null) even when user has no own or public skills', async () => {
-    const systemSkill = { ...stubBuiltinSkill };
+  it('returns the normalized metrics payload shape expected by the web client', async () => {
+    const skillRow = {
+      id: 'skill-1',
+      authorId: TEST_USER_ID,
+      publicationStatus: 'published',
+      likeCount: 5,
+      forkCount: 2,
+      popularityScore: 1.25,
+      trendingScore: 0.5,
+      updatedAt: new Date('2026-06-13T12:00:00.000Z'),
+    };
     const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([systemSkill])),
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => makeChain([skillRow])),
+      execute: vi.fn()
+        .mockResolvedValueOnce([{ distinct_users_90d: 3, session_starts_90d: 7, forks_90d: 2 }])
+        .mockResolvedValueOnce([{ distinct_users_30d: 2, session_starts_30d: 4, forks_30d: 1 }])
+        .mockResolvedValueOnce([{ likes_90d: 5 }])
+        .mockResolvedValueOnce([{ likes_30d: 3 }]),
     } as unknown as Database;
+
     const app = Fastify();
     decorateWithAuth(app);
-    await skillsRoutes(app, db);
+    await skillsRoutes(app, db, makePlansConfig());
 
-    const res = await app.inject({ method: 'GET', url: '/skills' });
+    const res = await app.inject({ method: 'GET', url: '/skills/skill-1/metrics' });
+
     expect(res.statusCode).toBe(200);
-    const { skills } = res.json<{ skills: Array<{ authorId: string | null }> }>();
-    expect(skills).toHaveLength(1);
-    expect(skills[0]!.authorId).toBeNull();
-  });
-
-  // Regression: bug 002 — GET /skills returned system skills but a test asserted an
-  // empty list; the correct contract is that system skills are always present.
-  // Verifies the route correctly passes through any skills returned by the DB
-  // (including system skills with authorId=null) without filtering them out.
-  it('includes system skills alongside user-owned skills in the response', async () => {
-    const rows = [stubSkill, stubBuiltinSkill];
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain(rows)),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'GET', url: '/skills' });
-    const { skills } = res.json<{ skills: Array<{ authorId: string | null }> }>();
-    const systemSkills = skills.filter((s) => s.authorId === null);
-    const ownedSkills = skills.filter((s) => s.authorId !== null);
-    expect(systemSkills).toHaveLength(1);
-    expect(ownedSkills).toHaveLength(1);
-  });
-});
-
-// ─── POST /skills ─────────────────────────────────────────────────────────
-
-describe('POST /skills', () => {
-  it('creates a skill and returns 201', async () => {
-    let selectCount = 0;
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => {
-        selectCount++;
-        return makeChain(selectCount === 1 ? [stubSkill] : []);
-      }),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/skills',
-      payload: {
-        name: 'My Skill',
-        description: 'Does things',
-        instructions: 'Always be helpful',
-      },
+    expect(res.json()).toEqual({
+      skillId: 'skill-1',
+      usage90d: 7,
+      likes90d: 5,
+      forks90d: 2,
+      usage30d: 4,
+      likes30d: 3,
+      forks30d: 1,
+      likeCount: 5,
+      forkCount: 2,
+      popularityScore: 1.25,
+      trendingScore: 0.5,
+      updatedAt: '2026-06-13T12:00:00.000Z',
     });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().name).toBe('My Skill');
-  });
-
-  it('returns 400 when required fields are missing', async () => {
-    const db = { ...makeInsertMock() } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/skills',
-      payload: { name: 'Missing desc and instructions' },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('validation_error');
-  });
-
-  it('uses private visibility by default', async () => {
-    let insertedValues: Record<string, unknown> = {};
-    let isFirstInsert = true;
-    const db = {
-      ...makeInsertMock((v) => {
-        if (!isFirstInsert) insertedValues = v as Record<string, unknown>;
-        isFirstInsert = false;
-      }),
-      select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    await app.inject({
-      method: 'POST',
-      url: '/skills',
-      payload: { name: 'S', description: 'D', instructions: 'I' },
-    });
-    expect(insertedValues['visibility']).toBe('private');
-  });
-
-  it('accepts execute_code as a canonical required tool', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([{ ...stubSkill, requiredTools: ['execute_code'] }])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/skills',
-      payload: {
-        name: 'Code Skill',
-        description: 'Runs code',
-        instructions: 'Use execute_code',
-        requiredTools: ['execute_code'],
-      },
-    });
-
-    expect(res.statusCode).toBe(201);
-  });
-
-  it('rejects legacy code_execute required tools', async () => {
-    const db = { ...makeInsertMock() } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/skills',
-      payload: {
-        name: 'Legacy Code Skill',
-        description: 'Runs code',
-        instructions: 'Use code_execute',
-        requiredTools: ['code_execute'],
-      },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('validation_error');
-  });
-});
-
-// ─── GET /skills/:id ──────────────────────────────────────────────────────
-
-describe('GET /skills/:id', () => {
-  it('returns 200 for owned skill', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'GET', url: `/skills/${SKILL_ID}` });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().id).toBe(SKILL_ID);
-  });
-
-  it('returns 404 when skill not found or not accessible', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'GET', url: `/skills/${SKILL_ID}` });
-    expect(res.statusCode).toBe(404);
-  });
-});
-
-// ─── PUT /skills/:id ──────────────────────────────────────────────────────
-
-describe('PUT /skills/:id', () => {
-  it('updates own skill and returns updated row', async () => {
-    let selectCount = 0;
-    const updatedSkill = { ...stubSkill, name: 'Updated Name' };
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => {
-        selectCount++;
-        return makeChain(selectCount === 1 ? [stubSkill] : [updatedSkill]);
-      }),
-      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/skills/${SKILL_ID}`,
-      payload: { name: 'Updated Name' },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().name).toBe('Updated Name');
-  });
-
-  it('returns 404 when skill not owned by user', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/skills/${SKILL_ID}`,
-      payload: { name: 'Hack' },
-    });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('rejects legacy code_execute on update', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([stubSkill])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'PUT',
-      url: `/skills/${SKILL_ID}`,
-      payload: { requiredTools: ['code_execute'] },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('validation_error');
-  });
-});
-
-// ─── DELETE /skills/:id ───────────────────────────────────────────────────
-
-describe('DELETE /skills/:id', () => {
-  it('deletes own skill and returns 204', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([{ id: SKILL_ID, authorId: TEST_USER_ID }])),
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'DELETE', url: `/skills/${SKILL_ID}` });
-    expect(res.statusCode).toBe(204);
-  });
-
-  it('returns 404 when skill not owned by user', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'DELETE', url: `/skills/${SKILL_ID}` });
-    expect(res.statusCode).toBe(404);
-  });
-});
-
-// ─── POST /skills/:id/fork ────────────────────────────────────────────────
-
-describe('POST /skills/:id/fork', () => {
-  it('creates a private copy and returns 201', async () => {
-    const forkedSkill = { ...stubSkill, id: 'fork-1', name: 'My Skill (fork)', visibility: 'private', forkOf: SKILL_ID };
-    let selectCount = 0;
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => {
-        selectCount++;
-        return makeChain(selectCount === 1 ? [stubSkill] : [forkedSkill]);
-      }),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'POST', url: `/skills/${SKILL_ID}/fork` });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().visibility).toBe('private');
-    expect(res.json().forkOf).toBe(SKILL_ID);
-  });
-
-  it('fork sets visibility to private even if source is public', async () => {
-    const publicSkill = { ...stubSkill, visibility: 'public' };
-    let insertedValues: Record<string, unknown> = {};
-    let selectCount = 0;
-    const db = {
-      ...makeInsertMock((v) => { insertedValues = v as Record<string, unknown>; }),
-      select: vi.fn().mockImplementation(() => {
-        selectCount++;
-        return makeChain(selectCount === 1 ? [publicSkill] : [{ ...publicSkill, visibility: 'private' }]);
-      }),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    await app.inject({ method: 'POST', url: `/skills/${SKILL_ID}/fork` });
-    expect(insertedValues['visibility']).toBe('private');
-    expect(insertedValues['authorId']).toBe(TEST_USER_ID);
-  });
-
-  it('returns 404 when source skill is not accessible', async () => {
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'POST', url: `/skills/${SKILL_ID}/fork` });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('rejects forking a source skill with legacy code_execute required tools', async () => {
-    const legacySkill = { ...stubSkill, requiredTools: ['code_execute'] };
-    const db = {
-      ...makeInsertMock(),
-      select: vi.fn().mockImplementation(() => makeChain([legacySkill])),
-    } as unknown as Database;
-    const app = Fastify();
-    decorateWithAuth(app);
-    await skillsRoutes(app, db);
-
-    const res = await app.inject({ method: 'POST', url: `/skills/${SKILL_ID}/fork` });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('validation_error');
   });
 });

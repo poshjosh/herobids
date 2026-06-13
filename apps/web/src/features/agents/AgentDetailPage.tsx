@@ -99,7 +99,7 @@ export function AgentDetailPage() {
 
   const skillsQuery = useQuery({
     queryKey: ['skills'],
-    queryFn: () => skillsApi.list(),
+    queryFn: () => skillsApi.list({ scope: 'selectable' }),
   });
 
   const selectedSkills = resolveSelectedSkills(agent?.skillIds ?? [], skillsQuery.data?.skills ?? []);

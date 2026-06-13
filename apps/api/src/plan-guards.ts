@@ -1,4 +1,4 @@
-import type { PlansConfig } from '@herobids/domain';
+import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { bots, venueAccounts, userCredentials, backtestRuns, agents } from '@herobids/db';
 import { eq, and, inArray } from 'drizzle-orm';
@@ -13,6 +13,7 @@ interface PlanLimits {
   maxConcurrentBacktests: number;
   maxAgents: number;
   liveEnabled: boolean;
+  skills: PlanSkillsEntitlements;
 }
 
 /** Resolve plan limits for a given planId. Falls back to default plan if unknown. */
@@ -20,9 +21,26 @@ function resolvePlanLimits(config: PlansConfig, planId: string): PlanLimits {
   const plan = config.plans[planId] ?? config.plans[config.defaultPlanId];
   if (!plan) {
     // Absolute fallback — should never happen if config is valid
-    return { maxPortfolios: 1, maxVenueAccounts: 1, maxCredentials: 1, maxTradingInstances: 1, maxConcurrentBacktests: 1, maxAgents: 0, liveEnabled: false };
+    return {
+      maxPortfolios: 1,
+      maxVenueAccounts: 1,
+      maxCredentials: 1,
+      maxTradingInstances: 1,
+      maxConcurrentBacktests: 1,
+      maxAgents: 0,
+      liveEnabled: false,
+      skills: {
+        autoPublishCreatedSkills: false,
+        canKeepSkillsPrivate: true,
+        canChargeForSkills: false,
+      },
+    };
   }
   return plan;
+}
+
+export function resolvePlanSkillEntitlements(config: PlansConfig, planId: string): PlanSkillsEntitlements {
+  return resolvePlanLimits(config, planId).skills;
 }
 
 export type PlanCheckResult = Result<void, {
