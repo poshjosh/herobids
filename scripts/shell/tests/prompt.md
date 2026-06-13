@@ -14,6 +14,14 @@ STEPS
 
 5. Wait for the script to complete; wait at most <timout> milliseconds.
 
+5.5. The script runs automated post-trade assertions before teardown:
+   - It verifies direct agent journal events via `GET /journal?actorId=<agent-id>`
+   - It verifies decision statuses via `GET /agents/<agent-id>/decisions`
+   - It compares `GET /agents/<agent-id>/capabilities/trading/positions` with `GET /agents/<agent-id>/capabilities/trading/state`
+   - It checks that the real `list_positions` tool path reported an open position after the trade landed
+   - If those assertions fail, skip eval and go directly to step 7 (investigation)
+   - If you need to inspect the agent manually after a failure, rerun step 4 with `SKIP_TEARDOWN=1`
+
 6. Read and execute/implement this: .ignore/eval/eval-prompt.md, with meaningful values for both evaluation-period and agent-id
 
 7. If there are observed errors/bugs which prevent trading (or other serious problems): 

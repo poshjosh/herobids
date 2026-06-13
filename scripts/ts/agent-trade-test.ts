@@ -45,6 +45,12 @@
 import { execSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  getToolResultPayload,
+  selectListPositionsResult,
+  type AgentActivityEntry,
+  type ToolResultPayload,
+} from './agent-trade-test-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -365,15 +371,27 @@ async function startAgent(token: string, agentId: string): Promise<void> {
   fatal(`Agent start failed: ${res.status} ${JSON.stringify(res.body)}`);
 }
 
+async function verifyAgentProvisioned(token: string, agentId: string): Promise<void> {
+  // Wait briefly for async provisioning to complete
+  await sleep(2000);
+
+  const verifyRes = await apiRequest<AgentBody>('GET', `/agents/${agentId}`, { token });
+  if (verifyRes.status !== 200) {
+    fatal(`Agent ${agentId} was created but is not queryable — status ${verifyRes.status}`);
+  }
+  if (verifyRes.body.status === 'unknown') {
+    fatal(`Agent ${agentId} exists but has status 'unknown' — provisioning gap detected`);
+  }
+  ok(`Agent verified — id=${agentId} status=${verifyRes.body.status}`);
+}
+
 // ---------------------------------------------------------------------------
 // Phase 3: Watch
 // ---------------------------------------------------------------------------
 
-interface ActivityEntry {
-  id: string;
-  type: string;
-  content?: string;
-  createdAt: string;
+interface AgentActivityFeedResponse {
+  entries: AgentActivityEntry[];
+  hasMore: boolean;
 }
 
 interface DecisionRow {
@@ -398,32 +416,104 @@ interface AgentStatusBody {
   activeSession?: { status: string } | null;
 }
 
+interface JournalEntry {
+  id: string;
+  actorId: string;
+  actorType: string;
+  eventType: string;
+  createdAt: string;
+}
+
+interface JournalQueryResponse {
+  events: JournalEntry[];
+}
+
+interface AgentPositionsResponse {
+  agentId: string;
+  family: 'trading';
+  items: Array<{
+    id: string;
+    actorType: string;
+    actorId: string;
+    closedAt: string | null;
+  }>;
+  limit: number;
+  offset: number;
+}
+
+type WatchOutcome = 'success' | 'timeout' | 'crashed' | 'silent_rejection' | 'rejected' | 'position_mismatch';
+
 // Tracks which activity entry IDs we have already printed so polling stays incremental.
 const seenActivityIds = new Set<string>();
 
-async function fetchAndPrintNewActivity(token: string, agentId: string): Promise<void> {
-  const res = await apiRequest<ActivityEntry[]>(
-    'GET', `/agents/${agentId}/activity-feed?limit=50`,
+async function fetchAgentActivityEntries(token: string, agentId: string, limit = 50): Promise<AgentActivityEntry[] | null> {
+  const res = await apiRequest<AgentActivityFeedResponse>(
+    'GET', `/agents/${agentId}/activity-feed?limit=${limit}`,
     { token },
   );
-  if (res.status !== 200 || !Array.isArray(res.body)) return;
+  if (res.status !== 200 || !Array.isArray(res.body.entries)) return null;
+  return res.body.entries;
+}
+
+async function fetchAndPrintNewActivity(token: string, agentId: string): Promise<void> {
+  const entries = await fetchAgentActivityEntries(token, agentId);
+  if (entries === null) return;
 
   // The feed is newest-first — reverse to print chronologically.
-  const entries = [...res.body].reverse();
-  for (const entry of entries) {
+  const orderedEntries = [...entries].reverse();
+  for (const entry of orderedEntries) {
     if (seenActivityIds.has(entry.id)) continue;
     seenActivityIds.add(entry.id);
-    const preview = (entry.content ?? '').slice(0, 120).replace(/\n/g, ' ');
-    log(`  ${DIM}[${entry.type}]${RESET} ${preview}`);
+    const preview = entry.summary.slice(0, 120).replace(/\n/g, ' ');
+    log(`  ${DIM}[${entry.eventType}]${RESET} ${preview}`);
   }
 }
 
-async function watchAgent(token: string, agentId: string): Promise<'success' | 'timeout' | 'crashed'> {
+async function waitForListPositionsResult(
+  token: string,
+  agentId: string,
+  notBeforeIso: string,
+  timeoutMs = 30_000,
+): Promise<AgentActivityEntry | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const entries = await fetchAgentActivityEntries(token, agentId, 100);
+    if (entries !== null) {
+      const match = selectListPositionsResult(entries, notBeforeIso);
+      if (match) {
+        return match;
+      }
+    }
+
+    await sleep(3_000);
+  }
+
+  return null;
+}
+
+async function fetchDirectAgentJournalEvents(token: string, agentId: string): Promise<JournalEntry[] | null> {
+  const query = new URLSearchParams({ actorId: agentId, limit: '20' });
+  const res = await apiRequest<JournalQueryResponse>(
+    'GET', `/journal?${query.toString()}`,
+    { token },
+  );
+  if (res.status !== 200 || !Array.isArray(res.body.events)) {
+    return null;
+  }
+  return res.body.events;
+}
+
+async function watchAgent(token: string, agentId: string): Promise<WatchOutcome> {
   section('Phase 3: Watching agent');
   log(`Timeout: ${TIMEOUT_MS / 1000}s  Poll interval: ${POLL_INTERVAL_MS / 1000}s`);
 
   const deadline = Date.now() + TIMEOUT_MS;
   let lastDecisionCount = 0;
+  let decisionObservedAt: number | null = null;
+
+  // After seeing a decision, wait up to this many ms for journal confirmation
+  const JOURNAL_CONFIRM_WAIT_MS = 60_000;
 
   while (Date.now() < deadline) {
     await sleep(POLL_INTERVAL_MS);
@@ -458,10 +548,20 @@ async function watchAgent(token: string, agentId: string): Promise<'success' | '
           const intent = d.intent ?? d.side ?? 'unknown';
           const instrument = d.instrumentId ?? d.symbol ?? 'unknown';
           const details = d.targetSize ? ` targetSize=${d.targetSize}` : '';
-          const status = d.status ? ` status=${d.status}` : '';
-          ok(`Decision recorded — id=${d.id} intent=${intent} instrument=${instrument}${details}${status}`);
+          const dStatus = d.status ? ` status=${d.status}` : '';
+          ok(`Decision recorded — id=${d.id} intent=${intent} instrument=${instrument}${details}${dStatus}`);
+
+          // Fail immediately if decision was explicitly rejected
+          if (d.status === 'rejected' || d.status === 'dropped') {
+            warn(`Decision ${d.id} was ${d.status} — trading pipeline rejected it`);
+            return 'rejected';
+          }
         }
         lastDecisionCount = count;
+        if (!decisionObservedAt) {
+          decisionObservedAt = Date.now();
+          log('Decision observed — waiting for journal/fill confirmation…');
+        }
       }
     }
 
@@ -478,15 +578,127 @@ async function watchAgent(token: string, agentId: string): Promise<'success' | '
       }
     }
 
-    // 5. Decisions alone (without open position) also count as success for paper mode
-    // In paper mode fills don't always produce an open position row immediately.
-    if (lastDecisionCount > 0) {
-      ok(`Decision submitted in paper mode — count=${lastDecisionCount}`);
-      return 'success';
+    // 5. If decision was observed, check for journal confirmation
+    if (decisionObservedAt) {
+      const agentJournalEvents = await fetchDirectAgentJournalEvents(token, agentId);
+      if (agentJournalEvents !== null) {
+        if (agentJournalEvents.length > 0) {
+          ok(`Journal event confirmed — ${agentJournalEvents.length} event(s) for agent actor`);
+          return 'success';
+        }
+      }
+
+      // If we've waited long enough after decision and still no journal, it's a silent rejection
+      if (Date.now() - decisionObservedAt > JOURNAL_CONFIRM_WAIT_MS) {
+        warn('Decision was submitted but no journal event appeared — silent rejection detected');
+        return 'silent_rejection';
+      }
     }
   }
 
   return 'timeout';
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3.5: Post-trade assertions
+// ---------------------------------------------------------------------------
+
+async function runPostTradeAssertions(token: string, agentId: string): Promise<WatchOutcome> {
+  section('Phase 3.5: Post-trade assertions');
+
+  // 1. Verify decisions exist and none are rejected
+  const decisionsRes = await apiRequest<DecisionRow[]>(
+    'GET', `/agents/${agentId}/decisions?limit=10`,
+    { token },
+  );
+  if (decisionsRes.status === 200 && Array.isArray(decisionsRes.body)) {
+    const rejected = decisionsRes.body.filter(d => d.status === 'rejected' || d.status === 'dropped');
+    if (rejected.length > 0) {
+      warn(`${rejected.length} decision(s) were rejected/dropped after initial success signal`);
+      for (const d of rejected) {
+        warn(`  Decision ${d.id} status=${d.status}`);
+      }
+      return 'rejected';
+    }
+    ok(`All ${decisionsRes.body.length} decision(s) have non-rejected status`);
+  }
+
+  // 2. Verify journal events exist for the agent
+  const agentEvents = await fetchDirectAgentJournalEvents(token, agentId);
+  if (agentEvents === null) {
+    warn('Could not query direct agent journal events during post-trade assertions');
+    return 'silent_rejection';
+  }
+  if (agentEvents.length > 0) {
+    ok(`Journal has ${agentEvents.length} event(s) attributed to agent actor directly`);
+  } else {
+    warn('No direct agent journal events found — trade may not have been persisted');
+    return 'silent_rejection';
+  }
+
+  // 3. Cross-check position visibility: system-level vs agent-visible
+  const stateRes = await apiRequest<TradingState>(
+    'GET', `/agents/${agentId}/capabilities/trading/state`,
+    { token },
+  );
+  const positionsRes = await apiRequest<AgentPositionsResponse>(
+    'GET', `/agents/${agentId}/capabilities/trading/positions`,
+    { token },
+  );
+
+  if (stateRes.status !== 200) {
+    warn(`Trading state check failed during post-trade assertions: ${stateRes.status}`);
+    return 'silent_rejection';
+  }
+
+  if (positionsRes.status !== 200 || !Array.isArray(positionsRes.body.items)) {
+    warn(`Trading positions check failed during post-trade assertions: ${positionsRes.status}`);
+    return 'silent_rejection';
+  }
+
+  const openSystemPositions = positionsRes.body.items.filter((position) => position.closedAt === null);
+  const systemPositionCount = openSystemPositions.length;
+  const agentVisibleCount = stateRes.body.openPositionCount;
+
+  if (systemPositionCount > 0) {
+    const notBeforeIso = agentEvents
+      .map((event) => event.createdAt)
+      .sort()
+      .at(-1)
+      ?? decisionsRes.body
+        .map((decision) => decision.createdAt)
+        .sort()
+        .at(-1)
+      ?? new Date().toISOString();
+
+    const listPositionsEntry = await waitForListPositionsResult(token, agentId, notBeforeIso);
+    if (!listPositionsEntry) {
+      warn('No successful list_positions tool result was observed after the trade landed');
+      return 'position_mismatch';
+    }
+
+    const payload = getToolResultPayload(listPositionsEntry);
+    if (payload?.hasOpenPositions === false || payload?.positionCount === 0) {
+      warn('list_positions reported no open positions even though the trading positions endpoint has open positions');
+      return 'position_mismatch';
+    }
+
+    ok('Observed successful list_positions tool result after the trade landed');
+  }
+
+  if (systemPositionCount > 0 && agentVisibleCount === 0) {
+    warn(`POSITION MISMATCH: ${systemPositionCount} position(s) at system level, but agent sees 0`);
+    for (const position of openSystemPositions.slice(0, 5)) {
+      warn(`  Position: actorType=${position.actorType} actorId=${position.actorId}`);
+    }
+    return 'position_mismatch';
+  }
+
+  if (systemPositionCount > 0) {
+    ok(`Position visibility consistent — system=${systemPositionCount} agent-visible=${agentVisibleCount}`);
+  }
+
+  return 'success';
 }
 
 // ---------------------------------------------------------------------------
@@ -568,12 +780,18 @@ async function main(): Promise<void> {
   const token = await authenticate();
   const bindingId = await createProviderLink(token);
   const agentId = await createAgent(token);
+  await verifyAgentProvisioned(token, agentId);
   await bindTradingCapability(token, agentId, bindingId);
   await startAgent(token, agentId);
   ok(`Agent ${agentId} is starting`);
 
   // Phase 3
-  const outcome = await watchAgent(token, agentId);
+  let outcome = await watchAgent(token, agentId);
+
+  // Phase 3.5: Post-trade assertions (cross-check consistency)
+  if (outcome === 'success') {
+    outcome = await runPostTradeAssertions(token, agentId);
+  }
 
   // Phase 4
   await teardown(token, agentId);
@@ -581,9 +799,30 @@ async function main(): Promise<void> {
   // Result
   console.log('');
   if (outcome === 'success') {
-    console.log(`${BOLD}${GREEN}PASS${RESET} — agent submitted a trade within the timeout window.`);
+    console.log(`${BOLD}${GREEN}PASS${RESET} — agent submitted a trade and execution was confirmed.`);
   } else if (outcome === 'crashed') {
     console.log(`${BOLD}${RED}FAIL${RESET} — agent crashed. Check the activity feed above for the cause.`);
+    process.exit(1);
+  } else if (outcome === 'rejected') {
+    console.log(`${BOLD}${RED}FAIL${RESET} — agent's decision was explicitly rejected by the trading pipeline.`);
+    console.log('  Possible causes:');
+    console.log('    · Agent not found in agents table (provisioning gap)');
+    console.log('    · Agent status is paused/stopped');
+    console.log('    · Risk gate rejected the decision');
+    process.exit(1);
+  } else if (outcome === 'silent_rejection') {
+    console.log(`${BOLD}${RED}FAIL${RESET} — decision was submitted but no journal event appeared (silent rejection).`);
+    console.log('  Possible causes:');
+    console.log('    · Agent row missing from agents table — worker drops decision at gate');
+    console.log('    · DecisionIntakeResolver cannot resolve execution context for agent actor');
+    console.log('    · Position persisted with wrong actorType — invisible to queries');
+    console.log('    · Worker crashed silently while processing the decision');
+    process.exit(1);
+  } else if (outcome === 'position_mismatch') {
+    console.log(`${BOLD}${RED}FAIL${RESET} — position exists at system level but is invisible to the agent.`);
+    console.log('  Possible causes:');
+    console.log('    · list_positions only queries actorType=bot (missing agent positions)');
+    console.log('    · Position persisted with incorrect actorId');
     process.exit(1);
   } else {
     console.log(`${BOLD}${RED}FAIL${RESET} — no trade was observed within ${TIMEOUT_MS / 1000}s.`);

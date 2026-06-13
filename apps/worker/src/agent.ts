@@ -32,6 +32,7 @@ import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages 
 import { buildIncrementalContext } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
+import { buildToolResultMetadata } from './tool-result-metadata.js';
 import {
   applyRuntimeMessage,
   buildSystemPrompt as composeSystemPrompt,
@@ -895,6 +896,7 @@ function emitToolResultEvent(params: {
   status: 'ok' | 'error';
   correlationId: string;
   summary?: string;
+  metadata?: Record<string, unknown>;
 }): void {
   emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT, {
     tickId: currentTickId,
@@ -903,6 +905,7 @@ function emitToolResultEvent(params: {
     status: params.status,
     correlationId: params.correlationId,
     summary: params.summary,
+    ...(params.metadata ? { metadata: params.metadata } : {}),
   });
 }
 
@@ -1203,6 +1206,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       status: 'ok',
       correlationId: toolCorrelationId,
       summary: serialized.slice(0, 500),
+      metadata: buildToolResultMetadata(call.tool, result.data),
     });
     return serialized;
   } catch (err) {
