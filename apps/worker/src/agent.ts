@@ -1113,6 +1113,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
               throw new Error(`Invariant violation: open position ${position.id} is missing actorId`);
             }
             return {
+              actorType: position.actorType,
               actorId: position.actorId,
               symbol: position.symbol,
               side: position.side,

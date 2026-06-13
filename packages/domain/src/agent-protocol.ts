@@ -146,7 +146,7 @@ export type ManageBotPayload = z.infer<typeof ManageBotPayloadSchema>;
 export const BotQueryPayloadSchema = z.object({
   action: z.enum(['list_bots', 'get_bot_status', 'get_analytics', 'list_positions']),
   botId: z.string().min(1).optional(),
-  days: z.number().int().min(1).max(365).optional(),
+  days: z.number().int().min(1).max(90).optional(),
 });
 
 export type BotQueryPayload = z.infer<typeof BotQueryPayloadSchema>;

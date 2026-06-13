@@ -9,6 +9,7 @@ function makeAgentRepo() {
   return {
     updateAgent: vi.fn().mockResolvedValue(undefined),
     listActiveAgents: vi.fn().mockResolvedValue([]),
+    getSessionsByStatuses: vi.fn().mockResolvedValue([]),
     getAgent: vi.fn().mockResolvedValue(null),
   };
 }
@@ -307,5 +308,114 @@ describe('DockerAgentManager — LLM env forwarding (bug #22)', () => {
 
     const env = getContainerEnv(fetchMock);
     expect(env).toContain('LLM_BASE_URL=https://openrouter.ai/api/v1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconcile — orphan container detection
+//
+// A container may be running while the agents table has no matching active row.
+// This happens when the DB is truncated/re-seeded while containers keep running,
+// or when a container is launched outside the API provisioning flow.
+// The reconcile loop should stop such orphan containers and log a warning.
+// ---------------------------------------------------------------------------
+describe('DockerAgentManager — reconcile orphan detection', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  function makeReconcileFetch(options: {
+    runningAgentIds: string[];
+    stopStatus?: number;
+  }) {
+    const { runningAgentIds, stopStatus = 204 } = options;
+    return vi.fn().mockImplementation((url: string, _init: RequestInit) => {
+      if (url.includes('/containers/json')) {
+        const containers = runningAgentIds.map((id) => ({
+          Names: [`/herobids-agent-${id}`],
+          State: 'running',
+          Labels: { 'herobids.role': 'agent', 'herobids.agentId': id },
+        }));
+        return Promise.resolve(new Response(JSON.stringify(containers), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }));
+      }
+      if (url.includes('/stop')) {
+        return Promise.resolve(new Response(null, { status: stopStatus }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+  }
+
+  it('stops a container running with no active agent row in DB', async () => {
+    const agentRepo = makeAgentRepo(); // listActiveAgents returns [] — no known active agents
+    const fetchMock = makeReconcileFetch({ runningAgentIds: ['orphan-001'] });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+    await manager.reconcile();
+
+    const stopCall = fetchMock.mock.calls.find((c: unknown[]) =>
+      typeof c[0] === 'string' && (c[0] as string).includes('/stop'),
+    );
+    expect(stopCall).toBeDefined();
+    expect(stopCall![0] as string).toContain('herobids-agent-orphan-001');
+  });
+
+  it('does not stop a container that has a matching active agent row', async () => {
+    const agentRepo = makeAgentRepo();
+    (agentRepo.listActiveAgents as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'agent-001', status: 'active' }]);
+    const fetchMock = makeReconcileFetch({ runningAgentIds: ['agent-001'] });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+    await manager.reconcile();
+
+    const stopCall = fetchMock.mock.calls.find((c: unknown[]) =>
+      typeof c[0] === 'string' && (c[0] as string).includes('/stop'),
+    );
+    expect(stopCall).toBeUndefined();
+  });
+
+  it('does not stop a container whose runtime session is still starting', async () => {
+    const agentRepo = makeAgentRepo();
+    (agentRepo.getSessionsByStatuses as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-starting', status: 'starting' },
+    ]);
+    const fetchMock = makeReconcileFetch({ runningAgentIds: ['agent-starting'] });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+    await manager.reconcile();
+
+    const stopCall = fetchMock.mock.calls.find((c: unknown[]) =>
+      typeof c[0] === 'string' && (c[0] as string).includes('/stop'),
+    );
+    expect(stopCall).toBeUndefined();
+  });
+
+  it('stops only orphan containers when some have active rows and some do not', async () => {
+    const agentRepo = makeAgentRepo();
+    (agentRepo.listActiveAgents as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'agent-known', status: 'active' }]);
+    const fetchMock = makeReconcileFetch({ runningAgentIds: ['agent-known', 'agent-orphan'] });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+    await manager.reconcile();
+
+    const stopCalls = fetchMock.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === 'string' && (c[0] as string).includes('/stop'),
+    );
+    expect(stopCalls).toHaveLength(1);
+    expect(stopCalls[0]![0] as string).toContain('agent-orphan');
+  });
+
+  it('continues reconciliation when stopping an orphan fails', async () => {
+    const agentRepo = makeAgentRepo();
+    const fetchMock = makeReconcileFetch({ runningAgentIds: ['orphan-fail'], stopStatus: 500 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+    // Should not throw even if the Docker stop call fails
+    await expect(manager.reconcile()).resolves.not.toThrow();
   });
 });

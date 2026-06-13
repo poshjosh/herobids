@@ -170,6 +170,63 @@ describe('AgentDecisionHandler', () => {
     );
   });
 
+  it('accepts a decision when the agent row is missing but a running session exists', async () => {
+    const { handler, eventPublisher } = makeHandler();
+
+    vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+      decision: {
+        id: 'dec-3',
+        botId: 'inst-1',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: { toString: () => '1' },
+        timestamp: '2026-06-03T00:00:00.000Z',
+      } as any,
+      riskRejected: false,
+      position: {
+        symbol: 'BTC/USD:USD',
+        side: 'flat',
+        size: { toString: () => '0' },
+        entryPrice: { toString: () => '0' },
+        realizedPnl: { toString: () => '0' },
+      } as any,
+      executionFailed: false,
+    });
+
+    const agentRepo = (handler as unknown as { agentRepo: { getAgent: ReturnType<typeof vi.fn> } }).agentRepo;
+    agentRepo.getAgent.mockResolvedValueOnce(null);
+
+    await handler.handleDecisionSubmit(
+      {
+        schemaVersion: 'v1',
+        messageId: 'msg-3',
+        correlationId: 'corr-3',
+        initiatorType: 'agent',
+        initiatorId: 'agent-1',
+        botId: 'inst-1',
+        type: 'agent.decision.submit',
+        createdAt: '2026-06-03T00:00:00.000Z',
+        payload: {},
+      },
+      {
+        decisionId: 'dec-3',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: '1',
+        rationaleSummary: 'missing row but live session',
+      },
+    );
+
+    expect(eventPublisher.emitDecisionRejected).not.toHaveBeenCalledWith(
+      'inst-1',
+      expect.objectContaining({ code: 'agent_paused' }),
+    );
+    expect(eventPublisher.emitDecisionAccepted).toHaveBeenCalledWith(
+      'inst-1',
+      expect.objectContaining({ decisionId: 'dec-3' }),
+    );
+  });
+
   it('swallows post-commit publication failures after successful intake', async () => {
     const { handler, eventPublisher } = makeHandler();
 

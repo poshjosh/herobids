@@ -314,6 +314,26 @@ export class DockerAgentManager {
         }
       }
 
+      // A running container is also legitimate while its session is still starting/
+      // launching, before the first heartbeat promotes the agent row to active.
+      // Paused agents keep their runtime session alive as well, so session state is
+      // part of the ownership signal for the orphan-stop path.
+      const liveSessions = await this.agentRepo.getSessionsByStatuses(['starting', 'launching', 'running', 'unhealthy']);
+
+      // Find containers running with no active DB row — they are orphans.
+      // This happens when the agents table is truncated while containers keep running,
+      // or when a container is launched outside the normal API provisioning flow.
+      const activeAgentIds = new Set(activeAgents.map((a) => a.id));
+      const liveSessionAgentIds = new Set(liveSessions.map((session) => session.agentId));
+      for (const agentId of runningAgentIds) {
+        if (!activeAgentIds.has(agentId) && !liveSessionAgentIds.has(agentId)) {
+          logger.warn({ agentId }, 'Reconcile: container running but no active agent in DB — stopping orphan');
+          await this.stop(agentId).catch((err: unknown) => {
+            logger.error({ err, agentId }, 'Reconcile: failed to stop orphan container');
+          });
+        }
+      }
+
       logger.info({ runningCount: runningAgentIds.size }, 'Agent container reconciliation complete');
     } catch (err) {
       logger.error({ err }, 'Agent container reconciliation failed');

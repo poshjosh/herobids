@@ -1256,13 +1256,19 @@ export function applyRuntimeMessage(
       recordPerformanceInputs(state, {
         winRate: parseNumber(data['winRate']),
       });
-      const summary = `Bot analytics: P&L ${state.metrics.lastPnlSummary ?? 'unavailable'}, open positions ${parseNumber(data['openPositions']) ?? 0}`;
+      const summary = `Portfolio analytics: P&L ${state.metrics.lastPnlSummary ?? 'unavailable'}, open positions ${parseNumber(data['openPositions']) ?? 0}`;
       pushRecentEvent(state, type, summary);
       return summary;
     }
 
-    if (tool === 'list_positions' && Array.isArray(data)) {
-      setOpenPositions(state, data.map((position) => ({
+    const positionRows = tool === 'list_positions'
+      ? (Array.isArray(data)
+        ? data
+        : (data && !Array.isArray(data) && Array.isArray(data['positions']) ? data['positions'] : null))
+      : null;
+
+    if (positionRows) {
+      setOpenPositions(state, positionRows.map((position) => ({
         instrumentId: String(position['instrumentId'] ?? position['symbol'] ?? 'unknown'),
         side: String(position['side'] ?? 'unknown'),
         size: String(position['size'] ?? 'unknown'),
@@ -1273,7 +1279,7 @@ export function applyRuntimeMessage(
         venueType: inferVenueType(state, String(position['instrumentId'] ?? position['symbol'] ?? 'unknown')),
         freshness: freshFreshness('positions-tool'),
       })));
-      const summary = `Open positions: ${data.length}`;
+      const summary = `Open positions: ${positionRows.length}`;
       pushRecentEvent(state, type, summary);
       return summary;
     }

@@ -666,16 +666,34 @@ export class BotRepository {
     return !!row;
   }
 
-  /** Open positions for all bots created by the given actor. */
+  /** Open positions for all bots created by the given actor, plus any agent-direct positions. */
   async getOpenPositionsByCreator(creatorType: string, creatorId: string, botId?: string) {
     const botRows = await this.getBotsForQuery(creatorType, creatorId, undefined, botId);
     const botIds = botRows.map((row) => row.id);
-    if (botIds.length === 0) return [];
+
+    // Agent-native positions: actorType='agent', actorId=creatorId.
+    // Only include when the caller is an agent and no specific botId filter is requested,
+    // since a botId filter scopes the query to a single bot's positions.
+    const hasAgentDirect = creatorType === 'agent' && !botId;
+
+    if (botIds.length === 0 && !hasAgentDirect) return [];
+
+    const botCondition = botIds.length > 0
+      ? and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds), isNull(positions.closedAt))
+      : undefined;
+
+    const agentCondition = hasAgentDirect
+      ? and(eq(positions.actorType, 'agent'), eq(positions.actorId, creatorId), isNull(positions.closedAt))
+      : undefined;
+
+    const whereClause = botCondition && agentCondition
+      ? or(botCondition, agentCondition)
+      : (botCondition ?? agentCondition!);
 
     return this.db
       .select()
       .from(positions)
-      .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds), isNull(positions.closedAt)))
+      .where(whereClause)
       .orderBy(desc(positions.updatedAt));
   }
 
@@ -683,17 +701,34 @@ export class BotRepository {
   async getRecentFillsByCreator(creatorType: string, creatorId: string, since?: Date, botId?: string) {
     const botRows = await this.getBotsForQuery(creatorType, creatorId, undefined, botId);
     const botIds = botRows.map((row) => row.id);
-    if (botIds.length === 0) return [];
 
-    const conditions = [eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)];
-    if (since) {
-      conditions.push(gte(fills.filledAt, since));
-    }
+    const hasAgentDirect = creatorType === 'agent' && !botId;
+    if (botIds.length === 0 && !hasAgentDirect) return [];
+
+    const botCondition = botIds.length > 0
+      ? and(
+        eq(fills.actorType, 'bot'),
+        inArray(fills.actorId, botIds),
+        ...(since ? [gte(fills.filledAt, since)] : []),
+      )
+      : undefined;
+
+    const agentCondition = hasAgentDirect
+      ? and(
+        eq(fills.actorType, 'agent'),
+        eq(fills.actorId, creatorId),
+        ...(since ? [gte(fills.filledAt, since)] : []),
+      )
+      : undefined;
+
+    const whereClause = botCondition && agentCondition
+      ? or(botCondition, agentCondition)
+      : (botCondition ?? agentCondition!);
 
     return this.db
       .select()
       .from(fills)
-      .where(and(...conditions))
+      .where(whereClause)
       .orderBy(desc(fills.filledAt));
   }
 
@@ -706,7 +741,8 @@ export class BotRepository {
       ? await this.getBotsForQuery(creatorType, creatorId, undefined, botId)
       : await this.getBotsByCreator(creatorType, creatorId);
     const botIds = botRows.map((row) => row.id);
-    if (botIds.length === 0) {
+    const hasAgentDirect = creatorType === 'agent' && !botId;
+    if (botIds.length === 0 && !hasAgentDirect) {
       return {
         botCount: 0,
         openPositions: 0,
@@ -717,23 +753,48 @@ export class BotRepository {
         recentFills: 0,
         avgHoldTimeHours: null as number | null,
         byBot: [] as Array<{ botId: string; status: string; recentFills: number; realizedPnlUsd: string }>,
+        agentDirect: null,
       };
     }
+
+    const botPositionCondition = botIds.length > 0
+      ? and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds))
+      : undefined;
+    const agentPositionCondition = hasAgentDirect
+      ? and(eq(positions.actorType, 'agent'), eq(positions.actorId, creatorId))
+      : undefined;
+    const positionWhereClause = botPositionCondition && agentPositionCondition
+      ? or(botPositionCondition, agentPositionCondition)
+      : (botPositionCondition ?? agentPositionCondition!);
 
     const positionRows = await this.db
       .select()
       .from(positions)
-      .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
+      .where(positionWhereClause);
 
     // Scope fills to the time window (not bot creation time)
-    const fillConditions: ReturnType<typeof eq>[] = [eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds) as ReturnType<typeof eq>];
-    if (since) {
-      fillConditions.push(gte(fills.filledAt, since) as ReturnType<typeof eq>);
-    }
+    const botFillCondition = botIds.length > 0
+      ? and(
+        eq(fills.actorType, 'bot'),
+        inArray(fills.actorId, botIds),
+        ...(since ? [gte(fills.filledAt, since)] : []),
+      )
+      : undefined;
+    const agentFillCondition = hasAgentDirect
+      ? and(
+        eq(fills.actorType, 'agent'),
+        eq(fills.actorId, creatorId),
+        ...(since ? [gte(fills.filledAt, since)] : []),
+      )
+      : undefined;
+    const fillWhereClause = botFillCondition && agentFillCondition
+      ? or(botFillCondition, agentFillCondition)
+      : (botFillCondition ?? agentFillCondition!);
+
     const fillRows = await this.db
       .select()
       .from(fills)
-      .where(and(...fillConditions))
+      .where(fillWhereClause)
       .orderBy(desc(fills.filledAt));
 
     const openPositions = positionRows.filter((row) => row.closedAt == null);
@@ -763,6 +824,16 @@ export class BotRepository {
       };
     });
 
+    // Agent-direct breakdown (trades made by the agent without a bot)
+    const agentDirect = hasAgentDirect
+      ? (() => {
+        const agentFills = fillRows.filter((f) => f.actorType === 'agent' && f.actorId === creatorId);
+        const agentPositions = closedPositions.filter((p) => p.actorType === 'agent' && p.actorId === creatorId);
+        const agentPnl = agentPositions.reduce((s, p) => s + Number(p.realizedPnl ?? 0), 0);
+        return { recentFills: agentFills.length, realizedPnlUsd: agentPnl.toFixed(2) };
+      })()
+      : null;
+
     return {
       botCount: botRows.length,
       openPositions: openPositions.length,
@@ -773,6 +844,7 @@ export class BotRepository {
       recentFills: fillRows.length,
       avgHoldTimeHours,
       byBot,
+      agentDirect,
     };
   }
 

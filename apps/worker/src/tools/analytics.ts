@@ -10,7 +10,7 @@ const GetAnalyticsParamsSchema = z.object({
 
 const getAnalyticsTool: AgentTool = {
   name: 'get_analytics',
-  description: 'Get trading analytics for all bots created by this agent. Returns total trades, win rate, P&L, fees, and per-bot breakdown over the specified lookback period.',
+  description: 'Get trading analytics for this agent, including both direct agent trades and all bot-created trades. Returns total trades, win rate, P&L, fees, per-bot breakdown, and an agent-direct summary over the specified lookback period.',
   parametersSchema: GetAnalyticsParamsSchema,
   parameters: convertZodToJsonSchema(GetAnalyticsParamsSchema),
   category: 'read-database',
@@ -34,12 +34,13 @@ const getAnalyticsTool: AgentTool = {
         ok: true,
         totalTrades: analytics.recentFills,
         winRate: Math.round(winRate * 100) / 100,
-        totalPnlUsd: analytics.realizedPnlUsd,
+        realizedPnlUsd: analytics.realizedPnlUsd,
         totalFeesUsd: analytics.totalFeesUsd,
         openPositions: analytics.openPositions,
         botCount: analytics.botCount,
         avgHoldTimeHours: analytics.avgHoldTimeHours,
         byBot: analytics.byBot,
+        agentDirect: analytics.agentDirect,
         days,
       },
     };
@@ -52,7 +53,7 @@ const ListPositionsParamsSchema = z.object({});
 
 const listPositionsTool: AgentTool = {
   name: 'list_positions',
-  description: 'List open positions for all bots created by this agent. Returns instrument, side, size, entry price, and open timestamp.',
+  description: 'List open positions owned by this agent, including bot-created and direct agent positions. Returns ownership, instrument, side, size, entry price, and open timestamp.',
   parametersSchema: ListPositionsParamsSchema,
   parameters: convertZodToJsonSchema(ListPositionsParamsSchema),
   category: 'read-database',
@@ -69,7 +70,9 @@ const listPositionsTool: AgentTool = {
         ok: true,
         note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
         positions: openPositions.map((position) => ({
-          botId: position.actorId,
+          actorType: position.actorType,
+          actorId: position.actorId,
+          botId: position.actorType === 'bot' ? position.actorId : null,
           instrumentId: position.symbol,
           side: position.side,
           size: position.size,

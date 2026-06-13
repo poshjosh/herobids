@@ -59,6 +59,7 @@ export interface ToolBotRecord {
 
 /** Position row shape returned by repository queries. */
 export interface ToolPositionRecord {
+  actorType: string;
   actorId: string;
   symbol: string;
   side: string;
@@ -78,6 +79,7 @@ export interface ToolAnalyticsResult {
   recentFills: number;
   avgHoldTimeHours: number | null;
   byBot: Array<{ botId: string; status: string; recentFills: number; realizedPnlUsd: string }>;
+  agentDirect: { recentFills: number; realizedPnlUsd: string } | null;
 }
 
 export interface ToolContext {

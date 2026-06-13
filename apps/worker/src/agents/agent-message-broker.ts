@@ -792,8 +792,20 @@ export class AgentMessageBroker {
     }
 
     if (payload.action === 'get_analytics') {
-      const since = payload.days ? new Date(Date.now() - payload.days * 24 * 60 * 60 * 1000) : undefined;
-      let analytics: unknown;
+      const days = payload.days ?? 7;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      let analytics: {
+        botCount: number;
+        openPositions: number;
+        closedPositions: number;
+        winningPositions: number;
+        realizedPnlUsd: string;
+        totalFeesUsd: string;
+        recentFills: number;
+        avgHoldTimeHours: number | null;
+        byBot: Array<{ botId: string; status: string; recentFills: number; realizedPnlUsd: string }>;
+        agentDirect: { recentFills: number; realizedPnlUsd: string } | null;
+      };
       try {
         analytics = await this.botRepo.getAnalyticsByCreator('agent', agent.id, since, payload.botId);
       } catch (err) {
@@ -806,17 +818,40 @@ export class AgentMessageBroker {
         });
         return;
       }
+      const winRate = analytics.closedPositions > 0
+        ? (analytics.winningPositions / analytics.closedPositions) * 100
+        : 0;
       await this.eventPublisher.emitToolResult(agent.id, {
         tool: 'get_analytics',
         status: 'ok',
         message: 'Analytics summary ready',
-        data: analytics,
+        data: {
+          ok: true,
+          totalTrades: analytics.recentFills,
+          winRate: Math.round(winRate * 100) / 100,
+          realizedPnlUsd: analytics.realizedPnlUsd,
+          totalFeesUsd: analytics.totalFeesUsd,
+          openPositions: analytics.openPositions,
+          botCount: analytics.botCount,
+          avgHoldTimeHours: analytics.avgHoldTimeHours,
+          byBot: analytics.byBot,
+          agentDirect: analytics.agentDirect,
+          days,
+        },
       });
       return;
     }
 
     if (payload.action === 'list_positions') {
-      let positions: readonly unknown[];
+      let positions: Array<{
+        actorType: string;
+        actorId: string;
+        symbol: string;
+        side: string;
+        size: string;
+        entryPrice: string;
+        openedAt: Date;
+      }>;
       try {
         positions = await this.botRepo.getOpenPositionsByCreator('agent', agent.id, payload.botId);
       } catch (err) {
@@ -833,15 +868,20 @@ export class AgentMessageBroker {
         tool: 'list_positions',
         status: 'ok',
         message: `Found ${positions.length} open position(s)`,
-        data: (positions as Array<Record<string, unknown>>).map((position) => ({
-          id: position.id,
-          symbol: position.symbol,
-          side: position.side,
-          size: position.size,
-          entryPrice: position.entryPrice,
-          realizedPnl: position.realizedPnl,
-          updatedAt: position.updatedAt instanceof Date ? position.updatedAt.toISOString() : undefined,
-        })),
+        data: {
+          ok: true,
+          note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
+          positions: positions.map((position) => ({
+            actorType: position.actorType,
+            actorId: position.actorId,
+            botId: position.actorType === 'bot' ? position.actorId : null,
+            instrumentId: position.symbol,
+            side: position.side,
+            size: position.size,
+            entryPrice: position.entryPrice,
+            openedAt: position.openedAt.toISOString(),
+          })),
+        },
       });
       return;
     }

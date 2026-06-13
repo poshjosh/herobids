@@ -58,6 +58,8 @@ docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build |
 
 # 5. Seed admin user (optional — skipped if ADMIN_EMAIL is not set)
 log "Step 5: Seeding admin user..."
+# Default to the local dev postgres URL if not explicitly provided
+export DATABASE_URL="${DATABASE_URL:-postgres://herobids:herobids@localhost:5432/herobids}"
 pnpm --filter scripts seed-admin || error_exit "Failed to seed admin user"
 
 log "Build and run process completed successfully!"

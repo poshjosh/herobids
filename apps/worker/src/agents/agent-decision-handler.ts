@@ -35,13 +35,17 @@ export class AgentDecisionHandler {
     const effectiveBotId = tradingInstanceId ?? botId ?? effectiveAgentId;
     const resolveId = effectiveBotId;
 
-    // 1. Verify agent is not paused
+    // 1. Verify agent is not paused.
+    // A missing agents row is NOT treated as paused — it likely means the agent was
+    // launched directly (e.g. via docker run) without going through the API provisioning
+    // flow, or the agents table was transiently truncated while the container kept
+    // running. The active-session check below is the real liveness gate.
     const agent = await this.agentRepo.getAgent(effectiveAgentId);
-    if (!agent || agent.status === 'paused' || agent.status === 'stopped') {
+    if (agent && (agent.status === 'paused' || agent.status === 'stopped')) {
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'agent_paused',
-        message: `Agent is ${agent?.status ?? 'unknown'} — cannot accept decisions`,
+        message: `Agent is ${agent.status} — cannot accept decisions`,
         retryable: false,
       });
       return;

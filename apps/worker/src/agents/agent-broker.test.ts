@@ -570,6 +570,150 @@ describe('AgentMessageBroker', () => {
           }),
         );
       });
+
+      it('emits get_analytics using the tool contract and default 7-day lookback', async () => {
+        const botRepo = {
+          getAnalyticsByCreator: vi.fn().mockResolvedValue({
+            botCount: 1,
+            openPositions: 2,
+            closedPositions: 3,
+            winningPositions: 2,
+            realizedPnlUsd: '45.00',
+            totalFeesUsd: '2.10',
+            recentFills: 8,
+            avgHoldTimeHours: 4.5,
+            byBot: [{ botId: 'bot-1', status: 'running', recentFills: 5, realizedPnlUsd: '30.00' }],
+            agentDirect: { recentFills: 3, realizedPnlUsd: '15.00' },
+          }),
+        };
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+        );
+
+        const result = await brokerWithBot.processInbound({
+          schemaVersion: 'v1',
+          messageId: 'msg-query-4',
+          correlationId: 'corr-query-4',
+          initiatorType: 'agent',
+          initiatorId: 'agent-123',
+          agentId: 'agent-123',
+          type: 'agent.bot.query',
+          createdAt: new Date().toISOString(),
+          payload: { action: 'get_analytics' },
+        });
+
+        expect(result.accepted).toBe(true);
+        expect(botRepo.getAnalyticsByCreator).toHaveBeenCalledWith('agent', 'agent-123', expect.any(Date), undefined);
+        expect((eventPublisher as any).emitToolResult).toHaveBeenCalledWith(
+          'agent-123',
+          expect.objectContaining({
+            tool: 'get_analytics',
+            status: 'ok',
+            message: 'Analytics summary ready',
+            data: {
+              ok: true,
+              totalTrades: 8,
+              winRate: 66.67,
+              realizedPnlUsd: '45.00',
+              totalFeesUsd: '2.10',
+              openPositions: 2,
+              botCount: 1,
+              avgHoldTimeHours: 4.5,
+              byBot: [{ botId: 'bot-1', status: 'running', recentFills: 5, realizedPnlUsd: '30.00' }],
+              agentDirect: { recentFills: 3, realizedPnlUsd: '15.00' },
+              days: 7,
+            },
+          }),
+        );
+      });
+
+      it('emits list_positions using the tool contract with explicit ownership fields', async () => {
+        const botRepo = {
+          getOpenPositionsByCreator: vi.fn().mockResolvedValue([
+            {
+              actorType: 'agent',
+              actorId: 'agent-123',
+              symbol: 'SOL',
+              side: 'long',
+              size: '50',
+              entryPrice: '67.917',
+              openedAt: new Date('2026-06-13T12:55:00.000Z'),
+            },
+          ]),
+        };
+
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any,
+          agentRepo as any,
+          decisionHandler,
+          sessionManager,
+          eventPublisher,
+          undefined,
+          botRepo as any,
+        );
+
+        const result = await brokerWithBot.processInbound({
+          schemaVersion: 'v1',
+          messageId: 'msg-query-5',
+          correlationId: 'corr-query-5',
+          initiatorType: 'agent',
+          initiatorId: 'agent-123',
+          agentId: 'agent-123',
+          type: 'agent.bot.query',
+          createdAt: new Date().toISOString(),
+          payload: { action: 'list_positions' },
+        });
+
+        expect(result.accepted).toBe(true);
+        expect((eventPublisher as any).emitToolResult).toHaveBeenCalledWith(
+          'agent-123',
+          expect.objectContaining({
+            tool: 'list_positions',
+            status: 'ok',
+            message: 'Found 1 open position(s)',
+            data: {
+              ok: true,
+              note: 'unrealizedPnl not available — mark prices are not cached in the agent process',
+              positions: [
+                {
+                  actorType: 'agent',
+                  actorId: 'agent-123',
+                  botId: null,
+                  instrumentId: 'SOL',
+                  side: 'long',
+                  size: '50',
+                  entryPrice: '67.917',
+                  openedAt: '2026-06-13T12:55:00.000Z',
+                },
+              ],
+            },
+          }),
+        );
+      });
+
+      it('rejects bot_query payloads with days above the shared 90-day limit', async () => {
+        const result = await broker.processInbound({
+          schemaVersion: 'v1',
+          messageId: 'msg-query-6',
+          correlationId: 'corr-query-6',
+          initiatorType: 'agent',
+          initiatorId: 'agent-123',
+          agentId: 'agent-123',
+          type: 'agent.bot.query',
+          createdAt: new Date().toISOString(),
+          payload: { action: 'get_analytics', days: 365 },
+        });
+
+        expect(result.accepted).toBe(false);
+        expect(result.error).toBe('invalid_payload');
+      });
     });
 
     const MANAGE_BOT_ENABLED_GRANT = { capability: 'manage_bot', tier: 'brokered', enabled: true, limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 } };

@@ -646,14 +646,17 @@ describe('runtime composition helpers', () => {
         type: 'instance.tool.result',
         payload: {
           tool: 'list_positions',
-          data: [
-            {
-              instrumentId: 'BONK/USDC',
-              side: 'long',
-              size: '1000',
-              entryPrice: '0.00002',
-            },
-          ],
+          data: {
+            ok: true,
+            positions: [
+              {
+                instrumentId: 'BONK/USDC',
+                side: 'long',
+                size: '1000',
+                entryPrice: '0.00002',
+              },
+            ],
+          },
         },
       },
     ]);
@@ -669,15 +672,18 @@ describe('runtime composition helpers', () => {
         type: 'instance.tool.result',
         payload: {
           tool: 'list_positions',
-          data: [
-            {
-              instrumentId: 'BTC-PERP',
-              side: 'long',
-              size: '0.5',
-              entryPrice: '60000',
-              unrealizedPnlUsd: '500',
-            },
-          ],
+          data: {
+            ok: true,
+            positions: [
+              {
+                instrumentId: 'BTC-PERP',
+                side: 'long',
+                size: '0.5',
+                entryPrice: '60000',
+                unrealizedPnlUsd: '500',
+              },
+            ],
+          },
         },
       },
     ]);
@@ -695,15 +701,18 @@ describe('runtime composition helpers', () => {
         type: 'instance.tool.result',
         payload: {
           tool: 'list_positions',
-          data: [
-            {
-              instrumentId: 'BTC-PERP',
-              side: 'long',
-              size: '0.5',
-              entryPrice: '60000',
-              unrealizedPnlUsd: '500',
-            },
-          ],
+          data: {
+            ok: true,
+            positions: [
+              {
+                instrumentId: 'BTC-PERP',
+                side: 'long',
+                size: '0.5',
+                entryPrice: '60000',
+                unrealizedPnlUsd: '500',
+              },
+            ],
+          },
         },
       },
     ]);
@@ -713,7 +722,10 @@ describe('runtime composition helpers', () => {
         type: 'instance.tool.result',
         payload: {
           tool: 'list_positions',
-          data: [],
+          data: {
+            ok: true,
+            positions: [],
+          },
         },
       },
     ]);
