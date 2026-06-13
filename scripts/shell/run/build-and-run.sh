@@ -45,4 +45,8 @@ docker build -f docker/Dockerfile.agent -t herobids-agent:latest . || error_exit
 log "Step 4: Building and starting services with docker compose..."
 docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build || error_exit "Failed to start services with docker compose"
 
+# 5. Seed admin user (optional — skipped if ADMIN_EMAIL is not set)
+log "Step 5: Seeding admin user..."
+pnpm --filter scripts seed-admin || error_exit "Failed to seed admin user"
+
 log "Build and run process completed successfully!"
