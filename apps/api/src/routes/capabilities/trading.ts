@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and, desc, inArray, isNull, sum, count, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, sum, count, sql, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from '@herobids/db';
 import {
@@ -339,26 +339,22 @@ export async function tradingCapabilityRoutes(
         .where(inArray(bots.tradingBindingId, bindingIds));
       const botIds = botRows.map((bot) => bot.id);
 
-      if (botIds.length === 0) {
-        return reply.send({
-          agentId,
-          family: 'trading',
-          agentStatus: agent.status,
-          totalPnl: '0',
-          openPositionCount: 0,
-          updatedAt: new Date().toISOString(),
-        });
+      const positionOwners = [
+        and(eq(positions.actorType, 'agent'), eq(positions.actorId, agentId)),
+      ];
+      if (botIds.length > 0) {
+        positionOwners.push(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
       }
 
       const [pnlResult] = await db
         .select({ totalPnl: sum(positions.realizedPnl) })
         .from(positions)
-        .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
+        .where(or(...positionOwners));
 
       const [openResult] = await db
         .select({ openCount: count(positions.id) })
         .from(positions)
-        .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds), isNull(positions.closedAt)));
+        .where(and(or(...positionOwners), isNull(positions.closedAt)));
 
       return reply.send({
         agentId,
@@ -560,21 +556,28 @@ export async function tradingCapabilityRoutes(
         .where(inArray(bots.tradingBindingId, bindingIds));
       const botIds = botRows.map((bot) => bot.id);
 
-      if (botIds.length === 0) {
-        return reply.send({ agentId, family: 'trading', items: [], limit, offset });
+      const fillOwners = [
+        and(eq(fills.actorType, 'agent'), eq(fills.actorId, agentId)),
+      ];
+      const eventOwners = [
+        and(eq(journalEvents.actorType, 'agent'), eq(journalEvents.actorId, agentId)),
+      ];
+      if (botIds.length > 0) {
+        fillOwners.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)));
+        eventOwners.push(and(eq(journalEvents.actorType, 'bot'), inArray(journalEvents.actorId, botIds)));
       }
 
       const [recentFills, recentEvents] = await Promise.all([
         db
           .select()
           .from(fills)
-          .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)))
+          .where(or(...fillOwners))
           .orderBy(desc(fills.filledAt))
           .limit(fetchCount),
         db
           .select()
           .from(journalEvents)
-          .where(inArray(journalEvents.actorId, botIds))
+          .where(or(...eventOwners))
           .orderBy(desc(journalEvents.createdAt))
           .limit(fetchCount),
       ]);
@@ -640,40 +643,39 @@ export async function tradingCapabilityRoutes(
         .where(inArray(bots.tradingBindingId, bindingIds));
       const botIds = botRows.map((bot) => bot.id);
 
-      if (botIds.length === 0) {
-        return reply.send({
-          agentId,
-          family: 'trading',
-          tradeCount: 0,
-          totalPnl: '0',
-          winRate: null,
-          feesByCurrency: {},
-          openPositionCount: 0,
-        });
+      const fillOwners = [
+        and(eq(fills.actorType, 'agent'), eq(fills.actorId, agentId)),
+      ];
+      const positionOwners = [
+        and(eq(positions.actorType, 'agent'), eq(positions.actorId, agentId)),
+      ];
+      if (botIds.length > 0) {
+        fillOwners.push(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)));
+        positionOwners.push(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
       }
 
       const [fillCountResult, feeRows, pnlResult, openResult, allPositions] = await Promise.all([
         db
           .select({ tradeCount: count(fills.id) })
           .from(fills)
-          .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds))),
+          .where(or(...fillOwners)),
         db
           .select({ feeCurrency: fills.feeCurrency, total: sum(fills.fee) })
           .from(fills)
-          .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, botIds)))
+          .where(or(...fillOwners))
           .groupBy(fills.feeCurrency),
         db
           .select({ totalPnl: sum(positions.realizedPnl) })
           .from(positions)
-          .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds))),
+          .where(or(...positionOwners)),
         db
           .select({ openCount: count(positions.id) })
           .from(positions)
-          .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds), isNull(positions.closedAt))),
+          .where(and(or(...positionOwners), isNull(positions.closedAt))),
         db
           .select({ realizedPnl: positions.realizedPnl, closedAt: positions.closedAt })
           .from(positions)
-          .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds))),
+          .where(or(...positionOwners)),
       ]);
 
       const feesByCurrency: Record<string, string> = {};
@@ -731,13 +733,17 @@ export async function tradingCapabilityRoutes(
         .where(inArray(bots.tradingBindingId, bindingIds));
       const botIds = botRows.map((bot) => bot.id);
 
-      if (botIds.length === 0) {
-        return reply.send({ agentId, family: 'trading', items: [], limit, offset });
+      const positionOwners = [
+        and(eq(positions.actorType, 'agent'), eq(positions.actorId, agentId)),
+      ];
+      if (botIds.length > 0) {
+        positionOwners.push(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)));
       }
 
       const positionRows = await db
         .select({
           id: positions.id,
+          actorType: positions.actorType,
           actorId: positions.actorId,
           venue: positions.venue,
           symbol: positions.symbol,
@@ -750,7 +756,7 @@ export async function tradingCapabilityRoutes(
           exitPrice: sql<string | null>`(
             SELECT ${fills.price}
             FROM ${fills}
-            WHERE ${fills.actorType} = 'bot'
+            WHERE ${fills.actorType} = ${positions.actorType}
               AND ${fills.actorId} = ${positions.actorId}
               AND ${fills.venueAccountId} = ${positions.venueAccountId}
               AND ${fills.venue} = ${positions.venue}
@@ -761,7 +767,7 @@ export async function tradingCapabilityRoutes(
           )`,
         })
         .from(positions)
-        .where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, botIds)))
+        .where(or(...positionOwners))
         .orderBy(desc(positions.openedAt))
         .limit(limit)
         .offset(offset);

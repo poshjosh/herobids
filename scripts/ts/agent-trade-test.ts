@@ -250,6 +250,18 @@ interface ProviderLinkResult {
   tradingBinding: { id: string };
 }
 
+function buildTradeTestDecision(): { instrumentId: string; targetSize: string } {
+  if (VENUE === 'hyperliquid') {
+    return { instrumentId: 'BTC', targetSize: '0.01' };
+  }
+
+  if (VENUE === 'bybit') {
+    return { instrumentId: 'BTC', targetSize: '0.001' };
+  }
+
+  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit`);
+}
+
 async function createProviderLink(token: string): Promise<string> {
   const res = await apiRequest<ProviderLinkResult & { error?: string }>(
     'POST', '/setup/provider-link',
@@ -274,6 +286,8 @@ async function createProviderLink(token: string): Promise<string> {
 
 // The goal is deliberately imperative to push the agent to trade on tick 1
 // without analysis or deliberation. This is what we want in a trade test.
+const TRADE_TEST_DECISION = buildTradeTestDecision();
+
 const TRADE_TEST_GOAL = `
 TRADE TEST — EXECUTE IMMEDIATELY.
 
@@ -281,14 +295,15 @@ You are running an automated paper-trading validation test.
 Your ONLY objective is to confirm that the full trading path works end-to-end.
 
 On your VERY FIRST tick, take these actions in order:
-1. Call list_bots to check for existing bots.
-2. If no running bot exists, call create_bot with:
-   - config.strategyPreset = "momentum"
-   - config.symbol = "ETH/USD:USD"
-   - config.size = "0.01"
-   - rationale = "trade-test validation"
-3. On the next tick, call list_bots to confirm the bot is running and report its ID and status.
-4. If the bot is running, call get_analytics for a summary.
+1. Call list_positions to confirm your current position state.
+2. If you are flat, call submit_decision with exactly these values:
+  - instrumentId = "${TRADE_TEST_DECISION.instrumentId}"
+  - intent = "go_long"
+  - targetSize = "${TRADE_TEST_DECISION.targetSize}"
+  - rationaleSummary = "trade-test validation"
+  - confidence = 0.95
+3. Do not create a bot for this test.
+4. On the next tick, call list_positions and get_analytics to confirm the trade landed.
 
 Do NOT wait for market signals. Do NOT evaluate the regime. Act immediately.
 `.trim();
@@ -363,9 +378,12 @@ interface ActivityEntry {
 
 interface DecisionRow {
   id: string;
-  side: string;
-  symbol: string;
-  status: string;
+  intent?: string;
+  instrumentId?: string;
+  targetSize?: string;
+  side?: string;
+  symbol?: string;
+  status?: string;
   createdAt: string;
 }
 
@@ -428,7 +446,7 @@ async function watchAgent(token: string, agentId: string): Promise<'success' | '
     // 2. Stream new activity events
     await fetchAndPrintNewActivity(token, agentId);
 
-    // 3. Decisions (bots submitting orders)
+    // 3. Decisions submitted directly by the agent or via one of its bots.
     const decisionsRes = await apiRequest<DecisionRow[]>(
       'GET', `/agents/${agentId}/decisions?limit=10`,
       { token },
@@ -437,7 +455,11 @@ async function watchAgent(token: string, agentId: string): Promise<'success' | '
       const count = decisionsRes.body.length;
       if (count > lastDecisionCount) {
         for (const d of decisionsRes.body.slice(0, count - lastDecisionCount)) {
-          ok(`Decision recorded — id=${d.id} side=${d.side} symbol=${d.symbol} status=${d.status}`);
+          const intent = d.intent ?? d.side ?? 'unknown';
+          const instrument = d.instrumentId ?? d.symbol ?? 'unknown';
+          const details = d.targetSize ? ` targetSize=${d.targetSize}` : '';
+          const status = d.status ? ` status=${d.status}` : '';
+          ok(`Decision recorded — id=${d.id} intent=${intent} instrument=${instrument}${details}${status}`);
         }
         lastDecisionCount = count;
       }

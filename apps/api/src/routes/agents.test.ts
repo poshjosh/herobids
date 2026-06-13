@@ -26,11 +26,21 @@ function buildDb(options: {
     ...(options.txAgentRows ? [options.txAgentRows] : [[]]),
   ];
 
+  const makeSelectChain = () => {
+    const chain: Record<string, unknown> = {};
+    chain.where = vi.fn().mockReturnValue(chain);
+    chain.orderBy = vi.fn().mockReturnValue(chain);
+    chain.limit = vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() ?? []));
+    (chain as { then: unknown }).then = (
+      resolve: (v: unknown) => unknown,
+      reject?: (v: unknown) => unknown,
+    ) => Promise.resolve(selectResponses.shift() ?? []).then(resolve, reject);
+    return chain;
+  };
+
   const db: any = {
     select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() ?? [])),
-      }),
+      from: vi.fn().mockImplementation(() => makeSelectChain()),
     }),
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockImplementation((values: Record<string, unknown>) => {
@@ -63,6 +73,31 @@ function buildDb(options: {
 describe('agent routes lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('returns agent-native decisions even when the agent has no bots', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const decisionRow = {
+      id: 'dec-1',
+      actorType: 'agent',
+      actorId: 'agent-1',
+      instrumentId: 'BTC',
+      intent: 'go_long',
+    };
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'active', userId: TEST_USER_ID }],
+      activeLinkRows: [],
+      txAgentRows: [decisionRow],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1/decisions?limit=10' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([decisionRow]);
   });
 
   it('returns starting and persists a starting session when /start is called', async () => {

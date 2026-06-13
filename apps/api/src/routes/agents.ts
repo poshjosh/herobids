@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, notInArray, desc, sql } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { agents, agentRuntimeSessions, agentMessages, agentArtifacts, agentOutboundMessages, bots, decisions } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
@@ -532,7 +532,7 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     return reply.send(sessions);
   });
 
-  // Get recent decisions from bots owned by this agent
+  // Get recent decisions initiated by this agent directly or through its bots.
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/agents/:id/decisions', async (request, reply) => {
     const { id } = request.params;
     const limit = Math.min(parseInt(request.query.limit ?? '20', 10), 100);
@@ -545,12 +545,15 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
     const agentBotIds = agentBots.map((b) => b.id);
 
-    if (agentBotIds.length === 0) {
-      return reply.send([]);
+    const decisionOwners = [
+      and(eq(decisions.actorType, 'agent'), eq(decisions.actorId, id)),
+    ];
+    if (agentBotIds.length > 0) {
+      decisionOwners.push(and(eq(decisions.actorType, 'bot'), inArray(decisions.actorId, agentBotIds)));
     }
 
     const agentDecisions = await db.select().from(decisions)
-      .where(and(eq(decisions.actorType, 'bot'), inArray(decisions.actorId, agentBotIds)))
+      .where(or(...decisionOwners))
       .orderBy(desc(decisions.createdAt))
       .limit(limit);
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { capabilityRoutes as registerCapabilityRoutesImpl } from './index.js';
 import { tradingCapabilityRoutes as registerTradingCapabilityRoutesImpl } from './trading.js';
+import { agents as agentsTable, capabilityGrants as capabilityGrantsTable, bots as botsTable, fills as fillsTable, journalEvents as journalEventsTable } from '@herobids/db';
 
 const TEST_USER_ID = 'user-1';
 const TEST_AGENT_ID = 'agent-1';
@@ -61,6 +62,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col, val) => ({ _eq: val })),
   and: vi.fn((...args) => ({ _and: args })),
+  or: vi.fn((...args) => ({ _or: args })),
   desc: vi.fn((col) => ({ _desc: col })),
   inArray: vi.fn((col, vals) => ({ _inArray: vals })),
   isNull: vi.fn((col) => ({ _isNull: col })),
@@ -104,6 +106,9 @@ function buildDb(selectSequence: unknown[][] = []) {
     chain.innerJoin = vi.fn(() => chain);
     chain.orderBy = vi.fn(() => chain);
     chain.where = vi.fn(() => chain);
+    chain.limit = vi.fn(() => chain);
+    chain.offset = vi.fn(() => chain);
+    chain.groupBy = vi.fn(() => chain);
     (chain as { then: unknown }).then = (
       resolve: (v: unknown) => unknown,
       reject?: (v: unknown) => unknown,
@@ -347,6 +352,118 @@ describe('trading capability routes', () => {
     const body = res.json();
     expect(body.totalPnl).toBe('12.500000');
     expect(body.openPositionCount).toBe(1);
+  });
+
+  it('includes direct agent positions in trading state when no bots exist', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([
+      [AGENT_ROW],
+      [{
+        grantId: 'grant-1',
+        grantStatus: 'active',
+        grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+        revokedAt: null,
+        bindingId: TEST_BINDING_ID,
+        bindingStatus: 'active',
+        bindingRef: 'acct-1',
+        bindingProfile: { venue: 'hyperliquid' },
+        sourceVenueAccountId: 'va-1',
+        provider: 'hyperliquid',
+        label: 'HL binding',
+        connectionId: 'conn-1',
+        connectionStatus: 'active',
+      }],
+      [],
+      [{ totalPnl: '3.250000' }],
+      [{ openCount: 1 }],
+    ]);
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/state` });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totalPnl).toBe('3.250000');
+    expect(body.openPositionCount).toBe(1);
+  });
+
+  it('includes direct agent activity when no bots exist', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const filledAt = new Date('2026-02-02T10:00:00.000Z');
+    const createdAt = new Date('2026-02-02T10:01:00.000Z');
+    const grantRow = {
+      grantId: 'grant-1',
+      grantStatus: 'active',
+      grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+      revokedAt: null,
+      bindingId: TEST_BINDING_ID,
+      bindingStatus: 'active',
+      bindingRef: 'acct-1',
+      bindingProfile: { venue: 'hyperliquid' },
+      sourceVenueAccountId: 'va-1',
+      provider: 'hyperliquid',
+      label: 'HL binding',
+      connectionId: 'conn-1',
+      connectionStatus: 'active',
+    };
+    const fillRow = {
+      id: 'fill-1',
+      symbol: 'BTC',
+      side: 'buy',
+      quantity: '0.01',
+      price: '100000',
+      fee: '1',
+      feeCurrency: 'USDC',
+      venueRefId: null,
+      filledAt,
+    };
+    const eventRow = {
+      id: 'evt-1',
+      type: 'decision.created',
+      payload: { instrumentId: 'BTC' },
+      createdAt,
+    };
+
+    const makeChain = (result: unknown) => {
+      const chain: Record<string, unknown> = {};
+      chain.innerJoin = vi.fn(() => chain);
+      chain.orderBy = vi.fn(() => chain);
+      chain.where = vi.fn(() => chain);
+      chain.limit = vi.fn(() => chain);
+      chain.offset = vi.fn(() => chain);
+      chain.groupBy = vi.fn(() => chain);
+      (chain as { then: unknown }).then = (
+        resolve: (v: unknown) => unknown,
+        reject?: (v: unknown) => unknown,
+      ) => Promise.resolve(result).then(resolve, reject);
+      return chain;
+    };
+
+    const db = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockImplementation((table: unknown) => {
+          if (table === agentsTable) return makeChain([AGENT_ROW]);
+          if (table === capabilityGrantsTable) return makeChain([grantRow]);
+          if (table === botsTable) return makeChain([]);
+          if (table === fillsTable) return makeChain([fillRow]);
+          if (table === journalEventsTable) return makeChain([eventRow]);
+          return makeChain([]);
+        }),
+      })),
+      transaction: vi.fn(),
+      insert: vi.fn(),
+      update: vi.fn(),
+    } as any;
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/trading/activity` });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ items: Array<{ type: string; id: string }> }>();
+    expect(body.items.map((item) => item.id)).toEqual(['evt-1', 'fill-1']);
+    expect(body.items.map((item) => item.type)).toEqual(['event', 'fill']);
   });
 
   it('unbinds an active trading binding grant from an agent', async () => {
