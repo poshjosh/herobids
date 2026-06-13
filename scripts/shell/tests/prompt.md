@@ -4,17 +4,19 @@ Repeatedly run scripts/shell/tests/agent-trade-test.sh, each run fix anomalies/p
 
 STEPS
 
-1. Read scripts/shell/tests/agent-trade-test.sh
+1. Shutdown the stack, For example by running command: `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml down`.
 
-2. Determine a suitable value for <timeout>, or use 600000
+2. Start the stack, For example by running command: `scripts/shell/run/build-and-run.sh`.
 
-3. Run `TIMEOUT_MS = <timeout> scripts/shell/tests/agent-trade-test.sh`
+3. Read scripts/shell/tests/agent-trade-test.sh to understand the next step, then determine a suitable value for <timeout>, or use 600000.
 
-4. Wait for the script to complete; wait at most <timout> milliseconds.
+4. Run `TIMEOUT_MS = <timeout> scripts/shell/tests/agent-trade-test.sh`
 
-5. Read and follow this .ignore/eval/eval-prompt.md, with meaningful values for both evaluation-period and agent-id
+5. Wait for the script to complete; wait at most <timout> milliseconds.
 
-6. If there are observed errors/bugs which prevent trading or other serious problems: 
+6. Read and execute/implement this: .ignore/eval/eval-prompt.md, with meaningful values for both evaluation-period and agent-id
+
+7. If there are observed errors/bugs which prevent trading (or other serious problems): 
 
    a. Investigate the errors/bugs which prevent trading (or other serious problems).
 
@@ -24,9 +26,9 @@ STEPS
 
    d. Review the code following this: .github/agents/CodeReviewer.agent.md
 
-   e. Address the code review observations, if any are valid by making the appropriate code changes.
+   e. Address the code review observations, if any are valid, by making the appropriate code changes.
 
    f. Goto Step 1.
 
-7. If there are no observed anomalies/problems, STOP.
+8. If there are no observed anomalies/problems, STOP.
 
