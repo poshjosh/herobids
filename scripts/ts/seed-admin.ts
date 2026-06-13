@@ -18,7 +18,7 @@
 
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
-import { createDatabase, users, localIdentities, userPlans } from '@herobids/db';
+import { createDatabase, closeDatabase, users, localIdentities, userPlans } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 
 const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(crypto.scrypt);
@@ -54,7 +54,7 @@ async function main() {
   const password = adminPassword;
 
   const db = createDatabase(databaseUrl);
-
+  try {
   const normalizedEmail = adminEmail.toLowerCase().trim();
   const now = new Date();
   const passwordHash = await hashPassword(password);
@@ -114,6 +114,9 @@ async function main() {
   console.log(existing
     ? `[seed-admin] Admin user promoted (id=${userId}, email=${normalizedEmail}, isAdmin=true).`
     : `[seed-admin] Admin user created (id=${userId}, email=${normalizedEmail}, isAdmin=true).`);
+  } finally {
+    await closeDatabase(db);
+  }
 }
 
 main().catch((err: unknown) => {

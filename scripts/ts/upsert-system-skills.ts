@@ -9,13 +9,14 @@
  */
 
 import { SYSTEM_SKILLS } from '@herobids/domain';
-import { createDatabase, skills as skillsTable } from '@herobids/db';
+import { createDatabase, closeDatabase, skills as skillsTable } from '@herobids/db';
 
 const DEFAULT_DATABASE_URL = 'postgres://herobids:herobids@localhost:5432/herobids';
 
 async function main() {
   const databaseUrl = process.env['DATABASE_URL'] ?? DEFAULT_DATABASE_URL;
   const db = createDatabase(databaseUrl);
+  try {
   const now = new Date();
 
   for (const skill of SYSTEM_SKILLS) {
@@ -53,6 +54,9 @@ async function main() {
   }
 
   console.log(`[upsert-system-skills] Synced ${SYSTEM_SKILLS.length} built-in skills.`);
+  } finally {
+    await closeDatabase(db);
+  }
 }
 
 main().catch((error: unknown) => {
