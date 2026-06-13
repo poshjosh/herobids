@@ -137,8 +137,11 @@ async function apiRequest<T = unknown>(
   path: string,
   options?: { body?: unknown; token?: string },
 ): Promise<ApiResponse<T>> {
-  const url = `${API_BASE_URL}/api${path}`;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const url = `${API_BASE_URL}${path}`;
+  const headers: Record<string, string> = {};
+  if (options?.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (options?.token) {
     headers['Authorization'] = `Bearer ${options.token}`;
   }
@@ -167,7 +170,7 @@ let stackStartedByUs = false;
 
 async function checkApiHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
     return res.ok;
   } catch {
     return false;
