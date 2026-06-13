@@ -2,9 +2,11 @@
 
 An agentic platform which offers AI agents as a service (AaaS). Also uses skills to give agents expertise. Core skill is crypto trading.
 
-Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea/intention in, outcomes out.
+Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea in, success out.
 
-Supports multiple venues (Hyperliquid perpetuals, Bybit, Jupiter/1inch DEX swaps) with paper/shadow/live execution modes, real-time WebSocket market data, and configurable trading strategies.
+Supports multiple agent types e.g. personal-assistant, trader etc 
+
+Trading platforms include: Hyperliquid perpetuals, Bybit, Jupiter/1inch DEX swaps
 
 ## Prerequisites
 
@@ -146,39 +148,15 @@ scripts/shell/tests/run-all-tests.sh
 
 This script starts postgres and redis if they are not already running, runs all tiers, and tears down what it started.
 
-### Unit tests
+### Agent Trading Pipeline End-to-End Smoke Test
 
-Pure logic, no external services required.
+This is the canonical "is the agent trading pipeline alive?" check. Run it after any change to the engine, agent runtime, or venue adapters. 
 
-```bash
-pnpm test
-```
+scripts/shell/tests/agent-trade-test-prompt.md
 
-### Integration tests
+### Playwright
 
-Require a running postgres and redis (started automatically by the script above, or via `docker compose up -d postgres redis`).
-
-```bash
-pnpm test:integration
-```
-
-### Functional tests
-
-Full API and worker in-process against a real database. Same requirements as integration tests.
-
-```bash
-pnpm test:functional
-```
-
-### E2E tests (Playwright)
-
-Require the full stack to be running. Pass `--e2e` to the test script, which builds and starts everything automatically:
-
-```bash
-scripts/shell/tests/run-all-tests.sh --e2e
-```
-
-Or run Playwright directly against an already-running stack:
+To run Playwright directly against an already-running stack:
 
 ```bash
 cd tests/e2e

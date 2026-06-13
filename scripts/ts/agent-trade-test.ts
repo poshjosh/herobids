@@ -1,18 +1,24 @@
 /**
- * agent-trade-test.ts — End-to-end smoke test that verifies an agent can trade.
+ * agent-trade-test.ts — End-to-end smoke test that verifies an agent can open and close a trade.
  *
  * This script is NOT part of the routine test suite. Run it manually to
  * diagnose agent trading issues against a live or local stack.
  *
  * What it does
  * ────────────
- *  Phase 1  Stack — checks Docker + API are healthy; optionally starts them.
- *  Phase 2  Setup  — registers/logs in, creates a provider-link (credential +
- *                    connection + trading binding), creates a trading agent,
- *                    binds trading capability to it, and starts it.
- *  Phase 3  Watch  — polls activity-feed, decisions, and trading state every
- *                    10 s; streams events to stdout for debugging.
- *  Phase 4  Teardown — stops and deletes the agent; optionally stops Docker.
+ *  Phase 1    Stack    — checks Docker + API are healthy; optionally starts them.
+ *  Phase 2    Setup    — registers/logs in, creates a provider-link (credential +
+ *                        connection + trading binding), creates a trading agent,
+ *                        binds trading capability to it, and starts it.
+ *  Phase 3    Watch    — polls activity-feed, decisions, and trading state every
+ *                        10 s until an open position is confirmed.
+ *  Phase 3.5  Assert   — verifies decisions are non-rejected, journal events exist,
+ *                        and position visibility is consistent (system vs agent-visible).
+ *  Phase 3.6  Close    — waits for the agent to submit go_flat and confirms
+ *                        openPositionCount drops to 0.
+ *  Phase 3.7  Audit    — checks DB bookkeeping: closedAt set, go_flat plan settled,
+ *                        journal event count, worker error logs, Redis reminder cleanup.
+ *  Phase 4    Teardown — stops and deletes the agent; optionally stops Docker.
  *
  * Required env vars
  * ─────────────────

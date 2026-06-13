@@ -8,10 +8,9 @@ Anyone can use AI to act on their ideas or intentions — regardless of knowledg
 
 ## Mission
 
-Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea/intention in, outcomes out.
+Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea in, success out.
 
 We are foremost an agentic platform. We offer agents as a service. We use skills to give agents expertise to work for users. Our first and core skill is crypto trading.
-
 
 ## Core Beliefs
 
