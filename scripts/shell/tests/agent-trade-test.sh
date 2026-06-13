@@ -95,7 +95,22 @@ done
 
 # ---------------------------------------------------------------------------
 # Load env file
+# CLI-provided env vars take precedence over values in the env file.
+# Capture them before sourcing so we can restore them afterward.
+# (Uses individual variables for bash 3.x compat — no associative arrays.)
 # ---------------------------------------------------------------------------
+
+# Snapshot: <VAR>_ISSET=1 if the var was already in the environment
+_PRE_DOCKER_COMPOSE_UP_SET="${DOCKER_COMPOSE_UP+1}"
+_PRE_DOCKER_COMPOSE_UP_VAL="${DOCKER_COMPOSE_UP:-}"
+_PRE_DOCKER_COMPOSE_DOWN_SET="${DOCKER_COMPOSE_DOWN+1}"
+_PRE_DOCKER_COMPOSE_DOWN_VAL="${DOCKER_COMPOSE_DOWN:-}"
+_PRE_SKIP_TEARDOWN_SET="${SKIP_TEARDOWN+1}"
+_PRE_SKIP_TEARDOWN_VAL="${SKIP_TEARDOWN:-}"
+_PRE_EXECUTION_MODE_SET="${EXECUTION_MODE+1}"
+_PRE_EXECUTION_MODE_VAL="${EXECUTION_MODE:-}"
+_PRE_VENUE_SET="${VENUE+1}"
+_PRE_VENUE_VAL="${VENUE:-}"
 
 if [[ -f "$ENV_FILE" ]]; then
   log "Loading env from $ENV_FILE"
@@ -108,6 +123,18 @@ else
   warn "Continuing with environment variables already set in the shell."
   warn "To create the file: cp scripts/.env.trade-test.example scripts/.env.trade-test"
 fi
+
+# Restore CLI overrides so they take precedence over env file values
+[[ "$_PRE_DOCKER_COMPOSE_UP_SET"   == "1" ]] && export DOCKER_COMPOSE_UP="$_PRE_DOCKER_COMPOSE_UP_VAL"
+[[ "$_PRE_DOCKER_COMPOSE_DOWN_SET" == "1" ]] && export DOCKER_COMPOSE_DOWN="$_PRE_DOCKER_COMPOSE_DOWN_VAL"
+[[ "$_PRE_SKIP_TEARDOWN_SET"       == "1" ]] && export SKIP_TEARDOWN="$_PRE_SKIP_TEARDOWN_VAL"
+[[ "$_PRE_EXECUTION_MODE_SET"      == "1" ]] && export EXECUTION_MODE="$_PRE_EXECUTION_MODE_VAL"
+[[ "$_PRE_VENUE_SET"               == "1" ]] && export VENUE="$_PRE_VENUE_VAL"
+unset _PRE_DOCKER_COMPOSE_UP_SET _PRE_DOCKER_COMPOSE_UP_VAL \
+      _PRE_DOCKER_COMPOSE_DOWN_SET _PRE_DOCKER_COMPOSE_DOWN_VAL \
+      _PRE_SKIP_TEARDOWN_SET _PRE_SKIP_TEARDOWN_VAL \
+      _PRE_EXECUTION_MODE_SET _PRE_EXECUTION_MODE_VAL \
+      _PRE_VENUE_SET _PRE_VENUE_VAL
 
 # ---------------------------------------------------------------------------
 # Defaults

@@ -4,7 +4,7 @@ Repeatedly run scripts/shell/tests/agent-trade-test.sh, each run fix anomalies/p
 
 STEPS
 
-1. Shutdown the stack; for that, this command is recommended: `docker compose -f docker-compose.yaml -f docker-compose.dev.yaml down -v --remove-orphans && docker system prune -f`
+1. Shutdown the stack; for that, this command is recommended: `scripts/shell/run/shutdown.sh`
 
 2. Start the stack, for that, this command is recommended: `scripts/shell/run/build-and-run.sh`.
 
