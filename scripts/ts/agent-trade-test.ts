@@ -297,8 +297,8 @@ const TRADE_TEST_DECISION = buildTradeTestDecision();
 const TRADE_TEST_GOAL = `
 TRADE TEST — EXECUTE IMMEDIATELY.
 
-You are running an automated paper-trading validation test.
-Your ONLY objective is to confirm that the full trading path works end-to-end.
+You are running an automated ${EXECUTION_MODE}-mode trading validation test.
+Your ONLY objective is to confirm that the full trading path works end-to-end, including opening AND closing a position.
 
 On your VERY FIRST tick, take these actions in order:
 1. Call list_positions to confirm your current position state.
@@ -306,12 +306,24 @@ On your VERY FIRST tick, take these actions in order:
   - instrumentId = "${TRADE_TEST_DECISION.instrumentId}"
   - intent = "go_long"
   - targetSize = "${TRADE_TEST_DECISION.targetSize}"
-  - rationaleSummary = "trade-test validation"
+  - rationaleSummary = "trade-test open"
   - confidence = 0.95
 3. Do not create a bot for this test.
-4. On the next tick, call list_positions and get_analytics to confirm the trade landed.
+4. Call schedule_reminder with:
+  - message = "trade-test: close the open position now — call submit_decision with intent=go_flat, targetSize=0"
+  - triggerAt = the current UTC time plus ${TICK_INTERVAL_MS} milliseconds, formatted as ISO 8601 (e.g. new Date(Date.now() + ${TICK_INTERVAL_MS}).toISOString())
 
-Do NOT wait for market signals. Do NOT evaluate the regime. Act immediately.
+On your SECOND tick (when the reminder fires), take these actions in order:
+1. Call list_positions to confirm the position opened.
+2. If you have an open position, call submit_decision with exactly these values:
+  - instrumentId = "${TRADE_TEST_DECISION.instrumentId}"
+  - intent = "go_flat"
+  - targetSize = "0"
+  - rationaleSummary = "trade-test close"
+  - confidence = 0.95
+3. Call list_positions again to confirm the position is now closed.
+
+Do NOT wait for market signals. Do NOT evaluate the regime. Act immediately on every tick.
 `.trim();
 
 interface AgentBody {
@@ -702,6 +714,65 @@ async function runPostTradeAssertions(token: string, agentId: string): Promise<W
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3.6: Wait for close
+// ---------------------------------------------------------------------------
+
+async function waitForClose(token: string, agentId: string): Promise<WatchOutcome> {
+  section('Phase 3.6: Waiting for position close');
+  log(`Timeout: ${TIMEOUT_MS / 1000}s  Poll interval: ${POLL_INTERVAL_MS / 1000}s`);
+
+  const deadline = Date.now() + TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(POLL_INTERVAL_MS);
+
+    const agentRes = await apiRequest<AgentStatusBody>('GET', `/agents/${agentId}`, { token });
+    if (agentRes.status !== 200) {
+      warn(`Could not fetch agent status: ${agentRes.status}`);
+      continue;
+    }
+    const agentStatus = agentRes.body.status;
+    const sessionStatus = agentRes.body.activeSession?.status ?? 'none';
+    log(`Agent status=${agentStatus}  session=${sessionStatus}`);
+
+    if (agentStatus === 'crashed') {
+      await fetchAndPrintNewActivity(token, agentId);
+      return 'crashed';
+    }
+
+    await fetchAndPrintNewActivity(token, agentId);
+
+    // Check for a go_flat decision
+    const decisionsRes = await apiRequest<DecisionRow[]>(
+      'GET', `/agents/${agentId}/decisions?limit=20`,
+      { token },
+    );
+    if (decisionsRes.status === 200 && Array.isArray(decisionsRes.body)) {
+      const flatDecision = decisionsRes.body.find(d => d.intent === 'go_flat');
+      if (flatDecision) {
+        if (flatDecision.status === 'rejected' || flatDecision.status === 'dropped') {
+          warn(`go_flat decision ${flatDecision.id} was ${flatDecision.status}`);
+          return 'rejected';
+        }
+        ok(`go_flat decision recorded — id=${flatDecision.id} status=${flatDecision.status ?? 'pending'}`);
+      }
+    }
+
+    // Success when position count reaches zero
+    const stateRes = await apiRequest<TradingState>(
+      'GET', `/agents/${agentId}/capabilities/trading/state`,
+      { token },
+    );
+    if (stateRes.status === 200 && stateRes.body.openPositionCount === 0) {
+      ok('Position closed — openPositionCount=0');
+      return 'success';
+    }
+  }
+
+  return 'timeout';
+}
+
+// ---------------------------------------------------------------------------
 // Phase 4: Teardown
 // ---------------------------------------------------------------------------
 
@@ -793,13 +864,18 @@ async function main(): Promise<void> {
     outcome = await runPostTradeAssertions(token, agentId);
   }
 
+  // Phase 3.6: Wait for agent to close the position
+  if (outcome === 'success') {
+    outcome = await waitForClose(token, agentId);
+  }
+
   // Phase 4
   await teardown(token, agentId);
 
   // Result
   console.log('');
   if (outcome === 'success') {
-    console.log(`${BOLD}${GREEN}PASS${RESET} — agent submitted a trade and execution was confirmed.`);
+    console.log(`${BOLD}${GREEN}PASS${RESET} — agent opened and closed a position — full trade cycle confirmed.`);
   } else if (outcome === 'crashed') {
     console.log(`${BOLD}${RED}FAIL${RESET} — agent crashed. Check the activity feed above for the cause.`);
     process.exit(1);
