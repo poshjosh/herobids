@@ -47,6 +47,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Production readiness hardening (2026-06-15): fail-closed agent grant fallback now rejects missing agent rows, bot and agent config updates validate execution capability at write time, actor health snapshots now cover bots and agents with refreshes instead of expiring to stale state, and decision failures are durably recorded for stale-session, missing-context, missing-position, and pre-execution rejection paths.
+
 - Worker tick reliability (2026-06-12): tightened tick-gate fallback handling, preserved degradation metadata across skip branches, and added agent-level coverage for non-trading tick guard behavior.
 
 - Agent runtime policy (2026-06-09): added a dedicated container runtime policy schema so forwarded LLM retry/scout/thinking settings are validated and preserved inside the agent runtime
