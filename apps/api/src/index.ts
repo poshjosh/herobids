@@ -31,6 +31,7 @@ import { setupRoutes } from './routes/setup.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
+import { syncSystemSkills } from './sync-system-skills.js';
 
 const appConfig = loadConfig();
 
@@ -61,6 +62,8 @@ const redisClient = new Redis(redisConnection);
 redisClient.on('error', (err: Error) => app.log.error({ err }, 'Redis client error'));
 
 const db = createDatabase(appConfig.database.url);
+await syncSystemSkills(db);
+app.log.info('System skills synced');
 
 const lifecycleQueue = new Queue<LifecycleJob>('trading-instance-lifecycle', {
   connection: redisConnection,

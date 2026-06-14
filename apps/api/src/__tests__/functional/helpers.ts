@@ -7,7 +7,7 @@
 
 import Fastify from 'fastify';
 import { sql } from 'drizzle-orm';
-import { createDatabase, skillRevisions, skills as skillsTable } from '@herobids/db';
+import { createDatabase } from '@herobids/db';
 import { authPlugin } from '../../plugins/auth.js';
 import { authRoutes } from '../../routes/auth.js';
 import { agentRoutes } from '../../routes/agents.js';
@@ -25,6 +25,7 @@ import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { LlmRuntimeConfigSchema, SYSTEM_SKILLS } from '@herobids/domain';
+import { syncSystemSkills } from '../../sync-system-skills.js';
 
 const TEST_BUDGETS: RuntimeBudgetPolicy = {
   maxHistoryMessages: 20,
@@ -233,48 +234,7 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
     CASCADE
   `);
 
-  // Re-seed system skills after truncation (authorId = null = platform-owned).
-  // Source instructions and tool sets from the live domain constants to keep
-  // them in sync with what the functional contract tests assert.
-  for (const skill of SYSTEM_SKILLS) {
-    const revisionId = `${skill.id}:system:1`;
-    await db.insert(skillsTable).values({
-      id: skill.id,
-      authorId: null,
-      publicationStatus: 'published',
-      publishedAt: new Date(),
-      currentRevisionId: revisionId,
-      priceCents: 0,
-      autoPublishedByPlan: false,
-      name: skill.name,
-      description: skill.description,
-      instructions: skill.instructions,
-      requiredTools: skill.requiredTools,
-      contextRequirements: skill.contextRequirements,
-      requiredGuardrails: skill.requiredGuardrails,
-      capabilityFamilies: skill.capabilityFamilies,
-      suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-      tags: [],
-    }).onConflictDoNothing();
-
-    await db.insert(skillRevisions).values({
-      id: revisionId,
-      skillId: skill.id,
-      version: 1,
-      name: skill.name,
-      description: skill.description,
-      instructions: skill.instructions,
-      requiredTools: skill.requiredTools,
-      contextRequirements: skill.contextRequirements,
-      requiredGuardrails: skill.requiredGuardrails,
-      capabilityFamilies: skill.capabilityFamilies,
-      suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-      tags: [],
-      changeSummary: 'system seed',
-      createdByUserId: null,
-      createdAt: new Date(),
-    }).onConflictDoNothing();
-  }
+  await syncSystemSkills(db);
 }
 
 /** Register a test user and return the auth token. */

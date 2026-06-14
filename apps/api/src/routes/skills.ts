@@ -5,9 +5,10 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-
 import type { SQL } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
-import { findUnknownSkillTools, SYSTEM_SKILLS } from '@herobids/domain';
+import { findUnknownSkillTools } from '@herobids/domain';
 import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
+import { syncSystemSkills } from '../sync-system-skills.js';
 
 const PublicationStatusSchema = z.enum(['draft', 'private', 'published', 'delisted', 'archived']);
 
@@ -473,88 +474,7 @@ function hasContentChange(
 }
 
 export async function skillsRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
-  const now = new Date();
-
-  for (const skill of SYSTEM_SKILLS) {
-    const [existingRevision] = await db
-      .select({ id: skillRevisions.id })
-      .from(skillRevisions)
-      .where(and(eq(skillRevisions.skillId, skill.id), eq(skillRevisions.version, 1)))
-      .limit(1);
-    const revisionId = existingRevision?.id ?? `${skill.id}:system:1`;
-    await db
-      .insert(skills)
-      .values({
-        id: skill.id,
-        authorId: null,
-        publicationStatus: 'published',
-        publishedAt: now,
-        currentRevisionId: revisionId,
-        priceCents: 0,
-        autoPublishedByPlan: false,
-        name: skill.name,
-        description: skill.description,
-        instructions: skill.instructions,
-        requiredTools: skill.requiredTools,
-        contextRequirements: skill.contextRequirements,
-        requiredGuardrails: skill.requiredGuardrails,
-        capabilityFamilies: skill.capabilityFamilies,
-        suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-        tags: [],
-      })
-      .onConflictDoUpdate({
-        target: skills.id,
-        set: {
-          publicationStatus: 'published',
-          publishedAt: now,
-          currentRevisionId: revisionId,
-          priceCents: 0,
-          name: skill.name,
-          description: skill.description,
-          instructions: skill.instructions,
-          requiredTools: skill.requiredTools,
-          contextRequirements: skill.contextRequirements,
-          requiredGuardrails: skill.requiredGuardrails,
-          capabilityFamilies: skill.capabilityFamilies,
-          suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-          updatedAt: now,
-        },
-      });
-
-    await db.insert(skillRevisions).values({
-      id: revisionId,
-      skillId: skill.id,
-      version: 1,
-      name: skill.name,
-      description: skill.description,
-      instructions: skill.instructions,
-      requiredTools: skill.requiredTools,
-      contextRequirements: skill.contextRequirements,
-      requiredGuardrails: skill.requiredGuardrails,
-      capabilityFamilies: skill.capabilityFamilies,
-      suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-      tags: [],
-      changeSummary: 'system seed',
-      createdByUserId: null,
-      createdAt: now,
-    }).onConflictDoUpdate({
-      target: skillRevisions.id,
-      set: {
-        name: skill.name,
-        description: skill.description,
-        instructions: skill.instructions,
-        requiredTools: skill.requiredTools,
-        contextRequirements: skill.contextRequirements,
-        requiredGuardrails: skill.requiredGuardrails,
-        capabilityFamilies: skill.capabilityFamilies,
-        suggestedTickIntervalMs: skill.suggestedTickIntervalMs,
-        tags: [],
-        changeSummary: 'system seed',
-      },
-    });
-  }
-
-  app.log.info(`[skills] synced ${SYSTEM_SKILLS.length} system skills`);
+  await syncSystemSkills(db);
 
   const scoreRefreshTimer = setInterval(() => {
     void recomputeAllSkillScores(db).catch((error: unknown) => {

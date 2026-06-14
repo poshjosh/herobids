@@ -6,6 +6,10 @@ A skill describes *expertise* for an agent and the *tools* the agent can use wit
 
 - Do not use such assertive language that may compel the agent to always do what the skill makes it capable of doing.
 
+## System Skill Sync
+
+`SYSTEM_SKILLS` in `packages/domain/src/skills.ts` is upserted into the database on every API startup, so changes to instructions, tools, guardrails, or related fields take effect on the next restart without a manual reseed.
+
 ## Examples
 
 When defining a `generic-trading` skill:
