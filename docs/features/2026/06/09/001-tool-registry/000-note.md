@@ -81,7 +81,7 @@ const scoutDefinitions = toolRegistry.getDefinitions(scoutTools);
 const judgeDefinitions = toolRegistry.getDefinitions(); // no filter
 ```
 
-## Migration Path for Herobids
+## Migration Path for HeroBids
 
 ### Phase 1: Build Registry Infrastructure (3-4 hours)
 

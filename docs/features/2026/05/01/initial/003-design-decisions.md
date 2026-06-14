@@ -1,4 +1,4 @@
-# Herobids Design Decision Record
+# HeroBids Design Decision Record
 
 ## 0. Framing Decisions
 
@@ -27,7 +27,7 @@ The first orderbook venue should be chosen to match the first live strategy you 
 - **Execution:** Submits orders, manages lifecycle, records fills
 - **Reconciliation:** Compares local state to venue state, detects and resolves drift
 
-The old project conflates planning and execution inside `position-manager.ts`. Herobids separates them.
+The old project conflates planning and execution inside `position-manager.ts`. HeroBids separates them.
 
 ### Q1.2: Should the "Desire Layer" be a distinct package or a module within `engine`?
 

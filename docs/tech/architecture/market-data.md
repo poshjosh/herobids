@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the current-state source of truth for how Herobids fetches,
+This document is the current-state source of truth for how HeroBids fetches,
 caches, rates, distributes, and degrades market data and related market
 intelligence.
 
@@ -289,7 +289,7 @@ consumer to rediscover the same tokens independently.
 
 ## Failure and Degradation Model
 
-Herobids does not treat all market-data failures the same.
+HeroBids does not treat all market-data failures the same.
 
 ### Stream failure
 

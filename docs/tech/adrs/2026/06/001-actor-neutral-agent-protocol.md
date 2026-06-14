@@ -5,7 +5,7 @@ Date: 2026-06-02
 
 ## Context
 
-Herobids is agent-focused, but the platform must not hardcode `agent` as the only possible actor type. Future runtimes may include bots, users, and system-authored actions. The trading instance remains the execution authority. Different layers may use different provenance terms when they are more precise for that context.
+HeroBids is agent-focused, but the platform must not hardcode `agent` as the only possible actor type. Future runtimes may include bots, users, and system-authored actions. The trading instance remains the execution authority. Different layers may use different provenance terms when they are more precise for that context.
 
 ## Decision
 

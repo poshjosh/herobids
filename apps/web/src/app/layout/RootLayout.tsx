@@ -50,7 +50,7 @@ export function RootLayout() {
             ☰
           </button>
           <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--color-brand)' }}>
-            Herobids
+            HeroBids
           </span>
         </div>
 

@@ -7,7 +7,7 @@ Add Stripe-backed billing to the product control plane without weakening the exi
 The key architectural rule for this step is:
 
 - Stripe is the payment system of record.
-- Herobids remains the source of truth for feature entitlements enforced inside the API.
+- HeroBids remains the source of truth for feature entitlements enforced inside the API.
 - The trading engine, worker runtime, and venue adapters remain billing-agnostic.
 
 This step should turn paid subscription state into durable, user-scoped plan entitlements that the existing auth and plan-guard paths can enforce.
@@ -19,7 +19,7 @@ This step should turn paid subscription state into durable, user-scoped plan ent
 - Webhook events, not browser redirects, are authoritative for upgrade, downgrade, renewal, cancellation, and payment-failure state.
 - `users.planId` remains a denormalized entitlement cache for fast request-time checks.
 - `user_plans` remains the historical record of plan transitions.
-- Agent token budgets, usage-based charging, invoices mirrored into Herobids, and tax-specific workflows can stay out of the first billing slice unless GTM requires them immediately.
+- Agent token budgets, usage-based charging, invoices mirrored into HeroBids, and tax-specific workflows can stay out of the first billing slice unless GTM requires them immediately.
 
 ## Implementation Order
 
@@ -70,7 +70,7 @@ Primary files:
 
 Changes:
 
-- Add a user-scoped customer table keyed by Herobids `userId` and Stripe `customerId`.
+- Add a user-scoped customer table keyed by HeroBids `userId` and Stripe `customerId`.
 - Add a subscription table that captures the current commercial subscription state separately from `users.planId`, including fields such as:
   - `userId`
   - `stripeCustomerId`
@@ -114,7 +114,7 @@ Changes:
   - `POST /billing/customer-portal`
 - Add a public webhook endpoint such as `POST /billing/webhook` that validates Stripe signatures before any state mutation.
 - Create Stripe customers lazily when a user first starts checkout or needs portal access.
-- Stamp checkout sessions with stable Herobids identity metadata such as `userId` and intended `planId` so webhook handling can resolve ownership without trusting a redirect round-trip.
+- Stamp checkout sessions with stable HeroBids identity metadata such as `userId` and intended `planId` so webhook handling can resolve ownership without trusting a redirect round-trip.
 - Keep browser success and cancel redirects informational only. They should never update entitlements directly.
 - Persist bounded webhook metadata for audit and diagnostics rather than depending on Stripe alone for debugging.
 

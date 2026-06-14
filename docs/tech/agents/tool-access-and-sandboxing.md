@@ -8,7 +8,7 @@ It complements [Agent Runtime Boundary And Message Contract](./runtime-boundary-
 
 Tooling must let the agent gather information and produce explainable intent without collapsing the trust boundary.
 
-Herobids should empower agents in a developer-like way for safe read and research tasks, while still applying tighter isolation, audit, and revocation than a human developer would require because agent actions are autonomous and high-frequency.
+HeroBids should empower agents in a developer-like way for safe read and research tasks, while still applying tighter isolation, audit, and revocation than a human developer would require because agent actions are autonomous and high-frequency.
 
 The platform therefore optimizes for:
 

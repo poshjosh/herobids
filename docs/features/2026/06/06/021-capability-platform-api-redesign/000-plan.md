@@ -22,7 +22,7 @@
 
 ## Goal
 
-Reshape Herobids from a trading-first API and UI into an agent-first platform whose capabilities are extended through skills, explicit grants, and capability-specific bindings.
+Reshape HeroBids from a trading-first API and UI into an agent-first platform whose capabilities are extended through skills, explicit grants, and capability-specific bindings.
 
 The redesign must preserve strong trading semantics internally while making trading only one capability family among many.
 

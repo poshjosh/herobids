@@ -63,7 +63,7 @@ export function LoginPage() {
               marginBottom: '8px',
             }}
           >
-            Herobids
+            HeroBids
           </div>
           <div style={{ color: 'var(--color-text-secondary)', fontSize: '15px' }}>
             {intl.formatMessage({ id: 'auth.tagline' })}

@@ -532,7 +532,7 @@ export async function agentInteractivityRoutes(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: 'Herobids: Telegram notification test — your chat ID is verified.',
+        text: 'HeroBids: Telegram notification test — your chat ID is verified.',
       }),
     });
 

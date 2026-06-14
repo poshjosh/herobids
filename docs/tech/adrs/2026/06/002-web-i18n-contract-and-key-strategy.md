@@ -5,7 +5,7 @@ Date: 2026-06-10
 
 ## Context
 
-Herobids now supports multiple operator locales in the web app and API-facing UI flows. The implementation needs a single contract for how page chrome, persisted user preferences, API error payloads, and activity events are localized so later features do not regress into mixed English copy or ad-hoc formatting.
+HeroBids now supports multiple operator locales in the web app and API-facing UI flows. The implementation needs a single contract for how page chrome, persisted user preferences, API error payloads, and activity events are localized so later features do not regress into mixed English copy or ad-hoc formatting.
 
 ## Decision
 

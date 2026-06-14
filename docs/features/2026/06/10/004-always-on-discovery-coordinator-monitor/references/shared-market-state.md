@@ -16,7 +16,7 @@ Agents may still fetch or refine data during ticks, but the platform should main
 
 ## Background
 
-Herobids already has:
+HeroBids already has:
 - discovery fanout and normalization in `packages/market-data/src/discovery.ts`
 - coordinated provider access and cache behavior in `packages/market-data/src/provider-registry.ts`
 

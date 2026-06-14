@@ -52,7 +52,7 @@ Agent runtime failure is not by itself proof that venue execution failed.
 
 ## Worker Or Trading Instance Failure
 
-If the worker dies, the replacement path follows the existing Herobids rehydration model:
+If the worker dies, the replacement path follows the existing HeroBids rehydration model:
 
 1. lease ownership transfers to another worker
 2. positions, orders, fills, and known plans reload from Postgres

@@ -1,6 +1,6 @@
 # Web UI — User Acceptance Tests
 
-Manual test checklist for the Herobids frontend dashboard.
+Manual test checklist for the HeroBids frontend dashboard.
 
 **Status legend**
 

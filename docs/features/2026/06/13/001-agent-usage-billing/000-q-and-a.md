@@ -43,7 +43,7 @@ The right path is:
 
 8. Build user-visible usage surfaces early. Add “usage this period,” “estimated current charges,” “remaining included credits,” “hard cap,” and “which agents/skills are spending” to the billing UI. If users cannot see spend building up in real time, usage billing will feel hostile.
 
-9. Let Herobids be the source of truth for metering, and use Stripe/Creem to collect money. Your current billing abstraction is already good for checkout, subscriptions, and portal flows. For usage billing, the external provider should charge based on totals Herobids computed, not become the authoritative place where usage is reconstructed.
+9. Let HeroBids be the source of truth for metering, and use Stripe/Creem to collect money. Your current billing abstraction is already good for checkout, subscriptions, and portal flows. For usage billing, the external provider should charge based on totals HeroBids computed, not become the authoritative place where usage is reconstructed.
 
 10. Roll it out in this order: internal meter, rating engine, account balance model, enforcement, UI, then invoicing/top-ups. If you reverse that and start with invoices or provider-specific metered billing, you will end up with weak enforcement and poor explainability.
 

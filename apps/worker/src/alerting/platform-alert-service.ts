@@ -122,7 +122,7 @@ function formatPlatformAlert(event: PlatformAlertEvent, ctx: PlatformAlertContex
   const detail = ctx.detail ? `\n<i>${escapeHtml(ctx.detail.slice(0, 300))}</i>` : '';
 
   return [
-    `🔔 <b>[Herobids Safety Alert]</b>`,
+    `🔔 <b>[HeroBids Safety Alert]</b>`,
     `<b>${escapeHtml(subject)}</b>`,
     `Agent: ${agentLabel}`,
     escapeHtml(ctx.message),

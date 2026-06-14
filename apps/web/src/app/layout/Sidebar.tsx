@@ -52,7 +52,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
         }}
       >
         <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-brand)', letterSpacing: '-0.3px' }}>
-          Herobids
+          HeroBids
         </div>
         {onClose && (
           // Only meaningful on mobile where the sidebar is an overlay.

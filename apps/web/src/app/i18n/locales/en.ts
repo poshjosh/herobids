@@ -132,7 +132,7 @@ export const messages: Record<string, string> = {
   'settings.subtitle': 'Account preferences and notification configuration',
   'settings.telegram.title': 'Telegram Notifications',
   'settings.telegram.description':
-    'Bind your Telegram account to receive AI agent messages and safety alerts directly in Telegram. Start a chat with the Herobids bot, send /start, then paste your chat ID here.',
+    'Bind your Telegram account to receive AI agent messages and safety alerts directly in Telegram. Start a chat with the HeroBids bot, send /start, then paste your chat ID here.',
   'settings.telegram.chatId.label': 'Telegram Chat ID',
   'settings.telegram.chatId.placeholder': 'e.g. 123456789',
   'settings.telegram.saved': 'Telegram chat ID saved.',

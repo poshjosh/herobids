@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quick-setup.sh — Bootstrap a Herobids user account via the REST API.
+# quick-setup.sh — Bootstrap a HeroBids user account via the REST API.
 #
 # Reads configuration from scripts/.env.setup (or a custom path via --env),
 # then runs one of two setup flows:
@@ -37,7 +37,7 @@
 # ─────────────────────────────────────────────────────────────────
 #
 # API
-#   API_BASE_URL          Base URL of the Herobids API
+#   API_BASE_URL          Base URL of the HeroBids API
 #                         e.g. http://localhost:3000
 #
 # Auth

@@ -367,7 +367,7 @@ const browseUrlTool: AgentTool = {
         let hops = 0;
         while (true) {
           response = await fetch(currentUrl, {
-            headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'User-Agent': 'Herobids-Agent/1.0' },
+            headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'User-Agent': 'HeroBids-Agent/1.0' },
             redirect: 'manual',
             signal: controller.signal,
           });
@@ -581,7 +581,7 @@ const readDocumentTool: AgentTool = {
       let response: Response;
       try {
         response = await fetch(url, {
-          headers: { 'Accept': 'application/pdf,*/*;q=0.8', 'User-Agent': 'Herobids-Agent/1.0' },
+          headers: { 'Accept': 'application/pdf,*/*;q=0.8', 'User-Agent': 'HeroBids-Agent/1.0' },
           redirect: 'manual',
           signal: controller.signal,
         });

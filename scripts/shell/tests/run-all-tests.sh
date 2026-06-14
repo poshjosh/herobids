@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-all-tests.sh — Run the full Herobids test suite.
+# run-all-tests.sh — Run the full HeroBids test suite.
 #
 # Test tiers (in order):
 #   1. Unit tests          — pure logic, no external services required

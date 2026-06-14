@@ -4,7 +4,7 @@ Rules and guidelines for AI agents working on this codebase.
 
 ## Project Overview
 
-Herobids is an AI-first algorithmic trading system. It supports multiple venues (Hyperliquid perpetuals, Jupiter DEX swaps) with paper/shadow/live execution modes, real-time WebSocket market data, and configurable trading strategies.
+HeroBids is an AI-first algorithmic trading system. It supports multiple venues (Hyperliquid perpetuals, Jupiter DEX swaps) with paper/shadow/live execution modes, real-time WebSocket market data, and configurable trading strategies.
 
 Tech stack: TypeScript (strict), Node.js ≥22, ESM modules, pnpm monorepo, PostgreSQL + Drizzle ORM, Redis, Zod validation, vitest.
 
