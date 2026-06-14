@@ -47,6 +47,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Runtime state alignment (2026-06-15): runtime session retirement now preserves `crashed` vs `stopped`, and Docker fallback handling skips duplicate crash processing once an abnormal end is already recorded.
+
 - System skill sync (2026-06-15): API startup now upserts platform-owned skills and revisions from `SYSTEM_SKILLS`, and functional reseed helpers reuse the same sync path.
 
 - Production readiness hardening (2026-06-15): fail-closed agent grant fallback now rejects missing agent rows, bot and agent config updates validate execution capability at write time, actor health snapshots now cover bots and agents with refreshes instead of expiring to stale state, and decision failures are durably recorded for stale-session, missing-context, missing-position, and pre-execution rejection paths.

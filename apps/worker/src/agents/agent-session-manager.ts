@@ -361,12 +361,12 @@ export class AgentSessionManager {
 
   /**
    * Handle a runtime-initiated session end (the container sent session_ended before dying).
-   * Session-aware: verifies the session is still active before acting. Stale farewells
-   * from superseded containers are no-ops.
+   * Session-aware: verifies the session is still active before acting and preserves the
+   * runtime-reported terminal status so graceful stops stay stopped and crashes stay crashed.
    */
   async handleRuntimeSessionEnd(sessionId: string, agentId: string, status: 'stopped' | 'crashed'): Promise<void> {
-    const stopped = await this.agentRepo.markSessionStopped(sessionId, new Date());
-    if (!stopped) {
+    const ended = await this.agentRepo.markSessionEnded(sessionId, status, new Date());
+    if (!ended) {
       // Session already stopped/superseded — stale farewell from a previous container.
       logger.debug({ sessionId, agentId, status }, 'Ignoring stale session_ended — session already terminated');
       return;

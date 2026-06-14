@@ -9,6 +9,7 @@ function makeAgentRepo() {
   return {
     updateAgent: vi.fn().mockResolvedValue(undefined),
     updateSession: vi.fn().mockResolvedValue(undefined),
+    retireActiveSessionsWithStatus: vi.fn().mockResolvedValue(undefined),
     listActiveAgents: vi.fn().mockResolvedValue([]),
     getSessionsByStatuses: vi.fn().mockResolvedValue([]),
     getCurrentSession: vi.fn().mockResolvedValue(null),
@@ -506,10 +507,20 @@ describe('DockerAgentManager — session-aware container death', () => {
 
     await manager.onContainerDie('agent-001', 'docker_event', 'sess-001');
 
-    expect(agentRepo.updateSession).toHaveBeenCalledWith('sess-001', expect.objectContaining({
-      status: 'crashed',
-      stoppedAt: expect.any(Date),
-    }));
+    expect(agentRepo.retireActiveSessionsWithStatus).toHaveBeenCalledWith('agent-001', 'crashed', expect.any(Date));
     expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-001', { status: 'crashed' });
+  });
+
+  it('skips duplicate crash handling after a crashed runtime already retired its session', async () => {
+    const agentRepo = makeAgentRepo();
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'agent-001', status: 'crashed' });
+    (agentRepo.getCurrentSession as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+
+    await manager.onContainerDie('agent-001', 'docker_event', 'sess-001');
+
+    expect(agentRepo.retireActiveSessionsWithStatus).not.toHaveBeenCalled();
+    expect(agentRepo.updateAgent).not.toHaveBeenCalled();
   });
 });

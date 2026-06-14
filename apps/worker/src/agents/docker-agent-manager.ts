@@ -348,7 +348,8 @@ export class DockerAgentManager {
 
   /**
    * Called when a container die/kill event is received from Docker event stream.
-   * Updates agent status to crashed, closes the active session, fires safety alert.
+    * Fallback detector for terminal exits. Updates agent/session status to crashed,
+    * and skips duplicate handling when a prior session-ended path already recorded it.
    *
    * Crash taxonomy:
    *   - voluntary_stop: agent was already stopped before the die event
@@ -365,6 +366,10 @@ export class DockerAgentManager {
     }
 
     const currentSession = await this.agentRepo.getCurrentSession(agentId);
+    if (currentAgent?.status === 'crashed' && !currentSession) {
+      logger.info({ agentId, sessionId, reason }, 'Agent crash already recorded — skipping duplicate crash handling');
+      return;
+    }
     if (sessionId && currentSession?.id !== sessionId) {
       logger.info(
         { agentId, sessionId, currentSessionId: currentSession?.id, reason },
@@ -384,12 +389,7 @@ export class DockerAgentManager {
     logger.warn({ agentId, sessionId, reason, crashType }, `Agent container died — ${crashType}`);
 
     try {
-      if (currentSession) {
-        await this.agentRepo.updateSession(currentSession.id, {
-          status: 'crashed',
-          stoppedAt: new Date(),
-        });
-      }
+      await this.agentRepo.retireActiveSessionsWithStatus(agentId, 'crashed', new Date());
 
       await this.agentRepo.updateAgent(agentId, { status: 'crashed' });
 

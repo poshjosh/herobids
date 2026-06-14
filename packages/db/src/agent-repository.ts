@@ -289,10 +289,34 @@ export class AgentRepository {
     return [];
   }
 
-  /** Retire all non-terminal sessions for an agent (starting/launching/running/unhealthy → stopped). */
+  /** Mark an active session terminal without collapsing the terminal status.
+   * `stopped` is the graceful path; `crashed` preserves abnormal termination. */
+  async markSessionEnded(sessionId: string, status: 'stopped' | 'crashed', stoppedAt: Date): Promise<boolean> {
+    const updated = await this.db.update(agentRuntimeSessions).set({
+      status,
+      stoppedAt,
+    }).where(and(
+      eq(agentRuntimeSessions.id, sessionId),
+      inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+    )).returning({ id: agentRuntimeSessions.id });
+
+    return updated.length > 0;
+  }
+
+  /** Retire all non-terminal sessions for an agent as stopped (graceful terminal state). */
   async retireActiveSessions(agentId: string): Promise<void> {
+    await this.retireActiveSessionsWithStatus(agentId, 'stopped');
+  }
+
+  /** Retire all non-terminal sessions for an agent using the requested terminal status.
+   * Used by graceful stops (`stopped`) and abnormal terminal exits (`crashed`). */
+  async retireActiveSessionsWithStatus(
+    agentId: string,
+    status: 'stopped' | 'crashed',
+    stoppedAt: Date = new Date(),
+  ): Promise<void> {
     await this.db.update(agentRuntimeSessions)
-      .set({ status: 'stopped', stoppedAt: new Date() })
+      .set({ status, stoppedAt })
       .where(and(
         eq(agentRuntimeSessions.agentId, agentId),
         inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
@@ -316,15 +340,7 @@ export class AgentRepository {
   }
 
   async markSessionStopped(sessionId: string, stoppedAt: Date): Promise<boolean> {
-    const updated = await this.db.update(agentRuntimeSessions).set({
-      status: 'stopped',
-      stoppedAt,
-    }).where(and(
-      eq(agentRuntimeSessions.id, sessionId),
-      inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
-    )).returning({ id: agentRuntimeSessions.id });
-
-    return updated.length > 0;
+    return this.markSessionEnded(sessionId, 'stopped', stoppedAt);
   }
 
   async markSessionStartTimedOut(sessionId: string, stoppedAt: Date): Promise<boolean> {

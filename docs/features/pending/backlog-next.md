@@ -2,7 +2,7 @@
 
 1. DONE [Skill Tool Validation](skill-tool-validation/001-plan.md) - establish the shared tool-name trust boundary before any skill sync or startup wiring depends on it.
 2. DONE [System Skill Startup Sync](system-skill-startup-sync/001-plan.md) - keep the database copy of system skills aligned with code once the tool contract is trustworthy.
-3. [Bug: Mismatch Between Agent And Runtime State](bug-mismatch-between-agent-and-runtime-state/001-plan.md) - fix terminal-state semantics before layering more deployment and lifecycle behavior on top.
+3. DONE [Bug: Mismatch Between Agent And Runtime State](bug-mismatch-between-agent-and-runtime-state/001-plan.md) - fix terminal-state semantics before layering more deployment and lifecycle behavior on top.
 4. [Graceful Agent Deployment - Zero/Low Downtime](graceful-agent-deployment/000-graceful-agent-deployment.md) - add clean handoff and shutdown behavior after lifecycle state is consistent.
 5. [025 - Trading Binding Native Bot Startup Follow-Through](025-trading-binding-native-bot-startup-follow-through.md) - finish the binding-first startup migration once the worker lifecycle path is stable.
 6. [Agent Runtime Loop Controls](agent-runtime-loop-controls/001-plan.md) - make the core agent runtime tuning knobs configurable.

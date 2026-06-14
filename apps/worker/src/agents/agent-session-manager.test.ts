@@ -49,6 +49,7 @@ describe('AgentSessionManager', () => {
       claimStartingSession: vi.fn().mockResolvedValue(true),
       markSessionRunning: vi.fn().mockResolvedValue(true),
       markSessionStopped: vi.fn().mockResolvedValue(true),
+      markSessionEnded: vi.fn().mockResolvedValue(true),
       markSessionStartTimedOut: vi.fn().mockResolvedValue(true),
       updateSession: vi.fn().mockResolvedValue(undefined),
       updateAgent: vi.fn().mockResolvedValue(undefined),
@@ -1122,6 +1123,26 @@ describe('AgentSessionManager', () => {
 
       expect(onSessionStopped).not.toHaveBeenCalled();
     });
+  });
+
+  it('marks runtime sessions crashed when session_ended reports a crash', async () => {
+    const { agentRepo, runtimeLauncher } = buildManager();
+    const onSessionStopped = vi.fn();
+    const onAgentStatusChange = vi.fn();
+
+    const manager = new AgentSessionManager(
+      agentRepo as any,
+      {} as any,
+      runtimeLauncher as any,
+      { budgets: TEST_RUNTIME_BUDGETS, onSessionStopped, onAgentStatusChange },
+    );
+
+    await manager.handleRuntimeSessionEnd('sess-crashed', 'agent-crashed', 'crashed');
+
+    expect(agentRepo.markSessionEnded).toHaveBeenCalledWith('sess-crashed', 'crashed', expect.any(Date));
+    expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-crashed', { status: 'crashed' });
+    expect(onSessionStopped).toHaveBeenCalledWith('agent-crashed', 'sess-crashed');
+    expect(onAgentStatusChange).toHaveBeenCalledWith('agent-crashed', 'user-1', 'crashed');
   });
 
   describe('handleRuntimeFailure', () => {

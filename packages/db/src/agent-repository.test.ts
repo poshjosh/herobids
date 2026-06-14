@@ -113,3 +113,52 @@ describe('AgentRepository email delivery metadata', () => {
     }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// runtime session retirement
+// ---------------------------------------------------------------------------
+
+function buildRuntimeSessionUpdateDb(returningRows: Array<Record<string, unknown>> = [{ id: 'sess-1' }]) {
+  const returningFn = vi.fn().mockResolvedValue(returningRows);
+  const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
+  const setFn = vi.fn().mockReturnValue({ where: whereFn });
+  const updateFn = vi.fn().mockReturnValue({ set: setFn });
+  return { db: { update: updateFn }, setFn, returningFn };
+}
+
+function buildRuntimeSessionRetireDb() {
+  const whereFn = vi.fn().mockResolvedValue(undefined);
+  const setFn = vi.fn().mockReturnValue({ where: whereFn });
+  const updateFn = vi.fn().mockReturnValue({ set: setFn });
+  return { db: { update: updateFn }, setFn };
+}
+
+describe('AgentRepository runtime session retirement', () => {
+  it('retires active sessions as stopped', async () => {
+    const { db, setFn } = buildRuntimeSessionRetireDb();
+    const repo = new AgentRepository(db as never);
+
+    await repo.retireActiveSessionsWithStatus('agent-1', 'stopped', new Date('2026-06-15T00:00:00Z'));
+
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({ status: 'stopped', stoppedAt: expect.any(Date) }));
+  });
+
+  it('retires active sessions as crashed', async () => {
+    const { db, setFn } = buildRuntimeSessionRetireDb();
+    const repo = new AgentRepository(db as never);
+
+    await repo.retireActiveSessionsWithStatus('agent-1', 'crashed', new Date('2026-06-15T00:00:00Z'));
+
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({ status: 'crashed', stoppedAt: expect.any(Date) }));
+  });
+
+  it('does not change already-terminal sessions when ending a session', async () => {
+    const { db, setFn, returningFn } = buildRuntimeSessionUpdateDb([]);
+    const repo = new AgentRepository(db as never);
+
+    await expect(repo.markSessionEnded('sess-1', 'crashed', new Date('2026-06-15T00:00:00Z'))).resolves.toBe(false);
+
+    expect(setFn).toHaveBeenCalledWith(expect.objectContaining({ status: 'crashed', stoppedAt: expect.any(Date) }));
+    expect(returningFn).toHaveBeenCalled();
+  });
+});

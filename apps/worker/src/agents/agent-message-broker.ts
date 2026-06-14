@@ -280,7 +280,8 @@ export class AgentMessageBroker {
         case AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED: {
           // The agent container sends this before exiting. Route through session
           // manager which is session-aware: verifies the farewell belongs to the
-          // currently active session before retiring it. Stale farewells from
+          // currently active session, preserves the runtime-reported terminal
+          // status, and retires the matching session. Stale farewells from
           // superseded containers are no-ops. This also triggers in-memory actor
           // cleanup (AgentTradingActor stop + deregister).
           const payload = envelope.payload as { reasonCode?: string; sessionId?: string };
