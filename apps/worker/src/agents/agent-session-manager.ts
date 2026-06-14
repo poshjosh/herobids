@@ -717,7 +717,7 @@ export class AgentSessionManager {
     });
 
     await this.eventPublisher.emitInstanceStatus(agentId, {
-      status: 'crashed',
+      status: 'stopped',
       reason: instanceReason,
       updatedAt: new Date().toISOString(),
     });

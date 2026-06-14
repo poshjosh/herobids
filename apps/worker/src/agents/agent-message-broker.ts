@@ -88,7 +88,6 @@ export class AgentMessageBroker {
     private readonly botStop?: BotStopCallback,
     private readonly botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
-    private readonly onAgentStatusChange?: (agentId: string, userId: string, status: 'starting' | 'active' | 'paused' | 'stopped' | 'crashed') => void,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -343,7 +342,7 @@ export class AgentMessageBroker {
     }
   }
 
-  private async handleArtifactPublish(agentId: string, envelope: MessageEnvelope, payload: ArtifactPublishPayload): Promise<void> {
+  private async handleArtifactPublish(agentId: string, _envelope: MessageEnvelope, payload: ArtifactPublishPayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) {
       throw new Error('Agent not found');
@@ -373,7 +372,7 @@ export class AgentMessageBroker {
    * Rate limited per agent. Always available in the MVP (not user-disableable).
    * Persists to agent_outbound_messages with authored_by='agent'.
    */
-  private async handleSendMessage(agentId: string, envelope: MessageEnvelope, payload: SendMessagePayload): Promise<void> {
+  private async handleSendMessage(agentId: string, _envelope: MessageEnvelope, payload: SendMessagePayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) {
       throw new Error('Agent not found');
@@ -526,7 +525,7 @@ export class AgentMessageBroker {
     logger.info({ agentId, msgId, messageId: result.data.messageId }, 'Agent send_message email fanout sent');
   }
 
-  private async handleManageBot(agentId: string, envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
+  private async handleManageBot(agentId: string, _envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) throw new Error('Agent not found');
 
@@ -738,7 +737,7 @@ export class AgentMessageBroker {
     throw new Error(`Unknown manage_bot action: ${(payload as { action: string }).action}`);
   }
 
-  private async handleBotQuery(agentId: string, envelope: MessageEnvelope, payload: BotQueryPayload): Promise<void> {
+  private async handleBotQuery(agentId: string, _envelope: MessageEnvelope, payload: BotQueryPayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) throw new Error('Agent not found');
 

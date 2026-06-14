@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { Database } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import { SYSTEM_SKILLS } from '@herobids/domain';
 import { skillsRoutes } from './skills.js';
 
 const TEST_USER_ID = 'user-1';
@@ -136,6 +137,9 @@ describe('skillsRoutes (normalized contract)', () => {
     const app = Fastify();
     decorateWithAuth(app);
     await skillsRoutes(app, db, makePlansConfig());
+    // Reset counter after init: skillsRoutes seeds SYSTEM_SKILLS which calls
+    // db.select() once per skill to check for existing revisions.
+    selectCalls = 0;
 
     const res = await app.inject({
       method: 'POST',
@@ -155,6 +159,27 @@ describe('skillsRoutes (normalized contract)', () => {
     expect(createdInsert).toBeDefined();
     expect(createdInsert!['publicationStatus']).toBe('published');
     expect(createdInsert!['autoPublishedByPlan']).toBe(true);
+  });
+
+  it('calls db.select() once per SYSTEM_SKILL entry during route initialisation', async () => {
+    let selectCallCount = 0;
+    const trackingDb = {
+      ...makeDbMock(),
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount += 1;
+        return makeChain([]);
+      }),
+    } as unknown as Database;
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await skillsRoutes(app, trackingDb, makePlansConfig());
+
+    // skillsRoutes calls db.select() once per SYSTEM_SKILL to check for an
+    // existing revision before upserting. This count is consumed before any
+    // route handler runs, so tests that track db.select() calls must reset
+    // their counter immediately after skillsRoutes() returns.
+    expect(selectCallCount).toBe(SYSTEM_SKILLS.length);
   });
 
   it('rejects invalid create payloads with 400 validation_error', async () => {

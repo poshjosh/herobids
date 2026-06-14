@@ -211,6 +211,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       skillIds: [],
       status: 'active',
       executionMode: 'paper',
+      capital: '100000',
       createdAt: now,
       updatedAt: now,
     });
@@ -291,7 +292,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
     return {
       schemaVersion: 'v1',
       messageId: crypto.randomUUID(),
-      correlationId: crypto.randomUUID(),
+      correlationId: sessionId, // must match the running agentRuntimeSession id
       initiatorType: 'agent',
       initiatorId: agentId,
       agentId,
@@ -421,5 +422,49 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
     // After go_long(1) then go_short(1), position should be flat or short depending on engine logic
     // The key assertion: the pipeline ran twice without error
     expect(allDecisions.every((d) => d.actorType === 'agent')).toBe(true);
+  });
+
+  it('rejects decision when correlationId does not match the active session id', async () => {
+    // Use a random UUID that is NOT the active sessionId — this is the root cause
+    // of Bug 005: makeEnvelope() was generating a random correlationId instead of
+    // using sessionId, causing every decision to be rejected with stale_session.
+    const envelope = makeEnvelope({ correlationId: crypto.randomUUID() });
+    const payload = makePayload();
+
+    await handler.handleDecisionSubmit(envelope, payload);
+
+    // The stale_session check fires before any DB write, so no decision is persisted.
+    const allDecisions = await db.select().from(decisions).where(eq(decisions.id, payload.decisionId));
+    expect(allDecisions.length).toBe(0);
+
+    // No execution plan or fills either
+    const allPlans = await db.select().from(executionPlans).where(eq(executionPlans.decisionId, payload.decisionId));
+    expect(allPlans.length).toBe(0);
+  });
+
+  it('risk gate rejects decision when agent capital is insufficient for the order notional', async () => {
+    // Lower the agent capital to $100 — smaller than the 0.1 BTC × $50,000 = $5,000 notional.
+    // This is the root cause of Bug 005 Bug 2: the integration test agent had no capital
+    // configured, which previously defaulted to '$100', blocking all trades via the risk gate.
+    await db.update(agents).set({ capital: '100' }).where(eq(agents.id, agentId));
+
+    const envelope = makeEnvelope();
+    // 0.1 BTC at the stub mark price of $50,000 = $5,000 notional > $100 maxOrderNotional
+    const payload = makePayload({ targetSize: '0.1' });
+
+    await handler.handleDecisionSubmit(envelope, payload);
+
+    // The decision IS persisted — the risk gate runs inside the engine after the DB write.
+    const [decision] = await db.select().from(decisions).where(eq(decisions.id, payload.decisionId));
+    expect(decision).toBeDefined();
+
+    // An execution plan is created (write-ahead) but then marked failed by the risk gate.
+    const allPlans = await db.select().from(executionPlans).where(eq(executionPlans.decisionId, payload.decisionId));
+    expect(allPlans.length).toBe(1);
+    expect(allPlans[0]!.status).toBe('failed');
+
+    // No fills are created — the executor never ran.
+    const allFills = await db.select().from(fills).where(eq(fills.venueAccountId, venueAccountId));
+    expect(allFills.length).toBe(0);
   });
 });

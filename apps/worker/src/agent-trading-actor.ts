@@ -1049,10 +1049,10 @@ export class AgentTradingActor implements ExecutionActor {
           this.positions.set(pos.symbol, {
             venue: pos.venue,
             symbol: pos.symbol,
-            side: pos.side,
-            size: pos.size instanceof Decimal ? pos.size : new Decimal(String(pos.size)),
-            entryPrice: pos.entryPrice instanceof Decimal ? pos.entryPrice : new Decimal(String(pos.entryPrice)),
-            realizedPnl: pos.realizedPnl instanceof Decimal ? pos.realizedPnl : new Decimal(String(pos.realizedPnl)),
+            side: pos.side as 'long' | 'short',
+            size: new Decimal(pos.size),
+            entryPrice: new Decimal(pos.entryPrice),
+            realizedPnl: new Decimal(pos.realizedPnl),
           });
         }
       },

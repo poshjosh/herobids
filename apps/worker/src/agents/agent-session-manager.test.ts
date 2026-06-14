@@ -957,7 +957,7 @@ describe('AgentSessionManager', () => {
       expect(runtimeLauncher.stop).toHaveBeenCalledWith('sess-failed-actor');
       expect(agentRepo.updateSession).toHaveBeenCalledWith('sess-failed-actor', expect.objectContaining({ status: 'crashed' }));
       expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-failed-actor', { status: 'crashed' });
-      expect(eventPublisher.emitInstanceStatus).toHaveBeenCalledWith('agent-failed-actor', expect.objectContaining({ status: 'crashed' }));
+      expect(eventPublisher.emitInstanceStatus).toHaveBeenCalledWith('agent-failed-actor', expect.objectContaining({ status: 'stopped' }));
       expect(reconnectHandler.handleReconnect).not.toHaveBeenCalled();
     });
 
@@ -1149,7 +1149,7 @@ describe('AgentSessionManager', () => {
         code: 'trading_actor.runtime_failed',
       }));
       expect(eventPublisher.emitInstanceStatus).toHaveBeenCalledWith('agent-runtime-failed', expect.objectContaining({
-        status: 'crashed',
+        status: 'stopped',
         reason: 'trading_actor_runtime_failed',
       }));
     });
