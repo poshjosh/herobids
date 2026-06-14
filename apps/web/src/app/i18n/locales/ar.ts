@@ -66,6 +66,27 @@ export const messages: Record<string, string> = {
   'auth.logout.malformed_token': 'الرمز غير صالح البنية.',
   'auth.logout.missing_session_id': 'الرمز لا يحتوي على معرف جلسة.',
 
+  // Skills
+  'skills.title': 'المهارات',
+  'skills.subtitle': 'المهارات توسّع ما يعرفه وكلاء الذكاء الاصطناعي وما يمكنهم فعله',
+  'skills.tab.all': 'كل المهارات',
+  'skills.tab.mine': 'مهاراتك',
+  'skills.tab.builtIn': 'مدمجة',
+  'skills.tab.marketplace': 'السوق',
+  'skills.tab.adminCatalog': 'كتالوج الإدارة',
+  'skills.empty.all.title': 'لا توجد مهارات حتى الآن',
+  'skills.empty.all.message': 'ستظهر هنا حِزم القدرات المدمجة أو التي أنشأها المستخدم عندما تصبح متاحة.',
+  'skills.empty.mine.title': 'لا توجد مهارات حتى الآن',
+  'skills.empty.mine.message': 'أنشئ أول مهارة لديك لتصبح قابلة لإعادة الاستخدام عبر الوكلاء.',
+  'skills.empty.builtIn.title': 'لا توجد مهارات مدمجة',
+  'skills.empty.builtIn.message': 'ستظهر المهارات المدمجة هنا عندما يكون كتالوج النظام متاحاً.',
+  'skills.empty.marketplace.title': 'لا توجد مهارات في السوق',
+  'skills.empty.marketplace.message': 'ستظهر المهارات العامة من السوق هنا عندما تكون متاحة لخطتك.',
+  'skills.empty.admin.title': 'لا توجد مهارات إدارية',
+  'skills.empty.admin.message': 'كتالوج المهارات الإدارية فارغ حالياً.',
+  'skills.marketplaceUnavailable': 'الوصول إلى السوق غير متاح في خطتك الحالية.',
+  'skills.adminUnavailable': 'نطاق الإدارة غير متاح لهذا الحساب.',
+
   // Activity feed page
   'activity.title': 'النشاط',
   'activity.subtitle': 'ما يقوم به وكلاء الذكاء الاصطناعي لديك',

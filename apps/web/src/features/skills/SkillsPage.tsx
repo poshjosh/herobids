@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIntl } from 'react-intl';
 import { skills as skillsApi, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner } from '../../lib/ui.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 
+type SkillCategoryTab = 'all' | 'mine' | 'built-in' | 'marketplace' | 'admin';
+
 export function SkillsPage() {
+  const intl = useIntl();
   const { user } = useSession();
   const queryClient = useQueryClient();
   const skillsEntitlements = user?.planEntitlements?.skills ?? null;
@@ -14,6 +18,7 @@ export function SkillsPage() {
   const canPublishToMarketplace = skillsEntitlements?.canPublishToMarketplace ?? true;
   const canCreatePrivateSkills = skillsEntitlements?.canCreatePrivateSkills ?? true;
 
+  const [activeCategory, setActiveCategory] = useState<SkillCategoryTab>('all');
   const [showCreateComposer, setShowCreateComposer] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateSkillRequest>({
     name: '',
@@ -79,14 +84,155 @@ export function SkillsPage() {
   const adminSkills = adminQuery.data?.skills ?? [];
   const adminAccessDenied = adminQuery.data === null;
   const hasAnySkills = builtIn.length > 0 || mySkills.length > 0 || marketplaceSkills.length > 0 || adminSkills.length > 0;
-  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading);
+  const isLoading = selectableQuery.isLoading || mineQuery.isLoading || (canViewMarketplace && marketplaceQuery.isLoading) || (adminQuery.isLoading && builtIn.length === 0 && mySkills.length === 0 && marketplaceSkills.length === 0);
   const queryError = selectableQuery.error ?? mineQuery.error ?? (canViewMarketplace ? marketplaceQuery.error : null);
+  const skillTabs: Array<{ key: SkillCategoryTab; label: string }> = [
+    { key: 'all', label: intl.formatMessage({ id: 'skills.tab.all', defaultMessage: 'All skills' }) },
+    { key: 'mine', label: intl.formatMessage({ id: 'skills.tab.mine', defaultMessage: 'Your skills' }) },
+    { key: 'built-in', label: intl.formatMessage({ id: 'skills.tab.builtIn', defaultMessage: 'Built-in' }) },
+    { key: 'marketplace', label: intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' }) },
+    { key: 'admin', label: intl.formatMessage({ id: 'skills.tab.adminCatalog', defaultMessage: 'Admin catalog' }) },
+  ];
+
+  const renderSkillGrid = (skills: Skill[], mode: 'built-in' | 'mine' | 'marketplace' | 'admin') => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+      {skills.map((skill) => (
+        <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
+      ))}
+    </div>
+  );
+
+  const renderCategorySection = (
+    title: string,
+    skills: Skill[],
+    mode: 'built-in' | 'mine' | 'marketplace' | 'admin',
+    emptyTitle: string,
+    emptyMessage: string,
+  ) => (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <SectionLabel>{title}</SectionLabel>
+      {skills.length > 0 ? renderSkillGrid(skills, mode) : <EmptyState title={emptyTitle} message={emptyMessage} />}
+    </section>
+  );
+
+  const renderAllSkills = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {mySkills.length > 0 && renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.mine', defaultMessage: 'Your skills' }),
+        mySkills,
+        'mine',
+        intl.formatMessage({ id: 'skills.empty.mine.title', defaultMessage: 'No skills yet' }),
+        intl.formatMessage({ id: 'skills.empty.mine.message', defaultMessage: 'Create your first skill to make it available for reuse across agents.' }),
+      )}
+      {builtIn.length > 0 && renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.builtIn', defaultMessage: 'Built-in' }),
+        builtIn,
+        'built-in',
+        intl.formatMessage({ id: 'skills.empty.builtIn.title', defaultMessage: 'No built-in skills' }),
+        intl.formatMessage({ id: 'skills.empty.builtIn.message', defaultMessage: 'Built-in skills will appear here when the system catalog is available.' }),
+      )}
+      {canViewMarketplace && marketplaceSkills.length > 0 && renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' }),
+        marketplaceSkills,
+        'marketplace',
+        intl.formatMessage({ id: 'skills.empty.marketplace.title', defaultMessage: 'No marketplace skills' }),
+        intl.formatMessage({ id: 'skills.empty.marketplace.message', defaultMessage: 'Public skills from the marketplace will appear here when they are available for your plan.' }),
+      )}
+      {!canViewMarketplace && (
+        <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+          Marketplace access is not available on your current plan.
+        </div>
+      )}
+      {adminQuery.isLoading && <LoadingRows count={2} />}
+      {adminQuery.isError && <ErrorBanner message={(adminQuery.error as Error).message} />}
+      {adminAccessDenied && !adminQuery.isLoading && !adminQuery.isError && (
+        <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+          Admin scope unavailable for this account.
+        </div>
+      )}
+      {!adminQuery.isLoading && !adminQuery.isError && adminSkills.length > 0 && renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.adminCatalog', defaultMessage: 'Admin catalog' }),
+        adminSkills,
+        'admin',
+        intl.formatMessage({ id: 'skills.empty.admin.title', defaultMessage: 'No admin skills' }),
+        intl.formatMessage({ id: 'skills.empty.admin.message', defaultMessage: 'The admin skill catalog is currently empty.' }),
+      )}
+    </div>
+  );
+
+  const renderActiveCategory = () => {
+    if (activeCategory === 'all') {
+      return renderAllSkills();
+    }
+
+    if (activeCategory === 'mine') {
+      return renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.mine', defaultMessage: 'Your skills' }),
+        mySkills,
+        'mine',
+        intl.formatMessage({ id: 'skills.empty.mine.title', defaultMessage: 'No skills yet' }),
+        intl.formatMessage({ id: 'skills.empty.mine.message', defaultMessage: 'Create your first skill to make it available for reuse across agents.' }),
+      );
+    }
+
+    if (activeCategory === 'built-in') {
+      return renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.builtIn', defaultMessage: 'Built-in' }),
+        builtIn,
+        'built-in',
+        intl.formatMessage({ id: 'skills.empty.builtIn.title', defaultMessage: 'No built-in skills' }),
+        intl.formatMessage({ id: 'skills.empty.builtIn.message', defaultMessage: 'Built-in skills will appear here when the system catalog is available.' }),
+      );
+    }
+
+    if (activeCategory === 'marketplace') {
+      if (!canViewMarketplace) {
+        return (
+          <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+            Marketplace access is not available on your current plan.
+          </div>
+        );
+      }
+
+      return renderCategorySection(
+        intl.formatMessage({ id: 'skills.tab.marketplace', defaultMessage: 'Marketplace' }),
+        marketplaceSkills,
+        'marketplace',
+        intl.formatMessage({ id: 'skills.empty.marketplace.title', defaultMessage: 'No marketplace skills' }),
+        intl.formatMessage({ id: 'skills.empty.marketplace.message', defaultMessage: 'Public skills from the marketplace will appear here when they are available for your plan.' }),
+      );
+    }
+
+    if (adminQuery.isLoading) {
+      return <LoadingRows count={2} />;
+    }
+
+    if (adminQuery.isError) {
+      return <ErrorBanner message={(adminQuery.error as Error).message} />;
+    }
+
+    if (adminAccessDenied) {
+      return (
+        <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+          Admin scope unavailable for this account.
+        </div>
+      );
+    }
+
+    return renderCategorySection(
+      intl.formatMessage({ id: 'skills.tab.adminCatalog', defaultMessage: 'Admin catalog' }),
+      adminSkills,
+      'admin',
+      intl.formatMessage({ id: 'skills.empty.admin.title', defaultMessage: 'No admin skills' }),
+      intl.formatMessage({ id: 'skills.empty.admin.message', defaultMessage: 'The admin skill catalog is currently empty.' }),
+    );
+  };
 
   return (
     <PageShell>
       <PageHeader
-        title="Skills"
-        subtitle="Capability bundles that tell AI agents what they can do"
+        title={intl.formatMessage({ id: 'skills.title', defaultMessage: 'Skills' })}
+        subtitle={intl.formatMessage({ id: 'skills.subtitle', defaultMessage: 'Skills extend what AI agents know and can do' })}
         action={(
           <Button
             variant={showCreateComposer ? 'secondary' : 'primary'}
@@ -115,10 +261,48 @@ export function SkillsPage() {
       )}
 
       {!isLoading && !queryError && !hasAnySkills && (
-        <EmptyState
-          title="No skills yet"
-          message="Skills will appear here once built-in or user-authored capability bundles are available."
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <EmptyState
+            title="No skills yet"
+            message="Skills will appear here once built-in or user-authored capability bundles are available."
+          />
+          {adminQuery.isError ? (
+            <ErrorBanner message={(adminQuery.error as Error).message} />
+          ) : adminAccessDenied ? (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+              Admin scope unavailable for this account.
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {!isLoading && !queryError && hasAnySkills && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {skillTabs.map((tab) => (
+              <Button
+                key={tab.key}
+                variant={activeCategory === tab.key ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setActiveCategory(tab.key)}
+              >
+                {tab.label}
+              </Button>
+            ))}
+          </div>
+
+          <div>
+            {renderActiveCategory()}
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !queryError && privateSkillsDisabled && (
+        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+          {autoPublishesNonDraftSkills
+            ? 'Your current plan auto-publishes non-draft skills and does not allow private skills.'
+            : 'Your current plan does not allow private skills.'}
+        </div>
       )}
 
       {showCreateComposer && (
@@ -199,76 +383,6 @@ export function SkillsPage() {
           </div>
           {createError && <ErrorBanner message={createError} />}
         </Card>
-      )}
-
-      {builtIn.length > 0 && (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <SectionLabel>Built-in skills</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-            {builtIn.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="built-in" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {mySkills.length > 0 && (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <SectionLabel>Your skills</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-            {mySkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="mine" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!isLoading && !queryError && privateSkillsDisabled && (
-        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
-          {autoPublishesNonDraftSkills
-            ? 'Your current plan auto-publishes non-draft skills and does not allow private skills.'
-            : 'Your current plan does not allow private skills.'}
-        </div>
-      )}
-
-      {marketplaceSkills.length > 0 && (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <SectionLabel>Marketplace</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-            {marketplaceSkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="marketplace" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!isLoading && !queryError && !canViewMarketplace && (
-        <div style={{ marginTop: '8px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
-          Marketplace access is not available on your current plan.
-        </div>
-      )}
-
-      {!isLoading && !queryError && adminSkills.length > 0 && (
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '24px' }}>
-          <SectionLabel>Admin skill catalog</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-            {adminSkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} mode="admin" onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!isLoading && !queryError && adminAccessDenied && (
-        <div style={{ marginTop: '12px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
-          Admin scope unavailable for this account.
-        </div>
-      )}
-
-      {!isLoading && !queryError && adminQuery.isError && (
-        <div style={{ marginTop: '12px' }}>
-          <ErrorBanner message={(adminQuery.error as Error).message} />
-        </div>
       )}
     </PageShell>
   );

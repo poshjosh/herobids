@@ -18,6 +18,27 @@ export const messages: Record<string, string> = {
   'nav.closeNavigation': 'Close navigation',
   'nav.signOut': 'Sign out',
 
+  // Skills
+  'skills.title': 'Skills',
+  'skills.subtitle': 'Skills extend what AI agents know and can do',
+  'skills.tab.all': 'All skills',
+  'skills.tab.mine': 'Your skills',
+  'skills.tab.builtIn': 'Built-in',
+  'skills.tab.marketplace': 'Marketplace',
+  'skills.tab.adminCatalog': 'Admin catalog',
+  'skills.empty.all.title': 'No skills yet',
+  'skills.empty.all.message': 'Skills will appear here once built-in or user-authored capability bundles are available.',
+  'skills.empty.mine.title': 'No skills yet',
+  'skills.empty.mine.message': 'Create your first skill to make it available for reuse across agents.',
+  'skills.empty.builtIn.title': 'No built-in skills',
+  'skills.empty.builtIn.message': 'Built-in skills will appear here when the system catalog is available.',
+  'skills.empty.marketplace.title': 'No marketplace skills',
+  'skills.empty.marketplace.message': 'Public skills from the marketplace will appear here when they are available for your plan.',
+  'skills.empty.admin.title': 'No admin skills',
+  'skills.empty.admin.message': 'The admin skill catalog is currently empty.',
+  'skills.marketplaceUnavailable': 'Marketplace access is not available on your current plan.',
+  'skills.adminUnavailable': 'Admin scope unavailable for this account.',
+
   // Common
   'common.loading': 'Loading…',
   'common.retry': 'Retry',

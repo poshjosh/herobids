@@ -66,6 +66,27 @@ export const messages: Record<string, string> = {
   'auth.logout.malformed_token': 'टोकन गलत प्रारूप में है।',
   'auth.logout.missing_session_id': 'टोकन में सत्र आईडी नहीं है।',
 
+  // Skills
+  'skills.title': 'कौशल',
+  'skills.subtitle': 'कौशल AI एजेंटों के ज्ञान और कार्यक्षमता को बढ़ाते हैं',
+  'skills.tab.all': 'सभी कौशल',
+  'skills.tab.mine': 'आपके कौशल',
+  'skills.tab.builtIn': 'अंतर्निहित',
+  'skills.tab.marketplace': 'मार्केटप्लेस',
+  'skills.tab.adminCatalog': 'एडमिन कैटलॉग',
+  'skills.empty.all.title': 'अभी तक कोई कौशल नहीं',
+  'skills.empty.all.message': 'इनबिल्ट या उपयोगकर्ता-निर्मित क्षमता बंडल उपलब्ध होने पर वे यहाँ दिखाई देंगे।',
+  'skills.empty.mine.title': 'अभी तक कोई कौशल नहीं',
+  'skills.empty.mine.message': 'अपना पहला कौशल बनाएं ताकि वह एजेंटों के बीच पुन: उपयोग हो सके।',
+  'skills.empty.builtIn.title': 'कोई इनबिल्ट कौशल नहीं',
+  'skills.empty.builtIn.message': 'सिस्टम कैटलॉग उपलब्ध होने पर इनबिल्ट कौशल यहाँ दिखाई देंगे।',
+  'skills.empty.marketplace.title': 'कोई मार्केटप्लेस कौशल नहीं',
+  'skills.empty.marketplace.message': 'मार्केटप्लेस के सार्वजनिक कौशल आपकी योजना के लिए उपलब्ध होने पर यहाँ दिखाई देंगे।',
+  'skills.empty.admin.title': 'कोई एडमिन कौशल नहीं',
+  'skills.empty.admin.message': 'एडमिन कौशल कैटलॉग फिलहाल खाली है।',
+  'skills.marketplaceUnavailable': 'मार्केटप्लेस पहुंच आपकी वर्तमान योजना में उपलब्ध नहीं है।',
+  'skills.adminUnavailable': 'इस खाते के लिए एडमिन स्कोप उपलब्ध नहीं है।',
+
   // Activity feed page
   'activity.title': 'गतिविधि',
   'activity.subtitle': 'आपके AI एजेंट क्या कर रहे हैं',
