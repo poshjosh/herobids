@@ -1,5 +1,5 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload } from '@herobids/domain';
-import { formatAgentGoalLiteralBlock, normalizeAgentGoal } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
