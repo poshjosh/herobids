@@ -176,58 +176,6 @@ Send an immediate alert whenever:
 4. A flash sale is detected.
 5. A lowest-ever fare is likely to disappear soon.
 
-### Telegram Report Format
-
-FLIGHT DEAL MONITOR REPORT
-
-Report Date:
-Report Time:
-
-CHEAPEST OVERALL
-
-(details)
-
-Change Since Last Report:
-Change Since Historical Low:
-
-TOP 10 OPTIONS
-
-(details)
-
-Ranked by total cost for <travellers>.
-
-BEST DIRECT FLIGHT
-
-(details)
-
-BEST VALUE OPTION
-
-(details)
-
-NEW DEALS FOUND
-
-(list)
-
-FARE TREND ANALYSIS
-
-(details)
-
-PRICE CHANGE GRAPH
-
-Generate a visual or tabular trend summary showing fare movement over time.
-
-RECOMMENDED ACTION
-
-BOOK NOW / MONITOR CLOSELY / WAIT
-
-Reasoning:
-
-Confidence Level: High / Medium / Low
-
-BOOKING LINKS
-
-Provide direct booking links whenever available.
-
 ## Success Criteria
 
 The objective is to continuously discover, monitor, compare, and report the best bookable airfare opportunities while minimizing total travel cost and booking confidence through historical trend analysis and ongoing market surveillance.

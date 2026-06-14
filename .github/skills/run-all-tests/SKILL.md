@@ -1,7 +1,7 @@
 ---
 name: run-all-tests
-description: 'Build, lint, build the agent image, run the full test workflow, and fix failures until all checks pass. Use when asked to run all tests, execute the repo validation sequence, perform browser UATs, and file bug reports for real defects.'
+description: 'A mirror of .github/skills/test-and-fix/SKILL.md'
 argument-hint: 'Optional scope or failing test context'
 ---
 
-follow the instructions in the `test-and-fix` skill
+Follow the instructions in the `test-and-fix` skill
