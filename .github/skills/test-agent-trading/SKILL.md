@@ -18,7 +18,7 @@ This skill executes the agent trade test loop: boot the stack, run `agent-trade-
 ## When Not to Use
 
 - Only unit or integration tests are needed (use `pnpm test` directly).
-- The full test suite is required (`test-all` skill covers that).
+- The full test suite is required (`test-and-fix` skill covers that).
 - Infrastructure is unavailable and the user only wants static analysis.
 
 ## Procedure

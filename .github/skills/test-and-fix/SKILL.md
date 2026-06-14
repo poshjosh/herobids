@@ -1,23 +1,22 @@
 ---
-name: test-all
+name: test-and-fix
 description: 'Build, lint, build the agent image, run the full test workflow, and fix failures until all checks pass. Use when asked to run all tests, execute the repo validation sequence, perform browser UATs, and file bug reports for real defects.'
 argument-hint: 'Optional scope or failing test context'
 ---
 
-# Test All
+# Test and Fix
 
 This skill runs the repository validation workflow end to end, fixes failures as they appear, and repeats until the required checks pass.
 
 ## When to Use
 
-- The user asks to run all tests or validate the whole repository.
+- The user asks to run tests or validate the repository.
 - The task requires the full build, lint, Docker image, and test sequence rather than a narrow targeted check.
 - The user wants manual browser UATs after automated validation.
 - The user expects real defects to be fixed rather than just reported.
 
 ## When Not to Use
 
-- The task only needs a focused test for a touched slice.
 - The user wants code review or debugging without running the full validation sequence.
 - The required infrastructure is unavailable and the user only wants static analysis.
 

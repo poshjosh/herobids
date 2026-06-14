@@ -4,4 +4,4 @@ description: 'Build, lint, build the agent image, run the full test workflow, an
 argument-hint: 'Optional scope or failing test context'
 ---
 
-follow the instructions in the `test-all` skill
+follow the instructions in the `test-and-fix` skill
