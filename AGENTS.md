@@ -113,11 +113,26 @@ When an agent is running, the agent's goal text and any explicit creator-specifi
 
 | Category | Examples | Rule |
 |---|---|---|
-| **Constraints** | Stop-loss %, position caps, portfolio stop | Never apply unless the goal or creator-specified instructions explicitly specify them |
+| **Constraints** | Stop-loss %, position caps, portfolio stop | Never apply unless explicitly configured (see risk gate rules below) |
 | **Data** | Price, P&L, market context, progress score | Always provide — the agent reasons over it |
 | **Operational mechanics** | Execution mode, slippage, retries, schema validation | Always apply — infrastructure, not policy |
 
-Key rules:
+### Risk Gate Rules for Agents
+
+Every risk limit applied to an agent follows one of two paths:
+
+| Path | Source | Mutability | Example |
+|------|--------|------------|---------|
+| **User-configured** | Explicitly set by the creator in the agent's config (UI or API) | Immutable at runtime — the agent cannot override it | User sets `dailyLossLimit: 500` → engine enforces a hard $500/day cap |
+| **Operator default** | Read from `config.agentRiskDefaults.*` because the user did not specify a value | Agent-mutable — exposed to the agent as an adjustable parameter via tools | Default `maxOpenPositions: 10` from config → agent may raise or lower it within operator bounds |
+
+Key invariants:
+- **No hard-coded magic numbers.** Every default must come from operator config (`config/default.yaml → agentRiskDefaults`).
+- **Transparency.** The agent must be able to read its effective risk limits.
+- **User intent is supreme.** If the user explicitly configured a limit, the agent cannot weaken it.
+- **Operator bounds.** Operator config may define a ceiling that neither user nor agent can exceed (e.g. `agentRiskDefaults.maxOpenPositions` = 50 as an absolute platform cap).
+
+### Other Key Rules
 - Do not apply bot blueprint risk defaults as constraints over agent decisions
 - Do not add confirmation gates or approval steps to agent bot lifecycle actions
 - An agent has full lifecycle authority over its own bots: create, start, stop, reconfigure, delete — no user confirmation required

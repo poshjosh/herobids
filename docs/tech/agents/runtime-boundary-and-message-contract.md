@@ -108,29 +108,46 @@ This does not permit the engine to substitute a different discretionary strategy
 
 ## Agent Mode Purity
 
-When an agent is running, the agent's goal text is the **sole source of trading policy**. The platform must not inject hidden constraints the user did not ask for.
+When an agent is running, the agent's goal text and any explicit creator-specified constraints are the **source of trading policy**. The platform must not inject hidden constraints the user did not ask for.
 
 ### Constraints vs Data
 
 | Category | Examples | Agent mode rule |
 |---|---|---|
-| **Constraints** (restrict decisions) | Stop-loss %, take-profit %, max simultaneous positions, portfolio stop, position size caps | **Never apply** unless explicitly derived from the agent's goal, creator-specified configuration, or instructions |
+| **Constraints** (restrict decisions) | Stop-loss %, take-profit %, max simultaneous positions, portfolio stop, position size caps | **Never apply** unless explicitly configured via one of the two paths below |
 | **Data** (inform reasoning) | Price, P&L, position state, market context, progress score, fills history | **Always provide** — the agent reasons over it |
 | **Operational mechanics** | Execution mode, slippage tolerance, retry logic, schema validation | **Always apply** — these are infrastructure, not trading policy |
 
 The distinction: a constraint mechanically overrides or prevents the agent's decision. Data is input the agent reads and reasons about — it restricts nothing.
 
+### Risk Gate Two-Path Model
+
+Every risk limit applied to an agent runtime follows exactly one of two paths:
+
+| Path | Source | Mutability at runtime | Example |
+|------|--------|----------------------|---------| 
+| **User-configured** | Explicitly set by the creator in the agent's config (via UI or API) | **Immutable** — the agent cannot weaken or remove it | User sets `dailyLossLimit: 500` → engine enforces a hard $500/day rolling cap |
+| **Operator default** | Read from `config.agentRiskDefaults.*` because the user did *not* specify a value | **Agent-mutable** — the agent can read and adjust it via tools, within operator-defined bounds | Default `maxOpenPositions: 10` → agent may raise it up to `agentRiskDefaults.maxOpenPositions` ceiling |
+
+Key invariants:
+
+1. **No hard-coded magic numbers.** Every default must come from operator config (`config/default.yaml → agentRiskDefaults`), never from source code literals.
+2. **Transparency.** The agent must be able to read its effective risk limits (both user-configured and defaulted).
+3. **User intent is supreme.** If the user explicitly configured a limit, the agent cannot weaken it.
+4. **Operator bounds.** Operator config defines a ceiling that neither user nor agent can exceed (the operator default *is* both the initial value and the ceiling for agent self-adjustment).
+5. **The engine risk gate still applies to hard safety invariants.** Malformed payloads, unauthorized access, unreconciled state, and user-configured limits are always enforced.
+
 ### What this means in practice
 
-1. **No default stop-loss or take-profit.** Unless the goal or instructions specify them, these fields are absent. The engine does not apply bot blueprint risk defaults as constraints over the agent's reasoning.
+1. **Stop-loss and take-profit.** If the user configured them, the engine enforces them as hard limits. If not, the operator default applies but the agent may adjust or disable it (within operator bounds) via the `adjust_risk_limits` tool.
 
-2. **No position count cap.** If the goal does not say "max 3 positions", the platform does not enforce one.
+2. **Position count cap.** Comes from operator default when not user-specified. Agent may raise or lower it.
 
-3. **No portfolio stop.** Unless the goal says "stop after X% loss", no circuit breaker fires on the agent's behalf.
+3. **Daily loss / drawdown.** If the user explicitly set `dailyLossLimit`, it is a hard cap. Otherwise the operator default applies and the agent can adjust.
 
-4. **Risk config from the bot blueprint is data, not policy.** The agent may read the blueprint's risk fields as context. The engine does not silently enforce them as hard limits over agent decisions unless they represent explicit creator-specified constraints or explicit safety invariants (see below).
+4. **Risk config from the bot blueprint is data, not policy.** The agent may read the blueprint's risk fields as context. The engine does not silently enforce them as hard limits over agent decisions.
 
-5. **The engine risk gate still applies to hard safety invariants.** Malformed payloads, unauthorized access, unreconciled state, and limits explicitly configured by the user are still enforced. The purity rule removes hidden defaults — it does not remove user-configured or creator-configured constraints.
+5. **Bot blueprints vs agent direct trading.** Bots created by the agent inherit the bot-level risk config specified in their blueprint (that IS their creator-specified config). The agent's own direct trading path uses the agent's risk config.
 
 ### Agent Lifecycle Authority
 
