@@ -20,7 +20,7 @@ MODEL_LOAD_TIMEOUT=300  # 5 min — large models (24 GB) can take >2 min on firs
 
 MODELS=(
   "qwen3.6:35b-a3b-q4_K_M"
-  "qwen3-coder:30b"
+  "qwen3:8b"
 )
 
 log()  { echo "[load-ollama] $1"; }
