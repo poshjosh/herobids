@@ -7,16 +7,18 @@
 #   Guided mode   (default when one provider + one label can be derived)
 #     1. Authenticate   — POST /auth/login
 #                         On 401, fall back to POST /auth/register
-#     2. Provider link  — POST /setup/provider-link
+#     2. Skill          — ensure the Flight Deal Monitoring skill exists
+#     3. Provider link  — POST /setup/provider-link
 #                         (creates credential + connection + trading binding)
-#     3. Telegram       — PATCH /auth/me { telegramChatId }
+#     4. Telegram       — PATCH /auth/me { telegramChatId }
 #
 #   Advanced mode (fallback for separate labels or explicit resource reuse)
 #     1. Authenticate   — POST /auth/login
 #                         On 401, fall back to POST /auth/register
-#     2. Credential     — POST /credentials  (encrypt and store venue API keys)
-#     3. Connection     — POST /connections  (link credential to a provider)
-#     4. Telegram       — PATCH /auth/me { telegramChatId }
+#     2. Skill          — ensure the Flight Deal Monitoring skill exists
+#     3. Credential     — POST /credentials  (encrypt and store venue API keys)
+#     4. Connection     — POST /connections  (link credential to a provider)
+#     5. Telegram       — PATCH /auth/me { telegramChatId }
 #
 # Usage:
 #   scripts/shell/ops/quick-setup.sh
@@ -94,6 +96,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env.setup"
 DRY_RUN=0
 SETUP_MODE_CLI=""
+FLIGHT_DEAL_SKILL_NAME="Flight Deal Monitoring"
+FLIGHT_DEAL_SKILL_DESCRIPTION="Continuously search, compare, analyze, and monitor flight prices for <travellers> traveling from <departure> to <destination>. Identify the lowest total travel cost while balancing convenience, travel time and baggage requirements."
+FLIGHT_DEAL_SKILL_TAG="flight-deal-monitoring"
+FLIGHT_DEAL_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/flight-deal-monitoring-skill.md"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -229,6 +235,62 @@ resolve_guided_label() {
   fi
 
   printf '%s' "${CREDENTIAL_LABEL:-${CONNECTION_LABEL:-}}"
+}
+
+build_flight_deal_skill_payload() {
+  local instructions
+
+  if [[ ! -f "$FLIGHT_DEAL_SKILL_SOURCE_FILE" ]]; then
+    die "Skill source file not found: $FLIGHT_DEAL_SKILL_SOURCE_FILE"
+  fi
+
+  instructions="$(tail -n +3 "$FLIGHT_DEAL_SKILL_SOURCE_FILE")"
+
+  jq -n \
+    --arg name "$FLIGHT_DEAL_SKILL_NAME" \
+    --arg description "$FLIGHT_DEAL_SKILL_DESCRIPTION" \
+    --arg instructions "$instructions" \
+    --arg tag "$FLIGHT_DEAL_SKILL_TAG" \
+    '{
+      name: $name,
+      description: $description,
+      instructions: $instructions,
+      requiredTools: ["search_web", "browse_url", "read_document", "set_memory", "get_memory", "list_memory_keys", "delete_memory", "schedule_reminder", "send_message", "publish_artifact"],
+      publicationStatus: "draft",
+      tags: [$tag],
+      changeSummary: "Seeded by quick-setup"
+    }'
+}
+
+ensure_flight_deal_monitoring_skill() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log_info "Dry-run mode: skipping Flight Deal Monitoring skill provisioning"
+    return 0
+  fi
+
+  log_section "Step 2: Ensure Flight Deal Monitoring skill"
+
+  api_call GET /skills '?scope=mine'
+  if [[ "$HTTP_STATUS" -ne 200 ]]; then
+    log_error "Failed to list skills (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+    die "Skill provisioning step failed."
+  fi
+
+  FLIGHT_DEAL_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r --arg name "$FLIGHT_DEAL_SKILL_NAME" '[.skills[] | select(.name == $name) | .id][0] // empty')"
+  if [[ -n "$FLIGHT_DEAL_SKILL_ID" && "$FLIGHT_DEAL_SKILL_ID" != "null" ]]; then
+    log_info "Skill already exists: ${FLIGHT_DEAL_SKILL_NAME} (id=${FLIGHT_DEAL_SKILL_ID})"
+    return 0
+  fi
+
+  api_call POST /skills "$(build_flight_deal_skill_payload)"
+  if [[ "$HTTP_STATUS" -eq 201 ]]; then
+    FLIGHT_DEAL_SKILL_ID="$(echo "$RESPONSE_BODY" | jq -r '.id')"
+    log_ok "Created skill: ${FLIGHT_DEAL_SKILL_NAME} (id=${FLIGHT_DEAL_SKILL_ID})"
+    return 0
+  fi
+
+  log_error "Skill creation failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+  die "Skill provisioning step failed."
 }
 
 # Core
@@ -446,6 +508,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Step 2 — Ensure flight deal monitoring skill exists
+# ---------------------------------------------------------------------------
+
+ensure_flight_deal_monitoring_skill
+
+# ---------------------------------------------------------------------------
 # Shared secrets payload
 # ---------------------------------------------------------------------------
 
@@ -477,10 +545,10 @@ esac
 
 if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   # -------------------------------------------------------------------------
-  # Step 2 — Guided provider link setup
+  # Step 3 — Guided provider link setup
   # -------------------------------------------------------------------------
 
-  log_section "Step 2: Guided provider link (provider=${SETUP_PROVIDER_RESOLVED})"
+  log_section "Step 3: Guided provider link (provider=${SETUP_PROVIDER_RESOLVED})"
 
   api_call POST /setup/provider-link "$(jq -n \
     --arg provider "$SETUP_PROVIDER_RESOLVED" \
@@ -507,10 +575,10 @@ if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   fi
 else
   # -------------------------------------------------------------------------
-  # Step 2 — Create credential
+  # Step 3 — Create credential
   # -------------------------------------------------------------------------
 
-  log_section "Step 2: Create credential (venue=${ADVANCED_CREDENTIAL_VENUE})"
+  log_section "Step 3: Create credential (venue=${ADVANCED_CREDENTIAL_VENUE})"
 
   # Check for an existing credential with the same venue + label before creating.
   api_call GET /credentials
@@ -538,10 +606,10 @@ else
   fi
 
   # -------------------------------------------------------------------------
-  # Step 3 — Create connection
+  # Step 4 — Create connection
   # -------------------------------------------------------------------------
 
-  log_section "Step 3: Create connection (provider=${ADVANCED_CONNECTION_PROVIDER})"
+  log_section "Step 4: Create connection (provider=${ADVANCED_CONNECTION_PROVIDER})"
 
   # Check for an existing active connection with the same provider + label.
   api_call GET /connections
@@ -574,9 +642,9 @@ fi
 # ---------------------------------------------------------------------------
 
 if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
-  log_section "Step 3: Set Telegram chat ID"
-else
   log_section "Step 4: Set Telegram chat ID"
+else
+  log_section "Step 5: Set Telegram chat ID"
 fi
 
 # Check current value before patching — skip the write if already set.
@@ -608,6 +676,9 @@ fi
 log_section "Setup complete"
 log_ok "Email:       ${SETUP_EMAIL}"
 log_ok "Mode:        ${EFFECTIVE_SETUP_MODE}"
+if [[ -n "${FLIGHT_DEAL_SKILL_ID:-}" && "${FLIGHT_DEAL_SKILL_ID:-}" != "null" ]]; then
+  log_ok "Skill:       ${FLIGHT_DEAL_SKILL_ID}  (${FLIGHT_DEAL_SKILL_NAME})"
+fi
 if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   log_ok "Credential:  ${CREDENTIAL_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
   log_ok "Connection:  ${CONNECTION_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
