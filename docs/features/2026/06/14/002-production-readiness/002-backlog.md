@@ -35,29 +35,33 @@ Status: completed for the current shared-wallet product boundary. The implementa
 
 ---
 
-**Phase 3 — Live Execution Safety (~2 weeks)**
+**Phase 3 — Live Execution Safety (~2 weeks for orderbook core, plus a bounded swap-live safety parity pass)**
+
+Status: in-progress. The implementation plan in `008-phase-3-live-execution-safety.md` is actively landing. Minimal live limit submission, durable orderbook pre-submit/ack state persistence, live slippage alerts, operator crash-policy wiring, and explicit timeout/cancellation handling are implemented. Full recovery state-machine coverage and bounded swap-live parity remain in progress.
 
 | # | Gap | Effort | Status | Why here |
 |---|---|---|---|---|
-| 4 | Live limit orders rejected | M | todo | Extends LiveExecutor |
-| 20 | No order timeout/cancellation | M | todo | Required for live safety |
-| 22 | No idempotency for resubmission | M | todo | Required for crash recovery in live |
-| 23 | No graceful wind-down on crash | L | todo | Last piece of live safety |
-| 21 | No slippage alerting | S | todo | Quick add once live fills flow |
+| 4 | Live limit orders rejected | M | done | Minimal live limit submission landed in LiveExecutor |
+| 20 | No order timeout/cancellation | M | done | Timeout policy + stale-order cancellation/escalation is now wired |
+| 22 | No idempotency for resubmission | M | in-progress | Durable order lifecycle state landed; full restart state-machine still in progress |
+| 23 | No graceful wind-down on crash | L | in-progress | Crash policy and best-effort auto-go-flat branch wired; ambiguity handling still to harden |
+| 21 | No slippage alerting | S | done | Live slippage alerts now emitted from confirmed fill paths |
 
 ---
 
 **Phase 4 — Config Validation & Operational Polish (~1 week)**
 
+Status: completed. Execution capability validation at API boundaries, non-null execution mode end-to-end, unsafe paper fallback removal, durable failed-decision persistence, per-actor health surface via Redis, export metadata correctness, and Docker crash taxonomy hardening are all landed.
+
 | # | Gap | Effort | Status | Why here |
 |---|---|---|---|---|
-| 14 | Agent mode vs venue validation | S | todo | Prevents invalid state at API |
-| 15 | No agent paper+swap guard | S | todo | Same pass as #14 |
-| 16 | Nullable execution_mode | S | todo | Schema cleanup |
-| 29 | Export bundle serialisation bug | S | todo | Quick fix |
-| 30 | Docker manager misclassifies crash | S | todo | Quick fix |
-| 31 | No per-actor health check | M | todo | Observability |
-| 32 | No dead-letter for failed decisions | M | todo | Reliability |
-| 6 | Fallback resolver uses PaperExecutor | S | todo | Edge case cleanup |
-| 26 | Bybit public stream | S | todo | Low priority, documented |
-| 28 | No reconciliation for agent paper | S | todo | No real risk |
+| 14 | Agent mode vs venue validation | S | done | Prevents invalid state at API |
+| 15 | No agent paper+swap guard | S | done | Same pass as #14 |
+| 16 | Nullable execution_mode | S | done | Schema cleanup |
+| 29 | Export bundle serialisation bug | S | done | Quick fix |
+| 30 | Docker manager misclassifies crash | S | done | Quick fix |
+| 31 | No per-actor health check | M | done | Observability |
+| 32 | No dead-letter for failed decisions | M | done | Reliability |
+| 6 | Fallback resolver uses PaperExecutor | S | done | Edge case cleanup — grant fallback now fails closed for non-paper agents |
+| 26 | Bybit public stream | S | done | Already implemented via stream pool; backlog row was stale |
+| 28 | No reconciliation for agent paper | S | done | Accepted limitation — paper mode has no venue truth to reconcile against |
