@@ -154,7 +154,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3-coder:30b' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(503);
@@ -865,15 +865,15 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3-coder:30b' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis);
 
     const res = await app.inject({
       method: 'PATCH',
       url: '/settings/ai-model',
       payload: {
         provider: 'ollama',
-        lightModel: 'qwen3-coder:30b',
-        heavyModel: 'qwen3-coder:30b',
+        lightModel: 'qwen3:8b',
+        heavyModel: 'qwen3:8b',
       },
     });
 
@@ -892,7 +892,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3-coder:30b' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -961,7 +961,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     await aiRoutes(app, db, {
       ...stubLlmConfig,
       provider: 'ollama',
-      model: 'qwen3-coder:30b',
+      model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
     }, redis);
 
@@ -971,7 +971,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('ollama');
     // Operator-configured model must always appear
-    expect(body.providers[0]!.models.map((model) => model.id)).toContain('qwen3-coder:30b');
+    expect(body.providers[0]!.models.map((model) => model.id)).toContain('qwen3:8b');
 
     vi.unstubAllGlobals();
   });
@@ -979,7 +979,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
   it('marks ollama as Free only when the configured endpoint is local', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+      json: async () => ({ models: [{ name: 'qwen3:8b' }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -990,7 +990,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     await aiRoutes(app, db, {
       ...stubLlmConfig,
       provider: 'ollama',
-      model: 'qwen3-coder:30b',
+      model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
     }, redis);
 
@@ -1006,7 +1006,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
   it('does not mark remote ollama endpoints as Free', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+      json: async () => ({ models: [{ name: 'qwen3:8b' }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1017,7 +1017,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     await aiRoutes(app, db, {
       ...stubLlmConfig,
       provider: 'ollama',
-      model: 'qwen3-coder:30b',
+      model: 'qwen3:8b',
       baseUrl: 'https://remote-ollama.example.com/v1',
     }, redis);
 
@@ -1033,7 +1033,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
   it('marks ollama as Free when locality override is local even for a non-local host', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+      json: async () => ({ models: [{ name: 'qwen3:8b' }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1044,7 +1044,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     await aiRoutes(app, db, {
       ...stubLlmConfig,
       provider: 'ollama',
-      model: 'qwen3-coder:30b',
+      model: 'qwen3:8b',
       baseUrl: 'https://proxy.example.com/v1',
       catalog: { ...stubLlmConfig.catalog, locality: 'local' },
     }, redis);
@@ -1061,7 +1061,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
   it('does not mark localhost ollama as Free when locality override is remote', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ models: [{ name: 'qwen3-coder:30b' }] }),
+      json: async () => ({ models: [{ name: 'qwen3:8b' }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1072,7 +1072,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     await aiRoutes(app, db, {
       ...stubLlmConfig,
       provider: 'ollama',
-      model: 'qwen3-coder:30b',
+      model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
       catalog: { ...stubLlmConfig.catalog, locality: 'remote' },
     }, redis);

@@ -11,7 +11,7 @@ export const LLM_PROVIDER_MODELS: Record<(typeof KNOWN_LLM_PROVIDERS)[number], s
   mistral: ['mistral-large-latest', 'mistral-small-latest'],
   cohere: ['command-r-plus', 'command-r'],
   google: ['gemini-1.5-pro', 'gemini-1.5-flash'],
-  ollama: ['qwen3-coder:30b', 'qwen3.6:35b-a3b-q4_K_M'],
+  ollama: ['qwen3:8b', 'qwen3.6:35b-a3b-q4_K_M'],
 };
 
 function isKnownLlmProvider(provider: string): provider is keyof typeof LLM_PROVIDER_MODELS {

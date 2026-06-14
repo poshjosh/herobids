@@ -70,7 +70,7 @@ describe('discoverOllamaModels — no baseUrl', () => {
   it('returns fallback source with only the configured model when no baseUrl is given', async () => {
     const result = await discoverOllamaModels({
       baseUrl: undefined,
-      configuredModel: 'qwen3-coder:30b',
+      configuredModel: 'qwen3:8b',
       timeoutMs: 1000,
       cacheTtlMs: 15_000,
     });
@@ -78,7 +78,7 @@ describe('discoverOllamaModels — no baseUrl', () => {
     if (result.ok) {
       expect(result.data.source).toBe('fallback');
       // Only the configured model — not the domain static list
-      expect(result.data.models).toEqual(['qwen3-coder:30b']);
+      expect(result.data.models).toEqual(['qwen3:8b']);
     }
   });
 
@@ -100,7 +100,7 @@ describe('discoverOllamaModels — invalid base URL', () => {
   it('returns err for an unsupported URL scheme', async () => {
     const result = await discoverOllamaModels({
       baseUrl: 'ftp://localhost:11434/v1',
-      configuredModel: 'qwen3-coder:30b',
+      configuredModel: 'qwen3:8b',
       timeoutMs: 1000,
       cacheTtlMs: 15_000,
     });
@@ -167,7 +167,7 @@ describe('discoverOllamaModels — fetch failure', () => {
 
     const result = await discoverOllamaModels({
       baseUrl: 'http://localhost:11434/v1',
-      configuredModel: 'qwen3-coder:30b',
+      configuredModel: 'qwen3:8b',
       timeoutMs: 3000,
       cacheTtlMs: 15_000,
     });
@@ -176,7 +176,7 @@ describe('discoverOllamaModels — fetch failure', () => {
     if (result.ok) {
       expect(result.data.source).toBe('fallback');
       // Cold-start: only the configured model, not the domain static list
-      expect(result.data.models).toEqual(['qwen3-coder:30b']);
+      expect(result.data.models).toEqual(['qwen3:8b']);
     }
 
     vi.unstubAllGlobals();
@@ -190,7 +190,7 @@ describe('discoverOllamaModels — fetch failure', () => {
 
     const result = await discoverOllamaModels({
       baseUrl: 'http://localhost:11434/v1',
-      configuredModel: 'qwen3-coder:30b',
+      configuredModel: 'qwen3:8b',
       timeoutMs: 3000,
       cacheTtlMs: 15_000,
     });
@@ -199,7 +199,7 @@ describe('discoverOllamaModels — fetch failure', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.source).toBe('fallback');
-      expect(result.data.models).toEqual(['qwen3-coder:30b']);
+      expect(result.data.models).toEqual(['qwen3:8b']);
     }
 
     vi.unstubAllGlobals();
@@ -218,7 +218,7 @@ describe('discoverOllamaModels — fetch failure', () => {
 
     const config = {
       baseUrl: 'http://localhost:11434/v1',
-      configuredModel: 'qwen3-coder:30b',
+      configuredModel: 'qwen3:8b',
       timeoutMs: 3000,
       cacheTtlMs: 1, // 1ms TTL — will be stale immediately
     };
@@ -250,7 +250,7 @@ describe('discoverOllamaModels — fetch failure', () => {
 
     const result = await discoverOllamaModels({
       baseUrl: 'http://localhost:11434/v1',
-      configuredModel: 'qwen3-coder:30b',
+      configuredModel: 'qwen3:8b',
       timeoutMs: 3000,
       cacheTtlMs: 15_000,
     });
