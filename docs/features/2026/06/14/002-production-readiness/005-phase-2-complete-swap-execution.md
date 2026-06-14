@@ -29,10 +29,10 @@ After Phase 2:
 3. The **live gate** permits swap venues through (gated by the `allowedVenues` config list instead of a blanket type check).
 4. **Jupiter signs and broadcasts** transactions via a Solana keypair, then polls for on-chain confirmation.
 5. **On-chain fill confirmation** monitors transaction status after execution — polling-based for v1 (WebSocket subscription deferred to v2).
-6. A **balance-delta position model** tracks swap positions as token holdings changes, enabling reconciliation to detect drift.
-7. **Swap reconciliation** compares expected token holdings (from fills) against actual on-chain balances.
+6. A **fill-projection model** tracks the net asset movement implied by recorded swap fills for actor-local accounting and restart rehydration.
+7. **Shared-wallet swap reconciliation** keeps real balance snapshots but treats balance differences as observational variance, not authoritative wallet drift. Strict holdings reconciliation is deferred to a future dedicated/managed-wallet mode.
 
-**Done signal:** An agent in shadow mode on Jupiter executes a swap, receives fill confirmation from the chain, updates its position tracker via the balance-delta model, and the reconciler detects intentional drift when a manual withdrawal occurs.
+**Done signal:** An agent on Jupiter in live mode executes a swap, receives fill confirmation from the chain, records the fill, updates its actor-local fill projection, and a later manual wallet withdrawal is surfaced as observational variance without blocking startup or claiming full-wallet accounting truth.
 
 ---
 
@@ -324,27 +324,27 @@ private async startSwapConfirmationLoop(): Promise<void> {
 
 ---
 
-### Step 6: Balance-delta position model (enables Gap #19)
+### Step 6: Fill-projection model for shared-wallet swap actors (enables Gap #19)
 
 **New module:** `packages/engine/src/swap-position-tracker.ts`
 
-Swap positions are fundamentally different from orderbook positions. Instead of tracking entry price and directional side, track **expected token holdings** derived from fills:
+Swap positions are fundamentally different from orderbook positions. For shared-wallet mode, the tracker must capture the net asset movement implied by this actor's recorded fills without claiming full-wallet accounting truth:
 
 ```typescript
-export interface SwapHolding {
+export interface SwapAssetProjection {
   asset: string;
-  expectedBalance: Quantity;    // Sum of all inflows minus outflows from fills
+  projectedBalanceDelta: Quantity;    // Net inflow/outflow implied by recorded fills
   lastUpdatedMs: number;
 }
 
 export class SwapPositionTracker {
-  private holdings = new Map<string, SwapHolding>();
+  private projections = new Map<string, SwapAssetProjection>();
 
-  constructor(initialHoldings?: SwapHolding[]) {
+  constructor(initialProjections?: SwapAssetProjection[]) {
     // Rehydrate from DB on restart
   }
 
-  /** Record a swap fill — adjusts expected balances for both assets */
+  /** Record a swap fill — adjusts the fill-derived projection for both assets */
   recordSwapFill(fill: {
     inputAsset: string;
     inputAmount: Quantity;
@@ -352,28 +352,28 @@ export class SwapPositionTracker {
     outputAmount: Quantity;
     timestamp: number;
   }): void {
-    // Decrease expected balance for inputAsset
-    // Increase expected balance for outputAsset
+    // Decrease projected delta for inputAsset
+    // Increase projected delta for outputAsset
   }
 
-  /** Get all expected holdings (non-zero) */
-  getExpectedHoldings(): SwapHolding[] {
-    return [...this.holdings.values()].filter(h => !h.expectedBalance.isZero());
+  /** Get all non-zero fill-derived projections */
+  getAssetProjections(): SwapAssetProjection[] {
+    return [...this.projections.values()].filter(p => !p.projectedBalanceDelta.isZero());
   }
 
-  /** Compute drift between expected and actual balances */
-  computeDrift(actualBalances: Map<string, Quantity>): SwapDriftResult[] {
-    // For each expected holding: drift = actual - expected
-    // Positive drift = unexplained inflow, negative = unexplained outflow
+  /** Compare fill-derived projections to currently observed wallet balances */
+  compareToObservedBalances(observedBalances: Map<string, Quantity>): SwapBalanceVariance[] {
+    // variance = observed - projected
+    // Diagnostic only: does not imply authoritative wallet truth
   }
 }
 
-export interface SwapDriftResult {
+export interface SwapBalanceVariance {
   asset: string;
-  expected: Quantity;
-  actual: Quantity;
-  drift: Quantity;      // actual - expected (can be negative)
-  driftPct: number;     // abs(drift) / expected * 100
+  projectedBalanceDelta: Quantity;
+  observedBalance: Quantity;
+  variance: Quantity;      // observed - projected
+  variancePct: number;     // abs(variance) / abs(projected) * 100
 }
 ```
 
@@ -383,16 +383,16 @@ export interface SwapDriftResult {
 - On restart, rehydrate from persisted fills in DB
 
 **Tests:** `packages/engine/src/swap-position-tracker.test.ts`
-- Empty tracker has no holdings
+- Empty tracker has no asset projections
 - After swap: input decreases, output increases
 - Multiple swaps accumulate correctly
-- Drift detection: positive drift (unexplained deposit)
-- Drift detection: negative drift (unexplained withdrawal)
-- Zero drift when balances match
+- Observed-balance comparison: positive variance when observed balance exceeds the fill projection
+- Observed-balance comparison: negative variance when observed balance is below the fill projection
+- Zero variance when observed balances match the projection
 
 ---
 
-### Step 7: Swap reconciliation with drift detection (enables Gap #27)
+### Step 7: Shared-wallet swap balance observation in reconciliation (enables Gap #27)
 
 **File:** `packages/engine/src/reconciliation/venue-state-loaders.ts`
 
@@ -401,7 +401,6 @@ export interface SwapDriftResult {
 ```typescript
 export function createSwapVenueStateLoader(
   venue: SwapVenuePort,
-  swapPositionTracker: SwapPositionTracker,
   logger: Logger,
 ): VenueStateLoader {
   return async (_since: Date | null): Promise<VenueState | null> => {
@@ -411,28 +410,8 @@ export function createSwapVenueStateLoader(
       return null;
     }
 
-    // Build actual balance map from venue
-    const actualBalances = new Map<string, Quantity>();
-    for (const b of balResult.data.balances) {
-      actualBalances.set(b.asset, quantity(b.amount.toString()));
-    }
-
-    // Compute drift against expected holdings
-    const driftResults = swapPositionTracker.computeDrift(actualBalances);
-
-    // Convert to position-like structures for the reconciler
-    // A significant drift becomes a "position mismatch" alert
-    const positions: VenueState['positions'] = driftResults
-      .filter(d => Math.abs(d.driftPct) > DRIFT_THRESHOLD_PCT)
-      .map(d => ({
-        symbol: d.asset,
-        side: d.drift.isPositive() ? 'unexplained_inflow' : 'unexplained_outflow',
-        size: d.drift.abs(),
-        driftPct: d.driftPct,
-      }));
-
     return {
-      positions,
+      positions: [],
       balances: { /* existing mapping */ },
       recentFills: [],
       openOrders: [],
@@ -441,25 +420,24 @@ export function createSwapVenueStateLoader(
 }
 ```
 
-**New reconciler logic for swap venues:**
+**Shared-wallet reconciler logic:**
 
-The existing reconciler checks position drift for orderbook venues. For swap venues, it now checks **balance drift**:
-- If `|actual - expected| > threshold%` → emit `reconciliation.swap_drift_detected` journal event
-- If drift is negative (less balance than expected) → escalate to `reconciliation.swap_balance_deficit` (possible unauthorized withdrawal or failed fill that was assumed successful)
-- If drift is positive → log as info (possible airdrop or external deposit)
+The existing reconciler still treats orderbook mismatches as authoritative drift. For shared-wallet swap venues, it now behaves differently:
 
-**Config:** Add drift threshold to reconciliation config:
-```yaml
-reconciliation:
-  swapDriftThresholdPct: 1.0  # Alert if balance differs by more than 1%
-```
+- no synthetic positions are created from wallet-balance variance
+- real venue balance snapshots are still persisted and compared
+- balance-only swap diffs are classified as `observed_variance`
+- the journal event is `reconciliation.observed_variance`
+- alert severity is informational, not the same as execution or risk failure
+- startup is allowed to proceed on shared-wallet observed variance
+
+Strict holdings reconciliation remains deferred to a future dedicated/managed-wallet mode with an explicit basis for treating the wallet as execution-scoped.
 
 **Tests:**
-- No drift → no alerts
-- Small drift below threshold → ignored
-- Large negative drift → deficit event emitted
-- Large positive drift → inflow event emitted
-- Multiple assets with mixed drift → each evaluated independently
+- Shared-wallet swap loaders always return empty positions plus real balance snapshots
+- Balance-only shared-wallet diffs are classified as `observed_variance`
+- `reconciliation.observed_variance` routes at info severity
+- Shared-wallet swap startup proceeds on observational variance but still blocks on authoritative drift
 
 ---
 
@@ -472,7 +450,7 @@ graph TD
   S2 --> S3[Step 3: Remove live gate swap block]
   S4 --> S5[Step 5: On-chain confirmation poller]
   S5 --> S2
-  S6[Step 6: Balance-delta position model] --> S7[Step 7: Swap reconciliation]
+  S6[Step 6: Fill-projection model] --> S7[Step 7: Shared-wallet balance observation]
   S2 --> S6
 
   style S1 fill:#f9f,stroke:#333
@@ -482,7 +460,7 @@ graph TD
 
 **Critical path:** Step 1 → Step 4 → Step 5 → Step 2 → Step 3 (end-to-end live swap execution)
 
-**Parallel track:** Step 6 → Step 7 (can be built alongside Steps 4–5 since it only needs fill data, not the executor itself)
+**Parallel track:** Step 6 → Step 7 (can be built alongside Steps 4–5 since it only needs fill data and balance telemetry, not the executor itself)
 
 ---
 
@@ -491,10 +469,10 @@ graph TD
 | Order | Step | Effort | Dependencies | Parallelizable with |
 |-------|------|--------|--------------|---------------------|
 | 1 | Step 1: Resolve swapAssets | S–M | None | Step 6 |
-| 2 | Step 6: Balance-delta position model | M | None | Step 1, Step 4 |
+| 2 | Step 6: Fill-projection model | M | None | Step 1, Step 4 |
 | 3 | Step 4: Jupiter transaction signing | M | Step 1 (for integration test) | Step 6 |
 | 4 | Step 5: On-chain confirmation poller | M | Step 4 | Step 7 |
-| 5 | Step 7: Swap reconciliation | M | Step 6 | Step 5 |
+| 5 | Step 7: Shared-wallet balance observation | M | Step 6 | Step 5 |
 | 6 | Step 2: SwapLiveExecutor | L | Step 4, Step 5 | — |
 | 7 | Step 3: Remove live gate swap block | S | Step 2 | — |
 
@@ -507,8 +485,8 @@ graph TD
 3. **Live swap executes (Jupiter):** Same as above but Jupiter actually signs the Solana transaction and polls for on-chain confirmation.
 4. **Live gate allows swap:** A swap venue listed in `allowedVenues` passes the live gate without error.
 5. **Confirmation poller works:** After a swap is broadcast, the poller detects confirmation and updates the fill status from `executing` to `filled`.
-6. **Balance tracking:** After a swap fill (SOL → USDC), the swap position tracker shows decreased SOL holding and increased USDC holding.
-7. **Drift detection:** When on-chain balance diverges from expected (manual withdrawal), the reconciler emits `reconciliation.swap_drift_detected`.
+6. **Fill projection tracking:** After a swap fill (SOL → USDC), the swap position tracker shows the fill-derived decrease in SOL and increase in USDC.
+7. **Observed variance:** When shared-wallet on-chain balances later diverge from the fill projection (for example, a manual withdrawal), the reconciler emits `reconciliation.observed_variance` instead of claiming authoritative wallet drift.
 8. **No regression:** Paper swap bots continue to work. Existing orderbook execution is unaffected.
 
 ---
@@ -519,7 +497,7 @@ graph TD
 |------|---------|
 | `packages/engine/src/swap-live-executor.ts` | Live swap execution via SwapVenuePort |
 | `packages/engine/src/swap-live-executor.test.ts` | Unit tests |
-| `packages/engine/src/swap-position-tracker.ts` | Balance-delta position model for swap venues |
+| `packages/engine/src/swap-position-tracker.ts` | Fill-projection tracker for swap venues |
 | `packages/engine/src/swap-position-tracker.test.ts` | Unit tests |
 | `packages/venues/src/swap-confirmation-poller.ts` | Interface for on-chain confirmation checking |
 | `packages/venues/src/jupiter-confirmation.ts` | Solana-specific confirmation polling |
@@ -538,8 +516,7 @@ graph TD
 | `apps/worker/src/live-gate.test.ts` | Update tests for new behavior |
 | `packages/venues/src/jupiter-swap.ts` | Add Solana signing: keypair constructor, sign + send + confirm in executeSwap |
 | `packages/venues/src/jupiter-swap.test.ts` | Add signing tests |
-| `packages/engine/src/reconciliation/venue-state-loaders.ts` | Accept SwapPositionTracker, compute drift |
-| `config/default.yaml` | Add `reconciliation.swapDriftThresholdPct` |
+| `packages/engine/src/reconciliation/venue-state-loaders.ts` | Keep swap balances observational and avoid synthetic positions |
 
 ---
 
@@ -548,6 +525,6 @@ graph TD
 - **WebSocket-based live fill streaming** for swap venues (polling is sufficient for v1; real-time subscription is a v2 optimization)
 - **Cross-chain swap routing** (Jupiter and 1inch remain chain-specific)
 - **Swap-specific unrealized P&L for risk gate** (requires price oracle for arbitrary token pairs — Phase 3 or later)
-- **Automatic drift resolution** (drift is detected and alerted, not auto-corrected)
+- **Dedicated-wallet strict holdings reconciliation** (shared-wallet mode only surfaces observational variance)
 - **Multi-hop/split-route swaps** (Jupiter and 1inch handle routing internally — we treat them as atomic)
 - **Solana priority fees / compute budget** (use defaults for v1, can be tuned operationally)

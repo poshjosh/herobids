@@ -2,6 +2,8 @@
 
 **Phase 1 — Risk Foundation (~2.5 weeks)**
 
+Status: completed. The implementation plan in `004-phase-1-risk-foundation.md` is done; all Phase 1 gaps below are now closed.
+
 | # | Gap | Effort | Status | Why here |
 |---|---|---|---|---|
 | 7 | Drawdown tracking (hardcoded zero) | M | done | Core risk infra |
@@ -18,16 +20,18 @@
 
 **Phase 2 — Complete Swap Execution (~2.5 weeks)**
 
+Status: completed for the current shared-wallet product boundary. The implementation plan in `005-phase-2-complete-swap-execution.md` landed the execution path, and `007-phase-2-shared-wallet-semantics-patch-plan.md` is now complete. Execution correctness, shared-wallet observational variance handling, and documentation are aligned. Dedicated/managed-wallet strict reconciliation remains deferred and out of scope for this phase.
+
 | # | Gap | Effort | Status | Why here |
 |---|---|---|---|---|
-| 3 | Agent shadow swap blocked | M | todo | Core swap gap |
-| 1 | Live swap executor missing | L | todo | Main feature work |
-| 2 | Live gate blocks swap | S | todo | Trivial removal once #1 done |
-| 5 | Jupiter doesn't sign transactions | M | todo | Needed for live swap |
-| 24 | (Same as #5 — Jupiter signing) | — | todo | Duplicate |
-| 25 | No private stream for swap venues | L | todo | Needed for live swap fill confirmation |
-| 19 | Swap position model (balance-based) | M | todo | Needed to reconcile swap outcomes correctly |
-| 27 | Swap reconciliation skips position drift | M | todo | Depends on #19 |
+| 3 | Agent shadow swap blocked | M | done | Core swap gap |
+| 1 | Live swap executor missing | L | done | Main feature work |
+| 2 | Live gate blocks swap | S | done | Trivial removal once #1 done |
+| 5 | Jupiter doesn't sign transactions | M | done | Needed for live swap |
+| 24 | (Same as #5 — Jupiter signing) | — | done | Duplicate |
+| 25 | No private stream for swap venues | L | done | Needed for live swap fill confirmation |
+| 19 | Swap position model (fill-projection based for shared wallets) | M | done | Actor-local swap fill projections are kept without claiming wallet-truth accounting |
+| 27 | Swap reconciliation skips position drift | M | done | Shared-wallet swap balance variance is now observational rather than synthetic authoritative drift; dedicated-wallet strict reconciliation is deferred |
 
 ---
 
