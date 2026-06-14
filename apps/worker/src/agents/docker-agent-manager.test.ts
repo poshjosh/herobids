@@ -63,6 +63,48 @@ function makeFetchForStart(containerId = 'container-abc') {
 describe('DockerAgentManager — TCP URL normalization (bug #19)', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
+  it('force-removes an existing running container before create', async () => {
+    const containerId = 'container-abc';
+    const fetchMock = vi.fn().mockImplementation((url: string, _init: RequestInit) => {
+      if (url.includes('/json') && !url.includes('events')) {
+        return Promise.resolve(new Response(JSON.stringify({ State: { Running: true } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }));
+      }
+      if (url.includes('?force=true')) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.includes('/create')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ Id: containerId }), {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      if (url.includes(`/${containerId}/start`)) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(
+      { ...BASE_CONFIG, dockerHost: 'tcp://docker-proxy:2375' },
+      makeAgentRepo() as any,
+    );
+    await manager.start(SPEC);
+
+    const urls = fetchMock.mock.calls.map((c: unknown[]) => c[0] as string);
+    const deleteIndex = urls.findIndex((u) => u.includes('?force=true'));
+    const createIndex = urls.findIndex((u) => u.includes('/create'));
+
+    expect(deleteIndex).toBeGreaterThanOrEqual(0);
+    expect(createIndex).toBeGreaterThanOrEqual(0);
+    expect(deleteIndex).toBeLessThan(createIndex);
+  });
+
   it('converts tcp:// scheme to http://', async () => {
     const fetchMock = makeFetchForStart();
     vi.stubGlobal('fetch', fetchMock);
@@ -144,6 +186,23 @@ describe('DockerAgentManager — TCP URL normalization (bug #19)', () => {
     for (const url of calledUrls) {
       expect(url).not.toContain('http://tcp://');
     }
+  });
+});
+
+describe('DockerAgentManager — stop failure recovery', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('reverts the agent status when Docker stop throws', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('socket closed'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const agentRepo = makeAgentRepo();
+    const manager = new DockerAgentManager(BASE_CONFIG, agentRepo as any);
+
+    await expect(manager.stop('agent-001')).rejects.toThrow('socket closed');
+
+    expect(agentRepo.updateAgent).toHaveBeenNthCalledWith(1, 'agent-001', { status: 'stopped' });
+    expect(agentRepo.updateAgent).toHaveBeenNthCalledWith(2, 'agent-001', { status: 'crashed' });
   });
 });
 

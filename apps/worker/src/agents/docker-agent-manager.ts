@@ -139,14 +139,16 @@ export class DockerAgentManager {
   }
 
   /**
-   * Start an agent container. If a container with the same name already
-   * exists and is running, returns without creating a duplicate.
+   * Start an agent container.
+   *
+   * If a container with the same name already exists (running or stopped),
+   * force-remove it first so Docker name reuse cannot fail with 409.
    */
   async start(spec: DockerContainerSpec): Promise<{ containerId: string }> {
     const name = `herobids-agent-${spec.agentId}`;
 
-    // Remove any stopped container with the same name to allow restart
-    await this.removeStoppedContainer(name);
+    // Remove any existing container with the same name to allow restart
+    await this.removeExistingContainer(name);
 
     const agentConfigJson = JSON.stringify({
       ...spec.agentConfig,
@@ -251,19 +253,23 @@ export class DockerAgentManager {
     const name = `herobids-agent-${agentId}`;
     await this.agentRepo.updateAgent(agentId, { status: 'stopped' });
 
-    const res = await this.dockerRequest('POST', `/containers/${name}/stop`, undefined, '?t=10');
-    if (!res.ok && res.status !== 404 && res.status !== 304) {
+    try {
+      const res = await this.dockerRequest('POST', `/containers/${name}/stop`, undefined, '?t=10');
+      if (!res.ok && res.status !== 404 && res.status !== 304) {
+        throw new Error(`Docker container stop failed for agent ${agentId}: HTTP ${res.status}`);
+      }
+      logger.info({ agentId }, 'Agent container stopped');
+    } catch (error) {
       // Docker stop failed — the container may still be running. Revert status so
       // onContainerDie can fire a crash alert if the container dies on its own later.
       // We also throw so the caller (session-manager) does not proceed to mark the agent
       // stopped, which would overwrite the reverted 'crashed' status.
-      logger.warn({ agentId, status: res.status }, 'Agent container stop failed — reverting status to crashed');
+      logger.warn({ agentId, error }, 'Agent container stop failed — reverting status to crashed');
       await this.agentRepo.updateAgent(agentId, { status: 'crashed' }).catch((err: unknown) => {
         logger.error({ err, agentId }, 'Failed to revert agent status after stop failure');
       });
-      throw new Error(`Docker container stop failed for agent ${agentId}: HTTP ${res.status}`);
+      throw error;
     }
-    logger.info({ agentId }, 'Agent container stopped');
   }
 
   /**
@@ -464,15 +470,12 @@ export class DockerAgentManager {
     this.eventStreamAbort = null;
   }
 
-  private async removeStoppedContainer(name: string): Promise<void> {
+  private async removeExistingContainer(name: string): Promise<void> {
     const res = await this.dockerRequest('GET', `/containers/${name}/json`);
     if (res.status === 404) return;
     if (!res.ok) return;
 
-    const info = await res.json() as { State?: { Running?: boolean } };
-    if (!info.State?.Running) {
-      await this.dockerRequest('DELETE', `/containers/${name}?force=true`);
-    }
+    await this.dockerRequest('DELETE', `/containers/${name}?force=true`);
   }
 
   private dockerRequest(method: string, path: string, body?: unknown, suffix = ''): Promise<Response> {
