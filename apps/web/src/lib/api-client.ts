@@ -160,6 +160,7 @@ export const auth = {
 export interface AiAvailableModelProvider {
   provider: string;
   models: AiAvailableModelEntry[];
+  isMultiProvider?: boolean;
 }
 
 export interface AiAvailableModelEntry {

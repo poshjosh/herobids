@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Card, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
-import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 interface AgentSummaryCardProps {
   agent: Agent;
@@ -60,7 +60,7 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
             )}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-            {objective}
+            {formatObjectivePreview(objective)}
           </div>
         </div>
 

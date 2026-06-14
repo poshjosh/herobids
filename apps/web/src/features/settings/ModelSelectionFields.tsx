@@ -51,6 +51,21 @@ function pickFallbackModel(models: string[], preferredIndex: number): string {
   return models[Math.min(preferredIndex, models.length - 1)] ?? models[0] ?? '';
 }
 
+export function resolveDefaultModelSelection(
+  providers: AiAvailableModelProvider[],
+): ModelSelectionValue | null {
+  const defaultProvider = providers.find((provider) => provider.isMultiProvider && provider.models.length > 0);
+  if (!defaultProvider) {
+    return null;
+  }
+
+  return normalizeModelSelection({
+    provider: defaultProvider.provider,
+    lightModel: '',
+    heavyModel: '',
+  }, providers);
+}
+
 export function normalizeModelSelection(
   value: ModelSelectionValue,
   providers: AiAvailableModelProvider[],

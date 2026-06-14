@@ -1,4 +1,4 @@
-import { normalizeAgentGoal } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock } from '@herobids/domain';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 
@@ -45,7 +45,7 @@ export function buildScoutSystemPrompt(params: {
   return [
     `You are the scout phase for agent "${params.name ?? params.agentId}".`,
     `## Your Goal`,
-    normalizeAgentGoal(params.goal),
+    formatAgentGoalLiteralBlock(params.goal),
     '## Operating Context',
     ...formatPromptTimingContextLines(params.timing),
     ...venueSection,

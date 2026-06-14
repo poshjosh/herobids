@@ -18,6 +18,7 @@ export interface AgentControlsFormValue {
 interface AgentControlsSectionProps {
   value: AgentControlsFormValue;
   onChange: (patch: Partial<AgentControlsFormValue>) => void;
+  showBotControls: boolean;
   tickIntervalError?: string | null;
   tickIntervalNotice?: string | null;
   effectiveTickIntervalMs?: number | null;
@@ -37,6 +38,7 @@ interface TradingGuardrailsFieldsProps {
 export function AgentControlsSection({
   value,
   onChange,
+  showBotControls,
   tickIntervalError = null,
   tickIntervalNotice = null,
   effectiveTickIntervalMs = null,
@@ -142,17 +144,19 @@ export function AgentControlsSection({
         )}
       </div>
 
-      <div>
-        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxBots' })}</FieldLabel>
-        <input
-          style={inputStyle}
-          type="number"
-          min={1}
-          value={value.maxBots}
-          onChange={(event) => onChange({ maxBots: event.target.value })}
-          placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-        />
-      </div>
+      {showBotControls && (
+        <div>
+          <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxBots' })}</FieldLabel>
+          <input
+            style={inputStyle}
+            type="number"
+            min={1}
+            value={value.maxBots}
+            onChange={(event) => onChange({ maxBots: event.target.value })}
+            placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+          />
+        </div>
+      )}
       {estimatedDailySpend != null && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {intl.formatMessage({ id: 'agents.controls.estimatedDailySpend' }, { amount: estimatedDailySpend.toFixed(2) })}

@@ -18,7 +18,7 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
 
   return renderToStaticMarkup(
     <IntlProvider locale="en" messages={messages}>
-      <AgentControlsSection value={state} onChange={() => undefined} />
+      <AgentControlsSection value={state} onChange={() => undefined} showBotControls />
     </IntlProvider>,
   );
 }
@@ -30,6 +30,28 @@ describe('AgentControlsSection rendering', () => {
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
     expect(html).toContain(messages['agents.controls.maxBots']);
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
+  });
+
+  it('hides max bots when bot controls are disabled', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <AgentControlsSection
+          value={{
+            costPreset: 'standard',
+            dailySpendBudgetUsd: '',
+            tickIntervalMins: '',
+            maxBots: '',
+            capital: '',
+            dailyLossLimit: '',
+            maxSlippageBps: '',
+          }}
+          onChange={() => undefined}
+          showBotControls={false}
+        />
+      </IntlProvider>,
+    );
+
+    expect(html).not.toContain(messages['agents.controls.maxBots']);
   });
 
   it('shows preset-derived cadence and daily spend when no explicit tick interval exists', () => {

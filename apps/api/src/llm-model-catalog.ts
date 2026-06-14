@@ -19,6 +19,7 @@ export interface ProviderModelEntry {
 export interface ProviderCatalogEntry {
   provider: string;
   models: ProviderModelEntry[];
+  isMultiProvider?: boolean;
 }
 
 type LlmProviderCatalogMode = 'static' | 'dynamic';
@@ -26,18 +27,22 @@ type LlmProviderCatalogMode = 'static' | 'dynamic';
 interface LlmProviderMetadata {
   catalogMode: LlmProviderCatalogMode;
   staticModels: string[];
+  /** Only show this provider in non-production environments (e.g. Ollama). */
+  devOnly?: boolean;
+  /** This provider routes to multiple underlying LLM providers. */
+  isMultiProvider?: boolean;
 }
 
 const PROVIDER_METADATA: Record<string, LlmProviderMetadata> = {
   openai: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.openai },
   anthropic: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.anthropic },
-  openrouter: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.openrouter },
+  openrouter: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.openrouter, isMultiProvider: true },
   together: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.together },
   fireworks: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.fireworks },
   mistral: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.mistral },
   cohere: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.cohere },
   google: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.google },
-  ollama: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.ollama },
+  ollama: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.ollama, devOnly: true },
 };
 
 // --- Operator context ---
@@ -386,8 +391,16 @@ function isProviderExplicitlyConfigured(provider: string): boolean {
   return !!process.env[`LLM_API_KEY_${provider.toUpperCase()}`];
 }
 
+function isProviderAllowed(provider: string): boolean {
+  const meta = PROVIDER_METADATA[provider];
+  if (meta?.devOnly && process.env['NODE_ENV'] !== 'development') {
+    return false;
+  }
+  return true;
+}
+
 function getConfiguredProviders(): string[] {
-  return KNOWN_PROVIDERS.filter(isProviderExplicitlyConfigured);
+  return KNOWN_PROVIDERS.filter((p) => isProviderExplicitlyConfigured(p) && isProviderAllowed(p));
 }
 
 function hasUsableDynamicCatalogConfig(context: OperatorLlmCatalogContext): boolean {
@@ -419,6 +432,9 @@ export function makeCatalogContext(llmConfig: {
 
 export function getAvailableProviders(context: OperatorLlmCatalogContext): string[] {
   const explicit = getConfiguredProviders();
+  if (!isProviderAllowed(context.provider)) {
+    return explicit;
+  }
   const meta = PROVIDER_METADATA[context.provider];
 
   // Dynamic providers are only available when the operator explicitly selected them
@@ -463,12 +479,16 @@ export async function getProviderCatalogEntry(
   provider: string,
   context: OperatorLlmCatalogContext,
 ): Promise<ProviderCatalogEntry> {
+  const meta = PROVIDER_METADATA[provider];
+  const isMultiProvider = meta?.isMultiProvider === true ? true : undefined;
+
   if (provider === 'openrouter') {
     const catalog = await fetchOpenRouterCatalog(context);
     const models = catalog.modelIds.length > 0 ? catalog.modelIds : getLlmProviderModels(provider);
     return {
       provider,
       models: mapProviderModels(models, (modelId) => mapOpenRouterModelPricingMetadata(catalog.pricingByModel[modelId])),
+      isMultiProvider,
     };
   }
 

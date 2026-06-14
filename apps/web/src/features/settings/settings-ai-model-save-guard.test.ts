@@ -8,8 +8,20 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createClearedAiModelSettings, shouldDisableAiModelSave } from './ai-model-settings.js';
+import { resolveDefaultModelSelection } from './ModelSelectionFields.js';
 
 describe('Settings page — AI model Save button disable predicate', () => {
+  const availableProviders = [
+    {
+      provider: 'openrouter',
+      isMultiProvider: true,
+      models: [
+        { id: 'gpt-4o-mini' },
+        { id: 'gpt-4o' },
+      ],
+    },
+  ];
+
   it('is disabled when provider or either model is empty', () => {
     expect(shouldDisableAiModelSave({ provider: '', lightModel: '', heavyModel: '' }, null, false)).toBe(true);
     expect(shouldDisableAiModelSave({ provider: 'openai', lightModel: '', heavyModel: 'gpt-4o' }, null, false)).toBe(true);
@@ -54,6 +66,10 @@ describe('Settings page — AI model Save button disable predicate', () => {
         false,
       ),
     ).toBe(false);
+  });
+
+  it('is enabled for the auto-selected default when no settings are saved yet', () => {
+    expect(shouldDisableAiModelSave(resolveDefaultModelSelection(availableProviders)!, null, false)).toBe(false);
   });
 
   it('builds a cleared payload for the reset action', () => {

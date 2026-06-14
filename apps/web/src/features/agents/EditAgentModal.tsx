@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
@@ -6,7 +6,7 @@ import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui
 import { extractAgentObjective, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
-import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
+import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { buildUpdateAgentPayload } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { formatTickIntervalMinutesForInput, getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
@@ -81,6 +81,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   });
   const currentHasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
   const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
+  const hasBotManagementSkill = form.skillIds.includes('bot-management');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(form.tickIntervalMins);
   const tickIntervalError = tickIntervalValidationMessageId
     ? intl.formatMessage({ id: tickIntervalValidationMessageId })
@@ -97,6 +98,17 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const showTradingControls = hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim());
 
+  useEffect(() => {
+    if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
+      return;
+    }
+    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? []);
+    if (!defaultSelection) {
+      return;
+    }
+    setModelForm(defaultSelection);
+  }, [availableModelsQuery.data?.providers, inheritedModelSettings, modelForm.provider, modelOverrideEnabled]);
+
   const set = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
@@ -107,6 +119,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
         name: form.name,
         prompt: form.prompt,
         skillIds,
+        hasBotManagementSkill,
         executionMode: form.executionMode,
         hasTradingCapability,
         telegramChatId: form.telegramChatId,
@@ -295,6 +308,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                 dailyLossLimit: form.dailyLossLimit,
                 maxSlippageBps: form.maxSlippageBps,
               }}
+              showBotControls={hasBotManagementSkill}
               tickIntervalError={tickIntervalError}
               tickIntervalNotice={tickIntervalNotice}
               effectiveTickIntervalMs={effectiveTickIntervalMs}

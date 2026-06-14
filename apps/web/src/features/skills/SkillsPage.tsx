@@ -415,7 +415,7 @@ function SkillCard({
         )}
         {canFork && (
           <Button size="sm" variant="secondary" onClick={() => forkMutation.mutate()} disabled={isActionPending}>
-            {forkMutation.isPending ? 'Forking...' : 'Fork'}
+            {forkMutation.isPending ? 'Copying...' : 'Copy'}
           </Button>
         )}
         {canManage && (

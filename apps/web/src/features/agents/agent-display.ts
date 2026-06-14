@@ -83,6 +83,16 @@ export function formatSkillSelection(skills: Array<{ name: string }>, intl?: Int
   return skills.length > 0 ? skills.map((skill) => skill.name).join(', ') : formatMessageOrFallback(intl, 'agents.skills.baseOnly', 'Base only');
 }
 
+export function formatObjectivePreview(objective: string, maxLength = 160): string {
+  const compactObjective = objective.replace(/\s+/g, ' ').trim();
+
+  if (compactObjective.length <= maxLength) {
+    return compactObjective;
+  }
+
+  return `${compactObjective.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 export function hasCapabilityFamily(skills: Array<{ capabilityFamilies: string[] }>, family: string): boolean {
   return skills.some((skill) => skill.capabilityFamilies.includes(family));
 }

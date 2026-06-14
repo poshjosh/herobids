@@ -6,7 +6,7 @@ import { PageShell, PageHeader, Card, Button, FieldLabel, ErrorBanner } from '..
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
-import { ModelSelectionFields } from './ModelSelectionFields.js';
+import { ModelSelectionFields, resolveDefaultModelSelection } from './ModelSelectionFields.js';
 import { EMPTY_AI_MODEL_SELECTION, createClearedAiModelSettings, normalizeAiModelSelection, shouldDisableAiModelSave, type AiModelSelectionState } from './ai-model-settings.js';
 
 const LOCALE_DISPLAY_NAMES: Record<SupportedLocale, string> = {
@@ -66,6 +66,23 @@ export function SettingsPage() {
     }
     setModelSettings(normalizeAiModelSelection(savedModelSettings));
   }, [modelTouched, savedModelSettings]);
+
+  useEffect(() => {
+    if (modelTouched) {
+      return;
+    }
+    if (modelSettings.provider) {
+      return;
+    }
+    if (!aiSettingsQuery.isSuccess || savedModelSettings) {
+      return;
+    }
+    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? []);
+    if (!defaultSelection) {
+      return;
+    }
+    setModelSettings(defaultSelection);
+  }, [availableModelsQuery.data?.providers, aiSettingsQuery.isSuccess, modelSettings.provider, modelTouched, savedModelSettings]);
 
   const telegramMutation = useMutation({
     mutationFn: (chatId: string) => authApi.updateMe({ telegramChatId: chatId.trim() || null }),

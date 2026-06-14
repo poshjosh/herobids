@@ -18,6 +18,7 @@ export interface CreateAgentIntentPayloadInput {
   name: string;
   goal: string;
   skillIds: string[];
+  hasBotManagementSkill: boolean;
   requiresTradingSetup: boolean;
   executionMode: 'paper' | 'shadow' | 'live';
   modelPayload: {
@@ -40,6 +41,7 @@ export interface UpdateAgentPayloadInput {
   name: string;
   prompt: string;
   skillIds: string[];
+  hasBotManagementSkill: boolean;
   executionMode: string;
   hasTradingCapability: boolean;
   telegramChatId: string;
@@ -93,7 +95,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(input.dailySpendBudgetUsd) } : {}),
     ...(input.telegramChatId.trim() ? { telegramChatId: input.telegramChatId.trim() } : {}),
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
-    ...(input.maxBots ? { maxBots: parseInt(input.maxBots, 10) } : {}),
+    ...(input.hasBotManagementSkill && input.maxBots ? { maxBots: parseInt(input.maxBots, 10) } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
     ...(input.dailyLossLimit.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
     ...(input.maxSlippageBps ? { maxSlippageBps: parseInt(input.maxSlippageBps, 10) } : {}),
@@ -137,7 +139,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
     dailyLossLimit: input.dailyLossLimit.trim() || null,
-    maxBots: input.maxBots ? parseInt(input.maxBots, 10) : null,
+    maxBots: input.hasBotManagementSkill && input.maxBots ? parseInt(input.maxBots, 10) : null,
     maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
     tickIntervalMs,
     capital: input.capital.trim() || null,

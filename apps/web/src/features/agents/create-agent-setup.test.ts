@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProviderSetupResult, TradingBindingSummary } from '../../lib/api-client.js';
 import { createAgentUsesInheritedModels, resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { resolveCreateAgentBindingId } from './agent-payloads.js';
+import { resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 
 // ---------------------------------------------------------------------------
 // Auto-select logic
@@ -146,6 +147,17 @@ describe('Create Agent — available trading bindings filter', () => {
 // ---------------------------------------------------------------------------
 
 describe('Create Agent — review gate and model summary', () => {
+  const availableProviders = [
+    {
+      provider: 'openrouter',
+      isMultiProvider: true,
+      models: [
+        { id: 'gpt-4o-mini' },
+        { id: 'gpt-4o' },
+      ],
+    },
+  ];
+
   function canProceedToReview(intent: {
     name: string;
     goal: string;
@@ -201,6 +213,30 @@ describe('Create Agent — review gate and model summary', () => {
       provider: 'anthropic',
       lightModel: 'claude-haiku-3-5',
       heavyModel: 'claude-sonnet-4-5',
+    });
+  });
+
+  it('keeps create payload inherited when no provider has been explicitly selected yet', () => {
+    expect(resolveCreateAgentModelPayload(
+      { provider: '', lightModel: '', heavyModel: '' },
+      null,
+    )).toEqual({ inherits: true });
+  });
+
+  it('treats the auto-selected multi-provider default as an explicit override in create flow', () => {
+    const defaultSelection = resolveDefaultModelSelection(availableProviders);
+
+    expect(defaultSelection).toEqual({
+      provider: 'openrouter',
+      lightModel: 'gpt-4o-mini',
+      heavyModel: 'gpt-4o',
+    });
+
+    expect(resolveCreateAgentModelPayload(defaultSelection!, null)).toEqual({
+      inherits: false,
+      provider: 'openrouter',
+      lightModel: 'gpt-4o-mini',
+      heavyModel: 'gpt-4o',
     });
   });
 });

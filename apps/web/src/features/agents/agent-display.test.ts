@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SKILL_PRESET_MAP } from '@herobids/domain';
-import { resolveSkillPresetSkillIds } from './agent-display.js';
+import { formatObjectivePreview, resolveSkillPresetSkillIds } from './agent-display.js';
 
 describe('skill preset resolution', () => {
   it('personal-assistant preset resolves to task-management and web-access', () => {
@@ -26,5 +26,9 @@ describe('skill preset resolution', () => {
 
   it('domain SKILL_PRESET_MAP personal-assistant maps to task-management and web-access', () => {
     expect(SKILL_PRESET_MAP['personal-assistant']).toEqual(['task-management', 'web-access']);
+  });
+
+  it('formats long objectives as a compact preview', () => {
+    expect(formatObjectivePreview('Grow my Solana portfolio\nwith disciplined entries and exits', 24)).toBe('Grow my Solana portfoli…');
   });
 });

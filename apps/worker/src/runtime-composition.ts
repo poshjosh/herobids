@@ -1,5 +1,5 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload } from '@herobids/domain';
-import { normalizeAgentGoal } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, normalizeAgentGoal } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
@@ -1396,7 +1396,7 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     `You are an autonomous agent named "${state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId}". Use the available tools to accomplish your goal.`,
     skillInstructions,
     '## Your Goal',
-    normalizeAgentGoal(state.runtimeDescriptor.goal),
+    formatAgentGoalLiteralBlock(state.runtimeDescriptor.goal),
     '## Operating Context',
     ...formatPromptTimingContextLines(timing),
     '## Available Tools',

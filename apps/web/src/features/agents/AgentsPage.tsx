@@ -9,7 +9,7 @@ import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
-import { ModelSelectionFields } from '../settings/ModelSelectionFields.js';
+import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
@@ -141,8 +141,8 @@ function CreateAgentFlow({
   const [intent, setIntent] = useState<IntentState>({
     name: '',
     goal: '',
-    skillPreset: 'custom',
-    skillIds: [],
+    skillPreset: 'trading',
+    skillIds: resolveSkillPresetSkillIds('trading'),
     executionMode: 'paper',
     provider: '',
     lightModel: '',
@@ -190,6 +190,23 @@ function CreateAgentFlow({
   }, [aiSettingsQuery.data?.aiModelConfig, modelTouched]);
 
   useEffect(() => {
+    if (modelTouched) {
+      return;
+    }
+    if (intent.provider) {
+      return;
+    }
+    if (!aiSettingsQuery.isSuccess || aiSettingsQuery.data?.aiModelConfig) {
+      return;
+    }
+    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? []);
+    if (!defaultSelection) {
+      return;
+    }
+    setIntent((state) => ({ ...state, ...defaultSelection }));
+  }, [availableModelsQuery.data?.providers, aiSettingsQuery.isSuccess, aiSettingsQuery.data?.aiModelConfig, intent.provider, modelTouched]);
+
+  useEffect(() => {
     if (telegramTouched) {
       return;
     }
@@ -200,6 +217,7 @@ function CreateAgentFlow({
   }, [meQuery.data?.telegramChatId, telegramTouched]);
 
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
+  const hasBotManagementSkill = intent.skillIds.includes('bot-management');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(intent.tickIntervalMins);
   const tickIntervalError = tickIntervalValidationMessageId
     ? intl.formatMessage({ id: tickIntervalValidationMessageId })
@@ -225,6 +243,7 @@ function CreateAgentFlow({
         name: intent.name,
         goal: intent.goal,
         skillIds: intent.skillIds,
+        hasBotManagementSkill,
         requiresTradingSetup,
         executionMode: intent.executionMode,
         modelPayload,
@@ -425,6 +444,7 @@ function CreateAgentFlow({
               dailyLossLimit: intent.dailyLossLimit,
               maxSlippageBps: intent.maxSlippageBps,
             }}
+            showBotControls={hasBotManagementSkill}
             tickIntervalError={tickIntervalError}
             onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
           />

@@ -6,7 +6,7 @@ import { ApiError, agents as agentsApi, skills as skillsApi, type AgentOutboundM
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button, StatusBadge, RelativeTime, KV, SectionLabel } from '../../lib/ui.js';
 import { EditAgentModal } from './EditAgentModal.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
-import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatCapabilityFamily, formatCapabilityState, formatExecutionMode, formatObjectivePreview, formatSkillSelection, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentTradesTable } from './AgentTradesTable.js';
@@ -230,7 +230,7 @@ export function AgentDetailPage() {
     <PageShell>
       <PageHeader
         title={agent.name}
-        subtitle={objective}
+        subtitle={formatObjectivePreview(objective)}
         action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {(agent.status === 'stopped' || agent.status === 'crashed') && (
