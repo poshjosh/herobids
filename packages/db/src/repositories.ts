@@ -197,6 +197,21 @@ export class PositionRepository {
       );
   }
 
+  /** Get open positions for an actor scoped to a specific venue account */
+  async getOpenByActorAndVenueAccount(actorType: string, actorId: string, venueAccountId: string) {
+    return this.db
+      .select()
+      .from(positions)
+      .where(
+        and(
+          eq(positions.actorType, actorType),
+          eq(positions.actorId, actorId),
+          eq(positions.venueAccountId, venueAccountId),
+          isNull(positions.closedAt),
+        ),
+      );
+  }
+
   /** Get open positions for a trading instance (bot actor) */
   async getOpenByInstance(botId: string) {
     return this.getOpenByActor('bot', botId);
@@ -348,6 +363,22 @@ export class OrderRepository {
         and(
           eq(orders.actorType, actorType),
           eq(orders.actorId, actorId),
+          notInArray(orders.status, TERMINAL_ORDER_STATUSES),
+        ),
+      )
+      .orderBy(desc(orders.createdAt));
+  }
+
+  /** Get open (non-terminal) orders for an actor scoped to a specific venue account */
+  async getOpenByActorAndVenueAccount(actorType: string, actorId: string, venueAccountId: string) {
+    return this.db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.actorType, actorType),
+          eq(orders.actorId, actorId),
+          eq(orders.venueAccountId, venueAccountId),
           notInArray(orders.status, TERMINAL_ORDER_STATUSES),
         ),
       )

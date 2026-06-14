@@ -8,8 +8,10 @@ import { DockerAgentManager } from './docker-agent-manager.js';
 function makeAgentRepo() {
   return {
     updateAgent: vi.fn().mockResolvedValue(undefined),
+    updateSession: vi.fn().mockResolvedValue(undefined),
     listActiveAgents: vi.fn().mockResolvedValue([]),
     getSessionsByStatuses: vi.fn().mockResolvedValue([]),
+    getCurrentSession: vi.fn().mockResolvedValue(null),
     getAgent: vi.fn().mockResolvedValue(null),
   };
 }
@@ -417,5 +419,38 @@ describe('DockerAgentManager — reconcile orphan detection', () => {
     const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
     // Should not throw even if the Docker stop call fails
     await expect(manager.reconcile()).resolves.not.toThrow();
+  });
+});
+
+describe('DockerAgentManager — session-aware container death', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('ignores stale container exits from a superseded session', async () => {
+    const agentRepo = makeAgentRepo();
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'agent-001', status: 'active' });
+    (agentRepo.getCurrentSession as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'sess-new', agentId: 'agent-001', status: 'running' });
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+
+    await manager.onContainerDie('agent-001', 'docker_event', 'sess-old');
+
+    expect(agentRepo.updateSession).not.toHaveBeenCalled();
+    expect(agentRepo.updateAgent).not.toHaveBeenCalled();
+  });
+
+  it('crashes only the current session when its container dies', async () => {
+    const agentRepo = makeAgentRepo();
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'agent-001', status: 'active' });
+    (agentRepo.getCurrentSession as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'sess-001', agentId: 'agent-001', status: 'running' });
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+
+    await manager.onContainerDie('agent-001', 'docker_event', 'sess-001');
+
+    expect(agentRepo.updateSession).toHaveBeenCalledWith('sess-001', expect.objectContaining({
+      status: 'crashed',
+      stoppedAt: expect.any(Date),
+    }));
+    expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-001', { status: 'crashed' });
   });
 });

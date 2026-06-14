@@ -1,4 +1,4 @@
-import type { Decision, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
+import type { Decision, MarkSource, SwapTokenSafetyPort, Price } from '@herobids/domain';
 import { price } from '@herobids/domain';
 import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan, PlannerDeps } from './planner.js';
@@ -45,6 +45,10 @@ export interface DecisionIntakeDeps {
     minAgeHours?: number;
     allowOverrides?: boolean;
   };
+  /** Aggregate open position count across all instruments (multi-instrument actors). When provided, overrides single-instrument derivation. */
+  openPositionCount?: number;
+  /** Current equity (used for %-based risk checks like maxPositionSizePct). */
+  equity?: Price;
 }
 
 /**
@@ -229,9 +233,10 @@ export async function submitDecisionForExecution(
   const referenceMark = price(context.referenceMark.price);
   const riskResult = checkRisk(plan, deps.riskLimits, {
     currentPosition: position.side === 'flat' ? null : position,
-    openPositionCount: position.side === 'flat' ? 0 : 1,
+    openPositionCount: deps.openPositionCount ?? (position.side === 'flat' ? 0 : 1),
     currentDrawdown: price('0'),
     referenceMark,
+    equity: deps.equity,
   });
 
   if (!riskResult.ok) {

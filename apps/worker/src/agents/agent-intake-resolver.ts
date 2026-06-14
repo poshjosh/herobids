@@ -1,7 +1,7 @@
 import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
-import type { PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
+import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
 import type { MarkSource } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
@@ -15,6 +15,7 @@ const logger = pino({ name: 'agent-intake-resolver' });
 
 export interface AgentIntakeResolverDeps {
   db: Database;
+  agentRepo: AgentRepository;
   positionRepo: PositionRepository;
   decisionRepo: DecisionRepository;
   planRepo: ExecutionPlanRepository;
@@ -40,6 +41,10 @@ export class AgentIntakeResolver {
   async getIntakeDeps(agentId: string, instrumentId: string): Promise<DecisionIntakeDeps | undefined> {
     const binding = await this.resolveActiveBinding(agentId);
     if (!binding) return undefined;
+    const agent = await this.deps.agentRepo.getAgent(agentId).catch(() => null);
+    const openPositions = await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId);
+    const capitalStr = agent?.capital ?? '100';
+    const dailyLossStr = agent?.dailyLossLimit ?? '10000';
 
     const executor = new PaperExecutor(this.deps.idGen);
 
@@ -52,14 +57,18 @@ export class AgentIntakeResolver {
       executor,
       journal: this.deps.journal,
       riskLimits: {
-        maxPositionSize: quantity('1000000'),
-        maxOpenPositions: 100,
-        maxDrawdown: price('100000'),
+        maxPositionSize: quantity('1000000000'),
+        maxOpenPositions: 10,
+        maxDrawdown: price(String(dailyLossStr)),
+        maxOrderNotional: price(String(capitalStr)),
+        maxPositionSizePct: 100,
       },
       markSource: this.deps.markSource,
       persistence: this.buildPersistence(agentId, binding.venueAccountId, binding.venue),
       idGen: { planId: () => this.deps.idGen.planId() },
       clock: realClock,
+      openPositionCount: openPositions.filter((position) => position.side !== 'flat').length,
+      equity: price(String(capitalStr)),
     };
   }
 
@@ -93,7 +102,10 @@ export class AgentIntakeResolver {
   }
 
   async getPosition(agentId: string, instrumentId: string, venue?: string): Promise<PositionState> {
-    const positions = await this.deps.positionRepo.getOpenByActor('agent', agentId);
+    const binding = await this.resolveActiveBinding(agentId);
+    const positions = binding
+      ? await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId)
+      : await this.deps.positionRepo.getOpenByActor('agent', agentId);
     const match = positions.find((p) => p.symbol === instrumentId);
     if (!match) return flatPosition(venue ?? 'paper', instrumentId);
     return {
@@ -104,6 +116,11 @@ export class AgentIntakeResolver {
       entryPrice: price(match.entryPrice),
       realizedPnl: price(match.realizedPnl ?? '0'),
     };
+  }
+
+  /** Resolve the active trading binding for an agent (public for AgentTradingActor setup). */
+  async resolveBinding(agentId: string): Promise<{ venue: string; venueAccountId: string } | undefined> {
+    return this.resolveActiveBinding(agentId);
   }
 
   private async resolveActiveBinding(agentId: string): Promise<{ venue: string; venueAccountId: string } | undefined> {

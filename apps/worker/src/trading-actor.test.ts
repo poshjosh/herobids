@@ -804,4 +804,55 @@ describe('TradingActor lifecycle', () => {
       await actor.stop();
     });
   });
+
+  // --- ExecutionActor interface: getDecisionContext and getPosition ---
+
+  describe('ExecutionActor: getDecisionContext', () => {
+    it('returns undefined before start', () => {
+      const deps = makeBaseDeps();
+      const actor = new TradingActor('exec-actor-1', {}, deps);
+      // Not started — no snapshot available
+      expect(actor.getDecisionContext()).toBeUndefined();
+    });
+
+    it('returns a populated context after start (tick fires immediately on start)', async () => {
+      const deps = makeBaseDeps({
+        strategy: { evaluate: vi.fn().mockResolvedValue(ok(null)) } as any,
+      });
+      // Large interval — no periodic tick will fire; only the initial tick on start
+      const actor = new TradingActor('exec-actor-2', {}, deps, 60_000);
+      await actor.start();
+      // flush microtasks so the initial void tick() completes
+      await Promise.resolve();
+
+      const ctx = actor.getDecisionContext();
+      expect(ctx).toBeDefined();
+      expect(ctx!.snapshot.symbol).toBe('BTC/USD:USD');
+      expect(ctx!.snapshot.price).toBe('50000');
+      expect(ctx!.position).toBeNull(); // flat position → null
+      expect(ctx!.strategyParams).toEqual({});
+      // No mark source configured → falls back to snapshot price
+      expect(ctx!.referenceMark.source).toBe('snapshot');
+
+      await actor.stop();
+    });
+  });
+
+  describe('ExecutionActor: getPosition', () => {
+    it('returns flat position before start', () => {
+      const deps = makeBaseDeps();
+      const actor = new TradingActor('pos-actor-1', {}, deps);
+      const pos = actor.getPosition();
+      expect(pos.side).toBe('flat');
+      expect(pos.venue).toBe('hyperliquid');
+      expect(pos.symbol).toBe('BTC/USD:USD');
+    });
+
+    it('returns the same PositionState as currentPosition', () => {
+      const deps = makeBaseDeps();
+      const actor = new TradingActor('pos-actor-2', {}, deps);
+      expect(actor.getPosition()).toBe(actor.currentPosition);
+    });
+  });
 });
+

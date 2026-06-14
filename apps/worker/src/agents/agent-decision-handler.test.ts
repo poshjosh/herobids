@@ -25,6 +25,7 @@ describe('AgentDecisionHandler', () => {
       getActiveLink: vi.fn().mockResolvedValue({ botId: 'inst-1' }),
       getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', status: 'active' }),
       getSessionForAgentAndInstance: vi.fn().mockResolvedValue({ id: 'sess-1', status: 'running' }),
+      isActiveSession: vi.fn().mockResolvedValue(true),
     };
 
     const intakeResolver = {
@@ -227,6 +228,63 @@ describe('AgentDecisionHandler', () => {
     );
   });
 
+  it('resolves execution context by agentId even when bot-facing ids differ', async () => {
+    const { handler } = makeHandler();
+
+    vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+      decision: {
+        id: 'dec-agent-key',
+        botId: 'ti-123',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: { toString: () => '1' },
+        timestamp: '2026-06-03T00:00:00.000Z',
+      } as any,
+      riskRejected: false,
+      position: {
+        symbol: 'BTC/USD:USD',
+        side: 'flat',
+        size: { toString: () => '0' },
+        entryPrice: { toString: () => '0' },
+        realizedPnl: { toString: () => '0' },
+      } as any,
+      executionFailed: false,
+    });
+
+    const intakeResolver = (handler as unknown as { intakeResolver: {
+      getIntakeDeps: ReturnType<typeof vi.fn>;
+      getDecisionContext: ReturnType<typeof vi.fn>;
+      getPosition: ReturnType<typeof vi.fn>;
+    } }).intakeResolver;
+
+    await handler.handleDecisionSubmit(
+      {
+        schemaVersion: 'v1',
+        messageId: 'msg-agent-key',
+        correlationId: 'corr-agent-key',
+        initiatorType: 'agent',
+        initiatorId: 'agent-1',
+        agentId: 'agent-1',
+        botId: 'bot-99',
+        tradingInstanceId: 'ti-123',
+        type: 'agent.decision.submit',
+        createdAt: '2026-06-03T00:00:00.000Z',
+        payload: {},
+      },
+      {
+        decisionId: 'dec-agent-key',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: '1',
+        rationaleSummary: 'agent keyed routing',
+      },
+    );
+
+    expect(intakeResolver.getIntakeDeps).toHaveBeenCalledWith('agent-1', 'BTC/USD:USD');
+    expect(intakeResolver.getDecisionContext).toHaveBeenCalledWith('agent-1', 'BTC/USD:USD');
+    expect(intakeResolver.getPosition).toHaveBeenCalledWith('agent-1', 'BTC/USD:USD');
+  });
+
   it('swallows post-commit publication failures after successful intake', async () => {
     const { handler, eventPublisher } = makeHandler();
 
@@ -329,5 +387,94 @@ describe('AgentDecisionHandler', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it('rejects decisions from a superseded runtime session', async () => {
+    const { handler, eventPublisher } = makeHandler();
+
+    const agentRepo = (handler as unknown as { agentRepo: { isActiveSession: ReturnType<typeof vi.fn> } }).agentRepo;
+    agentRepo.isActiveSession.mockResolvedValueOnce(false);
+
+    await handler.handleDecisionSubmit(
+      {
+        schemaVersion: 'v1',
+        messageId: 'msg-stale',
+        correlationId: 'old-session-id',
+        initiatorType: 'agent',
+        initiatorId: 'agent-1',
+        agentId: 'agent-1',
+        type: 'agent.decision.submit',
+        createdAt: '2026-06-03T00:00:00.000Z',
+        payload: {},
+      },
+      {
+        decisionId: 'dec-stale',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: '1',
+        rationaleSummary: 'stale container trade attempt',
+      },
+    );
+
+    expect(eventPublisher.emitDecisionRejected).toHaveBeenCalledWith(
+      'agent-1',
+      expect.objectContaining({
+        decisionId: 'dec-stale',
+        code: 'stale_session',
+        retryable: false,
+      }),
+    );
+    expect(agentRepo.isActiveSession).toHaveBeenCalledWith('agent-1', 'old-session-id');
+  });
+
+  it('accepts decisions when correlationId matches the active session', async () => {
+    const { handler, eventPublisher } = makeHandler();
+
+    vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+      decision: {
+        id: 'dec-ok',
+        botId: 'agent-1',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: { toString: () => '1' },
+        timestamp: '2026-06-03T00:00:00.000Z',
+      } as any,
+      riskRejected: false,
+      position: {
+        symbol: 'BTC/USD:USD',
+        side: 'flat',
+        size: { toString: () => '0' },
+        entryPrice: { toString: () => '0' },
+        realizedPnl: { toString: () => '0' },
+      } as any,
+      executionFailed: false,
+    });
+
+    const agentRepo = (handler as unknown as { agentRepo: { isActiveSession: ReturnType<typeof vi.fn> } }).agentRepo;
+    agentRepo.isActiveSession.mockResolvedValueOnce(true);
+
+    await handler.handleDecisionSubmit(
+      {
+        schemaVersion: 'v1',
+        messageId: 'msg-ok',
+        correlationId: 'current-session-id',
+        initiatorType: 'agent',
+        initiatorId: 'agent-1',
+        agentId: 'agent-1',
+        type: 'agent.decision.submit',
+        createdAt: '2026-06-03T00:00:00.000Z',
+        payload: {},
+      },
+      {
+        decisionId: 'dec-ok',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long',
+        targetSize: '1',
+        rationaleSummary: 'current session trade',
+      },
+    );
+
+    expect(eventPublisher.emitDecisionRejected).not.toHaveBeenCalled();
+    expect(agentRepo.isActiveSession).toHaveBeenCalledWith('agent-1', 'current-session-id');
   });
 });

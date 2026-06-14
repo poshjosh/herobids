@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTickGateState } from './tick-gate-state.js';
+import { computeDecisionContextHash } from './tick-gates.js';
 
 describe('buildTickGateState', () => {
   it('threads wake messages into shouldSkipTick state while preserving the previous hash', () => {
@@ -48,5 +49,207 @@ describe('buildTickGateState', () => {
     expect(state.positionSide).toBe('short');
     expect(state.latestPrice).toBeNull();
     expect(state.portfolioPnlUsd).toBeNull();
+  });
+
+  it('aggregates multiple context snapshots from a reconnect batch', () => {
+    const state = buildTickGateState({
+      tickNumber: 3,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            pnl: '100',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            pnl: '-20',
+            position: { side: 'short', size: '5', entryPrice: '3300' },
+          },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: null,
+    });
+
+    // Latest price comes from the last snapshot
+    expect(state.latestPrice).toBe(3200);
+    // PnL is summed across all snapshots
+    expect(state.portfolioPnlUsd).toBe(80);
+    // Position side is the latest non-flat side seen
+    expect(state.positionSide).toBe('short');
+    expect(state.hasOpenPositions).toBe(true);
+  });
+
+  it('handles reconnect batch where one instrument is flat and another has a position', () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: null,
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            position: { side: 'long', size: '10', entryPrice: '3100' },
+          },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: 'long',
+    });
+
+    // The second snapshot has a position, so positionSide should be 'long'
+    expect(state.positionSide).toBe('long');
+    expect(state.latestPrice).toBe(3200);
+  });
+
+  it('does not use position.realizedPnl as portfolio PnL — only top-level pnl counts', () => {
+    const state = buildTickGateState({
+      tickNumber: 4,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: { side: 'long', size: '0.5', entryPrice: '48000', realizedPnl: '100' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            position: { side: 'short', size: '5', entryPrice: '3300', realizedPnl: '-20' },
+          },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: null,
+    });
+
+    // position.realizedPnl must NOT flow into portfolioPnlUsd
+    expect(state.portfolioPnlUsd).toBeNull();
+    expect(state.positionSide).toBe('short');
+    expect(state.latestPrice).toBe(3200);
+  });
+
+  it('produces instrument snapshots that are order-independent for hashing', () => {
+    const btcFirst = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'BTC/USD:USD', price: '50000', pnl: '100', position: { side: 'long' } },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'ETH/USD:USD', price: '3200', pnl: '-20', position: { side: 'short' } },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: null,
+    });
+
+    const ethFirst = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'ETH/USD:USD', price: '3200', pnl: '-20', position: { side: 'short' } },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'BTC/USD:USD', price: '50000', pnl: '100', position: { side: 'long' } },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: null,
+    });
+
+    // Both states should produce the same context hash regardless of message order
+    const hashA = computeDecisionContextHash({
+      positionSide: btcFirst.positionSide,
+      latestPrice: btcFirst.latestPrice,
+      portfolioPnlUsd: btcFirst.portfolioPnlUsd,
+      regimePass: null,
+      instrumentSnapshots: btcFirst.instrumentSnapshots,
+    });
+    const hashB = computeDecisionContextHash({
+      positionSide: ethFirst.positionSide,
+      latestPrice: ethFirst.latestPrice,
+      portfolioPnlUsd: ethFirst.portfolioPnlUsd,
+      regimePass: null,
+      instrumentSnapshots: ethFirst.instrumentSnapshots,
+    });
+
+    expect(hashA).toBe(hashB);
+  });
+
+  it('detects price change in non-final instrument of multi-instrument batch', () => {
+    const original = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'BTC/USD:USD', price: '50000', pnl: '100', position: { side: 'long' } },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'ETH/USD:USD', price: '3200', pnl: '-20', position: { side: 'short' } },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: null,
+    });
+
+    // BTC price changes significantly but ETH (final snapshot) stays the same
+    const btcMoved = buildTickGateState({
+      tickNumber: 2,
+      incomingMessages: [
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'BTC/USD:USD', price: '55000', pnl: '500', position: { side: 'long' } },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: { symbol: 'ETH/USD:USD', price: '3200', pnl: '-20', position: { side: 'short' } },
+        },
+      ],
+      hasOpenPositions: true,
+      lastKnownPositionSide: null,
+    });
+
+    const hashOriginal = computeDecisionContextHash({
+      positionSide: original.positionSide,
+      latestPrice: original.latestPrice,
+      portfolioPnlUsd: original.portfolioPnlUsd,
+      regimePass: null,
+      instrumentSnapshots: original.instrumentSnapshots,
+    });
+    const hashMoved = computeDecisionContextHash({
+      positionSide: btcMoved.positionSide,
+      latestPrice: btcMoved.latestPrice,
+      portfolioPnlUsd: btcMoved.portfolioPnlUsd,
+      regimePass: null,
+      instrumentSnapshots: btcMoved.instrumentSnapshots,
+    });
+
+    // Hash must differ because BTC price moved even though ETH (the final snapshot) didn't
+    expect(hashOriginal).not.toBe(hashMoved);
   });
 });

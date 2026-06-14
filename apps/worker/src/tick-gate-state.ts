@@ -1,4 +1,5 @@
-import type { TickGateState } from './tick-gates.js';
+import type { InstrumentHashEntry, TickGateState } from './tick-gates.js';
+import { computePriceBucket, computePnlBucket } from './tick-gates.js';
 
 export interface BuildTickGateStateParams {
   tickNumber: number;
@@ -27,6 +28,23 @@ function parseNumericValue(value: unknown): number | null {
   return null;
 }
 
+function parseSnapshotPnl(payloadRecord: Record<string, unknown>): number | null {
+  // Only use top-level `pnl` which represents current portfolio/unrealized P&L.
+  // Do NOT fall back to position.realizedPnl — that is historical and would
+  // pollute the context-hash gate with values unrelated to current exposure.
+  return parseNumericValue(payloadRecord['pnl']);
+}
+
+/**
+ * Aggregate tick signals from ALL context snapshots in the incoming message batch.
+ * Multi-instrument agents emit multiple snapshots on reconnect; the tick gate
+ * must incorporate all of them rather than stopping at the first one found.
+ *
+ * For price: use the latest-seen price (last snapshot in chronological order).
+ * For PnL: sum per-instrument unrealized PnL across snapshots.
+ * For positionSide: if any snapshot has a non-flat position, report that side;
+ *   if multiple instruments have positions, prefer the latest-seen non-flat side.
+ */
 function extractTickSignals(
   incomingMessages: Array<Record<string, unknown>>,
   lastKnownPositionSide?: string | null,
@@ -34,35 +52,72 @@ function extractTickSignals(
   latestPrice: number | null;
   portfolioPnlUsd: number | null;
   positionSide: string | null;
+  instrumentSnapshots: InstrumentHashEntry[];
 } {
   let latestPrice: number | null = null;
   let portfolioPnlUsd: number | null = null;
   let positionSide: string | null = lastKnownPositionSide ?? null;
+  let foundAnySnapshot = false;
 
-  for (let index = incomingMessages.length - 1; index >= 0; index--) {
+  // Per-instrument state keyed by symbol for stable hashing.
+  // Uses a Map to keep the latest data per instrument (last-write-wins per symbol).
+  const instrumentMap = new Map<string, { price: number | null; pnl: number | null; side: string }>();
+
+  // Scan forward (oldest → newest) so the last-seen price/side wins
+  for (let index = 0; index < incomingMessages.length; index++) {
     const message = incomingMessages[index]!;
     const type = message['type'];
     const payload = message['payload'];
     if (type !== 'instance.context.snapshot' || !payload || typeof payload !== 'object') {
       continue;
     }
+    foundAnySnapshot = true;
 
     const payloadRecord = payload as Record<string, unknown>;
-    latestPrice = parseNumericValue(payloadRecord['price']) ?? latestPrice;
-    portfolioPnlUsd = parseNumericValue(payloadRecord['pnl']) ?? portfolioPnlUsd;
+    const snapshotPrice = parseNumericValue(payloadRecord['price']);
+    latestPrice = snapshotPrice ?? latestPrice;
 
+    const snapshotPnl = parseSnapshotPnl(payloadRecord);
+    if (snapshotPnl !== null) {
+      portfolioPnlUsd = (portfolioPnlUsd ?? 0) + snapshotPnl;
+    }
+
+    let snapshotSide = 'flat';
     const position = payloadRecord['position'];
     if (position && typeof position === 'object') {
       const rawSide = (position as Record<string, unknown>)['side'];
-      positionSide = typeof rawSide === 'string' ? rawSide : positionSide;
+      if (typeof rawSide === 'string') {
+        positionSide = rawSide;
+        snapshotSide = rawSide;
+      }
     } else if (position === null) {
-      positionSide = 'flat';
+      // Only mark flat if no other non-flat position has been seen yet;
+      // a subsequent snapshot with a position will override back to non-flat.
+      if (positionSide === lastKnownPositionSide || positionSide === null) {
+        positionSide = 'flat';
+      }
     }
 
-    break;
+    // Track per-instrument state for stable hashing
+    const symbol = typeof payloadRecord['symbol'] === 'string' ? payloadRecord['symbol'] : '_default';
+    instrumentMap.set(symbol, { price: snapshotPrice, pnl: snapshotPnl, side: snapshotSide });
   }
 
-  return { latestPrice, portfolioPnlUsd, positionSide };
+  if (!foundAnySnapshot) {
+    return { latestPrice: null, portfolioPnlUsd: null, positionSide: lastKnownPositionSide ?? null, instrumentSnapshots: [] };
+  }
+
+  // Build sorted instrument summaries for order-independent hashing
+  const instrumentSnapshots: InstrumentHashEntry[] = [...instrumentMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([symbol, data]) => ({
+      symbol,
+      priceBucket: computePriceBucket(data.price),
+      pnlBucket: computePnlBucket(data.pnl),
+      side: data.side,
+    }));
+
+  return { latestPrice, portfolioPnlUsd, positionSide, instrumentSnapshots };
 }
 
 export function buildTickGateState(params: BuildTickGateStateParams): TickGateState {
@@ -78,6 +133,7 @@ export function buildTickGateState(params: BuildTickGateStateParams): TickGateSt
     positionSide: tickSignals.positionSide ?? (params.hasOpenPositions ? params.lastKnownPositionSide ?? 'open' : 'flat'),
     latestPrice: tickSignals.latestPrice,
     portfolioPnlUsd: tickSignals.portfolioPnlUsd,
+    instrumentSnapshots: tickSignals.instrumentSnapshots.length > 0 ? tickSignals.instrumentSnapshots : undefined,
     previousContextHash: params.previousContextHash,
     baseTickIntervalMs: params.baseTickIntervalMs,
     currentTickIntervalMs: params.currentTickIntervalMs,

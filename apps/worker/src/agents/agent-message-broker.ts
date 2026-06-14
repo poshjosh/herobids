@@ -132,7 +132,39 @@ export class AgentMessageBroker {
       return { accepted: false, error: 'invalid_payload' };
     }
 
-    // 3. Enforce capability policy for brokered tool calls
+    // 3. Deduplicate by messageId — must run before session-ownership gate so
+    // that already-processed messages get idempotent success even after the
+    // session that sent them has been superseded.
+    const isDuplicate = await this.agentRepo.isMessageDuplicate(envelope.messageId);
+    if (isDuplicate) {
+      logger.debug({ messageId: envelope.messageId }, 'Duplicate message — skipping');
+      return { accepted: true }; // Idempotent success
+    }
+
+    // 4. Centralized session-ownership gate
+    // All agent-originated messages (except heartbeat and session_ended) must
+    // prove they come from the currently active session. Fail-closed: stale
+    // containers are rejected here rather than requiring each handler to verify.
+    if (envelope.initiatorType === 'agent'
+      && envelope.type !== AGENT_MESSAGE_TYPES.RUNTIME_HEARTBEAT
+      && envelope.type !== AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED
+    ) {
+      const runtimeSessionId = envelope.correlationId;
+      if (!runtimeSessionId) {
+        logger.warn({ agentId: effectiveAgentId, type: envelope.type }, 'Agent message missing correlationId — rejected');
+        return { accepted: false, error: 'missing_session_id' };
+      }
+      const isActive = await this.agentRepo.isActiveSession(effectiveAgentId, runtimeSessionId);
+      if (!isActive) {
+        logger.warn(
+          { agentId: effectiveAgentId, sessionId: runtimeSessionId, type: envelope.type },
+          'Stale session message rejected at broker boundary',
+        );
+        return { accepted: false, error: 'stale_session' };
+      }
+    }
+
+    // 5. Enforce capability policy for brokered tool calls
     const capabilityByType: Record<string, string> = {
       [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: 'submit_decision',
       [AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT]: 'publish_artifact',
@@ -166,27 +198,7 @@ export class AgentMessageBroker {
       policyStartMs = Date.now();
     }
 
-    // 4. Deduplicate by messageId
-    const isDuplicate = await this.agentRepo.isMessageDuplicate(envelope.messageId);
-    if (isDuplicate) {
-      logger.debug({ messageId: envelope.messageId }, 'Duplicate message — skipping');
-      // Release the concurrency slot acquired above so subsequent calls are not blocked.
-      if (policyEngine && capabilityName && policySessionId) {
-        policyEngine.recordEnd(capabilityName, policySessionId, {
-          capability: capabilityName,
-          agentId: effectiveAgentId,
-          sessionId: policySessionId,
-          timestamp: new Date().toISOString(),
-          durationMs: 0,
-          inputSummary: 'duplicate',
-          outputSummary: '',
-          success: true,
-        });
-      }
-      return { accepted: true }; // Idempotent success
-    }
-
-    // 4. Persist message envelope for audit/replay
+    // 6. Persist message envelope for audit/replay
     await this.agentRepo.insertMessage({
       messageId: envelope.messageId,
       correlationId: envelope.correlationId,
@@ -202,7 +214,7 @@ export class AgentMessageBroker {
       payload: envelope.payload,
     });
 
-    // 5. Route to appropriate handler
+    // 7. Route to appropriate handler
     let processingSuccess = false;
     try {
       switch (envelope.type) {
@@ -236,6 +248,7 @@ export class AgentMessageBroker {
 
         case AGENT_MESSAGE_TYPES.PUBLISH_ARTIFACT:
           await this.handleArtifactPublish(
+            effectiveAgentId,
             envelope,
             envelope.payload as unknown as ArtifactPublishPayload,
           );
@@ -243,6 +256,7 @@ export class AgentMessageBroker {
 
         case AGENT_MESSAGE_TYPES.SEND_MESSAGE:
           await this.handleSendMessage(
+            effectiveAgentId,
             envelope,
             envelope.payload as unknown as SendMessagePayload,
           );
@@ -250,6 +264,7 @@ export class AgentMessageBroker {
 
         case AGENT_MESSAGE_TYPES.MANAGE_BOT:
           await this.handleManageBot(
+            effectiveAgentId,
             envelope,
             envelope.payload as unknown as ManageBotPayload,
           );
@@ -257,28 +272,27 @@ export class AgentMessageBroker {
 
         case AGENT_MESSAGE_TYPES.BOT_QUERY:
           await this.handleBotQuery(
+            effectiveAgentId,
             envelope,
             envelope.payload as unknown as BotQueryPayload,
           );
           break;
 
         case AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED: {
-          // The agent container sends this before exiting — use the reasonCode to
-          // distinguish a planned shutdown from an unexpected crash so that
-          // docker-agent-manager.onContainerDie() sees status='stopped' and skips
-          // the crash path (it already has that guard). Retire any active runtime
-          // session here as well because onContainerDie() will return early once
-          // it sees a stopped status.
-          const payload = envelope.payload as { reasonCode?: string };
+          // The agent container sends this before exiting. Route through session
+          // manager which is session-aware: verifies the farewell belongs to the
+          // currently active session before retiring it. Stale farewells from
+          // superseded containers are no-ops. This also triggers in-memory actor
+          // cleanup (AgentTradingActor stop + deregister).
+          const payload = envelope.payload as { reasonCode?: string; sessionId?: string };
           const plannedReasonCodes = new Set(['wall_clock_expired', 'stop_requested', 'pause_requested', 'SIGTERM', 'SIGINT']);
           const status = plannedReasonCodes.has(payload.reasonCode ?? '') ? 'stopped' : 'crashed';
-          const currentAgent = await this.agentRepo.getAgent(effectiveAgentId).catch(() => null);
-          const wasAlreadyStopped = currentAgent?.status === 'stopped';
-          await this.agentRepo.updateAgent(effectiveAgentId, { status });
-          await this.agentRepo.retireActiveSessions(effectiveAgentId);
-          if (status === 'stopped' && !wasAlreadyStopped && currentAgent && this.onAgentStatusChange) {
-            this.onAgentStatusChange(effectiveAgentId, currentAgent.userId, 'stopped');
+          const sessionId = envelope.correlationId ?? payload.sessionId;
+          if (!sessionId) {
+            logger.warn({ agentId: effectiveAgentId }, 'session_ended missing session identifier — cannot route');
+            break;
           }
+          await this.sessionManager.handleRuntimeSessionEnd(sessionId, effectiveAgentId, status);
           break;
         }
 
@@ -329,9 +343,8 @@ export class AgentMessageBroker {
     }
   }
 
-  private async handleArtifactPublish(envelope: MessageEnvelope, payload: ArtifactPublishPayload): Promise<void> {
-    // Resolve agent from initiator
-    const agent = await this.agentRepo.getAgent(envelope.initiatorId);
+  private async handleArtifactPublish(agentId: string, envelope: MessageEnvelope, payload: ArtifactPublishPayload): Promise<void> {
+    const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) {
       throw new Error('Agent not found');
     }
@@ -360,8 +373,8 @@ export class AgentMessageBroker {
    * Rate limited per agent. Always available in the MVP (not user-disableable).
    * Persists to agent_outbound_messages with authored_by='agent'.
    */
-  private async handleSendMessage(envelope: MessageEnvelope, payload: SendMessagePayload): Promise<void> {
-    const agent = await this.agentRepo.getAgent(envelope.initiatorId);
+  private async handleSendMessage(agentId: string, envelope: MessageEnvelope, payload: SendMessagePayload): Promise<void> {
+    const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) {
       throw new Error('Agent not found');
     }
@@ -513,8 +526,8 @@ export class AgentMessageBroker {
     logger.info({ agentId, msgId, messageId: result.data.messageId }, 'Agent send_message email fanout sent');
   }
 
-  private async handleManageBot(envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
-    const agent = await this.agentRepo.getAgent(envelope.initiatorId);
+  private async handleManageBot(agentId: string, envelope: MessageEnvelope, payload: ManageBotPayload): Promise<void> {
+    const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) throw new Error('Agent not found');
 
     const activeSession = await this.agentRepo.getActiveSession(agent.id);
@@ -725,8 +738,8 @@ export class AgentMessageBroker {
     throw new Error(`Unknown manage_bot action: ${(payload as { action: string }).action}`);
   }
 
-  private async handleBotQuery(envelope: MessageEnvelope, payload: BotQueryPayload): Promise<void> {
-    const agent = await this.agentRepo.getAgent(envelope.initiatorId);
+  private async handleBotQuery(agentId: string, envelope: MessageEnvelope, payload: BotQueryPayload): Promise<void> {
+    const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) throw new Error('Agent not found');
 
     const activeSession = await this.agentRepo.getActiveSession(agent.id);

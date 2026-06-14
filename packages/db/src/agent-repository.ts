@@ -213,9 +213,36 @@ export class AgentRepository {
     return rows[0] ?? null;
   }
 
+  async getCurrentSession(agentId: string) {
+    const rows = await this.db.select().from(agentRuntimeSessions)
+      .where(and(
+        eq(agentRuntimeSessions.agentId, agentId),
+        inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
+      ))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async getSessionForAgentAndInstance(agentId: string, _botId: string) {
     // tradingInstanceId no longer stored on sessions — use getActiveSession(agentId) instead.
     return this.getActiveSession(agentId);
+  }
+
+  /**
+   * Verify that a given sessionId is the current active (running) session for the agent.
+   * Returns true only if the session exists, belongs to the agent, and is in 'running' status.
+   * Used to reject messages from superseded containers.
+   */
+  async isActiveSession(agentId: string, sessionId: string): Promise<boolean> {
+    const rows = await this.db.select({ id: agentRuntimeSessions.id })
+      .from(agentRuntimeSessions)
+      .where(and(
+        eq(agentRuntimeSessions.id, sessionId),
+        eq(agentRuntimeSessions.agentId, agentId),
+        eq(agentRuntimeSessions.status, 'running'),
+      ))
+      .limit(1);
+    return rows.length > 0;
   }
 
   async getActiveSessionByInstance(_botId: string) {

@@ -44,6 +44,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
 function makeAgentRepo(agentOverrides: Record<string, unknown> = {}) {
   return {
     isMessageDuplicate: vi.fn().mockResolvedValue(false),
+    isActiveSession: vi.fn().mockResolvedValue(true),
     insertMessage: vi.fn().mockResolvedValue(undefined),
     markMessageProcessed: vi.fn().mockResolvedValue(undefined),
     getAgent: vi.fn().mockResolvedValue(makeAgent(agentOverrides)),

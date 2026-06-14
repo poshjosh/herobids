@@ -1011,8 +1011,70 @@ export function updatePortfolioSummary(
 }
 
 export function setOpenPositions(state: RuntimeCompositionState, positions: RuntimePositionSnapshot[]): void {
-  state.metrics.openPositions = positions;
-  state.metrics.lastPositionSide = positions[0]?.side ?? 'flat';
+  state.metrics.openPositions = orderReplacementPositions(state.metrics.openPositions, positions);
+  state.metrics.lastPositionSide = state.metrics.openPositions[0]?.side ?? 'flat';
+  recalculatePortfolioFromPositions(state);
+}
+
+function orderReplacementPositions(
+  current: RuntimePositionSnapshot[],
+  replacement: RuntimePositionSnapshot[],
+): RuntimePositionSnapshot[] {
+  const currentIndex = new Map(current.map((position, index) => [position.instrumentId, index]));
+
+  return replacement
+    .map((position, originalIndex) => ({ position, originalIndex }))
+    .sort((left, right) => {
+      const leftCurrentIndex = currentIndex.get(left.position.instrumentId);
+      const rightCurrentIndex = currentIndex.get(right.position.instrumentId);
+      if (leftCurrentIndex !== undefined && rightCurrentIndex !== undefined) {
+        return leftCurrentIndex - rightCurrentIndex;
+      }
+      if (leftCurrentIndex !== undefined) return -1;
+      if (rightCurrentIndex !== undefined) return 1;
+
+      const leftOpenedAt = left.position.openedAt ? Date.parse(left.position.openedAt) : Number.NaN;
+      const rightOpenedAt = right.position.openedAt ? Date.parse(right.position.openedAt) : Number.NaN;
+      const leftHasOpenedAt = Number.isFinite(leftOpenedAt);
+      const rightHasOpenedAt = Number.isFinite(rightOpenedAt);
+      if (leftHasOpenedAt && rightHasOpenedAt && leftOpenedAt !== rightOpenedAt) {
+        return rightOpenedAt - leftOpenedAt;
+      }
+      if (leftHasOpenedAt) return -1;
+      if (rightHasOpenedAt) return 1;
+
+      return left.originalIndex - right.originalIndex;
+    })
+    .map(({ position }) => position);
+}
+
+/**
+ * Upsert a single position by instrumentId. If the position is flat/null, remove it.
+ * Used by context-snapshot processing to merge multi-instrument state without
+ * overwriting siblings. The list is kept newest-first so cached position-side
+ * fallbacks follow the most recently updated non-flat instrument.
+ */
+export function upsertOpenPosition(state: RuntimeCompositionState, position: RuntimePositionSnapshot): void {
+  const idx = state.metrics.openPositions.findIndex((p) => p.instrumentId === position.instrumentId);
+  if (idx >= 0) {
+    state.metrics.openPositions.splice(idx, 1);
+    state.metrics.openPositions.unshift(position);
+  } else {
+    state.metrics.openPositions.unshift(position);
+  }
+  state.metrics.lastPositionSide = state.metrics.openPositions[0]?.side ?? 'flat';
+  recalculatePortfolioFromPositions(state);
+}
+
+/** Remove a position by instrumentId (instrument went flat). */
+export function removeOpenPosition(state: RuntimeCompositionState, instrumentId: string): void {
+  state.metrics.openPositions = state.metrics.openPositions.filter((p) => p.instrumentId !== instrumentId);
+  state.metrics.lastPositionSide = state.metrics.openPositions[0]?.side ?? 'flat';
+  recalculatePortfolioFromPositions(state);
+}
+
+function recalculatePortfolioFromPositions(state: RuntimeCompositionState): void {
+  const positions = state.metrics.openPositions;
   const exposureUsd = positions.reduce((total, position) => {
     const size = parseNumber(position.size);
     const entryPrice = parseNumber(position.entryPrice);
@@ -1021,13 +1083,12 @@ export function setOpenPositions(state: RuntimeCompositionState, positions: Runt
     }
     return total + Math.abs(size * entryPrice);
   }, 0);
-  const unrealizedPnlUsd = positions.reduce((total, position) => total + (position.unrealizedPnlUsd ?? 0), 0);
+  const anyPositionHasUnrealizedPnl = positions.some((position) => position.unrealizedPnlUsd !== null);
+  const unrealizedPnlUsd = anyPositionHasUnrealizedPnl
+    ? positions.reduce((total, position) => total + (position.unrealizedPnlUsd ?? 0), 0)
+    : null;
   state.metrics.portfolio.exposureUsd = positions.length === 0 ? 0 : exposureUsd;
-  state.metrics.portfolio.unrealizedPnlUsd = positions.length === 0
-    ? 0
-    : positions.some((position) => position.unrealizedPnlUsd !== null)
-      ? unrealizedPnlUsd
-      : 0;
+  state.metrics.portfolio.unrealizedPnlUsd = positions.length === 0 ? 0 : unrealizedPnlUsd;
   refreshDerivedPerformanceInputs(state);
 }
 
@@ -1108,28 +1169,29 @@ export function applyRuntimeMessage(
 
   if (type === 'instance.context.snapshot') {
     const position = payload['position'] as Record<string, unknown> | undefined | null;
-    const pnl = parseNumber(payload['pnl']) ?? parseNumber(position?.['realizedPnl']);
-    if (pnl !== null) {
+    const unrealizedPnl = parseNumber(payload['pnl']);
+    if (unrealizedPnl !== null) {
       updatePortfolioSummary(state, {
-        unrealizedPnlUsd: pnl,
+        unrealizedPnlUsd: unrealizedPnl,
         freshness: freshFreshness('runtime-snapshot'),
       });
     }
+    const instrumentId = String(payload['symbol'] ?? 'unknown');
     if (position?.['side']) {
-      const instrumentId = String(payload['symbol'] ?? 'unknown');
-      setOpenPositions(state, [{
+      upsertOpenPosition(state, {
         instrumentId,
         side: String(position['side']),
         size: String(position['size'] ?? 'unknown'),
         entryPrice: position['entryPrice'] ? String(position['entryPrice']) : null,
-        unrealizedPnlUsd: pnl,
+        unrealizedPnlUsd: unrealizedPnl,
         openedAt: null,
         holdDurationMinutes: null,
         venueType: inferVenueType(state, instrumentId),
         freshness: freshFreshness('runtime-snapshot'),
-      }]);
+      });
     } else if (position === null) {
-      setOpenPositions(state, []);
+      // null position means this instrument went flat — remove only this instrument
+      removeOpenPosition(state, instrumentId);
     }
     const symbol = payload['symbol'];
     const price = parseNumber(payload['price']);

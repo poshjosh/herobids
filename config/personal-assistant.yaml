@@ -1,0 +1,5 @@
+# Agent runtime — behavior policy for agent containers.
+agentRuntime:
+  toolCircuitBreaker:
+    reopenAfterTicks: 1        # 1 means: circuit is locked for the remainder of the current tick, 
+                               # then available again at the start of the next tick.

@@ -254,6 +254,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
 
     const agentIntakeResolver = new AgentIntakeResolver({
       db,
+      agentRepo,
       positionRepo,
       decisionRepo,
       planRepo,

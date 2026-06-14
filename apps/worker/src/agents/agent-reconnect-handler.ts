@@ -2,7 +2,6 @@ import type { Redis } from 'ioredis';
 import type { AgentRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import type { ContextSnapshotPayload } from '@herobids/domain';
-import crypto from 'node:crypto';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-reconnect-handler' });
@@ -14,9 +13,11 @@ export interface ReconnectConfig {
   replayWindowMs: number;
 }
 
-/** Optional resolver to supply a live context snapshot on reconnect */
+/** Optional resolver to supply live context snapshots on reconnect */
 export interface ContextSnapshotResolver {
-  resolveSnapshot(agentId: string): ContextSnapshotPayload | undefined;
+  resolveSnapshot(agentId: string): Promise<ContextSnapshotPayload | undefined> | ContextSnapshotPayload | undefined;
+  /** Resolve snapshots for all tracked instruments. Falls back to resolveSnapshot if not implemented. */
+  resolveSnapshots?(agentId: string): Promise<ContextSnapshotPayload[]> | ContextSnapshotPayload[];
 }
 
 const DEFAULT_CONFIG: ReconnectConfig = {
@@ -75,14 +76,26 @@ export class AgentReconnectHandler {
       updatedAt: new Date().toISOString(),
     });
 
-    // 3. Emit context snapshot if the instance is currently running
+    // 3. Emit context snapshots for all tracked instruments
     if (this.snapshotResolver) {
-      const snapshot = this.snapshotResolver.resolveSnapshot(agentId);
-      if (snapshot) {
-        await this.eventPublisher.emitContextSnapshot(agentId, snapshot);
-        logger.debug({ agentId, sessionId }, 'Context snapshot sent on reconnect');
+      const snapshots = this.snapshotResolver.resolveSnapshots
+        ? await this.snapshotResolver.resolveSnapshots(agentId)
+        : [];
+
+      if (snapshots.length > 0) {
+        for (const snapshot of snapshots) {
+          await this.eventPublisher.emitContextSnapshot(agentId, snapshot);
+        }
+        logger.debug({ agentId, sessionId, count: snapshots.length }, 'Context snapshots sent on reconnect');
       } else {
-        logger.debug({ agentId, sessionId }, 'No context snapshot available for reconnect (instance not running or no tick yet)');
+        // Fallback to single-snapshot resolver for backward compat (bot actors)
+        const snapshot = await this.snapshotResolver.resolveSnapshot(agentId);
+        if (snapshot) {
+          await this.eventPublisher.emitContextSnapshot(agentId, snapshot);
+          logger.debug({ agentId, sessionId }, 'Context snapshot sent on reconnect');
+        } else {
+          logger.debug({ agentId, sessionId }, 'No context snapshot available for reconnect (instance not running or no tick yet)');
+        }
       }
     }
 
@@ -139,18 +152,14 @@ export class AgentReconnectHandler {
           const envelope = JSON.parse(envelopeRaw) as Record<string, unknown>;
           // Only replay high-value event types
           if (REPLAY_TYPES.has(envelope['type'] as string)) {
-              // Re-publish with a fresh messageId so the agent runtime does not treat
-              // this as a duplicate when deduplicating by messageId (per
-              // recovery-and-replay.md §Duplicate Handling). The is_replay stream field
-              // prevents cascading re-replay in future reconnect scans without relying
-              // on messageId identity.
-              const replayEnvelope = { ...envelope, messageId: crypto.randomUUID() };
-              await this.redis.xadd(
-                `agent:outbound:${agentId}`,
-                '*',
-                'envelope', JSON.stringify(replayEnvelope),
-                'is_replay', '1',
-              );
+            // Preserve the original messageId so reconnect replay remains compatible
+            // with the protocol's duplicate-safe delivery contract.
+            await this.redis.xadd(
+              `agent:outbound:${agentId}`,
+              '*',
+              'envelope', JSON.stringify(envelope),
+              'is_replay', '1',
+            );
             replayed++;
           }
         } catch {

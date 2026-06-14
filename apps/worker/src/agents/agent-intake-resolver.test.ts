@@ -23,7 +23,12 @@ describe('AgentIntakeResolver', () => {
 
     const positionRepo = {
       getOpenByActor: vi.fn().mockResolvedValue([]),
+      getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const agentRepo = {
+      getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', capital: '250', dailyLossLimit: '75' }),
     };
 
     const decisionRepo = {
@@ -73,6 +78,7 @@ describe('AgentIntakeResolver', () => {
     return {
       deps: {
         db: db as any,
+        agentRepo: agentRepo as any,
         positionRepo: positionRepo as any,
         decisionRepo: decisionRepo as any,
         planRepo: planRepo as any,
@@ -85,7 +91,7 @@ describe('AgentIntakeResolver', () => {
         idGen: idGen as any,
         ...overrides,
       },
-      mocks: { db, positionRepo, markSource, journal },
+      mocks: { db, agentRepo, positionRepo, markSource, journal },
     };
   }
 
@@ -125,6 +131,32 @@ describe('AgentIntakeResolver', () => {
 
       expect(result).toBeUndefined();
     });
+
+    it('includes aggregate openPositionCount for multi-instrument risk checks', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.positionRepo.getOpenByActorAndVenueAccount.mockResolvedValue([
+        { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: '1', entryPrice: '50000', realizedPnl: '0' },
+        { venue: 'hyperliquid', symbol: 'ETH/USD:USD', side: 'short', size: '2', entryPrice: '2500', realizedPnl: '0' },
+        { venue: 'hyperliquid', symbol: 'SOL/USD:USD', side: 'flat', size: '0', entryPrice: '0', realizedPnl: '0' },
+      ]);
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result?.openPositionCount).toBe(2);
+    });
+
+    it('derives fallback risk limits from the agent profile instead of permissive hardcoded values', async () => {
+      const { deps } = makeDeps();
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result?.riskLimits.maxPositionSize.toString()).toBe('250');
+      expect(result?.riskLimits.maxOpenPositions).toBe(10);
+      expect(result?.riskLimits.maxDrawdown.toString()).toBe('75');
+      expect(result?.riskLimits.maxOrderNotional?.toString()).toBe('250');
+    });
   });
 
   describe('getDecisionContext', () => {
@@ -143,7 +175,7 @@ describe('AgentIntakeResolver', () => {
 
     it('includes existing position in context', async () => {
       const { deps, mocks } = makeDeps();
-      mocks.positionRepo.getOpenByActor.mockResolvedValue([
+      mocks.positionRepo.getOpenByActorAndVenueAccount.mockResolvedValue([
         { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: '0.5', entryPrice: '48000', realizedPnl: '100' },
       ]);
       const resolver = new AgentIntakeResolver(deps);
@@ -185,7 +217,7 @@ describe('AgentIntakeResolver', () => {
 
     it('returns existing position when found', async () => {
       const { deps, mocks } = makeDeps();
-      mocks.positionRepo.getOpenByActor.mockResolvedValue([
+      mocks.positionRepo.getOpenByActorAndVenueAccount.mockResolvedValue([
         { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: '1.5', entryPrice: '45000', realizedPnl: '200' },
       ]);
       const resolver = new AgentIntakeResolver(deps);
@@ -199,7 +231,7 @@ describe('AgentIntakeResolver', () => {
 
     it('filters positions by instrument', async () => {
       const { deps, mocks } = makeDeps();
-      mocks.positionRepo.getOpenByActor.mockResolvedValue([
+      mocks.positionRepo.getOpenByActorAndVenueAccount.mockResolvedValue([
         { venue: 'hyperliquid', symbol: 'ETH/USD:USD', side: 'long', size: '10', entryPrice: '3000', realizedPnl: '50' },
       ]);
       const resolver = new AgentIntakeResolver(deps);
@@ -208,6 +240,109 @@ describe('AgentIntakeResolver', () => {
 
       expect(pos.side).toBe('flat');
       expect(pos.symbol).toBe('BTC/USD:USD');
+    });
+  });
+
+  describe('resolveBinding', () => {
+    it('returns venue and venueAccountId from active trading grant', async () => {
+      const { deps } = makeDeps();
+      const resolver = new AgentIntakeResolver(deps);
+
+      const binding = await resolver.resolveBinding('agent-1');
+
+      expect(binding).toBeDefined();
+      expect(binding!.venue).toBe('hyperliquid');
+      expect(binding!.venueAccountId).toBe('va-1');
+    });
+
+    it('returns undefined when no active trading grant exists', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              leftJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([]),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const binding = await resolver.resolveBinding('agent-no-grant');
+
+      expect(binding).toBeUndefined();
+    });
+
+    it('falls back to provider when venueAccountVenue is null', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              leftJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([
+                      {
+                        sourceVenueAccountId: 'va-2',
+                        provider: 'bybit',
+                        venueAccountVenue: null,
+                        venueAccountId: null,
+                        connectionStatus: 'active',
+                      },
+                    ]),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const binding = await resolver.resolveBinding('agent-2');
+
+      expect(binding).toBeDefined();
+      expect(binding!.venue).toBe('bybit');
+      expect(binding!.venueAccountId).toBe('va-2');
+    });
+
+    it('returns undefined when both venueAccountId and sourceVenueAccountId are null', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            innerJoin: vi.fn().mockReturnValue({
+              leftJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([
+                      {
+                        sourceVenueAccountId: null,
+                        provider: 'hyperliquid',
+                        venueAccountVenue: null,
+                        venueAccountId: null,
+                        connectionStatus: 'active',
+                      },
+                    ]),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const binding = await resolver.resolveBinding('agent-broken');
+
+      expect(binding).toBeUndefined();
     });
   });
 });

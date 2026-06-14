@@ -471,4 +471,58 @@ describe('submitDecisionForExecution', () => {
       expect(callArgs.estimatedOrderNotionalUsd).toBe('300.00');
     });
   });
+
+  describe('openPositionCount override', () => {
+    it('uses provided openPositionCount for risk check instead of deriving from position', async () => {
+      const persistence = makePersistence();
+      // Position is flat for this symbol, but agent has 5 open positions elsewhere
+      const result = await submitDecisionForExecution(
+        makeDecision(computeDecisionContextHash(makeContext())),
+        makeContext(),
+        flatPosition('hyperliquid', 'BTC/USD:USD'),
+        {
+          actorType: 'agent',
+          actorId: 'agent-1',
+          venue: 'hyperliquid',
+          symbol: 'BTC/USD:USD',
+          venueAccountId: 'venue-account-1',
+          executor: new PaperExecutor(makeIdGen()),
+          journal: { append: vi.fn().mockResolvedValue(undefined) },
+          riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+          persistence,
+          idGen: makeIdGen(),
+          clock,
+          openPositionCount: 5,
+        },
+      );
+
+      // Should be risk-rejected because openPositionCount (5) >= maxOpenPositions (5)
+      expect(result.riskRejected).toBe(true);
+    });
+
+    it('falls back to single-instrument derivation when openPositionCount is not provided', async () => {
+      const persistence = makePersistence();
+      const result = await submitDecisionForExecution(
+        makeDecision(computeDecisionContextHash(makeContext())),
+        makeContext(),
+        flatPosition('hyperliquid', 'BTC/USD:USD'),
+        {
+          actorType: 'bot',
+          actorId: 'bot-1',
+          venue: 'hyperliquid',
+          symbol: 'BTC/USD:USD',
+          venueAccountId: 'venue-account-1',
+          executor: new PaperExecutor(makeIdGen()),
+          journal: { append: vi.fn().mockResolvedValue(undefined) },
+          riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+          persistence,
+          idGen: makeIdGen(),
+          clock,
+        },
+      );
+
+      // Position is flat → openPositionCount = 0, well under limit of 5
+      expect(result.riskRejected).toBe(false);
+    });
+  });
 });

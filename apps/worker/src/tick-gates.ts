@@ -1,6 +1,14 @@
 import crypto from 'node:crypto';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 
+/** Per-instrument summary used for stable context hashing across multi-instrument batches. */
+export interface InstrumentHashEntry {
+  symbol: string;
+  priceBucket: string;
+  pnlBucket: string;
+  side: string;
+}
+
 export interface TickGateState {
   tickNumber: number;
   hasOpenPositions: boolean;
@@ -13,6 +21,8 @@ export interface TickGateState {
   positionSide?: string | null;
   latestPrice?: number | null;
   portfolioPnlUsd?: number | null;
+  /** Sorted per-instrument summaries for stable multi-instrument context hashing. */
+  instrumentSnapshots?: InstrumentHashEntry[];
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -72,14 +82,14 @@ export function isWithinTradingHours(now: Date, tradingHours?: TradingHoursConfi
   return allowedHours.includes(hour);
 }
 
-function computePriceBucket(price?: number | null): string {
+export function computePriceBucket(price?: number | null): string {
   if (!price || !Number.isFinite(price) || price <= 0) {
     return 'unknown';
   }
   return String(Math.round(Math.log(price) / Math.log(1.005)));
 }
 
-function computePnlBucket(portfolioPnlUsd?: number | null): string {
+export function computePnlBucket(portfolioPnlUsd?: number | null): string {
   if (portfolioPnlUsd === null || portfolioPnlUsd === undefined || !Number.isFinite(portfolioPnlUsd)) {
     return 'unknown';
   }
@@ -91,7 +101,22 @@ export function computeDecisionContextHash(input: {
   latestPrice?: number | null;
   portfolioPnlUsd?: number | null;
   regimePass?: boolean | null;
+  instrumentSnapshots?: InstrumentHashEntry[];
 }): string {
+  // When multi-instrument snapshots are available, use the sorted per-instrument
+  // summary for a stable, order-independent hash. This ensures a price move in
+  // any tracked instrument is detected regardless of message ordering.
+  if (input.instrumentSnapshots && input.instrumentSnapshots.length > 0) {
+    return crypto
+      .createHash('sha256')
+      .update(JSON.stringify({
+        instruments: input.instrumentSnapshots,
+        regimePass: input.regimePass ?? 'unknown',
+      }))
+      .digest('hex');
+  }
+
+  // Single-instrument fallback: uses aggregate scalars.
   return crypto
     .createHash('sha256')
     .update(JSON.stringify({
@@ -219,6 +244,7 @@ export async function shouldSkipTick(
       latestPrice: state.latestPrice,
       portfolioPnlUsd: state.portfolioPnlUsd,
       regimePass: null,
+      instrumentSnapshots: state.instrumentSnapshots,
     });
 
     if (
@@ -262,6 +288,7 @@ export async function shouldSkipTick(
     latestPrice: state.latestPrice,
     portfolioPnlUsd: state.portfolioPnlUsd,
     regimePass: regime?.pass ?? null,
+    instrumentSnapshots: state.instrumentSnapshots,
   });
 
   if (regime !== null && !regime.pass) {

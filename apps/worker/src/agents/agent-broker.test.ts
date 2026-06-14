@@ -29,11 +29,12 @@ function makeEnvelope(overrides: Record<string, unknown> = {}) {
 function mockAgentRepo() {
   return {
     isMessageDuplicate: vi.fn().mockResolvedValue(false),
+    isActiveSession: vi.fn().mockResolvedValue(true),
     insertMessage: vi.fn().mockResolvedValue(undefined),
     markMessageProcessed: vi.fn().mockResolvedValue(undefined),
     getAgent: vi.fn().mockResolvedValue({ id: 'agent-123', status: 'active' }),
     updateAgent: vi.fn().mockResolvedValue(undefined),
-    getActiveSession: vi.fn().mockResolvedValue({ id: 'sess-001' }),
+    getActiveSession: vi.fn().mockResolvedValue({ id: 'sess-001', status: 'running' }),
     retireActiveSessions: vi.fn().mockResolvedValue(undefined),
     getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue(makeTradingCapabilityDescriptor()),
     insertArtifact: vi.fn().mockResolvedValue('art-id'),
@@ -68,6 +69,7 @@ function mockSessionManager() {
     handleHeartbeat: vi.fn().mockResolvedValue(undefined),
     handlePauseRequest: vi.fn().mockResolvedValue(undefined),
     handleStopRequest: vi.fn().mockResolvedValue(undefined),
+    handleRuntimeSessionEnd: vi.fn().mockResolvedValue(undefined),
   } as unknown as AgentSessionManager;
 }
 
@@ -151,6 +153,56 @@ describe('AgentMessageBroker', () => {
       expect(agentRepo.insertMessage).toHaveBeenCalled();
       expect(decisionHandler.handleDecisionSubmit).toHaveBeenCalled();
     });
+
+    it('returns idempotent success for duplicate even after session rotation', async () => {
+      agentRepo.isMessageDuplicate.mockResolvedValue(true);
+      // Session gate would reject if reached, but dedup runs first
+      agentRepo.isActiveSession.mockResolvedValue(false);
+      const envelope = makeEnvelope();
+      const result = await broker.processInbound(envelope);
+      expect(result.accepted).toBe(true);
+      expect(agentRepo.isActiveSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('session-ownership gate', () => {
+    it('rejects agent message from stale session', async () => {
+      agentRepo.isActiveSession.mockResolvedValue(false);
+      const envelope = makeEnvelope({ correlationId: 'stale-session-id' });
+      const result = await broker.processInbound(envelope);
+      expect(result.accepted).toBe(false);
+      expect(result.error).toBe('stale_session');
+    });
+
+    it('exempts heartbeat from session gate', async () => {
+      agentRepo.isActiveSession.mockResolvedValue(false);
+      const envelope = makeEnvelope({
+        type: 'agent.runtime.heartbeat',
+        payload: { sessionId: 'sess-001', status: 'ready' },
+      });
+      const result = await broker.processInbound(envelope);
+      expect(result.accepted).toBe(true);
+      expect(agentRepo.isActiveSession).not.toHaveBeenCalled();
+    });
+
+    it('exempts session_ended from session gate', async () => {
+      agentRepo.isActiveSession.mockResolvedValue(false);
+      agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
+      const envelope = makeEnvelope({
+        type: 'agent.runtime.session_ended',
+        payload: { sessionId: 'sess-001', reasonCode: 'wall_clock_expired' },
+      });
+      const result = await broker.processInbound(envelope);
+      expect(result.accepted).toBe(true);
+      expect(agentRepo.isActiveSession).not.toHaveBeenCalled();
+    });
+
+    it('allows non-agent initiator messages without session check', async () => {
+      const envelope = makeEnvelope({ initiatorType: 'user' });
+      const result = await broker.processInbound(envelope);
+      expect(result.accepted).toBe(true);
+      expect(agentRepo.isActiveSession).not.toHaveBeenCalled();
+    });
   });
 
   describe('message routing', () => {
@@ -187,7 +239,7 @@ describe('AgentMessageBroker', () => {
       expect((sessionManager as any).handleStopRequest).toHaveBeenCalled();
     });
 
-    it('handles runtime session ended by stopping the agent and retiring active sessions', async () => {
+    it('handles runtime session ended by routing through session manager', async () => {
       const statusChange = vi.fn();
       agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'active' });
       const brokerWithStatus = new AgentMessageBroker(
@@ -213,13 +265,11 @@ describe('AgentMessageBroker', () => {
       const result = await brokerWithStatus.processInbound(envelope);
 
       expect(result.accepted).toBe(true);
-      expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-123', { status: 'stopped' });
-      expect(agentRepo.retireActiveSessions).toHaveBeenCalledWith('agent-123');
+      expect((sessionManager as any).handleRuntimeSessionEnd).toHaveBeenCalledWith('corr-001', 'agent-123', 'stopped');
       expect(agentRepo.markMessageProcessed).toHaveBeenCalledWith(envelope.messageId, 'processed');
-      expect(statusChange).toHaveBeenCalledWith('agent-123', 'user-1', 'stopped');
     });
 
-    it('does not emit a duplicate stopped event when the agent is already stopped', async () => {
+    it('routes session_ended with crash reason code through session manager as crashed', async () => {
       const statusChange = vi.fn();
       agentRepo.getAgent.mockResolvedValue({ id: 'agent-123', userId: 'user-1', status: 'stopped' });
       const brokerWithStatus = new AgentMessageBroker(
@@ -240,16 +290,84 @@ describe('AgentMessageBroker', () => {
 
       const envelope = makeEnvelope({
         type: 'agent.runtime.session_ended',
-        payload: { sessionId: 'sess-001', reasonCode: 'SIGTERM' },
+        payload: { sessionId: 'sess-001', reasonCode: 'unexpected_error' },
       });
 
       const result = await brokerWithStatus.processInbound(envelope);
 
       expect(result.accepted).toBe(true);
-      expect(statusChange).not.toHaveBeenCalled();
-      expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-123', { status: 'stopped' });
-      expect(agentRepo.retireActiveSessions).toHaveBeenCalledWith('agent-123');
+      expect((sessionManager as any).handleRuntimeSessionEnd).toHaveBeenCalledWith('corr-001', 'agent-123', 'crashed');
       expect(agentRepo.markMessageProcessed).toHaveBeenCalledWith(envelope.messageId, 'processed');
+    });
+
+    it('routes publish_artifact using effective agent ownership for non-agent initiators', async () => {
+      agentRepo.getAgent.mockImplementation(async (id: string) => (
+        id === 'agent-123'
+          ? { id: 'agent-123', userId: 'user-1', status: 'active', toolPolicy: null }
+          : null
+      ));
+
+      const result = await broker.processInbound({
+        schemaVersion: 'v1',
+        messageId: 'msg-artifact-effective-agent',
+        correlationId: 'corr-artifact-effective-agent',
+        initiatorType: 'user',
+        initiatorId: 'user-1',
+        agentId: 'agent-123',
+        type: 'agent.artifact.publish',
+        createdAt: new Date().toISOString(),
+        payload: {
+          artifactId: 'artifact-1',
+          artifactType: 'note',
+          contentType: 'text/plain',
+          summary: 'artifact summary',
+        },
+      });
+
+      expect(result.accepted).toBe(true);
+      expect(agentRepo.getAgent).toHaveBeenCalledWith('agent-123');
+      expect(agentRepo.insertArtifact).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-123',
+        sessionId: 'sess-001',
+      }));
+    });
+
+    it('routes bot_query using effective agent ownership for non-agent initiators', async () => {
+      agentRepo.getAgent.mockImplementation(async (id: string) => (
+        id === 'agent-123'
+          ? { id: 'agent-123', userId: 'user-1', status: 'active', toolPolicy: null }
+          : null
+      ));
+      const botRepo = {
+        getBotsByCreator: vi.fn().mockResolvedValue([
+          { id: 'bot-a', status: 'running', config: { strategyPreset: 'momentum', symbol: 'BTC-USD' } },
+        ]),
+      };
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+      );
+
+      const result = await brokerWithBot.processInbound({
+        schemaVersion: 'v1',
+        messageId: 'msg-bot-query-effective-agent',
+        correlationId: 'corr-bot-query-effective-agent',
+        initiatorType: 'user',
+        initiatorId: 'user-1',
+        agentId: 'agent-123',
+        type: 'agent.bot.query',
+        createdAt: new Date().toISOString(),
+        payload: { action: 'list_bots' },
+      });
+
+      expect(result.accepted).toBe(true);
+      expect(agentRepo.getAgent).toHaveBeenCalledWith('agent-123');
+      expect(botRepo.getBotsByCreator).toHaveBeenCalledWith('agent', 'agent-123', undefined);
     });
   });
 
@@ -1527,6 +1645,7 @@ describe('AgentMessageBroker — runtime activity audit events', () => {
   function makeAuditAgentRepo() {
     return {
       isMessageDuplicate: vi.fn().mockResolvedValue(false),
+      isActiveSession: vi.fn().mockResolvedValue(true),
       insertMessage: vi.fn().mockResolvedValue(undefined),
       markMessageProcessed: vi.fn().mockResolvedValue(undefined),
       getAgent: vi.fn().mockResolvedValue({ id: 'agent-123', status: 'active' }),

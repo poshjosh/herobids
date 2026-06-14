@@ -39,6 +39,18 @@ export interface AgentSessionManagerConfig {
    * Used to publish real-time UI events to the user's event channel.
    */
   onAgentStatusChange?: (agentId: string, userId: string, status: string) => void;
+  /**
+   * Called when an agent session becomes active (first successful heartbeat).
+   * Used to create and register the AgentTradingActor in the actorRegistry.
+    * Return `false` when the runtime is healthy but no trading actor/fallback was
+    * established yet, so activation should be retried on a later heartbeat.
+   */
+    onSessionActive?: (agentId: string, executionMode: string | null, sessionId: string) => boolean | void | Promise<boolean | void>;
+  /**
+   * Called when an agent session is stopped.
+   * Used to stop and deregister the AgentTradingActor from the actorRegistry.
+   */
+  onSessionStopped?: (agentId: string, sessionId: string) => void;
   /** Optional usage billing repo — used to check spend state before session launch */
   usageBillingRepo?: UsageBillingRepository;
   /** Optional plan and usage-billing configs — used to apply plan packaging to billing periods */
@@ -55,6 +67,12 @@ export class AgentSessionManager {
   private reconcileTimer?: ReturnType<typeof setInterval>;
   private stopping = false;
   private readonly config: AgentSessionManagerConfig;
+  /** Sessions whose trading actor has been bootstrapped on this worker. Prevents
+   * conflating "runtime handle registered for stop reachability" with "actor activated". */
+  private readonly activatedSessions = new Set<string>();
+  /** Resolves once survived-session preregistration completes. Actions that need
+   * runtime handle reachability (stop, health checks) await this before proceeding. */
+  private readyPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly agentRepo: AgentRepository,
@@ -76,7 +94,10 @@ export class AgentSessionManager {
     // Pre-register launcher handles for sessions that survived a worker restart so that
     // stop() and health-monitor cleanup can reach those containers even if a stop request
     // arrives before the container sends its first heartbeat to the new worker.
-    void this.registerSurvivedSessions().catch((err: unknown) => logger.error({ err }, 'Failed to register survived sessions on startup'));
+    // Actions that need handle reachability await this.readyPromise before proceeding.
+    this.readyPromise = this.registerSurvivedSessions().catch((err: unknown) => {
+      logger.error({ err }, 'Failed to register survived sessions on startup');
+    });
     void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
     this.reconcileTimer = setInterval(() => {
       void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
@@ -306,6 +327,9 @@ export class AgentSessionManager {
 
   /** Stop an agent session gracefully */
   async stopSession(sessionId: string): Promise<void> {
+    // Ensure survived-session handles are registered before we attempt to reach the container.
+    await this.readyPromise;
+
     const session = await this.agentRepo.getSession(sessionId);
     if (!session) return;
 
@@ -314,6 +338,13 @@ export class AgentSessionManager {
     const stopped = await this.agentRepo.markSessionStopped(sessionId, new Date());
     if (!stopped) {
       return;
+    }
+
+    this.activatedSessions.delete(sessionId);
+
+    // Stop and deregister the agent trading actor
+    if (this.config.onSessionStopped) {
+      this.config.onSessionStopped(session.agentId, session.id);
     }
 
     // Update agent status
@@ -328,6 +359,39 @@ export class AgentSessionManager {
     }
   }
 
+  /**
+   * Handle a runtime-initiated session end (the container sent session_ended before dying).
+   * Session-aware: verifies the session is still active before acting. Stale farewells
+   * from superseded containers are no-ops.
+   */
+  async handleRuntimeSessionEnd(sessionId: string, agentId: string, status: 'stopped' | 'crashed'): Promise<void> {
+    const stopped = await this.agentRepo.markSessionStopped(sessionId, new Date());
+    if (!stopped) {
+      // Session already stopped/superseded — stale farewell from a previous container.
+      logger.debug({ sessionId, agentId, status }, 'Ignoring stale session_ended — session already terminated');
+      return;
+    }
+
+    this.activatedSessions.delete(sessionId);
+
+    // Trigger in-memory actor cleanup (same path as stopSession)
+    if (this.config.onSessionStopped) {
+      this.config.onSessionStopped(agentId, sessionId);
+    }
+
+    // Update agent status
+    await this.agentRepo.updateAgent(agentId, { status });
+    logger.info({ sessionId, agentId, status }, 'Agent runtime session ended');
+
+    // Notify real-time event stream (best-effort)
+    if (this.config.onAgentStatusChange) {
+      const agent = await this.agentRepo.getAgent(agentId).catch(() => null);
+      if (agent) {
+        this.config.onAgentStatusChange(agentId, agent.userId, status);
+      }
+    }
+  }
+
   /** Handle heartbeat from agent runtime */
   async handleHeartbeat(envelope: MessageEnvelope, payload: HeartbeatPayload): Promise<void> {
     const session = await this.agentRepo.getSession(payload.sessionId);
@@ -338,15 +402,22 @@ export class AgentSessionManager {
 
 
       // Bootstrap recovery covers two cases:
-      // 1. Normal startup: session is starting/launching/unhealthy and needs to become running.
+      // 1. Normal startup: session is starting/launching and needs to become running.
       // 2. Worker restart recovery: session is already 'running' in the DB but this worker has
-      //    no in-memory handle for it. Because containers outlive the worker (they are NOT
-      //    killed on shutdown), a restarted worker will see heartbeats from containers it did
-      //    not launch itself. Re-bootstrapping the reconnect handler here re-establishes the
-      //    live trading context (bots, positions, market subscriptions) for the recovered runtime.
-      const startedFromNonRunning = session.status === 'starting' || session.status === 'launching' || session.status === 'unhealthy';
-      const shouldBootstrapRecovery = startedFromNonRunning
-        || (session.status === 'running' && !this.runtimeLauncher.hasRuntime(payload.sessionId));
+      //    not yet bootstrapped its trading actor. We check `activatedSessions` rather than
+      //    `hasRuntime()` because `registerSurvivedSessions()` pre-registers runtime handles
+      //    for stop-reachability but that should NOT suppress actor activation on first heartbeat.
+      //
+      // Unhealthy sessions that recover via heartbeat are NOT re-bootstrapped — the actor
+      // is still running in-memory. They only need to be marked running again and get a
+      // reconnect snapshot. Re-calling onSessionActive would create a duplicate actor.
+      const isFirstBoot = session.status === 'starting' || session.status === 'launching';
+      const isUnhealthyRecovery = session.status === 'unhealthy' && this.activatedSessions.has(payload.sessionId);
+      const shouldBootstrapRecovery = !isUnhealthyRecovery && (
+        isFirstBoot
+        || session.status === 'unhealthy'
+        || (session.status === 'running' && !this.activatedSessions.has(payload.sessionId))
+      );
 
     // Only accept heartbeats for running/starting/launching sessions.
     if (session.status !== 'running' && session.status !== 'starting' && session.status !== 'launching' && session.status !== 'unhealthy') {
@@ -358,7 +429,7 @@ export class AgentSessionManager {
       return;
     }
 
-    if (startedFromNonRunning) {
+    if (isFirstBoot) {
       await this.agentRepo.recordSessionStartedSkillUsage(session.agentId, payload.sessionId)
         .catch((err: unknown) => logger.warn({ err, sessionId: payload.sessionId }, 'Failed to persist session_started skill usage events'));
     }
@@ -371,11 +442,25 @@ export class AgentSessionManager {
     }
 
     if (shouldBootstrapRecovery) {
-      await this.agentRepo.updateAgent(session.agentId, { status: 'active' });
       // Re-register the runtime handle so that stop() and health-monitor cleanup
       // can find this container on the new worker after a restart. Without this,
       // runtimeLauncher.stop(sessionId) is a no-op and the container escapes control.
       this.runtimeLauncher.registerRecoveredRuntime(session.agentId, payload.sessionId);
+      // Create and register the AgentTradingActor for direct agent trading
+      let activationEstablished = true;
+      if (this.config.onSessionActive) {
+        const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
+        try {
+          activationEstablished = await this.config.onSessionActive(session.agentId, agent?.executionMode ?? null, session.id) !== false;
+        } catch (err) {
+          await this.handleActivationFailure(session.id, session.agentId, agent?.userId, err);
+          return;
+        }
+      }
+      if (activationEstablished) {
+        this.activatedSessions.add(payload.sessionId);
+      }
+      await this.agentRepo.updateAgent(session.agentId, { status: 'active' });
       // Notify real-time event stream (best-effort)
       if (this.config.onAgentStatusChange) {
         const agent = await this.agentRepo.getAgent(session.agentId).catch(() => null);
@@ -385,9 +470,9 @@ export class AgentSessionManager {
       }
     }
 
-    // First successful connect and unhealthy recovery both bootstrap the runtime
-    // with the latest instance status/context via the reconnect handler.
-    if (shouldBootstrapRecovery && this.reconnectHandler) {
+    // First successful connect and unhealthy recovery both send the latest
+    // instance status/context via the reconnect handler.
+    if ((shouldBootstrapRecovery || isUnhealthyRecovery) && this.reconnectHandler) {
       this.reconnectHandler.handleReconnect(session.agentId, payload.sessionId).catch(
         (err: unknown) => logger.error({ err, sessionId: payload.sessionId }, 'Reconnect recovery failed'),
       );
@@ -401,6 +486,17 @@ export class AgentSessionManager {
 
     // Idempotent: already paused is success
     if (agent.status === 'paused') return;
+
+    // Session-scoped authorization: only the current runtime session can pause the agent.
+    // Defense-in-depth: also checked at broker boundary (processInbound step 3).
+    if (envelope.initiatorType === 'agent') {
+      const runtimeSessionId = envelope.correlationId;
+      const isActive = await this.agentRepo.isActiveSession(agent.id, runtimeSessionId);
+      if (!isActive) {
+        logger.warn({ agentId: agent.id, sessionId: runtimeSessionId }, 'Pause request rejected — stale runtime session');
+        return;
+      }
+    }
 
     await this.agentRepo.updateAgent(agent.id, {
       status: 'paused',
@@ -439,8 +535,17 @@ export class AgentSessionManager {
     // Idempotent: already stopped is success
     if (agent.status === 'stopped') return;
 
-    // Use instance-scoped lookup so a stale runtime from an old link cannot
-    // stop the session belonging to the current (relinked) instance.
+    // Session-scoped authorization: only the current runtime session can stop the agent.
+    // Defense-in-depth: also checked at broker boundary (processInbound step 3).
+    if (envelope.initiatorType === 'agent') {
+      const runtimeSessionId = envelope.correlationId;
+      const isActive = await this.agentRepo.isActiveSession(agent.id, runtimeSessionId);
+      if (!isActive) {
+        logger.warn({ agentId: agent.id, sessionId: runtimeSessionId }, 'Stop request rejected — stale runtime session');
+        return;
+      }
+    }
+
     const session = await this.agentRepo.getActiveSession(agent.id);
     if (session) {
       await this.stopSession(session.id);
@@ -457,6 +562,8 @@ export class AgentSessionManager {
 
   /** Mark a never-connected session as stopped after launch timeout. */
   async handleStartTimeout(sessionId: string): Promise<void> {
+    await this.readyPromise;
+
     const session = await this.agentRepo.getSession(sessionId);
     if (!session || (session.status !== 'starting' && session.status !== 'launching')) {
       return;
@@ -507,5 +614,123 @@ export class AgentSessionManager {
       sessionId,
       message: 'Agent runtime heartbeat lost. New decisions will not be accepted until the runtime reconnects.',
     }).catch((err: unknown) => logger.warn({ err }, 'Failed to send platform unhealthy alert'));
+  }
+
+  async handleRuntimeFailure(
+    sessionId: string,
+    agentId: string,
+    userId: string | undefined,
+    err: unknown,
+  ): Promise<void> {
+    await this.handleTradingActorFailure({
+      sessionId,
+      agentId,
+      userId,
+      err,
+      guardrailCode: 'trading_actor.runtime_failed',
+      guardrailMessage: 'Agent trading context failed while running — session stopped',
+      instanceReason: 'trading_actor_runtime_failed',
+      logMessage: 'Agent trading actor failed while running',
+      stopFailureLogMessage: 'Failed to stop runtime after trading actor runtime failure',
+      platformMessage: 'Agent trading context failed while running — the runtime was stopped.',
+    });
+  }
+
+  private async handleActivationFailure(
+    sessionId: string,
+    agentId: string,
+    userId: string | undefined,
+    err: unknown,
+  ): Promise<void> {
+    await this.handleTradingActorFailure({
+      sessionId,
+      agentId,
+      userId,
+      err,
+      guardrailCode: 'trading_actor.start_failed',
+      guardrailMessage: 'Agent trading context failed to initialize — session stopped',
+      instanceReason: 'trading_actor_start_failed',
+      logMessage: 'Agent trading actor failed to initialize',
+      stopFailureLogMessage: 'Failed to stop runtime after trading actor initialization failure',
+      platformMessage: 'Agent trading context failed to initialize — the runtime was stopped.',
+    });
+  }
+
+  private async handleTradingActorFailure(args: {
+    sessionId: string;
+    agentId: string;
+    userId: string | undefined;
+    err: unknown;
+    guardrailCode: string;
+    guardrailMessage: string;
+    instanceReason: string;
+    logMessage: string;
+    stopFailureLogMessage: string;
+    platformMessage: string;
+  }): Promise<void> {
+    const {
+      sessionId,
+      agentId,
+      userId,
+      err,
+      guardrailCode,
+      guardrailMessage,
+      instanceReason,
+      logMessage,
+      stopFailureLogMessage,
+      platformMessage,
+    } = args;
+    const detail = err instanceof Error ? err.message : String(err);
+    const session = await this.agentRepo.getSession(sessionId);
+
+    if (!session || session.status === 'stopped' || session.status === 'crashed') {
+      logger.info({ sessionId, agentId, status: session?.status }, 'Agent trading actor failure ignored — session already terminal');
+      return;
+    }
+
+    const activeSession = await this.agentRepo.getActiveSession(agentId);
+    if (activeSession && activeSession.id !== sessionId) {
+      logger.info(
+        { sessionId, agentId, activeSessionId: activeSession.id },
+        'Agent trading actor failure ignored — a newer session is already active',
+      );
+      return;
+    }
+
+    logger.error({ err, sessionId, agentId }, logMessage);
+
+    await this.runtimeLauncher.stop(sessionId).catch((stopErr: unknown) => {
+      logger.warn({ stopErr, sessionId, agentId }, stopFailureLogMessage);
+    });
+
+    await this.agentRepo.updateSession(sessionId, {
+      status: 'crashed',
+      stoppedAt: new Date(),
+    });
+    await this.agentRepo.updateAgent(agentId, { status: 'crashed' });
+
+    await this.eventPublisher.emitGuardrailTriggered(agentId, {
+      scope: 'agent_guardrail',
+      code: guardrailCode,
+      message: guardrailMessage,
+      details: { sessionId, detail },
+    });
+
+    await this.eventPublisher.emitInstanceStatus(agentId, {
+      status: 'crashed',
+      reason: instanceReason,
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (this.config.onAgentStatusChange && userId) {
+      this.config.onAgentStatusChange(agentId, userId, 'crashed');
+    }
+
+    this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, {
+      agentId,
+      sessionId,
+      message: platformMessage,
+      detail,
+    }).catch((alertErr: unknown) => logger.warn({ alertErr }, 'Failed to send platform actor-start failure alert'));
   }
 }

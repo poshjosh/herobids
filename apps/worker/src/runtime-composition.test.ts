@@ -1042,4 +1042,260 @@ describe('runtime composition helpers', () => {
       expect(prompt).not.toContain('Set messageClass');
     });
   });
+
+  describe('multi-instrument snapshot merge', () => {
+    it('preserves both instruments when two context snapshots arrive in sequence', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            pnl: '100',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            pnl: '-20',
+            position: { side: 'short', size: '5', entryPrice: '3300' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.openPositions).toHaveLength(2);
+      const symbols = state.metrics.openPositions.map((p) => p.instrumentId).sort();
+      expect(symbols).toEqual(['BTC/USD:USD', 'ETH/USD:USD']);
+
+      const btc = state.metrics.openPositions.find((p) => p.instrumentId === 'BTC/USD:USD')!;
+      expect(btc.side).toBe('long');
+      expect(btc.size).toBe('0.5');
+
+      const eth = state.metrics.openPositions.find((p) => p.instrumentId === 'ETH/USD:USD')!;
+      expect(eth.side).toBe('short');
+      expect(eth.size).toBe('5');
+    });
+
+    it('removes only the specified instrument when its snapshot has null position', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      // First establish two positions
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            position: { side: 'short', size: '5', entryPrice: '3300' },
+          },
+        },
+      ]);
+      expect(state.metrics.openPositions).toHaveLength(2);
+
+      // Now BTC goes flat
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '51000',
+            position: null,
+          },
+        },
+      ]);
+
+      // ETH should still be there, BTC removed
+      expect(state.metrics.openPositions).toHaveLength(1);
+      expect(state.metrics.openPositions[0]!.instrumentId).toBe('ETH/USD:USD');
+    });
+
+    it('upserts existing instrument position on size/side change', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+      ]);
+      expect(state.metrics.openPositions).toHaveLength(1);
+
+      // BTC position changes
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '52000',
+            position: { side: 'long', size: '1.0', entryPrice: '49000' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.openPositions).toHaveLength(1);
+      expect(state.metrics.openPositions[0]!.size).toBe('1.0');
+      expect(state.metrics.openPositions[0]!.entryPrice).toBe('49000');
+    });
+
+    it('tracks lastPositionSide from the most recently updated instrument', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            position: { side: 'short', size: '5', entryPrice: '3300' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.lastPositionSide).toBe('short');
+
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '51000',
+            position: { side: 'long', size: '0.75', entryPrice: '48500' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.lastPositionSide).toBe('long');
+      expect(state.metrics.openPositions[0]!.instrumentId).toBe('BTC/USD:USD');
+    });
+
+    it('preserves cached side ordering across list_positions refreshes', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            position: { side: 'short', size: '5', entryPrice: '3300' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.lastPositionSide).toBe('short');
+      expect(state.metrics.openPositions[0]!.instrumentId).toBe('ETH/USD:USD');
+
+      buildTickUserContext(state, [
+        {
+          type: 'instance.tool.result',
+          payload: {
+            tool: 'list_positions',
+            data: [
+              { symbol: 'BTC/USD:USD', side: 'long', size: '0.5', entryPrice: '48000' },
+              { symbol: 'ETH/USD:USD', side: 'short', size: '5', entryPrice: '3300' },
+            ],
+          },
+        },
+      ]);
+
+      expect(state.metrics.lastPositionSide).toBe('short');
+      expect(state.metrics.openPositions[0]!.instrumentId).toBe('ETH/USD:USD');
+    });
+
+    it('does not treat realized position PnL as unrealized snapshot PnL', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            position: { side: 'long', size: '0.5', entryPrice: '48000', realizedPnl: '125' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.openPositions[0]?.unrealizedPnlUsd).toBeNull();
+      expect(state.metrics.portfolio.unrealizedPnlUsd).toBeNull();
+      expect(state.metrics.lastPnlSummary).toBeNull();
+    });
+
+    it('uses schema-defined pnl field for per-instrument unrealized PnL', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            pnl: '750.00',
+            position: { side: 'long', size: '0.75', entryPrice: '49000', realizedPnl: '250' },
+          },
+        },
+      ]);
+
+      expect(state.metrics.openPositions[0]?.unrealizedPnlUsd).toBe(750);
+      expect(state.metrics.portfolio.unrealizedPnlUsd).toBe(750);
+    });
+
+    it('aggregates pnl across multiple instruments without double-counting', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      buildTickUserContext(state, [
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'BTC/USD:USD',
+            price: '50000',
+            pnl: '100',
+            position: { side: 'long', size: '0.5', entryPrice: '48000' },
+          },
+        },
+        {
+          type: 'instance.context.snapshot',
+          payload: {
+            symbol: 'ETH/USD:USD',
+            price: '3200',
+            pnl: '-20',
+            position: { side: 'short', size: '5', entryPrice: '3300' },
+          },
+        },
+      ]);
+
+      // Each position gets its own pnl — not the sum
+      const btc = state.metrics.openPositions.find((p) => p.instrumentId === 'BTC/USD:USD');
+      const eth = state.metrics.openPositions.find((p) => p.instrumentId === 'ETH/USD:USD');
+      expect(btc?.unrealizedPnlUsd).toBe(100);
+      expect(eth?.unrealizedPnlUsd).toBe(-20);
+      // Portfolio aggregates all unrealized PnL across instruments
+      expect(state.metrics.portfolio.unrealizedPnlUsd).toBe(80);
+    });
+  });
 });

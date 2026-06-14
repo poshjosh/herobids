@@ -225,7 +225,9 @@ agentRuntime:
     maxIntervalMs: 1800000     # cap on backed-off tick interval (30 min)
   toolCircuitBreaker:
     failureThreshold: 3        # consecutive tool failures before circuit opens
-    reopenAfterTicks: 5        # ticks before circuit auto-resets
+    reopenAfterTicks: 5        # 1 means: circuit is locked for the remainder of the current tick, 
+                               # then available again at the start of the next tick.
+                               # 5 for trading agents to avoid hammering a broken venue/platform
   thinking:
     drawdownThresholdPct: -2   # drawdown % that triggers deep thinking mode
   contextDiff:

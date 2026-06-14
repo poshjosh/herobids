@@ -33,7 +33,7 @@ export class AgentDecisionHandler {
     const { agentId, botId, initiatorId, initiatorType, tradingInstanceId } = envelope;
     const effectiveAgentId = agentId ?? initiatorId;
     const effectiveBotId = tradingInstanceId ?? botId ?? effectiveAgentId;
-    const resolveId = effectiveBotId;
+    const resolveId = effectiveAgentId;
 
     // 1. Verify agent is not paused.
     // A missing agents row is NOT treated as paused — it likely means the agent was
@@ -51,14 +51,17 @@ export class AgentDecisionHandler {
       return;
     }
 
-    // 2. Verify a running session exists
-    const session = await this.agentRepo.getSessionForAgentAndInstance(effectiveAgentId, effectiveBotId);
-    if (!session || session.status !== 'running') {
+    // 2. Verify the submitting runtime owns the current active session.
+    // Defense-in-depth: also checked at broker boundary (processInbound step 3).
+    // This prevents superseded containers from trading after a restart/relink.
+    const runtimeSessionId = envelope.correlationId;
+    const isActiveSession = await this.agentRepo.isActiveSession(effectiveAgentId, runtimeSessionId);
+    if (!isActiveSession) {
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
-        code: 'no_active_session',
-        message: 'No running runtime session',
-        retryable: true,
+        code: 'stale_session',
+        message: 'Decision rejected — runtime session is no longer the active session',
+        retryable: false,
       });
       return;
     }

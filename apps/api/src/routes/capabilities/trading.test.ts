@@ -66,6 +66,7 @@ vi.mock('drizzle-orm', () => ({
   asc: vi.fn((col) => ({ _asc: col })),
   desc: vi.fn((col) => ({ _desc: col })),
   inArray: vi.fn((col, vals) => ({ _inArray: vals })),
+  notInArray: vi.fn((col, vals) => ({ _notInArray: vals })),
   isNull: vi.fn((col) => ({ _isNull: col })),
   sum: vi.fn((col) => ({ _sum: col })),
   count: vi.fn((col) => ({ _count: col })),
@@ -322,6 +323,46 @@ describe('trading capability routes', () => {
     expect(envelope.payload.runtimeDescriptor.budgets.maxVisibleToolSchemas).toBe(37);
   });
 
+  it('allows rebinding to a new binding record on the same venue account even when positions are open', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const redisClient = { xadd: vi.fn().mockResolvedValue('msg-1') };
+    mockAssertBindingOwnership.mockResolvedValueOnce({
+      ...DEFAULT_ACTIVE_BINDING,
+      id: TEST_BINDING_ID,
+      sourceVenueAccountId: 'va-1',
+    });
+    const db = buildDb([
+      [AGENT_ROW],
+      [{
+        grantId: 'grant-current',
+        grantStatus: 'active',
+        grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+        revokedAt: null,
+        bindingId: 'binding-old',
+        bindingStatus: 'active',
+        bindingRef: 'acct-1',
+        bindingProfile: { venue: 'hyperliquid' },
+        sourceVenueAccountId: 'va-1',
+        provider: 'hyperliquid',
+        label: 'HL binding old',
+        connectionId: 'conn-1',
+        connectionStatus: 'active',
+      }],
+      [AGENT_ROW],
+    ]);
+    await tradingCapabilityRoutes(app, db, redisClient as any);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
+      payload: { bindingId: TEST_BINDING_ID },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(redisClient.xadd).toHaveBeenCalled();
+  });
+
   it('keeps historical trading state available after a grant is revoked', async () => {
     const app = Fastify();
     decorateWithAuth(app);
@@ -470,21 +511,28 @@ describe('trading capability routes', () => {
   it('unbinds an active trading binding grant from an agent', async () => {
     const app = Fastify();
     decorateWithAuth(app);
-    const db = buildDb([[AGENT_ROW], [{
-      grantId: 'grant-1',
-      grantStatus: 'active',
-      grantedAt: new Date('2026-02-01T00:00:00.000Z'),
-      revokedAt: null,
-      bindingId: TEST_BINDING_ID,
-      bindingStatus: 'active',
-      bindingRef: 'acct-1',
-      bindingProfile: { venue: 'hyperliquid' },
-      sourceVenueAccountId: 'va-1',
-      provider: 'hyperliquid',
-      label: 'HL binding',
-      connectionId: 'conn-1',
-      connectionStatus: 'active',
-    }]]);
+    const db = buildDb([
+      [AGENT_ROW],
+      [{
+        grantId: 'grant-1',
+        grantStatus: 'active',
+        grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+        revokedAt: null,
+        bindingId: TEST_BINDING_ID,
+        bindingStatus: 'active',
+        bindingRef: 'acct-1',
+        bindingProfile: { venue: 'hyperliquid' },
+        sourceVenueAccountId: 'va-1',
+        provider: 'hyperliquid',
+        label: 'HL binding',
+        connectionId: 'conn-1',
+        connectionStatus: 'active',
+      }],
+      // getOpenPositionSymbols — no positions
+      [],
+      // getOpenOrderCount — no orders
+      [{ cnt: 0 }],
+    ]);
     await tradingCapabilityRoutes(app, db);
 
     const res = await app.inject({
@@ -518,5 +566,90 @@ describe('trading capability routes', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.capabilities[0].bindingId).toBe(TEST_BINDING_ID);
+  });
+
+  it('rejects binding switch when resting orders exist on current venue account', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    mockAssertBindingOwnership.mockResolvedValueOnce({
+      ...DEFAULT_ACTIVE_BINDING,
+      id: TEST_BINDING_ID,
+      sourceVenueAccountId: 'va-new',
+    });
+    const db = buildDb([
+      [AGENT_ROW],
+      // selectAgentTradingGrantRows — current binding on va-1
+      [{
+        grantId: 'grant-current',
+        grantStatus: 'active',
+        grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+        revokedAt: null,
+        bindingId: 'binding-old',
+        bindingStatus: 'active',
+        bindingRef: 'acct-1',
+        bindingProfile: { venue: 'hyperliquid' },
+        sourceVenueAccountId: 'va-1',
+        provider: 'hyperliquid',
+        label: 'HL binding old',
+        connectionId: 'conn-1',
+        connectionStatus: 'active',
+      }],
+      // getOpenPositionSymbols — no positions
+      [],
+      // getOpenOrderCount — 2 resting orders
+      [{ cnt: 2 }],
+    ]);
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
+      payload: { bindingId: TEST_BINDING_ID },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json();
+    expect(body.error).toBe('binding.open_orders');
+    expect(body.openOrderCount).toBe(2);
+  });
+
+  it('rejects unbind when resting orders exist on effective venue account', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildDb([
+      [AGENT_ROW],
+      // selectAgentTradingGrantRows — grant being unbound is the effective one
+      [{
+        grantId: 'grant-1',
+        grantStatus: 'active',
+        grantedAt: new Date('2026-02-01T00:00:00.000Z'),
+        revokedAt: null,
+        bindingId: TEST_BINDING_ID,
+        bindingStatus: 'active',
+        bindingRef: 'acct-1',
+        bindingProfile: { venue: 'hyperliquid' },
+        sourceVenueAccountId: 'va-1',
+        provider: 'hyperliquid',
+        label: 'HL binding',
+        connectionId: 'conn-1',
+        connectionStatus: 'active',
+      }],
+      // getOpenPositionSymbols — no positions
+      [],
+      // getOpenOrderCount — 3 resting orders
+      [{ cnt: 3 }],
+    ]);
+    await tradingCapabilityRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/unbind`,
+      payload: { bindingId: TEST_BINDING_ID },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json();
+    expect(body.error).toBe('binding.open_orders');
+    expect(body.openOrderCount).toBe(3);
   });
 });

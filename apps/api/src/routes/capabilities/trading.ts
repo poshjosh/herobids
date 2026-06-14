@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and, desc, inArray, isNull, sum, count, sql, or } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, notInArray, sum, count, sql, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from '@herobids/db';
 import {
@@ -13,6 +13,7 @@ import {
   fills,
   journalEvents,
   positions,
+  orders,
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { CapabilityReadiness, ReadinessState, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
@@ -154,6 +155,58 @@ function latestGrantPerBinding(rows: TradingGrantRow[]): TradingGrantRow[] {
 
 function allBindingIds(rows: TradingGrantRow[]): string[] {
   return [...new Set(rows.map((row) => row.bindingId))];
+}
+
+/**
+ * Fail-closed guard: returns open position symbols for an agent on the given
+ * venue account. If non-empty, binding switches must be blocked.
+ */
+async function getOpenPositionSymbols(db: Database, agentId: string, venueAccountId: string): Promise<string[]> {
+  const rows = await db
+    .select({ symbol: positions.symbol })
+    .from(positions)
+    .where(
+      and(
+        eq(positions.actorType, 'agent'),
+        eq(positions.actorId, agentId),
+        eq(positions.venueAccountId, venueAccountId),
+        sql`${positions.side} != 'flat'`,
+        isNull(positions.closedAt),
+      ),
+    );
+  return rows.map((r) => r.symbol);
+}
+
+const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'rejected'];
+
+/**
+ * Fail-closed guard: returns count of open (non-terminal) orders for an agent
+ * on the given venue account. If > 0, binding switches must be blocked because
+ * resting orders can fill after the switch and create untracked exposure.
+ */
+async function getOpenOrderCount(db: Database, agentId: string, venueAccountId: string): Promise<number> {
+  const [result] = await db
+    .select({ cnt: count() })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.actorType, 'agent'),
+        eq(orders.actorId, agentId),
+        eq(orders.venueAccountId, venueAccountId),
+        notInArray(orders.status, TERMINAL_ORDER_STATUSES),
+      ),
+    );
+  return result?.cnt ?? 0;
+}
+
+/**
+ * Find the currently effective binding for an agent (newest active grant).
+ * Returns the grant row or undefined if no active binding exists.
+ */
+function findEffectiveGrant(grantRows: TradingGrantRow[]): TradingGrantRow | undefined {
+  return grantRows
+    .filter((r) => r.grantStatus === 'active')
+    .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())[0];
 }
 
 async function selectTradingBindingResourceRows(db: Database, userId: string): Promise<TradingBindingResourceRow[]> {
@@ -928,7 +981,8 @@ export async function tradingCapabilityRoutes(
           });
         }
 
-        const existingGrant = (await selectAgentTradingGrantRows(db, agentId)).find(
+        const allGrants = await selectAgentTradingGrantRows(db, agentId);
+        const existingGrant = allGrants.find(
           (row) => row.bindingId === parsed.data.bindingId && row.grantStatus === 'active',
         );
         if (existingGrant) {
@@ -939,6 +993,35 @@ export async function tradingCapabilityRoutes(
             bindingId: parsed.data.bindingId,
             status: 'active',
           });
+        }
+
+        // Fail-closed: reject binding switch when the effective venue account
+        // would change while open positions or resting orders still exist on the
+        // current account. Resting orders can fill after the switch and create
+        // untracked exposure on an account the runtime no longer monitors.
+        const effectiveGrant = findEffectiveGrant(allGrants);
+        if (
+          effectiveGrant
+          && effectiveGrant.bindingId !== parsed.data.bindingId
+          && effectiveGrant.sourceVenueAccountId
+          && effectiveGrant.sourceVenueAccountId !== binding.sourceVenueAccountId
+        ) {
+          const openSymbols = await getOpenPositionSymbols(db, agentId, effectiveGrant.sourceVenueAccountId);
+          if (openSymbols.length > 0) {
+            return reply.status(409).send({
+              error: 'binding.open_positions',
+              message: 'Cannot switch binding while agent has open positions',
+              symbols: openSymbols,
+            });
+          }
+          const openOrderCnt = await getOpenOrderCount(db, agentId, effectiveGrant.sourceVenueAccountId);
+          if (openOrderCnt > 0) {
+            return reply.status(409).send({
+              error: 'binding.open_orders',
+              message: 'Cannot switch binding while agent has resting orders on the current venue account',
+              openOrderCount: openOrderCnt,
+            });
+          }
         }
 
         await createGrant(db, {
@@ -971,6 +1054,29 @@ export async function tradingCapabilityRoutes(
         const matchingGrant = grantRows.find((row) => row.bindingId === parsed.data.bindingId && row.grantStatus === 'active');
         if (!matchingGrant) {
           return reply.status(404).send({ error: 'binding.not_found' });
+        }
+
+        // Fail-closed: reject unbinding the effective binding when open positions
+        // or resting orders exist. Orders can fill after unbind and create
+        // exposure on an account the runtime no longer treats as effective.
+        const effectiveGrant = findEffectiveGrant(grantRows);
+        if (effectiveGrant && effectiveGrant.grantId === matchingGrant.grantId && matchingGrant.sourceVenueAccountId) {
+          const openSymbols = await getOpenPositionSymbols(db, agentId, matchingGrant.sourceVenueAccountId);
+          if (openSymbols.length > 0) {
+            return reply.status(409).send({
+              error: 'binding.open_positions',
+              message: 'Cannot unbind while agent has open positions on this binding',
+              symbols: openSymbols,
+            });
+          }
+          const openOrderCnt = await getOpenOrderCount(db, agentId, matchingGrant.sourceVenueAccountId);
+          if (openOrderCnt > 0) {
+            return reply.status(409).send({
+              error: 'binding.open_orders',
+              message: 'Cannot unbind while agent has resting orders on this venue account',
+              openOrderCount: openOrderCnt,
+            });
+          }
         }
 
         const revoked = await revokeGrant(db, {

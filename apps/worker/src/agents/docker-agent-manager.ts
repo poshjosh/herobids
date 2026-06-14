@@ -344,21 +344,35 @@ export class DockerAgentManager {
    * Called when a container die/kill event is received from Docker event stream.
    * Updates agent status to crashed, closes the active session, fires safety alert.
    */
-  async onContainerDie(agentId: string, reason = 'container_exit'): Promise<void> {
+  async onContainerDie(agentId: string, reason = 'container_exit', sessionId?: string): Promise<void> {
     // If the agent was already marked stopped, the container exited after a voluntary
     // stop() call — do not reclassify as crashed or fire a spurious safety alert.
     const currentAgent = await this.agentRepo.getAgent(agentId);
     if (currentAgent?.status === 'stopped') {
-      logger.info({ agentId, reason }, 'Agent container exited after voluntary stop — skipping crash handling');
+      logger.info({ agentId, sessionId, reason }, 'Agent container exited after voluntary stop — skipping crash handling');
       return;
     }
 
-    logger.warn({ agentId, reason }, 'Agent container died unexpectedly — updating status and firing safety alert');
+    const currentSession = await this.agentRepo.getCurrentSession(agentId);
+    if (sessionId && currentSession?.id !== sessionId) {
+      logger.info(
+        { agentId, sessionId, currentSessionId: currentSession?.id, reason },
+        'Ignoring stale container exit — agent is owned by a different session',
+      );
+      return;
+    }
+
+    logger.warn({ agentId, sessionId, reason }, 'Agent container died unexpectedly — updating status and firing safety alert');
 
     try {
-      await this.agentRepo.updateAgent(agentId, { status: 'crashed' });
+      if (currentSession) {
+        await this.agentRepo.updateSession(currentSession.id, {
+          status: 'crashed',
+          stoppedAt: new Date(),
+        });
+      }
 
-      await this.agentRepo.retireActiveSessions(agentId);
+      await this.agentRepo.updateAgent(agentId, { status: 'crashed' });
 
       await this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, {
         agentId,
@@ -433,8 +447,9 @@ export class DockerAgentManager {
             Actor?: { Attributes?: Record<string, string> };
           };
           const agentId = event.Actor?.Attributes?.['herobids.agentId'];
+          const sessionId = event.Actor?.Attributes?.['herobids.sessionId'];
           if (agentId) {
-            void this.onContainerDie(agentId, 'docker_event');
+            void this.onContainerDie(agentId, 'docker_event', sessionId);
           }
         } catch {
           // Non-JSON line — ignore

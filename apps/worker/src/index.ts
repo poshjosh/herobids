@@ -7,19 +7,22 @@ import { BacktestRuntime } from './backtest-runtime.js';
 import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
+import type { ExecutionActor } from './execution-actor.js';
+import { VenueAdapterFactory } from './venue-adapter-factory.js';
+import { AgentTradingActor } from './agent-trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
+import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, bots, venueAccounts, userCredentials, users } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, PublicStreamPool, OracleMarkSource } from '@herobids/venues';
+import { PublicStreamPool, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
-import { LastFillMarkSource, MarkSelector, credentialDecryptedEvent } from '@herobids/engine';
+import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
 import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork } from '@herobids/domain';
-import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig } from '@herobids/domain';
+import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
 import crypto from 'node:crypto';
-import { decryptCredential } from './crypto.js';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
@@ -166,7 +169,8 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
 
 // Agent subsystem — registry + protocol stack. Created before WorkerRuntime so the
 // actor factory can subscribe streams and register actors on creation.
-const actorRegistry = new Map<string, TradingActor>();
+const actorRegistry = new Map<string, ExecutionActor>();
+const agentState = new ActorStateOwner(actorRegistry);
 /** Maps botId → userId so the onStarted/onStartFailed callbacks can publish events. */
 const instanceUserIds = new Map<string, string>();
 const agentRepo = new AgentRepository(db);
@@ -241,6 +245,7 @@ const oracleMarkSource = new OracleMarkSource({
 
 const agentIntakeResolver = new AgentIntakeResolver({
   db,
+  agentRepo,
   positionRepo,
   decisionRepo,
   planRepo,
@@ -256,40 +261,24 @@ const agentIntakeResolver = new AgentIntakeResolver({
 const intakeResolver: DecisionIntakeResolver = {
   getIntakeDeps: (instanceId: string, instrumentId?: string) => {
     const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) return actor.getIntakeDeps();
+    if (actor?.isRunning) return actor.getIntakeDeps(instrumentId);
+    if (!agentState.canUseGrantFallback(instanceId)) return undefined;
     // Fallback: resolve as agent via capability grants
     if (instrumentId) return agentIntakeResolver.getIntakeDeps(instanceId, instrumentId);
     return undefined;
   },
   getDecisionContext: (instanceId: string, instrumentId?: string): DecisionContext | undefined | Promise<DecisionContext | undefined> => {
     const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) {
-      const snapshot = actor.getLastSnapshot();
-      if (!snapshot) return undefined;
-      const pos = actor.currentPosition;
-      const lastMark = actor.getLastMarkResult();
-      const referenceMark = (lastMark?.ok && !lastMark.data.stale)
-        ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
-        : { price: snapshot.price.toString(), source: 'snapshot' };
-      return {
-        snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp },
-        position: pos.side === 'flat' ? null : {
-          side: pos.side,
-          size: pos.size.toString(),
-          entryPrice: pos.entryPrice.toString(),
-          realizedPnl: pos.realizedPnl.toString(),
-        },
-        referenceMark,
-        strategyParams: {},
-      };
-    }
+    if (actor?.isRunning) return actor.getDecisionContext(instrumentId);
+    if (!agentState.canUseGrantFallback(instanceId)) return undefined;
     // Fallback: resolve as agent
     if (instrumentId) return agentIntakeResolver.getDecisionContext(instanceId, instrumentId);
     return undefined;
   },
   getPosition: (instanceId: string, instrumentId?: string) => {
     const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) return actor.currentPosition;
+    if (actor?.isRunning) return actor.getPosition(instrumentId);
+    if (!agentState.canUseGrantFallback(instanceId)) return undefined;
     // Fallback: resolve as agent
     if (instrumentId) return agentIntakeResolver.getPosition(instanceId, instrumentId);
     return undefined;
@@ -299,12 +288,39 @@ const intakeResolver: DecisionIntakeResolver = {
 const agentDecisionHandler = new AgentDecisionHandler(agentRepo, intakeResolver, eventPublisher);
 
 const snapshotResolver: ContextSnapshotResolver = {
-  resolveSnapshot: (instanceId: string) => {
+  resolveSnapshots: async (instanceId: string) => {
+    const actor = actorRegistry.get(instanceId);
+    if (!actor?.isRunning) return [];
+    if (actor instanceof AgentTradingActor) {
+      return actor.buildReconnectSnapshots();
+    }
+    // Bot actors are single-instrument — delegate to single resolver path
+    return [];
+  },
+  resolveSnapshot: async (instanceId: string) => {
     const actor = actorRegistry.get(instanceId);
     if (!actor?.isRunning) return undefined;
+    if (actor instanceof AgentTradingActor) {
+      return actor.buildReconnectSnapshot();
+    }
+    if (!(actor instanceof TradingActor)) return undefined;
     const snapshot = actor.getLastSnapshot();
     if (!snapshot) return undefined;
     const pos = actor.currentPosition;
+
+    // Compute per-instrument unrealized PnL when mark/snapshot is available
+    let pnl: string | undefined;
+    if (pos.side !== 'flat') {
+      const markPrice = parseFloat(snapshot.price.toString());
+      const entryPrice = parseFloat(pos.entryPrice.toString());
+      const size = parseFloat(pos.size.toString());
+      const direction = pos.side === 'long' ? 1 : -1;
+      const unrealizedPnl = (markPrice - entryPrice) * size * direction;
+      if (Number.isFinite(unrealizedPnl)) {
+        pnl = unrealizedPnl.toFixed(2);
+      }
+    }
+
     return {
       snapshotId: crypto.randomUUID(),
       symbol: snapshot.symbol,
@@ -316,6 +332,7 @@ const snapshotResolver: ContextSnapshotResolver = {
         entryPrice: pos.entryPrice.toString(),
         realizedPnl: pos.realizedPnl.toString(),
       },
+      pnl,
       referenceMark: (() => {
         const lastMark = actor.getLastMarkResult();
         return (lastMark?.ok && !lastMark.data.stale)
@@ -365,6 +382,104 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {
       logger.error({ err, agentId }, 'Failed to publish agent status event');
     });
+  },
+  onSessionActive: (agentId, executionMode, sessionId) => {
+    const mode = (executionMode === 'shadow' || executionMode === 'live') ? executionMode : 'paper';
+    // Track the session that initiated this actor so stop can correlate
+    agentState.markSessionPending(agentId, sessionId);
+    return (async (): Promise<boolean> => {
+      const binding = await agentIntakeResolver.resolveBinding(agentId);
+      if (!agentState.isCurrentFallbackSession(agentId, sessionId)) {
+        logger.info({ agentId, sessionId }, 'Agent trading actor start abandoned — session changed during binding resolution');
+        return false;
+      }
+      if (!binding) {
+        logger.debug({ agentId }, 'No active binding for agent — grant fallback remains disabled');
+        agentState.clearPending(agentId, sessionId);
+        return false;
+      }
+
+      try {
+        // Determine venue type from venue name heuristic
+        const venueType: 'orderbook' | 'swap' = (binding.venue === 'jupiter' || binding.venue === '1inch') ? 'swap' : 'orderbook';
+        const agent = await agentRepo.getAgent(agentId);
+        const capitalStr = agent?.capital ?? '100';
+        const dailyLossStr = agent?.dailyLossLimit ?? '10000';
+
+        if (venueType === 'swap' && mode !== 'paper') {
+          throw new Error(
+            `Direct-agent swap execution currently supports paper mode only; ${mode} mode requires instrument-scoped swap metadata for agent ${agentId}`,
+          );
+        }
+
+        let actor: AgentTradingActor | undefined;
+        actor = new AgentTradingActor({
+          agentId,
+          executionMode: mode,
+          venueAccountId: binding.venueAccountId,
+          venue: binding.venue,
+          venueType,
+          riskLimits: {
+            maxPositionSize: quantity('1000000000'),
+            maxOpenPositions: 10,
+            maxDrawdown: price(String(dailyLossStr)),
+            maxOrderNotional: price(String(capitalStr)),
+            maxPositionSizePct: 100,
+          },
+          venueAdapterFactory,
+          createStreamPoolHandle: venueType !== 'swap'
+            ? (testnet: boolean) => createScopedStreamPoolHandle(publicStreamPool, binding.venue, testnet)
+            : undefined,
+          markSource: oracleMarkSource,
+          journal,
+          idGen,
+          positionRepo,
+          fillRepo,
+          planRepo,
+          orderRepo,
+          decisionRepo,
+          balanceSnapshotRepo,
+          backtestingRepo,
+          reconciliationRepo,
+          reconciliationConfig,
+          streamConfig: appConfig.streams.private,
+          liveRollout: appConfig.liveRollout,
+          driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
+          swapNetwork: venueType === 'swap'
+            ? binding.venue === 'jupiter' ? 'solana' : appConfig.venues['1inch']?.tokenSafetyNetwork ?? inferOneInchTokenSafetyNetwork(appConfig.venues['1inch']?.chainId)
+            : undefined,
+          swapBaseTokenAddress: undefined,
+          swapTokenSafety: venueType === 'swap' ? swapTokenSafety : undefined,
+          capital: String(capitalStr),
+          onCrashed: async (err) => {
+            agentState.deregisterOnCrash(agentId, sessionId, actor!);
+            await sessionManager.handleRuntimeFailure(sessionId, agentId, agent?.userId, err);
+          },
+        });
+
+        await actor.start();
+
+        // Only register if the session is still active (not stopped during start)
+        if (agentState.isSessionPending(agentId, sessionId)) {
+          agentState.registerActor(agentId, sessionId, actor, mode, venueType);
+          logger.info({ agentId, mode, venue: binding.venue }, 'Agent trading actor registered');
+          return true;
+        } else {
+          // Session changed while starting — tear down immediately
+          await actor.stop();
+          logger.info({ agentId, sessionId }, 'Agent trading actor discarded — session changed during start');
+          return false;
+        }
+      } finally {
+        agentState.clearPending(agentId, sessionId);
+      }
+    })();
+  },
+  onSessionStopped: (agentId, sessionId) => {
+    const actor = agentState.handleSessionStopped(agentId, sessionId);
+    if (actor && actor instanceof AgentTradingActor) {
+      actor.stop().catch((err) => logger.error({ err, agentId }, 'Failed to stop agent trading actor'));
+    }
   },
   usageBillingRepo: appConfig.usageBilling?.enabled ? new UsageBillingRepository(db) : undefined,
   plansConfig: appConfig.plans,
@@ -444,13 +559,20 @@ const reconciliationConfig = appConfig.reconciliation;
 // Worker-scoped public stream pool — one WebSocket per venue, fan-out to all actors.
 // Initialised when at least one orderbook venue has a wsUrl configured.
 const publicStreamConfig = appConfig.streams.public;
-const bybitVenueConfig = appConfig.venues['bybit'];
 
 const streamConnectors = buildPublicStreamConnectors(appConfig.venues);
 
 const publicStreamPool = streamConnectors.size > 0
   ? new PublicStreamPool(publicStreamConfig, streamConnectors)
   : undefined;
+
+// Shared venue adapter factory — used by both bot startup and agent trading actors
+const venueAdapterFactory = new VenueAdapterFactory({
+  db,
+  journal,
+  venues: appConfig.venues,
+  streamConfig: appConfig.streams.private,
+});
 
 const runtime = new WorkerRuntime(
   {
@@ -521,81 +643,38 @@ const runtime = new WorkerRuntime(
       throw new Error(`Bot ${botId} has no venueAccountId in job config — refusing to start`);
     }
     const instanceUserId = rawConfig['userId'] as string | undefined;
-    let apiKey = '';
-    let secret = '';
-    let walletAddress = '';
     let testnet = false;
-    let credentialsFromDb = false;
     let resolvedCredentialId: string | undefined;
+    let credentialsPresent = false;
+    let venueAdapter: OrderbookVenuePort | undefined;
+    let swapVenue: SwapVenuePort | undefined;
 
-    // Credential resolution is only needed for orderbook venues (exchange API keys).
-    // Swap venues are wallet-only — they resolve their address from venueAccountRef later.
+    // Resolve adapters via shared factory
     if (config.venueType !== 'swap') {
-      let pendingCredentialId: string | undefined;
-      try {
-        const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
-        if (account?.credentialId) {
-          pendingCredentialId = account.credentialId;
-          const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
-          if (cred) {
-            const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
-            if (encryptionKey) {
-              const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { apiKey: string; secret: string; walletAddress?: string; testnet?: boolean };
-              apiKey = decrypted.apiKey;
-              secret = decrypted.secret;
-              walletAddress = decrypted.walletAddress || walletAddress;
-              testnet = decrypted.testnet ?? false;
-              credentialsFromDb = true;
-              resolvedCredentialId = account.credentialId;
-              journal.append(credentialDecryptedEvent({
-                credentialId: account.credentialId,
-                venue: config.venue,
-                venueAccountId,
-                botId,
-                outcome: 'success',
-              })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-            } else {
-              journal.append(credentialDecryptedEvent({
-                credentialId: account.credentialId,
-                venue: config.venue,
-                venueAccountId,
-                botId,
-                outcome: 'failure',
-                error: 'CREDENTIAL_ENCRYPTION_KEY not set',
-              })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-              throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt credentials for venueAccount ${venueAccountId}`);
-            }
-          } else {
-            journal.append(credentialDecryptedEvent({
-              credentialId: account.credentialId,
-              venue: config.venue,
-              venueAccountId,
-              botId,
-              outcome: 'failure',
-              error: 'Credential record not found (dangling reference)',
-            })).catch((err) => { logger.error({ err, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-            throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
-          }
-        } else if (config.execution.mode !== 'paper') {
-          throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential`);
-        } else {
-          logger.warn({ venueAccountId, botId }, 'Paper mode: venue account has no linked credential — proceeding without credentials');
-        }
-      } catch (err) {
-        if (err instanceof CredentialResolutionError) throw err;
-        // Decrypt or parse failed — emit failure audit before re-throwing
-        if (pendingCredentialId) {
-          journal.append(credentialDecryptedEvent({
-            credentialId: pendingCredentialId,
-            venue: config.venue,
-            venueAccountId,
-            botId,
-            outcome: 'failure',
-            error: err instanceof Error ? err.message : String(err),
-          })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: pendingCredentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-        }
-        throw new CredentialResolutionError(`Failed to load credentials for venueAccount ${venueAccountId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      const result = await venueAdapterFactory.buildOrderbookAdapter({
+        venueAccountId,
+        venue: config.venue,
+        actorType: 'bot',
+        actorId: botId,
+        executionMode: config.execution.mode,
+      });
+      venueAdapter = result.venuePort;
+      testnet = result.credentials.testnet;
+      resolvedCredentialId = result.credentialId;
+      credentialsPresent = !!(result.credentials.apiKey.trim() && result.credentials.secret.trim());
+    } else if (config.swapAssets) {
+      const result = await venueAdapterFactory.buildSwapAdapter({
+        venueAccountId,
+        venue: config.venue,
+        swapAssets: config.swapAssets,
+        actorType: 'bot',
+        actorId: botId,
+      });
+      swapVenue = result.swapVenue;
+    } else {
+      throw new CredentialResolutionError(
+        `swapAssets config required for swap venue bot ${botId} — cannot route swaps without explicit asset identifiers and decimals`,
+      );
     }
 
     // --- Live-mode startup gate (fail-closed) ---
@@ -604,141 +683,14 @@ const runtime = new WorkerRuntime(
       venue: config.venue,
       venueType: config.venueType,
       venueAccountId,
-      credentialsFromDb,
-      credentialsPresent: !!(apiKey.trim() && secret.trim()),
+      credentialsFromDb: !!resolvedCredentialId,
+      credentialsPresent,
       driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
       instanceMaxOrderNotional: config.risk.maxOrderNotional,
     });
 
     // Stream config (shared between adapter construction and actor deps)
     const streamConfig = appConfig.streams.private;
-
-    // Construct venue adapters based on venueType
-    const venueAdapter = config.venueType !== 'swap'
-      ? config.venue === 'bybit'
-        ? new BybitAdapter({
-            credentials: { apiKey, secret, testnet },
-            wsUrl: bybitVenueConfig?.wsUrl,
-            wsPrivateUrl: bybitVenueConfig?.wsPrivateUrl,
-            wsTestnetPrivateUrl: bybitVenueConfig?.wsTestnetPrivateUrl,
-            streamConfig,
-          })
-        : new HyperliquidAdapter({
-            credentials: { apiKey, secret, walletAddress, testnet },
-            wsUrl: appConfig.venues['hyperliquid']?.wsUrl,
-            testnetBaseUrl: appConfig.venues['hyperliquid']?.testnetBaseUrl,
-            testnetWsUrl: appConfig.venues['hyperliquid']?.testnetWsUrl,
-            streamConfig,
-          })
-      : undefined;
-
-    // Construct swap venue adapter when venueType is 'swap'
-    const swapVenue = config.venueType === 'swap'
-      ? await (async () => {
-          // swapAssets is required for swap venues — fail fast if missing
-          if (!config.swapAssets) {
-            throw new CredentialResolutionError(
-              `swapAssets config required for swap venue bot ${botId} — cannot route swaps without explicit asset identifiers and decimals`,
-            );
-          }
-          // Build token decimals map from configured swap assets
-          const tokenDecimals: Record<string, number> = {
-            [config.swapAssets.baseAsset]: config.swapAssets.baseDecimals,
-            [config.swapAssets.quoteAsset]: config.swapAssets.quoteDecimals,
-          };
-
-          if (config.venue === '1inch') {
-            // 1inch requires a private key and API key — resolved from DB credential
-            let privateKey: string | undefined;
-            let oneInchApiKey: string | undefined;
-            const [account] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
-            if (account?.credentialId) {
-              const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, account.credentialId)).limit(1);
-              const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
-              if (cred && encryptionKey) {
-                try {
-                  const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string; apiKey: string };
-                  privateKey = decrypted.privateKey;
-                  oneInchApiKey = decrypted.apiKey;
-                  journal.append(credentialDecryptedEvent({
-                    credentialId: account.credentialId,
-                    venue: config.venue,
-                    venueAccountId,
-                    botId,
-                    outcome: 'success',
-                  })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-                } catch (decryptErr) {
-                  journal.append(credentialDecryptedEvent({
-                    credentialId: account.credentialId,
-                    venue: config.venue,
-                    venueAccountId,
-                    botId,
-                    outcome: 'failure',
-                    error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
-                  })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-                  throw new CredentialResolutionError(`Failed to decrypt 1inch credentials for venueAccount ${venueAccountId}: ${decryptErr instanceof Error ? decryptErr.message : String(decryptErr)}`);
-                }
-              } else if (!encryptionKey && cred) {
-                journal.append(credentialDecryptedEvent({
-                  credentialId: account.credentialId,
-                  venue: config.venue,
-                  venueAccountId,
-                  botId,
-                  outcome: 'failure',
-                  error: 'CREDENTIAL_ENCRYPTION_KEY not set',
-                })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: account.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
-                throw new CredentialResolutionError(`CREDENTIAL_ENCRYPTION_KEY not set — cannot decrypt 1inch credentials for venueAccount ${venueAccountId}`);
-              } else {
-                throw new CredentialResolutionError(`Credential record not found for venueAccount ${venueAccountId}`);
-              }
-            } else {
-              throw new CredentialResolutionError(`Venue account ${venueAccountId} has no linked credential — cannot resolve 1inch secrets`);
-            }
-            if (!privateKey) {
-              throw new CredentialResolutionError(
-                `privateKey required for 1inch venue bot ${botId}. Store in DB credential.`,
-              );
-            }
-            if (!oneInchApiKey) {
-              throw new CredentialResolutionError(
-                `apiKey required for 1inch venue bot ${botId}. Store in DB credential.`,
-              );
-            }
-            const oneInchConfig = appConfig.venues['1inch'];
-            return new OneInchSwapAdapter({
-              apiUrl: oneInchConfig?.baseUrl ?? 'https://api.1inch.dev/swap/v6.0/8453',
-              apiKey: oneInchApiKey,
-              signer: {
-                privateKey,
-                rpcUrl: oneInchConfig?.rpcUrl ?? 'https://mainnet.base.org',
-                chainId: oneInchConfig?.chainId ?? 8453,
-                confirmationTimeoutMs: oneInchConfig?.confirmationTimeoutMs ?? appConfig.execution.orderTimeoutMs,
-              },
-              rateLimitPerSec: oneInchConfig?.rateLimitPerSec,
-              tokenDecimals,
-              timeoutMs: oneInchConfig?.timeoutMs,
-              routerAddress: oneInchConfig?.routerAddress,
-            });
-          }
-
-          // Non-1inch swap venues (Jupiter) require a wallet address on the venue account
-          const [swapAccount] = await db.select().from(venueAccounts).where(eq(venueAccounts.id, venueAccountId)).limit(1);
-          if (!swapAccount?.venueAccountRef) {
-            throw new CredentialResolutionError(
-              `Venue account ${venueAccountId} has no venueAccountRef — cannot resolve wallet address for swap venue bot ${botId}`,
-            );
-          }
-          const walletAddress = swapAccount.venueAccountRef;
-
-          return new JupiterSwapAdapter({
-            walletAddress,
-            apiUrl: appConfig.venues['jupiter']?.baseUrl,
-            rpcUrl: appConfig.venues['jupiter']?.rpcUrl,
-            tokenDecimals,
-            timeoutMs: appConfig.venues['jupiter']?.timeoutMs,
-          });
-        })()
-      : undefined;
 
     const fetchPrice = async (): Promise<MarketSnapshot | null> => {
       if (!venueAdapter) return null; // Swap venues don't use orderbook ticker

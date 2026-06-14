@@ -1,6 +1,7 @@
 import pino from 'pino';
 import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
+import type { ExecutionActor } from './execution-actor.js';
 import {
   PaperExecutor,
   ShadowExecutor,
@@ -31,6 +32,7 @@ import type {
   Diff,
   TradingCyclePersistence,
   DecisionIntakeDeps,
+  DecisionContext,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -119,7 +121,7 @@ export interface TradingActorDeps {
  *
  * Lifecycle: start → rehydrate → venue-state reconciliation → open private stream → begin scan loop
  */
-export class TradingActor implements InstanceActor {
+export class TradingActor implements InstanceActor, ExecutionActor {
   readonly botId: string;
   private readonly logger;
   private timer?: ReturnType<typeof setInterval>;
@@ -1092,6 +1094,31 @@ export class TradingActor implements InstanceActor {
       swapTokenSafety: this.deps.swapTokenSafety,
       swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
     };
+  }
+
+  getDecisionContext(): DecisionContext | undefined {
+    const snapshot = this.lastSnapshot;
+    if (!snapshot) return undefined;
+    const pos = this.position;
+    const lastMark = this.cachedMark?.result;
+    const referenceMark = (lastMark?.ok && !lastMark.data.stale)
+      ? { price: lastMark.data.price.toString(), source: lastMark.data.source }
+      : { price: snapshot.price.toString(), source: 'snapshot' };
+    return {
+      snapshot: { symbol: snapshot.symbol, price: snapshot.price.toString(), timestamp: snapshot.timestamp },
+      position: pos.side === 'flat' ? null : {
+        side: pos.side,
+        size: pos.size.toString(),
+        entryPrice: pos.entryPrice.toString(),
+        realizedPnl: pos.realizedPnl.toString(),
+      },
+      referenceMark,
+      strategyParams: {},
+    };
+  }
+
+  getPosition(): PositionState {
+    return this.position;
   }
 
   /**

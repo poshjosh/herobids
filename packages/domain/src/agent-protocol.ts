@@ -165,6 +165,10 @@ export const ContextSnapshotPayloadSchema = z.object({
     entryPrice: z.string(),
     realizedPnl: z.string(),
   }).nullable(),
+  /** Per-instrument unrealized PnL in USD. Computed as (markPrice - entryPrice) * size * direction.
+   * Used by the runtime tick gate and composition layer for portfolio-level aggregation.
+   * Omitted when mark price is unavailable (degraded snapshots). */
+  pnl: z.union([z.string(), z.number()]).optional(),
   referenceMark: z.object({
     price: z.string(),
     source: z.string(),
