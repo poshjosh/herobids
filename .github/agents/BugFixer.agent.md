@@ -24,13 +24,21 @@ Number the files in the `bug-report-dir` folder sequentially based on the date o
 
 Bug reports should follow this format:
 - **Status:** (OPEN | FIXED | CLOSED)
-- **Severity:** (High | Medium | Low)
+- **Severity:** (Critical | High | Medium | Low)
 - **Date:** (ISO date)
 - **Summary:** (brief description)
 - **Root Cause:** (what went wrong)
 - **Fix:** (what was changed)
 - **Files Changed:** (list)
 - **Verification:** (how it was confirmed fixed)
+
+Severity rubric:
+| Severity | Criteria |
+|----------|----------|
+| Critical | System cannot operate safely — crash, data loss, silent incorrect execution, security violation |
+| High | Core feature broken or significantly degraded; no workaround |
+| Medium | Feature partially broken or degraded; workaround exists |
+| Low | Minor annoyance, cosmetic issue, or edge case with negligible impact |
 
 If an existing bug report template exists in the `docs/bug-reports` folder, follow that format instead.
 
