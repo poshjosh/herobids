@@ -432,16 +432,20 @@ export function makeCatalogContext(llmConfig: {
 
 export function getAvailableProviders(context: OperatorLlmCatalogContext): string[] {
   const explicit = getConfiguredProviders();
-  if (!isProviderAllowed(context.provider)) {
-    return explicit;
-  }
   const meta = PROVIDER_METADATA[context.provider];
 
-  // Dynamic providers are only available when the operator explicitly selected them
-  // and configured a usable catalog URL.
+  // Dynamic providers (e.g. Ollama) are available whenever the operator explicitly
+  // selected them and configured a usable catalog URL — regardless of environment.
+  // This takes precedence over the devOnly restriction because the operator made
+  // an explicit configuration choice.
   if (meta?.catalogMode === 'dynamic' && hasUsableDynamicCatalogConfig(context) && !explicit.includes(context.provider)) {
     return [...explicit, context.provider];
   }
+
+  if (!isProviderAllowed(context.provider)) {
+    return explicit;
+  }
+
   if (resolveApiKey(context.provider) && !explicit.includes(context.provider)) {
     return [...explicit, context.provider];
   }
