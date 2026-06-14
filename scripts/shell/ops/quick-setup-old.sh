@@ -50,10 +50,8 @@
 #
 # Setup mode
 #   SETUP_MODE            auto | guided | advanced (guide is accepted as an alias)
-#                         auto (default) provisions all fully configured
-#                         provider secret blocks (HL_*, BYBIT_*, ONEINCH_*)
-#                         via guided setup; otherwise it falls back to the
-#                         single-provider guided/advanced behavior
+#                         auto (default) uses guided mode when a single
+#                         provider + label can be resolved, otherwise advanced
 #
 # Guided setup inputs
 #   SETUP_PROVIDER        Optional unified provider identifier
@@ -194,7 +192,6 @@ log_section "Validating variables"
 MISSING=0
 SETUP_MODE="${SETUP_MODE:-auto}"
 EFFECTIVE_SETUP_MODE=""
-RUN_MULTI_PROVIDER=0
 SETUP_PROVIDER_RESOLVED=""
 SETUP_LABEL_RESOLVED=""
 ADVANCED_CREDENTIAL_VENUE=""
@@ -205,8 +202,6 @@ CREDENTIAL_ID=""
 CONNECTION_ID=""
 VENUE_ACCOUNT_ID=""
 TRADING_BINDING_ID=""
-AUTO_DETECTED_PROVIDERS=()
-MULTI_SETUP_SUMMARIES=()
 
 require_var() {
   local var="$1"
@@ -240,115 +235,6 @@ resolve_guided_label() {
   fi
 
   printf '%s' "${CREDENTIAL_LABEL:-${CONNECTION_LABEL:-}}"
-}
-
-provider_display_name() {
-  local provider="$1"
-  case "$provider" in
-    hyperliquid)
-      printf '%s' 'Hyperliquid'
-      ;;
-    bybit)
-      printf '%s' 'Bybit'
-      ;;
-    1inch)
-      printf '%s' '1inch'
-      ;;
-    *)
-      printf '%s' "$provider"
-      ;;
-  esac
-}
-
-provider_required_secret_vars() {
-  local provider="$1"
-  case "$provider" in
-    hyperliquid)
-      printf '%s' 'HL_API_KEY HL_SECRET HL_WALLET_ADDRESS'
-      ;;
-    bybit)
-      printf '%s' 'BYBIT_API_KEY BYBIT_SECRET'
-      ;;
-    1inch)
-      printf '%s' 'ONEINCH_API_KEY ONEINCH_PRIVATE_KEY'
-      ;;
-    *)
-      printf '%s' ''
-      ;;
-  esac
-}
-
-provider_secret_block_status() {
-  local provider="$1"
-  local required_vars
-  required_vars="$(provider_required_secret_vars "$provider")"
-
-  if [[ -z "$required_vars" ]]; then
-    printf '%s' 'unsupported'
-    return 0
-  fi
-
-  local -a vars
-  read -r -a vars <<< "$required_vars"
-
-  local present_count=0
-  local var_name
-  for var_name in "${vars[@]}"; do
-    if [[ -n "${!var_name:-}" ]]; then
-      ((present_count += 1))
-    fi
-  done
-
-  if (( present_count == 0 )); then
-    printf '%s' 'absent'
-  elif (( present_count == ${#vars[@]} )); then
-    printf '%s' 'complete'
-  else
-    printf '%s' 'partial'
-  fi
-}
-
-resolve_multi_provider_label() {
-  local provider="$1"
-  local provider_name
-  provider_name="$(provider_display_name "$provider")"
-
-  if [[ -n "${SETUP_LABEL:-}" ]]; then
-    printf '%s %s' "$SETUP_LABEL" "$provider_name"
-    return 0
-  fi
-
-  printf '%s' "$provider_name"
-}
-
-build_provider_secrets_json() {
-  local provider="$1"
-
-  case "$provider" in
-    hyperliquid)
-      jq -n \
-        --arg apiKey "$HL_API_KEY" \
-        --arg secret "$HL_SECRET" \
-        --arg walletAddress "$HL_WALLET_ADDRESS" \
-        '{ apiKey: $apiKey, secret: $secret, walletAddress: $walletAddress }'
-      ;;
-    bybit)
-      jq -n \
-        --arg apiKey "$BYBIT_API_KEY" \
-        --arg secret "$BYBIT_SECRET" \
-        '{ apiKey: $apiKey, secret: $secret }'
-      ;;
-    1inch)
-      jq -n \
-        --arg apiKey "$ONEINCH_API_KEY" \
-        --arg privateKey "$ONEINCH_PRIVATE_KEY" \
-        '{ apiKey: $apiKey, privateKey: $privateKey }'
-      ;;
-    *)
-      log_warn "No secret template for '${provider}' — sending empty secrets object"
-      printf '%s' '{}'
-      ;;
-  esac
 }
 
 build_flight_deal_skill_payload() {
@@ -422,20 +308,6 @@ case "$SETUP_MODE" in
     ;;
 esac
 
-for provider in hyperliquid bybit 1inch; do
-  secret_block_status="$(provider_secret_block_status "$provider")"
-  case "$secret_block_status" in
-    complete)
-      AUTO_DETECTED_PROVIDERS+=("$provider")
-      ;;
-    partial)
-      required_vars="$(provider_required_secret_vars "$provider")"
-      log_error "Provider ${provider} is partially configured. Set all required vars: ${required_vars}"
-      MISSING=1
-      ;;
-  esac
-done
-
 if SETUP_PROVIDER_RESOLVED="$(resolve_guided_provider)"; then
   :
 else
@@ -455,10 +327,7 @@ ADVANCED_CONNECTION_LABEL="${CONNECTION_LABEL:-${SETUP_LABEL:-${CREDENTIAL_LABEL
 
 case "$SETUP_MODE" in
   auto)
-    if [[ "${#AUTO_DETECTED_PROVIDERS[@]}" -gt 1 ]]; then
-      RUN_MULTI_PROVIDER=1
-      EFFECTIVE_SETUP_MODE="guided-multi"
-    elif [[ -n "$SETUP_PROVIDER_RESOLVED" && -n "$SETUP_LABEL_RESOLVED" ]]; then
+    if [[ -n "$SETUP_PROVIDER_RESOLVED" && -n "$SETUP_LABEL_RESOLVED" ]]; then
       EFFECTIVE_SETUP_MODE="guided"
     else
       EFFECTIVE_SETUP_MODE="advanced"
@@ -472,56 +341,52 @@ case "$SETUP_MODE" in
     ;;
 esac
 
-if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
-  log_info "Auto-detected providers for setup: ${AUTO_DETECTED_PROVIDERS[*]}"
-else
-  if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
-    if [[ -z "$SETUP_PROVIDER_RESOLVED" ]]; then
-      log_error "Guided mode requires one provider. Set SETUP_PROVIDER or make CREDENTIAL_VENUE and CONNECTION_PROVIDER match."
-      MISSING=1
-    fi
-    if [[ -z "$SETUP_LABEL_RESOLVED" ]]; then
-      log_error "Guided mode requires one label. Set SETUP_LABEL or make CREDENTIAL_LABEL and CONNECTION_LABEL match."
-      MISSING=1
-    fi
-
-    ADVANCED_CREDENTIAL_VENUE="$SETUP_PROVIDER_RESOLVED"
-    ADVANCED_CREDENTIAL_LABEL="$SETUP_LABEL_RESOLVED"
-    ADVANCED_CONNECTION_PROVIDER="$SETUP_PROVIDER_RESOLVED"
-    ADVANCED_CONNECTION_LABEL="$SETUP_LABEL_RESOLVED"
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+  if [[ -z "$SETUP_PROVIDER_RESOLVED" ]]; then
+    log_error "Guided mode requires one provider. Set SETUP_PROVIDER or make CREDENTIAL_VENUE and CONNECTION_PROVIDER match."
+    MISSING=1
+  fi
+  if [[ -z "$SETUP_LABEL_RESOLVED" ]]; then
+    log_error "Guided mode requires one label. Set SETUP_LABEL or make CREDENTIAL_LABEL and CONNECTION_LABEL match."
+    MISSING=1
   fi
 
-  # Credential / provider
-  require_var ADVANCED_CREDENTIAL_VENUE
+  ADVANCED_CREDENTIAL_VENUE="$SETUP_PROVIDER_RESOLVED"
+  ADVANCED_CREDENTIAL_LABEL="$SETUP_LABEL_RESOLVED"
+  ADVANCED_CONNECTION_PROVIDER="$SETUP_PROVIDER_RESOLVED"
+  ADVANCED_CONNECTION_LABEL="$SETUP_LABEL_RESOLVED"
+fi
 
-  # Venue-specific secrets
-  case "${ADVANCED_CREDENTIAL_VENUE:-}" in
-    hyperliquid)
-      require_var HL_API_KEY
-      require_var HL_SECRET
-      require_var HL_WALLET_ADDRESS
-      ;;
-    bybit)
-      require_var BYBIT_API_KEY
-      require_var BYBIT_SECRET
-      ;;
-    1inch)
-      require_var ONEINCH_API_KEY
-      require_var ONEINCH_PRIVATE_KEY
-      ;;
-    "")
-      : # already caught by require_var ADVANCED_CREDENTIAL_VENUE above
-      ;;
-    *)
-      log_warn "No built-in secret template for venue '${ADVANCED_CREDENTIAL_VENUE}'. Ensure any required secret variables are set."
-      ;;
-  esac
+# Credential / provider
+require_var ADVANCED_CREDENTIAL_VENUE
 
-  if [[ "$EFFECTIVE_SETUP_MODE" == "advanced" ]]; then
-    require_var ADVANCED_CREDENTIAL_LABEL
-    require_var ADVANCED_CONNECTION_PROVIDER
-    require_var ADVANCED_CONNECTION_LABEL
-  fi
+# Venue-specific secrets
+case "${ADVANCED_CREDENTIAL_VENUE:-}" in
+  hyperliquid)
+    require_var HL_API_KEY
+    require_var HL_SECRET
+    require_var HL_WALLET_ADDRESS
+    ;;
+  bybit)
+    require_var BYBIT_API_KEY
+    require_var BYBIT_SECRET
+    ;;
+  1inch)
+    require_var ONEINCH_API_KEY
+    require_var ONEINCH_PRIVATE_KEY
+    ;;
+  "")
+    : # already caught by require_var ADVANCED_CREDENTIAL_VENUE above
+    ;;
+  *)
+    log_warn "No built-in secret template for venue '${ADVANCED_CREDENTIAL_VENUE}'. Ensure any required secret variables are set."
+    ;;
+esac
+
+if [[ "$EFFECTIVE_SETUP_MODE" == "advanced" ]]; then
+  require_var ADVANCED_CREDENTIAL_LABEL
+  require_var ADVANCED_CONNECTION_PROVIDER
+  require_var ADVANCED_CONNECTION_LABEL
 fi
 
 # Telegram
@@ -535,8 +400,6 @@ log_ok "All required variables present"
 
 if [[ "$SETUP_MODE" == "auto" && "$EFFECTIVE_SETUP_MODE" == "advanced" ]]; then
   log_info "Auto mode selected advanced flow because a single guided provider/label could not be resolved."
-elif [[ "$SETUP_MODE" == "auto" && "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
-  log_info "Auto mode selected guided multi-provider flow."
 elif [[ "$SETUP_MODE" == "auto" ]]; then
   log_info "Auto mode selected guided flow."
 else
@@ -650,52 +513,40 @@ fi
 
 ensure_flight_deal_monitoring_skill
 
-if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
-  # -------------------------------------------------------------------------
-  # Step 3 — Guided provider link setup (multi-provider)
-  # -------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Shared secrets payload
+# ---------------------------------------------------------------------------
 
-  log_section "Step 3: Guided provider link setup (multi-provider)"
+case "$ADVANCED_CREDENTIAL_VENUE" in
+  hyperliquid)
+    SECRETS_JSON="$(jq -n \
+      --arg apiKey        "$HL_API_KEY" \
+      --arg secret        "$HL_SECRET" \
+      --arg walletAddress "$HL_WALLET_ADDRESS" \
+      '{ apiKey: $apiKey, secret: $secret, walletAddress: $walletAddress }')"
+    ;;
+  bybit)
+    SECRETS_JSON="$(jq -n \
+      --arg apiKey "$BYBIT_API_KEY" \
+      --arg secret "$BYBIT_SECRET" \
+      '{ apiKey: $apiKey, secret: $secret }')"
+    ;;
+  1inch)
+    SECRETS_JSON="$(jq -n \
+      --arg apiKey     "$ONEINCH_API_KEY" \
+      --arg privateKey "$ONEINCH_PRIVATE_KEY" \
+      '{ apiKey: $apiKey, privateKey: $privateKey }')"
+    ;;
+  *)
+    SECRETS_JSON="{}"
+    log_warn "No secret template for '${ADVANCED_CREDENTIAL_VENUE}' — sending empty secrets object"
+    ;;
+esac
 
-  for provider in "${AUTO_DETECTED_PROVIDERS[@]}"; do
-    provider_label="$(resolve_multi_provider_label "$provider")"
-    provider_secrets_json="$(build_provider_secrets_json "$provider")"
-
-    log_info "Linking provider=${provider} label=${provider_label}"
-
-    api_call POST /setup/provider-link "$(jq -n \
-      --arg provider "$provider" \
-      --arg label "$provider_label" \
-      --arg capability trading \
-      --argjson secrets "$provider_secrets_json" \
-      '{ provider: $provider, label: $label, secrets: $secrets, capability: $capability }')"
-
-    if [[ "$HTTP_STATUS" -eq 201 ]]; then
-      multi_credential_id="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
-      multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
-      multi_venue_account_id="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
-      multi_trading_binding_id="$(echo "$RESPONSE_BODY" | jq -r '.tradingBinding.id // empty')"
-
-      MULTI_SETUP_SUMMARIES+=("${provider}|${provider_label}|${multi_credential_id}|${multi_connection_id}|${multi_venue_account_id}|${multi_trading_binding_id}")
-
-      log_ok "Guided setup created provider=${provider} credential=${multi_credential_id} connection=${multi_connection_id}"
-      if [[ -n "$multi_venue_account_id" ]]; then
-        log_ok "Venue account created: id=${multi_venue_account_id}"
-      fi
-      if [[ -n "$multi_trading_binding_id" ]]; then
-        log_ok "Trading binding created: id=${multi_trading_binding_id}"
-      fi
-    else
-      log_error "Guided setup failed for provider ${provider} (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-      die "Guided multi-provider setup step failed."
-    fi
-  done
-elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   # -------------------------------------------------------------------------
   # Step 3 — Guided provider link setup
   # -------------------------------------------------------------------------
-
-  SECRETS_JSON="$(build_provider_secrets_json "$SETUP_PROVIDER_RESOLVED")"
 
   log_section "Step 3: Guided provider link (provider=${SETUP_PROVIDER_RESOLVED})"
 
@@ -726,8 +577,6 @@ else
   # -------------------------------------------------------------------------
   # Step 3 — Create credential
   # -------------------------------------------------------------------------
-
-  SECRETS_JSON="$(build_provider_secrets_json "$ADVANCED_CREDENTIAL_VENUE")"
 
   log_section "Step 3: Create credential (venue=${ADVANCED_CREDENTIAL_VENUE})"
 
@@ -792,7 +641,7 @@ fi
 # Final account setup — Set Telegram chat ID
 # ---------------------------------------------------------------------------
 
-if [[ "$EFFECTIVE_SETUP_MODE" == "guided" || "$EFFECTIVE_SETUP_MODE" == "guided-multi" ]]; then
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   log_section "Step 4: Set Telegram chat ID"
 else
   log_section "Step 5: Set Telegram chat ID"
@@ -830,20 +679,7 @@ log_ok "Mode:        ${EFFECTIVE_SETUP_MODE}"
 if [[ -n "${FLIGHT_DEAL_SKILL_ID:-}" && "${FLIGHT_DEAL_SKILL_ID:-}" != "null" ]]; then
   log_ok "Skill:       ${FLIGHT_DEAL_SKILL_ID}  (${FLIGHT_DEAL_SKILL_NAME})"
 fi
-if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
-  for summary in "${MULTI_SETUP_SUMMARIES[@]}"; do
-    IFS='|' read -r summary_provider summary_label summary_credential_id summary_connection_id summary_venue_account_id summary_binding_id <<< "$summary"
-    log_ok "Provider:    ${summary_provider}  (${summary_label})"
-    log_ok "Credential:  ${summary_credential_id}"
-    log_ok "Connection:  ${summary_connection_id}"
-    if [[ -n "$summary_venue_account_id" ]]; then
-      log_ok "Venue acct:  ${summary_venue_account_id}"
-    fi
-    if [[ -n "$summary_binding_id" ]]; then
-      log_ok "Binding:     ${summary_binding_id}"
-    fi
-  done
-elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
+if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   log_ok "Credential:  ${CREDENTIAL_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
   log_ok "Connection:  ${CONNECTION_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
   if [[ -n "$VENUE_ACCOUNT_ID" ]]; then
