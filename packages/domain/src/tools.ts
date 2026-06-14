@@ -43,6 +43,12 @@ export interface ToolResult {
   error?: string;
   /** When true, the failure is transient (rate limit, timeout) and retrying may succeed. */
   retryable?: boolean;
+  /**
+   * When explicitly false, the failure is a content-level outcome (e.g. HTTP 4xx, redirect
+   * blocked by policy) rather than an infrastructure fault. The circuit breaker should not
+   * count these against the tool. Defaults to true (i.e. assume fault unless told otherwise).
+   */
+  fault?: boolean;
 }
 
 /** Bot row shape returned by bot repository queries. */

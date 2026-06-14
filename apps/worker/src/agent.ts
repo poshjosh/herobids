@@ -56,7 +56,7 @@ import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from '
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolvePreScoutDecision } from './scout-gating.js';
 import { classifyRuntimeError } from './runtime-errors.js';
-import { FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
+import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
@@ -432,15 +432,6 @@ function recordToolFailure(tool: string): void {
 
 function recordToolSuccess(tool: string): void {
   toolCircuitBreaker.recordSuccess(tool);
-}
-
-function toolResultIndicatesFailure(toolResult: string): boolean {
-  try {
-    const parsed = JSON.parse(toolResult) as { ok?: boolean };
-    return parsed.ok === false;
-  } catch {
-    return false;
-  }
 }
 
 applyToolVisibility();
@@ -1067,7 +1058,7 @@ interface ToolCall {
 async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): Promise<string | null> {
   const toolCorrelationId = crypto.randomUUID();
 
-  const rejectToolCall = (message: string): string => {
+  const rejectToolCall = (message: string, options?: { fault?: boolean }): string => {
     emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_CALL, {
       tickId: currentTickId,
       phase,
@@ -1081,15 +1072,24 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       correlationId: toolCorrelationId,
       summary: message.slice(0, 500),
     });
-    return JSON.stringify({ ok: false, error: message, retryable: false });
+    return JSON.stringify({ ok: false, error: message, retryable: false, fault: options?.fault !== false });
   };
 
   // Hard runtime gate: reject any tool not declared in the active skill set.
   // The model was only told about allowed tools, but we enforce it here too so
   // a jailbreak or prompt injection cannot invoke undeclared capabilities.
   if (!allowedTools().has(call.tool)) {
+    // Distinguish circuit-open (temporary) from genuinely absent (permanent) so the model
+    // knows not to retry this turn vs never call the tool.
+    if (toolCircuitBreaker.getBlockedTools(tickCount).has(call.tool)) {
+      logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool circuit open — ignoring');
+      return rejectToolCall(
+        `tool circuit open: ${call.tool} is temporarily suspended due to repeated errors. Do not retry this turn. Use other tools or conclude the tick.`,
+        { fault: false },
+      );
+    }
     logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
-    return rejectToolCall(`tool rejected: ${call.tool} is not available in the current skill set`);
+    return rejectToolCall(`tool rejected: ${call.tool} is not available in the current skill set`, { fault: false });
   }
 
   logger.info({ tool: call.tool, args: call.args }, 'Executing tool');
@@ -1177,6 +1177,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         ok: false,
         error: errorMessage,
         retryable: false,
+        fault: false,
       });
     }
 
@@ -1187,6 +1188,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         ok: false,
         error: result.error ?? 'tool execution failed',
         retryable: result.retryable,
+        // Preserve fault classification: default to true (assume fault) unless explicitly false.
+        fault: result.fault !== false,
       });
       emitToolResultEvent({
         phase,
@@ -1704,7 +1707,7 @@ async function runTick(): Promise<void> {
               correlationId: rejectedToolCorrelationId,
               summary: `tool rejected: ${toolCall.name}`,
             });
-            return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false });
+            return JSON.stringify({ ok: false, error: `tool rejected: ${toolCall.name}`, retryable: false, fault: false });
           }
 
           try {

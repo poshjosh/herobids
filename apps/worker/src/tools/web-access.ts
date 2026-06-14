@@ -12,6 +12,10 @@ const { Readability } = _require('@mozilla/readability') as { Readability: new (
 
 const logger = pino({ name: 'tools:web-access' });
 
+function nonFaultError(error: string, retryable = false): ToolResult {
+  return { success: false, error, retryable, fault: false };
+}
+
 function getJsonSizeBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
@@ -113,7 +117,7 @@ const _runtimeConfig = (() => {
       tools?: {
         webAccess?: {
           tavily?: { baseUrl?: string; searchDepth?: string; maxResults?: number; timeoutMs?: number };
-          browseUrl?: { maxResponseBytes?: number; timeoutMs?: number };
+          browseUrl?: { maxResponseBytes?: number; timeoutMs?: number; maxRedirects?: number };
         };
       };
     };
@@ -164,6 +168,16 @@ function isPrivateIpv6(ip: string): boolean {
 }
 
 async function isHostPrivate(hostname: string): Promise<boolean> {
+  // If the hostname is a raw IPv4 literal, check it directly without DNS.
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) {
+    return isPrivateIpv4(hostname);
+  }
+  // If the hostname is a raw IPv6 literal (with or without brackets), check directly.
+  const ipv6Literal = hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;
+  if (ipv6Literal.includes(':')) {
+    return isPrivateIpv6(ipv6Literal);
+  }
+
   const results: string[] = [];
   try {
     const v4 = await resolve4(hostname);
@@ -202,7 +216,7 @@ const webSearchTool: AgentTool = {
       const denied = ctx.capabilityEngine.checkAccess('search_web', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({ agentId: ctx.agentId, reason: denied }, 'search_web denied by capability policy');
-        return { success: false, error: `capability policy denied: ${denied}`, retryable: false };
+        return nonFaultError(`capability policy denied: ${denied}`);
       }
       ctx.capabilityEngine.recordStart('search_web', ctx.sessionId);
     }
@@ -312,7 +326,7 @@ const browseUrlTool: AgentTool = {
       const denied = ctx.capabilityEngine.checkAccess('browse_url', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({ agentId: ctx.agentId, reason: denied }, 'browse_url denied by capability policy');
-        return { success: false, error: `capability policy denied: ${denied}`, retryable: false };
+        return nonFaultError(`capability policy denied: ${denied}`);
       }
       ctx.capabilityEngine.recordStart('browse_url', ctx.sessionId);
     }
@@ -326,7 +340,7 @@ const browseUrlTool: AgentTool = {
       // Enforce HTTPS
       const parsed = new URL(url);
       if (parsed.protocol !== 'https:') {
-        return { success: false, error: 'browse_url only allows https:// URLs', retryable: false };
+        return nonFaultError('browse_url only allows https:// URLs');
       }
 
       // SSRF: resolve hostname and block private IPs
@@ -334,50 +348,86 @@ const browseUrlTool: AgentTool = {
       const isPrivate = await isHostPrivate(hostname);
       if (isPrivate) {
         logger.warn({ agentId: ctx.agentId, hostname }, 'browse_url blocked private/unresolvable hostname');
-        return { success: false, error: `browse_url blocked: hostname resolves to a private or reserved IP address`, retryable: false };
+        return nonFaultError('browse_url blocked: hostname resolves to a private or reserved IP address');
       }
 
       const browseConfig = _runtimeConfig?.browseUrl;
       const grant = ctx.capabilityEngine?.getGrant('browse_url');
       const maxResponseBytes = grant?.limits?.maxResponseBytes ?? browseConfig?.maxResponseBytes ?? 512 * 1024;
       const timeoutMs = grant?.limits?.timeoutMs ?? browseConfig?.timeoutMs ?? 15_000;
+      const maxRedirects = browseConfig?.maxRedirects ?? 3;
 
       const controller = new AbortController();
       const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 
       let response: Response;
+      let currentUrl = url;
       try {
-        response = await fetch(url, {
-          headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'User-Agent': 'Herobids-Agent/1.0' },
-          redirect: 'manual',
-          signal: controller.signal,
-        });
+        // Follow redirects up to maxRedirects hops, re-validating SSRF on each hop.
+        let hops = 0;
+        while (true) {
+          response = await fetch(currentUrl, {
+            headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'User-Agent': 'Herobids-Agent/1.0' },
+            redirect: 'manual',
+            signal: controller.signal,
+          });
+
+          if (response.status < 300 || response.status >= 400) break;
+
+          // Have a redirect — check if we can follow it.
+          if (hops >= maxRedirects) {
+            return nonFaultError(`browse_url: too many redirects (limit ${maxRedirects})`);
+          }
+
+          const location = response.headers.get('location');
+          if (!location) {
+            return nonFaultError(`browse_url blocked HTTP redirect (${response.status}): no Location header`);
+          }
+
+          let dest: URL;
+          try {
+            dest = new URL(location, currentUrl);
+          } catch {
+            return nonFaultError(`browse_url blocked redirect: invalid Location URL '${location}'`);
+          }
+
+          // Only follow HTTPS redirects.
+          if (dest.protocol !== 'https:') {
+            return nonFaultError(`browse_url blocked redirect to non-HTTPS URL: ${dest.toString()}`);
+          }
+
+          // Re-check SSRF on destination hostname.
+          if (await isHostPrivate(dest.hostname)) {
+            logger.warn({ agentId: ctx.agentId, hostname: dest.hostname }, 'browse_url blocked redirect to private/unresolvable hostname');
+            return nonFaultError(`browse_url blocked redirect: hostname '${dest.hostname}' resolves to a private or reserved IP address`);
+          }
+
+          currentUrl = dest.toString();
+          hops++;
+        }
       } finally {
         clearTimeout(timeoutHandle);
       }
 
       if (response.status >= 300 && response.status < 400) {
+        // Should not reach here — handled in the loop — but guard defensively.
         const location = response.headers.get('location');
-        return {
-          success: false,
-          error: location
+        return nonFaultError(
+          location
             ? `browse_url blocked redirect to ${location}`
             : `browse_url blocked HTTP redirect (${response.status})`,
-          retryable: false,
-        };
+        );
       }
 
       if (!response.ok) {
-        return { success: false, error: `browse_url HTTP error: ${response.status}`, retryable: response.status >= 500 };
+        // 4xx: content-level failure (page not found, auth required, etc.) — not a tool fault.
+        // 5xx: server error — ambiguous, but still not the tool's fault.
+        return nonFaultError(`browse_url HTTP error: ${response.status}`, response.status >= 500);
       }
 
       const contentType = response.headers.get('content-type');
       if (!isSupportedBrowseContentType(contentType)) {
-        return {
-          success: false,
-          error: `browse_url unsupported content type: ${contentType}`,
-          retryable: false,
-        };
+        return nonFaultError(`browse_url unsupported content type: ${contentType}`);
       }
 
       // Abort early if Content-Length header already exceeds the byte cap
@@ -385,13 +435,13 @@ const browseUrlTool: AgentTool = {
       if (!Number.isNaN(contentLength) && contentLength > maxResponseBytes) {
         logger.warn({ agentId: ctx.agentId, contentLength, maxResponseBytes }, 'browse_url: Content-Length exceeds limit, aborting before stream');
         controller.abort();
-        return { success: false, error: `browse_url blocked: Content-Length (${contentLength}) exceeds maxResponseBytes (${maxResponseBytes})`, retryable: false };
+        return nonFaultError(`browse_url blocked: Content-Length (${contentLength}) exceeds maxResponseBytes (${maxResponseBytes})`);
       }
 
       // Stream body with byte cap to avoid buffering huge responses
       const reader = response.body?.getReader();
       if (!reader) {
-        return { success: false, error: 'browse_url: no response body', retryable: false };
+        return nonFaultError('browse_url: no response body');
       }
 
       const chunks: Uint8Array[] = [];
@@ -418,7 +468,7 @@ const browseUrlTool: AgentTool = {
       const bodyText = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
 
       // Extract readable text via @mozilla/readability + linkedom
-      let title = url;
+      let title = currentUrl;
       let content = bodyText;
 
       try {
@@ -427,14 +477,14 @@ const browseUrlTool: AgentTool = {
         const reader2 = new Readability(document as unknown as Document);
         const article = reader2.parse();
         if (article) {
-          title = article.title || url;
+          title = article.title || currentUrl;
           content = article.textContent ?? bodyText;
         } else {
           // Fall back to body text content
           const bodyEl = document.querySelector('body');
           content = bodyEl ? bodyEl.textContent ?? bodyText : bodyText;
           const titleEl = document.querySelector('title');
-          title = titleEl ? titleEl.textContent ?? url : url;
+          title = titleEl ? titleEl.textContent ?? currentUrl : currentUrl;
         }
       } catch {
         // Parsing failed — return raw body text truncated
@@ -449,7 +499,7 @@ const browseUrlTool: AgentTool = {
       }
 
       browseSuccess = true;
-      return { success: true, data: { url, title, content, truncated } };
+  return { success: true, data: { url: currentUrl, title, content, truncated } };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes('abort') || msg.includes('timeout');
@@ -495,7 +545,7 @@ const readDocumentTool: AgentTool = {
       const denied = ctx.capabilityEngine.checkAccess('read_document', ctx.agentId, ctx.sessionId);
       if (denied) {
         logger.warn({ agentId: ctx.agentId, reason: denied }, 'read_document denied by capability policy');
-        return { success: false, error: `capability policy denied: ${denied}`, retryable: false };
+        return nonFaultError(`capability policy denied: ${denied}`);
       }
       ctx.capabilityEngine.recordStart('read_document', ctx.sessionId);
     }
@@ -509,7 +559,7 @@ const readDocumentTool: AgentTool = {
       // Enforce HTTPS
       const parsed = new URL(url);
       if (parsed.protocol !== 'https:') {
-        return { success: false, error: 'read_document only allows https:// URLs', retryable: false };
+        return nonFaultError('read_document only allows https:// URLs');
       }
 
       // SSRF: resolve hostname and block private IPs
@@ -517,7 +567,7 @@ const readDocumentTool: AgentTool = {
       const isPrivate = await isHostPrivate(hostname);
       if (isPrivate) {
         logger.warn({ agentId: ctx.agentId, hostname }, 'read_document blocked private/unresolvable hostname');
-        return { success: false, error: 'read_document blocked: hostname resolves to a private or reserved IP address', retryable: false };
+        return nonFaultError('read_document blocked: hostname resolves to a private or reserved IP address');
       }
 
       const browseConfig = _runtimeConfig?.browseUrl;
@@ -540,33 +590,29 @@ const readDocumentTool: AgentTool = {
       }
 
       if (response.status >= 300 && response.status < 400) {
-        return { success: false, error: `read_document blocked redirect (${response.status})`, retryable: false };
+        return nonFaultError(`read_document blocked redirect (${response.status})`);
       }
 
       if (!response.ok) {
-        return { success: false, error: `read_document HTTP error: ${response.status}`, retryable: response.status >= 500 };
+        return nonFaultError(`read_document HTTP error: ${response.status}`, response.status >= 500);
       }
 
       const contentType = response.headers.get('content-type');
       if (!isSupportedDocumentContentType(contentType)) {
-        return {
-          success: false,
-          error: `read_document unsupported content type: ${contentType ?? 'unknown'}. Only PDF is supported.`,
-          retryable: false,
-        };
+        return nonFaultError(`read_document unsupported content type: ${contentType ?? 'unknown'}. Only PDF is supported.`);
       }
 
       // Abort early if Content-Length exceeds byte cap
       const contentLength = Number(response.headers.get('content-length') ?? NaN);
       if (!Number.isNaN(contentLength) && contentLength > maxResponseBytes) {
         controller.abort();
-        return { success: false, error: `read_document blocked: Content-Length (${contentLength}) exceeds maxResponseBytes (${maxResponseBytes})`, retryable: false };
+        return nonFaultError(`read_document blocked: Content-Length (${contentLength}) exceeds maxResponseBytes (${maxResponseBytes})`);
       }
 
       // Stream body with byte cap
       const reader = response.body?.getReader();
       if (!reader) {
-        return { success: false, error: 'read_document: no response body', retryable: false };
+        return nonFaultError('read_document: no response body');
       }
 
       const chunks: Uint8Array[] = [];

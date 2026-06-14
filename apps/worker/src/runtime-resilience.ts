@@ -58,6 +58,15 @@ export interface ToolCircuitBreakerOptions {
   reopenAfterTicks?: number;
 }
 
+export function toolResultIndicatesFailure(toolResult: string): boolean {
+  try {
+    const parsed = JSON.parse(toolResult) as { ok?: boolean; fault?: boolean };
+    return parsed.ok === false && parsed.fault !== false;
+  } catch {
+    return false;
+  }
+}
+
 export class ToolCircuitBreaker {
   private readonly circuits = new Map<string, { failures: number; reopenAtTick: number | null }>();
 
@@ -68,7 +77,7 @@ export class ToolCircuitBreaker {
     state.failures += 1;
     const threshold = this.options.failureThreshold ?? 3;
     if (state.failures >= threshold && state.reopenAtTick === null) {
-      state.reopenAtTick = currentTick + (this.options.reopenAfterTicks ?? 5);
+      state.reopenAtTick = currentTick + (this.options.reopenAfterTicks ?? 1);
     }
     this.circuits.set(tool, state);
     return { opened: state.reopenAtTick !== null && state.failures >= threshold, reopenAtTick: state.reopenAtTick };

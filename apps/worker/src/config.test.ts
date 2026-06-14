@@ -716,7 +716,7 @@ llm:
       expect(config.agentRuntime.failureBackoff.backoffThreshold).toBe(3);
       expect(config.agentRuntime.failureBackoff.maxFailures).toBe(5);
       expect(config.agentRuntime.toolCircuitBreaker.failureThreshold).toBe(3);
-      expect(config.agentRuntime.toolCircuitBreaker.reopenAfterTicks).toBe(5);
+      expect(config.agentRuntime.toolCircuitBreaker.reopenAfterTicks).toBe(1);
       expect(config.agentRuntime.thinking.drawdownThresholdPct).toBe(-2);
       expect(config.agentRuntime.contextDiff.fullContextEveryTicks).toBe(10);
       expect(config.agentRuntime.contextDiff.maxDiffTokens).toBe(200);

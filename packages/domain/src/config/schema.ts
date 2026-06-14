@@ -594,6 +594,7 @@ export const WebAccessToolsConfigSchema = z.object({
   browseUrl: z.object({
     maxResponseBytes: z.number().int().min(1024).default(512 * 1024),
     timeoutMs: z.number().int().min(1000).default(15_000),
+    maxRedirects: z.number().int().min(0).max(10).default(3),
   }).default({}),
 });
 
@@ -605,7 +606,7 @@ export const AgentRuntimeConfigSchema = z.object({
   }).default({}),
   toolCircuitBreaker: z.object({
     failureThreshold: z.number().int().min(1).default(3),
-    reopenAfterTicks: z.number().int().min(1).default(5),
+    reopenAfterTicks: z.number().int().min(1).default(1),
   }).default({}),
   thinking: z.object({
     drawdownThresholdPct: z.number().min(-100).max(0).default(-2),

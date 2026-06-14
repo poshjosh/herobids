@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyToolExclusions, FailureBackoffController, ToolCircuitBreaker } from './runtime-resilience.js';
+import { applyToolExclusions, FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
 
 describe('FailureBackoffController', () => {
   it('backs off after repeated failures and stops after the threshold', () => {
@@ -84,8 +84,23 @@ describe('ToolCircuitBreaker', () => {
 
     expect(opened.opened).toBe(true);
     expect(breaker.getBlockedTools(3).has('discover_tokens')).toBe(true);
-    expect(breaker.getBlockedTools(7).has('discover_tokens')).toBe(true);
-    expect(breaker.getBlockedTools(8).has('discover_tokens')).toBe(false);
+    expect(breaker.getBlockedTools(3).has('discover_tokens')).toBe(true);
+    expect(breaker.getBlockedTools(4).has('discover_tokens')).toBe(false);
+  });
+});
+
+describe('toolResultIndicatesFailure', () => {
+  it('treats fault:false tool results as non-failures for breaker accounting', () => {
+    expect(toolResultIndicatesFailure(JSON.stringify({ ok: false, error: 'redirect blocked', retryable: false, fault: false }))).toBe(false);
+    expect(toolResultIndicatesFailure(JSON.stringify({ ok: false, error: 'invalid parameters', retryable: false, fault: false }))).toBe(false);
+  });
+
+  it('treats ordinary tool failures as breaker failures', () => {
+    expect(toolResultIndicatesFailure(JSON.stringify({ ok: false, error: 'timeout', retryable: true }))).toBe(true);
+  });
+
+  it('ignores malformed tool results', () => {
+    expect(toolResultIndicatesFailure('not-json')).toBe(false);
   });
 });
 

@@ -120,6 +120,7 @@ describe('search_web tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe('search_web requires TAVILY_API_KEY');
     expect(result.retryable).toBe(false);
+    expect(result).not.toHaveProperty('fault');
   });
 
   it('truncates response when combined payload exceeds maxResponseBytes', async () => {
@@ -181,6 +182,7 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('only allows https://');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('rejects a URL whose hostname resolves to a private IPv4 address (192.168.x.x)', async () => {
@@ -192,6 +194,7 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('private or reserved IP');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('rejects a URL whose hostname resolves to loopback (127.0.0.1)', async () => {
@@ -202,6 +205,7 @@ describe('browse_url tool', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('private or reserved IP');
+    expect(result.fault).toBe(false);
   });
 
   it('extracts readable title and text content from valid HTML', async () => {
@@ -301,9 +305,10 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('Content-Length');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
-  it('rejects redirects instead of following them', async () => {
+  it('blocks redirect to private IP (SSRF protection)', async () => {
     vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
     vi.mocked(resolve6).mockResolvedValue([]);
 
@@ -319,6 +324,70 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('blocked redirect');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
+  });
+
+  it('follows a safe HTTPS redirect up to maxRedirects hops', async () => {
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+    vi.mocked(resolve6).mockResolvedValue([]);
+
+    const encoder = new TextEncoder();
+    const bodyBytes = encoder.encode(SAMPLE_HTML);
+    let readIndex = 0;
+    const mockReader = {
+      read: vi.fn(async () => {
+        if (readIndex < bodyBytes.length) {
+          const chunk = bodyBytes.slice(readIndex, readIndex + 1024);
+          readIndex += chunk.length;
+          return { done: false, value: chunk };
+        }
+        return { done: true, value: undefined };
+      }),
+      cancel: vi.fn(async () => undefined),
+    };
+
+    const fetchMock = vi.fn()
+      // First call: redirect to safe destination
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 301,
+        headers: { get: (name: string) => name === 'location' ? 'https://www.example.com/final' : null },
+        body: null,
+      })
+      // Second call: success
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        body: { getReader: () => mockReader },
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await browseUrlTool.execute({ url: 'https://example.com/moved' }, makeContext({ capabilityEngine: makeCapabilityEngine() }));
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1] as unknown[])[0]).toBe('https://www.example.com/final');
+    expect((result.data as { url: string }).url).toBe('https://www.example.com/final');
+  });
+
+  it('returns too-many-redirects error when hop limit is reached', async () => {
+    vi.mocked(resolve4).mockResolvedValue(['93.184.216.34']);
+    vi.mocked(resolve6).mockResolvedValue([]);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 302,
+      headers: { get: (name: string) => name === 'location' ? 'https://example.com/loop' : null },
+      body: null,
+    }));
+
+    const result = await browseUrlTool.execute({ url: 'https://example.com/loop' }, makeContext({ capabilityEngine: makeCapabilityEngine() }));
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('too many redirects');
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('rejects unsupported non-HTML content types', async () => {
@@ -342,6 +411,7 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('unsupported content type');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('is denied when capability policy returns a denial reason', async () => {
@@ -354,6 +424,7 @@ describe('browse_url tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('capability policy denied');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 });
 
@@ -377,6 +448,7 @@ describe('read_document', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('https://');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('rejects unsupported content types', async () => {
@@ -391,6 +463,7 @@ describe('read_document', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('unsupported content type');
     expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('rejects HTML content type', async () => {
@@ -404,6 +477,7 @@ describe('read_document', () => {
     const result = await readDocumentTool.execute({ url: 'https://example.com/page.html' }, makeContext());
     expect(result.success).toBe(false);
     expect(result.error).toContain('unsupported content type');
+    expect(result.fault).toBe(false);
   });
 
   it('blocks private IP addresses', async () => {
@@ -412,6 +486,7 @@ describe('read_document', () => {
     const result = await readDocumentTool.execute({ url: 'https://internal.company.local/doc.pdf' }, makeContext());
     expect(result.success).toBe(false);
     expect(result.error).toContain('private');
+    expect(result.fault).toBe(false);
   });
 
   it('enforces Content-Length byte budget', async () => {
@@ -428,6 +503,22 @@ describe('read_document', () => {
     const result = await readDocumentTool.execute({ url: 'https://example.com/large.pdf' }, makeContext());
     expect(result.success).toBe(false);
     expect(result.error).toContain('maxResponseBytes');
+    expect(result.fault).toBe(false);
+  });
+
+  it('treats redirects as non-fault failures', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://example.com/redirected.pdf' },
+      }),
+    );
+
+    const result = await readDocumentTool.execute({ url: 'https://example.com/doc.pdf' }, makeContext());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('blocked redirect');
+    expect(result.retryable).toBe(false);
+    expect(result.fault).toBe(false);
   });
 
   it('returns text extracted from a minimal PDF', async () => {
