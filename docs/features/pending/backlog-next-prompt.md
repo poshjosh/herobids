@@ -37,3 +37,7 @@ STEPS
 11. Update <backlog> to indicate DONE against the plan you completed. For example: `1. DONE [Skill Tool Validation]`
 
 12. Goto Step 1
+
+IMPORTANT
+
+DO NOT STOP TILL ALL PLANS IN <backlog> HAVE BEEN IMPLEMENTED
