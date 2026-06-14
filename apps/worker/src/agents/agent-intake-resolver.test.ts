@@ -146,16 +146,29 @@ describe('AgentIntakeResolver', () => {
       expect(result?.openPositionCount).toBe(2);
     });
 
-    it('derives fallback risk limits from the agent profile instead of permissive hardcoded values', async () => {
+    it('applies agent-profile limits for drawdown and notional, uses permissive sentinel for position size', async () => {
       const { deps } = makeDeps();
       const resolver = new AgentIntakeResolver(deps);
 
       const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
 
-      expect(result?.riskLimits.maxPositionSize.toString()).toBe('250');
+      expect(result?.riskLimits.maxPositionSize.toString()).toBe('1000000000');
       expect(result?.riskLimits.maxOpenPositions).toBe(10);
       expect(result?.riskLimits.maxDrawdown.toString()).toBe('75');
       expect(result?.riskLimits.maxOrderNotional?.toString()).toBe('250');
+      expect(result?.equity?.toString()).toBe('250');
+    });
+
+    it('omits capital-based limits when agent has no capital configured', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: null, dailyLossLimit: '75' });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result?.riskLimits.maxOrderNotional).toBeUndefined();
+      expect(result?.riskLimits.maxPositionSizePct).toBeUndefined();
+      expect(result?.equity).toBeUndefined();
     });
   });
 

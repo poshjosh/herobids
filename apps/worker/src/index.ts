@@ -403,7 +403,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         // Determine venue type from venue name heuristic
         const venueType: 'orderbook' | 'swap' = (binding.venue === 'jupiter' || binding.venue === '1inch') ? 'swap' : 'orderbook';
         const agent = await agentRepo.getAgent(agentId);
-        const capitalStr = agent?.capital ?? '100';
+        const capitalStr = agent?.capital ?? null;
         const dailyLossStr = agent?.dailyLossLimit ?? '10000';
 
         if (venueType === 'swap' && mode !== 'paper') {
@@ -422,9 +422,8 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           riskLimits: {
             maxPositionSize: quantity('1000000000'),
             maxOpenPositions: 10,
-            maxDrawdown: price(String(dailyLossStr)),
-            maxOrderNotional: price(String(capitalStr)),
-            maxPositionSizePct: 100,
+            maxDrawdown: price(dailyLossStr),
+            ...(capitalStr != null ? { maxOrderNotional: price(capitalStr), maxPositionSizePct: 100 } : {}),
           },
           venueAdapterFactory,
           createStreamPoolHandle: venueType !== 'swap'
@@ -450,7 +449,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             : undefined,
           swapBaseTokenAddress: undefined,
           swapTokenSafety: venueType === 'swap' ? swapTokenSafety : undefined,
-          capital: String(capitalStr),
+          ...(capitalStr != null ? { capital: capitalStr } : {}),
           onCrashed: async (err) => {
             agentState.deregisterOnCrash(agentId, sessionId, actor!);
             await sessionManager.handleRuntimeFailure(sessionId, agentId, agent?.userId, err);
@@ -529,11 +528,7 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback, workerEmail, (agentId, userId, status) => {
-  userEventPublisher.publishAgentStatus(userId, agentId, status).catch((err) => {
-    logger.error({ err, agentId }, 'Failed to publish agent status event');
-  });
-});
+const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback, workerEmail);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);

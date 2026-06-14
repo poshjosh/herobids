@@ -41,9 +41,9 @@ export class AgentIntakeResolver {
   async getIntakeDeps(agentId: string, instrumentId: string): Promise<DecisionIntakeDeps | undefined> {
     const binding = await this.resolveActiveBinding(agentId);
     if (!binding) return undefined;
-    const agent = await this.deps.agentRepo.getAgent(agentId).catch(() => null);
+    const agent = await this.deps.agentRepo.getAgent(agentId);
     const openPositions = await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId);
-    const capitalStr = agent?.capital ?? '100';
+    const capitalStr = agent?.capital ?? null;
     const dailyLossStr = agent?.dailyLossLimit ?? '10000';
 
     const executor = new PaperExecutor(this.deps.idGen);
@@ -59,16 +59,15 @@ export class AgentIntakeResolver {
       riskLimits: {
         maxPositionSize: quantity('1000000000'),
         maxOpenPositions: 10,
-        maxDrawdown: price(String(dailyLossStr)),
-        maxOrderNotional: price(String(capitalStr)),
-        maxPositionSizePct: 100,
+        maxDrawdown: price(dailyLossStr),
+        ...(capitalStr != null ? { maxOrderNotional: price(capitalStr), maxPositionSizePct: 100 } : {}),
       },
       markSource: this.deps.markSource,
       persistence: this.buildPersistence(agentId, binding.venueAccountId, binding.venue),
       idGen: { planId: () => this.deps.idGen.planId() },
       clock: realClock,
       openPositionCount: openPositions.filter((position) => position.side !== 'flat').length,
-      equity: price(String(capitalStr)),
+      ...(capitalStr != null ? { equity: price(capitalStr) } : {}),
     };
   }
 

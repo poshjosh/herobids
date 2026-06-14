@@ -349,6 +349,8 @@ async function createAgent(token: string): Promise<string> {
         skillIds: ['trading', 'bot-management', 'risk-monitoring'],
         executionMode: EXECUTION_MODE,
         tickIntervalMs: TICK_INTERVAL_MS,
+        // Required: sets maxOrderNotional; must cover BTC order notional (~$640 at current prices)
+        capital: '100000',
       },
     },
   );
