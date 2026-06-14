@@ -64,7 +64,7 @@ function makeFetchForStart(containerId = 'container-abc') {
 describe('DockerAgentManager — TCP URL normalization (bug #19)', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it('force-removes an existing running container before create', async () => {
+  it('stops an existing running container before create', async () => {
     const containerId = 'container-abc';
     const fetchMock = vi.fn().mockImplementation((url: string, _init: RequestInit) => {
       if (url.includes('/json') && !url.includes('events')) {
@@ -73,7 +73,10 @@ describe('DockerAgentManager — TCP URL normalization (bug #19)', () => {
           headers: { 'Content-Type': 'application/json' },
         }));
       }
-      if (url.includes('?force=true')) {
+      if (url.includes('/stop')) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.includes('/containers/') && !url.includes('/json') && !url.includes('/create') && !url.includes('/start') && !url.includes('/stop')) {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
       if (url.includes('/create')) {
@@ -98,11 +101,14 @@ describe('DockerAgentManager — TCP URL normalization (bug #19)', () => {
     await manager.start(SPEC);
 
     const urls = fetchMock.mock.calls.map((c: unknown[]) => c[0] as string);
-    const deleteIndex = urls.findIndex((u) => u.includes('?force=true'));
+    const stopIndex = urls.findIndex((u) => u.includes('/stop'));
+    const deleteIndex = urls.findIndex((u) => u.includes('/containers/') && !u.includes('/json') && !u.includes('/create') && !u.includes('/start') && !u.includes('/stop'));
     const createIndex = urls.findIndex((u) => u.includes('/create'));
 
+    expect(stopIndex).toBeGreaterThanOrEqual(0);
     expect(deleteIndex).toBeGreaterThanOrEqual(0);
     expect(createIndex).toBeGreaterThanOrEqual(0);
+    expect(stopIndex).toBeLessThan(deleteIndex);
     expect(deleteIndex).toBeLessThan(createIndex);
   });
 

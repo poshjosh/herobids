@@ -47,6 +47,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Graceful agent deployment (2026-06-15): worker startup now stops existing agent containers before deleting them, giving runtimes a SIGTERM window during redeploys.
+
 - Runtime state alignment (2026-06-15): runtime session retirement now preserves `crashed` vs `stopped`, and Docker fallback handling skips duplicate crash processing once an abnormal end is already recorded.
 
 - System skill sync (2026-06-15): API startup now upserts platform-owned skills and revisions from `SYSTEM_SKILLS`, and functional reseed helpers reuse the same sync path.

@@ -489,7 +489,14 @@ export class DockerAgentManager {
     if (res.status === 404) return;
     if (!res.ok) return;
 
-    await this.dockerRequest('DELETE', `/containers/${name}?force=true`);
+    const stopRes = await this.dockerRequest('POST', `/containers/${name}/stop`, undefined, '?t=20');
+    if (stopRes.status === 404) return;
+    if (!stopRes.ok && stopRes.status !== 304) {
+      const text = await stopRes.text().catch(() => '');
+      throw new Error(`Docker container stop failed before recreate for ${name}: ${stopRes.status} ${text.slice(0, 300)}`);
+    }
+
+    await this.dockerRequest('DELETE', `/containers/${name}`);
   }
 
   private dockerRequest(method: string, path: string, body?: unknown, suffix = ''): Promise<Response> {
