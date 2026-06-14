@@ -332,10 +332,10 @@ auth:
 
 # Plan enforcement — coarse resource limits per user plan.
 plans:
-  defaultPlanId: free
+  defaultPlanId: free # required
   plans:
     free:
-      entitlements:
+      entitlements: # required
         skills:
           canCreatePrivateSkills: false
           canViewMarketplaceSkills: true
@@ -354,7 +354,7 @@ plans:
           maxVenueAccounts: 5
           maxConcurrentBacktests: 3
           liveEnabled: false
-      usage:
+      usage: # required
         includedCreditCents: 0
         topUpsEnabled: false
         topUpPackIds: []
