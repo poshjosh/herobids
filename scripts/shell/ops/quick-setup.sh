@@ -313,11 +313,6 @@ resolve_multi_provider_label() {
   local provider_name
   provider_name="$(provider_display_name "$provider")"
 
-  if [[ -n "${SETUP_LABEL:-}" ]]; then
-    printf '%s %s' "$SETUP_LABEL" "$provider_name"
-    return 0
-  fi
-
   printf '%s' "$provider_name"
 }
 
@@ -474,6 +469,9 @@ esac
 
 if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
   log_info "Auto-detected providers for setup: ${AUTO_DETECTED_PROVIDERS[*]}"
+  for provider in "${AUTO_DETECTED_PROVIDERS[@]}"; do
+    log_info "Auto-generated label for ${provider}: $(resolve_multi_provider_label "$provider")"
+  done
 else
   if [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
     if [[ -z "$SETUP_PROVIDER_RESOLVED" ]]; then
