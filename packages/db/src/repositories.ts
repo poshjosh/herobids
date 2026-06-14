@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, isNull, desc, or, gte, inArray, notInArray } from 'drizzle-orm';
+import { eq, and, isNull, desc, or, gte, inArray, notInArray, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { fills, positions, bots, tradingBindings, executionPlans, orders, balanceSnapshots, decisions, venueAccounts } from './schema/index.js';
 
@@ -18,6 +18,8 @@ export interface InsertFill {
   price: string;
   fee?: string;
   feeCurrency?: string;
+  /** Realized P&L delta for this fill (position P&L minus fee) */
+  realizedPnlDelta?: string;
   filledAt: Date;
 }
 
@@ -56,6 +58,7 @@ export class FillRepository {
       price: fill.price,
       fee: fill.fee ?? null,
       feeCurrency: fill.feeCurrency ?? null,
+      realizedPnlDelta: fill.realizedPnlDelta ?? null,
       filledAt: fill.filledAt,
     });
     return id;
@@ -66,6 +69,33 @@ export class FillRepository {
     const conditions = [
       eq(fills.actorType, actorType),
       eq(fills.actorId, actorId),
+    ];
+    if (since) {
+      conditions.push(gte(fills.filledAt, since));
+    }
+    const query = this.db
+      .select()
+      .from(fills)
+      .where(and(...conditions))
+      .orderBy(desc(fills.filledAt));
+    if (limit) {
+      return query.limit(limit);
+    }
+    return query;
+  }
+
+  /** Get recent fills for a specific actor + venue account, optionally since a timestamp */
+  async getRecentByActorAndVenueAccount(
+    actorType: string,
+    actorId: string,
+    venueAccountId: string,
+    since?: Date,
+    limit?: number,
+  ) {
+    const conditions = [
+      eq(fills.actorType, actorType),
+      eq(fills.actorId, actorId),
+      eq(fills.venueAccountId, venueAccountId),
     ];
     if (since) {
       conditions.push(gte(fills.filledAt, since));
@@ -112,6 +142,24 @@ export class FillRepository {
       .limit(1);
     if (!rows[0]) return null;
     return { price: rows[0].price!, filledAt: rows[0].filledAt.toISOString() };
+  }
+
+  /** Sum all realized_pnl_delta for an actor (fee-adjusted cumulative P&L). Returns '0' if no fills. */
+  async sumRealizedPnlDelta(actorType: string, actorId: string): Promise<string> {
+    const rows = await this.db
+      .select({ total: sql<string>`COALESCE(SUM(${fills.realizedPnlDelta}::numeric), 0)` })
+      .from(fills)
+      .where(and(eq(fills.actorType, actorType), eq(fills.actorId, actorId)));
+    return rows[0]?.total ?? '0';
+  }
+
+  /** Sum realized_pnl_delta for an actor scoped to a specific venue account. Returns '0' if no fills. */
+  async sumRealizedPnlDeltaByVenueAccount(actorType: string, actorId: string, venueAccountId: string): Promise<string> {
+    const rows = await this.db
+      .select({ total: sql<string>`COALESCE(SUM(${fills.realizedPnlDelta}::numeric), 0)` })
+      .from(fills)
+      .where(and(eq(fills.actorType, actorType), eq(fills.actorId, actorId), eq(fills.venueAccountId, venueAccountId)));
+    return rows[0]?.total ?? '0';
   }
 }
 
@@ -265,7 +313,7 @@ export interface UpsertOrder {
   actorType?: string;
   actorId?: string;
   executionPlanId?: string;
-  venueRefId: string;
+  venueRefId?: string;
   clientOrderId?: string;
   venue: string;
   symbol: string;
@@ -273,9 +321,19 @@ export interface UpsertOrder {
   type: string;
   quantity: string;
   price?: string;
+  referencePrice?: string;
   status: string;
+  submissionState?: 'prepared' | 'submit_attempting' | 'venue_acknowledged' | 'terminal';
+  submitAttemptedAt?: string;
+  acknowledgedAt?: string;
   filledQuantity?: string;
   avgFillPrice?: string;
+}
+
+function parseIsoTimestamp(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 /**
@@ -354,6 +412,16 @@ const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'rejected'];
 export class OrderRepository {
   constructor(private readonly db: Database) {}
 
+  /** Get an order by venue reference ID. */
+  async getByVenueRefId(venueRefId: string) {
+    const rows = await this.db
+      .select()
+      .from(orders)
+      .where(eq(orders.venueRefId, venueRefId))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   /** Get open (non-terminal) orders for an actor */
   async getOpenByActor(actorType: string, actorId: string) {
     return this.db
@@ -401,6 +469,10 @@ export class OrderRepository {
 
   /** Upsert an order by venueRefId (for private stream updates) — atomic via transaction */
   async upsertByVenueRefId(order: UpsertOrder): Promise<void> {
+    if (!order.venueRefId) {
+      throw new Error('upsertByVenueRefId requires venueRefId');
+    }
+
     await this.db.transaction(async (tx) => {
       const existing = await tx
         .select()
@@ -415,6 +487,10 @@ export class OrderRepository {
             status: order.status,
             filledQuantity: order.filledQuantity,
             avgFillPrice: order.avgFillPrice,
+            referencePrice: order.referencePrice,
+            submissionState: order.submissionState,
+            submitAttemptedAt: parseIsoTimestamp(order.submitAttemptedAt),
+            acknowledgedAt: parseIsoTimestamp(order.acknowledgedAt),
             // Backfill plan linkage when provided (handles stream-before-persist race)
             ...(order.executionPlanId && !existing[0]!.executionPlanId && { executionPlanId: order.executionPlanId }),
             ...(order.clientOrderId && !existing[0]!.clientOrderId && { clientOrderId: order.clientOrderId }),
@@ -436,11 +512,87 @@ export class OrderRepository {
           type: order.type,
           quantity: order.quantity,
           price: order.price,
+          referencePrice: order.referencePrice,
           status: order.status,
+          submissionState: order.submissionState,
+          submitAttemptedAt: parseIsoTimestamp(order.submitAttemptedAt),
+          acknowledgedAt: parseIsoTimestamp(order.acknowledgedAt),
           filledQuantity: order.filledQuantity ?? '0',
           avgFillPrice: order.avgFillPrice,
         });
       }
+    });
+  }
+
+  /**
+   * Upsert an order by deterministic clientOrderId + actor scope.
+   * Used for durable pre-submit state before a venueRefId exists.
+   */
+  async upsertByClientOrderId(order: UpsertOrder): Promise<void> {
+    if (!order.clientOrderId) {
+      throw new Error('upsertByClientOrderId requires clientOrderId');
+    }
+    if (!order.actorId) {
+      throw new Error('upsertByClientOrderId requires actorId');
+    }
+
+    const actorType = order.actorType ?? 'system';
+    const actorId = order.actorId;
+
+    await this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.clientOrderId, order.clientOrderId!),
+            eq(orders.actorType, actorType),
+            eq(orders.actorId, actorId),
+          ),
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        await tx
+          .update(orders)
+          .set({
+            status: order.status,
+            venueRefId: order.venueRefId ?? existing[0]!.venueRefId,
+            filledQuantity: order.filledQuantity,
+            avgFillPrice: order.avgFillPrice,
+            referencePrice: order.referencePrice,
+            submissionState: order.submissionState,
+            submitAttemptedAt: parseIsoTimestamp(order.submitAttemptedAt),
+            acknowledgedAt: parseIsoTimestamp(order.acknowledgedAt),
+            ...(order.executionPlanId && !existing[0]!.executionPlanId && { executionPlanId: order.executionPlanId }),
+            updatedAt: new Date(),
+          })
+          .where(eq(orders.id, existing[0]!.id));
+        return;
+      }
+
+      await tx.insert(orders).values({
+        id: order.id ?? crypto.randomUUID(),
+        venueAccountId: order.venueAccountId,
+        actorType,
+        actorId,
+        executionPlanId: order.executionPlanId,
+        venueRefId: order.venueRefId,
+        clientOrderId: order.clientOrderId,
+        venue: order.venue,
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: order.quantity,
+        price: order.price,
+        referencePrice: order.referencePrice,
+        status: order.status,
+        submissionState: order.submissionState,
+        submitAttemptedAt: parseIsoTimestamp(order.submitAttemptedAt),
+        acknowledgedAt: parseIsoTimestamp(order.acknowledgedAt),
+        filledQuantity: order.filledQuantity ?? '0',
+        avgFillPrice: order.avgFillPrice,
+      });
     });
   }
 }

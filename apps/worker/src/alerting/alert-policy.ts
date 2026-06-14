@@ -27,6 +27,7 @@ const SEVERITY_MAP: Record<string, AlertSeverity> = {
   'instance.crashed': 'critical',
   'instance.tick_error': 'warn',
   'instance.stopped': 'info',
+  'reconciliation.observed_variance': 'info',
   'reconciliation.drift_detected': 'warn',
   'reconciliation.correction': 'info',
 };

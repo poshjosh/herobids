@@ -322,6 +322,10 @@ marking:
       expect(config.liveRollout.maxInitialOrderNotionalUsd).toBe('50');
       expect(config.liveRollout.maxConsecutiveVenueErrors).toBe(3);
       expect(config.liveRollout.slippageAlertBps).toBe(50);
+      expect(config.liveRollout.limitOrderTimeoutMs).toBe(120000);
+      expect(config.liveRollout.marketOrderTimeoutMs).toBe(30000);
+      expect(config.liveRollout.timeoutCheckIntervalMs).toBe(10000);
+      expect(config.liveRollout.crashPolicy).toBe('alert_manual_intervention');
     });
 
     it('loads explicit liveRollout from YAML', () => {

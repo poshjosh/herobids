@@ -43,21 +43,35 @@ export interface SwapReceipt {
   timestamp: string;
 }
 
-/** Balance for a swap venue */
+/**
+ * Balance snapshot for a swap venue.
+ *
+ * In shared-wallet mode this is observational telemetry, not an authoritative
+ * claim that HeroBids can explain the entire wallet ledger.
+ */
 export interface SwapBalanceSnapshot {
   /** Per-asset balances. Crypto: token mint → amount. FX: currency code → amount. */
   balances: Array<{ asset: string; amount: Quantity }>;
   timestamp: string;
 }
 
-/** Balance for a single token on a swap venue */
+/**
+ * Balance snapshot for a single token on a swap venue.
+ *
+ * In shared-wallet mode this is observational telemetry for the queried asset.
+ */
 export interface TokenBalance {
   asset: string;
   amount: Quantity;
   timestamp: string;
 }
 
-/** A transaction as reported by the swap venue (used for reconciliation) */
+/**
+ * A transaction as reported by the swap venue.
+ *
+ * In shared-wallet mode this is observational wallet activity, not proof that
+ * HeroBids owns or can classify every transaction affecting the wallet.
+ */
 export interface SwapTransaction {
   /** Venue-specific reference (tx hash, deal ticket ID) */
   executionRef: string;
@@ -73,17 +87,23 @@ export interface SwapTransaction {
  * Crypto: DEX aggregators (Jupiter, 1inch).
  * TradFi: instant-execution FX/CFD brokers, OTC desks.
  * Lifecycle: quote → execute.
+ *
+ * Execution methods (`quote`, `executeSwap`) are authoritative for HeroBids'
+ * own execution pipeline. Balance and transaction fetches are telemetry
+ * surfaces that may observe unrelated wallet activity in shared-wallet mode.
  */
 export interface SwapVenuePort {
   quote(params: SwapQuoteParams): Promise<Result<SwapQuote, SwapVenueError>>;
   executeSwap(quote: SwapQuote): Promise<Result<SwapReceipt, SwapVenueError>>;
+
+  /** Fetch current venue balances as observational telemetry. */
   fetchBalances(): Promise<Result<SwapBalanceSnapshot, SwapVenueError>>;
 
-  // --- Reconciliation methods (Phase 2a) ---
+  // --- Telemetry methods used by reconciliation and operator visibility ---
 
-  /** Fetch balance for a specific token (on-chain balance check for reconciliation) */
+  /** Fetch a single token balance as observational telemetry. */
   fetchBalance(token: string): Promise<Result<TokenBalance, SwapVenueError>>;
 
-  /** Fetch recent transactions since a given timestamp (detect unrecorded swaps) */
+  /** Fetch recent wallet transactions as observational telemetry. */
   fetchRecentTransactions(since?: Date): Promise<Result<SwapTransaction[], SwapVenueError>>;
 }

@@ -10,3 +10,5 @@ export * from './skills.js';
 export * from './platform.js';
 export * from './runtime-composition.js';
 export * from './tools.js';
+export * from './trading/execution-capability.js';
+export * from './trading/actor-health.js';

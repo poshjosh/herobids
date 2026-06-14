@@ -61,7 +61,7 @@ describe('drift category classification', () => {
     expect(result.diffs[0]?.category).toBeUndefined();
   });
 
-  it('classifies balance mismatch as unexplained_balance_delta (no venue attribution available)', () => {
+  it('classifies balance mismatch as observed_balance_variance', () => {
     const local = makeLocalState({
       balances: [{ asset: 'USDC', total: new Decimal('1000') }],
     });
@@ -74,10 +74,10 @@ describe('drift category classification', () => {
 
     const result = reconcileWithThresholds(local, venue, { balance: new Decimal('1') });
     expect(result.status).toBe('drift_detected');
-    expect(result.diffs[0]?.category).toBe('unexplained_balance_delta');
+    expect(result.diffs[0]?.category).toBe('observed_balance_variance');
   });
 
-  it('classifies large balance difference as unexplained_balance_delta', () => {
+  it('classifies large balance difference as observed_balance_variance', () => {
     const local = makeLocalState({
       balances: [{ asset: 'USDC', total: new Decimal('1000') }],
     });
@@ -90,7 +90,7 @@ describe('drift category classification', () => {
 
     const result = reconcileWithThresholds(local, venue, { balance: new Decimal('1') });
     expect(result.status).toBe('drift_detected');
-    expect(result.diffs[0]?.category).toBe('unexplained_balance_delta');
+    expect(result.diffs[0]?.category).toBe('observed_balance_variance');
   });
 
   it('classifies orphaned order as open_order_drift', () => {
@@ -116,5 +116,21 @@ describe('drift category classification', () => {
     const result = reconcileWithThresholds(makeLocalState(), makeVenueState(), {});
     expect(result.status).toBe('match');
     expect(result.diffs).toHaveLength(0);
+  });
+
+  it('does NOT classify balance mismatch as observed_balance_variance in authoritative mode', () => {
+    const local = makeLocalState({
+      balances: [{ asset: 'USDC', total: new Decimal('1000') }],
+    });
+    const venue = makeVenueState({
+      balances: {
+        balances: [{ asset: 'USDC', free: new Decimal('995'), locked: new Decimal('0'), total: new Decimal('995') }],
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    const result = reconcileWithThresholds(local, venue, { balance: new Decimal('1'), venueAccountingMode: 'authoritative' });
+    expect(result.status).toBe('drift_detected');
+    expect(result.diffs[0]?.category).toBeUndefined();
   });
 });

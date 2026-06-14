@@ -143,10 +143,28 @@ export function resolveExecutionModeForSkills(input: {
   }
 
   if (input.executionModeProvided) {
-    return { value: normalizeExecutionMode(input.submittedExecutionMode) ?? null };
+    const resolved = normalizeExecutionMode(input.submittedExecutionMode);
+    if (resolved == null) {
+      return {
+        value: null,
+        issue: {
+          code: 'custom',
+          path: ['executionMode'],
+          message: 'executionMode must be explicitly set for agents with trading skills (paper, shadow, or live)',
+        },
+      };
+    }
+    return { value: resolved };
   }
 
-  return { value: normalizeExecutionMode(input.currentExecutionMode) ?? null };
+  // Carry forward existing mode when not provided in the update
+  const existing = normalizeExecutionMode(input.currentExecutionMode);
+  if (existing != null) {
+    return { value: existing };
+  }
+
+  // No existing mode and none provided — default to paper for backward compat during creation
+  return { value: 'paper' };
 }
 
 export function mergeModelPolicy(

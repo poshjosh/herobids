@@ -1,9 +1,11 @@
-import type { Strategy, MarketSnapshot, Decision, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, Decision, MarkSource, SwapTokenSafetyPort, Price } from '@herobids/domain';
 import type { Executor, ExecutionResult } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { Journal } from './journal.js';
 import type { RiskLimits } from './risk-gate.js';
 import type { PositionState } from './position-tracker.js';
+import type { EquityTracker } from './equity-tracker.js';
+import type { DailyLossTracker } from './daily-loss-tracker.js';
 import { submitDecisionForExecution } from './decision-intake.js';
 import type { DecisionContext } from './decision-intake.js';
 import { computeDecisionContextHash } from './decision-context-hash.js';
@@ -61,6 +63,8 @@ export interface PersistFillParams {
   price: string;
   fee?: string;
   feeCurrency?: string;
+  /** Realized P&L delta for this fill (position P&L minus fee) */
+  realizedPnlDelta?: string;
   filledAt: Date;
 }
 
@@ -117,7 +121,11 @@ export interface PersistOrderParams {
   type: string;
   quantity: string;
   price?: string;
+  referencePrice?: string;
   status: string;
+  submissionState?: 'prepared' | 'submit_attempting' | 'venue_acknowledged' | 'terminal';
+  submitAttemptedAt?: string;
+  acknowledgedAt?: string;
   filledQuantity?: string;
   avgFillPrice?: string;
 }
@@ -152,6 +160,16 @@ export interface TradingCycleDeps {
     minAgeHours?: number;
     allowOverrides?: boolean;
   };
+  /** Equity tracker for drawdown risk checks */
+  equityTracker?: EquityTracker;
+  /** Rolling 24h daily loss tracker */
+  dailyLossTracker?: DailyLossTracker;
+  /** Open positions (for multi-position unrealized P&L) */
+  openPositions?: PositionState[];
+  /** Timestamp of last stop-loss exit (for cooldown enforcement) */
+  lastStopLossExitMs?: number;
+  /** Pre-computed unrealized P&L across all positions */
+  precomputedUnrealizedPnl?: Price;
 }
 
 /**
@@ -264,6 +282,11 @@ export async function runTradingCycle(
     clock: deps.clock,
     swapTokenSafety: deps.swapTokenSafety,
     swapTokenSafetyThresholds: deps.swapTokenSafetyThresholds,
+    equityTracker: deps.equityTracker,
+    dailyLossTracker: deps.dailyLossTracker,
+    openPositions: deps.openPositions,
+    lastStopLossExitMs: deps.lastStopLossExitMs,
+    precomputedUnrealizedPnl: deps.precomputedUnrealizedPnl,
   });
 
   return {

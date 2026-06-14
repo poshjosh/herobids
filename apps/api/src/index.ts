@@ -21,6 +21,7 @@ import { aiRoutes } from './routes/ai.js';
 import { skillsRoutes } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
 import { exportRoutes } from './routes/exports.js';
+import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
 import { makeCatalogContext } from './llm-model-catalog.js';
@@ -124,6 +125,7 @@ await aiRoutes(app, db, appConfig.llm, redisClient);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
+await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 
 // WebSocket event stream — uses a fresh Redis subscriber per connection.

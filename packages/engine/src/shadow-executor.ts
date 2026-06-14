@@ -9,6 +9,8 @@ import type { ExecutionPlan } from './planner.js';
 import type { ManagedOrder, FillEvent } from './order-state.js';
 import type { MarketDataFeed, TradeEvent } from './market-data-feed.js';
 import type { IdGenerator } from './paper-executor.js';
+import type { FeeSimulatorConfig } from './fee-simulator.js';
+import { simulateFee } from './fee-simulator.js';
 
 /**
  * Shadow executor — validates strategy decisions against real market conditions
@@ -31,6 +33,7 @@ export class ShadowExecutor implements Executor {
     private readonly idGen: IdGenerator,
     private readonly feed: MarketDataFeed,
     private readonly swapVenue?: SwapVenuePort,
+    private readonly feeConfig?: FeeSimulatorConfig,
   ) {}
 
   async execute(plan: ExecutionPlan, _currentPrice: Price): Promise<Result<ExecutionResult, EngineError>> {
@@ -81,7 +84,7 @@ export class ShadowExecutor implements Executor {
           side: planned.side,
           quantity: planned.quantity,
           price: fillPrice,
-          fee: quantity('0'),
+          fee: this.feeConfig ? simulateFee(this.feeConfig, fillPrice.mul(planned.quantity)) : quantity('0'),
           feeCurrency: 'USD',
           filledAt: now,
         };
@@ -176,7 +179,7 @@ export class ShadowExecutor implements Executor {
           side: planned.side,
           quantity: filledQuantity,
           price: fillPrice,
-          fee: quantity('0'),
+          fee: this.feeConfig ? simulateFee(this.feeConfig, fillPrice.mul(filledQuantity)) : quantity('0'),
           feeCurrency: 'USD',
           filledAt: now,
         };
@@ -226,7 +229,7 @@ export class ShadowExecutor implements Executor {
             side: planned.side,
             quantity: planned.quantity,
             price: limitPrice,
-            fee: quantity('0'),
+            fee: this.feeConfig ? simulateFee(this.feeConfig, limitPrice.mul(planned.quantity)) : quantity('0'),
             feeCurrency: 'USD',
             filledAt: now,
           };
@@ -310,7 +313,7 @@ export class ShadowExecutor implements Executor {
           side: pending.side,
           quantity: pending.quantity,
           price: pending.resolvedFill.price,
-          fee: quantity('0'),
+          fee: this.feeConfig ? simulateFee(this.feeConfig, pending.resolvedFill.price.mul(pending.quantity)) : quantity('0'),
           feeCurrency: 'USD',
           filledAt: pending.resolvedFill.timestamp,
         });

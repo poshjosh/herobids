@@ -349,6 +349,11 @@ export class DockerAgentManager {
   /**
    * Called when a container die/kill event is received from Docker event stream.
    * Updates agent status to crashed, closes the active session, fires safety alert.
+   *
+   * Crash taxonomy:
+   *   - voluntary_stop: agent was already stopped before the die event
+   *   - startup_failure: session never reached 'running' or 'unhealthy' state
+   *   - runtime_crash: session had reached steady state (running/unhealthy) before dying
    */
   async onContainerDie(agentId: string, reason = 'container_exit', sessionId?: string): Promise<void> {
     // If the agent was already marked stopped, the container exited after a voluntary
@@ -368,7 +373,15 @@ export class DockerAgentManager {
       return;
     }
 
-    logger.warn({ agentId, sessionId, reason }, 'Agent container died unexpectedly — updating status and firing safety alert');
+    // Classify the crash type based on session state
+    const sessionStatus = currentSession?.status;
+    const isStartupFailure = sessionStatus === 'starting' || sessionStatus === 'launching';
+    const crashType = isStartupFailure ? 'startup_failure' : 'runtime_crash';
+    const alertMessage = isStartupFailure
+      ? 'Agent failed during startup — container exited before reaching ready state'
+      : 'Agent runtime stopped unexpectedly';
+
+    logger.warn({ agentId, sessionId, reason, crashType }, `Agent container died — ${crashType}`);
 
     try {
       if (currentSession) {
@@ -382,8 +395,9 @@ export class DockerAgentManager {
 
       await this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.RUNTIME_FAILED, {
         agentId,
-        message: `Agent runtime stopped unexpectedly`,
+        message: alertMessage,
         detail: reason,
+        crashType,
       });
     } catch (err) {
       logger.error({ err, agentId }, 'Error handling container die event');

@@ -22,3 +22,8 @@ export { EvmSigner } from './evm-signer.js';
 export type { EvmSignerConfig, EvmSignerError, TransactionRequest, SignableTransactionRequest, Erc20BalanceResult } from './evm-signer.js';
 export { OracleMarkSource, resolveCoinId } from './oracle-mark-source.js';
 export type { OracleMarkSourceConfig } from './oracle-mark-source.js';
+export { SolanaSigner } from './solana-signer.js';
+export type { SolanaSignerConfig, SolanaSignerPort, SolanaSignerError, SolanaTransactionResult, SolanaTransactionStatus } from './solana-signer.js';
+export { JupiterConfirmationPoller } from './jupiter-confirmation.js';
+export type { JupiterConfirmationConfig } from './jupiter-confirmation.js';
+export type { SwapConfirmationPoller, SwapConfirmationStatus, SwapConfirmationError } from './swap-confirmation-poller.js';

@@ -53,7 +53,7 @@ export interface LocalOrder {
 
 // --- Output types ---
 
-export type ReconciliationStatus = 'match' | 'drift_detected' | 'drift_within_threshold';
+export type ReconciliationStatus = 'match' | 'drift_detected' | 'drift_within_threshold' | 'observed_variance';
 
 export interface ReconciliationResult {
   status: ReconciliationStatus;
@@ -71,7 +71,7 @@ export type DiffSeverity = 'critical' | 'acceptable';
  */
 export type DriftCategory =
   | 'fee_funding_adjustment'
-  | 'unexplained_balance_delta'
+  | 'observed_balance_variance'
   | 'open_order_drift'
   | 'position_size_drift';
 
@@ -122,6 +122,14 @@ export interface DriftThresholds {
   positionSize?: Decimal;
   /** Balance drift threshold (absolute). Default: 0. */
   balance?: Decimal;
+  /**
+   * Venue accounting mode. When 'observational' (shared-wallet swap venues),
+   * balance mismatches are classified as observed_balance_variance.
+   * When 'authoritative' (orderbook venues), balance mismatches get no category
+   * since they represent real drift requiring investigation.
+   * Default: 'observational' for backward compatibility.
+   */
+  venueAccountingMode?: 'authoritative' | 'observational';
 }
 
 /**
@@ -139,10 +147,11 @@ export function reconcileWithThresholds(
 
   const posThreshold = thresholds.positionSize ?? new Decimal(0);
   const balThreshold = thresholds.balance ?? new Decimal(0);
+  const accountingMode = thresholds.venueAccountingMode ?? 'observational';
 
   const classifiedDiffs: Diff[] = baseResult.diffs.map((diff) => {
     const severity = classifyDiffSeverity(diff, posThreshold, balThreshold);
-    const category = classifyDriftCategory(diff);
+    const category = classifyDriftCategory(diff, accountingMode);
     return { ...diff, severity, category };
   });
 
@@ -186,7 +195,7 @@ function classifyDiffSeverity(diff: Diff, posThreshold: Decimal, balThreshold: D
  * Conservative: only assigns a category when the diff shape unambiguously matches.
  * Defaults to undefined (no category) rather than guessing.
  */
-function classifyDriftCategory(diff: Diff): DriftCategory | undefined {
+function classifyDriftCategory(diff: Diff, accountingMode: 'authoritative' | 'observational'): DriftCategory | undefined {
   if (diff.type === 'position_mismatch') {
     // Only classify as size drift when both local and venue positions exist
     // with matching side — side flips or missing positions are more serious
@@ -202,11 +211,10 @@ function classifyDriftCategory(diff: Diff): DriftCategory | undefined {
     return 'open_order_drift';
   }
   if (diff.type === 'balance_mismatch') {
-    // Without venue-provided attribution (funding history, fee ledger),
-    // we cannot reliably distinguish fees from other causes.
-    // Default to unexplained; fee_funding_adjustment should only be set
-    // when the venue explicitly reports the deduction type.
-    return 'unexplained_balance_delta';
+    // Only classify as observational variance for shared-wallet/observational venues.
+    // Authoritative venues (orderbook) leave balance mismatches uncategorized since
+    // they represent real drift that requires investigation.
+    return accountingMode === 'observational' ? 'observed_balance_variance' : undefined;
   }
   return undefined;
 }

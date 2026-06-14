@@ -25,6 +25,8 @@ export const fills = pgTable('fills', {
   fee: numeric('fee'),
   /** Fee currency */
   feeCurrency: text('fee_currency'),
+  /** Realized P&L delta for this fill (position P&L minus fee). Computed at write time. */
+  realizedPnlDelta: numeric('realized_pnl_delta'),
   filledAt: timestamp('filled_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

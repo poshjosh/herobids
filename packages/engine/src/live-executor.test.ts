@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LiveExecutor } from './live-executor.js';
-import { quantity } from '@herobids/domain';
+import { quantity, price } from '@herobids/domain';
 import type { OrderId, FillId } from '@herobids/domain';
 import type { OrderbookVenuePort, OrderCommand, OrderReceipt, VenueError } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
@@ -200,10 +200,17 @@ describe('LiveExecutor', () => {
   });
 
   describe('unsupported order types', () => {
-    it('rejects limit orders in live mode', async () => {
-      const venuePort = makeVenuePort(async () => {
-        throw new Error('Should not be called');
-      });
+    it('submits limit orders in live mode', async () => {
+      const venuePort = makeVenuePort(async (cmd) => ({
+        ok: true as const,
+        data: {
+          orderId: 'venue-oid-limit-1' as OrderId,
+          clientOrderId: cmd.clientOrderId,
+          status: 'open' as const,
+          venueRefId: 'vref-limit-1',
+          timestamp: '2026-01-01T00:00:02Z',
+        },
+      }));
 
       const plan = makePlan({
         orders: [
@@ -217,13 +224,13 @@ describe('LiveExecutor', () => {
         clientOrderId: (planId, idx) => `${planId}-${idx}`,
       });
 
-      const result = await executor.execute(plan, quantity('3000'));
+      const result = await executor.execute(plan, price('3000'));
 
-      // Single limit order → all rejected → plan failed with order detail preserved
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.data.plan.status).toBe('failed');
-      expect(result.data.orders[0]!.status).toBe('rejected');
+      expect(result.data.plan.status).toBe('executing');
+      expect(result.data.orders[0]!.status).toBe('open');
+      expect(result.data.orders[0]!.submissionState).toBe('venue_acknowledged');
     });
 
     it('rejects swap orders in live mode', async () => {
@@ -281,6 +288,35 @@ describe('LiveExecutor', () => {
 
       // Order status reflects what the venue said
       expect(result.data.orders[0]!.status).toBe('filled');
+    });
+  });
+
+  describe('durable submit lifecycle hooks', () => {
+    it('emits prepared -> submit_attempting -> venue_acknowledged transitions', async () => {
+      const venuePort = makeVenuePort(async (cmd) => ({
+        ok: true as const,
+        data: {
+          orderId: 'venue-oid-1' as OrderId,
+          clientOrderId: cmd.clientOrderId,
+          status: 'open' as const,
+          venueRefId: 'vref-123',
+          timestamp: '2026-01-01T00:00:01Z',
+        },
+      }));
+
+      const transitions: string[] = [];
+      const executor = new LiveExecutor({
+        venuePort,
+        idGen: makeIdGen(),
+        clientOrderId: (planId, idx) => `${planId}-${idx}`,
+        onOrderStateChange: async (order) => {
+          transitions.push(order.submissionState ?? 'none');
+        },
+      });
+
+      const result = await executor.execute(makePlan(), price('3000'));
+      expect(result.ok).toBe(true);
+      expect(transitions).toEqual(['prepared', 'submit_attempting', 'venue_acknowledged']);
     });
   });
 });

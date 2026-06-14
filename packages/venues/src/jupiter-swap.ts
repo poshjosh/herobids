@@ -11,6 +11,7 @@ import type {
 } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
 import { ok, err, quantity, Decimal } from '@herobids/domain';
+import type { SolanaSignerPort } from './solana-signer.js';
 
 export interface JupiterSwapConfig {
   /** Jupiter API base URL. Default: https://quote-api.jup.ag/v6 */
@@ -23,6 +24,8 @@ export interface JupiterSwapConfig {
   timeoutMs?: number;
   /** Token decimals keyed by mint/asset identifier. Required for amount scaling. */
   tokenDecimals?: Record<string, number>;
+  /** Solana signer for live execution (signing + sending transactions). Optional for shadow/paper. */
+  signer?: SolanaSignerPort;
 }
 
 /**
@@ -30,8 +33,12 @@ export interface JupiterSwapConfig {
  * Used for Solana token swaps. In shadow mode, only `quote()` is called
  * (no execution) to obtain real quoted prices for fill simulation.
  *
- * The adapter operates in human-readable units at its interface boundary.
- * Internally it converts to/from raw smallest-unit amounts for the Jupiter API.
+ * Execution calls are authoritative for HeroBids' own swap pipeline.
+ * Balance and transaction fetches are observational wallet telemetry in
+ * shared-wallet mode and may include unrelated wallet activity.
+ *
+ * The adapter operates in human-readable units at its interface boundary while
+ * converting to/from raw smallest-unit amounts for the Jupiter API.
  */
 export class JupiterSwapAdapter implements SwapVenuePort {
   private readonly apiUrl: string;
@@ -39,6 +46,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
   private readonly walletAddress: string;
   private readonly timeoutMs: number;
   private readonly tokenDecimals: Record<string, number>;
+  private readonly signer?: SolanaSignerPort;
 
   constructor(config: JupiterSwapConfig) {
     this.apiUrl = config.apiUrl ?? 'https://quote-api.jup.ag/v6';
@@ -46,6 +54,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
     this.walletAddress = config.walletAddress;
     this.timeoutMs = config.timeoutMs ?? 10_000;
     this.tokenDecimals = config.tokenDecimals ?? {};
+    this.signer = config.signer;
   }
 
   /** Convert human-readable amount to raw smallest-unit integer string. Fails if decimals unknown or amount invalid. */
@@ -154,10 +163,28 @@ export class JupiterSwapAdapter implements SwapVenuePort {
 
       const data = await response.json() as { swapTransaction: string; txid?: string };
 
-      // In a real implementation, sign and submit the transaction here.
-      // For now, return the transaction reference.
+      // Live Jupiter execution is only authoritative once the transaction is
+      // actually signed and broadcast. Without a signer we fail closed.
+      if (!this.signer) {
+        return err({
+          code: 'SWAP_SIGNING_UNAVAILABLE',
+          message: 'No Solana signer configured for Jupiter live execution. Configure a signer for live mode.',
+        });
+      }
+
+      // Sign and send the transaction via the Solana signer. The resulting
+      // executionRef is authoritative for execution tracking, not for full-wallet
+      // accounting claims in shared-wallet mode.
+      const txResult = await this.signer.signAndSendTransaction(data.swapTransaction);
+      if (!txResult.ok) {
+        return err({
+          code: 'SWAP_TX_FAILED',
+          message: txResult.error.message,
+        });
+      }
+
       return ok({
-        executionRef: data.txid ?? 'pending-signature',
+        executionRef: txResult.data.signature,
         inputAmount: quote.inputAmount,
         outputAmount: quote.expectedOutputAmount,
         timestamp: new Date().toISOString(),
@@ -172,7 +199,8 @@ export class JupiterSwapAdapter implements SwapVenuePort {
 
   async fetchBalances(): Promise<Result<SwapBalanceSnapshot, SwapVenueError>> {
     try {
-      // Fetch SPL token accounts and native SOL balance in parallel
+      // Fetch SPL token accounts and native SOL balance in parallel as
+      // observational telemetry for the configured wallet.
       const [tokenResponse, solResponse] = await Promise.all([
         fetch(this.rpcUrl, {
           method: 'POST',
@@ -260,6 +288,9 @@ export class JupiterSwapAdapter implements SwapVenuePort {
 
   async fetchRecentTransactions(since?: Date): Promise<Result<SwapTransaction[], SwapVenueError>> {
     try {
+      // This exposes observed wallet activity for operator visibility. In
+      // shared-wallet mode it must not be treated as a complete or authoritative
+      // classification of HeroBids-controlled transactions.
       const response = await fetch(this.rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -25,6 +25,8 @@ export interface RiskLimits {
   dailyMaxLossPct?: number;
   /** Minimum ms before re-entering an instrument after a stop-loss exit (0 = disabled). */
   stopLossCooldownMs?: number;
+  /** Maximum unrealized loss per position as % of equity (0–100) before stop-loss fires. 0 = disabled. */
+  stopLossMaxUnrealizedLossPct?: number;
 }
 
 /** Snapshot of current risk state passed to the gate */
@@ -59,8 +61,10 @@ export function checkRisk(
   limits: RiskLimits,
   snapshot: RiskSnapshot,
 ): RiskCheckResult {
+  const isRiskReducing = plan.action === 'close' || plan.action === 'reduce';
+
   // 1. Max drawdown breach
-  if (snapshot.currentDrawdown.gte(limits.maxDrawdown)) {
+  if (!isRiskReducing && snapshot.currentDrawdown.gte(limits.maxDrawdown)) {
     return err({
       code: 'risk.max_drawdown_exceeded',
       message: `Current drawdown ${snapshot.currentDrawdown.toString()} exceeds limit ${limits.maxDrawdown.toString()}`,
@@ -73,6 +77,7 @@ export function checkRisk(
 
   // 1b. Daily max loss (rolling 24h) — checked when both limit and snapshot data present
   if (
+    !isRiskReducing &&
     limits.dailyMaxLossPct != null &&
     snapshot.dailyLoss != null &&
     snapshot.equity != null
@@ -93,6 +98,7 @@ export function checkRisk(
 
   // 1c. Stop-loss cooldown — reject entry if instrument was stopped-out too recently
   if (
+    !isRiskReducing &&
     limits.stopLossCooldownMs != null &&
     limits.stopLossCooldownMs > 0 &&
     snapshot.lastStopLossExitMs != null &&

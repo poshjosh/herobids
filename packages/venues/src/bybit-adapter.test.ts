@@ -5,6 +5,8 @@ const ccxtState = vi.hoisted(() => ({
   fetchBalance: vi.fn(),
   fetchPositions: vi.fn(),
   fetchOpenOrders: vi.fn(),
+  fetchOrder: vi.fn(),
+  fetchOrders: vi.fn(),
   fetchMyTrades: vi.fn(),
   fetchTicker: vi.fn(),
   createOrder: vi.fn(),
@@ -34,6 +36,8 @@ vi.mock('ccxt', () => {
     fetchBalance = ccxtState.fetchBalance;
     fetchPositions = ccxtState.fetchPositions;
     fetchOpenOrders = ccxtState.fetchOpenOrders;
+    fetchOrder = ccxtState.fetchOrder;
+    fetchOrders = ccxtState.fetchOrders;
     fetchMyTrades = ccxtState.fetchMyTrades;
     fetchTicker = ccxtState.fetchTicker;
     createOrder = ccxtState.createOrder;
@@ -87,9 +91,12 @@ import ccxt from 'ccxt';
 describe('BybitAdapter account-mode routing', () => {
   beforeEach(() => {
     ccxtState.isUnifiedEnabled.mockReset();
+    ccxtState.isUnifiedEnabled.mockResolvedValue([false, true]);
     ccxtState.fetchBalance.mockReset();
     ccxtState.fetchPositions.mockReset();
     ccxtState.fetchOpenOrders.mockReset();
+    ccxtState.fetchOrder.mockReset();
+    ccxtState.fetchOrders.mockReset();
     ccxtState.fetchMyTrades.mockReset();
     ccxtState.fetchTicker.mockReset();
     ccxtState.createOrder.mockReset();
@@ -281,5 +288,47 @@ describe('BybitAdapter account-mode routing', () => {
 
     expect(result.ok).toBe(true);
     expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://stream.bybit.com/v5/private' });
+  });
+
+  it('supports direct lookup by venueRefId for recovery evidence', async () => {
+    ccxtState.fetchOrder.mockResolvedValue({
+      id: 'venue-order-1',
+      clientOrderId: 'client-1',
+      symbol: 'BTC/USDT:USDT',
+      side: 'buy',
+      type: 'limit',
+      status: 'open',
+      amount: 1,
+      filled: 0,
+      price: 50000,
+      average: undefined,
+      datetime: new Date().toISOString(),
+    });
+
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret' },
+    });
+
+    const result = await adapter.fetchOrderByVenueRefId('venue-order-1', 'BTC/USDT:USDT');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.venueRefId).toBe('venue-order-1');
+      expect(result.data?.status).toBe('open');
+    }
+  });
+
+  it('supports direct lookup by clientOrderId for recovery evidence', async () => {
+    ccxtState.fetchOpenOrders.mockResolvedValue([{ id: 'venue-order-2', clientOrderId: 'client-2', symbol: 'BTC/USDT:USDT', side: 'buy', type: 'limit', status: 'open', amount: 1, filled: 0, price: 50000, datetime: new Date().toISOString() }]);
+
+    const adapter = new BybitAdapter({
+      credentials: { apiKey: 'key', secret: 'secret' },
+    });
+
+    const result = await adapter.fetchOrderByClientOrderId('client-2', 'BTC/USDT:USDT');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.venueRefId).toBe('venue-order-2');
+      expect(result.data?.clientOrderId).toBe('client-2');
+    }
   });
 });

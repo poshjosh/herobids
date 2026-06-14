@@ -119,6 +119,44 @@ describe('Reconciler with VenueStateLoader', () => {
     reconciler.stop();
   });
 
+  it('reclassifies observational balance-only mismatches as observed variance', async () => {
+    const localState: LocalState = {
+      positions: [],
+      balances: [{ asset: 'USDC', total: new Decimal('1000') }],
+      recentFills: [],
+      openOrders: [],
+    };
+    const venueState: VenueState = {
+      positions: [],
+      balances: {
+        balances: [{ asset: 'USDC', free: new Decimal('950'), locked: new Decimal('0'), total: new Decimal('950') }],
+        timestamp: new Date().toISOString(),
+      },
+      recentFills: [],
+      openOrders: [],
+    };
+    const deps = makeDeps({
+      fetchVenueState: vi.fn().mockResolvedValue(venueState),
+      loadLocalState: vi.fn().mockResolvedValue(localState),
+      balanceDiffMode: 'observational',
+    });
+    const reconciler = new Reconciler(makeConfig({ balanceDriftThreshold: '1' }), deps);
+
+    reconciler.start();
+    const result = await reconciler.runPass();
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('observed_variance');
+    expect(result!.diffs[0]?.category).toBe('observed_balance_variance');
+    expect(deps.journal.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'reconciliation.observed_variance',
+      }),
+    );
+
+    reconciler.stop();
+  });
+
   it('does not run pass when stopped', async () => {
     const fetchVenueState = vi.fn().mockResolvedValue(emptyVenueState());
     const deps = makeDeps({ fetchVenueState });

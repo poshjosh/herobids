@@ -1,15 +1,18 @@
 import pino from 'pino';
 import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
-import type { ExecutionActor } from './execution-actor.js';
+import type { ExecutionActor, IntakeResult } from './execution-actor.js';
 import {
   PaperExecutor,
   ShadowExecutor,
   LiveExecutor,
+  SwapLiveExecutor,
+  SwapPositionTracker,
   PollingMarketDataFeed,
   StreamMarketDataFeed,
   flatPosition,
   applyFill,
+  applyFillAccounting,
   fillEvent,
   Reconciler,
   createOrderbookVenueStateLoader,
@@ -17,10 +20,21 @@ import {
   runTradingCycle,
   realClock,
   credentialUsedEvent,
+  EquityTracker,
+  DailyLossTracker,
+  VenueCircuitBreaker,
+  checkStopLoss,
+  submitDecisionForExecution,
+  rehydrateDailyLoss,
+  computeSlippageBps,
+  computeLiveTimeoutActions,
+  evaluateOrderbookRecovery,
 } from '@herobids/engine';
+import type { FeeSimulatorConfig } from '@herobids/engine';
 import type {
   Executor,
   Journal,
+  JournalEventType,
   PositionState,
   RiskLimits,
   IdGenerator,
@@ -33,6 +47,7 @@ import type {
   TradingCyclePersistence,
   DecisionIntakeDeps,
   DecisionContext,
+  LiveTimeoutPolicy,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -45,6 +60,7 @@ import type {
   BacktestingRepository,
 } from '@herobids/db';
 import { price, quantity, Decimal } from '@herobids/domain';
+import type { DecisionId, InstrumentId, BotId, OrderId } from '@herobids/domain';
 
 export interface StreamConfig {
   reconnectBaseMs: number;
@@ -71,8 +87,8 @@ export interface TradingActorDeps {
   venuePort?: OrderbookVenuePort;
   /** Reconciliation config */
   reconciliationConfig?: ReconcilerConfig;
-  /** Execution mode: paper (default), shadow, live */
-  executionMode?: 'paper' | 'shadow' | 'live';
+  /** Execution mode: paper, shadow, live */
+  executionMode: 'paper' | 'shadow' | 'live';
   /** Private stream config (reconnection parameters) */
   streamConfig?: StreamConfig;
   /** Polling interval for shadow market data feed (ms). Defaults to 2000. */
@@ -113,6 +129,39 @@ export interface TradingActorDeps {
     minAgeHours?: number;
     allowOverrides?: boolean;
   };
+  /** USD allocation cap — used as equity for %-based risk checks and risk tracking */
+  capital?: string;
+  /** Simulated fee configuration for paper/shadow fills */
+  feeConfig?: { takerFeePct: number; makerFeePct: number; paperSlippageBps?: number };
+  /** Max consecutive venue errors before circuit breaker trips */
+  maxConsecutiveVenueErrors?: number;
+  /** Live fill slippage alert threshold in bps */
+  slippageAlertBps?: number;
+  /** Fatal live crash policy */
+  crashPolicy?: 'auto_go_flat' | 'alert_manual_intervention';
+  /** Timeout policy for stale live order handling */
+  liveOrderTimeoutPolicy?: LiveTimeoutPolicy;
+}
+
+interface StartupPendingLiveOrderSnapshot {
+  orderId: string;
+  status: string;
+  submissionState?: string | null;
+  venueRefId?: string | null;
+  clientOrderId?: string | null;
+  symbol?: string;
+}
+
+interface StartupPendingLivePlanSnapshot {
+  planId: string;
+  planStatus: string;
+  orderCount: number;
+  nonTerminalOrders: StartupPendingLiveOrderSnapshot[];
+}
+
+interface StartupPendingLiveSnapshot {
+  capturedAt: string;
+  plans: StartupPendingLivePlanSnapshot[];
 }
 
 /**
@@ -139,6 +188,23 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   private positionMutex: Promise<void> = Promise.resolve();
   /** Cached mark result to avoid redundant oracle calls during fill bursts */
   private cachedMark: { result: Awaited<ReturnType<MarkSource['fetchMark']>>; fetchedAt: number } | undefined;
+  /** Equity tracker (drawdown + dynamic equity) */
+  private equityTracker?: EquityTracker;
+  /** Rolling 24h loss tracker */
+  private dailyLossTracker?: DailyLossTracker;
+  /** Stop-loss exit timestamp for cooldown enforcement */
+  private lastStopLossExitMs?: number;
+  /** Venue error circuit breaker */
+  private circuitBreaker?: VenueCircuitBreaker;
+  /** Swap fill projection tracker for actor-local swap accounting (swap venues only) */
+  private swapPositionTracker?: SwapPositionTracker;
+  /** Deduplicates recovery-required timeout alerts per open order */
+  private readonly timeoutRecoveryAlertedOrderIds = new Set<string>();
+  /** Startup-only in-memory snapshot of pending live work before recovery decisions run */
+  private startupPendingLiveSnapshot?: StartupPendingLiveSnapshot;
+  /** True when swap live recovery entered an ambiguous state and requires manual intervention */
+  private swapRecoveryHalted = false;
+  private readonly swapRecoveryAlertedPlanIds = new Set<string>();
 
   constructor(
     botId: string,
@@ -151,16 +217,83 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     this.position = flatPosition(deps.venue, deps.symbol);
 
     // Executor selection based on execution mode
-    const mode = deps.executionMode ?? 'paper';
+    const mode = deps.executionMode;
     if (mode === 'live') {
-      if (!deps.venuePort) {
-        throw new Error('Live execution mode requires a venue port (OrderbookVenuePort).');
+      if (deps.venueType === 'swap' && deps.swapVenue) {
+        this.executor = new SwapLiveExecutor({
+          swapVenue: deps.swapVenue,
+          idGen: deps.idGen,
+          clientOrderId: (planId, idx) => `${botId}:swap:${planId}:${idx}`,
+          onOrderStateChange: async (order) => {
+            const payload = {
+              id: order.id as unknown as string,
+              venueAccountId: order.venueAccountId,
+              actorType: order.actorType,
+              actorId: order.actorId,
+              executionPlanId: order.executionPlanId,
+              venueRefId: order.venueRefId,
+              clientOrderId: order.clientOrderId,
+              venue: order.venue,
+              symbol: order.symbol,
+              side: order.side,
+              type: order.type,
+              quantity: order.quantity.toString(),
+              price: order.price?.toString(),
+              referencePrice: order.referencePrice?.toString(),
+              status: order.status,
+              submissionState: order.submissionState,
+              submitAttemptedAt: order.submitAttemptedAt,
+              acknowledgedAt: order.acknowledgedAt,
+              filledQuantity: order.filledQuantity.toString(),
+              avgFillPrice: order.avgFillPrice?.toString(),
+            };
+            if (payload.venueRefId) {
+              await this.deps.orderRepo.upsertByVenueRefId(payload);
+            } else if (payload.clientOrderId) {
+              await (this.deps.orderRepo as { upsertByClientOrderId?: (order: typeof payload) => Promise<void> })
+                .upsertByClientOrderId?.(payload);
+            }
+          },
+        });
+      } else if (deps.venuePort) {
+        this.executor = new LiveExecutor({
+          venuePort: deps.venuePort,
+          idGen: deps.idGen,
+          clientOrderId: (planId, idx) => `${botId}:${planId}:${idx}`,
+          onOrderStateChange: async (order) => {
+            const payload = {
+              id: order.id as unknown as string,
+              venueAccountId: order.venueAccountId,
+              actorType: order.actorType,
+              actorId: order.actorId,
+              executionPlanId: order.executionPlanId,
+              venueRefId: order.venueRefId,
+              clientOrderId: order.clientOrderId,
+              venue: order.venue,
+              symbol: order.symbol,
+              side: order.side,
+              type: order.type,
+              quantity: order.quantity.toString(),
+              price: order.price?.toString(),
+              referencePrice: order.referencePrice?.toString(),
+              status: order.status,
+              submissionState: order.submissionState,
+              submitAttemptedAt: order.submitAttemptedAt,
+              acknowledgedAt: order.acknowledgedAt,
+              filledQuantity: order.filledQuantity.toString(),
+              avgFillPrice: order.avgFillPrice?.toString(),
+            };
+            if (payload.venueRefId) {
+              await this.deps.orderRepo.upsertByVenueRefId(payload);
+            } else if (payload.clientOrderId) {
+              await (this.deps.orderRepo as { upsertByClientOrderId?: (order: typeof payload) => Promise<void> })
+                .upsertByClientOrderId?.(payload);
+            }
+          },
+        });
+      } else {
+        throw new Error('Live execution mode requires a venue port (OrderbookVenuePort) or swap venue.');
       }
-      this.executor = new LiveExecutor({
-        venuePort: deps.venuePort,
-        idGen: deps.idGen,
-        clientOrderId: (planId, idx) => `${botId}:${planId}:${idx}`,
-      });
     } else if (mode === 'shadow' && (deps.venuePort || deps.swapVenue)) {
       // Prefer stream pool (Phase 2c) over polling (Phase 2b) for market data.
       // Only use stream pool for orderbook venues — swap venues have no registered
@@ -189,9 +322,9 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         feed = this.createPollingFeed();
       }
       this.marketDataFeed = feed;
-      this.executor = new ShadowExecutor(deps.idGen, feed, deps.swapVenue);
+      this.executor = new ShadowExecutor(deps.idGen, feed, deps.swapVenue, deps.feeConfig);
     } else {
-      this.executor = new PaperExecutor(deps.idGen);
+      this.executor = new PaperExecutor(deps.idGen, undefined, deps.feeConfig);
     }
   }
 
@@ -255,6 +388,13 @@ export class TradingActor implements InstanceActor, ExecutionActor {
 
     // Rehydrate position from DB before scanning
     await this.rehydratePosition();
+    await this.initializeRiskTrackers();
+
+    // Initialize the actor-local swap fill projection tracker (swap venues only)
+    if (this.deps.venueType === 'swap') {
+      this.swapPositionTracker = new SwapPositionTracker();
+      await this.rehydrateSwapPositionTracker();
+    }
 
     // Run initial reconciliation pass and start periodic loop (awaits first pass)
     await this.startReconciler();
@@ -271,7 +411,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       return;
     }
 
-    this.logger.info({ position: this.position.side, mode: this.deps.executionMode ?? 'paper' }, 'Actor started');
+    this.logger.info({ position: this.position.side, mode: this.deps.executionMode }, 'Actor started');
     // First tick immediately, then on interval
     void this.tick();
     this.timer = setInterval(() => void this.tick(), this.scanIntervalMs);
@@ -309,9 +449,197 @@ export class TradingActor implements InstanceActor, ExecutionActor {
    */
   async crash(): Promise<void> {
     this.logger.error('Actor crashing — persisting crashed status');
+
+    const crashPolicy = this.deps.crashPolicy ?? 'alert_manual_intervention';
+    let attemptedEmergencyGoFlat = false;
+    let emergencyGoFlatSucceeded = false;
+    let cancelledOpenOrders = 0;
+    let crashRecoveryAmbiguous = false;
+    let openSwapOrders = 0;
+    let unresolvedSwapOrders = 0;
+
+    if (this.deps.executionMode === 'live' && this.deps.venueType !== 'swap') {
+      const crashOrderResult = await this.cancelOpenOrderbookOrdersOnCrash();
+      cancelledOpenOrders = crashOrderResult.cancelledCount;
+      crashRecoveryAmbiguous = crashOrderResult.ambiguous;
+    } else if (this.deps.executionMode === 'live' && this.deps.venueType === 'swap') {
+      const crashOrderResult = await this.assessSwapCrashAmbiguity();
+      crashRecoveryAmbiguous = crashOrderResult.ambiguous;
+      openSwapOrders = crashOrderResult.openSwapOrders;
+      unresolvedSwapOrders = crashOrderResult.unresolvedSwapOrders;
+    }
+
+    if (this.deps.executionMode === 'live' && crashPolicy === 'auto_go_flat' && !crashRecoveryAmbiguous) {
+      attemptedEmergencyGoFlat = true;
+      emergencyGoFlatSucceeded = await this.tryEmergencyGoFlat();
+    }
+
+    await this.deps.journal.append({
+      actorType: 'bot',
+      actorId: this.botId,
+      type: 'instance.crashed',
+      payload: {
+        reason: 'actor_crash',
+        crashPolicy,
+        attemptedEmergencyGoFlat,
+        emergencyGoFlatSucceeded,
+        cancelledOpenOrders,
+        crashRecoveryAmbiguous,
+        openSwapOrders,
+        unresolvedSwapOrders,
+        positionSide: this.position.side,
+        symbol: this.deps.symbol,
+      },
+    }).catch((err: unknown) => {
+      this.logger.warn({ err }, 'Failed to append instance.crashed journal event');
+    });
+
     await this.stop();
     if (this.deps.onCrashed) {
       await this.deps.onCrashed(this.botId);
+    }
+  }
+
+  private async cancelOpenOrderbookOrdersOnCrash(): Promise<{ cancelledCount: number; ambiguous: boolean }> {
+    if (!this.deps.venuePort) {
+      return { cancelledCount: 0, ambiguous: true };
+    }
+
+    const openOrders = await this.deps.orderRepo.getOpenByInstance(this.botId);
+    if (openOrders.length === 0) {
+      return { cancelledCount: 0, ambiguous: false };
+    }
+
+    let cancelledCount = 0;
+    let ambiguous = false;
+    for (const order of openOrders) {
+      if (!order.venueRefId) {
+        ambiguous = true;
+        continue;
+      }
+
+      const cancelResult = await this.deps.venuePort.cancelOrder({
+        orderId: order.venueRefId as unknown as OrderId,
+        symbol: order.symbol,
+      });
+      if (!cancelResult.ok) {
+        ambiguous = true;
+        continue;
+      }
+
+      await this.deps.orderRepo.upsertByVenueRefId({
+        id: order.id,
+        venueAccountId: order.venueAccountId,
+        actorType: order.actorType,
+        actorId: order.actorId ?? undefined,
+        executionPlanId: order.executionPlanId ?? undefined,
+        venueRefId: order.venueRefId,
+        clientOrderId: order.clientOrderId ?? undefined,
+        venue: order.venue,
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: order.quantity,
+        price: order.price ?? undefined,
+        referencePrice: order.referencePrice ?? undefined,
+        status: 'cancelled',
+        submissionState: 'terminal',
+        submitAttemptedAt: order.submitAttemptedAt?.toISOString(),
+        acknowledgedAt: order.acknowledgedAt?.toISOString(),
+        filledQuantity: order.filledQuantity,
+        avgFillPrice: order.avgFillPrice ?? undefined,
+      });
+      cancelledCount++;
+    }
+
+    return { cancelledCount, ambiguous };
+  }
+
+  private async assessSwapCrashAmbiguity(): Promise<{ ambiguous: boolean; openSwapOrders: number; unresolvedSwapOrders: number }> {
+    const openOrders = await this.deps.orderRepo.getOpenByInstance(this.botId);
+    if (openOrders.length === 0) {
+      return { ambiguous: false, openSwapOrders: 0, unresolvedSwapOrders: 0 };
+    }
+
+    if (!this.deps.swapVenue) {
+      return { ambiguous: true, openSwapOrders: openOrders.length, unresolvedSwapOrders: openOrders.length };
+    }
+
+    const txResult = await this.deps.swapVenue.fetchRecentTransactions();
+    if (!txResult.ok) {
+      await this.deps.journal.append({
+        actorType: 'bot',
+        actorId: this.botId,
+        type: 'execution.failure',
+        payload: {
+          reason: 'live_swap_crash_recovery_ambiguous',
+          code: txResult.error.code,
+          message: txResult.error.message,
+          openSwapOrders: openOrders.length,
+        },
+      });
+      return { ambiguous: true, openSwapOrders: openOrders.length, unresolvedSwapOrders: openOrders.length };
+    }
+
+    const knownTxRefs = new Set(txResult.data.map((tx) => tx.executionRef));
+    const unresolvedSwapOrders = openOrders.filter((order) => !order.venueRefId || !knownTxRefs.has(order.venueRefId)).length;
+    if (unresolvedSwapOrders > 0) {
+      await this.deps.journal.append({
+        actorType: 'bot',
+        actorId: this.botId,
+        type: 'execution.failure',
+        payload: {
+          reason: 'live_swap_crash_recovery_ambiguous',
+          openSwapOrders: openOrders.length,
+          unresolvedSwapOrders,
+        },
+      });
+    }
+
+    return {
+      ambiguous: unresolvedSwapOrders > 0,
+      openSwapOrders: openOrders.length,
+      unresolvedSwapOrders,
+    };
+  }
+
+  private async tryEmergencyGoFlat(): Promise<boolean> {
+    if (this.position.side === 'flat') return true;
+
+    let context = this.getDecisionContext();
+    if (!context) {
+      const snapshot = await this.deps.fetchPrice();
+      if (snapshot) {
+        this.lastSnapshot = snapshot;
+        context = this.getDecisionContext();
+      }
+    }
+    if (!context) {
+      this.logger.error('Crash policy auto_go_flat could not build decision context');
+      return false;
+    }
+
+    const decisionId = this.deps.idGen.decisionId() as DecisionId;
+    const decision = {
+      id: decisionId,
+      venueAccountId: this.deps.venueAccountId,
+      instrumentId: this.deps.symbol as InstrumentId,
+      intent: 'go_flat' as const,
+      targetSize: quantity('0'),
+      timestamp: new Date().toISOString(),
+      actorType: 'bot' as const,
+      actorId: this.botId,
+      botId: this.botId as BotId,
+      metadata: { trigger: 'crash_policy_auto_go_flat' },
+    };
+
+    try {
+      const result = await submitDecisionForExecution(decision, context, this.position, this.buildIntakeDepsForEmergency());
+      this.position = result.position;
+      return !result.executionFailed && result.position.side === 'flat';
+    } catch (err) {
+      this.logger.error({ err }, 'Crash policy auto_go_flat failed');
+      return false;
     }
   }
 
@@ -326,10 +654,13 @@ export class TradingActor implements InstanceActor, ExecutionActor {
    */
   private async rehydratePosition(): Promise<void> {
     try {
-      // 1. Reconcile incomplete execution plans (write-ahead recovery)
+      // 1. Capture startup pending live work in memory (no recovery mutation)
+      await this.captureStartupPendingLiveSnapshot();
+
+      // 2. Reconcile incomplete execution plans (write-ahead recovery)
       await this.reconcileIncompletePlans();
 
-      // 2. Rebuild position state from DB
+      // 3. Rebuild position state from DB
       const openPositions = await this.deps.positionRepo.getOpenByInstance(this.botId);
       // Find the position matching this actor's symbol
       const match = openPositions.find((p) => p.symbol === this.deps.symbol && p.venue === this.deps.venue);
@@ -349,6 +680,150 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     }
   }
 
+  private async captureStartupPendingLiveSnapshot(): Promise<void> {
+    const mode = this.deps.executionMode;
+    if (mode !== 'live') {
+      this.startupPendingLiveSnapshot = undefined;
+      return;
+    }
+
+    const incompletePlans = await this.deps.planRepo.getIncomplete('bot', this.botId);
+    const plans: StartupPendingLivePlanSnapshot[] = [];
+
+    for (const plan of incompletePlans) {
+      const orders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
+      const nonTerminalOrders = orders
+        .filter((order) => !['filled', 'cancelled', 'rejected'].includes(order.status))
+        .map((order) => ({
+          orderId: order.id,
+          status: order.status,
+          submissionState: order.submissionState,
+          venueRefId: order.venueRefId ?? null,
+          clientOrderId: order.clientOrderId ?? null,
+          symbol: order.symbol,
+        }));
+
+      plans.push({
+        planId: plan.id,
+        planStatus: plan.status,
+        orderCount: orders.length,
+        nonTerminalOrders,
+      });
+    }
+
+    this.startupPendingLiveSnapshot = {
+      capturedAt: new Date().toISOString(),
+      plans,
+    };
+
+    const nonTerminalOrderCount = this.startupPendingLiveSnapshot.plans
+      .reduce((sum, plan) => sum + plan.nonTerminalOrders.length, 0);
+    this.logger.info({
+      planCount: plans.length,
+      nonTerminalOrderCount,
+    }, 'Captured startup pending live snapshot before recovery reconciliation');
+  }
+
+  /** Replay historical fills into the swap tracker to rebuild fill projections on restart. */
+  private async rehydrateSwapPositionTracker(): Promise<void> {
+    if (!this.swapPositionTracker || !this.deps.swapAssets) return;
+    try {
+      const fills = await this.deps.fillRepo.getRecentByActorAndVenueAccount(
+        'bot',
+        this.botId,
+        this.deps.venueAccountId,
+      );
+      const sorted = [...fills].sort((a, b) =>
+        new Date(a.filledAt).getTime() - new Date(b.filledAt).getTime(),
+      );
+      for (const fill of sorted) {
+        const isBuy = fill.side === 'buy';
+        const fillQty = quantity(fill.quantity ?? '0');
+        const fillPrice = price(fill.price ?? '0');
+        this.swapPositionTracker.recordSwapFill({
+          inputAsset: isBuy ? this.deps.swapAssets.quoteAsset : this.deps.swapAssets.baseAsset,
+          inputAmount: isBuy ? fillPrice.mul(fillQty) : fillQty,
+          outputAsset: isBuy ? this.deps.swapAssets.baseAsset : this.deps.swapAssets.quoteAsset,
+          outputAmount: isBuy ? fillQty : fillPrice.mul(fillQty),
+          timestamp: new Date(fill.filledAt).getTime(),
+        });
+      }
+      if (sorted.length > 0) {
+        this.logger.info({ fillCount: sorted.length }, 'Rehydrated swap fill projection tracker from historical fills');
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to rehydrate swap position tracker — starting with empty holdings');
+    }
+  }
+
+  private async initializeRiskTrackers(): Promise<void> {
+    const capital = this.deps.capital ? price(this.deps.capital) : price('0');
+    this.dailyLossTracker = new DailyLossTracker();
+    if (this.deps.maxConsecutiveVenueErrors) {
+      this.circuitBreaker = new VenueCircuitBreaker(this.deps.maxConsecutiveVenueErrors);
+    }
+
+    // Rehydrate fee-adjusted realized P&L from fills for equity tracker
+    let economicRealizedPnl = price('0');
+    try {
+      const total = await this.deps.fillRepo.sumRealizedPnlDelta('bot', this.botId);
+      economicRealizedPnl = price(total);
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to rehydrate economic realized P&L — falling back to position.realizedPnl');
+      economicRealizedPnl = this.position.realizedPnl;
+    }
+    this.equityTracker = new EquityTracker(capital, economicRealizedPnl);
+
+    // Rehydrate rolling 24h losses from persisted fills
+    try {
+      const since = new Date(Date.now() - 86_400_000);
+      const fills = await this.deps.fillRepo.getRecentByInstance(this.botId, since);
+      if (fills.length > 0) {
+        // Replay oldest-first
+        const sorted = [...fills].sort((a, b) => a.filledAt.getTime() - b.filledAt.getTime());
+        rehydrateDailyLoss(sorted, this.dailyLossTracker);
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to rehydrate daily loss tracker — starting fresh');
+    }
+  }
+
+  /** Force a go_flat decision via the decision intake pipeline when stop-loss triggers */
+  private async executeStopLoss(snapshot: MarketSnapshot): Promise<void> {
+    const decisionId = this.deps.idGen.decisionId() as DecisionId;
+    const decision = {
+      id: decisionId,
+      venueAccountId: this.deps.venueAccountId,
+      instrumentId: this.deps.symbol as InstrumentId,
+      intent: 'go_flat' as const,
+      targetSize: quantity('0'),
+      timestamp: new Date().toISOString(),
+      actorType: 'bot' as const,
+      actorId: this.botId,
+      botId: this.botId as BotId,
+      metadata: { trigger: 'stop_loss' },
+    };
+    const context = this.getDecisionContext();
+    if (!context) return;
+
+    try {
+      const result = await submitDecisionForExecution(decision, context, this.position, this.getIntakeDeps());
+      this.position = result.position;
+
+      if (!result.executionFailed && result.position.side === 'flat') {
+        this.lastStopLossExitMs = Date.now();
+        void this.deps.journal.append({
+          actorType: 'bot',
+          actorId: this.botId,
+          type: 'stop_loss.exit' as JournalEventType,
+          payload: { instrument: this.deps.symbol, timestamp: this.lastStopLossExitMs },
+        }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append stop_loss.exit journal event'));
+      }
+    } catch (err) {
+      this.logger.error({ err }, 'Failed to execute stop-loss go_flat');
+    }
+  }
+
   /**
    * Detect execution plans that were in-flight when the previous worker died.
    * In paper mode: mark them as failed (paper fills are ephemeral — no venue to reconcile against).
@@ -363,7 +838,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       'Found incomplete execution plans from previous run — reconciling',
     );
 
-    const mode = this.deps.executionMode ?? 'paper';
+    const mode = this.deps.executionMode;
     const venuePort = this.deps.venuePort;
 
     // Fetch venue state once before the loop — bail early if unreachable
@@ -388,10 +863,76 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     }
 
     for (const plan of incomplete) {
-      if (mode === 'paper' || !venuePort) {
+      if (mode === 'paper') {
         // Paper mode: no venue state to check — mark as failed
         await this.deps.planRepo.markFailed(plan.id);
         this.logger.info({ planId: plan.id, status: plan.status }, 'Marked incomplete plan as failed (paper mode)');
+      } else if (!venuePort && this.deps.swapVenue) {
+        // Swap venue: check on-chain transactions
+        try {
+          const planOrders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
+          const txResult = await this.deps.swapVenue.fetchRecentTransactions();
+
+          if (planOrders.length === 0) {
+            // No order rows persisted — crash may have occurred after on-chain confirmation
+            // but before persistOrder. Check recent transactions for a match.
+            if (txResult.ok) {
+              const matchedTx = this.matchPlanToRecentSwapTransactions(plan, txResult.data);
+              if (matchedTx) {
+                await this.deps.planRepo.markCompleted(plan.id);
+                this.logger.error(
+                  { planId: plan.id, executionRef: matchedTx.executionRef },
+                  'RECOVERY: Swap plan has no persisted orders but matching on-chain transaction found — ' +
+                  'marked completed to prevent double-execution. Order/fill/position state is incomplete and needs manual reconciliation.',
+                );
+              } else {
+                await this.haltSwapRecovery(plan.id, {
+                  reason: 'live_swap_recovery_ambiguous',
+                  detail: 'no_persisted_orders_and_no_matching_transaction',
+                });
+              }
+            } else {
+              await this.haltSwapRecovery(plan.id, {
+                reason: 'live_swap_recovery_ambiguous',
+                detail: 'transaction_lookup_failed',
+                code: txResult.error.code,
+                message: txResult.error.message,
+              });
+            }
+            continue;
+          }
+
+          if (txResult.ok) {
+            const knownTxRefs = new Set(txResult.data.map((tx) => tx.executionRef));
+            const confirmedOnChain = planOrders.some((o) => o.venueRefId && knownTxRefs.has(o.venueRefId));
+            if (confirmedOnChain) {
+              await this.deps.planRepo.markCompleted(plan.id);
+              this.logger.info({ planId: plan.id }, 'Incomplete swap plan confirmed on-chain — marked completed');
+            } else {
+              await this.haltSwapRecovery(plan.id, {
+                reason: 'live_swap_recovery_ambiguous',
+                detail: 'order_not_confirmed_on_chain',
+              });
+            }
+          } else {
+            await this.haltSwapRecovery(plan.id, {
+              reason: 'live_swap_recovery_ambiguous',
+              detail: 'transaction_lookup_failed',
+              code: txResult.error.code,
+              message: txResult.error.message,
+            });
+          }
+        } catch (err) {
+          await this.haltSwapRecovery(plan.id, {
+            reason: 'live_swap_recovery_ambiguous',
+            detail: 'recovery_exception',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else if (!venuePort) {
+        // No venue port and no swap venue — mark as failed
+        await this.deps.planRepo.markFailed(plan.id);
+        this.logger.info({ planId: plan.id, status: plan.status }, 'Marked incomplete plan as failed (no venue port)');
       } else {
         // Shadow/live mode: use pre-fetched venue state
         try {
@@ -420,15 +961,64 @@ export class TradingActor implements InstanceActor, ExecutionActor {
               planOrders.some((o) => o.venueRefId && (f.orderId === o.venueRefId || f.venueRefId === o.venueRefId)),
             );
 
-            if (matchedFills.length > 0) {
-              // Fills exist — mark completed
-              await this.deps.planRepo.markCompleted(plan.id);
-              this.logger.info({ planId: plan.id, fillCount: matchedFills.length }, 'Incomplete plan had fills on venue — marked completed');
-            } else {
-              // No open orders and no fills — mark failed
-              await this.deps.planRepo.markFailed(plan.id);
-              this.logger.info({ planId: plan.id }, 'No open orders or fills found on venue for incomplete plan — marked failed');
+            let lookupMatchedOrders: Array<{ venueRefId: string; status: string }> = [];
+            let lookupAmbiguous = false;
+            if (matchedFills.length === 0) {
+              const lookupResult = await this.lookupPlanOrderbookRecoveryEvidence(venuePort, planOrders);
+              lookupMatchedOrders = lookupResult.matchedOrders;
+              lookupAmbiguous = lookupResult.ambiguous;
             }
+
+            const decision = evaluateOrderbookRecovery({
+              orders: planOrders,
+              hasOpenOrders,
+              matchedFillCount: matchedFills.length,
+              matchedOrdersFromLookup: lookupMatchedOrders,
+              lookupAmbiguous,
+            });
+
+            await this.deps.journal.append({
+              actorType: 'bot',
+              actorId: this.botId,
+              type: 'order.recovery_evaluated',
+              payload: {
+                planId: plan.id,
+                decision: decision.kind,
+                reason: decision.reason,
+                orderCount: planOrders.length,
+                matchedFillCount: matchedFills.length,
+                lookupMatchedOrderCount: lookupMatchedOrders.length,
+              },
+            });
+
+            if (decision.kind === 'mark_completed') {
+              await this.deps.planRepo.markCompleted(plan.id);
+              this.logger.info({ planId: plan.id, reason: decision.reason }, 'Recovered incomplete live plan as completed');
+              continue;
+            }
+
+            if (decision.kind === 'mark_failed') {
+              await this.deps.planRepo.markFailed(plan.id);
+              this.logger.info({ planId: plan.id, reason: decision.reason }, 'Recovered incomplete live plan as failed');
+              continue;
+            }
+
+            if (decision.kind === 'halt_ambiguous') {
+              await this.deps.journal.append({
+                actorType: 'bot',
+                actorId: this.botId,
+                type: 'execution.failure',
+                payload: {
+                  reason: 'live_recovery_ambiguous',
+                  planId: plan.id,
+                  recoveryReason: decision.reason,
+                },
+              });
+              this.logger.warn({ planId: plan.id, reason: decision.reason }, 'Incomplete plan recovery is ambiguous — leaving executing for manual intervention');
+              continue;
+            }
+
+            this.logger.info({ planId: plan.id, reason: decision.reason }, 'Incomplete plan remains executing pending venue resolution');
           }
         } catch (err) {
           await this.deps.planRepo.markFailed(plan.id);
@@ -436,6 +1026,107 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         }
       }
     }
+  }
+
+  private async lookupPlanOrderbookRecoveryEvidence(
+    venuePort: OrderbookVenuePort,
+    planOrders: Array<{ venueRefId?: string | null; clientOrderId?: string | null; symbol?: string | null }>,
+  ): Promise<{ matchedOrders: Array<{ venueRefId: string; status: string }>; ambiguous: boolean }> {
+    const matchedOrders: Array<{ venueRefId: string; status: string }> = [];
+    const seenVenueRefs = new Set<string>();
+    let ambiguous = false;
+
+    const addMatchedOrder = (order: { venueRefId: string; status: string }) => {
+      if (!order.venueRefId || seenVenueRefs.has(order.venueRefId)) return;
+      seenVenueRefs.add(order.venueRefId);
+      matchedOrders.push(order);
+    };
+
+    if (venuePort.fetchOrderByVenueRefId) {
+      for (const order of planOrders) {
+        if (!order.venueRefId) continue;
+        const result = await venuePort.fetchOrderByVenueRefId(order.venueRefId, order.symbol ?? undefined);
+        if (!result.ok) {
+          ambiguous = true;
+          this.logger.warn({
+            venueRefId: order.venueRefId,
+            code: result.error.code,
+            message: result.error.message,
+          }, 'Direct venueRefId lookup failed during recovery evidence gathering');
+          continue;
+        }
+        if (result.data) {
+          addMatchedOrder({ venueRefId: result.data.venueRefId, status: result.data.status });
+        }
+      }
+    }
+
+    if (venuePort.fetchOrderByClientOrderId) {
+      for (const order of planOrders) {
+        if (!order.clientOrderId) continue;
+        const result = await venuePort.fetchOrderByClientOrderId(order.clientOrderId, order.symbol ?? undefined);
+        if (!result.ok) {
+          ambiguous = true;
+          this.logger.warn({
+            clientOrderId: order.clientOrderId,
+            code: result.error.code,
+            message: result.error.message,
+          }, 'Direct clientOrderId lookup failed during recovery evidence gathering');
+          continue;
+        }
+        if (result.data) {
+          addMatchedOrder({ venueRefId: result.data.venueRefId, status: result.data.status });
+        }
+      }
+    }
+
+    return { matchedOrders, ambiguous };
+  }
+
+  /**
+   * Match a plan (with no persisted orders) to a recent on-chain transaction
+   * by comparing the plan's stored swap params against transaction input/output assets.
+   */
+  private matchPlanToRecentSwapTransactions(
+    plan: { id: string; plannedOrders: unknown; createdAt: Date },
+    recentTxs: Array<{ executionRef: string; inputAsset: string; outputAsset: string; timestamp: string }>,
+  ): { executionRef: string } | undefined {
+    const plannedOrders = plan.plannedOrders as Array<{ swapParams?: { inputAsset: string; outputAsset: string } }> | undefined;
+    if (!plannedOrders || plannedOrders.length === 0) return undefined;
+
+    const planCreatedAt = plan.createdAt.getTime();
+    const windowMs = 5 * 60 * 1000;
+
+    for (const planned of plannedOrders) {
+      if (!planned.swapParams) continue;
+      const { inputAsset, outputAsset } = planned.swapParams;
+
+      for (const tx of recentTxs) {
+        const txTime = new Date(tx.timestamp).getTime();
+        if (txTime < planCreatedAt || txTime > planCreatedAt + windowMs) continue;
+        if (tx.inputAsset === inputAsset && tx.outputAsset === outputAsset) {
+          return { executionRef: tx.executionRef };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private async haltSwapRecovery(planId: string, details: Record<string, unknown>): Promise<void> {
+    this.swapRecoveryHalted = true;
+    if (this.swapRecoveryAlertedPlanIds.has(planId)) return;
+    this.swapRecoveryAlertedPlanIds.add(planId);
+
+    await this.deps.journal.append({
+      actorType: 'bot',
+      actorId: this.botId,
+      type: 'execution.failure',
+      payload: {
+        planId,
+        ...details,
+      },
+    });
+    this.logger.error({ planId, ...details }, 'Swap recovery ambiguity detected — halting bot for manual intervention');
   }
 
   /**
@@ -499,6 +1190,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       actorType: 'bot',
       actorId: this.botId,
       venueAccountId: this.deps.venueAccountId,
+      balanceDiffMode: this.deps.venueType === 'swap' ? 'observational' : 'authoritative',
       logger: this.logger,
       getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId),
     });
@@ -555,6 +1247,14 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       return;
     }
 
+    if (result.status === 'observed_variance') {
+      this.logger.info(
+        { diffCount: result.diffs.length, diffs: result.diffs },
+        'Observed shared-wallet balance variance on startup — proceeding',
+      );
+      return;
+    }
+
     // If drift is detected (exceeds threshold) and we are NOT in alert-only mode, block trading
     if (result.status === 'drift_detected' && !reconciliationConfig.driftAlertOnly) {
       this.logger.error(
@@ -574,7 +1274,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
    */
   private async openPrivateStream(): Promise<void> {
     if (!this.running) return;
-    const mode = this.deps.executionMode ?? 'paper';
+    const mode = this.deps.executionMode;
     if (mode === 'paper' || !this.deps.venuePort) return;
 
     const result = await this.deps.venuePort.subscribePrivate({
@@ -757,12 +1457,17 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   private async tick(): Promise<void> {
     if (!this.running) return;
     if (this.paused) return; // Private stream disconnected — skip tick
+    if (this.swapRecoveryHalted) return;
     try {
       // Resolve any pending shadow limit orders that were triggered by trade stream
       if (this.executor instanceof ShadowExecutor) {
         const resolvedFills = this.executor.resolvePendingLimits();
         for (const fill of resolvedFills) {
-          this.position = applyFill(this.position, fill);
+          const { position: nextPos, realizedPnlDelta } = applyFillAccounting(this.position, fill, {
+            equityTracker: this.equityTracker,
+            dailyLossTracker: this.dailyLossTracker,
+          });
+          this.position = nextPos;
           await this.deps.journal.append(fillEvent(fill));
           await this.deps.fillRepo.insertFill({
             venueAccountId: this.deps.venueAccountId,
@@ -777,6 +1482,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
             price: fill.price.toString(),
             fee: fill.fee?.toString(),
             feeCurrency: fill.feeCurrency,
+            realizedPnlDelta: realizedPnlDelta.toString(),
             filledAt: new Date(fill.filledAt),
           });
         }
@@ -847,9 +1553,32 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         }
       }
 
+      // Circuit breaker check — skip execution if tripped
+      if (this.circuitBreaker?.isOpen) {
+        this.logger.warn({ errorCount: this.circuitBreaker.errorCount }, 'Circuit breaker open — skipping tick');
+        return;
+      }
+
+      // Stop-loss check — force exit if position breaches threshold
+      if (this.position.side !== 'flat' && this.equityTracker && this.deps.riskLimits.stopLossMaxUnrealizedLossPct != null && this.deps.riskLimits.stopLossMaxUnrealizedLossPct > 0) {
+        const markPrice = price(snapshot.price.toString());
+        const equity = this.equityTracker.currentEquity(unrealizedPnl(this.position, markPrice));
+        const slResult = checkStopLoss(
+          { maxUnrealizedLossPct: this.deps.riskLimits.stopLossMaxUnrealizedLossPct },
+          [{ instrument: this.deps.symbol, position: this.position, markPrice, equity }],
+        );
+        if (slResult.triggered) {
+          this.logger.warn({ instrument: slResult.instrument, loss: slResult.unrealizedLoss?.toString(), threshold: slResult.threshold?.toString() }, 'Stop-loss triggered — forcing go_flat');
+          await this.executeStopLoss(snapshot);
+          return;
+        }
+      }
+
       // Delegate the core decision/plan/risk/execute path to the reusable trading cycle
       // Live mode guard: skip tick if there are unresolved live plans to prevent overlapping real orders
       if (this.deps.executionMode === 'live') {
+        await this.enforceLiveOrderTimeouts();
+
         const incompletePlans = await this.deps.planRepo.getIncomplete('bot', this.botId);
         if (incompletePlans.length > 0) {
           // Attempt to resolve plans whose orders are all terminal (fallback for stream-before-persist race)
@@ -898,15 +1627,37 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         clock: realClock,
         swapTokenSafety: this.deps.swapTokenSafety,
         swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
+        equityTracker: this.equityTracker,
+        dailyLossTracker: this.dailyLossTracker,
+        lastStopLossExitMs: this.lastStopLossExitMs,
       });
 
       this.position = cycleResult.position;
 
+      // Circuit breaker tracking
+      if (this.circuitBreaker) {
+        if (cycleResult.executionFailed) {
+          const tripped = this.circuitBreaker.recordError();
+          if (tripped) {
+            this.logger.error({ errorCount: this.circuitBreaker.errorCount }, 'Circuit breaker tripped — halting execution');
+            void this.deps.journal.append({
+              actorType: 'bot',
+              actorId: this.botId,
+              type: 'circuit_breaker.tripped' as JournalEventType,
+              payload: { consecutiveErrors: this.circuitBreaker.errorCount },
+            }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append circuit_breaker.tripped journal event'));
+          }
+        } else if (cycleResult.decided && cycleResult.executionResult) {
+          this.circuitBreaker.recordSuccess();
+        }
+      }
+
       // Emit credential.used audit event for live order submissions
       if (cycleResult.decided && cycleResult.executionResult && this.deps.executionMode === 'live' && this.deps.credentialId) {
-        // Only count orders that were actually submitted to the venue (market type).
-        // Limit/swap orders are rejected locally by LiveExecutor without calling submitOrder.
-        const submittedCount = cycleResult.executionResult.orders.filter((o) => o.type === 'market').length;
+        // Count orders that were actually submitted to the venue and acknowledged.
+        const submittedCount = cycleResult.executionResult.orders.filter(
+          (o) => (o.type === 'market' || o.type === 'limit') && o.status !== 'rejected',
+        ).length;
         if (submittedCount > 0) {
           this.deps.journal.append(credentialUsedEvent(this.botId, {
             credentialId: this.deps.credentialId,
@@ -962,6 +1713,211 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         type: 'instance.tick_error',
         payload: { error: err instanceof Error ? err.message : String(err) },
       }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append instance.tick_error journal event'));
+    }
+  }
+
+  private async enforceLiveOrderTimeouts(): Promise<void> {
+    if (this.deps.executionMode !== 'live' || !this.deps.liveOrderTimeoutPolicy) {
+      return;
+    }
+
+    if (this.deps.venueType === 'swap') {
+      await this.enforceLiveSwapConfirmationRecovery();
+      return;
+    }
+
+    if (!this.deps.venuePort) {
+      return;
+    }
+
+    const openOrders = await this.deps.orderRepo.getOpenByInstance(this.botId);
+    if (openOrders.length === 0) {
+      this.timeoutRecoveryAlertedOrderIds.clear();
+      return;
+    }
+
+    const openOrderIds = new Set(openOrders.map((o) => o.id));
+    for (const orderId of this.timeoutRecoveryAlertedOrderIds) {
+      if (!openOrderIds.has(orderId)) {
+        this.timeoutRecoveryAlertedOrderIds.delete(orderId);
+      }
+    }
+
+    const actions = computeLiveTimeoutActions(openOrders, this.deps.liveOrderTimeoutPolicy);
+    if (actions.length === 0) return;
+
+    for (const action of actions) {
+      const order = openOrders.find((candidate) => candidate.id === action.orderId);
+      if (!order) continue;
+
+      if (action.kind === 'cancel_limit') {
+        const cancelResult = await this.deps.venuePort.cancelOrder({
+          orderId: action.venueRefId as unknown as OrderId,
+          symbol: action.symbol,
+        });
+
+        if (!cancelResult.ok) {
+          await this.deps.journal.append({
+            actorType: 'bot',
+            actorId: this.botId,
+            type: 'execution.failure',
+            payload: {
+              code: cancelResult.error.code,
+              message: cancelResult.error.message,
+              reason: 'live_limit_timeout_cancel_failed',
+              orderId: action.orderId,
+              venueRefId: action.venueRefId,
+            },
+          });
+          continue;
+        }
+
+        await this.deps.orderRepo.upsertByVenueRefId({
+          id: order.id,
+          venueAccountId: order.venueAccountId,
+          actorType: order.actorType,
+          actorId: order.actorId ?? undefined,
+          executionPlanId: order.executionPlanId ?? undefined,
+          venueRefId: action.venueRefId,
+          clientOrderId: order.clientOrderId ?? undefined,
+          venue: order.venue,
+          symbol: order.symbol,
+          side: order.side,
+          type: order.type,
+          quantity: order.quantity,
+          price: order.price ?? undefined,
+          referencePrice: order.referencePrice ?? undefined,
+          status: 'cancelled',
+          submissionState: 'terminal',
+          submitAttemptedAt: order.submitAttemptedAt?.toISOString(),
+          acknowledgedAt: order.acknowledgedAt?.toISOString(),
+          filledQuantity: order.filledQuantity,
+          avgFillPrice: order.avgFillPrice ?? undefined,
+        });
+
+        await this.deps.journal.append({
+          actorType: 'bot',
+          actorId: this.botId,
+          type: 'order.cancelled',
+          payload: {
+            orderId: action.orderId,
+            venueRefId: action.venueRefId,
+            reason: 'live_limit_timeout',
+            ageMs: action.ageMs,
+            symbol: action.symbol,
+          },
+        });
+        continue;
+      }
+
+      if (this.timeoutRecoveryAlertedOrderIds.has(action.orderId)) {
+        continue;
+      }
+      this.timeoutRecoveryAlertedOrderIds.add(action.orderId);
+
+      await this.deps.journal.append({
+        actorType: 'bot',
+        actorId: this.botId,
+        type: 'execution.failure',
+        payload: {
+          reason: 'live_order_timeout_recovery_required',
+          orderId: action.orderId,
+          venueRefId: action.venueRefId,
+          symbol: action.symbol,
+          ageMs: action.ageMs,
+          timeoutType: action.reason,
+        },
+      });
+    }
+  }
+
+  private async enforceLiveSwapConfirmationRecovery(): Promise<void> {
+    if (!this.deps.swapVenue || !this.deps.liveOrderTimeoutPolicy) {
+      return;
+    }
+
+    const openOrders = await this.deps.orderRepo.getOpenByInstance(this.botId);
+    if (openOrders.length === 0) {
+      this.timeoutRecoveryAlertedOrderIds.clear();
+      return;
+    }
+
+    const txResult = await this.deps.swapVenue.fetchRecentTransactions();
+    if (!txResult.ok) {
+      await this.deps.journal.append({
+        actorType: 'bot',
+        actorId: this.botId,
+        type: 'execution.failure',
+        payload: {
+          reason: 'live_swap_confirmation_check_failed',
+          code: txResult.error.code,
+          message: txResult.error.message,
+          openSwapOrderCount: openOrders.length,
+        },
+      });
+      return;
+    }
+
+    const knownTxRefs = new Set(txResult.data.map((tx) => tx.executionRef));
+    const timeoutMs = this.deps.liveOrderTimeoutPolicy.marketOrderTimeoutMs;
+
+    for (const order of openOrders) {
+      if (order.venueRefId && knownTxRefs.has(order.venueRefId)) {
+        const resolvedFillPrice = order.avgFillPrice ?? order.price ?? order.referencePrice;
+        const resolvedFilledQuantity = order.filledQuantity && order.filledQuantity !== '0'
+          ? order.filledQuantity
+          : order.quantity;
+
+        await this.deps.orderRepo.upsertByVenueRefId({
+          id: order.id,
+          venueAccountId: order.venueAccountId,
+          actorType: order.actorType,
+          actorId: order.actorId ?? undefined,
+          executionPlanId: order.executionPlanId ?? undefined,
+          venueRefId: order.venueRefId,
+          clientOrderId: order.clientOrderId ?? undefined,
+          venue: order.venue,
+          symbol: order.symbol,
+          side: order.side,
+          type: order.type,
+          quantity: order.quantity,
+          price: order.price ?? undefined,
+          referencePrice: order.referencePrice ?? undefined,
+          status: 'filled',
+          submissionState: 'terminal',
+          submitAttemptedAt: order.submitAttemptedAt?.toISOString(),
+          acknowledgedAt: order.acknowledgedAt?.toISOString(),
+          filledQuantity: resolvedFilledQuantity,
+          avgFillPrice: resolvedFillPrice ?? undefined,
+        });
+
+        if (order.executionPlanId) {
+          await this.tryCompleteLivePlan(order.venueRefId);
+        }
+
+        continue;
+      }
+
+      const orderStartMs = order.submitAttemptedAt?.getTime() ?? order.createdAt.getTime();
+      const ageMs = Date.now() - orderStartMs;
+      if (ageMs < timeoutMs) {
+        continue;
+      }
+
+      const alertKey = order.executionPlanId ?? order.id;
+      if (this.timeoutRecoveryAlertedOrderIds.has(alertKey)) {
+        continue;
+      }
+      this.timeoutRecoveryAlertedOrderIds.add(alertKey);
+
+      await this.haltSwapRecovery(alertKey, {
+        reason: 'live_swap_confirmation_timeout_recovery_required',
+        orderId: order.id,
+        executionPlanId: order.executionPlanId,
+        venueRefId: order.venueRefId,
+        symbol: order.symbol,
+        ageMs,
+      });
     }
   }
 
@@ -1030,6 +1986,12 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       },
       persistFill: async (fill) => {
         await this.deps.fillRepo.insertFill({ ...fill, venueAccountId: fill.venueAccountId ?? this.deps.venueAccountId });
+        await this.maybeEmitLiveSwapExecutionQualityAlert({
+          venueRefId: fill.venueRefId,
+          symbol: fill.symbol,
+          side: fill.side,
+          price: fill.price,
+        });
       },
       persistPosition: async (pos) => {
         await this.deps.positionRepo.upsert({
@@ -1039,11 +2001,54 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         });
       },
       persistOrder: async (order) => {
-        if (order.venueRefId) {
-          await this.deps.orderRepo.upsertByVenueRefId({ ...order, venueRefId: order.venueRefId });
+        const payload = {
+          ...order,
+          actorType: order.actorType ?? 'bot',
+          actorId: order.actorId ?? this.botId,
+        };
+        if (payload.venueRefId) {
+          await this.deps.orderRepo.upsertByVenueRefId(payload);
+        } else if (payload.clientOrderId) {
+          await (this.deps.orderRepo as { upsertByClientOrderId?: (order: typeof payload) => Promise<void> })
+            .upsertByClientOrderId?.(payload);
         }
       },
     };
+  }
+
+  private async maybeEmitLiveSwapExecutionQualityAlert(fill: {
+    venueRefId?: string;
+    symbol: string;
+    side: string;
+    price: string;
+  }): Promise<void> {
+    if (this.deps.executionMode !== 'live' || this.deps.venueType !== 'swap') return;
+    const thresholdBps = this.deps.slippageAlertBps;
+    if (thresholdBps == null || !fill.venueRefId) return;
+
+    const order = await this.deps.orderRepo.getByVenueRefId(fill.venueRefId);
+    if (!order?.referencePrice) return;
+    if (fill.side !== 'buy' && fill.side !== 'sell') return;
+
+    const slippageBps = computeSlippageBps(order.referencePrice, fill.price, fill.side);
+    if (slippageBps <= thresholdBps) return;
+
+    await this.deps.journal.append({
+      actorType: 'bot',
+      actorId: this.botId,
+      type: 'live.slippage_alert',
+      payload: {
+        orderId: order.id,
+        venue: this.deps.venue,
+        symbol: fill.symbol,
+        side: fill.side,
+        referencePrice: order.referencePrice,
+        avgFillPrice: fill.price,
+        slippageBps,
+        thresholdBps,
+        executionType: 'swap',
+      },
+    });
   }
 
   /** Expose current position for read queries */
@@ -1058,7 +2063,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
 
   /** Execution mode for this actor */
   get executionMode(): 'paper' | 'shadow' | 'live' {
-    return this.deps.executionMode ?? 'paper';
+    return this.deps.executionMode;
   }
 
   /** Most recent market snapshot (null if no tick has completed yet) */
@@ -1073,7 +2078,23 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   }
 
   /** Build decision intake deps for the agent decision handler */
-  getIntakeDeps(): DecisionIntakeDeps {
+  getIntakeDeps(): IntakeResult {
+    if (this.swapRecoveryHalted) {
+      return {
+        rejected: true,
+        code: 'swap_recovery_ambiguous',
+        message: 'Swap recovery is in ambiguous state — manual intervention required before new executions',
+        retryable: false,
+      };
+    }
+    if (this.circuitBreaker?.isOpen) {
+      return {
+        rejected: true,
+        code: 'circuit_breaker_open',
+        message: 'Circuit breaker is open — execution halted after consecutive venue errors',
+        retryable: false,
+      };
+    }
     return {
       actorType: 'bot',
       actorId: this.botId,
@@ -1093,6 +2114,39 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       clock: realClock,
       swapTokenSafety: this.deps.swapTokenSafety,
       swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
+      equityTracker: this.equityTracker,
+      dailyLossTracker: this.dailyLossTracker,
+      openPositions: this.position.side !== 'flat' ? [this.position] : [],
+      lastStopLossExitMs: this.lastStopLossExitMs,
+      swapPositionTracker: this.swapPositionTracker,
+    };
+  }
+
+  private buildIntakeDepsForEmergency(): DecisionIntakeDeps {
+    return {
+      actorType: 'bot',
+      actorId: this.botId,
+      venue: this.deps.venue,
+      symbol: this.deps.symbol,
+      venueAccountId: this.deps.venueAccountId,
+      venueType: this.deps.venueType,
+      swapAssets: this.deps.swapAssets,
+      swapNetwork: this.deps.swapNetwork,
+      swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
+      executor: this.executor,
+      journal: this.deps.journal,
+      riskLimits: this.deps.riskLimits,
+      markSource: this.deps.markSource,
+      persistence: this.buildCyclePersistence(),
+      idGen: this.deps.idGen,
+      clock: realClock,
+      swapTokenSafety: this.deps.swapTokenSafety,
+      swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
+      equityTracker: this.equityTracker,
+      dailyLossTracker: this.dailyLossTracker,
+      openPositions: this.position.side !== 'flat' ? [this.position] : [],
+      lastStopLossExitMs: this.lastStopLossExitMs,
+      swapPositionTracker: this.swapPositionTracker,
     };
   }
 
@@ -1121,6 +2175,18 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     return this.position;
   }
 
+  recordExecutionOutcome(success: boolean): void {
+    if (!this.circuitBreaker) return;
+    if (success) {
+      this.circuitBreaker.recordSuccess();
+    } else {
+      const tripped = this.circuitBreaker.recordError();
+      if (tripped) {
+        this.logger.error({ errorCount: this.circuitBreaker.errorCount }, 'Circuit breaker tripped via external outcome — halting execution');
+      }
+    }
+  }
+
   /**
    * Persist a fill received from the private stream.
    * Updates fill repo, position state, and journals the event.
@@ -1141,6 +2207,44 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   }
 
   private async applyPrivateStreamFill(fill: PrivateStreamFill): Promise<void> {
+    // Build a FillEvent for the accounting helper
+    const fillEvent = {
+      id: this.deps.idGen.fillId(),
+      orderId: fill.orderId as unknown as import('@herobids/domain').OrderId,
+      venueAccountId: this.deps.venueAccountId,
+      actorType: 'bot' as const,
+      actorId: this.botId,
+      venueRefId: fill.venueRefId,
+      venue: this.deps.venue,
+      symbol: fill.symbol,
+      side: fill.side,
+      quantity: quantity(fill.quantity),
+      price: price(fill.price),
+      fee: quantity(fill.fee || '0'),
+      feeCurrency: fill.feeCurrency,
+      filledAt: fill.filledAt,
+    };
+
+    const { position: nextPos, realizedPnlDelta } = applyFillAccounting(this.position, fillEvent, {
+      equityTracker: this.equityTracker,
+      dailyLossTracker: this.dailyLossTracker,
+    });
+    this.position = nextPos;
+
+    // Record to swap position tracker (balance-delta model)
+    if (this.swapPositionTracker && this.deps.swapAssets) {
+      const isBuy = fill.side === 'buy';
+      const fillQty = quantity(fill.quantity);
+      const fillPrice = price(fill.price);
+      this.swapPositionTracker.recordSwapFill({
+        inputAsset: isBuy ? this.deps.swapAssets.quoteAsset : this.deps.swapAssets.baseAsset,
+        inputAmount: isBuy ? fillPrice.mul(fillQty) : fillQty,
+        outputAsset: isBuy ? this.deps.swapAssets.baseAsset : this.deps.swapAssets.quoteAsset,
+        outputAmount: isBuy ? fillQty : fillPrice.mul(fillQty),
+        timestamp: new Date(fill.filledAt).getTime(),
+      });
+    }
+
     await this.deps.fillRepo.insertFill({
       venueAccountId: this.deps.venueAccountId,
       orderId: fill.orderId,
@@ -1155,25 +2259,8 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       price: fill.price,
       fee: fill.fee,
       feeCurrency: fill.feeCurrency,
+      realizedPnlDelta: realizedPnlDelta.toString(),
       filledAt: new Date(fill.filledAt),
-    });
-
-    // Update in-memory position
-    this.position = applyFill(this.position, {
-      id: this.deps.idGen.fillId(),
-      orderId: fill.orderId as unknown as import('@herobids/domain').OrderId,
-      venueAccountId: this.deps.venueAccountId,
-      actorType: 'bot',
-      actorId: this.botId,
-      venueRefId: fill.venueRefId,
-      venue: this.deps.venue,
-      symbol: fill.symbol,
-      side: fill.side,
-      quantity: quantity(fill.quantity),
-      price: price(fill.price),
-      fee: quantity(fill.fee || '0'),
-      feeCurrency: fill.feeCurrency,
-      filledAt: fill.filledAt,
     });
 
     // Persist updated position
@@ -1194,15 +2281,47 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     await this.deps.journal.append({
       actorType: 'bot',
       actorId: this.botId,
-      type: 'fill.private_stream',
+      type: 'fill.private_stream' as JournalEventType,
       payload: fill as unknown as Record<string, unknown>,
     });
+
+    await this.maybeEmitLiveSlippageAlert(fill);
 
     // After position is updated, check if the owning plan can be completed.
     // This is the safe trigger point for 'filled' orders — position already reflects the fill.
     if (this.deps.executionMode === 'live') {
       await this.tryCompleteLivePlan(fill.venueRefId ?? fill.orderId);
     }
+  }
+
+  private async maybeEmitLiveSlippageAlert(fill: PrivateStreamFill): Promise<void> {
+    if (this.deps.executionMode !== 'live') return;
+    const thresholdBps = this.deps.slippageAlertBps;
+    if (thresholdBps == null) return;
+
+    const order = await this.deps.orderRepo.getByVenueRefId(fill.orderId)
+      ?? (fill.venueRefId ? await this.deps.orderRepo.getByVenueRefId(fill.venueRefId) : null);
+    const referencePrice = order?.referencePrice;
+    if (!referencePrice) return;
+
+    const slippageBps = computeSlippageBps(referencePrice, fill.price, fill.side);
+    if (slippageBps <= thresholdBps) return;
+
+    await this.deps.journal.append({
+      actorType: 'bot',
+      actorId: this.botId,
+      type: 'live.slippage_alert',
+      payload: {
+        orderId: order.id,
+        venue: this.deps.venue,
+        symbol: fill.symbol,
+        side: fill.side,
+        referencePrice,
+        avgFillPrice: fill.price,
+        slippageBps,
+        thresholdBps,
+      },
+    });
   }
 
   /**

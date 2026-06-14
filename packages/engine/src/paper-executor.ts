@@ -7,6 +7,8 @@ import type { Executor, ExecutionResult, EngineError } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { ManagedOrder, FillEvent } from './order-state.js';
 import type { Clock } from './trading-cycle.js';
+import type { FeeSimulatorConfig } from './fee-simulator.js';
+import { simulateFee, applyPaperSlippage } from './fee-simulator.js';
 
 export interface IdGenerator {
   orderId(): OrderId;
@@ -21,6 +23,7 @@ export class PaperExecutor implements Executor {
   constructor(
     private readonly idGen: IdGenerator,
     private readonly clock?: Clock,
+    private readonly feeConfig?: FeeSimulatorConfig,
   ) {}
 
   async execute(plan: ExecutionPlan, currentPrice: Price): Promise<Result<ExecutionResult, EngineError>> {
@@ -32,7 +35,16 @@ export class PaperExecutor implements Executor {
       const orderId = this.idGen.orderId();
       const fillId = this.idGen.fillId();
       // Paper mode: fill immediately at current price (market) or limit price
-      const fillPrice = planned.type === 'market' ? currentPrice : (planned.price ?? currentPrice);
+      const basePrice = planned.type === 'market' ? currentPrice : (planned.price ?? currentPrice);
+      // Apply simulated slippage for paper mode
+      const fillPrice = this.feeConfig
+        ? applyPaperSlippage(this.feeConfig, basePrice, planned.side)
+        : basePrice;
+      // Compute simulated fee
+      const notional = fillPrice.mul(planned.quantity);
+      const fee = this.feeConfig
+        ? simulateFee(this.feeConfig, notional)
+        : quantity('0');
 
       const order: ManagedOrder = {
         id: orderId,
@@ -70,7 +82,7 @@ export class PaperExecutor implements Executor {
         side: planned.side,
         quantity: planned.quantity,
         price: fillPrice,
-        fee: quantity('0'),
+        fee,
         feeCurrency: 'USD',
         filledAt: now,
       };

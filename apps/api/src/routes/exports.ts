@@ -729,13 +729,14 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         id: agent.id,
         name: agent.name,
         prompt: agent.prompt,
+        status: agent.status,
         skillIds,
         executionMode: agent.executionMode,
         dailyTokenBudget: agent.dailyTokenBudget,
         dailyLossLimit: agent.dailyLossLimit,
         maxBots: agent.maxBots,
         maxSlippageBps: agent.maxSlippageBps,
-        createdAt: agent.createdAt,
+        createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt,
       } as Record<string, unknown>);
 
       if (parsed.data.format === 'yaml') {
@@ -783,13 +784,14 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         id: agent.id,
         name: agent.name,
         prompt: agent.prompt,
+        status: agent.status,
         skillIds,
         executionMode: agent.executionMode,
         dailyTokenBudget: agent.dailyTokenBudget,
         dailyLossLimit: agent.dailyLossLimit,
         maxBots: agent.maxBots,
         maxSlippageBps: agent.maxSlippageBps,
-        createdAt: agent.createdAt,
+        createdAt: agent.createdAt instanceof Date ? agent.createdAt.toISOString() : agent.createdAt,
       } as Record<string, unknown>);
 
       const report = computeReport(allFills, allPositions);

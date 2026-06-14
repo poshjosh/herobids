@@ -37,3 +37,5 @@ export { resolveRuntimeCapabilityDescriptor, buildRuntimeDescriptor } from './ag
 export type { RuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
 export { TokenSafetyOverrideRepository } from './token-safety-override-repository.js';
 export type { IssueOverrideParams, TokenSafetyOverrideRow } from './token-safety-override-repository.js';
+export { DecisionFailureRepository } from './decision-failure-repository.js';
+export type { InsertDecisionFailure, DecisionFailureQuery } from './decision-failure-repository.js';

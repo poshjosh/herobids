@@ -10,6 +10,10 @@ const DEFAULT_ROLLOUT: LiveRolloutConfig = {
   maxInitialOrderNotionalUsd: '50',
   maxConsecutiveVenueErrors: 3,
   slippageAlertBps: 50,
+  limitOrderTimeoutMs: 120000,
+  marketOrderTimeoutMs: 30000,
+  timeoutCheckIntervalMs: 10000,
+  crashPolicy: 'alert_manual_intervention',
 };
 
 const VALID_LIVE_INPUT: LiveGateInput = {
@@ -86,11 +90,45 @@ describe('assertLiveReadiness', () => {
         .toThrow('not in liveRollout.allowedVenues');
     });
 
-    it('rejects swap venues', () => {
+    it('allows swap venues when listed in allowedVenues', () => {
+      const input: LiveGateInput = { ...VALID_LIVE_INPUT, venueType: 'swap', venue: 'jupiter', signerPresent: true };
+      const rollout = { ...DEFAULT_ROLLOUT, allowedVenues: ['jupiter'] };
+      const result = assertLiveReadiness(rollout, input);
+      expect(result.effectiveMaxOrderNotional).toBeDefined();
+    });
+
+    it('rejects swap venues when not in allowedVenues', () => {
       const input: LiveGateInput = { ...VALID_LIVE_INPUT, venueType: 'swap', venue: 'jupiter' };
+      expect(() => assertLiveReadiness(DEFAULT_ROLLOUT, input))
+        .toThrow('not in liveRollout.allowedVenues');
+    });
+
+    it('allows swap venues without traditional credentials (wallet-based auth)', () => {
+      const input: LiveGateInput = {
+        ...VALID_LIVE_INPUT,
+        venueType: 'swap',
+        venue: 'jupiter',
+        credentialsFromDb: false,
+        credentialsPresent: false,
+        signerPresent: true,
+      };
+      const rollout = { ...DEFAULT_ROLLOUT, allowedVenues: ['jupiter'] };
+      const result = assertLiveReadiness(rollout, input);
+      expect(result.effectiveMaxOrderNotional).toBeDefined();
+    });
+
+    it('rejects swap venues when no signer is configured', () => {
+      const input: LiveGateInput = {
+        ...VALID_LIVE_INPUT,
+        venueType: 'swap',
+        venue: 'jupiter',
+        credentialsFromDb: false,
+        credentialsPresent: false,
+        signerPresent: false,
+      };
       const rollout = { ...DEFAULT_ROLLOUT, allowedVenues: ['jupiter'] };
       expect(() => assertLiveReadiness(rollout, input))
-        .toThrow('orderbook venues');
+        .toThrow('configured transaction signer');
     });
 
     it('rejects env-var credential fallback when requireDbCredentials is true', () => {

@@ -11,6 +11,7 @@ import {
 } from '../schemas.js';
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
+import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import type { LifecycleJob } from '../types.js';
 
 export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
@@ -61,6 +62,23 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
 
     const id = crypto.randomUUID();
     const now = new Date();
+
+    // Validate execution capability for the bot's venue + mode combination
+    const botVenueType = venueTypeFromProvider(parsed.data.venue);
+    const botExecutionMode = (resolvedConfig['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+    if (botVenueType && botExecutionMode) {
+      const capCheck = validateExecutionCapability({
+        actorType: 'bot',
+        executionMode: botExecutionMode as 'paper' | 'shadow' | 'live',
+        venueType: botVenueType,
+      });
+      if (!capCheck.ok) {
+        return reply.status(400).send({
+          error: `execution_capability.${capCheck.error.code}`,
+          message: capCheck.error.message,
+        });
+      }
+    }
 
     if (plansConfig) {
       const planId = request.userPlanId || 'free';
@@ -173,9 +191,29 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       return reply.status(404).send({ error: 'not_found' });
     }
 
+    // Validate execution capability for the updated config against the bot's venue type
+    const newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
+    if (newExecutionMode) {
+      const [binding] = await db.select({ provider: tradingBindings.provider }).from(tradingBindings)
+        .where(eq(tradingBindings.id, existing.tradingBindingId));
+      const botVenueType = binding ? venueTypeFromProvider(binding.provider) : undefined;
+      if (botVenueType) {
+        const capCheck = validateExecutionCapability({
+          actorType: 'bot',
+          executionMode: newExecutionMode as 'paper' | 'shadow' | 'live',
+          venueType: botVenueType,
+        });
+        if (!capCheck.ok) {
+          return reply.status(400).send({
+            error: `execution_capability.${capCheck.error.code}`,
+            message: capCheck.error.message,
+          });
+        }
+      }
+    }
+
     // Live-mode plan gate
     if (plansConfig) {
-      const newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'];
       if (newExecutionMode === 'live') {
         const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);
         if (!liveCheck.ok) {

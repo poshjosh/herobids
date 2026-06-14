@@ -170,6 +170,36 @@ describe('AgentIntakeResolver', () => {
       expect(result?.riskLimits.maxPositionSizePct).toBeUndefined();
       expect(result?.equity).toBeUndefined();
     });
+
+    it('returns undefined when agent row is missing (fail closed)', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.agentRepo.getAgent.mockResolvedValue(null);
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('returns undefined when agent is in shadow mode (fail closed)', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: '100', dailyLossLimit: '50', executionMode: 'shadow' });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('returns undefined when agent is in live mode (fail closed)', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.agentRepo.getAgent.mockResolvedValue({ id: 'agent-1', capital: '100', dailyLossLimit: '50', executionMode: 'live' });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('getDecisionContext', () => {

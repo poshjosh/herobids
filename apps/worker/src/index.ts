@@ -14,17 +14,18 @@ import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, bots, users } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
+import { resolveSwapAssetsFromBinding } from './resolve-swap-assets.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
 import { TelegramClient, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
@@ -41,6 +42,7 @@ import {
 } from './agents/index.js';
 import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/index.js';
 import { UserEventPublisher } from './user-event-publisher.js';
+import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
 import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
@@ -154,6 +156,7 @@ const decisionRepo = new DecisionRepository(db);
 const backtestingRepo = new BacktestingRepository(db);
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
+const decisionFailureRepo = new DecisionFailureRepository(db);
 
 const sharedMarketDataRegistry = appConfig.marketData
   ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient })
@@ -173,9 +176,12 @@ const actorRegistry = new Map<string, ExecutionActor>();
 const agentState = new ActorStateOwner(actorRegistry);
 /** Maps botId → userId so the onStarted/onStartFailed callbacks can publish events. */
 const instanceUserIds = new Map<string, string>();
+/** Maps botId → execution mode for health snapshots. */
+const instanceExecutionModes = new Map<string, 'paper' | 'shadow' | 'live'>();
 const agentRepo = new AgentRepository(db);
 const eventPublisher = new InstanceEventPublisher(redisClient);
 const userEventPublisher = new UserEventPublisher(redisClient);
+const actorHealthPublisher = new ActorHealthPublisher(redisClient);
 
 // ID generator using UUIDv7 (crypto.randomUUID as fallback)
 const idGen: IdGenerator & { planId(): string; decisionId(): string } = {
@@ -283,9 +289,13 @@ const intakeResolver: DecisionIntakeResolver = {
     if (instrumentId) return agentIntakeResolver.getPosition(instanceId, instrumentId);
     return undefined;
   },
+  recordExecutionOutcome: (instanceId: string, success: boolean) => {
+    const actor = actorRegistry.get(instanceId);
+    if (actor?.isRunning) actor.recordExecutionOutcome?.(success);
+  },
 };
 
-const agentDecisionHandler = new AgentDecisionHandler(agentRepo, intakeResolver, eventPublisher);
+const agentDecisionHandler = new AgentDecisionHandler(agentRepo, intakeResolver, eventPublisher, decisionFailureRepo);
 
 const snapshotResolver: ContextSnapshotResolver = {
   resolveSnapshots: async (instanceId: string) => {
@@ -404,12 +414,18 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         const venueType: 'orderbook' | 'swap' = (binding.venue === 'jupiter' || binding.venue === '1inch') ? 'swap' : 'orderbook';
         const agent = await agentRepo.getAgent(agentId);
         const capitalStr = agent?.capital ?? null;
-        const dailyLossStr = agent?.dailyLossLimit ?? '10000';
+        const dailyLossStr = agent?.dailyLossLimit ?? null;
+        const agentDefaults = appConfig.agentRiskDefaults;
 
-        if (venueType === 'swap' && mode !== 'paper') {
-          throw new Error(
-            `Direct-agent swap execution currently supports paper mode only; ${mode} mode requires instrument-scoped swap metadata for agent ${agentId}`,
-          );
+        // Resolve swap asset metadata from binding for non-paper swap modes
+        let resolvedSwapAssets: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number } | undefined;
+        if (venueType === 'swap') {
+          resolvedSwapAssets = resolveSwapAssetsFromBinding(binding);
+          if (!resolvedSwapAssets && mode !== 'paper') {
+            throw new Error(
+              `Swap binding ${binding.id} missing swapAssets metadata (bindingProfile.swapAssets) for agent ${agentId} in ${mode} mode`,
+            );
+          }
         }
 
         let actor: AgentTradingActor | undefined;
@@ -420,10 +436,18 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           venue: binding.venue,
           venueType,
           riskLimits: {
-            maxPositionSize: quantity('1000000000'),
-            maxOpenPositions: 10,
-            maxDrawdown: price(dailyLossStr),
-            ...(capitalStr != null ? { maxOrderNotional: price(capitalStr), maxPositionSizePct: 100 } : {}),
+            maxPositionSize: quantity(String(agentDefaults.maxPositionSize)),
+            maxOpenPositions: agentDefaults.maxOpenPositions,
+            maxDrawdown: dailyLossStr ? price(dailyLossStr) : price('1000000000'),
+            stopLossMaxUnrealizedLossPct: agentDefaults.stopLossMaxUnrealizedLossPct,
+            stopLossCooldownMs: agentDefaults.stopLossCooldownMs,
+            ...(capitalStr != null ? {
+              maxOrderNotional: price(String(parseFloat(capitalStr) * agentDefaults.maxOrderNotionalMultiplier)),
+              maxPositionSizePct: agentDefaults.maxPositionSizePct,
+              dailyMaxLossPct: dailyLossStr
+                ? (parseFloat(dailyLossStr) / parseFloat(capitalStr)) * 100
+                : agentDefaults.dailyMaxLossPct,
+            } : {}),
           },
           venueAdapterFactory,
           createStreamPoolHandle: venueType !== 'swap'
@@ -447,9 +471,19 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           swapNetwork: venueType === 'swap'
             ? binding.venue === 'jupiter' ? 'solana' : appConfig.venues['1inch']?.tokenSafetyNetwork ?? inferOneInchTokenSafetyNetwork(appConfig.venues['1inch']?.chainId)
             : undefined,
-          swapBaseTokenAddress: undefined,
+          swapBaseTokenAddress: resolvedSwapAssets?.baseAsset,
+          swapAssets: resolvedSwapAssets,
           swapTokenSafety: venueType === 'swap' ? swapTokenSafety : undefined,
           ...(capitalStr != null ? { capital: capitalStr } : {}),
+          feeConfig: appConfig.simulation,
+          maxConsecutiveVenueErrors: appConfig.liveRollout.maxConsecutiveVenueErrors,
+          slippageAlertBps: appConfig.liveRollout.slippageAlertBps,
+          crashPolicy: appConfig.liveRollout.crashPolicy,
+          liveOrderTimeoutPolicy: {
+            limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
+            marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
+            checkIntervalMs: appConfig.liveRollout.timeoutCheckIntervalMs,
+          },
           onCrashed: async (err) => {
             agentState.deregisterOnCrash(agentId, sessionId, actor!);
             await sessionManager.handleRuntimeFailure(sessionId, agentId, agent?.userId, err);
@@ -461,7 +495,18 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         // Only register if the session is still active (not stopped during start)
         if (agentState.isSessionPending(agentId, sessionId)) {
           agentState.registerActor(agentId, sessionId, actor, mode, venueType);
+          instanceExecutionModes.set(agentId, mode);
           logger.info({ agentId, mode, venue: binding.venue }, 'Agent trading actor registered');
+          void actorHealthPublisher.publish({
+            actorType: 'agent',
+            actorId: agentId,
+            status: 'healthy',
+            reasons: [],
+            executionMode: mode,
+            updatedAt: new Date().toISOString(),
+            streamState: venueType === 'orderbook' ? 'connected' : 'not_applicable',
+            reconciliationState: 'healthy',
+          });
           return true;
         } else {
           // Session changed while starting — tear down immediately
@@ -479,6 +524,15 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     if (actor && actor instanceof AgentTradingActor) {
       actor.stop().catch((err) => logger.error({ err, agentId }, 'Failed to stop agent trading actor'));
     }
+    void actorHealthPublisher.publish({
+      actorType: 'agent',
+      actorId: agentId,
+      status: 'stopped',
+      reasons: ['session_stopped'],
+      executionMode: instanceExecutionModes.get(agentId) ?? 'paper',
+      updatedAt: new Date().toISOString(),
+    });
+    instanceExecutionModes.delete(agentId);
   },
   usageBillingRepo: appConfig.usageBilling?.enabled ? new UsageBillingRepository(db) : undefined,
   plansConfig: appConfig.plans,
@@ -594,7 +648,16 @@ const runtime = new WorkerRuntime(
           await userEventPublisher.publishBotStatus(userId, botId, 'crashed');
         }
       } catch { /* best-effort */ }
+      void actorHealthPublisher.publish({
+        actorType: 'bot',
+        actorId: botId,
+        status: 'crashed',
+        reasons: ['start_failed', error.message],
+        executionMode: instanceExecutionModes.get(botId) ?? 'paper',
+        updatedAt: new Date().toISOString(),
+      });
       instanceUserIds.delete(botId);
+      instanceExecutionModes.delete(botId);
     },
     onStopped: async (instanceId: string) => {
       actorRegistry.delete(instanceId);
@@ -608,7 +671,16 @@ const runtime = new WorkerRuntime(
           await userEventPublisher.publishBotStatus(userId, instanceId, 'stopped');
         }
       } catch { /* best-effort */ }
+      void actorHealthPublisher.publish({
+        actorType: 'bot',
+        actorId: instanceId,
+        status: 'stopped',
+        reasons: ['stopped'],
+        executionMode: instanceExecutionModes.get(instanceId) ?? 'paper',
+        updatedAt: new Date().toISOString(),
+      });
       instanceUserIds.delete(instanceId);
+      instanceExecutionModes.delete(instanceId);
     },
     onStarted: (botId) => {
       // Publish running event after actor.start() has completed successfully.
@@ -619,6 +691,14 @@ const runtime = new WorkerRuntime(
           logger.error({ err, botId }, 'Failed to publish bot running event');
         });
       }
+      void actorHealthPublisher.publish({
+        actorType: 'bot',
+        actorId: botId,
+        status: 'healthy',
+        reasons: [],
+        executionMode: instanceExecutionModes.get(botId) ?? 'paper',
+        updatedAt: new Date().toISOString(),
+      });
     },
   },
   async (botId, rawConfig) => {
@@ -641,6 +721,7 @@ const runtime = new WorkerRuntime(
     let testnet = false;
     let resolvedCredentialId: string | undefined;
     let credentialsPresent = false;
+    let signerPresent = false;
     let venueAdapter: OrderbookVenuePort | undefined;
     let swapVenue: SwapVenuePort | undefined;
 
@@ -666,6 +747,7 @@ const runtime = new WorkerRuntime(
         actorId: botId,
       });
       swapVenue = result.swapVenue;
+      signerPresent = result.signerPresent;
     } else {
       throw new CredentialResolutionError(
         `swapAssets config required for swap venue bot ${botId} — cannot route swaps without explicit asset identifiers and decimals`,
@@ -680,6 +762,7 @@ const runtime = new WorkerRuntime(
       venueAccountId,
       credentialsFromDb: !!resolvedCredentialId,
       credentialsPresent,
+      signerPresent,
       driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
       instanceMaxOrderNotional: config.risk.maxOrderNotional,
     });
@@ -788,6 +871,7 @@ const runtime = new WorkerRuntime(
         maxPositionSizePct: config.risk.maxPositionSizePct,
         dailyMaxLossPct: config.risk.dailyMaxLossPct,
         stopLossCooldownMs: config.risk.stopLossCooldownMs,
+        stopLossMaxUnrealizedLossPct: config.risk.stopLossMaxUnrealizedLossPct,
         maxOrderNotional: liveGateResult.effectiveMaxOrderNotional,
       },
       idGen,
@@ -826,6 +910,14 @@ const runtime = new WorkerRuntime(
             allowOverrides: config.risk.allowSwapTokenSafetyOverride,
           }
         : undefined,
+      feeConfig: appConfig.simulation,
+      maxConsecutiveVenueErrors: appConfig.liveRollout.maxConsecutiveVenueErrors,
+      slippageAlertBps: appConfig.liveRollout.slippageAlertBps,
+      crashPolicy: appConfig.liveRollout.crashPolicy,
+      liveOrderTimeoutPolicy: {
+        limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
+        marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
+      },
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
           agentStreamConsumer.unsubscribe(instanceId);
@@ -841,17 +933,28 @@ const runtime = new WorkerRuntime(
               logger.error({ err, botId: instanceId }, 'Failed to publish bot crash event');
             });
           }
+          void actorHealthPublisher.publish({
+            actorType: 'bot',
+            actorId: instanceId,
+            status: 'crashed',
+            reasons: ['runtime_crash'],
+            executionMode: instanceExecutionModes.get(instanceId) ?? 'paper',
+            updatedAt: new Date().toISOString(),
+          });
+          instanceExecutionModes.delete(instanceId);
         },
     };
     const actor = new TradingActor(botId, config.strategy.params as Record<string, unknown>, deps);
     actorRegistry.set(botId, actor);
     // Record userId so onStarted / onStartFailed / onStopped callbacks can publish events.
     if (instanceUserId) instanceUserIds.set(botId, instanceUserId);
+    instanceExecutionModes.set(botId, config.execution.mode);
     try {
       await agentStreamConsumer.subscribe(botId);
     } catch (err: unknown) {
       actorRegistry.delete(botId);
       instanceUserIds.delete(botId);
+      instanceExecutionModes.delete(botId);
       throw err;
     }
     return actor;
@@ -927,6 +1030,24 @@ const marketIntelCoordinator = appConfig.marketData
 
 marketIntelCoordinator?.start();
 
+// Periodic health refresh: re-publish healthy snapshots for all registered actors
+// so Redis entries do not expire while actors are running. Refresh at half the TTL.
+const HEALTH_REFRESH_INTERVAL_MS = (ACTOR_HEALTH_TTL_SECONDS / 2) * 1000;
+const healthRefreshInterval = setInterval(() => {
+  const now = new Date().toISOString();
+  for (const [id] of actorRegistry) {
+    const isAgent = agentState.getActor(id) !== undefined;
+    void actorHealthPublisher.publish({
+      actorType: isAgent ? 'agent' : 'bot',
+      actorId: id,
+      status: 'healthy',
+      reasons: [],
+      executionMode: instanceExecutionModes.get(id) ?? 'paper',
+      updatedAt: now,
+    });
+  }
+}, HEALTH_REFRESH_INTERVAL_MS);
+
 // Register graceful shutdown handlers after all services are fully initialized.
 // Placing them here guarantees no temporal-dead-zone reference errors if a
 // signal arrives during the async startup above.
@@ -938,6 +1059,7 @@ marketIntelCoordinator?.start();
 // instance picks them up via the heartbeat recovery path in AgentSessionManager.
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
+  clearInterval(healthRefreshInterval);
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -957,6 +1079,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
+  clearInterval(healthRefreshInterval);
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();

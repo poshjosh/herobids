@@ -24,8 +24,16 @@ export const orders = pgTable('orders', {
   type: text('type').notNull(),              // market | limit | stop_market | stop_limit
   quantity: numeric('quantity').notNull(),
   price: numeric('price'),
+  /** Decision-time mark used for execution-quality checks */
+  referencePrice: numeric('reference_price'),
   /** Current order status */
   status: text('status').notNull().default('pending'),
+  /** Live submit lifecycle phase for crash-safe recovery */
+  submissionState: text('submission_state'),
+  /** Timestamp when venue submit attempt was initiated */
+  submitAttemptedAt: timestamp('submit_attempted_at', { withTimezone: true }),
+  /** Timestamp when venue acknowledgement was persisted */
+  acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
   /** Quantity filled so far */
   filledQuantity: numeric('filled_quantity').notNull().default('0'),
   /** Average fill price */
@@ -36,5 +44,6 @@ export const orders = pgTable('orders', {
   index('idx_orders_venue_account_id').on(t.venueAccountId),
   index('idx_orders_actor_id').on(t.actorId),
   index('idx_orders_venue_ref_id').on(t.venueRefId),
+  index('idx_orders_client_order_id').on(t.clientOrderId),
   index('idx_orders_status').on(t.status),
 ]);

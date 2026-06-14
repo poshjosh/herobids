@@ -225,6 +225,261 @@ describe('AgentTradingActor', () => {
       expect(onCrashed).toHaveBeenCalledWith(expect.any(Error));
     });
 
+    it('halts auto_go_flat when crash recovery is ambiguous', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'o-ambiguous',
+            symbol: 'BTC/USD:USD',
+            venueRefId: null,
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            venue: 'hyperliquid',
+            side: 'buy',
+            type: 'market',
+            quantity: quantity('1'),
+            filledQuantity: quantity('0'),
+          },
+        ]),
+      };
+
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        cancelOrder: vi.fn().mockResolvedValue(ok(undefined)),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        crashPolicy: 'auto_go_flat',
+        journal: { append: journalAppend } as any,
+        orderRepo: orderRepo as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          orderbookAdapter: {
+            venuePort,
+            credentials: { apiKey: 'k', secret: 's', walletAddress: '', testnet: false },
+            credentialId: 'cred-1',
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).crash(new Error('forced crash'));
+
+      const crashCall = journalAppend.mock.calls.find((c) => c[0]?.type === 'instance.crashed');
+      expect(crashCall).toBeDefined();
+      expect(crashCall?.[0]?.payload).toMatchObject({
+        crashRecoveryAmbiguous: true,
+        attemptedEmergencyGoFlat: 0,
+      });
+    });
+
+    it('halts swap auto_go_flat when crash recovery is ambiguous on-chain', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'o-swap-ambiguous',
+            symbol: 'SOL/USDC',
+            venueRefId: null,
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            venue: 'jupiter',
+            side: 'buy',
+            type: 'swap',
+            quantity: quantity('1'),
+            filledQuantity: quantity('0'),
+          },
+        ]),
+      };
+
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        crashPolicy: 'auto_go_flat',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        orderRepo: orderRepo as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).crash(new Error('forced crash'));
+
+      expect(swapVenue.fetchRecentTransactions).toHaveBeenCalled();
+
+      const ambiguousFailure = journalAppend.mock.calls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === 'execution.failure'
+          && ((c[0] as { payload: Record<string, unknown> }).payload.reason === 'live_swap_crash_recovery_ambiguous'),
+      );
+      expect(ambiguousFailure).toBeDefined();
+
+      const crashCall = journalAppend.mock.calls.find((c: unknown[]) => (c[0] as { type: string }).type === 'instance.crashed');
+      expect(crashCall).toBeDefined();
+      expect((crashCall![0] as { payload: Record<string, unknown> }).payload).toMatchObject({
+        crashRecoveryAmbiguous: true,
+        attemptedEmergencyGoFlat: 0,
+        openSwapOrders: 1,
+        unresolvedSwapOrders: 1,
+      });
+    });
+
+    it('cancels open orders before crash-policy go_flat path', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'o-cancel',
+            symbol: 'BTC/USD:USD',
+            venueRefId: 'venue-order-1',
+            clientOrderId: 'client-1',
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            executionPlanId: 'plan-1',
+            venue: 'hyperliquid',
+            side: 'buy',
+            type: 'limit',
+            quantity: quantity('1'),
+            price: price('50000'),
+            filledQuantity: quantity('0'),
+          },
+        ]),
+      };
+
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        cancelOrder: vi.fn().mockResolvedValue(ok(undefined)),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        crashPolicy: 'auto_go_flat',
+        journal: { append: journalAppend } as any,
+        orderRepo: orderRepo as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          orderbookAdapter: {
+            venuePort,
+            credentials: { apiKey: 'k', secret: 's', walletAddress: '', testnet: false },
+            credentialId: 'cred-1',
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).crash(new Error('forced crash'));
+
+      expect(venuePort.cancelOrder).toHaveBeenCalledWith({
+        orderId: 'venue-order-1',
+        symbol: 'BTC/USD:USD',
+      });
+
+      const crashCall = journalAppend.mock.calls.find((c) => c[0]?.type === 'instance.crashed');
+      expect(crashCall).toBeDefined();
+      expect(crashCall?.[0]?.payload).toMatchObject({
+        crashRecoveryAmbiguous: false,
+        cancelledOpenOrders: 1,
+      });
+    });
+
+    it('captures startup pending-live snapshot in live mode', async () => {
+      const planRepo = {
+        ...makeRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([{ id: 'plan-startup-snapshot', status: 'executing' }]),
+      };
+      const orderRepo = {
+        ...makeRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          {
+            id: 'ord-startup-1',
+            status: 'pending',
+            submissionState: 'submit_attempting',
+            venueRefId: null,
+            clientOrderId: 'client-startup-1',
+            symbol: 'BTC/USD:USD',
+          },
+        ]),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          orderbookAdapter: {
+            venuePort: {
+              fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
+              subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
+              fetchPositions: vi.fn().mockResolvedValue(ok([])),
+              fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+              fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+              fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+            },
+            credentials: { apiKey: 'k', secret: 's', walletAddress: '', testnet: false },
+            credentialId: 'cred-1',
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+
+      const snapshot = (actor as any).startupPendingLiveSnapshot;
+      expect(snapshot).toBeDefined();
+      expect(snapshot.plans).toHaveLength(1);
+      expect(snapshot.plans[0]).toMatchObject({
+        planId: 'plan-startup-snapshot',
+        planStatus: 'executing',
+        orderCount: 1,
+      });
+      expect(snapshot.plans[0].nonTerminalOrders).toEqual([
+        expect.objectContaining({ orderId: 'ord-startup-1', status: 'pending', submissionState: 'submit_attempting' }),
+      ]);
+
+      await actor.stop();
+    });
+
+    it('clears startup pending-live snapshot in non-live mode', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ executionMode: 'paper' }));
+      (actor as any).startupPendingLiveSnapshot = {
+        capturedAt: new Date().toISOString(),
+        plans: [{ planId: 'stale', planStatus: 'executing', orderCount: 1, nonTerminalOrders: [] }],
+      };
+
+      await actor.start();
+
+      expect((actor as any).startupPendingLiveSnapshot).toBeUndefined();
+
+      await actor.stop();
+    });
+
     it('builds a reconnect snapshot from a tracked instrument', async () => {
       const positionRepo = {
         ...makeRepo(),
@@ -503,6 +758,143 @@ describe('AgentTradingActor', () => {
         venueAdapterFactory: factory as any,
       }));
       await expect(actor.start()).rejects.toThrow('Live execution mode requires a venue port');
+    });
+
+    it('cancels stale live limit orders via timeout policy', async () => {
+      const cancelOrder = vi.fn().mockResolvedValue(ok({ cancelled: true }));
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'agent-stale-limit',
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            executionPlanId: 'plan-stale-limit',
+            venueRefId: 'venue-agent-limit-1',
+            clientOrderId: 'client-agent-limit-1',
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'buy',
+            type: 'limit',
+            quantity: '1',
+            price: '49000',
+            referencePrice: null,
+            status: 'open',
+            submissionState: 'venue_acknowledged',
+            submitAttemptedAt: new Date(Date.now() - 10 * 60 * 1000),
+            acknowledgedAt: new Date(Date.now() - 10 * 60 * 1000),
+            filledQuantity: '0',
+            avgFillPrice: null,
+          },
+        ]),
+        upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        orderRepo: orderRepo as any,
+        liveOrderTimeoutPolicy: {
+          limitOrderTimeoutMs: 60_000,
+          marketOrderTimeoutMs: 30_000,
+          checkIntervalMs: 60_000,
+        },
+        venueAdapterFactory: makeVenueAdapterFactory({
+          orderbookAdapter: {
+            venuePort: {
+              fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
+              subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
+              fetchPositions: vi.fn().mockResolvedValue(ok([])),
+              fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+              fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+              fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+              cancelOrder,
+            },
+            credentials: { apiKey: 'k', secret: 's', walletAddress: '', testnet: false },
+            credentialId: 'cred-1',
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).enforceLiveOrderTimeouts();
+
+      expect(cancelOrder).toHaveBeenCalledWith({ orderId: 'venue-agent-limit-1', symbol: 'BTC/USD:USD' });
+      expect(orderRepo.upsertByVenueRefId).toHaveBeenCalledWith(expect.objectContaining({
+        venueRefId: 'venue-agent-limit-1',
+        status: 'cancelled',
+        submissionState: 'terminal',
+      }));
+
+      await actor.stop();
+    });
+
+    it('marks stale live market orders as recovery-required', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'agent-stale-market',
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            executionPlanId: 'plan-stale-market',
+            venueRefId: 'venue-agent-market-1',
+            clientOrderId: 'client-agent-market-1',
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'buy',
+            type: 'market',
+            quantity: '1',
+            price: null,
+            referencePrice: null,
+            status: 'pending',
+            submissionState: 'submit_attempting',
+            submitAttemptedAt: new Date(Date.now() - 5 * 60 * 1000),
+            acknowledgedAt: null,
+            filledQuantity: '0',
+            avgFillPrice: null,
+          },
+        ]),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        orderRepo: orderRepo as any,
+        journal: { append: journalAppend } as any,
+        liveOrderTimeoutPolicy: {
+          limitOrderTimeoutMs: 60_000,
+          marketOrderTimeoutMs: 30_000,
+          checkIntervalMs: 60_000,
+        },
+        venueAdapterFactory: makeVenueAdapterFactory({
+          orderbookAdapter: {
+            venuePort: {
+              fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
+              subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
+              fetchPositions: vi.fn().mockResolvedValue(ok([])),
+              fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+              fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+              fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+              cancelOrder: vi.fn(),
+            },
+            credentials: { apiKey: 'k', secret: 's', walletAddress: '', testnet: false },
+            credentialId: 'cred-1',
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).enforceLiveOrderTimeouts();
+
+      const recoveryEvent = journalAppend.mock.calls.find(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'execution.failure'
+          && ((call[0] as { payload: Record<string, unknown> }).payload.reason === 'live_order_timeout_recovery_required'),
+      );
+      expect(recoveryEvent).toBeTruthy();
+
+      await actor.stop();
     });
 
     it('throws for swap venues when swapAssets metadata is missing', async () => {
@@ -1178,6 +1570,312 @@ describe('AgentTradingActor', () => {
 
       await actor.stop();
     });
+
+    it('keeps plan executing when direct clientOrderId lookup finds an open venue order', async () => {
+      const planRepo = {
+        ...makeRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([
+          { id: 'plan-client-lookup', status: 'executing' },
+        ]),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+        markCompleted: vi.fn().mockResolvedValue(undefined),
+      };
+      const orderRepo = {
+        ...makeRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          { venueRefId: null, clientOrderId: 'client-lookup-1', symbol: 'BTC/USD:USD' },
+        ]),
+      };
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        fetchOrderByClientOrderId: vi.fn().mockResolvedValue(ok({
+          venueRefId: 'venue-open-1',
+          clientOrderId: 'client-lookup-1',
+          symbol: 'BTC/USD:USD',
+          side: 'buy',
+          type: 'limit',
+          status: 'open',
+          quantity: '1',
+          filledQuantity: '0',
+          price: '50000',
+          avgFillPrice: undefined,
+          createdAt: new Date().toISOString(),
+        })),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'shadow',
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          orderbookAdapter: {
+            venuePort,
+            credentials: { apiKey: 'k', secret: 's', walletAddress: '', testnet: false },
+            credentialId: 'cred-1',
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+
+      expect(venuePort.fetchOrderByClientOrderId).toHaveBeenCalledWith('client-lookup-1', 'BTC/USD:USD');
+      expect(planRepo.markFailed).not.toHaveBeenCalledWith('plan-client-lookup');
+      expect(planRepo.markCompleted).not.toHaveBeenCalledWith('plan-client-lookup');
+
+      await actor.stop();
+    });
+
+    it('halts live swap intake when incomplete swap plan cannot be confirmed on-chain', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const planRepo = {
+        ...makeRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([
+          { id: 'plan-swap-ambiguous', status: 'executing' },
+        ]),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+        markCompleted: vi.fn().mockResolvedValue(undefined),
+      };
+      const orderRepo = {
+        ...makeRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          { id: 'ord-swap-1', venueRefId: null, status: 'pending', symbol: 'SOL/USDC' },
+        ]),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+
+      expect(planRepo.markFailed).not.toHaveBeenCalledWith('plan-swap-ambiguous');
+      expect(planRepo.markCompleted).not.toHaveBeenCalledWith('plan-swap-ambiguous');
+
+      const recoveryFailure = journalAppend.mock.calls.find(
+        (c: unknown[]) => (c[0] as { type: string }).type === 'execution.failure'
+          && ((c[0] as { payload: Record<string, unknown> }).payload.reason === 'live_swap_recovery_ambiguous'),
+      );
+      expect(recoveryFailure).toBeDefined();
+
+      const intake = actor.getIntakeDeps('SOL/USDC');
+      expect(intake).toMatchObject({
+        rejected: true,
+        code: 'swap_recovery_ambiguous',
+      });
+
+      await actor.stop();
+    });
+  });
+
+  describe('swap timeout recovery and quality alerts', () => {
+    it('halts swap intake when live confirmation timeout requires manual recovery', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const staleSubmittedAt = new Date(Date.now() - 5 * 60 * 1000);
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'ord-stale-swap',
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            executionPlanId: 'plan-stale-swap',
+            venueRefId: null,
+            clientOrderId: 'agent:swap:1',
+            venue: 'jupiter',
+            symbol: 'SOL/USDC',
+            side: 'buy',
+            type: 'swap',
+            quantity: '1',
+            price: null,
+            referencePrice: '100',
+            status: 'pending',
+            submissionState: 'submit_attempting',
+            submitAttemptedAt: staleSubmittedAt,
+            acknowledgedAt: null,
+            filledQuantity: '0',
+            avgFillPrice: null,
+            createdAt: staleSubmittedAt,
+          },
+        ]),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        orderRepo: orderRepo as any,
+        liveOrderTimeoutPolicy: { limitOrderTimeoutMs: 60_000, marketOrderTimeoutMs: 30_000 },
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).enforceLiveOrderTimeouts();
+
+      const timeoutFailure = journalAppend.mock.calls.find(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'execution.failure'
+          && ((call[0] as { payload: Record<string, unknown> }).payload.reason === 'live_swap_confirmation_timeout_recovery_required'),
+      );
+      expect(timeoutFailure).toBeDefined();
+
+      const intake = actor.getIntakeDeps('SOL/USDC');
+      expect(intake).toMatchObject({
+        rejected: true,
+        code: 'swap_recovery_ambiguous',
+      });
+
+      await actor.stop();
+    });
+
+    it('emits live swap slippage alert when threshold is exceeded', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getByVenueRefId: vi.fn().mockResolvedValue({
+          id: 'ord-swap-alert',
+          referencePrice: '100',
+        }),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        orderRepo: orderRepo as any,
+        journal: { append: journalAppend } as any,
+        slippageAlertBps: 20,
+      }));
+
+      await (actor as any).maybeEmitLiveSwapExecutionQualityAlert({
+        venueRefId: 'swap-tx-1',
+        symbol: 'SOL/USDC',
+        side: 'buy',
+        price: '105',
+      });
+
+      const slippageEvent = journalAppend.mock.calls.find(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'live.slippage_alert',
+      );
+      expect(slippageEvent).toBeDefined();
+      expect((slippageEvent![0] as { payload: Record<string, unknown> }).payload).toMatchObject({
+        orderId: 'ord-swap-alert',
+        executionType: 'swap',
+      });
+    });
+
+    it('emits live orderbook slippage alert when threshold is exceeded', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getByVenueRefId: vi.fn().mockResolvedValue({
+          id: 'ord-orderbook-alert',
+          referencePrice: '100',
+        }),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'hyperliquid',
+        venueType: 'orderbook',
+        orderRepo: orderRepo as any,
+        journal: { append: journalAppend } as any,
+        slippageAlertBps: 20,
+      }));
+
+      await (actor as any).maybeEmitLiveSlippageAlert({
+        orderId: 'orderbook-ref-1',
+        venueRefId: 'orderbook-ref-1',
+        symbol: 'BTC/USD:USD',
+        side: 'buy',
+        price: '105',
+      });
+
+      const slippageEvent = journalAppend.mock.calls.find(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'live.slippage_alert',
+      );
+      expect(slippageEvent).toBeDefined();
+      expect((slippageEvent![0] as { payload: Record<string, unknown> }).payload).toMatchObject({
+        orderId: 'ord-orderbook-alert',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        side: 'buy',
+        referencePrice: '100',
+        avgFillPrice: '105',
+        slippageBps: 500,
+        thresholdBps: 20,
+      });
+      expect((slippageEvent![0] as { payload: Record<string, unknown> }).payload).not.toHaveProperty('executionType');
+    });
+
+    it('does not emit live orderbook slippage alert below threshold', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        ...makeRepo(),
+        getByVenueRefId: vi.fn().mockResolvedValue({
+          id: 'ord-orderbook-no-alert',
+          referencePrice: '100',
+        }),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'hyperliquid',
+        venueType: 'orderbook',
+        orderRepo: orderRepo as any,
+        journal: { append: journalAppend } as any,
+        slippageAlertBps: 20,
+      }));
+
+      await (actor as any).maybeEmitLiveSlippageAlert({
+        orderId: 'orderbook-ref-2',
+        venueRefId: 'orderbook-ref-2',
+        symbol: 'BTC/USD:USD',
+        side: 'buy',
+        price: '100.1',
+      });
+
+      const slippageEvent = journalAppend.mock.calls.find(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'live.slippage_alert',
+      );
+      expect(slippageEvent).toBeUndefined();
+    });
   });
 
   describe('openPositionCount enforcement', () => {
@@ -1196,6 +1894,105 @@ describe('AgentTradingActor', () => {
       expect(deps).toBeDefined();
       // Agent holds 2 open positions — intake deps should reflect this
       expect(deps!.openPositionCount).toBe(2);
+
+      await actor.stop();
+    });
+  });
+
+  describe('circuit breaker typed rejection', () => {
+    it('returns circuit_breaker_open rejection when breaker is tripped', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        maxConsecutiveVenueErrors: 2,
+      }));
+      await actor.start();
+
+      // Trip the circuit breaker
+      actor.recordExecutionOutcome(false);
+      actor.recordExecutionOutcome(false);
+
+      const result = actor.getIntakeDeps('BTC/USD:USD');
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('rejected', true);
+      expect(result).toHaveProperty('code', 'circuit_breaker_open');
+      expect(result).toHaveProperty('retryable', false);
+
+      await actor.stop();
+    });
+
+    it('returns normal intake deps when breaker is not tripped', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        maxConsecutiveVenueErrors: 5,
+      }));
+      await actor.start();
+
+      actor.recordExecutionOutcome(false); // 1 error, threshold is 5
+
+      const result = actor.getIntakeDeps('BTC/USD:USD');
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty('rejected');
+      expect(result).toHaveProperty('actorType', 'agent');
+
+      await actor.stop();
+    });
+  });
+
+  describe('stop-loss typed rejection', () => {
+    it('returns stop_loss_active when isStopLossTriggered returns true', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: '1', entryPrice: '50000', realizedPnl: '0' },
+        ]),
+      };
+      const actor = new AgentTradingActor(makeBaseDeps({
+        positionRepo: positionRepo as any,
+        riskLimits: {
+          maxPositionSize: quantity('100'),
+          maxOpenPositions: 5,
+          maxDrawdown: price('10000'),
+          stopLossMaxUnrealizedLossPct: 1,
+        },
+        capital: '10000',
+      }));
+      await actor.start();
+
+      // Spy on isStopLossTriggered to force it to return true
+      vi.spyOn(actor as any, 'isStopLossTriggered').mockReturnValue(true);
+
+      const result = actor.getIntakeDeps('BTC/USD:USD');
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('rejected', true);
+      expect(result).toHaveProperty('code', 'stop_loss_active');
+      expect(result).toHaveProperty('retryable', false);
+
+      await actor.stop();
+    });
+  });
+
+  describe('stop-loss go_flat position cleanup', () => {
+    it('removes flat position from map after stop-loss, reducing openPositionCount', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: '1', entryPrice: '50000', realizedPnl: '0' },
+          { venue: 'hyperliquid', symbol: 'ETH/USD:USD', side: 'short', size: '10', entryPrice: '3000', realizedPnl: '0' },
+        ]),
+      };
+      const actor = new AgentTradingActor(makeBaseDeps({
+        positionRepo: positionRepo as any,
+      }));
+      await actor.start();
+
+      // Verify initial count is 2
+      const depsBefore = actor.getIntakeDeps('SOL/USD:USD');
+      expect(depsBefore).toHaveProperty('openPositionCount', 2);
+
+      // Simulate a stop-loss flattening BTC/USD:USD by directly manipulating positions
+      // (the actual executeAgentStopLoss is private; we test the contract via the map)
+      (actor as any).positions.delete('BTC/USD:USD');
+
+      const depsAfter = actor.getIntakeDeps('SOL/USD:USD');
+      expect(depsAfter).toHaveProperty('openPositionCount', 1);
 
       await actor.stop();
     });

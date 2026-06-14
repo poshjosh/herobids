@@ -48,7 +48,8 @@ export function createOrderbookVenueStateLoader(
 /**
  * Creates a VenueStateLoader for swap venues.
  * Translates SwapVenuePort data into the canonical VenueState shape:
- * - Swap balances → balance snapshot (no position synthesis)
+ * - Shared-wallet balance snapshots are observational telemetry.
+ * - No synthetic positions are derived from fill projections.
  * - Recent fills: always empty — swap venues in shadow mode never execute real swaps,
  *   and external wallet transactions should not be flagged as "unknown fills" by the reconciler.
  * - No open orders (swaps are atomic)
@@ -65,12 +66,6 @@ export function createSwapVenueStateLoader(
       return null;
     }
 
-    // Map swap balances to position-like structures
-    // Swap venues don't have directional positions like orderbook perps.
-    // Token holdings are tracked via balance comparison, NOT position comparison.
-    // Synthesizing positions from balances would cause false drift with local strategy positions.
-    const positions: VenueState['positions'] = [];
-
     // Map swap balances to the BalanceSnapshot shape expected by reconciler
     const balances = {
       balances: balResult.data.balances.map((b) => ({
@@ -83,7 +78,7 @@ export function createSwapVenueStateLoader(
     };
 
     return {
-      positions,
+      positions: [],
       balances,
       // Swap venues in shadow mode don't execute real swaps. Returning external wallet
       // transactions here would cause the reconciler to raise false "unknown fill" diffs

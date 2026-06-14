@@ -48,6 +48,10 @@ describe('classifySeverity', () => {
   it('returns info for unknown types', () => {
     expect(classifySeverity('some.unknown.type')).toBe('info');
   });
+
+  it('returns info for reconciliation.observed_variance', () => {
+    expect(classifySeverity('reconciliation.observed_variance')).toBe('info');
+  });
 });
 
 describe('evaluateAlertPolicy', () => {
@@ -85,6 +89,20 @@ describe('evaluateAlertPolicy', () => {
     const result = evaluateAlertPolicy([event], config);
     expect(result).toHaveLength(1);
     expect(result[0]!.destinations).toEqual([{ channel: 'telegram', chatId: '456' }]);
+  });
+
+  it('does not route observed variance to warn-only reconciliation channels', () => {
+    const config = makeConfig({
+      telegram: {
+        botToken: 'x',
+        channels: [
+          { chatId: '789', eventPrefixes: ['reconciliation.'], minSeverity: 'warn' },
+        ],
+      },
+    });
+    const event = makeEvent({ type: 'reconciliation.observed_variance' });
+    const result = evaluateAlertPolicy([event], config);
+    expect(result).toHaveLength(0);
   });
 
   it('routes to multiple channels when prefixes and severity both match', () => {

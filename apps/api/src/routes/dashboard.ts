@@ -95,6 +95,10 @@ const EVENT_META: Record<string, EventMeta> = {
     category: 'system',
     severity: 'warn',
   },
+  'reconciliation.observed_variance': {
+    category: 'system',
+    severity: 'info',
+  },
   'live.slippage_alert': {
     category: 'execution',
     severity: 'warn',

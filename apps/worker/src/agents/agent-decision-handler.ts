@@ -2,8 +2,11 @@ import type { Decision, VenueAccountId, DecisionId, InstrumentId } from '@herobi
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
+import type { DecisionFailureRepository } from '@herobids/db';
 import { submitDecisionForExecution, DecisionContextHashMismatchError } from '@herobids/engine';
 import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
+import type { IntakeResult } from '../execution-actor.js';
+import { isIntakeRejection } from '../execution-actor.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import pino from 'pino';
 
@@ -14,9 +17,10 @@ const logger = pino({ name: 'agent-decision-handler' });
  * Keyed by actorId (botId or agentId). Methods may be sync or async.
  */
 export interface DecisionIntakeResolver {
-  getIntakeDeps(instanceId: string, instrumentId?: string): DecisionIntakeDeps | undefined | Promise<DecisionIntakeDeps | undefined>;
+  getIntakeDeps(instanceId: string, instrumentId?: string): IntakeResult | Promise<IntakeResult>;
   getDecisionContext(instanceId: string, instrumentId?: string): DecisionContext | undefined | Promise<DecisionContext | undefined>;
   getPosition(instanceId: string, instrumentId?: string): PositionState | undefined | Promise<PositionState | undefined>;
+  recordExecutionOutcome?(instanceId: string, success: boolean): void;
 }
 
 /**
@@ -27,7 +31,39 @@ export class AgentDecisionHandler {
     private readonly agentRepo: AgentRepository,
     private readonly intakeResolver: DecisionIntakeResolver,
     private readonly eventPublisher: InstanceEventPublisher,
+    private readonly decisionFailureRepo?: DecisionFailureRepository,
   ) {}
+
+  private recordFailure(input: {
+    actorType: string;
+    actorId: string;
+    decisionId?: string;
+    instrumentId?: string;
+    venue?: string;
+    venueAccountId?: string;
+    failureCode: string;
+    failureMessage: string;
+    failureClass: 'rejection' | 'error';
+    retryable: boolean;
+    details?: Record<string, unknown> | null;
+  }): void {
+    if (!this.decisionFailureRepo) return;
+    this.decisionFailureRepo.insert({
+      actorType: input.actorType,
+      actorId: input.actorId,
+      decisionId: input.decisionId,
+      instrumentId: input.instrumentId,
+      venue: input.venue,
+      venueAccountId: input.venueAccountId,
+      failureCode: input.failureCode,
+      failureMessage: input.failureMessage,
+      failureClass: input.failureClass,
+      retryable: input.retryable,
+      details: input.details,
+    }).catch((err) => {
+      logger.error({ err, failureCode: input.failureCode }, 'Failed to persist decision failure');
+    });
+  }
 
   async handleDecisionSubmit(envelope: MessageEnvelope, payload: DecisionSubmitPayload): Promise<void> {
     const { agentId, botId, initiatorId, initiatorType, tradingInstanceId } = envelope;
@@ -42,12 +78,14 @@ export class AgentDecisionHandler {
     // running. The active-session check below is the real liveness gate.
     const agent = await this.agentRepo.getAgent(effectiveAgentId);
     if (agent && (agent.status === 'paused' || agent.status === 'stopped')) {
+      const msg = `Agent is ${agent.status} — cannot accept decisions`;
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'agent_paused',
-        message: `Agent is ${agent.status} — cannot accept decisions`,
+        message: msg,
         retryable: false,
       });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'agent_paused', failureMessage: msg, failureClass: 'rejection', retryable: false });
       return;
     }
 
@@ -57,26 +95,41 @@ export class AgentDecisionHandler {
     const runtimeSessionId = envelope.correlationId;
     const isActiveSession = await this.agentRepo.isActiveSession(effectiveAgentId, runtimeSessionId);
     if (!isActiveSession) {
+      const msg = 'Decision rejected — runtime session is no longer the active session';
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'stale_session',
-        message: 'Decision rejected — runtime session is no longer the active session',
+        message: msg,
         retryable: false,
       });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'stale_session', failureMessage: msg, failureClass: 'rejection', retryable: false });
       return;
     }
 
     // 3. Resolve execution deps — try bot registry first, then agent grants
-    const intakeDeps = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
-    if (!intakeDeps) {
+    const intakeResult = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
+    if (!intakeResult) {
+      const msg = 'No execution context — ensure the bot is active or the agent has an active trading grant';
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'instance_not_running',
-        message: 'No execution context — ensure the bot is active or the agent has an active trading grant',
+        message: msg,
         retryable: true,
       });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'instance_not_running', failureMessage: msg, failureClass: 'rejection', retryable: true });
       return;
     }
+    if (isIntakeRejection(intakeResult)) {
+      await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
+        decisionId: payload.decisionId,
+        code: intakeResult.code,
+        message: intakeResult.message,
+        retryable: intakeResult.retryable,
+      });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: intakeResult.code, failureMessage: intakeResult.message, failureClass: 'rejection', retryable: intakeResult.retryable });
+      return;
+    }
+    const intakeDeps = intakeResult;
 
     // Instrument mismatch check — skip for agents (multi-symbol)
     if (intakeDeps.actorType !== 'agent' && payload.instrumentId !== intakeDeps.symbol) {
@@ -95,23 +148,27 @@ export class AgentDecisionHandler {
 
     const context = await this.intakeResolver.getDecisionContext(resolveId, payload.instrumentId);
     if (!context) {
+      const msg = 'No decision context available — bot may still be initializing or mark price unavailable';
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'no_context',
-        message: 'No decision context available — bot may still be initializing or mark price unavailable',
+        message: msg,
         retryable: true,
       });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'no_context', failureMessage: msg, failureClass: 'rejection', retryable: true });
       return;
     }
 
     const position = await this.intakeResolver.getPosition(resolveId, payload.instrumentId);
     if (!position) {
+      const msg = 'Position state not available';
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'no_position_state',
-        message: 'Position state not available',
+        message: msg,
         retryable: true,
       });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'no_position_state', failureMessage: msg, failureClass: 'rejection', retryable: true });
       return;
     }
 
@@ -141,6 +198,13 @@ export class AgentDecisionHandler {
         : intakeDeps;
       const result = await submitDecisionForExecution(decision, context, position, depsWithOverride);
 
+      // Track execution outcome for circuit breaker
+      if (result.executionFailed) {
+        this.intakeResolver.recordExecutionOutcome?.(resolveId, false);
+      } else if (result.executionResult) {
+        this.intakeResolver.recordExecutionOutcome?.(resolveId, true);
+      }
+
       // Handle pre-execution rejection (e.g. swap token safety)
       if (result.preExecutionRejection) {
         await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
@@ -150,10 +214,25 @@ export class AgentDecisionHandler {
           retryable: result.preExecutionRejection.retryable,
           details: result.preExecutionRejection.details,
         });
+        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, venueAccountId: intakeDeps.venueAccountId, failureCode: result.preExecutionRejection.code, failureMessage: result.preExecutionRejection.message, failureClass: 'rejection', retryable: result.preExecutionRejection.retryable, details: (result.preExecutionRejection.details as Record<string, unknown> | undefined) ?? null });
         return;
       }
 
       try {
+        if (result.riskRejected) {
+          const riskCode = result.riskError?.code ?? 'risk.rejected';
+          const riskMsg = result.riskError?.message ?? 'Decision rejected by risk gate';
+          await this.eventPublisher.emitGuardrailTriggered(effectiveBotId, {
+            scope: 'risk_gate',
+            code: riskCode,
+            message: riskMsg,
+            decisionId: payload.decisionId,
+            details: result.riskError?.context,
+          });
+          this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, venueAccountId: intakeDeps.venueAccountId, failureCode: riskCode, failureMessage: riskMsg, failureClass: 'rejection', retryable: false });
+          return;
+        }
+
         // 6. Emit accepted — deferred until hash and risk checks pass.
         await this.eventPublisher.emitDecisionAccepted(effectiveBotId, {
           decisionId: payload.decisionId,
@@ -182,15 +261,8 @@ export class AgentDecisionHandler {
           });
         }
 
-        // 8. Emit execution result or guardrail
-        if (result.riskRejected) {
-          await this.eventPublisher.emitGuardrailTriggered(effectiveBotId, {
-            scope: 'risk_gate',
-            code: 'risk.rejected',
-            message: 'Decision rejected by risk gate',
-            decisionId: payload.decisionId,
-          });
-        } else if (result.executionFailed) {
+        // 8. Emit execution result
+        if (result.executionFailed) {
           await this.eventPublisher.emitExecutionResult(effectiveBotId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
@@ -244,16 +316,19 @@ export class AgentDecisionHandler {
             suppliedHash: err.suppliedHash,
           },
         });
+        this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'context_hash_mismatch', failureMessage: 'Decision context hash does not match the server-resolved context', failureClass: 'rejection', retryable: false });
         return;
       }
 
       logger.error({ decisionId: payload.decisionId, err }, 'Decision execution failed');
+      const errMsg = err instanceof Error ? err.message : 'Unknown execution error';
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'execution_error',
-        message: err instanceof Error ? err.message : 'Unknown execution error',
+        message: errMsg,
         retryable: false,
       });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'execution_error', failureMessage: errMsg, failureClass: 'error', retryable: false });
     }
   }
 }

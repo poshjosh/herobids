@@ -1,0 +1,1 @@
+ALTER TABLE "fills" ADD COLUMN "realized_pnl_delta" numeric;

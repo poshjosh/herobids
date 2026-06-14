@@ -236,7 +236,7 @@ export type GuardrailTriggeredPayload = z.infer<typeof GuardrailTriggeredPayload
 
 export const ReconciliationNoticePayloadSchema = z.object({
   severity: z.enum(['info', 'warn', 'critical']),
-  eventType: z.enum(['match', 'drift_detected', 'drift_within_threshold', 'correction']),
+  eventType: z.enum(['match', 'observed_variance', 'drift_detected', 'drift_within_threshold', 'correction']),
   summary: z.string().min(1),
   details: z.record(z.unknown()).optional(),
   occurredAt: z.string().datetime(),

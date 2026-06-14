@@ -33,7 +33,7 @@ export const agents = pgTable('agents', {
     };
   } | null>(),
   /** Execution mode for bots this agent creates: paper | shadow | live */
-  executionMode: text('execution_mode'),
+  executionMode: text('execution_mode').notNull().default('paper'),
   /** Guard rails — broker-enforced, user-configured */
   dailyTokenBudget: integer('daily_token_budget'),           // max LLM tokens/day
   dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD)

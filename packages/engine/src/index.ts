@@ -17,6 +17,18 @@ export { ShadowExecutor } from './shadow-executor.js';
 export { LiveExecutor } from './live-executor.js';
 export type { LiveExecutorDeps } from './live-executor.js';
 
+export { computeLiveTimeoutActions } from './live-timeout-manager.js';
+export type { LiveTimeoutPolicy, LiveTimeoutOrder, LiveTimeoutAction } from './live-timeout-manager.js';
+
+export { evaluateOrderbookRecovery } from './live-recovery.js';
+export type { LiveRecoveryOrder, LiveRecoveryMatchedOrder, EvaluateOrderbookRecoveryInput, LiveRecoveryDecision } from './live-recovery.js';
+
+export { SwapLiveExecutor } from './swap-live-executor.js';
+export type { SwapLiveExecutorDeps } from './swap-live-executor.js';
+
+export { SwapPositionTracker } from './swap-position-tracker.js';
+export type { SwapAssetProjection, SwapFill, SwapBalanceVariance } from './swap-position-tracker.js';
+
 export { PollingMarketDataFeed } from './market-data-feed.js';
 export type { MarketDataFeed, TickerSnapshot, TradeEvent, TradeHandler } from './market-data-feed.js';
 
@@ -26,8 +38,21 @@ export type { StreamPoolHandle, TickerFetcher } from './stream-market-data-feed.
 export { LastFillMarkSource, MarkSelector } from './mark-source.js';
 export type { FillLookup, FillRecord, MarkSelectorConfig } from './mark-source.js';
 
-export { flatPosition, applyFill } from './position-tracker.js';
+export { flatPosition, applyFill, unrealizedPnl, totalUnrealizedPnl } from './position-tracker.js';
 export type { PositionState } from './position-tracker.js';
+
+export { applyFillAccounting } from './fill-accounting.js';
+export type { FillAccountingResult } from './fill-accounting.js';
+
+export { EquityTracker } from './equity-tracker.js';
+export { DailyLossTracker } from './daily-loss-tracker.js';
+export { rehydrateDailyLoss } from './rehydrate-daily-loss.js';
+export type { StoredFill } from './rehydrate-daily-loss.js';
+export { checkStopLoss } from './stop-loss-monitor.js';
+export type { StopLossConfig, StopLossCheck, StopLossResult } from './stop-loss-monitor.js';
+export { VenueCircuitBreaker } from './circuit-breaker.js';
+export { simulateFee, applyPaperSlippage } from './fee-simulator.js';
+export type { FeeSimulatorConfig } from './fee-simulator.js';
 
 export { checkRisk } from './risk-gate.js';
 export type { RiskError, RiskLimits, RiskSnapshot, RiskCheckResult } from './risk-gate.js';

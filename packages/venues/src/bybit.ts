@@ -205,20 +205,50 @@ export class BybitAdapter implements OrderbookVenuePort {
       const openOrders = requestParams
         ? await this.exchange.fetchOpenOrders(undefined, undefined, undefined, requestParams)
         : await this.exchange.fetchOpenOrders();
-      const mapped: VenueOrder[] = openOrders.map((o) => ({
-        venueRefId: o.id ?? '',
-        clientOrderId: o.clientOrderId ?? undefined,
-        symbol: o.symbol ?? '',
-        side: (o.side === 'buy' ? 'buy' : 'sell') as VenueOrder['side'],
-        type: mapCcxtOrderType(o.type),
-        status: mapCcxtOrderStatus(o.status),
-        quantity: quantity((o.amount ?? 0).toString()),
-        filledQuantity: quantity((o.filled ?? 0).toString()),
-        price: o.price != null ? price(o.price.toString()) : undefined,
-        avgFillPrice: o.average != null ? price(o.average.toString()) : undefined,
-        createdAt: o.datetime ?? new Date().toISOString(),
-      }));
+      const mapped: VenueOrder[] = openOrders.map((o) => mapCcxtVenueOrder(o));
       return ok(mapped);
+    });
+  }
+
+  async fetchOrderByVenueRefId(venueRefId: string, symbol?: string): Promise<Result<VenueOrder | null, VenueError>> {
+    await this.rateLimiter.waitForToken();
+    try {
+      const requestParams = await this.getStandardDerivativesParams();
+      const order = await this.exchange.fetchOrder(venueRefId, symbol, requestParams);
+      if (!order) return ok(null);
+      return ok(mapCcxtVenueOrder(order));
+    } catch (e: unknown) {
+      if (e instanceof ccxt.OrderNotFound) {
+        return ok(null);
+      }
+      return err(mapCcxtError(e));
+    }
+  }
+
+  async fetchOrderByClientOrderId(clientOrderId: string, symbol?: string): Promise<Result<VenueOrder | null, VenueError>> {
+    return this.withRateLimit(async () => {
+      const requestParams = await this.getStandardDerivativesParams();
+      const openOrders = requestParams
+        ? await this.exchange.fetchOpenOrders(symbol, undefined, undefined, requestParams)
+        : await this.exchange.fetchOpenOrders(symbol);
+      const openMatch = openOrders.find((o) => o.clientOrderId === clientOrderId);
+      if (openMatch) {
+        return ok(mapCcxtVenueOrder(openMatch));
+      }
+
+      const exchangeWithFetchOrders = this.exchange as unknown as {
+        fetchOrders?: (market?: string, since?: number, limit?: number, params?: Record<string, string>) => Promise<Array<Record<string, unknown>>>;
+      };
+      if (typeof exchangeWithFetchOrders.fetchOrders !== 'function') {
+        return err({
+          code: 'venue.lookup_unsupported',
+          message: 'Venue does not support direct order history lookup by clientOrderId',
+        });
+      }
+
+      const recentOrders = await exchangeWithFetchOrders.fetchOrders(symbol, undefined, 100, requestParams);
+      const recentMatch = recentOrders.find((o) => o.clientOrderId === clientOrderId);
+      return ok(recentMatch ? mapCcxtVenueOrder(recentMatch) : null);
     });
   }
 
@@ -374,6 +404,34 @@ function mapCcxtOrderStatus(status: string | undefined): VenueOrder['status'] {
     case 'rejected': return 'rejected';
     default: return 'pending';
   }
+}
+
+function mapCcxtVenueOrder(order: {
+  id?: string;
+  clientOrderId?: string;
+  symbol?: string;
+  side?: string;
+  type?: string;
+  status?: string;
+  amount?: number;
+  filled?: number;
+  price?: number;
+  average?: number;
+  datetime?: string;
+}): VenueOrder {
+  return {
+    venueRefId: order.id ?? '',
+    clientOrderId: order.clientOrderId ?? undefined,
+    symbol: order.symbol ?? '',
+    side: (order.side === 'buy' ? 'buy' : 'sell') as VenueOrder['side'],
+    type: mapCcxtOrderType(order.type),
+    status: mapCcxtOrderStatus(order.status),
+    quantity: quantity((order.amount ?? 0).toString()),
+    filledQuantity: quantity((order.filled ?? 0).toString()),
+    price: order.price != null ? price(order.price.toString()) : undefined,
+    avgFillPrice: order.average != null ? price(order.average.toString()) : undefined,
+    createdAt: order.datetime ?? new Date().toISOString(),
+  };
 }
 
 function mapPositionSide(side: string | undefined | null): Position['side'] {

@@ -50,10 +50,26 @@ execution:
   shadowPollIntervalMs: 2000   # swap-venue price polling interval when no live stream
   shadowQuoteSlippageBps: 50   # slippage assumed for shadow swap price estimation
 
+simulation:
+  takerFeePct: 0.001           # 10bps taker fee for paper/shadow fills
+  makerFeePct: 0.0005          # 5bps maker fee (currently unused — all fills simulated as taker)
+  paperSlippageBps: 5          # 5bps half-spread slippage for paper fills
+
 risk:
   globalMaxDrawdownPct: 20
   maxOpenPositions: 10
   maxPositionSizePct: 25
+
+# Default risk limits for agents when the user has NOT explicitly configured them.
+# These are the initial values AND the operator ceiling — agents can adjust downward at runtime.
+agentRiskDefaults:
+  maxOpenPositions: 10                   # max concurrent non-flat positions
+  maxPositionSizePct: 100                # max position notional as % of capital (100 = full capital)
+  maxPositionSize: 1000000               # max absolute position size in base units (operator ceiling)
+  stopLossMaxUnrealizedLossPct: 10       # max unrealized loss per position as % of equity before forced exit
+  dailyMaxLossPct: 20                    # rolling 24h max loss as % of equity
+  stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
+  maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
 
 reconciliation:
   intervalMs: 30000          # reconciliation loop interval
@@ -61,6 +77,7 @@ reconciliation:
   positionDriftThreshold: "0"  # position size diff threshold (absolute). "0" = exact match required
   balanceDriftThreshold: "0"   # balance diff threshold (absolute). "0" = exact match required
   autoCorrect: false           # auto-correct local state for diffs within threshold
+  swapDriftThresholdPct: 1.0   # swap venue: alert if balance differs by more than this % from expected
 
 streams:
   private:
@@ -280,6 +297,10 @@ liveRollout:
   maxInitialOrderNotionalUsd: "50" # hard cap on single-order notional (USD) during rollout
   maxConsecutiveVenueErrors: 3     # circuit-breaker: halt after N consecutive venue errors (wired in Step 2)
   slippageAlertBps: 50             # log warning when fill slippage exceeds this (wired in Step 2)
+  limitOrderTimeoutMs: 120000      # cancel stale live limit orders after this timeout
+  marketOrderTimeoutMs: 30000      # mark unresolved live market orders as recovery-required after this timeout
+  timeoutCheckIntervalMs: 10000    # frequency of live timeout scans
+  crashPolicy: alert_manual_intervention  # auto_go_flat | alert_manual_intervention
 
 # Market intelligence — always-on discovery coordinator and monitor.
 # Controls the background market intelligence subsystem that wakes agents
@@ -291,6 +312,7 @@ marketIntelligence:
   regimePollMs: 60000              # how often the coordinator polls regime sources
   networks:                        # networks to scan for discovery
     - solana
+    - base
   benchmarkSymbols:                # symbols for regime evaluation
     - BTC
   families:                        # per-family toggles for the monitor

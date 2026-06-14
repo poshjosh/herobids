@@ -2,6 +2,8 @@ import type { OrderId, FillId } from '@herobids/domain';
 import type { OrderSide, OrderType, OrderStatus } from '@herobids/domain';
 import type { Price, Quantity } from '@herobids/domain';
 
+export type LiveSubmissionState = 'prepared' | 'submit_attempting' | 'venue_acknowledged' | 'terminal';
+
 /**
  * Order state machine — tracks a single order through its lifecycle.
  * Transitions: pending → open → partial → filled / cancelled / rejected
@@ -21,7 +23,15 @@ export interface ManagedOrder {
   type: OrderType;
   quantity: Quantity;
   price?: Price;
+  /** Decision-time mark used for execution-quality checks. */
+  referencePrice?: Price;
   status: OrderStatus;
+  /** Durable live submission lifecycle phase (orderbook live only). */
+  submissionState?: LiveSubmissionState;
+  /** Timestamp when venue submit was attempted. */
+  submitAttemptedAt?: string;
+  /** Timestamp when venue ack was persisted. */
+  acknowledgedAt?: string;
   filledQuantity: Quantity;
   avgFillPrice?: Price;
   createdAt: string;

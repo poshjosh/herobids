@@ -33,8 +33,7 @@ This skill packages a repeatable implementation loop for repository work: implem
    - Read only the nearby code needed to identify the controlling code path and one falsifiable local hypothesis.
    - Avoid broad repo exploration once the owning slice is clear.
 
-3. Implement incrementally.
-   - Make the smallest grounded change that advances the plan.
+3. Implement.
    - Prefer fixing root causes over adding compatibility shims or duplicate paths.
    - Preserve existing conventions unless the plan explicitly requires a new pattern.
 

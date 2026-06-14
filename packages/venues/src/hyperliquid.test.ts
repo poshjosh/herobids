@@ -16,6 +16,8 @@ const ccxtState = vi.hoisted(() => ({
   fetchPositions: vi.fn(),
   fetchBalance: vi.fn(),
   fetchOpenOrders: vi.fn(),
+  fetchOrder: vi.fn(),
+  fetchOrders: vi.fn(),
   fetchMyTrades: vi.fn(),
   createOrder: vi.fn(),
   cancelOrder: vi.fn(),
@@ -44,6 +46,8 @@ vi.mock('ccxt', () => {
     fetchPositions = ccxtState.fetchPositions;
     fetchBalance = ccxtState.fetchBalance;
     fetchOpenOrders = ccxtState.fetchOpenOrders;
+    fetchOrder = ccxtState.fetchOrder;
+    fetchOrders = ccxtState.fetchOrders;
     fetchMyTrades = ccxtState.fetchMyTrades;
     createOrder = ccxtState.createOrder;
     cancelOrder = ccxtState.cancelOrder;
@@ -113,6 +117,8 @@ describe('HyperliquidAdapter construction', () => {
   beforeEach(() => {
     ccxtState.constructorConfig = null;
     ccxtState.setSandboxMode.mockReset();
+    ccxtState.fetchOrder.mockReset();
+    ccxtState.fetchOrders.mockReset();
     privateStreamState.config = null;
     privateStreamState.connect.mockClear();
   });
@@ -185,6 +191,57 @@ describe('HyperliquidAdapter construction', () => {
 
     expect(result.ok).toBe(true);
     expect(privateStreamState.config).toMatchObject({ wsUrl: 'wss://testnet.example/ws' });
+  });
+
+  it('supports direct lookup by venueRefId for recovery evidence', async () => {
+    ccxtState.fetchOrder.mockResolvedValue({
+      id: 'venue-order-1',
+      clientOrderId: 'client-1',
+      symbol: 'BTC/USD:USD',
+      side: 'buy',
+      type: 'limit',
+      status: 'open',
+      amount: 1,
+      filled: 0,
+      price: 50000,
+      average: undefined,
+      datetime: new Date().toISOString(),
+    });
+
+    const adapter = new HyperliquidAdapter({ credentials: BASE_CREDS });
+    const result = await adapter.fetchOrderByVenueRefId('venue-order-1', 'BTC/USD:USD');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.venueRefId).toBe('venue-order-1');
+      expect(result.data?.status).toBe('open');
+    }
+  });
+
+  it('supports direct lookup by clientOrderId for recovery evidence', async () => {
+    ccxtState.fetchOpenOrders.mockResolvedValue([
+      {
+        id: 'venue-order-2',
+        clientOrderId: 'client-2',
+        symbol: 'BTC/USD:USD',
+        side: 'buy',
+        type: 'limit',
+        status: 'open',
+        amount: 1,
+        filled: 0,
+        price: 50000,
+        datetime: new Date().toISOString(),
+      },
+    ]);
+
+    const adapter = new HyperliquidAdapter({ credentials: BASE_CREDS });
+    const result = await adapter.fetchOrderByClientOrderId('client-2', 'BTC/USD:USD');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.venueRefId).toBe('venue-order-2');
+      expect(result.data?.clientOrderId).toBe('client-2');
+    }
   });
 });
 

@@ -148,7 +148,7 @@ export class AgentRepository {
       modelPolicy: input.modelPolicy ?? null,
       telegramChatId: input.telegramChatId ?? null,
       notificationPolicy: input.notificationPolicy ?? null,
-      executionMode: input.executionMode ?? null,
+      executionMode: input.executionMode ?? 'paper',
       dailyTokenBudget: input.dailyTokenBudget ?? null,
       dailyLossLimit: input.dailyLossLimit ?? null,
       maxBots: input.maxBots ?? null,

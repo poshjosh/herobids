@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { resolveNotificationPolicy } from './agent-config-helpers.js';
+import { resolveNotificationPolicy, resolveExecutionModeForSkills } from './agent-config-helpers.js';
 
 describe('resolveNotificationPolicy', () => {
   beforeEach(() => {
@@ -91,6 +91,137 @@ describe('resolveNotificationPolicy', () => {
           source: 'explicit_update',
         },
       },
+    });
+  });
+});
+
+// 'trading', 'bot-management', 'risk-monitoring' all carry the 'trading' capability family
+const TRADING_SKILL = 'trading';
+const NON_TRADING_SKILL = 'base';
+
+describe('resolveExecutionModeForSkills', () => {
+  describe('non-trading agents', () => {
+    it('returns null when no skills are set and no mode provided', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: null,
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+      });
+      expect(result.value).toBeNull();
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('returns null when agent only has non-trading skills', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [NON_TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+      });
+      expect(result.value).toBeNull();
+    });
+
+    it('returns an issue when a non-trading agent provides an execution mode', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [NON_TRADING_SKILL],
+        submittedExecutionMode: 'paper',
+        executionModeProvided: true,
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('executionMode');
+    });
+
+    it('silently ignores explicit null mode for non-trading agent', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [NON_TRADING_SKILL],
+        submittedExecutionMode: null,
+        executionModeProvided: true,
+      });
+      // null mode with trading-capable flag false is treated as "not set" (no issue)
+      expect(result.issue).toBeUndefined();
+      expect(result.value).toBeNull();
+    });
+  });
+
+  describe('trading agents — mode provided', () => {
+    it('resolves paper mode', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'paper',
+        executionModeProvided: true,
+      });
+      expect(result.value).toBe('paper');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('resolves shadow mode', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'shadow',
+        executionModeProvided: true,
+      });
+      expect(result.value).toBe('shadow');
+    });
+
+    it('resolves live mode', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: 'live',
+        executionModeProvided: true,
+      });
+      expect(result.value).toBe('live');
+    });
+
+    it('returns an issue when an invalid mode string is submitted', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: null, // null is treated as "unset" → issue
+        executionModeProvided: true,
+      });
+      expect(result.issue).toBeDefined();
+      expect(result.issue?.path).toContain('executionMode');
+    });
+  });
+
+  describe('trading agents — mode not provided', () => {
+    it('carries forward existing mode when available', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'live',
+      });
+      expect(result.value).toBe('live');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('defaults to paper when no existing mode is set (creation path)', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: null,
+      });
+      expect(result.value).toBe('paper');
+      expect(result.issue).toBeUndefined();
+    });
+
+    it('defaults to paper when currentExecutionMode is omitted entirely', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+      });
+      expect(result.value).toBe('paper');
+    });
+
+    it('ignores a corrupt currentExecutionMode and defaults to paper', () => {
+      const result = resolveExecutionModeForSkills({
+        skillIds: [TRADING_SKILL],
+        submittedExecutionMode: undefined,
+        executionModeProvided: false,
+        currentExecutionMode: 'invalid-mode',
+      });
+      expect(result.value).toBe('paper');
     });
   });
 });

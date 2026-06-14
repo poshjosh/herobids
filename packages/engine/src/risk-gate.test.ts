@@ -49,6 +49,19 @@ describe('Risk Gate', () => {
     }
   });
 
+  it('allows close when max drawdown has already been exceeded', () => {
+    const result = checkRisk(
+      makePlan({ action: 'close', orders: [{ side: 'sell', type: 'market', quantity: quantity('2') }] }),
+      baseLimits,
+      {
+        ...baseSnapshot,
+        currentDrawdown: price('5000'),
+        currentPosition: { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: quantity('2'), entryPrice: price('30000'), realizedPnl: price('0') },
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it('rejects when max open positions exceeded on new open', () => {
     const result = checkRisk(
       makePlan({ action: 'open_long' }),
@@ -163,6 +176,20 @@ describe('Risk Gate', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('allows close when daily loss cap has already been breached', () => {
+    const result = checkRisk(
+      makePlan({ action: 'close', orders: [{ side: 'sell', type: 'market', quantity: quantity('2') }] }),
+      { ...baseLimits, dailyMaxLossPct: 10 },
+      {
+        ...baseSnapshot,
+        currentPosition: { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: quantity('2'), entryPrice: price('30000'), realizedPnl: price('0') },
+        equity: price('10000'),
+        dailyLoss: price('1000'),
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
   // --- stopLossCooldownMs ---
 
   it('rejects entry when stop-loss cooldown has not elapsed', () => {
@@ -191,6 +218,24 @@ describe('Risk Gate', () => {
       lastStopLossExitMs: now - 1800001, // just over 30 min ago
       nowMs: now,
     });
+    expect(result.ok).toBe(true);
+  });
+
+  it('allows close while stop-loss cooldown is active', () => {
+    const now = 1700000000000;
+    const result = checkRisk(
+      makePlan({ action: 'close', orders: [{ side: 'sell', type: 'market', quantity: quantity('2') }] }),
+      {
+        ...baseLimits,
+        stopLossCooldownMs: 1800000,
+      },
+      {
+        ...baseSnapshot,
+        currentPosition: { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: quantity('2'), entryPrice: price('30000'), realizedPnl: price('0') },
+        lastStopLossExitMs: now - 600000,
+        nowMs: now,
+      },
+    );
     expect(result.ok).toBe(true);
   });
 

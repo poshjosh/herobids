@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { flatPosition, applyFill } from './position-tracker.js';
+import { flatPosition, applyFill, unrealizedPnl, totalUnrealizedPnl } from './position-tracker.js';
 import type { FillEvent } from './order-state.js';
 import type { OrderId, FillId, BotId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
@@ -92,6 +92,58 @@ describe('Position Tracker', () => {
       expect(result.size.eq(new Decimal(2))).toBe(true);
       // Short PnL: (30000-28000)*2 = 4000
       expect(result.realizedPnl.eq(new Decimal(4000))).toBe(true);
+    });
+  });
+
+  describe('unrealizedPnl', () => {
+    it('returns 0 for flat position', () => {
+      const pos = flatPosition('hyperliquid', 'BTC/USD:USD');
+      expect(unrealizedPnl(pos, price('60000')).isZero()).toBe(true);
+    });
+
+    it('computes profit for long when mark > entry', () => {
+      const pos = applyFill(flatPosition('hyperliquid', 'BTC/USD:USD'), makeFill({ side: 'buy', quantity: quantity('2'), price: price('30000') }));
+      // (32000 - 30000) * 2 = 4000
+      expect(unrealizedPnl(pos, price('32000')).eq(new Decimal(4000))).toBe(true);
+    });
+
+    it('computes loss for long when mark < entry', () => {
+      const pos = applyFill(flatPosition('hyperliquid', 'BTC/USD:USD'), makeFill({ side: 'buy', quantity: quantity('2'), price: price('30000') }));
+      // (28000 - 30000) * 2 = -4000
+      expect(unrealizedPnl(pos, price('28000')).eq(new Decimal(-4000))).toBe(true);
+    });
+
+    it('computes profit for short when mark < entry', () => {
+      const pos = applyFill(flatPosition('hyperliquid', 'BTC/USD:USD'), makeFill({ side: 'sell', quantity: quantity('3'), price: price('30000') }));
+      // (30000 - 28000) * 3 = 6000
+      expect(unrealizedPnl(pos, price('28000')).eq(new Decimal(6000))).toBe(true);
+    });
+
+    it('computes loss for short when mark > entry', () => {
+      const pos = applyFill(flatPosition('hyperliquid', 'BTC/USD:USD'), makeFill({ side: 'sell', quantity: quantity('3'), price: price('30000') }));
+      // (30000 - 32000) * 3 = -6000
+      expect(unrealizedPnl(pos, price('32000')).eq(new Decimal(-6000))).toBe(true);
+    });
+  });
+
+  describe('totalUnrealizedPnl', () => {
+    it('sums across multiple positions', () => {
+      const long = applyFill(flatPosition('hyperliquid', 'BTC/USD:USD'), makeFill({ side: 'buy', quantity: quantity('1'), price: price('30000') }));
+      const short = applyFill(flatPosition('hyperliquid', 'ETH/USD:USD'), makeFill({ side: 'sell', quantity: quantity('10'), price: price('2000') }));
+      const flat = flatPosition('hyperliquid', 'SOL/USD:USD');
+      // long: (31000-30000)*1 = 1000, short: (2000-1900)*10 = 1000
+      // Using markPrice 31000 for simplicity (applies to all — in practice each would have its own mark)
+      // long unrealized: (31000-30000)*1=1000
+      // short unrealized: (2000-31000)*10 = big loss. Let's use a uniform mark for test
+      const total = totalUnrealizedPnl([long, short, flat], price('31000'));
+      // long: +1000, short: (2000 - 31000) * 10 = -290000
+      expect(total.eq(new Decimal(-289000))).toBe(true);
+    });
+
+    it('returns 0 when all positions are flat', () => {
+      const flat1 = flatPosition('hyperliquid', 'BTC/USD:USD');
+      const flat2 = flatPosition('hyperliquid', 'ETH/USD:USD');
+      expect(totalUnrealizedPnl([flat1, flat2], price('50000')).isZero()).toBe(true);
     });
   });
 });

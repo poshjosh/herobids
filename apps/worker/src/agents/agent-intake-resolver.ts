@@ -42,6 +42,19 @@ export class AgentIntakeResolver {
     const binding = await this.resolveActiveBinding(agentId);
     if (!binding) return undefined;
     const agent = await this.deps.agentRepo.getAgent(agentId);
+
+    // Fail closed: grant fallback must only serve paper-mode agents.
+    // Shadow/live agents depend on the running actor for venue wiring and execution safety.
+    // If the agent row is missing, we cannot determine execution mode — fail closed.
+    if (!agent) {
+      logger.warn({ agentId }, 'Grant fallback rejected — agent row not found, cannot verify execution mode');
+      return undefined;
+    }
+    if (agent.executionMode && agent.executionMode !== 'paper') {
+      logger.warn({ agentId, mode: agent.executionMode }, 'Grant fallback rejected — agent is not in paper mode');
+      return undefined;
+    }
+
     const openPositions = await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId);
     const capitalStr = agent?.capital ?? null;
     const dailyLossStr = agent?.dailyLossLimit ?? '10000';

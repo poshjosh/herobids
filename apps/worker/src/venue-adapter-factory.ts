@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { venueAccounts, userCredentials } from '@herobids/db';
 import type { OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
-import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter } from '@herobids/venues';
+import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, SolanaSigner } from '@herobids/venues';
 import { credentialDecryptedEvent } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
 import { decryptCredential } from './crypto.js';
@@ -44,6 +44,10 @@ export interface OrderbookAdapterResult {
 export interface SwapAdapterResult {
   swapVenue: SwapVenuePort;
   walletAddress: string;
+  /** Credential ID used for signing (if resolved from DB). Undefined for paper/shadow without signing. */
+  credentialId?: string;
+  /** Whether a transaction signer is configured (required for live execution) */
+  signerPresent: boolean;
 }
 
 export interface VenueAdapterFactoryDeps {
@@ -256,7 +260,7 @@ export class VenueAdapterFactory {
       });
 
       // For 1inch, wallet address is derived from the private key — we don't need venueAccountRef
-      return { swapVenue, walletAddress: '' };
+      return { swapVenue, walletAddress: '', credentialId: account?.credentialId ?? undefined, signerPresent: true };
     }
 
     if (venue !== 'jupiter') {
@@ -272,6 +276,45 @@ export class VenueAdapterFactory {
     }
     const walletAddress = swapAccount.venueAccountRef;
 
+    // Resolve Solana signer for live execution (optional — shadow/paper don't need it)
+    let signer: InstanceType<typeof SolanaSigner> | undefined;
+    let resolvedCredentialId: string | undefined;
+    if (swapAccount.credentialId) {
+      const [cred] = await db.select().from(userCredentials).where(eq(userCredentials.id, swapAccount.credentialId)).limit(1);
+      const encryptionKey = process.env['CREDENTIAL_ENCRYPTION_KEY'];
+      if (cred && encryptionKey) {
+        try {
+          const decrypted = JSON.parse(decryptCredential(cred.encryptedData, encryptionKey)) as { privateKey: string };
+          if (decrypted.privateKey) {
+            const jupiterRpcUrl = venues['jupiter']?.rpcUrl ?? 'https://api.mainnet-beta.solana.com';
+            signer = new SolanaSigner({
+              privateKey: decrypted.privateKey,
+              rpcUrl: jupiterRpcUrl,
+            });
+            resolvedCredentialId = swapAccount.credentialId;
+            journal.append(credentialDecryptedEvent({
+              credentialId: swapAccount.credentialId,
+              venue,
+              venueAccountId,
+              botId: actorId,
+              outcome: 'success',
+            })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: swapAccount.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+          }
+        } catch (decryptErr) {
+          journal.append(credentialDecryptedEvent({
+            credentialId: swapAccount.credentialId,
+            venue,
+            venueAccountId,
+            botId: actorId,
+            outcome: 'failure',
+            error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
+          })).catch((auditErr) => { logger.error({ err: auditErr, credentialId: swapAccount.credentialId, venueAccountId, eventType: 'credential.decrypted' }, 'Failed to persist credential audit event'); });
+          // Don't throw — signer is optional. Paper/shadow mode can proceed without it.
+          logger.warn({ venueAccountId, venue, err: decryptErr }, 'Failed to decrypt Jupiter credentials — signing unavailable');
+        }
+      }
+    }
+
     const jupiterConfig = venues['jupiter'];
     const swapVenue = new JupiterSwapAdapter({
       walletAddress,
@@ -279,8 +322,9 @@ export class VenueAdapterFactory {
       rpcUrl: jupiterConfig?.rpcUrl,
       tokenDecimals,
       timeoutMs: jupiterConfig?.timeoutMs,
+      signer,
     });
 
-    return { swapVenue, walletAddress };
+    return { swapVenue, walletAddress, credentialId: resolvedCredentialId, signerPresent: !!signer };
   }
 }

@@ -125,6 +125,18 @@ export interface OrderbookVenuePort {
   /** Fetch all open (non-terminal) orders on the venue */
   fetchOpenOrders(): Promise<Result<VenueOrder[], VenueError>>;
 
+  /**
+   * Fetch a single order by venue reference ID when the venue supports it.
+   * Returns null when the venue confirms the order is absent.
+   */
+  fetchOrderByVenueRefId?(venueRefId: string, symbol?: string): Promise<Result<VenueOrder | null, VenueError>>;
+
+  /**
+   * Fetch a single order by client order ID when the venue supports it.
+   * Returns null when the venue confirms the order is absent.
+   */
+  fetchOrderByClientOrderId?(clientOrderId: string, symbol?: string): Promise<Result<VenueOrder | null, VenueError>>;
+
   /** Fetch recent fills/trades since a given timestamp */
   fetchRecentFills(since?: Date): Promise<Result<VenueFill[], VenueError>>;
 

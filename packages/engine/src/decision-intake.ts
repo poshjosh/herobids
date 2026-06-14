@@ -5,15 +5,19 @@ import type { ExecutionPlan, PlannerDeps } from './planner.js';
 import { planDecision } from './planner.js';
 import type { Journal } from './journal.js';
 import { decisionEvent, planEvent, fillEvent, orderEvent, riskEvent } from './journal.js';
-import type { RiskLimits } from './risk-gate.js';
+import type { RiskLimits, RiskError } from './risk-gate.js';
 import { checkRisk } from './risk-gate.js';
 import type { PositionState } from './position-tracker.js';
-import { applyFill } from './position-tracker.js';
+import { unrealizedPnl } from './position-tracker.js';
+import { applyFillAccounting } from './fill-accounting.js';
 import { computeDecisionContextHash, DecisionContextHashMismatchError } from './decision-context-hash.js';
 import type {
   Clock,
   TradingCyclePersistence,
 } from './trading-cycle.js';
+import type { EquityTracker } from './equity-tracker.js';
+import type { DailyLossTracker } from './daily-loss-tracker.js';
+import type { SwapPositionTracker } from './swap-position-tracker.js';
 
 /**
  * Dependencies for decision intake — the shared execution pipeline
@@ -49,6 +53,18 @@ export interface DecisionIntakeDeps {
   openPositionCount?: number;
   /** Current equity (used for %-based risk checks like maxPositionSizePct). */
   equity?: Price;
+  /** Equity tracker for drawdown and dynamic equity computation */
+  equityTracker?: EquityTracker;
+  /** Daily loss tracker for rolling 24h loss */
+  dailyLossTracker?: DailyLossTracker;
+  /** All open positions for this actor (for multi-instrument unrealized P&L) */
+  openPositions?: PositionState[];
+  /** Timestamp of last stop-loss exit for this instrument (cooldown enforcement) */
+  lastStopLossExitMs?: number;
+  /** Pre-computed unrealized P&L (used when caller has per-instrument mark prices) */
+  precomputedUnrealizedPnl?: Price;
+  /** Swap fill projection tracker for actor-local swap accounting (swap venues only) */
+  swapPositionTracker?: SwapPositionTracker;
 }
 
 /**
@@ -92,6 +108,8 @@ export interface DecisionIntakeResult {
   decision: Decision;
   plan?: ExecutionPlan;
   riskRejected: boolean;
+  /** When riskRejected is true, carries the specific gate error (code, message, context). */
+  riskError?: RiskError;
   executionResult?: ExecutionResult;
   position: PositionState;
   executionFailed: boolean;
@@ -231,18 +249,32 @@ export async function submitDecisionForExecution(
 
   // 6. Risk check
   const referenceMark = price(context.referenceMark.price);
+
+  // Compute unrealized P&L for risk snapshot — prefer pre-computed (multi-instrument accuracy)
+  const unrealized = deps.precomputedUnrealizedPnl
+    ?? (deps.openPositions ?? (position.side !== 'flat' ? [position] : []))
+      .filter(p => p.side !== 'flat')
+      .reduce((sum, p) => sum.plus(unrealizedPnl(p, referenceMark)), price('0'));
+
   const riskResult = checkRisk(plan, deps.riskLimits, {
     currentPosition: position.side === 'flat' ? null : position,
     openPositionCount: deps.openPositionCount ?? (position.side === 'flat' ? 0 : 1),
-    currentDrawdown: price('0'),
+    currentDrawdown: deps.equityTracker
+      ? deps.equityTracker.currentDrawdown(unrealized)
+      : price('0'),
     referenceMark,
-    equity: deps.equity,
+    equity: deps.equityTracker
+      ? deps.equityTracker.currentEquity(unrealized)
+      : deps.equity,
+    dailyLoss: deps.dailyLossTracker?.rollingLoss(Date.now()),
+    nowMs: Date.now(),
+    lastStopLossExitMs: deps.lastStopLossExitMs,
   });
 
   if (!riskResult.ok) {
     await deps.persistence.markPlanFailed(plan.id);
     await deps.journal.append(riskEvent(deps.actorType, deps.actorId, riskResult.error));
-    return { decision: resolvedDecision, plan, riskRejected: true, position, executionFailed: false };
+    return { decision: resolvedDecision, plan, riskRejected: true, riskError: riskResult.error, position, executionFailed: false };
   }
 
   // 7. Execute
@@ -258,7 +290,24 @@ export async function submitDecisionForExecution(
   // 8. Record fills + update position
   let updatedPosition = position;
   for (const fill of execResult.data.fills) {
-    updatedPosition = applyFill(updatedPosition, fill);
+    const { position: nextPos, realizedPnlDelta } = applyFillAccounting(updatedPosition, fill, {
+      equityTracker: deps.equityTracker,
+      dailyLossTracker: deps.dailyLossTracker,
+    });
+    updatedPosition = nextPos;
+
+    // Record the actor-local fill projection for swap venues.
+    if (deps.swapPositionTracker && deps.swapAssets) {
+      const isBuy = fill.side === 'buy';
+      deps.swapPositionTracker.recordSwapFill({
+        inputAsset: isBuy ? deps.swapAssets.quoteAsset : deps.swapAssets.baseAsset,
+        inputAmount: isBuy ? fill.price.mul(fill.quantity) : fill.quantity,
+        outputAsset: isBuy ? deps.swapAssets.baseAsset : deps.swapAssets.quoteAsset,
+        outputAmount: isBuy ? fill.quantity : fill.price.mul(fill.quantity),
+        timestamp: new Date(fill.filledAt).getTime(),
+      });
+    }
+
     await deps.journal.append(fillEvent(fill));
     await deps.persistence.persistFill({
       orderId: fill.orderId as string,
@@ -273,6 +322,7 @@ export async function submitDecisionForExecution(
       price: fill.price.toString(),
       fee: fill.fee?.toString(),
       feeCurrency: fill.feeCurrency,
+      realizedPnlDelta: realizedPnlDelta.toString(),
       filledAt: new Date(fill.filledAt),
     });
   }
@@ -308,7 +358,7 @@ export async function submitDecisionForExecution(
       actorType: deps.actorType,
       actorId: deps.actorId,
       executionPlanId: order.executionPlanId,
-      venueRefId: order.venueRefId ?? `local-${order.id}`,
+      venueRefId: order.venueRefId,
       clientOrderId: order.clientOrderId,
       venue: order.venue,
       symbol: order.symbol,
@@ -316,7 +366,11 @@ export async function submitDecisionForExecution(
       type: order.type,
       quantity: order.quantity.toString(),
       price: order.price?.toString(),
+      referencePrice: order.referencePrice?.toString(),
       status: order.status,
+      submissionState: order.submissionState,
+      submitAttemptedAt: order.submitAttemptedAt,
+      acknowledgedAt: order.acknowledgedAt,
       filledQuantity: order.filledQuantity?.toString(),
       avgFillPrice: order.avgFillPrice?.toString(),
     });

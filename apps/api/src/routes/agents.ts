@@ -11,14 +11,18 @@ import {
   agentRuntimeSessions,
   agentSkills,
   bots,
+  capabilityGrants,
   decisions,
+  decisionFailures,
   executionPlans,
   skillEntitlements,
   skillRevisions,
   skillUsageEvents,
   skills,
+  tradingBindings,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
@@ -551,6 +555,36 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
 
+    // Validate execution capability against the agent's active trading binding (if any)
+    if (executionMode.value) {
+      const [activeGrant] = await db.select({ provider: tradingBindings.provider })
+        .from(capabilityGrants)
+        .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
+        .where(and(
+          eq(capabilityGrants.agentId, id),
+          eq(capabilityGrants.capabilityFamily, 'trading'),
+          eq(capabilityGrants.status, 'active'),
+          eq(tradingBindings.status, 'active'),
+        ))
+        .limit(1);
+      if (activeGrant) {
+        const agentVenueType = venueTypeFromProvider(activeGrant.provider);
+        if (agentVenueType) {
+          const capCheck = validateExecutionCapability({
+            actorType: 'agent',
+            executionMode: executionMode.value as 'paper' | 'shadow' | 'live',
+            venueType: agentVenueType,
+          });
+          if (!capCheck.ok) {
+            return reply.status(400).send({
+              error: `execution_capability.${capCheck.error.code}`,
+              message: capCheck.error.message,
+            });
+          }
+        }
+      }
+    }
+
     const skillPlanPolicy = resolveSkillPlanPolicy(request.userPlanId || 'free', request.isAdmin);
     const assignmentResolution = await resolveSkillAssignmentsForUser(
       db,
@@ -977,5 +1011,32 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const trimmed = entries.slice(0, limit);
 
     return reply.send({ entries: trimmed, hasMore: fetchedOverLimit });
+  });
+
+  // --- Decision Failures ---
+
+  // GET /agents/:id/decision-failures — query durable failed-decision records
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; since?: string } }>('/agents/:id/decision-failures', async (request, reply) => {
+    const { id } = request.params;
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    const limit = Math.min(parseInt(request.query.limit || '50', 10) || 50, 200);
+    const sinceFilter = request.query.since ? new Date(request.query.since) : undefined;
+
+    const conditions = [eq(decisionFailures.actorId, id)];
+    if (sinceFilter && !isNaN(sinceFilter.getTime())) {
+      conditions.push(sql`${decisionFailures.failedAt} >= ${sinceFilter}`);
+    }
+
+    const rows = await db.select().from(decisionFailures)
+      .where(and(...conditions))
+      .orderBy(desc(decisionFailures.failedAt))
+      .limit(limit);
+
+    return reply.send({ agentId: id, failures: rows });
   });
 }

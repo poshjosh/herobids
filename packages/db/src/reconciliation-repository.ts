@@ -8,7 +8,7 @@ export interface InsertReconciliationEvent {
   /** Accepted for call-site compatibility; not stored (reconciliation is venue-account-scoped) */
   botId?: string;
   venueAccountId: string;
-  result: 'match' | 'drift_detected' | 'drift_within_threshold' | 'repaired';
+  result: 'match' | 'observed_variance' | 'drift_detected' | 'drift_within_threshold' | 'repaired';
   localState: Record<string, unknown>;
   venueState: Record<string, unknown>;
   diff: Array<Record<string, unknown>>;

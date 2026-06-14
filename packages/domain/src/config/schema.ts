@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Supported venues for live rollout
-export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit'] as const;
+export const SUPPORTED_LIVE_VENUES = ['hyperliquid', 'bybit', 'jupiter', '1inch'] as const;
 export type SupportedLiveVenue = typeof SUPPORTED_LIVE_VENUES[number];
 
 export const SWAP_VENUES = ['jupiter', '1inch'] as const;
@@ -66,6 +66,8 @@ export const ReconciliationConfigSchema = z.object({
   balanceDriftThreshold: z.string().default('0'),
   /** If true, attempt to auto-correct acceptable drift by syncing local state to venue. Default: false */
   autoCorrect: z.boolean().default(false),
+  /** Swap venue: alert if balance differs from expected by more than this %. Default: 1.0 */
+  swapDriftThresholdPct: z.number().min(0).default(1.0),
 });
 
 export const PublicStreamConfigSchema = z.object({
@@ -668,6 +670,14 @@ export const LiveRolloutConfigSchema = z.object({
   maxConsecutiveVenueErrors: z.number().int().min(1).default(3),
   /** Slippage alert threshold (bps) — log warning when fill deviates beyond this */
   slippageAlertBps: z.number().min(0).default(50),
+  /** Timeout for stale live limit orders before cancellation is attempted */
+  limitOrderTimeoutMs: z.number().int().min(1000).default(120_000),
+  /** Timeout for live market orders that never reach terminal completion */
+  marketOrderTimeoutMs: z.number().int().min(1000).default(30_000),
+  /** Interval for live timeout scans in actor loops */
+  timeoutCheckIntervalMs: z.number().int().min(1000).default(10_000),
+  /** Fatal live crash policy: emergency flatten confirmed exposure or halt for manual intervention */
+  crashPolicy: z.enum(['auto_go_flat', 'alert_manual_intervention']).default('alert_manual_intervention'),
 });
 
 export const MarketIntelligenceFamilySchema = z.object({
@@ -721,11 +731,25 @@ export const AppConfigSchema = z.object({
     shadowPollIntervalMs: z.number().int().min(100).default(2_000),
     shadowQuoteSlippageBps: z.number().min(0).default(50),
   }),
+  simulation: z.object({
+    takerFeePct: z.number().min(0).default(0.001),
+    makerFeePct: z.number().min(0).default(0.0005),
+    paperSlippageBps: z.number().min(0).default(5),
+  }).default({}),
   risk: z.object({
     globalMaxDrawdownPct: z.number().min(0).max(100).default(20),
     maxOpenPositions: z.number().min(1).default(10),
     maxPositionSizePct: z.number().min(0).max(100).default(25),
   }),
+  agentRiskDefaults: z.object({
+    maxOpenPositions: z.number().min(1).default(10),
+    maxPositionSizePct: z.number().min(0).max(100).default(100),
+    maxPositionSize: z.number().min(0).default(1_000_000),
+    stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).default(10),
+    dailyMaxLossPct: z.number().min(0).max(100).default(20),
+    stopLossCooldownMs: z.number().min(0).default(300_000),
+    maxOrderNotionalMultiplier: z.number().min(0).default(1),
+  }).default({}),
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
   marking: MarkingConfigSchema.default({}),
@@ -881,6 +905,8 @@ export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfig
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
+export type SimulationConfig = AppConfig['simulation'];
+export type AgentRiskDefaultsConfig = AppConfig['agentRiskDefaults'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;
@@ -907,6 +933,7 @@ export const RiskConfigSchema = z.object({
   maxDrawdown: z.string().optional(),
   dailyMaxLossPct: z.number().min(0).max(100).optional(),
   stopLossCooldownMs: z.number().min(0).optional(),
+  stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).optional(),
   maxOrderNotional: z.string().optional(),
   minSwapTokenLiquidityUsd: z.number().min(0).optional(),
   minSwapTokenVolume24hUsd: z.number().min(0).optional(),

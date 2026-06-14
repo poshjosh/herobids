@@ -1,5 +1,5 @@
 import type { Price, Quantity } from '@herobids/domain';
-import { Decimal } from '@herobids/domain';
+import { Decimal, price } from '@herobids/domain';
 import type { FillEvent } from './order-state.js';
 
 /**
@@ -115,4 +115,26 @@ export function applyFill(position: PositionState, fill: FillEvent): PositionSta
     entryPrice: fillPrice,
     realizedPnl: position.realizedPnl.plus(realizedFromClose),
   };
+}
+
+/**
+ * Compute unrealized P&L for a single position at the given mark price.
+ * Returns 0 for flat positions.
+ */
+export function unrealizedPnl(position: PositionState, markPrice: Price): Price {
+  if (position.side === 'flat') return price('0');
+  if (position.side === 'long') {
+    return markPrice.minus(position.entryPrice).mul(position.size);
+  }
+  // short
+  return position.entryPrice.minus(markPrice).mul(position.size);
+}
+
+/**
+ * Compute total unrealized P&L across multiple positions at their respective mark prices.
+ */
+export function totalUnrealizedPnl(positions: PositionState[], markPrice: Price): Price {
+  return positions
+    .filter(p => p.side !== 'flat')
+    .reduce((sum, p) => sum.plus(unrealizedPnl(p, markPrice)), price('0'));
 }

@@ -14,6 +14,8 @@ export interface ReconcilerConfig {
   balanceDriftThreshold?: string;
   /** If true, attempt to auto-correct acceptable drift by syncing local state to venue */
   autoCorrect?: boolean;
+  /** Swap venue balance drift threshold (%). Alerts if expected vs actual > this. Default: 1.0 */
+  swapDriftThresholdPct?: number;
 }
 
 /**
@@ -43,6 +45,8 @@ export interface ReconcilerDeps {
   onReconciled?: (result: ReconciliationResult) => void;
   /** Returns the last reconciliation timestamp for fill cursor alignment */
   getLastReconciledAt?: () => Promise<Date | null>;
+  /** Whether balance mismatches should be treated as authoritative drift or observational telemetry. */
+  balanceDiffMode?: 'authoritative' | 'observational';
 }
 
 /**
@@ -95,19 +99,23 @@ export class Reconciler {
       const localState = await this.deps.loadLocalState();
 
       // 3. Reconcile (always use threshold-aware version — zero thresholds produce same result as basic reconcile)
-      const result = reconcileWithThresholds(localState, venueState, {
+      const rawResult = reconcileWithThresholds(localState, venueState, {
         positionSize: this.config.positionDriftThreshold
           ? new Decimal(this.config.positionDriftThreshold)
           : undefined,
         balance: this.config.balanceDriftThreshold
           ? new Decimal(this.config.balanceDriftThreshold)
           : undefined,
+        venueAccountingMode: this.deps.balanceDiffMode,
       });
+      const result = this.classifyResult(rawResult);
 
       // 4. Persist + journal
       await this.deps.persistResult(result, localState, venueState);
       const journalType = result.status === 'match'
         ? 'reconciliation.match'
+        : result.status === 'observed_variance'
+          ? 'reconciliation.observed_variance'
         : result.status === 'drift_within_threshold'
           ? 'reconciliation.drift_within_threshold'
           : 'reconciliation.drift_detected';
@@ -129,6 +137,11 @@ export class Reconciler {
         this.deps.logger.info(
           { venueAccountId: this.deps.venueAccountId },
           'Reconciliation pass: match',
+        );
+      } else if (result.status === 'observed_variance') {
+        this.deps.logger.info(
+          { venueAccountId: this.deps.venueAccountId, diffCount: result.diffs.length, diffs: result.diffs },
+          'Reconciliation pass: observed balance variance',
         );
       } else if (result.status === 'drift_within_threshold') {
         this.deps.logger.info(
@@ -177,6 +190,30 @@ export class Reconciler {
       ? await this.deps.getLastReconciledAt()
       : null;
     return this.deps.fetchVenueState(since);
+  }
+
+  private classifyResult(result: ReconciliationResult): ReconciliationResult {
+    if (this.deps.balanceDiffMode !== 'observational') {
+      return result;
+    }
+
+    if (result.status === 'match' || result.diffs.length === 0) {
+      return result;
+    }
+
+    const balanceOnly = result.diffs.every((diff) => diff.type === 'balance_mismatch');
+    if (!balanceOnly) {
+      return result;
+    }
+
+    return {
+      ...result,
+      status: 'observed_variance',
+      diffs: result.diffs.map((diff) => ({
+        ...diff,
+        category: diff.type === 'balance_mismatch' ? 'observed_balance_variance' : diff.category,
+      })),
+    };
   }
 
   get isRunning(): boolean {

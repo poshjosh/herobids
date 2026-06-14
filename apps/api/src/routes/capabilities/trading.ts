@@ -17,6 +17,7 @@ import {
   agentRuntimeSessions,
 } from '@herobids/db';
 import type { CapabilityReadiness, ReadinessState, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import { z } from 'zod';
 import {
   createGrant,
@@ -870,6 +871,28 @@ export async function tradingCapabilityRoutes(
       }
 
       if (action === 'start') {
+        // Validate execution capability before starting
+        if (agent.executionMode) {
+          const grantRows = await selectAgentTradingGrantRows(db, agentId);
+          const effectiveGrant = findEffectiveGrant(grantRows);
+          if (effectiveGrant?.provider) {
+            const startVenueType = venueTypeFromProvider(effectiveGrant.provider);
+            if (startVenueType) {
+              const capResult = validateExecutionCapability({
+                actorType: 'agent',
+                executionMode: agent.executionMode as 'paper' | 'shadow' | 'live',
+                venueType: startVenueType,
+              });
+              if (!capResult.ok) {
+                return reply.status(400).send({
+                  error: `execution_capability.${capResult.error.code}`,
+                  message: capResult.error.message,
+                });
+              }
+            }
+          }
+        }
+
         const sessionId = crypto.randomUUID();
         const now = new Date();
 
@@ -979,6 +1002,22 @@ export async function tradingCapabilityRoutes(
             error: 'binding.not_ready',
             message: 'Binding is not effectively ready',
           });
+        }
+
+        // Validate execution capability: reject binding if agent mode + venue type is unsupported
+        const bindingVenueType = venueTypeFromProvider(binding.provider);
+        if (bindingVenueType && agent.executionMode) {
+          const capResult = validateExecutionCapability({
+            actorType: 'agent',
+            executionMode: agent.executionMode as 'paper' | 'shadow' | 'live',
+            venueType: bindingVenueType,
+          });
+          if (!capResult.ok) {
+            return reply.status(400).send({
+              error: `execution_capability.${capResult.error.code}`,
+              message: capResult.error.message,
+            });
+          }
         }
 
         const allGrants = await selectAgentTradingGrantRows(db, agentId);
