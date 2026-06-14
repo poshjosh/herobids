@@ -6,8 +6,10 @@
 # resets the keep_alive timer and returns immediately.
 #
 # Usage:
+#   scripts/shell/run/build-and-run.sh                  # starts services and triggers background warmup
 #   scripts/shell/run/load-ollama-agents.sh              # blocks until all models loaded
 #   scripts/shell/run/load-ollama-agents.sh &            # fire-and-forget
+#   PRELOAD_OLLAMA_MODELS=0 scripts/shell/run/build-and-run.sh  # skip automatic warmup
 
 set -uo pipefail  # catch undefined vars and pipe failures, but NOT -e (errors are warnings here)
 

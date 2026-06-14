@@ -3,7 +3,7 @@
 #
 # Steps:
 #   1. docker compose down -v --remove-orphans + docker system prune
-#   2. scripts/shell/run/build-and-run.sh  (build, lint, agent image, compose up, seed admin)
+#   2. scripts/shell/run/build-and-run.sh  (build, lint, agent image, compose up, Ollama warmup, seed admin)
 #   3. scripts/shell/ops/quick-setup.sh   (API-level user account + credential + connection setup)
 #
 # Usage:
@@ -60,17 +60,6 @@ log "Step 2: Running build-and-run.sh..."
 bash "$SCRIPT_DIR/build-and-run.sh" || error_exit "build-and-run.sh failed"
 
 # ---------------------------------------------------------------------------
-# Step 2b — Pre-load Ollama models (background — runs in parallel with Step 3)
-# ---------------------------------------------------------------------------
-
-# Fire-and-forget: model loading can take several minutes for large models.
-# Running in the background lets quick-setup proceed immediately; models will
-# be warm by the time any agent fires its first tick.
-log "Step 2b: Pre-loading Ollama models in background..."
-bash "$SCRIPT_DIR/load-ollama-agents.sh" &
-OLLAMA_LOAD_PID=$!
-
-# ---------------------------------------------------------------------------
 # Step 3 — User account setup
 # ---------------------------------------------------------------------------
 
@@ -96,10 +85,4 @@ else
   bash "$SCRIPT_DIR/../ops/quick-setup.sh" || error_exit "quick-setup.sh failed"
 fi
 
-# Wait for the background Ollama pre-load to finish (non-fatal if it failed).
-if kill -0 "$OLLAMA_LOAD_PID" 2>/dev/null; then
-  log "Waiting for Ollama model pre-load to complete..."
-  wait "$OLLAMA_LOAD_PID" || log "WARNING: Ollama model pre-load finished with errors (see warnings above)."
-fi
-
-log "Reset and run complete."
+log "Reset and run complete. Stack services are ready; Ollama warmup may still be running in background when enabled."

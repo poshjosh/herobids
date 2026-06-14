@@ -38,6 +38,23 @@ if [[ -f "$ENV_FILE" ]]; then
     set +a
 fi
 
+PRELOAD_OLLAMA_MODELS="${PRELOAD_OLLAMA_MODELS:-1}"
+
+should_preload_ollama() {
+    case "$PRELOAD_OLLAMA_MODELS" in
+        1|true|TRUE|yes|YES)
+            return 0
+            ;;
+        0|false|FALSE|no|NO)
+            return 1
+            ;;
+        *)
+            log "WARNING: Unknown PRELOAD_OLLAMA_MODELS='$PRELOAD_OLLAMA_MODELS'; expected 1/0 or true/false. Defaulting to enabled."
+            return 0
+            ;;
+    esac
+}
+
 log "Starting Herobids build process..."
 
 # 1. Run pnpm build
@@ -56,10 +73,25 @@ docker build -f docker/Dockerfile.agent -t herobids-agent:latest . || error_exit
 log "Step 4: Building and starting services with docker compose..."
 docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build || error_exit "Failed to start services with docker compose"
 
+# 4b. Pre-load Ollama models in the background so the first agent tick avoids a cold start.
+# This is a best-effort local-dev optimization and must never fail the stack startup.
+if should_preload_ollama; then
+    log "Step 4b: Pre-loading Ollama models in background..."
+    (
+        bash "$SCRIPT_DIR/load-ollama-agents.sh" || log "WARNING: Ollama model pre-load finished with errors (see warnings above)."
+    ) &
+else
+    log "Step 4b: Skipping Ollama model pre-load (PRELOAD_OLLAMA_MODELS=$PRELOAD_OLLAMA_MODELS)."
+fi
+
 # 5. Seed admin user (optional — skipped if ADMIN_EMAIL is not set)
 log "Step 5: Seeding admin user..."
 # Default to the local dev postgres URL if not explicitly provided
 export DATABASE_URL="${DATABASE_URL:-postgres://herobids:herobids@localhost:5432/herobids}"
 pnpm --filter scripts seed-admin || error_exit "Failed to seed admin user"
 
-log "Build and run process completed successfully!"
+if should_preload_ollama; then
+    log "Build and run process completed successfully! Services are up; Ollama warmup continues in background."
+else
+    log "Build and run process completed successfully!"
+fi
