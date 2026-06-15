@@ -1082,4 +1082,40 @@ describe('POST /api/telegram/webhook', () => {
     expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('Use /to <agent name> <message>');
     fetchSpy.mockRestore();
   });
+
+  it('replies "No agent named X found" when /to targets an unknown agent name', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return makeChain([{ userId: TEST_USER_ID }]);
+        }
+        // User has one running agent named "Momentum" — not "GhostAgent"
+        return makeChain([{ agentId: AGENT_ID, agentName: 'Momentum', status: 'active' }]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: '/to GhostAgent buy BTC',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('No agent named GhostAgent found.');
+    fetchSpy.mockRestore();
+  });
 });

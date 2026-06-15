@@ -651,7 +651,7 @@ export async function telegramWebhookHandler(
       .from(agents)
       .where(eq(agents.userId, userId));
 
-    const parsedCommand = parseTelegramCommand(trimmedText, userAgents.map((row) => row.agentName));
+    const parsedCommand = parseTelegramCommand(trimmedText);
     const commandBody = parsedCommand?.body.trim() ?? trimmedText;
 
     if (parsedCommand?.targets.length) {

@@ -56,11 +56,21 @@ function isReservedTarget(token: string): boolean {
   return token === '*' || token.toLowerCase() === 'all';
 }
 
-function normalizeNames(knownAgentNames: string[]): Set<string> {
-  return new Set(knownAgentNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
-}
-
-export function parseTelegramCommand(text: string, knownAgentNames: string[] = []): TelegramCommandParseResult | null {
+/**
+ * Parse a Telegram `/to` command into targets and body.
+ *
+ * Target extraction rules (pure-syntax, no agent-name lookup required):
+ * - A quoted token in the leading position is always a target.
+ * - A reserved token (`*` / `all`) in the leading position is always a target.
+ * - The first bare (unquoted, non-reserved) token is always a target.
+ * - After the first bare token, bare tokens stop being targets (body starts).
+ * - Quoted or reserved tokens that immediately follow other targets continue
+ *   expanding the target list.
+ *
+ * Callers are responsible for resolving targets against actual agent names and
+ * producing user-facing "not found" responses.
+ */
+export function parseTelegramCommand(text: string): TelegramCommandParseResult | null {
   const trimmed = text.trim();
   const prefixMatch = trimmed.match(COMMAND_PREFIX);
   if (!prefixMatch) {
@@ -73,18 +83,24 @@ export function parseTelegramCommand(text: string, knownAgentNames: string[] = [
   }
 
   const tokens = tokenize(remainder);
-  const knownNames = normalizeNames(knownAgentNames);
   const targets: string[] = [];
   let bodyStart = 0;
 
   for (const token of tokens) {
-    const normalized = token.value.trim().toLowerCase();
-    const isKnownName = knownNames.has(normalized);
-    if (token.quoted || isReservedTarget(token.value) || isKnownName) {
+    if (token.quoted || isReservedTarget(token.value)) {
       targets.push(token.value.trim());
       bodyStart = token.end;
       continue;
     }
+
+    // Bare token: the first token when no targets have been collected yet is
+    // always a target (enables unknown-name routing at the call site).
+    // Once any target exists, a bare token marks the start of the body.
+    if (targets.length === 0) {
+      targets.push(token.value.trim());
+      bodyStart = token.end;
+    }
+
     break;
   }
 
