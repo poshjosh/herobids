@@ -134,7 +134,12 @@ export interface RuntimeCompositionState {
   runtimeDescriptor: RuntimeDescriptor;
   sessionStartMs: number;
   tickCount: number;
+  context: RuntimeCompositionContext;
   metrics: RuntimeSessionMetrics;
+}
+
+export interface RuntimeCompositionContext {
+  workspaceRoot: string | null;
 }
 
 export interface RuntimeContextBlock {
@@ -427,6 +432,18 @@ function hasTradingCapability(runtimeDescriptor: RuntimeDescriptor): boolean {
   return runtimeDescriptor.resolvedSkills.some((skill) => skill.capabilityFamilies.includes('trading'));
 }
 
+const WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
+  'execute_code',
+  'read_file',
+  'list_files',
+  'write_file',
+  'delete_file',
+]);
+
+function hasVisibleWorkspacePathTooling(state: RuntimeCompositionState): boolean {
+  return getVisibleToolNames(state).some((tool) => WORKSPACE_CONTEXT_TOOL_NAMES.has(tool));
+}
+
 function renderReadinessLine(family: string, readiness: CapabilityReadiness): string {
   const bindingSuffix = readiness.bindingId ? ` binding=${readiness.bindingId}` : '';
   const reasonSuffix = readiness.reasons.length > 0 ? ` reasons=${readiness.reasons.join('; ')}` : '';
@@ -527,9 +544,15 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       title: 'Core Platform',
       provider: 'core-platform',
       content: [
-        `\nAgent ID: ${state.runtimeDescriptor.agentId}`,
+        `Agent ID: ${state.runtimeDescriptor.agentId}`,
         ...(hasTradingCapability(state.runtimeDescriptor)
-          ? [`\nExecution mode: ${state.runtimeDescriptor.executionMode}`]
+          ? [`Execution mode: ${state.runtimeDescriptor.executionMode}`]
+          : []),
+        ...(state.context.workspaceRoot && hasVisibleWorkspacePathTooling(state)
+          ? [
+              `Workspace root: ${state.context.workspaceRoot}`,
+              'Use paths relative to workspace root, such as log.txt or sandbox/output.txt.',
+            ]
           : []),
       ].join('\n'),
     }),
@@ -909,11 +932,17 @@ function buildContextSection(state: RuntimeCompositionState, section: 'static' |
   return blocks.map((block) => `## ${block.title}\n${block.content}`).join('\n\n');
 }
 
-export function createRuntimeCompositionState(runtimeDescriptor: RuntimeDescriptor): RuntimeCompositionState {
+export function createRuntimeCompositionState(
+  runtimeDescriptor: RuntimeDescriptor,
+  context: Partial<RuntimeCompositionContext> = {},
+): RuntimeCompositionState {
   return {
     runtimeDescriptor,
     sessionStartMs: Date.now(),
     tickCount: 0,
+    context: {
+      workspaceRoot: context.workspaceRoot ?? null,
+    },
     metrics: {
       decisionsSubmitted: 0,
       decisionsAccepted: 0,
@@ -1252,7 +1281,23 @@ export function applyRuntimeMessage(
   if (type === 'agent.market.wake') {
     const parsed = AgentMarketWakePayloadSchema.safeParse(payload);
     if (!parsed.success) {
-      // Unrecognised or malformed wake — drop silently rather than rendering garbage
+      // Backward compatibility: older wake envelopes may omit typed context.
+      // Preserve actionable reason text when source/reason are present.
+      const source = payload['source'];
+      const reason = payload['reason'];
+      if (
+        (source === 'watch_threshold' || source === 'discovery_delta' || source === 'regime_change')
+        && typeof reason === 'string'
+        && reason.trim().length > 0
+      ) {
+        state.metrics.currentReminder = null;
+        state.metrics.currentMarketWake = null;
+        const summary = reason.trim();
+        pushRecentEvent(state, type, summary);
+        return summary;
+      }
+
+      // Unrecognised or malformed wake — drop silently rather than rendering garbage.
       return '';
     }
     const wake = parsed.data;

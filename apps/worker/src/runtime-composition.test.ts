@@ -113,7 +113,9 @@ function makeWatch(overrides: Parameters<typeof recordActiveWatches>[1][number])
 
 describe('runtime composition helpers', () => {
   it('caps visible tool names by runtime budget', () => {
-    const state = createRuntimeCompositionState(baseDescriptor);
+    const state = createRuntimeCompositionState(baseDescriptor, {
+      workspaceRoot: '/workspace',
+    });
     expect(getVisibleToolNames(state)).toEqual(['send_message', 'publish_artifact']);
   });
 
@@ -121,7 +123,9 @@ describe('runtime composition helpers', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-11T06:42:39.174Z'));
 
-    const state = createRuntimeCompositionState(baseDescriptor);
+    const state = createRuntimeCompositionState(baseDescriptor, {
+      workspaceRoot: '/workspace',
+    });
     const timing = createPromptTimingContext({
       currentTimeMs: Date.now(),
       nominalTickIntervalMs: 900_000,
@@ -136,6 +140,8 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).toContain('Execution mode: paper');
+    expect(prompt).not.toContain('Workspace root: /workspace');
+    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
     expect(prompt).toContain('Trading Venue');
     expect(prompt).toContain('hyperliquid (perpetuals)');
     expect(prompt).toContain('trade instruments use base tickers');
@@ -159,6 +165,8 @@ describe('runtime composition helpers', () => {
       grantedBindingsByFamily: {},
       defaultBindingByFamily: {},
       readinessByFamily: {},
+    }, {
+      workspaceRoot: '/tmp/herobids-agent-workspaces/agent-1',
     });
     const prompt = buildSystemPrompt(state, createPromptTimingContext({
       currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
@@ -169,10 +177,89 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
+    expect(prompt).not.toContain('Workspace root: /tmp/herobids-agent-workspaces/agent-1');
     expect(prompt).not.toContain('Execution mode:');
     expect(prompt).not.toContain('Trading Venue');
     expect(prompt).not.toContain('Daily loss limit:');
     expect(prompt).not.toContain('Max concurrent bots:');
+  });
+
+  it('renders workspace guidance when execute_code is available', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      resolvedSkills: [
+        baseDescriptor.resolvedSkills[0]!,
+        {
+          id: 'programming',
+          name: 'Programming',
+          description: 'Code execution tools',
+          instructions: 'Use execute_code.',
+          requiredTools: ['execute_code'],
+          capabilityFamilies: [],
+          bindingRequirements: {},
+          contextRequirements: [],
+          requiredContextBlocks: ['corePlatformContext'],
+          promptRendererHints: ['core-system'],
+          requiredGuardrails: [],
+          suggestedTickIntervalMs: 900_000,
+          visibility: 'public',
+        },
+      ],
+      budgets: {
+        ...baseDescriptor.budgets,
+        maxVisibleToolSchemas: 10,
+      },
+    }, {
+      workspaceRoot: '/workspace',
+    });
+
+    const prompt = buildSystemPrompt(state, createPromptTimingContext({
+      currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+    }));
+
+    expect(prompt).toContain('Workspace root: /workspace');
+    expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+  });
+
+  it('omits workspace guidance when workspace tools are hidden by visibility budget', () => {
+    const state = createRuntimeCompositionState({
+      ...baseDescriptor,
+      resolvedSkills: [
+        baseDescriptor.resolvedSkills[0]!,
+        {
+          id: 'programming',
+          name: 'Programming',
+          description: 'Code execution tools',
+          instructions: 'Use execute_code.',
+          requiredTools: ['execute_code'],
+          capabilityFamilies: [],
+          bindingRequirements: {},
+          contextRequirements: [],
+          requiredContextBlocks: ['corePlatformContext'],
+          promptRendererHints: ['core-system'],
+          requiredGuardrails: [],
+          suggestedTickIntervalMs: 900_000,
+          visibility: 'public',
+        },
+      ],
+      budgets: {
+        ...baseDescriptor.budgets,
+        maxVisibleToolSchemas: 2,
+      },
+    }, {
+      workspaceRoot: '/workspace',
+    });
+
+    const prompt = buildSystemPrompt(state, createPromptTimingContext({
+      currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
+      nominalTickIntervalMs: 900_000,
+      expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
+    }));
+
+    expect(prompt).not.toContain('Workspace root: /workspace');
+    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
   });
 
   it('renders only the configured default executable trading venue', () => {

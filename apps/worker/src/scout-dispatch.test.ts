@@ -49,12 +49,13 @@ describe('buildScoutSystemPrompt', () => {
       agentId: 'agent-1',
       name: 'market-watch-01',
       goal: 'Trade carefully',
-      readOnlyTools: ['check_regime', 'search_tokens'],
+      readOnlyTools: ['read_file', 'list_files'],
       timing: createPromptTimingContext({
         currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
         nominalTickIntervalMs: 900_000,
         expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
       }),
+      workspaceRoot: '/workspace',
     });
 
     expect(prompt).toContain('You are the scout phase for agent "market-watch-01".');
@@ -62,7 +63,9 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).toContain('Current time (UTC): 2026-06-11T06:42:39.174Z');
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
-    expect(prompt).toContain('Visible read-only tools: check_regime, search_tokens.');
+    expect(prompt).toContain('Workspace root: /workspace');
+    expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+    expect(prompt).toContain('Visible read-only tools: read_file, list_files.');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
     expect(prompt).toContain('Respond with JSON only. disposition must be "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.');
   });
@@ -113,12 +116,15 @@ describe('buildScoutSystemPrompt', () => {
         nominalTickIntervalMs: 900_000,
         expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
       }),
+      workspaceRoot: '/workspace',
       venueLines: ['- jupiter (swap / DEX) — trade instruments use pair symbols (e.g. "SOL/USDC", "ETH/USDC")'],
     });
 
     expect(prompt).toContain('## Trading Venue');
     expect(prompt).toContain('jupiter (swap / DEX)');
     expect(prompt).toContain('trade instruments use pair symbols');
+    expect(prompt).not.toContain('Workspace root:');
+    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
   });
 });
 

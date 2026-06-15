@@ -13,6 +13,14 @@ export const DEFAULT_SCOUT_MODELS = {
   openrouter: 'openai/gpt-4.1-mini',
 } as const;
 
+const SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
+  'execute_code',
+  'read_file',
+  'list_files',
+  'write_file',
+  'delete_file',
+]);
+
 export function resolveDefaultScoutModel(
   provider: string,
   judgeModel: string,
@@ -36,8 +44,12 @@ export function buildScoutSystemPrompt(params: {
   goal: string;
   readOnlyTools: string[];
   timing: PromptTimingContext;
+  workspaceRoot?: string;
   venueLines?: string[];
 }): string {
+  const includeWorkspaceContext = Boolean(params.workspaceRoot)
+    && params.readOnlyTools.some((tool) => SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES.has(tool));
+
   const venueSection = params.venueLines && params.venueLines.length > 0
     ? ['## Trading Venue', ...params.venueLines]
     : [];
@@ -48,6 +60,12 @@ export function buildScoutSystemPrompt(params: {
     formatAgentGoalLiteralBlock(params.goal),
     '## Operating Context',
     ...formatPromptTimingContextLines(params.timing),
+    ...(includeWorkspaceContext
+      ? [
+          `Workspace root: ${params.workspaceRoot}`,
+          'Use paths relative to workspace root, such as log.txt or sandbox/output.txt.',
+        ]
+      : []),
     ...venueSection,
     '## Available Tools',
     `Visible read-only tools: ${params.readOnlyTools.join(', ') || 'none'}.`,

@@ -64,6 +64,7 @@ import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
+import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
@@ -296,7 +297,10 @@ const runtimeDescriptor = agentConfig.runtimeDescriptor
     budgets: { ...agentRuntimePolicy.defaultBudgets },
   }
   : buildFallbackRuntimeDescriptor();
-const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor);
+const workspacePaths = getWorkspacePaths(AGENT_ID!);
+const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor, {
+  workspaceRoot: workspacePaths.root,
+});
 runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour = Number.isFinite(SERVER_COST_USD_PER_HOUR)
   ? SERVER_COST_USD_PER_HOUR
   : runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour;
@@ -1666,6 +1670,7 @@ async function runTick(): Promise<void> {
         goal: runtimeState.runtimeDescriptor.goal,
         readOnlyTools: readOnlyScoutTools,
         timing: promptTiming,
+        workspaceRoot: runtimeState.context.workspaceRoot ?? undefined,
         venueLines: buildVenueLines(runtimeState),
       });
       redis.set(scoutSystemPromptKey, scoutSystemPrompt, 'EX', 3600).catch((err: unknown) => {
