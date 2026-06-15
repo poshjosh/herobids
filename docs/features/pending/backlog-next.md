@@ -8,8 +8,8 @@
 4. DONE [Graceful Agent Deployment - Zero/Low Downtime](graceful-agent-deployment/000-graceful-agent-deployment.md) - add clean handoff and shutdown behavior after lifecycle state is consistent.
 5. DONE [025 - Trading Binding Native Bot Startup Follow-Through](025-trading-binding-native-bot-startup-follow-through.md) - finish the binding-first startup migration once the worker lifecycle path is stable.
 6. DONE [Agent Runtime Loop Controls](agent-runtime-loop-controls/001-plan.md) - make the core agent runtime tuning knobs configurable.
-7. IN_REVIEW [Agent Wake Semantics Ideal-State Plan](agent-wake-semantics-2/001-ideal-state-plan.md) - move wake delivery toward the typed, capability-aware contract.
-8. IN_REVIEW [Provider Registry For Credentials And Connections](provider-registry-credentials-and-connections/REVISED.md) - establish the backend-owned provider contract that the UI can render from.
+7. DONE [Agent Wake Semantics Ideal-State Plan](agent-wake-semantics-2/001-ideal-state-plan.md) - move wake delivery toward the typed, capability-aware contract.
+8. DONE [Provider Registry For Credentials And Connections](provider-registry-credentials-and-connections/REVISED.md) - establish the backend-owned provider contract that the UI can render from.
 9. IN_REVIEW [Agent Risk Configuration UI](agent-risk-config-ui/001-plan.md) - expose user-visible risk controls once the surrounding contract surfaces are stable.
 10. IN_REVIEW [Payment Provider Selection and Usage Dashboard](payment-provider-selection-and-usage-dashboard/001-plan.md) - separate billing-provider selection from dashboard visibility and runtime accounting.
 11. IN_REVIEW [Telegram Reply Threading](telegram-reply-threading/001-plan.md) - implement the reply-based Telegram routing foundation first.

@@ -377,7 +377,7 @@ export const messages: Record<string, string> = {
   'agents.controls.maxOpenPositions': 'Max open positions',
   'agents.controls.maxOpenPositions.help': 'Hard cap on simultaneous positions. Leave blank to use the platform default that the agent can adjust.',
   'agents.controls.maxPositionSizePct': 'Max position size (%)',
-  'agents.controls.maxPositionSizePct.help': 'Max single position as a percent of capital. Leave blank to use the platform default that the agent can adjust.',
+  'agents.controls.maxPositionSizePct.help': 'Max single position size as a percentage cap. Applies independently of whether capital is set. Leave blank to use the platform default (which the agent can adjust).',
   'agents.controls.stopLossPct': 'Stop-loss (%)',
   'agents.controls.stopLossPct.help': 'Force exit when unrealized loss exceeds this percent. Leave blank to use the platform default that the agent can adjust.',
   'agents.controls.stopLossCooldown': 'Stop-loss cooldown (sec)',
