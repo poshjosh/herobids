@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentRiskLimits, type AgentRiskLimitSource } from './agent-risk-limits.js';
+import { buildAgentRiskLimits, resolveContract, extractCeilings, extractCreatorInput, type AgentRiskLimitSource } from './agent-risk-limits.js';
 import type { AgentRiskDefaultsConfig } from '@herobids/domain';
 
 const DEFAULTS: AgentRiskDefaultsConfig = {
@@ -85,5 +85,94 @@ describe('buildAgentRiskLimits()', () => {
       );
       expect(limits.stopLossMaxUnrealizedLossPct).toBe(5);
     });
+  });
+
+  describe('overrides integration', () => {
+    it('applies agent override when no creator value is present', () => {
+      const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS, { maxOpenPositions: 7 });
+      expect(limits.maxOpenPositions).toBe(7);
+    });
+
+    it('ignores override when creator value is present', () => {
+      const limits = buildAgentRiskLimits(
+        { ...EMPTY_SOURCE, maxOpenPositions: 5 },
+        DEFAULTS,
+        { maxOpenPositions: 3 },
+      );
+      expect(limits.maxOpenPositions).toBe(5);
+    });
+
+    it('caps override at operator ceiling', () => {
+      const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS, { maxOpenPositions: 50 });
+      expect(limits.maxOpenPositions).toBe(10); // operator ceiling
+    });
+
+    it('applies stopLossPct override', () => {
+      const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS, { stopLossPct: 5 });
+      expect(limits.stopLossMaxUnrealizedLossPct).toBe(5);
+    });
+
+    it('applies stopLossCooldownMs override', () => {
+      const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS, { stopLossCooldownMs: 60_000 });
+      expect(limits.stopLossCooldownMs).toBe(60_000);
+    });
+  });
+});
+
+describe('resolveContract()', () => {
+  it('resolves full contract with correct source attribution', () => {
+    const source: AgentRiskLimitSource = {
+      capital: '10000',
+      dailyLossLimit: '500',
+      maxOpenPositions: 5,
+      maxPositionSizePct: null,
+      stopLossPct: null,
+      stopLossCooldownMs: null,
+    };
+    const overrides = { stopLossPct: 7 };
+
+    const contract = resolveContract(source, DEFAULTS, overrides);
+
+    expect(contract.maxOpenPositions.source).toBe('user');
+    expect(contract.maxOpenPositions.mutable).toBe(false);
+    expect(contract.maxOpenPositions.effectiveValue).toBe(5);
+
+    expect(contract.maxPositionSizePct.source).toBe('default');
+    expect(contract.maxPositionSizePct.mutable).toBe(true);
+    expect(contract.maxPositionSizePct.effectiveValue).toBe(100);
+
+    expect(contract.stopLossPct.source).toBe('agent_override');
+    expect(contract.stopLossPct.mutable).toBe(true);
+    expect(contract.stopLossPct.effectiveValue).toBe(7);
+
+    expect(contract.stopLossCooldownMs.source).toBe('default');
+    expect(contract.stopLossCooldownMs.mutable).toBe(true);
+  });
+});
+
+describe('extractCeilings()', () => {
+  it('maps AgentRiskDefaultsConfig fields to ceilings', () => {
+    const ceilings = extractCeilings(DEFAULTS);
+    expect(ceilings.maxOpenPositions).toBe(10);
+    expect(ceilings.maxPositionSizePct).toBe(100);
+    expect(ceilings.stopLossPct).toBe(10);
+    expect(ceilings.stopLossCooldownMs).toBe(300_000);
+  });
+});
+
+describe('extractCreatorInput()', () => {
+  it('preserves non-null creator values and nulls null fields', () => {
+    const input = extractCreatorInput({
+      capital: '1000',
+      dailyLossLimit: '100',
+      maxOpenPositions: 5,
+      maxPositionSizePct: '25',
+      stopLossPct: null,
+      stopLossCooldownMs: null,
+    });
+    expect(input.maxOpenPositions).toBe(5);
+    expect(input.maxPositionSizePct).toBe(25);
+    expect(input.stopLossPct).toBeNull();
+    expect(input.stopLossCooldownMs).toBeNull();
   });
 });

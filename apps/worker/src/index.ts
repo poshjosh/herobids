@@ -272,9 +272,26 @@ const agentIntakeResolver = new AgentIntakeResolver({
 });
 
 const intakeResolver: DecisionIntakeResolver = {
-  getIntakeDeps: (instanceId: string, instrumentId?: string) => {
+  getIntakeDeps: async (instanceId: string, instrumentId?: string) => {
     const actor = actorRegistry.get(instanceId);
-    if (actor?.isRunning) return actor.getIntakeDeps(instrumentId);
+    if (actor?.isRunning) {
+      // Refresh actor risk limits from DB so runtime overrides take effect on the next decision
+      if (actor.updateRiskLimits) {
+        const agent = await agentRepo.getAgent(instanceId);
+        if (agent) {
+          const freshLimits = buildAgentRiskLimits({
+            capital: agent.capital ?? null,
+            dailyLossLimit: agent.dailyLossLimit ?? null,
+            maxOpenPositions: agent.maxOpenPositions ?? null,
+            maxPositionSizePct: agent.maxPositionSizePct ?? null,
+            stopLossPct: agent.stopLossPct ?? null,
+            stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+          }, appConfig.agentRiskDefaults, (agent.riskOverrides as Record<string, number> | null) ?? {});
+          actor.updateRiskLimits(freshLimits);
+        }
+      }
+      return actor.getIntakeDeps(instrumentId);
+    }
     if (!agentState.canUseGrantFallback(instanceId)) return undefined;
     // Fallback: resolve as agent via capability grants
     if (instrumentId) return agentIntakeResolver.getIntakeDeps(instanceId, instrumentId);
@@ -445,6 +462,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
   // ~2 s instead of up to 10 s after the API sets the session to 'starting'.
   healthCheckIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
   budgets: appConfig.agentRuntime.defaultBudgets,
+  agentRiskDefaults: appConfig.agentRiskDefaults as unknown as Record<string, unknown>,
   streamSubscribe: async (agentId: string) => agentStreamSubscribeFn?.(agentId),
   onAgentStatusChange: (agentId, userId, status) => {
     userEventPublisher.publishAgentStatus(userId, agentId, status as 'starting' | 'active' | 'stopped' | 'crashed').catch((err) => {
@@ -499,7 +517,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             maxPositionSizePct: agent?.maxPositionSizePct ?? null,
             stopLossPct: agent?.stopLossPct ?? null,
             stopLossCooldownMs: agent?.stopLossCooldownMs ?? null,
-          }, agentDefaults),
+          }, agentDefaults, (agent?.riskOverrides as Record<string, number> | null) ?? {}),
           venueAdapterFactory,
           createStreamPoolHandle: venueType !== 'swap'
             ? (testnet: boolean) => createScopedStreamPoolHandle(publicStreamPool, binding.venue, testnet)

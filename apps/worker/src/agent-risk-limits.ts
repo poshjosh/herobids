@@ -1,4 +1,4 @@
-import { price, quantity, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { price, quantity, type AgentRiskDefaultsConfig, type AgentRiskOverrides, type AgentRiskCreatorInput, type AgentRiskCeilings, type ResolvedAgentRiskContract, resolveAgentRiskContract } from '@herobids/domain';
 import type { RiskLimits } from '@herobids/engine';
 
 export interface AgentRiskLimitSource {
@@ -19,21 +19,66 @@ function parseOptionalNumber(value: string | number | null): number | undefined 
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function buildAgentRiskLimits(source: AgentRiskLimitSource, defaults: AgentRiskDefaultsConfig): RiskLimits {
+/**
+ * Extract AgentRiskCeilings from operator config defaults.
+ */
+export function extractCeilings(defaults: AgentRiskDefaultsConfig): AgentRiskCeilings {
+  return {
+    maxOpenPositions: defaults.maxOpenPositions,
+    maxPositionSizePct: defaults.maxPositionSizePct,
+    stopLossPct: defaults.stopLossMaxUnrealizedLossPct,
+    stopLossCooldownMs: defaults.stopLossCooldownMs,
+  };
+}
+
+/**
+ * Extract AgentRiskCreatorInput from the raw nullable source columns.
+ */
+export function extractCreatorInput(source: AgentRiskLimitSource): AgentRiskCreatorInput {
+  return {
+    maxOpenPositions: source.maxOpenPositions,
+    maxPositionSizePct: parseOptionalNumber(source.maxPositionSizePct) ?? null,
+    stopLossPct: parseOptionalNumber(source.stopLossPct) ?? null,
+    stopLossCooldownMs: source.stopLossCooldownMs,
+  };
+}
+
+/**
+ * Resolve the full agent risk contract from all three sources.
+ */
+export function resolveContract(
+  source: AgentRiskLimitSource,
+  defaults: AgentRiskDefaultsConfig,
+  overrides: AgentRiskOverrides = {},
+): ResolvedAgentRiskContract {
+  return resolveAgentRiskContract(
+    extractCreatorInput(source),
+    extractCeilings(defaults),
+    overrides,
+    { hasCapital: source.capital != null },
+  );
+}
+
+/**
+ * Build engine-facing RiskLimits from the resolved contract and additional capital-derived fields.
+ */
+export function buildRiskLimitsFromContract(
+  contract: ResolvedAgentRiskContract,
+  source: AgentRiskLimitSource,
+  defaults: AgentRiskDefaultsConfig,
+): RiskLimits {
   const capital = source.capital;
   const dailyLossLimit = source.dailyLossLimit;
 
   return {
     maxPositionSize: quantity(String(defaults.maxPositionSize)),
-    maxOpenPositions: source.maxOpenPositions ?? defaults.maxOpenPositions,
+    maxOpenPositions: contract.maxOpenPositions.effectiveValue,
     maxDrawdown: price(dailyLossLimit ?? '1000000000'),
-    stopLossMaxUnrealizedLossPct: parseOptionalNumber(source.stopLossPct) ?? defaults.stopLossMaxUnrealizedLossPct,
-    stopLossCooldownMs: source.stopLossCooldownMs ?? defaults.stopLossCooldownMs,
-    // maxPositionSizePct is user-configurable independently of capital — preserve it whenever set.
-    // When capital is null and the user hasn't explicitly configured it, omit it entirely
-    // (percentage-based sizing has no meaning without a capital base).
-    ...(parseOptionalNumber(source.maxPositionSizePct) != null || capital != null ? {
-      maxPositionSizePct: parseOptionalNumber(source.maxPositionSizePct) ?? defaults.maxPositionSizePct,
+    stopLossMaxUnrealizedLossPct: contract.stopLossPct.effectiveValue,
+    stopLossCooldownMs: contract.stopLossCooldownMs.effectiveValue,
+    // maxPositionSizePct is included when capital is present or when the field has an effective value from creator/override
+    ...(contract.maxPositionSizePct.source !== 'default' || capital != null ? {
+      maxPositionSizePct: contract.maxPositionSizePct.effectiveValue,
     } : {}),
     ...(capital != null ? {
       maxOrderNotional: price(String(Number.parseFloat(capital) * defaults.maxOrderNotionalMultiplier)),
@@ -42,4 +87,17 @@ export function buildAgentRiskLimits(source: AgentRiskLimitSource, defaults: Age
         : defaults.dailyMaxLossPct,
     } : {}),
   };
+}
+
+/**
+ * Build engine-facing RiskLimits from raw source, defaults, and overrides.
+ * This is the single entry point that combines contract resolution and limit derivation.
+ */
+export function buildAgentRiskLimits(
+  source: AgentRiskLimitSource,
+  defaults: AgentRiskDefaultsConfig,
+  overrides: AgentRiskOverrides = {},
+): RiskLimits {
+  const contract = resolveContract(source, defaults, overrides);
+  return buildRiskLimitsFromContract(contract, source, defaults);
 }

@@ -12,6 +12,7 @@ import { priceTools } from './price.js';
 import { watchTools } from './watch.js';
 import { webAccessTools } from './web-access.js';
 import { taskTools } from './tasks.js';
+import { riskLimitsTools } from './risk-limits.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredToolNames = registry.list().map((tool) => tool.name).sort();
@@ -55,6 +56,7 @@ export function createToolRegistry(): ToolRegistry {
     ...watchTools,
     ...webAccessTools,
     ...taskTools,
+    ...riskLimitsTools,
   ];
 
   for (const tool of allTools) {

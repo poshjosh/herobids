@@ -821,6 +821,11 @@ export class AgentTradingActor implements ExecutionActor {
     }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append stop_loss.exit journal event'));
   }
 
+  /** Hot-swap risk limits so runtime overrides take effect without restart. */
+  updateRiskLimits(limits: RiskLimits): void {
+    this.deps.riskLimits = limits;
+  }
+
   /** Check if stop-loss threshold is breached for the given instrument. If triggered, fires async go_flat. */
   private isStopLossTriggered(instrumentId: string): boolean {
     const pct = this.deps.riskLimits.stopLossMaxUnrealizedLossPct;

@@ -38,6 +38,7 @@ import {
   resolveDailyLlmTokenBudget,
   resolveExecutionModeForSkills,
   resolveNotificationPolicy,
+  resolveAgentRiskContractForResponse,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
 import {
@@ -512,7 +513,8 @@ export async function agentRoutes(
 
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
-    return reply.status(201).send(decorateAgentResponse({ ...agent!, skillIds }));
+    const riskContract = resolveAgentRiskContractForResponse(agent!, agentRiskDefaults);
+    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), riskContract });
   });
 
   // List user's agents
@@ -547,7 +549,8 @@ export async function agentRoutes(
       .orderBy(desc(agentRuntimeSessions.startedAt));
 
     const skillIds = await listSkillIdsForAgent(db, id);
-    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), activeSession: session ?? null });
+    const riskContract = resolveAgentRiskContractForResponse(agent, agentRiskDefaults);
+    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), riskContract, activeSession: session ?? null });
   });
 
   // Update agent
@@ -726,7 +729,8 @@ export async function agentRoutes(
 
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
-    return reply.send(decorateAgentResponse({ ...updated!, skillIds }));
+    const riskContract = resolveAgentRiskContractForResponse(updated!, agentRiskDefaults);
+    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), riskContract });
   });
 
   // Delete agent

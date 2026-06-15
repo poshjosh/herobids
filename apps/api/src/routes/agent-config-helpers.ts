@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS, validateLlmModelSelection } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS, validateLlmModelSelection, resolveAgentRiskContract, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
 
@@ -352,4 +352,38 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
       ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
       : null,
   };
+}
+
+/**
+ * Resolve the agent's risk contract for API responses.
+ * Shows per-field source, mutability, and effective values.
+ */
+export function resolveAgentRiskContractForResponse(
+  agent: {
+    capital?: string | number | null;
+    maxOpenPositions?: number | null;
+    maxPositionSizePct?: string | number | null;
+    stopLossPct?: string | number | null;
+    stopLossCooldownMs?: number | null;
+    riskOverrides?: AgentRiskOverrides | null;
+  },
+  agentRiskDefaults: AgentRiskDefaultsConfig,
+): ResolvedAgentRiskContract {
+  const ceilings: AgentRiskCeilings = {
+    maxOpenPositions: agentRiskDefaults.maxOpenPositions,
+    maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
+    stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
+    stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
+  };
+
+  const creatorInput: AgentRiskCreatorInput = {
+    maxOpenPositions: agent.maxOpenPositions ?? null,
+    maxPositionSizePct: agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null,
+    stopLossPct: agent.stopLossPct != null ? Number(agent.stopLossPct) : null,
+    stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+  };
+
+  return resolveAgentRiskContract(creatorInput, ceilings, agent.riskOverrides ?? {}, {
+    hasCapital: agent.capital != null,
+  });
 }

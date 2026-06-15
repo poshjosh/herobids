@@ -11,8 +11,8 @@
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES } from '@herobids/domain';
-import { createDatabase, BotRepository } from '@herobids/db';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract } from '@herobids/domain';
+import { createDatabase, BotRepository, AgentRepository } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
@@ -64,6 +64,7 @@ import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
 import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
+import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
@@ -128,6 +129,10 @@ interface AgentConfig {
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
+  maxOpenPositions?: number;
+  maxPositionSizePct?: number | string;
+  stopLossPct?: number | string;
+  stopLossCooldownMs?: number;
   tickIntervalMs?: number;
   capital?: string;
   telegramChatId?: string;
@@ -138,6 +143,15 @@ interface AgentConfig {
   usageBillingIncludedCreditMicrousd?: number;
   usageBillingSoftCapMicrousd?: number | null;
   usageBillingHardCapMicrousd?: number | null;
+  agentRiskDefaults?: {
+    maxOpenPositions: number;
+    maxPositionSizePct: number;
+    stopLossMaxUnrealizedLossPct: number;
+    stopLossCooldownMs: number;
+    maxPositionSize: number;
+    maxOrderNotionalMultiplier: number;
+    dailyMaxLossPct: number;
+  };
 }
 
 let agentConfig: AgentConfig;
@@ -563,6 +577,7 @@ const WAKE_SIGNAL_POLL_MS = agentRuntimePolicy.wake.pollMs;
 const DATABASE_URL = process.env['DATABASE_URL'];
 const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
 const botRepo = db ? new BotRepository(db) : null;
+const agentRepo = db ? new AgentRepository(db) : null;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
@@ -1057,6 +1072,85 @@ function stopWakeSignalPolling(): void {
 // Tool execution
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Risk Contract Operations — provides agent tools access to risk limits
+// ---------------------------------------------------------------------------
+
+function buildRiskContractOps(): ToolContext['riskContractOps'] {
+  if (!agentRepo || !agentConfig.agentRiskDefaults) {
+    return undefined;
+  }
+
+  const defaults = agentConfig.agentRiskDefaults as AgentRiskDefaultsConfig;
+  const ceilings = extractCeilings(defaults);
+
+  return {
+    async getContract(): Promise<ResolvedAgentRiskContract> {
+      const overrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
+      const creatorInput = extractCreatorInput({
+        capital: agentConfig.capital ?? null,
+        dailyLossLimit: agentConfig.dailyLossLimit ?? null,
+        maxOpenPositions: agentConfig.maxOpenPositions ?? null,
+        maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
+        stopLossPct: agentConfig.stopLossPct ?? null,
+        stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
+      });
+      return resolveAgentRiskContract(creatorInput, ceilings, overrides);
+    },
+
+    async adjustOverrides(proposedChanges: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: ResolvedAgentRiskContract }> {
+      const currentOverrides = await agentRepo!.getRiskOverrides(AGENT_ID!);
+      const creatorInput = extractCreatorInput({
+        capital: agentConfig.capital ?? null,
+        dailyLossLimit: agentConfig.dailyLossLimit ?? null,
+        maxOpenPositions: agentConfig.maxOpenPositions ?? null,
+        maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
+        stopLossPct: agentConfig.stopLossPct ?? null,
+        stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
+      });
+      const currentContract = resolveAgentRiskContract(creatorInput, ceilings, currentOverrides);
+
+      // Validate all proposed changes
+      const errors: string[] = [];
+      for (const [field, value] of Object.entries(proposedChanges)) {
+        if (!(field in currentContract)) {
+          errors.push(`Unknown risk field: '${field}'`);
+          continue;
+        }
+        const validationError = validateRiskOverride(
+          field as keyof ResolvedAgentRiskContract,
+          currentContract,
+          value,
+        );
+        if (validationError) {
+          errors.push(validationError);
+        }
+      }
+
+      if (errors.length > 0) {
+        return { ok: false, error: errors.join('; ') };
+      }
+
+      // Apply changes to overrides
+      const newOverrides: AgentRiskOverrides = { ...currentOverrides };
+      for (const [field, value] of Object.entries(proposedChanges)) {
+        if (value == null) {
+          // Reset to default by removing override
+          delete (newOverrides as Record<string, unknown>)[field];
+        } else {
+          (newOverrides as Record<string, number>)[field] = value;
+        }
+      }
+
+      await agentRepo!.setRiskOverrides(AGENT_ID!, newOverrides);
+
+      // Return updated contract
+      const updatedContract = resolveAgentRiskContract(creatorInput, ceilings, newOverrides);
+      return { ok: true, contract: updatedContract };
+    },
+  };
+}
+
 interface ToolCall {
   tool: string;
   args: Record<string, unknown>;
@@ -1164,6 +1258,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     capabilityEngine,
     sessionMetrics,
     priceService: priceService ?? undefined,
+    riskContractOps: buildRiskContractOps(),
   };
 
   try {

@@ -163,6 +163,11 @@ export interface ToolContext {
       error?: { code: string; message: string };
     }>;
   };
+  /** Agent risk contract operations for reading and adjusting runtime risk limits. */
+  riskContractOps?: {
+    getContract(): Promise<import('./agent-risk-contract.js').ResolvedAgentRiskContract>;
+    adjustOverrides(overrides: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: import('./agent-risk-contract.js').ResolvedAgentRiskContract }>;
+  };
 }
 
 export interface AgentTool {
@@ -193,6 +198,7 @@ export interface ToolDefinition {
 
 export const KNOWN_AGENT_TOOL_NAMES = [
   'adjust_bot_config',
+  'adjust_risk_limits',
   'browse_url',
   'check_regime',
   'check_watches',
@@ -209,6 +215,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_market_overview',
   'get_memory',
   'get_price',
+  'get_risk_limits',
   'list_bots',
   'list_files',
   'list_memory_keys',
@@ -221,13 +228,13 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'remove_watch',
   'schedule_reminder',
   'search_tokens',
+  'search_web',
   'send_message',
   'set_memory',
   'start_bot',
   'stop_bot',
   'submit_decision',
   'watch_token',
-  'search_web',
   'write_file',
 ] as const;
 

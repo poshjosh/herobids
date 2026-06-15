@@ -120,6 +120,13 @@
       "when": 1781529000000,
       "tag": "0016_orders_live_execution_state",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0017_agent_risk_overrides",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
+import type { DecisionIntakeDeps, DecisionContext, PositionState, RiskLimits } from '@herobids/engine';
 
 /** Rejection codes for when getIntakeDeps cannot provide execution context */
 export type IntakeRejectionCode =
@@ -35,4 +35,6 @@ export interface ExecutionActor {
   getPosition(instrumentId?: string): PositionState | undefined;
   /** Notify the actor of an execution outcome for circuit breaker tracking */
   recordExecutionOutcome?(success: boolean): void;
+  /** Hot-swap risk limits so runtime overrides take effect without restart */
+  updateRiskLimits?(limits: RiskLimits): void;
 }

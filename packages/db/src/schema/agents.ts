@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
+import type { AgentRiskOverrides } from '@herobids/domain';
 import { users } from './users.js';
 
 /**
@@ -47,6 +48,8 @@ export const agents = pgTable('agents', {
   tickIntervalMs: integer('tick_interval_ms'),
   /** Deployable allocation cap in USD — the amount the agent may trade with, not the full wallet balance. */
   capital: numeric('capital', { precision: 20, scale: 8 }),
+  /** Agent runtime risk overrides — only fields the agent has actively adjusted (separate from creator config). */
+  riskOverrides: jsonb('risk_overrides').$type<AgentRiskOverrides | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

@@ -41,8 +41,9 @@ export const BASE_SKILL: SkillDefinition = {
 - Use \`list_memory_keys\` to list all stored memory keys.
 - Use \`delete_memory\` to remove one or more memory keys.
 - Use \`publish_artifact\` to publish structured outputs.
-- Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" for urgency. Set emailDelivery to "if_allowed" to request email fanout (policy permitting). Use contextRef to link the message to a specific context.`,
-  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory'],
+- Use \`send_message\` to communicate important updates, alerts, or status reports to the user. Set messageClass to "alert" or "reminder" for urgency. Set emailDelivery to "if_allowed" to request email fanout (policy permitting). Use contextRef to link the message to a specific context.
+- Use \`get_risk_limits\` to inspect your effective risk limits, including which are mutable and which are locked by the creator.`,
+  requiredTools: ['send_message', 'publish_artifact', 'set_memory', 'get_memory', 'list_memory_keys', 'delete_memory', 'get_risk_limits'],
   capabilityFamilies: [],
   bindingRequirements: {},
   contextRequirements: ['costs', 'session_elapsed'],
@@ -106,8 +107,10 @@ export const TRADING_SKILL: SkillDefinition = {
 - Use \`get_funding_rates\` to inspect perpetual funding conditions.
 - Use \`get_market_overview\` to inspect broad market state.
 - Use \`get_price\` for focused price checks.
-- Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring.`,
-  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
+- Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring.
+- Use \`get_risk_limits\` to inspect your effective risk limits and their sources.
+- Use \`adjust_risk_limits\` to adjust mutable (default-derived) risk limits within operator ceilings.`,
+  requiredTools: ['submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches', 'get_risk_limits', 'adjust_risk_limits'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {
@@ -137,8 +140,10 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
 - Use \`get_price\` for focused price checks.
 - Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring.
 - Use \`send_message\` to alert the user.
-- Use \`publish_artifact\` to publish structured monitoring outputs.`,
-  requiredTools: ['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches'],
+- Use \`publish_artifact\` to publish structured monitoring outputs.
+- Use \`get_risk_limits\` to inspect effective risk limits and sources.
+- Use \`adjust_risk_limits\` to adjust mutable risk limits within operator ceilings.`,
+  requiredTools: ['send_message', 'publish_artifact', 'list_positions', 'get_analytics', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'check_watches', 'get_risk_limits', 'adjust_risk_limits'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {

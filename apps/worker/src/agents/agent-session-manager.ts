@@ -25,6 +25,8 @@ export interface AgentSessionManagerConfig {
   healthCheckIntervalMs: number;
   /** Resolved runtime budget policy from operator config. */
   budgets: RuntimeBudgetPolicy;
+  /** Operator-configured agent risk defaults — forwarded to agent containers for contract resolution. */
+  agentRiskDefaults?: Record<string, unknown>;
   /**
    * Called after a session's container is successfully launched.
    * Used to subscribe the agent's inbound Redis stream so that heartbeats
@@ -304,6 +306,12 @@ export class AgentSessionManager {
           ...(agent.maxSlippageBps != null && { maxSlippageBps: agent.maxSlippageBps }),
           ...(agent.tickIntervalMs != null && { tickIntervalMs: agent.tickIntervalMs }),
           ...(agent.capital != null && { capital: agent.capital }),
+          // Risk contract fields — forwarded so the agent container can resolve the contract
+          maxOpenPositions: agent.maxOpenPositions ?? null,
+          maxPositionSizePct: agent.maxPositionSizePct ?? null,
+          stopLossPct: agent.stopLossPct ?? null,
+          stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+          agentRiskDefaults: this.config.agentRiskDefaults,
           runtimeDescriptor,
         };
         await this.runtimeLauncher.launch({

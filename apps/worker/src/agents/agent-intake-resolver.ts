@@ -2,7 +2,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
-import type { AgentRiskDefaultsConfig, MarkSource } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
 import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
@@ -62,6 +62,9 @@ export class AgentIntakeResolver {
 
     const executor = new PaperExecutor(this.deps.idGen);
 
+    // Load persisted runtime risk overrides
+    const overrides: AgentRiskOverrides = (agent.riskOverrides as AgentRiskOverrides) ?? {};
+
     return {
       actorType: 'agent',
       actorId: agentId,
@@ -77,7 +80,7 @@ export class AgentIntakeResolver {
         maxPositionSizePct: agent.maxPositionSizePct ?? null,
         stopLossPct: agent.stopLossPct ?? null,
         stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
-      }, this.deps.agentRiskDefaults),
+      }, this.deps.agentRiskDefaults, overrides),
       markSource: this.deps.markSource,
       persistence: this.buildPersistence(agentId, binding.venueAccountId, binding.venue),
       idGen: { planId: () => this.deps.idGen.planId() },
