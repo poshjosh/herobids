@@ -1468,4 +1468,53 @@ describe('AgentSessionManager', () => {
       expect(runtimeLauncher.stop).toHaveBeenCalledWith('sess-1');
     });
   });
+
+  describe('usage billing — always-on (no enabled flag)', () => {
+    it('opens a billing account and period when usageBillingRepo is provided, without requiring an enabled flag', async () => {
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+
+      const mockBillingAccount = { id: 'account-1', userId: 'user-1', status: 'active' };
+      const mockRateCard = { id: 'ratecard-1', name: 'default' };
+      const usageBillingRepo = {
+        getUserPlanId: vi.fn().mockResolvedValue(null),
+        getAccountByUserId: vi.fn().mockResolvedValue(null),
+        getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue(mockBillingAccount),
+        ensureActiveRateCard: vi.fn().mockResolvedValue(mockRateCard),
+        getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period-1' }),
+      };
+
+      (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'sess-billing', agentId: 'agent-1' },
+      ]);
+
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        { emitGuardrailTriggered: vi.fn(), emitInstanceStatus: vi.fn() } as any,
+        runtimeLauncher as any,
+        {
+          budgets: TEST_RUNTIME_BUDGETS,
+          usageBillingRepo: usageBillingRepo as any,
+          usageBillingConfig: { defaultRateCardName: 'default' } as any,
+        },
+        reconnectHandler as any,
+      );
+
+      await manager.reconcileStartingSessions();
+
+      expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith(
+        'user-1',
+        expect.any(String),
+        expect.any(Object),
+      );
+      expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
+        'account-1',
+        expect.any(Date),
+        expect.any(String),
+        'ratecard-1',
+        expect.any(Number),
+        null,
+        null,
+      );
+    });
+  });
 });

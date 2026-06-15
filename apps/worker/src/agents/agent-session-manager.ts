@@ -245,7 +245,7 @@ export class AgentSessionManager {
         const resolvedPlanId = userPlanId ?? this.config.plansConfig?.defaultPlanId ?? 'free';
         const planUsage = this.config.plansConfig?.plans[resolvedPlanId]?.usage;
 
-        if (this.config.usageBillingRepo && this.config.usageBillingConfig?.enabled) {
+        if (this.config.usageBillingRepo) {
           const includedCreditMicrousd = (planUsage?.includedCreditCents ?? 0) * 10_000;
           const softCapMicrousd = planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null;
           const hardCapMicrousd = planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null;
@@ -258,7 +258,7 @@ export class AgentSessionManager {
               hardCapMicrousd,
             },
           );
-          const activeRateCard = await this.config.usageBillingRepo.ensureActiveRateCard(this.config.usageBillingConfig.defaultRateCardName);
+          const activeRateCard = await this.config.usageBillingRepo.ensureActiveRateCard(this.config.usageBillingConfig?.defaultRateCardName ?? 'default');
           await this.config.usageBillingRepo.getOrCreateOpenPeriod(
             billingAccount.id,
             new Date(),
