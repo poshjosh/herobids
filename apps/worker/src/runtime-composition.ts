@@ -1331,6 +1331,14 @@ export function applyRuntimeMessage(
     return summary;
   }
 
+  if (type === 'instance.guardrail.triggered') {
+    const code = typeof payload['code'] === 'string' ? payload['code'] : 'unknown';
+    const message = typeof payload['message'] === 'string' ? payload['message'] : 'Guardrail triggered';
+    const summary = `Guardrail: ${code} — ${message}`;
+    pushRecentEvent(state, type, summary);
+    return summary;
+  }
+
   const summary = `Platform message: ${type}`;
   pushRecentEvent(state, type, summary);
   return summary;

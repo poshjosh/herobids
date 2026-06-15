@@ -746,6 +746,24 @@ describe('runtime composition helpers', () => {
     expect(userContext).toContain('Guidance: Skip market-data lookups for now or retry next tick after recovery.');
   });
 
+  it('applyRuntimeMessage surfaces specific risk code and message for guardrail.triggered', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    const summary = applyRuntimeMessage(state, {
+      type: 'instance.guardrail.triggered',
+      payload: {
+        scope: 'risk_gate',
+        code: 'risk.max_position_size_pct_exceeded',
+        message: 'Resulting position notional 6745 exceeds 100% of equity (1000)',
+        decisionId: 'dec-001',
+      },
+    });
+    expect(summary).toBe('Guardrail: risk.max_position_size_pct_exceeded — Resulting position notional 6745 exceeds 100% of equity (1000)');
+    expect(state.metrics.recentEvents.at(-1)).toMatchObject({
+      type: 'instance.guardrail.triggered',
+      summary,
+    });
+  });
+
   it('applyRuntimeMessage returns a Reminder summary for reminder wakes', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {
