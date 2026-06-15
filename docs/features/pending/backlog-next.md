@@ -12,7 +12,7 @@
 8. DONE [Provider Registry For Credentials And Connections](provider-registry-credentials-and-connections/REVISED.md) - establish the backend-owned provider contract that the UI can render from.
 9. DONE [Agent Risk Configuration UI](agent-risk-config-ui/001-plan.md) - expose user-visible risk controls once the surrounding contract surfaces are stable.
 10. DONE [Payment Provider Selection and Usage Dashboard](payment-provider-selection-and-usage-dashboard/001-plan.md) - separate billing-provider selection from dashboard visibility and runtime accounting.
-11. IN_REVIEW [Telegram Reply Threading](telegram-reply-threading/001-plan.md) - implement the reply-based Telegram routing foundation first.
+11. DONE [Telegram Reply Threading](telegram-reply-threading/001-plan.md) - implement the reply-based Telegram routing foundation first.
 12. IN_REVIEW [Telegram Slash Commands](telegram-slash-commands/001-plan.md) - build the explicit Telegram command routing on top of the shared webhook path.
 13. [024 - Backtesting Agent Tools](024-backtesting-agent-tools.md) - add historical strategy evaluation before more complex live trading polish.
 14. [003 - Birdeye Provider](003-birdeye-provider/001-plan.md) - add the Solana market-data provider once the core agent surface is settled.

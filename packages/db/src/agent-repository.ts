@@ -559,4 +559,29 @@ export class AgentRepository {
       .limit(1);
     return rows[0]?.email ?? null;
   }
+
+  /**
+   * Resolve the agent that owns a given Telegram reply.
+   * Looks up `agentOutboundMessages` by `telegramMessageId` and joins to `agents`
+   * to verify the message belongs to the requesting user (`userId`).
+   * Returns `{ agentId, agentName, status }` or `null` when no matching message is found.
+   */
+  async resolveAgentForTelegramReply(
+    telegramMessageId: string,
+    userId: string,
+  ): Promise<{ agentId: string; agentName: string; status: string } | null> {
+    const rows = await this.db.select({
+      agentId: agents.id,
+      agentName: agents.name,
+      status: agents.status,
+    })
+      .from(agentOutboundMessages)
+      .innerJoin(agents, eq(agentOutboundMessages.agentId, agents.id))
+      .where(and(
+        eq(agentOutboundMessages.telegramMessageId, telegramMessageId),
+        eq(agents.userId, userId),
+      ))
+      .limit(1);
+    return rows[0] ?? null;
+  }
 }

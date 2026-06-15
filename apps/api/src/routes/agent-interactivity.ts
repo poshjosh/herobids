@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agentOutboundMessages, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
+import { AgentRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
@@ -605,28 +605,12 @@ export async function telegramWebhookHandler(
     await redisClient.xadd(`agent:outbound:${agentId}`, '*', 'envelope', JSON.stringify(envelope));
   }
 
-  app.post<{ Body: unknown }>('/api/telegram/webhook', async (request, reply) => {
-    if (!botToken || !webhookSecret) {
-      return reply.status(501).send({ error: 'not_configured' });
-    }
+  const agentRepo = new AgentRepository(db);
 
-    // Validate the Telegram webhook secret token
-    const secretHeader = (request.headers['x-telegram-bot-api-secret-token'] as string | undefined) ?? '';
-    if (!secretHeader || secretHeader !== webhookSecret) {
-      return reply.status(401).send({ error: 'unauthorized' });
-    }
-
-    const parsed = TelegramWebhookUpdateSchema.safeParse(request.body);
-    if (!parsed.success || !parsed.data.message) {
-      return reply.status(200).send({ ok: true });
-    }
-
-    const message = parsed.data.message;
-    if (!message.text || message.text.trim().length === 0) {
-      return reply.status(200).send({ ok: true });
-    }
-
-    const chatId = message.chat.id;
+  async function processWebhookUpdate(
+    chatId: string,
+    message: NonNullable<z.infer<typeof TelegramWebhookUpdateSchema>['message']>,
+  ): Promise<void> {
     const userRows = await db.select({ userId: users.id })
       .from(users)
       .where(eq(users.telegramChatId, chatId))
@@ -634,43 +618,29 @@ export async function telegramWebhookHandler(
     const userId = userRows[0]?.userId;
 
     if (!userId) {
-      return reply.status(200).send({ ok: true });
+      return;
     }
 
-    if (!message.text || message.text.trim().length === 0) {
-      return reply.status(200).send({ ok: true });
-    }
-
-    const trimmedText = message.text.trim();
+    const trimmedText = message.text!.trim();
 
     if (message.reply_to_message) {
-      const agentRows = await db.select({
-        agentId: agents.id,
-        agentName: agents.name,
-        status: agents.status,
-      })
-        .from(agentOutboundMessages)
-        .innerJoin(agents, eq(agentOutboundMessages.agentId, agents.id))
-        .where(and(
-          eq(agentOutboundMessages.telegramMessageId, String(message.reply_to_message.message_id)),
-          eq(agents.userId, userId),
-        ))
-        .limit(1);
-
-      const agent = agentRows[0] ?? null;
+      const agent = await agentRepo.resolveAgentForTelegramReply(
+        String(message.reply_to_message.message_id),
+        userId,
+      );
       if (!agent) {
         await sendTelegramText(chatId, "I couldn't find which agent that reply belongs to. The message may be too old.");
-        return reply.status(200).send({ ok: true });
+        return;
       }
 
       if (!agentCanReceiveTelegram(agent.status)) {
         await sendTelegramText(chatId, `Agent ${agent.agentName} is stopped and cannot receive messages right now.`);
-        return reply.status(200).send({ ok: true });
+        return;
       }
 
       await deliverTelegramMessage(agent.agentId, userId, trimmedText);
       await sendTelegramText(chatId, `Delivered to ${agent.agentName}.`);
-      return reply.status(200).send({ ok: true });
+      return;
     }
 
     const userAgents = await db.select({
@@ -687,7 +657,7 @@ export async function telegramWebhookHandler(
     if (parsedCommand?.targets.length) {
       if (commandBody.length === 0) {
         await sendTelegramText(chatId, 'Please include a message after the target.');
-        return reply.status(200).send({ ok: true });
+        return;
       }
 
       const confirmations: string[] = [];
@@ -721,22 +691,50 @@ export async function telegramWebhookHandler(
       }
 
       await sendTelegramText(chatId, confirmations.join('\n'));
-      return reply.status(200).send({ ok: true });
+      return;
     }
 
     const runningAgents = userAgents.filter((row) => agentCanReceiveTelegram(row.status));
     if (runningAgents.length === 1) {
       await deliverTelegramMessage(runningAgents[0]!.agentId, userId, commandBody);
       await sendTelegramText(chatId, `Delivered to ${runningAgents[0]!.agentName}.`);
-      return reply.status(200).send({ ok: true });
+      return;
     }
 
     if (runningAgents.length === 0) {
       await sendTelegramText(chatId, 'No running agents found. Start an agent or reply to one of its Telegram messages.');
-      return reply.status(200).send({ ok: true });
+      return;
     }
 
     await sendTelegramText(chatId, 'Multiple running agents found. Use /to <agent name> <message> to choose a target.');
-    return reply.status(200).send({ ok: true });
+  }
+
+  app.post<{ Body: unknown }>('/api/telegram/webhook', async (request, reply) => {
+    if (!botToken || !webhookSecret) {
+      return reply.status(501).send({ error: 'not_configured' });
+    }
+
+    // Validate the Telegram webhook secret token
+    const secretHeader = (request.headers['x-telegram-bot-api-secret-token'] as string | undefined) ?? '';
+    if (!secretHeader || secretHeader !== webhookSecret) {
+      return reply.status(401).send({ error: 'unauthorized' });
+    }
+
+    const parsed = TelegramWebhookUpdateSchema.safeParse(request.body);
+    if (!parsed.success || !parsed.data.message) {
+      return reply.status(200).send({ ok: true });
+    }
+
+    const message = parsed.data.message;
+    if (!message.text || message.text.trim().length === 0) {
+      return reply.status(200).send({ ok: true });
+    }
+
+    // Acknowledge Telegram immediately — routing and delivery happen asynchronously
+    // to avoid slow-DB or slow-Telegram-API latency causing Telegram retries.
+    reply.status(200).send({ ok: true });
+    void processWebhookUpdate(message.chat.id, message).catch((err) => {
+      app.log.warn({ err }, 'Telegram webhook async processing failed');
+    });
   });
 }

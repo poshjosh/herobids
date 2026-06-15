@@ -8,6 +8,12 @@ import type { Redis } from 'ioredis';
 const TEST_USER_ID = 'user-1';
 const AGENT_ID = 'agent-1';
 
+/** Flush all pending promise micro-tasks — needed after webhook inject calls
+ *  because the handler now fires delivery work asynchronously. */
+function flushPromises() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
   app.decorateRequest('userId', '');
   app.decorateRequest('userPlanId', '');
@@ -855,6 +861,7 @@ describe('POST /api/telegram/webhook', () => {
         },
       },
     });
+    await flushPromises();
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledWith(
@@ -912,6 +919,7 @@ describe('POST /api/telegram/webhook', () => {
           },
         },
       });
+      await flushPromises();
 
       expect(res.statusCode).toBe(200);
       expect(redis.xadd).not.toHaveBeenCalled();
@@ -950,6 +958,7 @@ describe('POST /api/telegram/webhook', () => {
         },
       },
     });
+    await flushPromises();
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledTimes(1);
@@ -991,6 +1000,7 @@ describe('POST /api/telegram/webhook', () => {
         },
       },
     });
+    await flushPromises();
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledTimes(2);
@@ -1027,6 +1037,7 @@ describe('POST /api/telegram/webhook', () => {
         },
       },
     });
+    await flushPromises();
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).toHaveBeenCalledTimes(1);
@@ -1064,6 +1075,7 @@ describe('POST /api/telegram/webhook', () => {
         },
       },
     });
+    await flushPromises();
 
     expect(res.statusCode).toBe(200);
     expect(redis.xadd).not.toHaveBeenCalled();
