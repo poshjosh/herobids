@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import type { FieldDefinition } from '@herobids/domain';
@@ -86,6 +86,13 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability }: Pro
 
     return provider.connections?.autoCreatesTradingBinding === true;
   });
+  // Auto-select the first trading provider once the catalog loads
+  useEffect(() => {
+    if (isTradingSetup && providerChoice === '' && providerSuggestions.length > 0) {
+      setProviderChoice(providerSuggestions[0].id);
+    }
+  }, [isTradingSetup, providerChoice, providerSuggestions]);
+
   const selectedProvider = providerSuggestions.find((provider) => provider.id === providerChoice);
   const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
   const effectiveProvider = isCustomProvider ? customProviderId.trim() : providerChoice.trim();

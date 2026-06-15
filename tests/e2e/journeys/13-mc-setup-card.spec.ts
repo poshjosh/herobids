@@ -31,16 +31,16 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await ctaButton.click();
     await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Add trading connection$/ }).first()).toBeVisible({ timeout: 5_000 });
 
-    // Fill provider — typing 'hyperliquid' triggers the template auto-fill
-    await page.getByPlaceholder('e.g. hyperliquid, bybit, 1inch').fill('hyperliquid');
+    // Provider is auto-selected (Hyperliquid) from catalog once form opens
+    await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });
     await page.getByPlaceholder('e.g. My Hyperliquid account').fill('My HL Account J13');
 
-    // Template populates 3 secret rows (apiKey, secret, walletAddress)
-    await expect(page.locator('input[placeholder="Secret value"]')).toHaveCount(3, { timeout: 3_000 });
+    // Credential fields render for the selected provider (Hyperliquid: apiKey, secret, walletAddress)
+    await expect(page.getByPlaceholder('0x...')).toHaveCount(2, { timeout: 5_000 });
 
-    await page.locator('input[placeholder="Secret value"]').nth(0).fill('test-api-key-j13');
-    await page.locator('input[placeholder="Secret value"]').nth(1).fill('test-secret-j13');
-    await page.locator('input[placeholder="Secret value"]').nth(2).fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    await page.getByPlaceholder('0x...').first().fill('test-api-key-j13');
+    await page.locator('input[type="password"]').fill('test-secret-j13');
+    await page.getByPlaceholder('0x...').last().fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit the form
     await page.getByRole('dialog').getByRole('button', { name: 'Add trading connection' }).click();

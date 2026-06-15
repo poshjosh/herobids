@@ -36,7 +36,8 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
       throw new Error('bot-management skill not found in API response');
     }
 
-    // Select the trading-capable skill
+    // Select the trading-capable skill — must switch to Custom preset first
+    await page.locator('select:has(option[value="personal-assistant"])').selectOption('custom');
     await page.getByRole('checkbox', { name: botSkill.name }).check();
 
     // The trading section appears and shows the no-bindings state
@@ -50,16 +51,16 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     // ProviderSetupForm replaces the create agent modal content
     await expect(page.locator('div').filter({ hasText: /^Add trading connection$/ }).first()).toBeVisible({ timeout: 5_000 });
 
-    // Fill in the setup form
-    await page.getByPlaceholder('e.g. hyperliquid, bybit, 1inch').fill('hyperliquid');
+    // Fill in the setup form — provider is auto-selected (Hyperliquid) from catalog
+    await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });
     await page.getByPlaceholder('e.g. My Hyperliquid account').fill('My HL Account J14');
 
-    // Template populates 3 secret rows
-    await expect(page.locator('input[placeholder="Secret value"]')).toHaveCount(3, { timeout: 3_000 });
+    // Credential fields render for the selected provider (Hyperliquid: apiKey, secret, walletAddress)
+    await expect(page.getByPlaceholder('0x...')).toHaveCount(2, { timeout: 5_000 });
 
-    await page.locator('input[placeholder="Secret value"]').nth(0).fill('test-api-key-j14');
-    await page.locator('input[placeholder="Secret value"]').nth(1).fill('test-secret-j14');
-    await page.locator('input[placeholder="Secret value"]').nth(2).fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    await page.getByPlaceholder('0x...').first().fill('test-api-key-j14');
+    await page.locator('input[type="password"]').fill('test-secret-j14');
+    await page.getByPlaceholder('0x...').last().fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit
     await page.getByRole('button', { name: 'Add trading connection' }).click();

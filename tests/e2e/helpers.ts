@@ -85,6 +85,39 @@ export async function createAgent(
   const goalField = page.locator('textarea').first();
   await goalField.fill(goal);
 
+  // The preset combobox is the select that has a "personal-assistant" option value
+  // (unique to the skill preset select — other selects use different option values).
+  const presetSelect = page.locator('select:has(option[value="personal-assistant"])');
+
+  if ((options.skillIds ?? []).length > 0) {
+    // Switch to Custom so individual skill checkboxes are rendered
+    await presetSelect.selectOption('custom');
+  } else if (options.preset) {
+    const presetValueMap: Record<string, string> = {
+      trading: 'trading',
+      'personal-assistant': 'personal-assistant',
+      custom: 'custom',
+      general: 'custom', // 'general' → Custom with no skills
+    };
+    const presetValue = presetValueMap[options.preset];
+    if (presetValue) {
+      await presetSelect.selectOption(presetValue);
+
+      // When mapping to custom with no specific skillIds target, uncheck any
+      // skills that were pre-selected by the previous preset (e.g. trading).
+      if (presetValue === 'custom') {
+        const allCheckboxes = page.getByRole('checkbox');
+        const count = await allCheckboxes.count();
+        for (let i = 0; i < count; i++) {
+          const cb = allCheckboxes.nth(i);
+          if (await cb.isChecked()) {
+            await cb.uncheck();
+          }
+        }
+      }
+    }
+  }
+
   if ((options.skillIds ?? []).length > 0) {
     const token = await getAuthToken(page);
     const response = await page.request.get('/api/skills', {

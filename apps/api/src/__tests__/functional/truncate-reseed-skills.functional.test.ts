@@ -114,6 +114,8 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
       'list_watches',
       'remove_watch',
       'check_watches',
+      'get_risk_limits',
+      'adjust_risk_limits',
     ]);
     expect(new Set(tools)).toEqual(expectedTools);
 
@@ -151,6 +153,8 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
       'list_watches',
       'remove_watch',
       'check_watches',
+      'get_risk_limits',
+      'adjust_risk_limits',
     ]);
     expect(new Set(tools)).toEqual(expectedTools);
 

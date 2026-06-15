@@ -9,7 +9,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Venue validation shell wrappers (2026-06-15): `scripts/shell/tests/validate-jupiter.sh` and `validate-1inch.sh` source credentials from `.env.venue-validation` and run canonical dry-run or live validation with `--execute`.
+
 - Telegram slash commands (2026-06-15): Telegram users can now route `/to` commands to one or more named agents, broadcast to all routable agents, and fall back to automatic delivery when exactly one agent is available.
+
+### Fixed
+
+- 1inch quote response parsing (2026-06-15): The `/quote` endpoint returns `{ dstAmount }`, not `{ srcToken, dstToken, toAmount }`. Adapter now handles both shapes and makes token fields optional.
+
+- Jupiter API URL migration (2026-06-15): Migrated from defunct `quote-api.jup.ag/v6` to `api.jup.ag/swap/v1` across adapter, tests, and config.
 
 - Telegram reply threading (2026-06-15): agent Telegram messages now use reply anchors, new sessions send a first-boot Telegram anchor message, the public webhook routes replies back to the owning agent stream, and user-facing Telegram reply-threading documentation is now published.
 
