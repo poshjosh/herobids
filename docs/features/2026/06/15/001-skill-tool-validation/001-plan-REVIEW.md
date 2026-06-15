@@ -16,7 +16,7 @@ The current tree already contains the shared tool catalog, worker startup assert
 
 ## Suggested Change List
 
-1. Critical: modify [docs/features/pending/backlog-next.md](../backlog-next.md) to clarify whether statuses are branch-local or cumulative repo-state markers.
+1. Critical: modify [docs/features/2026/06/15/backlog.md](../backlog.md) to clarify whether statuses are branch-local or cumulative repo-state markers.
    Change: modify.
    Dependencies: none.
    Risks/Open questions: if backlog status is meant to drive PR review order, leaving this ambiguous will keep producing false-positive `DONE` entries.
@@ -37,4 +37,4 @@ The current tree already contains the shared tool catalog, worker startup assert
 
 ## Open Question
 
-Should `backlog-next.md` be reviewed as a branch-local completion checklist or as a whole-repo progress tracker? The answer changes whether this item is a documentation bug or a delivery gap.
+Should `backlog.md` be reviewed as a branch-local completion checklist or as a whole-repo progress tracker? The answer changes whether this item is a documentation bug or a delivery gap.
