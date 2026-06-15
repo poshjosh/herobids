@@ -478,3 +478,13 @@ Acceptance checks:
 - The API and worker both validate against the same shared catalog.
 - Focused tests exist for success and failure paths.
 - `pnpm lint` passes.
+
+## Implementation Provenance
+
+This feature was implemented in the `backlog-implementation` branch (commit `b440c9e`).
+
+Key files changed:
+- `packages/domain/src/tools.ts` — `KNOWN_AGENT_TOOL_NAMES`, `isKnownAgentToolName`, `findUnknownSkillTools`
+- `apps/worker/src/tools/index.ts` — registry/catalog parity assertion and built-in skill validation at startup
+- `apps/api/src/routes/skills.ts` — `buildUnknownToolValidationError` applied to create, update, and fork paths
+- `packages/db/src/agent-runtime-descriptor.ts` — `assertKnownRequiredTools` backstop before converting stored skill rows to runtime descriptors

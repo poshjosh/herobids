@@ -1,6 +1,8 @@
 # Pending Feature Backlog
 
-1. IN_PROGRESS [Skill Tool Validation](skill-tool-validation/001-plan.md) - establish the shared tool-name trust boundary before any skill sync or startup wiring depends on it.
+> **Status semantics** — statuses in this backlog are **cumulative repo-state markers**, not branch-local completion flags. `DONE` means the feature is present in the current repository tree (HEAD). `IN_REVIEW` means a code review has been requested and the implementation is under review. `IN_PROGRESS` means active work is underway. Items without a status label are not yet started.
+
+1. DONE [Skill Tool Validation](skill-tool-validation/001-plan.md) - establish the shared tool-name trust boundary before any skill sync or startup wiring depends on it.
 2. IN_REVIEW [System Skill Startup Sync](system-skill-startup-sync/001-plan.md) - keep the database copy of system skills aligned with code once the tool contract is trustworthy.
 3. IN_REVIEW [Bug: Mismatch Between Agent And Runtime State](bug-mismatch-between-agent-and-runtime-state/001-plan.md) - fix terminal-state semantics before layering more deployment and lifecycle behavior on top.
 4. IN_REVIEW [Graceful Agent Deployment - Zero/Low Downtime](graceful-agent-deployment/000-graceful-agent-deployment.md) - add clean handoff and shutdown behavior after lifecycle state is consistent.
