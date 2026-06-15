@@ -10,6 +10,8 @@ A skill describes *expertise* for an agent and the *tools* the agent can use wit
 
 `SYSTEM_SKILLS` in `packages/domain/src/skills.ts` is upserted into the database on every API startup, so changes to instructions, tools, guardrails, or related fields take effect on the next restart without a manual reseed.
 
+**Single sync owner:** `syncSystemSkills(db)` is called exactly once, in `apps/api/src/index.ts` before route registration. Do not call it from within route modules or middleware — doing so makes route registration a hidden write path and makes the sync order hard to reason about. Test and bootstrap code that does not go through `index.ts` must call `syncSystemSkills(db)` explicitly before mounting routes.
+
 ## Examples
 
 When defining a `generic-trading` skill:

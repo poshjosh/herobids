@@ -8,7 +8,6 @@ import type { PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
 import { findUnknownSkillTools } from '@herobids/domain';
 import { agentSkills, agents, skillEntitlements, skillLikes, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
 import { resolvePlanSkillEntitlements } from '../plan-guards.js';
-import { syncSystemSkills } from '../sync-system-skills.js';
 
 const PublicationStatusSchema = z.enum(['draft', 'private', 'published', 'delisted', 'archived']);
 
@@ -474,8 +473,6 @@ function hasContentChange(
 }
 
 export async function skillsRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig): Promise<void> {
-  await syncSystemSkills(db);
-
   const scoreRefreshTimer = setInterval(() => {
     void recomputeAllSkillScores(db).catch((error: unknown) => {
       app.log.error({ err: error }, '[skills] failed periodic score recomputation');

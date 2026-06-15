@@ -189,6 +189,9 @@ export async function buildApp() {
   });
   await aiRoutes(app, db, stubLlmConfig, redisClient);
 
+  // Sync system skills before route registration, mirroring the startup sequence
+  // in apps/api/src/index.ts. This is the single canonical sync point.
+  await syncSystemSkills(db);
   await skillsRoutes(app, db, testPlansConfig as any);
   await datasetRoutes(app, db, redisClient);
   await exportRoutes(app, db);

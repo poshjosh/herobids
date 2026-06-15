@@ -175,3 +175,29 @@ describe.skipIf(SKIP)('Truncate-and-reseed skill contract', () => {
     expect(second.map((s) => s.id).sort()).toEqual(first.map((s) => s.id).sort());
   });
 });
+
+describe.skipIf(SKIP)('Startup sync — system skills present before first request', () => {
+  /**
+   * Verifies that buildApp() (which mirrors the index.ts startup sequence)
+   * guarantees system skills exist in the DB immediately after bootstrap —
+   * without any truncateAll() reseed step. This proves that syncSystemSkills()
+   * runs as part of the startup path, not as a side-effect of route registration.
+   */
+  let ctx: Awaited<ReturnType<typeof buildApp>>;
+
+  beforeAll(async () => {
+    ctx = await buildApp();
+  }, 30_000);
+
+  afterAll(async () => {
+    await ctx.app.close();
+    await ctx.redisClient.quit();
+    await ctx.lifecycleQueue.close();
+  });
+
+  it('system skills exist immediately after buildApp() without a reseed', async () => {
+    const rows = await ctx.db.select().from(skills);
+    const systemSkillIds = rows.filter((s) => s.authorId === null).map((s) => s.id).sort();
+    expect(systemSkillIds).toEqual(SYSTEM_SKILLS.map((s) => s.id).sort());
+  });
+});
