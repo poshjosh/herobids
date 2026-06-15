@@ -751,17 +751,12 @@ export async function agentRoutes(
     }
 
     // Delete the agent — explicitly cascade-delete child rows before the parent.
-    // billing_usage_events.session_id has ON DELETE NO ACTION — null it out to preserve billing history.
-    const sessionIds = await db
-      .select({ id: agentRuntimeSessions.id })
-      .from(agentRuntimeSessions)
-      .where(eq(agentRuntimeSessions.agentId, id));
-    if (sessionIds.length > 0) {
-      await db
-        .update(billingUsageEvents)
-        .set({ sessionId: null })
-        .where(inArray(billingUsageEvents.sessionId, sessionIds.map((s) => s.id)));
-    }
+    // billing_usage_events.agent_id and .session_id both have ON DELETE NO ACTION —
+    // null them both out to preserve billing history while removing FK constraints.
+    await db
+      .update(billingUsageEvents)
+      .set({ sessionId: null, agentId: null })
+      .where(eq(billingUsageEvents.agentId, id));
     await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
     await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
     await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
