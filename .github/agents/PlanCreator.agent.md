@@ -30,3 +30,9 @@ Follow these steps:
 6. **Save the plan** — Write the plan to `docs/features/` using the repo's dated folder structure.
 
 Do NOT implement anything. Only plan.
+
+## Handoff Rules
+
+After creating/updating the plan:
+- If the plan is complete and has no critical unresolved blockers, trigger **"Implement Plan"** so the Implementer can begin execution.
+- If the plan has unresolved blockers that require user decisions or external input, stop and present the blockers to the user without handing off.

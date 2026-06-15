@@ -43,3 +43,7 @@ Severity rubric:
 If an existing bug report template exists in the `docs/bug-reports` folder, follow that format instead.
 
 After fixing and documenting the bug, set its status in the bug report to FIXED.
+
+## Handoff Rules
+
+After fixing the bug, trigger the **"Add Tests"** handoff so the Tester can add regression tests — UNLESS the fix is purely configuration, documentation, or otherwise has no testable code path (e.g., env var typo, YAML indentation). In that case, stop and summarise the fix without handing off.

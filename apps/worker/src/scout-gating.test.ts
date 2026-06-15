@@ -22,4 +22,25 @@ describe('resolvePreScoutDecision', () => {
       source: 'scout',
     });
   });
+
+  it('forces escalation when there are open positions', () => {
+    expect(resolvePreScoutDecision({ tickCount: 2, reminderScheduledBy: null, hasOpenPositions: true })).toEqual({
+      decision: { disposition: 'escalate', reason: 'open_positions_require_active_management' },
+      source: 'forced_open_positions',
+    });
+  });
+
+  it('runs the scout when there are no open positions', () => {
+    expect(resolvePreScoutDecision({ tickCount: 2, reminderScheduledBy: null, hasOpenPositions: false })).toEqual({
+      decision: null,
+      source: 'scout',
+    });
+  });
+
+  it('judge reminder takes priority over open positions', () => {
+    expect(resolvePreScoutDecision({ tickCount: 2, reminderScheduledBy: 'judge', hasOpenPositions: true })).toEqual({
+      decision: { disposition: 'escalate', reason: 'judge_scheduled_reminder' },
+      source: 'forced_judge_reminder',
+    });
+  });
 });

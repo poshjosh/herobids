@@ -34,3 +34,10 @@ Suggest specific changes to enhance the code. Outline the sequence of suggested 
 Each item on the list should have a priority level (critial, high, medium, low). Each item on the list should also be actionable and specific. If there are any uncertainties or assumptions in your suggestions, clearly state them.
 
 Note what should be unit tested vs integration tested vs visually verified.
+
+## Handoff Rules
+
+After completing the review:
+- If you identified **critical or high-priority issues** that need fixing, trigger **"Rework"** so the Implementer can address them.
+- If the review passed (no issues, or only low-severity suggestions) AND the change touches frontend/UI code, trigger **"Visual Test"** for browser verification.
+- If the review passed and there is no frontend component, stop and report the review summary without handing off.

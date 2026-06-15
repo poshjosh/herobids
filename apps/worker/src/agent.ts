@@ -1740,7 +1740,7 @@ async function runTick(): Promise<void> {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
-    const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy });
+    const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy, hasOpenPositions });
     let resolvedScoutDecision: ScoutDecision;
     let isSoftLimited = false;
     if (preScoutResolution.decision) {

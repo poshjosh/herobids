@@ -18,3 +18,9 @@ If a question can be answered by searching the web or elsewhere, search the web 
 For each question, provide your recommended answer.
 
 For those questions which have no answer yet, note them down in your response as open questions that need to be resolved before implementation can begin.
+
+## Handoff Rules
+
+After completing contemplation:
+- If all critical questions are resolved and a clear direction is established, trigger **"Create Plan"** so the PlanCreator can produce an actionable implementation plan.
+- If there are unresolved open questions that require user input (not answerable via code or web search), stop and present the open questions to the user without handing off.

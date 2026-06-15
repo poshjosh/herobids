@@ -42,3 +42,13 @@ Follow these principles:
 9. **Signal completion** — When done, summarize what was implemented and note any deviations from the plan with reasoning.
 
 If the plan is ambiguous or incomplete, use codebase exploration to resolve ambiguity. If blocked by a design ambiguity that requires deeper analysis, hand off to the Contemplator. If blocked by a factual question only the user can answer, state what is unclear and stop.
+
+## Handoff Rules
+
+After successful implementation:
+- Trigger **"Unit Tests"** so the UnitTester can add test coverage for the new/modified code.
+- Do NOT trigger "Review Code" directly — review happens after tests are written (UnitTester → CodeReviewer chain).
+
+If the change is purely non-functional (docs, config, migrations with no logic) and has nothing to unit-test, trigger **"Review Code"** instead.
+
+If blocked by a design question you cannot resolve via codebase exploration, trigger **"Contemplate"** and stop implementing.

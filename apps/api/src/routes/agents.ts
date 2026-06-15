@@ -10,6 +10,7 @@ import {
   agentOutboundMessages,
   agentRuntimeSessions,
   agentSkills,
+  billingUsageEvents,
   bots,
   capabilityGrants,
   decisions,
@@ -750,6 +751,17 @@ export async function agentRoutes(
     }
 
     // Delete the agent — explicitly cascade-delete child rows before the parent.
+    // billing_usage_events.session_id has ON DELETE NO ACTION — null it out to preserve billing history.
+    const sessionIds = await db
+      .select({ id: agentRuntimeSessions.id })
+      .from(agentRuntimeSessions)
+      .where(eq(agentRuntimeSessions.agentId, id));
+    if (sessionIds.length > 0) {
+      await db
+        .update(billingUsageEvents)
+        .set({ sessionId: null })
+        .where(inArray(billingUsageEvents.sessionId, sessionIds.map((s) => s.id)));
+    }
     await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
     await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
     await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
