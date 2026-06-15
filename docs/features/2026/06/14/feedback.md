@@ -1,6 +1,6 @@
 # FEEDBACK
 
-**Recommended Tests**
+**Tests to Add**
 
 - Add a sibling orderbook live-recovery smoke, not just more assertions in the current harness. The best target is a new script beside agent-trade-test.sh that forces the two crash windows Phase 3 cares about: after local submit persistence but before venue ack, and after venue ack but before local ack persistence. That directly exercises the remaining done-signal in 008-phase-3-live-execution-safety.md.
 - Add a live minimal-limit lifecycle smoke. Either extend the TS harness with an order-type switch or add a dedicated script, but it should cover submit, open/resting state, timeout, cancel, partial/full fill, and post-timeout escalation. That is the exact contract called out in 008-phase-3-live-execution-safety.md and is not exercised by the current open-then-go-flat happy path in agent-trade-test.ts.
@@ -12,7 +12,7 @@
 
 For the current harness specifically, I would keep agent-trade-test.sh as the happy-path orderbook smoke and avoid turning it into one giant Swiss-army script. A small update to parameterize order type and maybe a matrix wrapper is reasonable, but swap recovery and crash-window tests deserve sibling scripts because they are different products of failure.
 
-**Gaps**
+**Gaps And Deferred Work**
 
 - Phase 3 is still the real open production-readiness area. The backlog explicitly says full recovery state-machine coverage and bounded swap-live parity remain in progress in 002-backlog.md, with #22 and #23 still marked in progress in 002-backlog.md and 002-backlog.md.
 - The explicit unfinished slices are swap pending-confirmation recovery and swap crash-policy/execution-quality parity. Those are still marked in progress in 009-phase-3-live-execution-safety-tasks.md and 009-phase-3-live-execution-safety-tasks.md.
