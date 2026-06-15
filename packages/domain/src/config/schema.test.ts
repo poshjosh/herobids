@@ -219,7 +219,17 @@ describe('AgentRuntimePolicySchema', () => {
     if (result.success) {
       expect(result.data.llm.retry.maxRetries).toBe(4);
       expect(result.data.llm.scout.defaultModels.anthropic).toBe('claude-3-5-haiku-latest');
+      expect(result.data.llm.scout.maxTurns).toBe(10);
+      expect(result.data.llm.scout.maxTokens).toBe(1_024);
+      expect(result.data.llm.scout.temperature).toBe(0);
+      expect(result.data.llm.judge.maxTurns).toBe(25);
+      expect(result.data.llm.judge.temperature).toBe(0.3);
       expect(result.data.llm.thinking.deepBudgetTokens).toBe(10_240);
+      expect(result.data.wake.minIntervalMs).toBe(15_000);
+      expect(result.data.wake.pollMs).toBe(1_000);
+      expect(result.data.marketIntelligence.maxTrackedPerps).toBe(3);
+      expect(result.data.marketIntelligence.maxTrackedDexTargets).toBe(3);
+      expect(result.data.marketIntelligence.maxRefreshedDexTargetsPerTick).toBe(2);
       expect(result.data.sandboxDefaults.memoryMb).toBe(512);
     }
   });
@@ -262,6 +272,54 @@ describe('AgentRuntimePolicySchema', () => {
     if (result.success) {
       expect(result.data.llm.scout.maxHoldDurationMs).toBe(120_000);
     }
+  });
+
+  it('accepts explicit runtime loop-control overrides', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {
+        scout: { maxTurns: 7, maxTokens: 768, temperature: 0.1 },
+        judge: { maxTurns: 12, temperature: 0.6 },
+      },
+      wake: { minIntervalMs: 20_000, pollMs: 1_500 },
+      marketIntelligence: {
+        maxTrackedPerps: 4,
+        maxTrackedDexTargets: 5,
+        maxRefreshedDexTargetsPerTick: 3,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.llm.scout.maxTurns).toBe(7);
+      expect(result.data.llm.scout.maxTokens).toBe(768);
+      expect(result.data.llm.scout.temperature).toBe(0.1);
+      expect(result.data.llm.judge.maxTurns).toBe(12);
+      expect(result.data.llm.judge.temperature).toBe(0.6);
+      expect(result.data.wake.minIntervalMs).toBe(20_000);
+      expect(result.data.wake.pollMs).toBe(1_500);
+      expect(result.data.marketIntelligence.maxTrackedPerps).toBe(4);
+      expect(result.data.marketIntelligence.maxTrackedDexTargets).toBe(5);
+      expect(result.data.marketIntelligence.maxRefreshedDexTargetsPerTick).toBe(3);
+    }
+  });
+
+  it('rejects invalid runtime loop-control overrides', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {
+        scout: { maxTurns: 0, maxTokens: 0, temperature: 3 },
+        judge: { maxTurns: 0, temperature: -0.1 },
+      },
+      wake: { minIntervalMs: 500, pollMs: 0 },
+      marketIntelligence: {
+        maxTrackedPerps: 0,
+        maxTrackedDexTargets: 0,
+        maxRefreshedDexTargetsPerTick: 0,
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('rejects missing defaultBudgets', () => {

@@ -53,6 +53,21 @@ execution:
 risk:
   globalMaxDrawdownPct: 20
 agentRuntime:
+  llm:
+    scout:
+      maxTurns: ${SENTINEL}
+      maxTokens: 1370
+      temperature: 0.37
+    judge:
+      maxTurns: 41
+      temperature: 0.61
+  wake:
+    minIntervalMs: 37000
+    pollMs: 1370
+  marketIntelligence:
+    maxTrackedPerps: ${SENTINEL}
+    maxTrackedDexTargets: 41
+    maxRefreshedDexTargetsPerTick: 13
   defaultBudgets:
     maxHistoryMessages: ${SENTINEL}
     maxRecentToolMessages: ${SENTINEL}
@@ -164,13 +179,23 @@ describe('Config propagation: budget values reach consumers', () => {
       ...appConfig.agentRuntime,
       llm: {
         retry: appConfig.llm.retry,
-        scout: appConfig.llm.scout,
+        scout: {
+          ...appConfig.llm.scout,
+          ...appConfig.agentRuntime.llm.scout,
+        },
+        judge: appConfig.agentRuntime.llm.judge,
         thinking: appConfig.llm.thinking,
       },
     });
 
     const parsed = JSON.parse(agentRuntimeConfigJson) as {
       defaultBudgets: Record<string, unknown>;
+      llm: {
+        scout: Record<string, unknown>;
+        judge: Record<string, unknown>;
+      };
+      wake: Record<string, unknown>;
+      marketIntelligence: Record<string, unknown>;
     };
 
     expect(parsed.defaultBudgets['maxHistoryMessages']).toBe(SENTINEL);
@@ -178,6 +203,16 @@ describe('Config propagation: budget values reach consumers', () => {
     expect(parsed.defaultBudgets['maxToolResultChars']).toBe(SENTINEL);
     expect(parsed.defaultBudgets['maxVisibleToolSchemas']).toBe(SENTINEL);
     expect(parsed.defaultBudgets['maxContextBlockChars']).toBe(SENTINEL);
+    expect(parsed.llm.scout['maxTurns']).toBe(SENTINEL);
+    expect(parsed.llm.scout['maxTokens']).toBe(1370);
+    expect(parsed.llm.scout['temperature']).toBe(0.37);
+    expect(parsed.llm.judge['maxTurns']).toBe(41);
+    expect(parsed.llm.judge['temperature']).toBe(0.61);
+    expect(parsed.wake['minIntervalMs']).toBe(37000);
+    expect(parsed.wake['pollMs']).toBe(1370);
+    expect(parsed.marketIntelligence['maxTrackedPerps']).toBe(SENTINEL);
+    expect(parsed.marketIntelligence['maxTrackedDexTargets']).toBe(41);
+    expect(parsed.marketIntelligence['maxRefreshedDexTargetsPerTick']).toBe(13);
   });
 
   // ── 3. AgentSessionManager passes the budgets into the runtimeDescriptor ─

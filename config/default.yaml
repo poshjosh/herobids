@@ -247,6 +247,21 @@ agentRuntime:
                                # 5 for trading agents to avoid hammering a broken venue/platform
   thinking:
     drawdownThresholdPct: -2   # drawdown % that triggers deep thinking mode
+  llm:
+    scout:
+      maxTurns: 10             # cap read-only scout tool rounds; raise for deeper discovery, lower to bound latency and spend
+      maxTokens: 1024          # scout response budget per turn; increase only if scout JSON/tool planning is getting truncated
+      temperature: 0           # keep scout deterministic so repeated scouting converges on the same escalation decision
+    judge:
+      maxTurns: 25             # cap full judge/tool rounds; higher values improve persistence but can amplify bad tool loops and cost
+      temperature: 0.3         # modest exploration for judge synthesis; lower values make actions more repeatable during incidents
+  wake:
+    minIntervalMs: 15000       # minimum cooldown between wake-driven ticks; lower reacts faster, higher suppresses bursty market churn
+    pollMs: 1000               # Redis wake-stream block timeout; lower improves wake pickup latency, higher reduces idle polling churn
+  marketIntelligence:
+    maxTrackedPerps: 3         # number of perp symbols to enrich per tick; raise for broader awareness, lower to protect market-data budgets
+    maxTrackedDexTargets: 3    # number of DEX watch targets to consider per tick before refresh fanout is applied
+    maxRefreshedDexTargetsPerTick: 2  # number of tracked DEX targets to refresh each tick; keep below breadth cap to avoid hot-looping token lookups
   contextDiff:
     fullContextEveryTicks: 10  # force full context every N ticks (not a diff)
     maxDiffTokens: 200         # fall back to full context if diff exceeds this token budget

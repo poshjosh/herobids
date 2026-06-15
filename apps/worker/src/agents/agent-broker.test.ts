@@ -995,7 +995,9 @@ describe('AgentMessageBroker', () => {
         tradingBindingId: 'binding-2',
         venueAccountId: 'va-002',
       }));
-      expect(botStart).toHaveBeenCalledWith('bot-targeted', 'user-1', 'va-002', expect.any(Object));
+      expect(botStart).toHaveBeenCalledWith('bot-targeted', 'user-1', 'binding-2', expect.objectContaining({
+        venueAccountId: 'va-002',
+      }));
     });
 
     it('rejects create_and_start when the requested venue account maps to multiple bindings', async () => {
@@ -1158,9 +1160,10 @@ describe('AgentMessageBroker', () => {
       expect(botStart).toHaveBeenCalledWith(
         'bot-cap',
         'user-1',
-        'va-001',
+        'binding-1',
         expect.objectContaining({
           risk: expect.objectContaining({ maxOrderNotional: '1000' }),
+          venueAccountId: 'va-001',
         }),
       );
     });
@@ -1205,6 +1208,7 @@ describe('AgentMessageBroker', () => {
         getBotById: vi.fn().mockResolvedValue({
           id: 'bot-start',
           userId: 'user-1',
+          tradingBindingId: 'binding-1',
           venueAccountId: 'va-001',
           status: 'stopped',
           startedAt: null,
@@ -1259,6 +1263,7 @@ describe('AgentMessageBroker', () => {
         getBotById: vi.fn().mockResolvedValue({
           id: 'bot-start',
           userId: 'user-1',
+          tradingBindingId: 'binding-1',
           venueAccountId: 'va-001',
           status: 'stopped',
           startedAt: null,
@@ -1293,8 +1298,9 @@ describe('AgentMessageBroker', () => {
       expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-start', {
         risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
       });
-      expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'va-001', {
+      expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'binding-1', {
         risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
+        venueAccountId: 'va-001',
       });
     });
 
@@ -1341,6 +1347,7 @@ describe('AgentMessageBroker', () => {
         getBotById: vi.fn().mockResolvedValue({
           id: 'bot-run',
           userId: 'user-1',
+          tradingBindingId: 'binding-1',
           venueAccountId: 'va-001',
           status: 'running',
           config: {
@@ -1382,10 +1389,11 @@ describe('AgentMessageBroker', () => {
         risk: { maxDrawdownPct: 10 },
         executionMode: 'shadow',
       });
-      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', {
+      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', {
         strategy: { type: 'momentum', threshold: 5 },
         risk: { maxDrawdownPct: 10 },
         executionMode: 'shadow',
+        venueAccountId: 'va-001',
       });
     });
 
@@ -1446,6 +1454,7 @@ describe('AgentMessageBroker', () => {
       expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', {
         strategy: { type: 'momentum', threshold: 2 },
         risk: { maxDrawdownPct: 10, maxOrderNotional: '750' },
+        venueAccountId: 'va-001',
       });
     });
 

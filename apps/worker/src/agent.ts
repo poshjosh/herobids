@@ -552,7 +552,7 @@ const CONSUMER_GROUP = 'agent-runtime';
 const CONSUMER_NAME = `agent-${AGENT_ID}-${process.pid}`;
 const WAKE_CONSUMER_GROUP = 'agent-market-wake';
 const WAKE_CONSUMER_NAME = `agent-market-wake-${AGENT_ID}-${process.pid}`;
-const WAKE_SIGNAL_POLL_MS = 1000;
+const WAKE_SIGNAL_POLL_MS = agentRuntimePolicy.wake.pollMs;
 
 // ---------------------------------------------------------------------------
 // Database (optional — enables direct bot tool access)
@@ -565,9 +565,9 @@ if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
     permanentlyExcludedTools.add(tool);
-  }
-  applyToolVisibility();
-}
+  const scoutLoopConfig = agentRuntimePolicy.llm.scout;
+  const judgeLoopConfig = agentRuntimePolicy.llm.judge;
+  const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
 
 const USAGE_BILLING_ENABLED = process.env['USAGE_BILLING_ENABLED'] === 'true';
 const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
@@ -689,7 +689,14 @@ async function refreshVenueIntelligence(): Promise<void> {
 
   const tradingProviders = extractTradingProviders();
   const trackedPerpsSymbols = collectPerpsTrackedSymbols(sessionMetrics).slice(0, 3);
-  const trackedDexTargets = collectDexTrackedTargets(sessionMetrics, agentConfig.dexWatchlistSymbols).slice(0, 3);
+  const trackedPerpsSymbols = collectPerpsTrackedSymbols(sessionMetrics).slice(0, marketIntelligencePolicy.maxTrackedPerps);
+  const trackedDexTargets = collectDexTrackedTargets(
+    sessionMetrics,
+    agentConfig.dexWatchlistSymbols,
+  ).slice(0, marketIntelligencePolicy.maxTrackedDexTargets);
+    for (const target of trackedDexTargets.slice(0, marketIntelligencePolicy.maxRefreshedDexTargetsPerTick)) {
+  const WAKE_MIN_INTERVAL_MS = agentRuntimePolicy.wake.minIntervalMs;
+    maxTurns: scoutLoopConfig.maxTurns,
   const signals: Array<Parameters<typeof recordVenueSignals>[1][number]> = [];
 
   if (trackedPerpsSymbols.length > 0 && (tradingProviders.has('hyperliquid') || tradingProviders.has('bybit'))) {
@@ -1672,15 +1679,16 @@ async function runTick(): Promise<void> {
         providerConfig: {
           provider: resolvedProvider,
           model: resolvedLightModel,
-          maxTokens: 1024,
+          maxTokens: scoutLoopConfig.maxTokens,
           timeoutMs: LLM_TIMEOUT_MS,
           baseUrl: LLM_BASE_URL,
         },
         requestBase: {
-          maxTokens: 1024,
-          temperature: 0,
+          maxTokens: scoutLoopConfig.maxTokens,
+          temperature: scoutLoopConfig.temperature,
           thinking: 'none',
         },
+          maxTurns: scoutLoopConfig.maxTurns,
         initialMessages: [
           { role: 'system', content: scoutSystemPrompt },
           { role: 'user', content: userContext },
@@ -1859,7 +1867,7 @@ async function runTick(): Promise<void> {
       tickId,
       phase: 'judge',
       model: costProfile.heavyModel,
-      maxTurns: JUDGE_MAX_TURNS,
+      maxTurns: judgeLoopConfig.maxTurns,
     });
 
     const judgeLoopResult = await runStructuredToolLoop({
@@ -1873,9 +1881,10 @@ async function runTick(): Promise<void> {
       },
       requestBase: {
         maxTokens: LLM_MAX_TOKENS,
-        temperature: 0.3,
+        temperature: judgeLoopConfig.temperature,
         thinking: judgeThinking.thinking,
       },
+        maxTurns: judgeLoopConfig.maxTurns,
       initialMessages: messages,
       tools: judgeToolDefinitions,
       maxTurns: JUDGE_MAX_TURNS,

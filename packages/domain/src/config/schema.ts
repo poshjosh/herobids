@@ -121,6 +121,15 @@ export const LlmScoutConfigSchema = z.object({
   /** Max ms the scout can hold without escalating before a forced escalation. Unset = no limit. */
   maxHoldDurationMs: z.number().int().min(0).optional(),
 });
+const AgentRuntimeLlmScoutControlsSchema = z.object({
+  maxTurns: z.number().int().min(1).default(10),
+  maxTokens: z.number().int().min(1).default(1_024),
+  temperature: z.number().min(0).max(2).default(0),
+});
+const LlmJudgeConfigSchema = z.object({
+  maxTurns: z.number().int().min(1).default(25),
+  temperature: z.number().min(0).max(2).default(0.3),
+});
 
 export const LlmThinkingConfigSchema = z.object({
   lightBudgetTokens: z.number().int().min(0).default(2_048),
@@ -613,6 +622,19 @@ export const AgentRuntimeConfigSchema = z.object({
   thinking: z.object({
     drawdownThresholdPct: z.number().min(-100).max(0).default(-2),
   }).default({}),
+  llm: z.object({
+    scout: AgentRuntimeLlmScoutControlsSchema.default({}),
+    judge: LlmJudgeConfigSchema.default({}),
+  }).default({}),
+  wake: z.object({
+    minIntervalMs: z.number().int().min(1_000).default(15_000),
+    pollMs: z.number().int().min(100).default(1_000),
+  }).default({}),
+  marketIntelligence: z.object({
+    maxTrackedPerps: z.number().int().min(1).default(3),
+    maxTrackedDexTargets: z.number().int().min(1).default(3),
+    maxRefreshedDexTargetsPerTick: z.number().int().min(1).default(2),
+  }).default({}),
   contextDiff: z.object({
     fullContextEveryTicks: z.number().int().min(1).default(10),
     maxDiffTokens: z.number().int().min(1).default(200),
@@ -649,7 +671,8 @@ export const AgentRuntimePolicySchema = AgentRuntimeConfigSchema.extend({
   llm: z.object({
     catalog: LlmCatalogConfigSchema.default({}),
     retry: LlmRetryConfigSchema.default({}),
-    scout: LlmScoutConfigSchema.default({}),
+    scout: LlmScoutConfigSchema.merge(AgentRuntimeLlmScoutControlsSchema).default({}),
+    judge: LlmJudgeConfigSchema.default({}),
     thinking: LlmThinkingConfigSchema.default({}),
   }).default({}),
 });

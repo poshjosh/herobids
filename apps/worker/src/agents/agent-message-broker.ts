@@ -39,15 +39,15 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 /**
  * Callback the broker uses to enqueue a bot start job on the runtime queue.
  * Decouples the broker from BullMQ — the caller wires this to queue.add().
- * venueAccountId is explicit so the type system enforces it is always present.
+ * tradingBindingId is explicit so the type system enforces the binding-first routing contract.
  */
-export type BotStartCallback = (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => Promise<void>;
+export type BotStartCallback = (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => Promise<void>;
 
 /** Callback used to enqueue a bot stop job on the runtime queue. */
 export type BotStopCallback = (botId: string, userId: string) => Promise<void>;
 
 /** Callback used to enqueue a bot restart job on the runtime queue. */
-export type BotRestartCallback = (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => Promise<void>;
+export type BotRestartCallback = (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => Promise<void>;
 
 /**
  * Optional callback for enforcing a subscription-level bot cap before create.
@@ -597,7 +597,10 @@ export class AgentMessageBroker {
       if (this.botStart) {
         // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
         await this.botRepo.markBotRunning(botId);
-        await this.botStart(botId, agent.userId, binding.sourceVenueAccountId, effectiveConfig);
+        await this.botStart(botId, agent.userId, binding.bindingId, {
+          ...effectiveConfig,
+          venueAccountId: binding.sourceVenueAccountId,
+        });
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }
 
@@ -640,7 +643,10 @@ export class AgentMessageBroker {
       if (this.botStart) {
         await this.botRepo.markBotRunning(payload.botId);
         try {
-          await this.botStart(payload.botId, agent.userId, bot.venueAccountId, effectiveConfig);
+          await this.botStart(payload.botId, agent.userId, bot.tradingBindingId ?? bot.venueAccountId, {
+            ...effectiveConfig,
+            venueAccountId: bot.venueAccountId,
+          });
         } catch (err) {
           logger.error({ botId: payload.botId, err }, 'Failed to enqueue start job during start action');
           try {
@@ -715,7 +721,10 @@ export class AgentMessageBroker {
 
       if (bot.status === 'running' && this.botRestart) {
         try {
-          await this.botRestart(payload.botId, agent.userId, bot.venueAccountId, mergedConfig);
+          await this.botRestart(payload.botId, agent.userId, bot.tradingBindingId ?? bot.venueAccountId, {
+            ...mergedConfig,
+            venueAccountId: bot.venueAccountId,
+          });
         } catch (err) {
           logger.error(
             { botId: payload.botId, err },

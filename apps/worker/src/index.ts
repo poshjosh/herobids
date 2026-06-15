@@ -26,6 +26,7 @@ import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { resolveSwapAssetsFromBinding } from './resolve-swap-assets.js';
+import { resolveBotStartupContext } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
 import { TelegramClient, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
@@ -224,7 +225,11 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
           ...appConfig.agentRuntime,
           llm: {
             retry: appConfig.llm.retry,
-            scout: appConfig.llm.scout,
+            scout: {
+              ...appConfig.llm.scout,
+              ...appConfig.agentRuntime.llm.scout,
+            },
+            judge: appConfig.agentRuntime.llm.judge,
             thinking: appConfig.llm.thinking,
           },
         }),
@@ -543,11 +548,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
 
 const botRepo = new BotRepository(db);
-const botStartCallback = async (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => {
+const botStartCallback = async (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('start-instance', {
     command: 'start',
     botId,
-    config: { ...config, venueAccountId, userId },
+    config: { ...config, tradingBindingId, userId },
   });
 };
 const botStopCallback = async (botId: string) => {
@@ -556,11 +561,11 @@ const botStopCallback = async (botId: string) => {
     botId,
   });
 };
-const botRestartCallback = async (botId: string, userId: string, venueAccountId: string, config: Record<string, unknown>) => {
+const botRestartCallback = async (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('restart-instance', {
     command: 'restart',
     botId,
-    config: { ...config, venueAccountId, userId },
+    config: { ...config, tradingBindingId, userId },
   });
 };
 
@@ -711,13 +716,22 @@ const runtime = new WorkerRuntime(
     }
     const config = parseResult.data;
 
+    const startupContext = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId,
+      rawConfig,
+      venue: config.venue,
+      venueType: config.venueType,
+    });
+
     const strategy = createStrategy(config.strategy);
 
-    const venueAccountId = (rawConfig['venueAccountId'] as string) ?? rawConfig['venue_account_id'] as string;
+    const venueAccountId = startupContext.sourceVenueAccountId;
     if (!venueAccountId) {
-      throw new Error(`Bot ${botId} has no venueAccountId in job config — refusing to start`);
+      throw new Error(`Bot ${botId} has no resolved source venue account — refusing to start`);
     }
-    const instanceUserId = rawConfig['userId'] as string | undefined;
+    const instanceUserId = startupContext.userId ?? (rawConfig['userId'] as string | undefined);
     let testnet = false;
     let resolvedCredentialId: string | undefined;
     let credentialsPresent = false;
@@ -797,6 +811,7 @@ const runtime = new WorkerRuntime(
         userId: instanceUserId,
         metadata: {
           botId,
+            tradingBindingId: startupContext.tradingBindingId,
           venueAccountId,
           captureTrades: appConfig.marketDataRecording.captureTrades,
           captureTopOfBook: appConfig.marketDataRecording.captureTopOfBook,
@@ -963,7 +978,7 @@ const runtime = new WorkerRuntime(
     const running = await db.select().from(bots).where(eq(bots.status, 'running'));
     return running.map((row) => ({
       id: row.id,
-      config: { ...row.config, venueAccountId: row.venueAccountId, userId: row.userId },
+      config: { ...row.config, tradingBindingId: row.tradingBindingId, venueAccountId: row.venueAccountId, userId: row.userId },
     }));
   },
   lease,
