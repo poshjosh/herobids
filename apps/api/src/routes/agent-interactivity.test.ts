@@ -347,7 +347,7 @@ describe('PUT /agents/:id', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionMode: null }));
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ executionMode: 'paper' }));
   });
 
   it('returns 409 when agent is running', async () => {

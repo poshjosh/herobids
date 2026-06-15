@@ -30,6 +30,7 @@ export interface PlatformAlertContext {
   sessionId?: string;
   message: string;
   detail?: string;
+  crashType?: string;
 }
 
 /**

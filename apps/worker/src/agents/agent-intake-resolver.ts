@@ -134,17 +134,19 @@ export class AgentIntakeResolver {
   }
 
   /** Resolve the active trading binding for an agent (public for AgentTradingActor setup). */
-  async resolveBinding(agentId: string): Promise<{ venue: string; venueAccountId: string } | undefined> {
+  async resolveBinding(agentId: string): Promise<{ id: string; venue: string; venueAccountId: string; bindingProfile?: Record<string, unknown> | null } | undefined> {
     return this.resolveActiveBinding(agentId);
   }
 
-  private async resolveActiveBinding(agentId: string): Promise<{ venue: string; venueAccountId: string } | undefined> {
+  private async resolveActiveBinding(agentId: string): Promise<{ id: string; venue: string; venueAccountId: string; bindingProfile?: Record<string, unknown> | null } | undefined> {
     const rows = await this.deps.db
       .select({
+        bindingId: tradingBindings.id,
         sourceVenueAccountId: tradingBindings.sourceVenueAccountId,
         provider: tradingBindings.provider,
         venueAccountVenue: venueAccounts.venue,
         venueAccountId: venueAccounts.id,
+        bindingProfile: tradingBindings.bindingProfile,
         connectionStatus: connections.status,
       })
       .from(capabilityGrants)
@@ -179,7 +181,7 @@ export class AgentIntakeResolver {
     }
 
     const venue = row.venueAccountVenue ?? row.provider;
-    return { venue, venueAccountId };
+    return { id: row.bindingId, venue, venueAccountId, bindingProfile: row.bindingProfile };
   }
 
   private buildPersistence(agentId: string, venueAccountId: string, venue: string): TradingCyclePersistence {

@@ -37,7 +37,7 @@ function getValidationError(
   return field.errors?.[kind] ?? fallback;
 }
 
-export function canonicalizeProviderSecrets(venue: string, secrets: Record<string, string>, entry?: RegistryEntry): Record<string, string> {
+export function canonicalizeProviderSecrets(_venue: string, secrets: Record<string, string>, entry?: RegistryEntry): Record<string, string> {
   const aliasMap = new Map<string, string>();
   for (const field of entry?.credentials?.fields ?? []) {
     aliasMap.set(normalizeSecretToken(field.key), field.key);

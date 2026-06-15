@@ -11,7 +11,7 @@ import {
   PollingMarketDataFeed,
   StreamMarketDataFeed,
   flatPosition,
-  applyFill,
+  unrealizedPnl,
   applyFillAccounting,
   fillEvent,
   Reconciler,
@@ -30,7 +30,6 @@ import {
   computeLiveTimeoutActions,
   evaluateOrderbookRecovery,
 } from '@herobids/engine';
-import type { FeeSimulatorConfig } from '@herobids/engine';
 import type {
   Executor,
   Journal,
@@ -60,7 +59,7 @@ import type {
   BacktestingRepository,
 } from '@herobids/db';
 import { price, quantity, Decimal } from '@herobids/domain';
-import type { DecisionId, InstrumentId, BotId, OrderId } from '@herobids/domain';
+import type { DecisionId, InstrumentId, BotId, OrderId, VenueAccountId } from '@herobids/domain';
 
 export interface StreamConfig {
   reconnectBaseMs: number;
@@ -622,7 +621,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     const decisionId = this.deps.idGen.decisionId() as DecisionId;
     const decision = {
       id: decisionId,
-      venueAccountId: this.deps.venueAccountId,
+      venueAccountId: this.deps.venueAccountId as unknown as VenueAccountId,
       instrumentId: this.deps.symbol as InstrumentId,
       intent: 'go_flat' as const,
       targetSize: quantity('0'),
@@ -789,11 +788,11 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   }
 
   /** Force a go_flat decision via the decision intake pipeline when stop-loss triggers */
-  private async executeStopLoss(snapshot: MarketSnapshot): Promise<void> {
+  private async executeStopLoss(_snapshot: MarketSnapshot): Promise<void> {
     const decisionId = this.deps.idGen.decisionId() as DecisionId;
     const decision = {
       id: decisionId,
-      venueAccountId: this.deps.venueAccountId,
+      venueAccountId: this.deps.venueAccountId as unknown as VenueAccountId,
       instrumentId: this.deps.symbol as InstrumentId,
       intent: 'go_flat' as const,
       targetSize: quantity('0'),
@@ -807,7 +806,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     if (!context) return;
 
     try {
-      const result = await submitDecisionForExecution(decision, context, this.position, this.getIntakeDeps());
+      const result = await submitDecisionForExecution(decision, context, this.position, this.buildIntakeDepsForEmergency());
       this.position = result.position;
 
       if (!result.executionFailed && result.position.side === 'flat') {

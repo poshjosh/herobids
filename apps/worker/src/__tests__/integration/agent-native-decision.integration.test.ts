@@ -41,7 +41,7 @@ import {
   executionPlans,
   fills,
 } from '@herobids/db';
-import type { DecisionSubmitPayload, MessageEnvelope } from '@herobids/domain';
+import type { DecisionSubmitPayload, MessageEnvelope, AgentRiskDefaultsConfig } from '@herobids/domain';
 import { OracleMarkSource } from '@herobids/venues';
 import { AgentDecisionHandler } from '../../agents/agent-decision-handler.js';
 import { AgentIntakeResolver } from '../../agents/agent-intake-resolver.js';
@@ -266,6 +266,15 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       journal,
       markSource: stubMarkSource as any,
       idGen,
+      agentRiskDefaults: {
+        maxOpenPositions: 10,
+        maxPositionSizePct: 100,
+        maxPositionSize: 1_000_000,
+        stopLossMaxUnrealizedLossPct: 10,
+        dailyMaxLossPct: 20,
+        stopLossCooldownMs: 300_000,
+        maxOrderNotionalMultiplier: 1,
+      } satisfies AgentRiskDefaultsConfig,
     });
 
     // The combined resolver: no actorRegistry match → agent fallback

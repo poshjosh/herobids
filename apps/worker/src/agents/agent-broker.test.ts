@@ -1412,6 +1412,7 @@ describe('AgentMessageBroker', () => {
           id: 'bot-run',
           userId: 'user-1',
           venueAccountId: 'va-001',
+          tradingBindingId: 'va-001',
           status: 'running',
           config: {
             strategy: { type: 'momentum', threshold: 2 },

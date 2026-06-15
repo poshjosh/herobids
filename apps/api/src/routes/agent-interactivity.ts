@@ -361,7 +361,7 @@ export async function agentInteractivityRoutes(
 
     await db.update(agents).set({
       ...agentUpdates,
-      executionMode: executionMode.value,
+      executionMode: executionMode.value ?? 'paper',
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

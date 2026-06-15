@@ -1315,7 +1315,7 @@ export function applyRuntimeMessage(
     state.metrics.currentReminder = null;
 
     if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change') {
-      state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context };
+      state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context as WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext };
       const summary = reason || `Market wake: ${wake.source}`;
       pushRecentEvent(state, type, summary);
       return summary;

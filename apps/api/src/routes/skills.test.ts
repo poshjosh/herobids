@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { Database } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { SYSTEM_SKILLS } from '@herobids/domain';
 import { skillsRoutes } from './skills.js';
 
 const TEST_USER_ID = 'user-1';
@@ -161,7 +160,7 @@ describe('skillsRoutes (normalized contract)', () => {
     expect(createdInsert!['autoPublishedByPlan']).toBe(true);
   });
 
-  it('calls db.select() once per SYSTEM_SKILL entry during route initialisation', async () => {
+  it('does not call db.select() during route initialisation (system skill sync is owned by index.ts)', async () => {
     let selectCallCount = 0;
     const trackingDb = {
       ...makeDbMock(),
@@ -175,11 +174,9 @@ describe('skillsRoutes (normalized contract)', () => {
     decorateWithAuth(app);
     await skillsRoutes(app, trackingDb, makePlansConfig());
 
-    // skillsRoutes calls db.select() once per SYSTEM_SKILL to check for an
-    // existing revision before upserting. This count is consumed before any
-    // route handler runs, so tests that track db.select() calls must reset
-    // their counter immediately after skillsRoutes() returns.
-    expect(selectCallCount).toBe(SYSTEM_SKILLS.length);
+    // syncSystemSkills is called exclusively by apps/api/src/index.ts at startup,
+    // not by skillsRoutes itself. No db.select() calls should happen during init.
+    expect(selectCallCount).toBe(0);
   });
 
   it('rejects invalid create payloads with 400 validation_error', async () => {

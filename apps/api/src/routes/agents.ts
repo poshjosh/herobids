@@ -493,7 +493,7 @@ export async function agentRoutes(
       notificationPolicy: parsed.data.notificationPolicy !== undefined
         ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
         : null,
-      executionMode: executionMode.value,
+      ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
       dailyTokenBudget: dailyLlmTokenBudget.value ?? null,
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
       maxBots: parsed.data.maxBots ?? null,
@@ -700,6 +700,8 @@ export async function agentRoutes(
       modelPolicy: _modelPolicy,
       skillIds: _skillIds,
       notificationPolicy: notificationPolicyInput,
+      maxPositionSizePct: rawMaxPositionSizePct,
+      stopLossPct: rawStopLossPct,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
@@ -710,9 +712,9 @@ export async function agentRoutes(
 
     await db.update(agents).set({
       ...agentUpdates,
-      ...(agentUpdates.maxPositionSizePct !== undefined ? { maxPositionSizePct: agentUpdates.maxPositionSizePct != null ? String(agentUpdates.maxPositionSizePct) : null } : {}),
-      ...(agentUpdates.stopLossPct !== undefined ? { stopLossPct: agentUpdates.stopLossPct != null ? String(agentUpdates.stopLossPct) : null } : {}),
-      executionMode: executionMode.value,
+      ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
+      ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
+      executionMode: executionMode.value ?? null,
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,

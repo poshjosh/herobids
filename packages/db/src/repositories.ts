@@ -473,11 +473,12 @@ export class OrderRepository {
       throw new Error('upsertByVenueRefId requires venueRefId');
     }
 
+    const venueRefId = order.venueRefId;
     await this.db.transaction(async (tx) => {
       const existing = await tx
         .select()
         .from(orders)
-        .where(eq(orders.venueRefId, order.venueRefId))
+        .where(eq(orders.venueRefId, venueRefId))
         .limit(1);
 
       if (existing.length > 0) {
@@ -496,7 +497,7 @@ export class OrderRepository {
             ...(order.clientOrderId && !existing[0]!.clientOrderId && { clientOrderId: order.clientOrderId }),
             updatedAt: new Date(),
           })
-          .where(eq(orders.venueRefId, order.venueRefId));
+          .where(eq(orders.venueRefId, venueRefId));
       } else {
         await tx.insert(orders).values({
           id: order.id ?? crypto.randomUUID(),

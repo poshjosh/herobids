@@ -156,7 +156,7 @@ marketData:
     enabled: false
     baseUrl: "https://public-api.birdeye.so"
     requestsPerMinute: 60
-    apiKey: ""
+    apiKey: ""                # override: BIRDEYE_API_KEY — required when birdeye.enabled is true
     cacheTtlMs: 3600000
   coinMarketCap:
     enabled: false

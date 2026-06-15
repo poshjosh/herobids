@@ -1543,5 +1543,131 @@ describe('TradingActor lifecycle', () => {
       });
     });
   });
+
+  describe('clientOrderId persistence path (pre-venueRefId)', () => {
+    it('persists order via upsertByClientOrderId when venueRefId is absent', async () => {
+      const upsertByClientOrderId = vi.fn().mockResolvedValue(undefined);
+      const upsertByVenueRefId = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        getOpenByInstance: vi.fn().mockResolvedValue([]),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([]),
+        upsertByVenueRefId,
+        upsertByClientOrderId,
+      };
+
+      // A live executor that emits prepared → submit_attempting → acknowledged
+      const submitOrder = vi.fn().mockResolvedValue(ok({
+        orderId: 'o-live-1',
+        venueRefId: 'venue-ref-1',
+        status: 'open',
+        timestamp: new Date().toISOString(),
+      }));
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn(), onStateChange: vi.fn() })),
+        submitOrder,
+        cancelOrder: vi.fn(),
+      } as any;
+
+      const deps = makeBaseDeps({
+        venuePort,
+        orderRepo: orderRepo as any,
+        executionMode: 'live',
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        strategy: {
+          evaluate: vi.fn().mockResolvedValueOnce(ok({
+            id: 'd-coid',
+            botId: 'inst-coid' as BotId,
+            instrumentId: 'BTC/USD:USD',
+            intent: 'go_long',
+            targetSize: quantity('1'),
+            timestamp: new Date().toISOString(),
+          })).mockResolvedValue(ok(null)),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-coid', {}, deps, 100_000);
+      await actor.start();
+      await new Promise((r) => setTimeout(r, 150));
+
+      // The first two state changes (prepared, submit_attempting) should use clientOrderId path
+      expect(upsertByClientOrderId).toHaveBeenCalled();
+      const firstCall = upsertByClientOrderId.mock.calls[0]![0];
+      expect(firstCall.clientOrderId).toBeDefined();
+      expect(firstCall.venueRefId).toBeUndefined();
+      expect(firstCall.submissionState).toBe('prepared');
+
+      // After venue acknowledgement, venueRefId path is used
+      expect(upsertByVenueRefId).toHaveBeenCalled();
+      const ackCall = upsertByVenueRefId.mock.calls[0]![0];
+      expect(ackCall.venueRefId).toBe('venue-ref-1');
+      expect(ackCall.submissionState).toBe('venue_acknowledged');
+
+      await actor.stop();
+    });
+
+    it('uses clientOrderId path for submit_attempting state before venue response', async () => {
+      const upsertByClientOrderId = vi.fn().mockResolvedValue(undefined);
+      const upsertByVenueRefId = vi.fn().mockResolvedValue(undefined);
+      const orderRepo = {
+        getOpenByInstance: vi.fn().mockResolvedValue([]),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([]),
+        upsertByVenueRefId,
+        upsertByClientOrderId,
+      };
+
+      // Slow venue that rejects after a delay — we get prepared + submit_attempting before rejection
+      const submitOrder = vi.fn().mockResolvedValue(err({ code: 'VENUE_REJECT', message: 'insufficient margin' }));
+      const venuePort = {
+        fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
+        fetchPositions: vi.fn().mockResolvedValue(ok([])),
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        fetchRecentFills: vi.fn().mockResolvedValue(ok([])),
+        fetchOpenOrders: vi.fn().mockResolvedValue(ok([])),
+        subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn(), onStateChange: vi.fn() })),
+        submitOrder,
+        cancelOrder: vi.fn(),
+      } as any;
+
+      const deps = makeBaseDeps({
+        venuePort,
+        orderRepo: orderRepo as any,
+        executionMode: 'live',
+        reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
+        strategy: {
+          evaluate: vi.fn().mockResolvedValueOnce(ok({
+            id: 'd-reject',
+            botId: 'inst-reject' as BotId,
+            instrumentId: 'BTC/USD:USD',
+            intent: 'go_long',
+            targetSize: quantity('1'),
+            timestamp: new Date().toISOString(),
+          })).mockResolvedValue(ok(null)),
+        } as any,
+      });
+
+      const actor = new TradingActor('inst-reject', {}, deps, 100_000);
+      await actor.start();
+      await new Promise((r) => setTimeout(r, 150));
+
+      // All three state changes should go through clientOrderId since venue rejected (no venueRefId ever)
+      expect(upsertByClientOrderId.mock.calls.length).toBeGreaterThanOrEqual(2);
+      const states = upsertByClientOrderId.mock.calls.map((c: unknown[]) => (c[0] as Record<string, unknown>).submissionState);
+      expect(states).toContain('prepared');
+      expect(states).toContain('submit_attempting');
+
+      // The rejected state also has no venueRefId — goes through clientOrderId path
+      const rejectedCall = upsertByClientOrderId.mock.calls.find(
+        (c: unknown[]) => (c[0] as Record<string, unknown>).submissionState === 'terminal',
+      );
+      expect(rejectedCall).toBeDefined();
+
+      await actor.stop();
+    });
+  });
 });
 

@@ -4,6 +4,8 @@
 
 **Goal:** Turn the revised Phase 3 live-execution-safety plan into an execution-ready task list with strict sequencing, explicit dependency edges, and a bounded swap-live safety parity pass.
 
+**Focused slice:** [011-phase-3-swap-live-safety-parity.md](./011-phase-3-swap-live-safety-parity.md)
+
 ---
 
 ## Tasks

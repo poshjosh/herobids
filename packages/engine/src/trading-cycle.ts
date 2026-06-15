@@ -56,6 +56,8 @@ export interface PersistFillParams {
   botId?: string;
   actorType?: string;
   actorId?: string;
+  /** Venue's fill/trade reference ID (e.g. tx hash for swaps) */
+  venueRefId?: string;
   venue: string;
   symbol: string;
   side: string;

@@ -5,7 +5,8 @@ export type IntakeRejectionCode =
   | 'circuit_breaker_open'
   | 'stop_loss_active'
   | 'instance_not_running'
-  | 'no_executor';
+  | 'no_executor'
+  | 'swap_recovery_ambiguous';
 
 export interface IntakeRejection {
   rejected: true;

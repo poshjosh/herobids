@@ -157,6 +157,16 @@ describe('AgentMarketWakePayloadSchema', () => {
     priority: 'normal' as const,
     requestedAt: '2026-06-10T12:36:02.000Z',
     source: 'watch_threshold' as const,
+    context: {
+      watchId: 'wt-1',
+      symbol: 'SOL',
+      chain: 'solana',
+      condition: 'above' as const,
+      thresholdPrice: 200,
+      currentPrice: 204,
+      stale: false,
+      triggeredAt: '2026-06-10T12:36:02.000Z',
+    },
   };
 
   it('accepts a valid payload', () => {
@@ -185,18 +195,25 @@ describe('AgentMarketWakePayloadSchema', () => {
     expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, eventIds: [] }).success).toBe(true);
   });
 
-  it('accepts typed source and context fields', () => {
+  it('rejects watch_threshold payload with partial context (missing required fields)', () => {
     const typed = {
       ...valid,
       source: 'watch_threshold' as const,
       context: { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, currentPrice: 204 },
     };
-    expect(AgentMarketWakePayloadSchema.safeParse(typed).success).toBe(true);
+    expect(AgentMarketWakePayloadSchema.safeParse(typed).success).toBe(false);
   });
 
-  it('accepts all valid source values', () => {
-    for (const source of ['reminder', 'watch_threshold', 'discovery_delta', 'regime_change']) {
-      expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, source }).success, `source=${source}`).toBe(true);
+  it('accepts each source with valid context', () => {
+    const sources = [
+      { source: 'reminder' as const, context: { reminderId: 'r-1', message: 'check', scheduledBy: 'scout' as const } },
+      { source: 'watch_threshold' as const, context: valid.context },
+      { source: 'discovery_delta' as const, context: { symbol: 'X', network: 'solana', address: '0x1', reason: 'new', detectedAt: '2026-06-10T12:36:02.000Z' } },
+      { source: 'regime_change' as const, context: { benchmarkSymbol: 'BTC', previousState: 'bull', currentState: 'bear', changedAt: '2026-06-10T12:36:02.000Z' } },
+    ];
+    for (const { source, context } of sources) {
+      const payload = { ...valid, source, context };
+      expect(AgentMarketWakePayloadSchema.safeParse(payload).success, `source=${source}`).toBe(true);
     }
   });
 
@@ -315,7 +332,16 @@ describe('validateMessage — market monitor envelope round-trips', () => {
         priority: 'normal',
         requestedAt: '2026-06-10T12:00:00.000Z',
         source: 'watch_threshold',
-        context: { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, currentPrice: 204 },
+        context: {
+          watchId: 'wt-1',
+          symbol: 'SOL',
+          chain: 'solana',
+          condition: 'above',
+          thresholdPrice: 200,
+          currentPrice: 204,
+          stale: false,
+          triggeredAt: '2026-06-10T12:00:00.000Z',
+        },
       },
     });
     expect(result.success).toBe(true);

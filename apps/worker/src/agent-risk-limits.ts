@@ -30,7 +30,11 @@ export function buildAgentRiskLimits(source: AgentRiskLimitSource, defaults: Age
     stopLossMaxUnrealizedLossPct: parseOptionalNumber(source.stopLossPct) ?? defaults.stopLossMaxUnrealizedLossPct,
     stopLossCooldownMs: source.stopLossCooldownMs ?? defaults.stopLossCooldownMs,
     // maxPositionSizePct is user-configurable independently of capital — preserve it whenever set.
-    maxPositionSizePct: parseOptionalNumber(source.maxPositionSizePct) ?? defaults.maxPositionSizePct,
+    // When capital is null and the user hasn't explicitly configured it, omit it entirely
+    // (percentage-based sizing has no meaning without a capital base).
+    ...(parseOptionalNumber(source.maxPositionSizePct) != null || capital != null ? {
+      maxPositionSizePct: parseOptionalNumber(source.maxPositionSizePct) ?? defaults.maxPositionSizePct,
+    } : {}),
     ...(capital != null ? {
       maxOrderNotional: price(String(Number.parseFloat(capital) * defaults.maxOrderNotionalMultiplier)),
       dailyMaxLossPct: dailyLossLimit != null

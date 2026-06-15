@@ -24,7 +24,7 @@ import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import { LlmRuntimeConfigSchema, SYSTEM_SKILLS } from '@herobids/domain';
+import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
 
 const TEST_BUDGETS: RuntimeBudgetPolicy = {

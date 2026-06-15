@@ -56,6 +56,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   RESEND_API_KEY: { path: 'alerts.email.apiKey', type: 'string' },
   RESEND_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },
   RESEND_REPLY_TO_EMAIL: { path: 'alerts.email.replyToEmail', type: 'string' },
+  // Market data providers
+  BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
   // LLM runtime
   LLM_PROVIDER: { path: 'llm.provider', type: 'string' },
   LLM_MODEL: { path: 'llm.model', type: 'string' },

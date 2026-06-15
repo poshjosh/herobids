@@ -704,19 +704,15 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       for (const { key, wake, lastWakeKey } of claimed) {
         if (stopped) return;
 
-        if (!wake.primarySource || !wake.primaryContext) {
-          logger.warn({ agentId: wake.agentId }, 'Skipping wake flush: missing source or context');
-          continue;
-        }
         const payload: AgentMarketWakePayload = {
           wakeId: crypto.randomUUID(),
           reason: wake.primaryReason ?? 'market monitor',
           eventIds: wake.eventIds,
           priority: 'normal',
           requestedAt: new Date().toISOString(),
-          source: wake.primarySource,
-          context: wake.primaryContext,
-        } as AgentMarketWakePayload;
+          source: wake.primarySource ?? 'watch_threshold',
+          ...(wake.primaryContext !== undefined && { context: wake.primaryContext }),
+        };
 
         await publisher.emitAgentMarketWake(wake.agentId, payload);
         await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);

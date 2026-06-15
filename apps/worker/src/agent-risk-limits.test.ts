@@ -23,9 +23,11 @@ const EMPTY_SOURCE: AgentRiskLimitSource = {
 
 describe('buildAgentRiskLimits()', () => {
   describe('maxPositionSizePct', () => {
-    it('uses default when neither source nor capital is provided', () => {
+    it('omits maxPositionSizePct when neither source nor capital is provided', () => {
+      // Percentage-based sizing has no meaning without a capital base.
+      // When neither is set, the field is omitted so callers can detect the absence.
       const limits = buildAgentRiskLimits(EMPTY_SOURCE, DEFAULTS);
-      expect(limits.maxPositionSizePct).toBe(DEFAULTS.maxPositionSizePct);
+      expect(limits.maxPositionSizePct).toBeUndefined();
     });
 
     it('preserves user-configured maxPositionSizePct even when capital is null', () => {

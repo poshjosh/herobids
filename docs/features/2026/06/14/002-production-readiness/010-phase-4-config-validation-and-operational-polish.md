@@ -1,5 +1,9 @@
 # Phase 4 — Config Validation And Operational Polish
 
+**Focused slices:**
+
+1. [014-phase-4-agent-risk-contract-integrity.md](./014-phase-4-agent-risk-contract-integrity.md)
+
 ## Problem Statement
 
 Phase 1 established real risk inputs. Phase 2 completed swap execution and corrected shared-wallet semantics. Phase 3 hardened live execution safety. The remaining production-readiness gaps are now concentrated at the API and operational boundary:

@@ -38,6 +38,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
   TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
+  // Market data providers
+  BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
 
 };
 
@@ -85,7 +87,8 @@ function coerceEnvValue(raw: string, type: EnvType): unknown {
 function applyEnvOverrides(merged: Record<string, unknown>): void {
   for (const [envVar, override] of Object.entries(ENV_OVERRIDES)) {
     const value = process.env[envVar];
-    if (value !== undefined) {
+    // Skip empty strings so docker-compose ${VAR:-} passthrough entries do not stomp YAML defaults.
+    if (value !== undefined && value !== '') {
       setNestedValue(merged, override.path, coerceEnvValue(value, override.type));
     }
   }

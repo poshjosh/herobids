@@ -14,7 +14,6 @@ import {
   SwapPositionTracker,
   PollingMarketDataFeed,
   StreamMarketDataFeed,
-  applyFill,
   flatPosition,
   unrealizedPnl,
   applyFillAccounting,
@@ -76,7 +75,7 @@ export interface AgentTradingActorDeps {
   createStreamPoolHandle?: (testnet: boolean) => StreamPoolHandle | undefined;
   markSource: MarkSource;
   journal: Journal;
-  idGen: IdGenerator & { planId(): string };
+  idGen: IdGenerator & { planId(): string; decisionId(): string };
   positionRepo: PositionRepository;
   fillRepo: FillRepository;
   planRepo: ExecutionPlanRepository;
@@ -533,7 +532,7 @@ export class AgentTradingActor implements ExecutionActor {
     }
 
     const openOrders = await this.deps.orderRepo.getOpenByActorAndVenueAccount(
-      this.deps.actorType,
+      'agent',
       this.agentId,
       this.deps.venueAccountId,
     );
@@ -588,7 +587,7 @@ export class AgentTradingActor implements ExecutionActor {
 
   private async assessSwapCrashAmbiguity(): Promise<{ ambiguous: boolean; openSwapOrders: number; unresolvedSwapOrders: number }> {
     const openOrders = await this.deps.orderRepo.getOpenByActorAndVenueAccount(
-      this.deps.actorType,
+      'agent',
       this.agentId,
       this.deps.venueAccountId,
     );
@@ -603,7 +602,7 @@ export class AgentTradingActor implements ExecutionActor {
     const txResult = await this.swapVenue.fetchRecentTransactions();
     if (!txResult.ok) {
       await this.deps.journal.append({
-        actorType: this.deps.actorType,
+        actorType: 'agent',
         actorId: this.agentId,
         type: 'execution.failure',
         payload: {
@@ -620,7 +619,7 @@ export class AgentTradingActor implements ExecutionActor {
     const unresolvedSwapOrders = openOrders.filter((order) => !order.venueRefId || !knownTxRefs.has(order.venueRefId)).length;
     if (unresolvedSwapOrders > 0) {
       await this.deps.journal.append({
-        actorType: this.deps.actorType,
+        actorType: 'agent',
         actorId: this.agentId,
         type: 'execution.failure',
         payload: {
@@ -1712,7 +1711,7 @@ export class AgentTradingActor implements ExecutionActor {
           });
 
           await this.deps.journal.append({
-            actorType: this.deps.actorType,
+            actorType: 'agent',
             actorId: this.agentId,
             type: 'order.recovery_evaluated',
             payload: {
@@ -1739,7 +1738,7 @@ export class AgentTradingActor implements ExecutionActor {
 
           if (decision.kind === 'halt_ambiguous') {
             await this.deps.journal.append({
-              actorType: this.deps.actorType,
+              actorType: 'agent',
               actorId: this.agentId,
               type: 'execution.failure',
               payload: {
@@ -1821,7 +1820,7 @@ export class AgentTradingActor implements ExecutionActor {
    * If a plan's order has a venueRefId (tx hash) that appears in recent transactions,
    * the swap landed and the plan should be marked completed, not failed.
    */
-  private async reconcileIncompleteSwapPlans(incomplete: Array<{ id: string; status: string }>): Promise<void> {
+  private async reconcileIncompleteSwapPlans(incomplete: Array<{ id: string; status: string; plannedOrders: unknown; createdAt: Date }>): Promise<void> {
     // Fetch recent on-chain transactions once for all plans
     const txResult = await this.swapVenue!.fetchRecentTransactions();
     const knownTxRefs = new Set<string>();
@@ -1914,7 +1913,7 @@ export class AgentTradingActor implements ExecutionActor {
     this.swapRecoveryAlertedPlanIds.add(planId);
 
     await this.deps.journal.append({
-      actorType: this.deps.actorType,
+      actorType: 'agent',
       actorId: this.agentId,
       type: 'execution.failure',
       payload: {
@@ -2307,7 +2306,7 @@ export class AgentTradingActor implements ExecutionActor {
     if (slippageBps <= thresholdBps) return;
 
     await this.deps.journal.append({
-      actorType: this.deps.actorType,
+      actorType: 'agent',
       actorId: this.agentId,
       type: 'live.slippage_alert',
       payload: {

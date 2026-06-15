@@ -471,6 +471,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         // Determine venue type from venue name heuristic
         const venueType: 'orderbook' | 'swap' = (binding.venue === 'jupiter' || binding.venue === '1inch') ? 'swap' : 'orderbook';
         const agent = await agentRepo.getAgent(agentId);
+        const capitalStr = agent?.capital ?? null;
         const agentDefaults = appConfig.agentRiskDefaults;
 
         // Resolve swap asset metadata from binding for non-paper swap modes
@@ -776,7 +777,7 @@ const runtime = new WorkerRuntime(
     const venueAccountId = startupContext.sourceVenueAccountId;
     // The resolver already validated the source-venue-account requirement per provider type.
     // Consume the resolver's decision here rather than re-encoding provider-specific logic.
-    if (startupContext.sourceVenueAccountRequired && !venueAccountId) {
+    if (!venueAccountId) {
       throw new Error(`Bot ${botId} has no resolved source venue account — refusing to start`);
     }
     const instanceUserId = startupContext.userId ?? (rawConfig['userId'] as string | undefined);

@@ -34,16 +34,16 @@ describe('AgentMarketWakePayloadSchema', () => {
       }
     });
 
-    it('rejects reminder payload with cross-family context fields', () => {
+    it('rejects reminder payload with invalid context fields', () => {
       const result = AgentMarketWakePayloadSchema.safeParse({
         ...BASE,
         source: 'reminder',
-        context: { symbol: 'BTC', network: 'eth' }, // watch_threshold fields
+        context: { symbol: 'BTC', network: 'eth' }, // missing required reminder fields
       });
       expect(result.success).toBe(false);
     });
 
-    it('rejects reminder payload without required context', () => {
+    it('rejects reminder payload without context (context is required)', () => {
       const result = AgentMarketWakePayloadSchema.safeParse({ ...BASE, source: 'reminder' });
       expect(result.success).toBe(false);
     });
@@ -92,11 +92,11 @@ describe('AgentMarketWakePayloadSchema', () => {
       expect(result.success).toBe(true);
     });
 
-    it('rejects watch_threshold payload with missing required fields', () => {
+    it('rejects watch_threshold payload with partial context (missing required fields)', () => {
       const result = AgentMarketWakePayloadSchema.safeParse({
         ...BASE,
         source: 'watch_threshold',
-        context: { symbol: 'BTC' }, // missing watchId, chain, condition, etc.
+        context: { symbol: 'BTC' }, // missing required watch_threshold fields
       });
       expect(result.success).toBe(false);
     });

@@ -157,6 +157,33 @@ billing:
     expect(config.alerts.email.replyToEmail).toBe('support@example.com');
   });
 
+  it('applies BIRDEYE_API_KEY env override without clobbering YAML defaults', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + MINIMAL_MARKET_DATA_YAML);
+    process.env['BIRDEYE_API_KEY'] = 'birdeye-env-key';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.birdeye.apiKey).toBe('birdeye-env-key');
+    expect(config.marketData?.birdeye.enabled).toBe(false);
+  });
+
+  it('preserves YAML Birdeye apiKey when the env override is empty', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  birdeye:
+    enabled: false
+    baseUrl: https://public-api.birdeye.so
+    requestsPerMinute: 60
+    apiKey: yaml-birdeye-key
+`);
+    process.env['BIRDEYE_API_KEY'] = '';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.birdeye.apiKey).toBe('yaml-birdeye-key');
+    expect(config.marketData?.birdeye.enabled).toBe(false);
+  });
+
   it('env overlay deep-merges without clobbering sibling keys', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
 reconciliation:
