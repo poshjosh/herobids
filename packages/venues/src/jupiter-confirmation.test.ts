@@ -104,9 +104,10 @@ describe('JupiterConfirmationPoller', () => {
       const poller = new JupiterConfirmationPoller({ rpcUrl: 'http://solana-rpc' });
       const result = await poller.checkConfirmation('tx-failed');
 
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.code).toBe('TX_FAILED');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.confirmed).toBe(false);
+      expect(result.data.failed).toBe(true);
 
       vi.unstubAllGlobals();
     });

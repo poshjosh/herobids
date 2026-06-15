@@ -1139,6 +1139,127 @@ describe('TradingActor lifecycle', () => {
       });
     });
 
+    it('falls back to recent transactions when the swap confirmation poller errors', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const recoveredAt = new Date('2026-06-15T10:00:00.000Z');
+      const orderRepo = {
+        ...stubRepo(),
+        getOpenByInstance: vi.fn().mockResolvedValue([
+          {
+            id: 'ord-poller-error-fallback',
+            venueAccountId: 'va-1',
+            actorType: 'bot',
+            actorId: 'inst-swap-fallback',
+            executionPlanId: 'plan-swap-fallback',
+            venueRefId: 'tx-fallback-match',
+            clientOrderId: 'client-swap-fallback',
+            venue: 'jupiter',
+            symbol: 'SOL/USDC',
+            side: 'buy',
+            type: 'swap',
+            quantity: '1',
+            price: null,
+            referencePrice: '100',
+            status: 'pending',
+            submissionState: 'venue_acknowledged',
+            submitAttemptedAt: recoveredAt,
+            acknowledgedAt: recoveredAt,
+            filledQuantity: '0',
+            avgFillPrice: null,
+            createdAt: recoveredAt,
+          },
+        ]),
+        upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
+      };
+      const fillRepo = {
+        ...stubRepo(),
+        insertFill: vi.fn().mockResolvedValue('fill-id'),
+      };
+      const swapVenue = {
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([{ executionRef: 'tx-fallback-match' }])),
+      } as any;
+      const swapConfirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(err({ code: 'RPC_ERROR', message: 'temporary failure' })),
+      };
+
+      const deps = makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        symbol: 'SOL/USDC',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        swapVenue,
+        swapConfirmationPoller: swapConfirmationPoller as any,
+        orderRepo: orderRepo as any,
+        fillRepo: fillRepo as any,
+        journal: { append: journalAppend } as any,
+        liveOrderTimeoutPolicy: { limitOrderTimeoutMs: 60_000, marketOrderTimeoutMs: 30_000 },
+      });
+
+      const actor = new TradingActor('inst-swap-fallback', {}, deps, 100_000);
+      await (actor as any).enforceLiveOrderTimeouts();
+
+      expect(swapConfirmationPoller.checkConfirmation).toHaveBeenCalledWith('tx-fallback-match');
+      expect(swapVenue.fetchRecentTransactions).toHaveBeenCalledTimes(1);
+      expect(orderRepo.upsertByVenueRefId).toHaveBeenCalledWith(expect.objectContaining({
+        venueRefId: 'tx-fallback-match',
+        status: 'filled',
+        submissionState: 'terminal',
+      }));
+      expect(fillRepo.insertFill).toHaveBeenCalledWith(expect.objectContaining({
+        orderId: 'ord-poller-error-fallback',
+        filledAt: recoveredAt,
+      }));
+
+      const timeoutFailure = journalAppend.mock.calls.find(
+        (call: unknown[]) => (call[0] as { type: string }).type === 'execution.failure'
+          && ((call[0] as { payload: Record<string, unknown> }).payload.reason === 'live_swap_confirmation_timeout_recovery_required'),
+      );
+      expect(timeoutFailure).toBeFalsy();
+    });
+
+    it('marks incomplete swap plans failed when the confirmation poller reports a reverted tx', async () => {
+      const planRepo = {
+        ...stubRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([{ id: 'plan-swap-failed', status: 'executing' }]),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+      };
+      const orderRepo = {
+        ...stubRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          { id: 'ord-swap-failed', venueRefId: 'tx-failed', status: 'pending', symbol: 'SOL/USDC' },
+        ]),
+        updateStatus: vi.fn().mockResolvedValue(undefined),
+      };
+      const swapVenue = {
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      } as any;
+      const swapConfirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(ok({ confirmed: false, failed: true })),
+      };
+
+      const deps = makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        symbol: 'SOL/USDC',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        swapVenue,
+        swapConfirmationPoller: swapConfirmationPoller as any,
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+      });
+
+      const actor = new TradingActor('inst-swap-failed', {}, deps, 100_000);
+      await actor.start();
+
+      expect(swapConfirmationPoller.checkConfirmation).toHaveBeenCalledWith('tx-failed');
+      expect(orderRepo.updateStatus).toHaveBeenCalledWith('ord-swap-failed', 'rejected');
+      expect(planRepo.markFailed).toHaveBeenCalledWith('plan-swap-failed');
+
+      await actor.stop();
+    });
+
     it('private stream disconnect pauses live actor', async () => {
       let stateChangeHandler: ((state: string) => void) | undefined;
       const venuePort = {

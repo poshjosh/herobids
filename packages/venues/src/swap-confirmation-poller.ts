@@ -14,6 +14,8 @@ import type { Quantity } from '@herobids/domain';
 
 export interface SwapConfirmationStatus {
   confirmed: boolean;
+  /** Transaction was included on-chain but reverted / failed definitively */
+  failed?: boolean;
   blockNumber?: number;
   timestamp?: string;
   /** Actual output amount parsed from on-chain events when available */

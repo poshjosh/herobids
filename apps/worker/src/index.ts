@@ -787,6 +787,7 @@ const runtime = new WorkerRuntime(
     let signerPresent = false;
     let venueAdapter: OrderbookVenuePort | undefined;
     let swapVenue: SwapVenuePort | undefined;
+    let swapConfirmationPoller: import('@herobids/venues').SwapConfirmationPoller | undefined;
 
     // Resolve adapters via shared factory
     if (config.venueType !== 'swap') {
@@ -811,6 +812,7 @@ const runtime = new WorkerRuntime(
       });
       swapVenue = result.swapVenue;
       signerPresent = result.signerPresent;
+      swapConfirmationPoller = result.confirmationPoller;
     } else {
       throw new CredentialResolutionError(
         `swapAssets config required for swap venue bot ${botId} — cannot route swaps without explicit asset identifiers and decimals`,
@@ -982,6 +984,7 @@ const runtime = new WorkerRuntime(
         limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
         marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
       },
+      swapConfirmationPoller,
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
           agentStreamConsumer.unsubscribe(instanceId);

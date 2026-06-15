@@ -2,6 +2,7 @@ import pino from 'pino';
 import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
+import type { SwapConfirmationPoller } from '@herobids/venues';
 import {
   PaperExecutor,
   ShadowExecutor,
@@ -140,6 +141,8 @@ export interface TradingActorDeps {
   crashPolicy?: 'auto_go_flat' | 'alert_manual_intervention';
   /** Timeout policy for stale live order handling */
   liveOrderTimeoutPolicy?: LiveTimeoutPolicy;
+  /** Venue-specific swap confirmation poller for authoritative on-chain tx status checks */
+  swapConfirmationPoller?: SwapConfirmationPoller;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -867,7 +870,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         await this.deps.planRepo.markFailed(plan.id);
         this.logger.info({ planId: plan.id, status: plan.status }, 'Marked incomplete plan as failed (paper mode)');
       } else if (!venuePort && this.deps.swapVenue) {
-        // Swap venue: check on-chain transactions
+        // Swap venue: check on-chain transactions using confirmation poller (primary) or fetchRecentTransactions (fallback)
         try {
           const planOrders = await this.deps.orderRepo.getByExecutionPlanId(plan.id);
           const txResult = await this.deps.swapVenue.fetchRecentTransactions();
@@ -890,35 +893,64 @@ export class TradingActor implements InstanceActor, ExecutionActor {
                   detail: 'no_persisted_orders_and_no_matching_transaction',
                 });
               }
-            } else {
+            } else if (!this.deps.swapConfirmationPoller) {
               await this.haltSwapRecovery(plan.id, {
                 reason: 'live_swap_recovery_ambiguous',
                 detail: 'transaction_lookup_failed',
                 code: txResult.error.code,
                 message: txResult.error.message,
               });
+            } else {
+              // No tx list but no orders to check via poller either
+              await this.haltSwapRecovery(plan.id, {
+                reason: 'live_swap_recovery_ambiguous',
+                detail: 'no_persisted_orders_and_transaction_lookup_failed',
+              });
             }
             continue;
           }
 
-          if (txResult.ok) {
-            const knownTxRefs = new Set(txResult.data.map((tx) => tx.executionRef));
-            const confirmedOnChain = planOrders.some((o) => o.venueRefId && knownTxRefs.has(o.venueRefId));
-            if (confirmedOnChain) {
-              await this.deps.planRepo.markCompleted(plan.id);
-              this.logger.info({ planId: plan.id }, 'Incomplete swap plan confirmed on-chain — marked completed');
-            } else {
-              await this.haltSwapRecovery(plan.id, {
-                reason: 'live_swap_recovery_ambiguous',
-                detail: 'order_not_confirmed_on_chain',
-              });
+          // Primary: use confirmation poller for orders with a venueRefId (authoritative)
+          let confirmedViaPoller = false;
+          let failedViaPoller = false;
+          if (this.deps.swapConfirmationPoller) {
+            for (const order of planOrders) {
+              if (!order.venueRefId) continue;
+              const confirmResult = await this.deps.swapConfirmationPoller.checkConfirmation(order.venueRefId);
+              if (confirmResult.ok && confirmResult.data.confirmed) {
+                confirmedViaPoller = true;
+                break;
+              }
+              if (confirmResult.ok && confirmResult.data.failed) {
+                failedViaPoller = true;
+                break;
+              }
             }
+          }
+
+          if (failedViaPoller) {
+            for (const order of planOrders) {
+              if (order.status !== 'filled' && order.status !== 'cancelled' && order.status !== 'rejected') {
+                await this.deps.orderRepo.updateStatus(order.id, 'rejected');
+              }
+            }
+            await this.deps.planRepo.markFailed(plan.id);
+            this.logger.info({ planId: plan.id }, 'Swap tx reverted on-chain — plan marked failed');
+            continue;
+          }
+
+          // Supplementary: check fetchRecentTransactions evidence
+          const confirmedViaTxList = !confirmedViaPoller && txResult.ok
+            && planOrders.some((o) => o.venueRefId && new Set(txResult.data.map((tx) => tx.executionRef)).has(o.venueRefId!));
+
+          if (confirmedViaPoller || confirmedViaTxList) {
+            await this.deps.planRepo.markCompleted(plan.id);
+            this.logger.info({ planId: plan.id, source: confirmedViaPoller ? 'confirmation_poller' : 'recent_transactions' },
+              'Incomplete swap plan confirmed on-chain — marked completed');
           } else {
             await this.haltSwapRecovery(plan.id, {
               reason: 'live_swap_recovery_ambiguous',
-              detail: 'transaction_lookup_failed',
-              code: txResult.error.code,
-              message: txResult.error.message,
+              detail: 'order_not_confirmed_on_chain',
             });
           }
         } catch (err) {
@@ -1841,59 +1873,71 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       return;
     }
 
-    const txResult = await this.deps.swapVenue.fetchRecentTransactions();
-    if (!txResult.ok) {
-      await this.deps.journal.append({
-        actorType: 'bot',
-        actorId: this.botId,
-        type: 'execution.failure',
-        payload: {
-          reason: 'live_swap_confirmation_check_failed',
-          code: txResult.error.code,
-          message: txResult.error.message,
-          openSwapOrderCount: openOrders.length,
-        },
-      });
-      return;
+    // Use the confirmation poller as the primary authoritative check for orders with a venueRefId.
+    // Fall back to fetchRecentTransactions when the poller is unavailable or temporarily errors.
+    let knownTxRefs: Set<string> | undefined;
+    let txLookupAttempted = false;
+    let txLookupError: { code: string; message: string } | undefined;
+    const loadKnownTxRefs = async (): Promise<Set<string> | undefined> => {
+      if (txLookupAttempted) {
+        return knownTxRefs;
+      }
+      txLookupAttempted = true;
+      const txResult = await this.deps.swapVenue.fetchRecentTransactions();
+      if (!txResult.ok) {
+        txLookupError = { code: txResult.error.code, message: txResult.error.message };
+        return undefined;
+      }
+      knownTxRefs = new Set(txResult.data.map((tx) => tx.executionRef));
+      return knownTxRefs;
+    };
+    if (!this.deps.swapConfirmationPoller) {
+      const resolvedKnownTxRefs = await loadKnownTxRefs();
+      if (!resolvedKnownTxRefs && txLookupError) {
+        await this.deps.journal.append({
+          actorType: 'bot',
+          actorId: this.botId,
+          type: 'execution.failure',
+          payload: {
+            reason: 'live_swap_confirmation_check_failed',
+            code: txLookupError.code,
+            message: txLookupError.message,
+            openSwapOrderCount: openOrders.length,
+          },
+        });
+        return;
+      }
     }
 
-    const knownTxRefs = new Set(txResult.data.map((tx) => tx.executionRef));
     const timeoutMs = this.deps.liveOrderTimeoutPolicy.marketOrderTimeoutMs;
 
     for (const order of openOrders) {
-      if (order.venueRefId && knownTxRefs.has(order.venueRefId)) {
-        const resolvedFillPrice = order.avgFillPrice ?? order.price ?? order.referencePrice;
-        const resolvedFilledQuantity = order.filledQuantity && order.filledQuantity !== '0'
-          ? order.filledQuantity
-          : order.quantity;
-
-        await this.deps.orderRepo.upsertByVenueRefId({
-          id: order.id,
-          venueAccountId: order.venueAccountId,
-          actorType: order.actorType,
-          actorId: order.actorId ?? undefined,
-          executionPlanId: order.executionPlanId ?? undefined,
-          venueRefId: order.venueRefId,
-          clientOrderId: order.clientOrderId ?? undefined,
-          venue: order.venue,
-          symbol: order.symbol,
-          side: order.side,
-          type: order.type,
-          quantity: order.quantity,
-          price: order.price ?? undefined,
-          referencePrice: order.referencePrice ?? undefined,
-          status: 'filled',
-          submissionState: 'terminal',
-          submitAttemptedAt: order.submitAttemptedAt?.toISOString(),
-          acknowledgedAt: order.acknowledgedAt?.toISOString(),
-          filledQuantity: resolvedFilledQuantity,
-          avgFillPrice: resolvedFillPrice ?? undefined,
-        });
-
-        if (order.executionPlanId) {
-          await this.tryCompleteLivePlan(order.venueRefId);
+      // Primary path: use confirmation poller for orders with a venueRefId (tx hash)
+      if (order.venueRefId && this.deps.swapConfirmationPoller) {
+        const confirmResult = await this.deps.swapConfirmationPoller.checkConfirmation(order.venueRefId);
+        if (confirmResult.ok && confirmResult.data.confirmed) {
+          await this.finalizeConfirmedSwapOrder(order, confirmResult.data.timestamp);
+          continue;
         }
-
+        if (confirmResult.ok && confirmResult.data.failed) {
+          // Definitively reverted on-chain — mark as rejected
+          await this.finalizeFailedSwapOrder(order);
+          continue;
+        }
+        if (!confirmResult.ok) {
+          this.logger.warn({
+            venueRefId: order.venueRefId,
+            code: confirmResult.error.code,
+          }, 'Confirmation poller error during runtime recovery — falling through to timeout check');
+          const fallbackTxRefs = await loadKnownTxRefs();
+          if (order.venueRefId && fallbackTxRefs?.has(order.venueRefId)) {
+            await this.finalizeConfirmedSwapOrder(order);
+            continue;
+          }
+        }
+      } else if (order.venueRefId && knownTxRefs?.has(order.venueRefId)) {
+        // Fallback: fetchRecentTransactions evidence (when poller is unavailable)
+        await this.finalizeConfirmedSwapOrder(order);
         continue;
       }
 
@@ -1917,6 +1961,149 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         symbol: order.symbol,
         ageMs,
       });
+    }
+  }
+
+  /**
+   * Finalize a confirmed swap order: mark as filled, persist fill + position, trigger plan completion + quality alerting.
+   */
+  private async finalizeConfirmedSwapOrder(
+    order: { id: string; venueAccountId: string; actorType: string; actorId?: string | null; executionPlanId?: string | null; venueRefId?: string | null; clientOrderId?: string | null; venue: string; symbol: string; side: string; type: string; quantity: string; price?: string | null; referencePrice?: string | null; status: string; submitAttemptedAt?: Date | null; acknowledgedAt?: Date | null; filledQuantity: string; avgFillPrice?: string | null },
+    confirmedAt?: string,
+  ): Promise<void> {
+    const resolvedFillPrice = order.avgFillPrice ?? order.price ?? order.referencePrice;
+    const resolvedFilledQuantity = order.filledQuantity && order.filledQuantity !== '0'
+      ? order.filledQuantity
+      : order.quantity;
+    // Prefer persisted order timestamps (closer to actual execution) over the
+    // synthetic poll-time timestamp the poller returns at recovery time.
+    const recoveredFillTimestamp = order.acknowledgedAt?.toISOString()
+      ?? order.submitAttemptedAt?.toISOString()
+      ?? confirmedAt
+      ?? new Date().toISOString();
+
+    await this.deps.orderRepo.upsertByVenueRefId({
+      id: order.id,
+      venueAccountId: order.venueAccountId,
+      actorType: order.actorType,
+      actorId: order.actorId ?? undefined,
+      executionPlanId: order.executionPlanId ?? undefined,
+      venueRefId: order.venueRefId!,
+      clientOrderId: order.clientOrderId ?? undefined,
+      venue: order.venue,
+      symbol: order.symbol,
+      side: order.side,
+      type: order.type,
+      quantity: order.quantity,
+      price: order.price ?? undefined,
+      referencePrice: order.referencePrice ?? undefined,
+      status: 'filled',
+      submissionState: 'terminal',
+      submitAttemptedAt: order.submitAttemptedAt?.toISOString(),
+      acknowledgedAt: order.acknowledgedAt?.toISOString(),
+      filledQuantity: resolvedFilledQuantity,
+      avgFillPrice: resolvedFillPrice ?? undefined,
+    });
+
+    // Persist fill and update position state for risk enforcement
+    if (resolvedFillPrice) {
+      const side = order.side as 'buy' | 'sell';
+      const fillEvt = {
+        id: this.deps.idGen.fillId(),
+        orderId: order.id as unknown as import('@herobids/domain').OrderId,
+        venueAccountId: this.deps.venueAccountId,
+        actorType: 'bot' as const,
+        actorId: this.botId,
+        venueRefId: order.venueRefId ?? undefined,
+        venue: this.deps.venue,
+        symbol: order.symbol,
+        side,
+        quantity: quantity(resolvedFilledQuantity),
+        price: price(resolvedFillPrice),
+        fee: quantity('0'),
+        feeCurrency: undefined,
+        filledAt: recoveredFillTimestamp,
+      };
+
+      const { position: nextPos, realizedPnlDelta } = applyFillAccounting(this.position, fillEvt, {
+        equityTracker: this.equityTracker,
+        dailyLossTracker: this.dailyLossTracker,
+      });
+      this.position = nextPos;
+
+      if (this.swapPositionTracker && this.deps.swapAssets) {
+        const isBuy = side === 'buy';
+        const fillQty = quantity(resolvedFilledQuantity);
+        const fillPrice = price(resolvedFillPrice);
+        this.swapPositionTracker.recordSwapFill({
+          inputAsset: isBuy ? this.deps.swapAssets.quoteAsset : this.deps.swapAssets.baseAsset,
+          inputAmount: isBuy ? fillPrice.mul(fillQty) : fillQty,
+          outputAsset: isBuy ? this.deps.swapAssets.baseAsset : this.deps.swapAssets.quoteAsset,
+          outputAmount: isBuy ? fillQty : fillPrice.mul(fillQty),
+          timestamp: new Date(recoveredFillTimestamp).getTime(),
+        });
+      }
+
+      await this.deps.fillRepo.insertFill({
+        venueAccountId: this.deps.venueAccountId,
+        orderId: order.id,
+        botId: this.botId,
+        actorType: 'bot',
+        actorId: this.botId,
+        venueRefId: order.venueRefId ?? undefined,
+        venue: this.deps.venue,
+        symbol: order.symbol,
+        side: order.side,
+        quantity: resolvedFilledQuantity,
+        price: resolvedFillPrice,
+        fee: undefined,
+        feeCurrency: undefined,
+        realizedPnlDelta: realizedPnlDelta.toString(),
+        filledAt: new Date(recoveredFillTimestamp),
+      });
+
+      const markResult = await this.fetchCachedMark();
+      await this.deps.positionRepo.upsert({
+        actorType: 'bot',
+        actorId: this.botId,
+        venueAccountId: this.deps.venueAccountId,
+        venue: this.deps.venue,
+        symbol: this.deps.symbol,
+        side: this.position.side,
+        size: this.position.size.toString(),
+        entryPrice: this.position.entryPrice.toString(),
+        realizedPnl: this.position.realizedPnl.toString(),
+        markSource: markResult?.ok ? markResult.data.source : undefined,
+      });
+    }
+
+    // Emit execution-quality alert from confirmed recovery
+    if (resolvedFillPrice && order.side) {
+      await this.maybeEmitLiveSwapExecutionQualityAlert({
+        venueRefId: order.venueRefId ?? undefined,
+        symbol: order.symbol,
+        side: order.side,
+        price: resolvedFillPrice,
+      });
+    }
+
+    if (order.executionPlanId) {
+      await this.tryCompleteLivePlan(order.venueRefId!);
+    }
+  }
+
+  /**
+   * Finalize a definitively failed/reverted swap order: mark as rejected and fail the plan.
+   */
+  private async finalizeFailedSwapOrder(
+    order: { id: string; executionPlanId?: string | null; venueRefId?: string | null; symbol: string },
+  ): Promise<void> {
+    await this.deps.orderRepo.updateStatus(order.id, 'rejected');
+    this.logger.info({ orderId: order.id, venueRefId: order.venueRefId, symbol: order.symbol },
+      'Swap tx reverted on-chain — order marked rejected');
+
+    if (order.executionPlanId) {
+      await this.deps.planRepo.markFailed(order.executionPlanId);
     }
   }
 

@@ -1997,4 +1997,328 @@ describe('AgentTradingActor', () => {
       await actor.stop();
     });
   });
+
+  describe('swap confirmation poller recovery', () => {
+    it('confirms pending swap via confirmation poller on runtime timeout check', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const staleSubmittedAt = new Date(Date.now() - 5 * 60 * 1000);
+      const confirmedAt = new Date(staleSubmittedAt.getTime() + 15_000).toISOString();
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'ord-poller-confirm',
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            executionPlanId: 'plan-poller-confirm',
+            venueRefId: 'tx-hash-confirmed',
+            clientOrderId: 'agent:swap:1',
+            venue: 'jupiter',
+            symbol: 'SOL/USDC',
+            side: 'buy',
+            type: 'swap',
+            quantity: '10',
+            price: null,
+            referencePrice: '150',
+            status: 'pending',
+            submissionState: 'venue_acknowledged',
+            submitAttemptedAt: staleSubmittedAt,
+            acknowledgedAt: null,
+            filledQuantity: '0',
+            avgFillPrice: null,
+            createdAt: staleSubmittedAt,
+          },
+        ]),
+        upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
+        getByVenueRefId: vi.fn().mockResolvedValue({ id: 'ord-poller-confirm', referencePrice: '150' }),
+      };
+      const fillRepo = {
+        ...makeRepo(),
+        insertFill: vi.fn().mockResolvedValue(undefined),
+      };
+      const confirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(ok({ confirmed: true, blockNumber: 100, timestamp: confirmedAt })),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        orderRepo: orderRepo as any,
+        fillRepo: fillRepo as any,
+        liveOrderTimeoutPolicy: { limitOrderTimeoutMs: 60_000, marketOrderTimeoutMs: 30_000 },
+        swapConfirmationPoller: confirmationPoller as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+            confirmationPoller,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).enforceLiveOrderTimeouts();
+
+      // Poller was called with the tx hash
+      expect(confirmationPoller.checkConfirmation).toHaveBeenCalledWith('tx-hash-confirmed');
+      // Order was finalized as filled
+      expect(orderRepo.upsertByVenueRefId).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'filled', submissionState: 'terminal' }),
+      );
+      // Timestamp precedence: submitAttemptedAt is preferred over poller's confirmedAt
+      expect(fillRepo.insertFill).toHaveBeenCalledWith(expect.objectContaining({
+        orderId: 'ord-poller-confirm',
+        filledAt: staleSubmittedAt,
+      }));
+      // Should NOT halt recovery
+      const intake = actor.getIntakeDeps('SOL/USDC');
+      expect(intake).not.toMatchObject({ rejected: true, code: 'swap_recovery_ambiguous' });
+
+      await actor.stop();
+    });
+
+    it('halts when confirmation poller says not confirmed and timeout exceeded', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const staleSubmittedAt = new Date(Date.now() - 5 * 60 * 1000);
+      const orderRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            id: 'ord-poller-unconfirmed',
+            venueAccountId: 'va-1',
+            actorType: 'agent',
+            actorId: 'agent-test-1',
+            executionPlanId: 'plan-poller-unconfirmed',
+            venueRefId: 'tx-hash-pending',
+            clientOrderId: 'agent:swap:2',
+            venue: 'jupiter',
+            symbol: 'SOL/USDC',
+            side: 'buy',
+            type: 'swap',
+            quantity: '10',
+            price: null,
+            referencePrice: '150',
+            status: 'pending',
+            submissionState: 'venue_acknowledged',
+            submitAttemptedAt: staleSubmittedAt,
+            acknowledgedAt: null,
+            filledQuantity: '0',
+            avgFillPrice: null,
+            createdAt: staleSubmittedAt,
+          },
+        ]),
+        upsertByVenueRefId: vi.fn().mockResolvedValue(undefined),
+      };
+      const confirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(ok({ confirmed: false })),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        orderRepo: orderRepo as any,
+        liveOrderTimeoutPolicy: { limitOrderTimeoutMs: 60_000, marketOrderTimeoutMs: 30_000 },
+        swapConfirmationPoller: confirmationPoller as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+            confirmationPoller,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+      await (actor as any).enforceLiveOrderTimeouts();
+
+      // Should halt — poller says not confirmed and timeout exceeded
+      const intake = actor.getIntakeDeps('SOL/USDC');
+      expect(intake).toMatchObject({ rejected: true, code: 'swap_recovery_ambiguous' });
+
+      await actor.stop();
+    });
+
+    it('uses confirmation poller on startup to confirm incomplete swap plan', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const planRepo = {
+        ...makeRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([
+          { id: 'plan-startup-poller', status: 'executing', plannedOrders: [], createdAt: new Date() },
+        ]),
+        markCompleted: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+      };
+      const orderRepo = {
+        ...makeRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          { id: 'ord-startup-1', venueRefId: 'tx-hash-startup-confirmed', status: 'pending', symbol: 'SOL/USDC' },
+        ]),
+      };
+      const confirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(ok({ confirmed: true, blockNumber: 200 })),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        swapConfirmationPoller: confirmationPoller as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+            confirmationPoller,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+
+      // Poller was called with the tx hash during startup recovery
+      expect(confirmationPoller.checkConfirmation).toHaveBeenCalledWith('tx-hash-startup-confirmed');
+      // Plan was marked completed
+      expect(planRepo.markCompleted).toHaveBeenCalledWith('plan-startup-poller');
+      // Should NOT halt
+      const intake = actor.getIntakeDeps('SOL/USDC');
+      expect(intake).not.toMatchObject({ rejected: true, code: 'swap_recovery_ambiguous' });
+
+      await actor.stop();
+    });
+
+    it('halts when startup confirmation poller returns not confirmed for incomplete swap plan', async () => {
+      const journalAppend = vi.fn().mockResolvedValue(undefined);
+      const planRepo = {
+        ...makeRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([
+          { id: 'plan-startup-not-confirmed', status: 'executing', plannedOrders: [], createdAt: new Date() },
+        ]),
+        markCompleted: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+      };
+      const orderRepo = {
+        ...makeRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          { id: 'ord-startup-2', venueRefId: 'tx-hash-not-found', status: 'pending', symbol: 'SOL/USDC' },
+        ]),
+      };
+      const confirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(ok({ confirmed: false })),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        journal: { append: journalAppend } as any,
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        swapConfirmationPoller: confirmationPoller as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+            confirmationPoller,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+
+      // Plan was NOT marked completed
+      expect(planRepo.markCompleted).not.toHaveBeenCalledWith('plan-startup-not-confirmed');
+      // Should halt
+      const intake = actor.getIntakeDeps('SOL/USDC');
+      expect(intake).toMatchObject({ rejected: true, code: 'swap_recovery_ambiguous' });
+
+      await actor.stop();
+    });
+
+    it('marks incomplete swap plans failed and rejects pending orders when the confirmation poller reports a reverted tx', async () => {
+      const planRepo = {
+        ...makeRepo(),
+        getIncomplete: vi.fn().mockResolvedValue([
+          { id: 'plan-startup-failed', status: 'executing', plannedOrders: [], createdAt: new Date() },
+        ]),
+        markCompleted: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+      };
+      const orderRepo = {
+        ...makeRepo(),
+        getByExecutionPlanId: vi.fn().mockResolvedValue([
+          { id: 'ord-startup-failed', venueRefId: 'tx-hash-failed', status: 'pending', symbol: 'SOL/USDC' },
+        ]),
+        updateStatus: vi.fn().mockResolvedValue(undefined),
+      };
+      const confirmationPoller = {
+        checkConfirmation: vi.fn().mockResolvedValue(ok({ confirmed: false, failed: true })),
+      };
+      const swapVenue = {
+        fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
+        quote: vi.fn(),
+        fetchRecentTransactions: vi.fn().mockResolvedValue(ok([])),
+      };
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'live',
+        venue: 'jupiter',
+        venueType: 'swap',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        planRepo: planRepo as any,
+        orderRepo: orderRepo as any,
+        swapConfirmationPoller: confirmationPoller as any,
+        venueAdapterFactory: makeVenueAdapterFactory({
+          swapAdapter: {
+            swapVenue,
+            walletAddress: 'wallet-xyz',
+            signerPresent: true,
+            confirmationPoller,
+          },
+        }) as any,
+      }));
+
+      await actor.start();
+
+      expect(confirmationPoller.checkConfirmation).toHaveBeenCalledWith('tx-hash-failed');
+      expect(orderRepo.updateStatus).toHaveBeenCalledWith('ord-startup-failed', 'rejected');
+      expect(planRepo.markFailed).toHaveBeenCalledWith('plan-startup-failed');
+
+      await actor.stop();
+    });
+  });
 });

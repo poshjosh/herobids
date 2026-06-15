@@ -65,6 +65,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Swap recovery confirmation handling (2026-06-15): restored filled-quantity and fill-timestamp recovery to match live swap execution semantics.
+
 - Graceful agent deployment (2026-06-15): worker startup now stops existing agent containers before deleting them, giving runtimes a SIGTERM window during redeploys.
 
 - Runtime state alignment (2026-06-15): runtime session retirement now preserves `crashed` vs `stopped`, and Docker fallback handling skips duplicate crash processing once an abnormal end is already recorded.

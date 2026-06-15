@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { venueAccounts, userCredentials } from '@herobids/db';
 import type { OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
-import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, SolanaSigner } from '@herobids/venues';
+import { HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter, OneInchSwapAdapter, SolanaSigner, JupiterConfirmationPoller, EvmConfirmationPoller } from '@herobids/venues';
+import type { SwapConfirmationPoller } from '@herobids/venues';
 import { credentialDecryptedEvent } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
 import { decryptCredential } from './crypto.js';
@@ -48,6 +49,8 @@ export interface SwapAdapterResult {
   credentialId?: string;
   /** Whether a transaction signer is configured (required for live execution) */
   signerPresent: boolean;
+  /** Venue-specific confirmation poller for authoritative on-chain tx status checks */
+  confirmationPoller?: SwapConfirmationPoller;
 }
 
 export interface VenueAdapterFactoryDeps {
@@ -260,7 +263,9 @@ export class VenueAdapterFactory {
       });
 
       // For 1inch, wallet address is derived from the private key — we don't need venueAccountRef
-      return { swapVenue, walletAddress: '', credentialId: account?.credentialId ?? undefined, signerPresent: true };
+      const oneInchRpcUrl = oneInchConfig?.rpcUrl ?? 'https://mainnet.base.org';
+      const confirmationPoller = new EvmConfirmationPoller({ rpcUrl: oneInchRpcUrl });
+      return { swapVenue, walletAddress: '', credentialId: account?.credentialId ?? undefined, signerPresent: true, confirmationPoller };
     }
 
     if (venue !== 'jupiter') {
@@ -316,15 +321,17 @@ export class VenueAdapterFactory {
     }
 
     const jupiterConfig = venues['jupiter'];
+    const jupiterRpcUrl = jupiterConfig?.rpcUrl ?? 'https://api.mainnet-beta.solana.com';
     const swapVenue = new JupiterSwapAdapter({
       walletAddress,
       apiUrl: jupiterConfig?.baseUrl,
-      rpcUrl: jupiterConfig?.rpcUrl,
+      rpcUrl: jupiterRpcUrl,
       tokenDecimals,
       timeoutMs: jupiterConfig?.timeoutMs,
       signer,
     });
 
-    return { swapVenue, walletAddress, credentialId: resolvedCredentialId, signerPresent: !!signer };
+    const confirmationPoller = new JupiterConfirmationPoller({ rpcUrl: jupiterRpcUrl }, signer);
+    return { swapVenue, walletAddress, credentialId: resolvedCredentialId, signerPresent: !!signer, confirmationPoller };
   }
 }

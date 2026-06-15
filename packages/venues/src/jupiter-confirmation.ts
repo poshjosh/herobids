@@ -79,7 +79,7 @@ export class JupiterConfirmationPoller implements SwapConfirmationPoller {
       }
 
       if (status.err) {
-        return err({ code: 'TX_FAILED', message: `Transaction failed on-chain: ${JSON.stringify(status.err)}` });
+        return ok({ confirmed: false, failed: true, blockNumber: status.slot });
       }
 
       const isConfirmed = status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized';
