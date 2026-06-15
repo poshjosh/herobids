@@ -1244,27 +1244,10 @@ export function applyRuntimeMessage(
 
     // Typed source check first — prefer structured payload over string-prefix convention
     if (source === 'reminder') {
-      const reminderId = typeof context['reminderId'] === 'string' ? context['reminderId'] : (wakeId.startsWith('reminder:') ? wakeId.slice('reminder:'.length) : null) || null;
-      const message = typeof context['message'] === 'string' ? context['message'] : (reason.startsWith('reminder:') ? reason.slice('reminder:'.length) : reason);
+      const reminderId = typeof context['reminderId'] === 'string' ? context['reminderId'] : wakeId || null;
+      const message = typeof context['message'] === 'string' ? context['message'] : reason;
       const scheduledBy: 'scout' | 'judge' = context['scheduledBy'] === 'scout' ? 'scout' : 'judge';
       state.metrics.currentReminder = { wakeId, reminderId, message, requestedAt, scheduledBy };
-      state.metrics.currentMarketWake = null;
-      const summary = `Reminder: ${message}`;
-      pushRecentEvent(state, type, summary);
-      return summary;
-    }
-
-    // Legacy string-prefix fallback for reminder wakes (kept during migration)
-    if (wakeId.startsWith('reminder:') && reason.startsWith('reminder:')) {
-      const reminderId = wakeId.slice('reminder:'.length) || null;
-      const message = reason.slice('reminder:'.length);
-      state.metrics.currentReminder = {
-        wakeId,
-        reminderId,
-        message,
-        requestedAt,
-        scheduledBy: 'judge', // Legacy records predate scheduledBy; all were judge-created
-      };
       state.metrics.currentMarketWake = null;
       const summary = `Reminder: ${message}`;
       pushRecentEvent(state, type, summary);

@@ -331,7 +331,7 @@ export const AgentMarketWakePayloadSchema = z.object({
   priority: WakePrioritySchema,
   requestedAt: z.string().datetime(),
   notBefore: z.string().datetime().optional(),
-  source: AgentMarketWakeSourceSchema.optional(),
+  source: AgentMarketWakeSourceSchema,
   context: z.record(z.unknown()).optional(),
 });
 

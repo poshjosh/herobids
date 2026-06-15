@@ -751,11 +751,13 @@ describe('runtime composition helpers', () => {
     const summary = applyRuntimeMessage(state, {
       type: 'agent.market.wake',
       payload: {
-        wakeId: 'reminder:rem-001',
-        reason: 'reminder:Check BTC price',
+        wakeId: 'rem-001',
+        reason: 'Check BTC price',
         eventIds: ['rem-001'],
         priority: 'normal',
         requestedAt: new Date().toISOString(),
+        source: 'reminder',
+        context: { reminderId: 'rem-001', message: 'Check BTC price', scheduledBy: 'judge' },
       },
     });
     expect(summary).toBe('Reminder: Check BTC price');
@@ -796,11 +798,13 @@ describe('runtime composition helpers', () => {
     const userContext = buildTickUserContext(state, [{
       type: 'agent.market.wake',
       payload: {
-        wakeId: 'reminder:rem-001',
-        reason: 'reminder:Check BTC price',
+        wakeId: 'rem-001',
+        reason: 'Check BTC price',
         eventIds: ['rem-001'],
         priority: 'normal',
         requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'reminder',
+        context: { reminderId: 'rem-001', message: 'Check BTC price', scheduledBy: 'judge' },
       },
     }]);
 
@@ -816,11 +820,13 @@ describe('runtime composition helpers', () => {
     const firstTick = buildTickUserContext(state, [{
       type: 'agent.market.wake',
       payload: {
-        wakeId: 'reminder:rem-001',
-        reason: 'reminder:Check BTC price',
+        wakeId: 'rem-001',
+        reason: 'Check BTC price',
         eventIds: ['rem-001'],
         priority: 'normal',
         requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'reminder',
+        context: { reminderId: 'rem-001', message: 'Check BTC price', scheduledBy: 'judge' },
       },
     }]);
     const secondTick = buildTickUserContext(state, []);
@@ -829,7 +835,7 @@ describe('runtime composition helpers', () => {
     expect(secondTick).not.toContain('## A reminder you set for yourself is now due');
   });
 
-  it('applyRuntimeMessage returns a generic Market wake summary for non-reminder, non-typed wakes', () => {
+  it('applyRuntimeMessage returns the wake reason when a typed market wake has no extra context', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {
       type: 'agent.market.wake',
@@ -839,9 +845,10 @@ describe('runtime composition helpers', () => {
         eventIds: [],
         priority: 'high',
         requestedAt: new Date().toISOString(),
+        source: 'watch_threshold',
       },
     });
-    expect(summary).toBe('Market wake: momentum signal detected');
+    expect(summary).toBe('momentum signal detected');
   });
 
   it('applyRuntimeMessage renders Watch Trigger Context for watch_threshold wakes', () => {

@@ -156,6 +156,7 @@ describe('AgentMarketWakePayloadSchema', () => {
     eventIds: ['evt-1', 'evt-2'],
     priority: 'normal' as const,
     requestedAt: '2026-06-10T12:36:02.000Z',
+    source: 'watch_threshold' as const,
   };
 
   it('accepts a valid payload', () => {
@@ -203,15 +204,15 @@ describe('AgentMarketWakePayloadSchema', () => {
     expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, source: 'unknown_source' }).success).toBe(false);
   });
 
-  it('accepts payload without source/context for backward compatibility', () => {
-    const legacyPayload = {
+  it('rejects payload without a wake source', () => {
+    const missingSource = {
       wakeId: 'wake-legacy',
       reason: 'market_monitor_triggered',
       eventIds: ['evt-1'],
       priority: 'normal' as const,
       requestedAt: '2026-06-10T12:36:02.000Z',
     };
-    expect(AgentMarketWakePayloadSchema.safeParse(legacyPayload).success).toBe(true);
+    expect(AgentMarketWakePayloadSchema.safeParse(missingSource).success).toBe(false);
   });
 });
 
@@ -320,7 +321,7 @@ describe('validateMessage — market monitor envelope round-trips', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts a legacy agent.market.wake envelope without source/context', () => {
+  it('rejects an agent.market.wake envelope without source/context', () => {
     const result = validateMessage({
       ...baseEnvelope,
       type: 'agent.market.wake',
@@ -332,7 +333,7 @@ describe('validateMessage — market monitor envelope round-trips', () => {
         requestedAt: '2026-06-10T12:00:00.000Z',
       },
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it('rejects market.watch.triggered envelope with invalid payload', () => {

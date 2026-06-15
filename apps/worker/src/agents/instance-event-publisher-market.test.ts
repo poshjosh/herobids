@@ -228,7 +228,7 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
       eventId: 'e3', monitorType: 'regime_change', benchmarkSymbol: 'BTC', previousState: 'favorable', currentState: 'unfavorable', changedAt: new Date().toISOString(),
     });
     await publisher.emitAgentMarketWake(agentId, {
-      wakeId: 'w1', reason: 'test', eventIds: [], priority: 'low', requestedAt: new Date().toISOString(),
+      wakeId: 'w1', reason: 'test', eventIds: [], priority: 'low', requestedAt: new Date().toISOString(), source: 'reminder', context: { reminderId: 'w1', message: 'test', scheduledBy: 'judge' },
     });
 
     const expectedStream = `agent:outbound:${agentId}`;

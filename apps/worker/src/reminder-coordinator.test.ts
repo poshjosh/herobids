@@ -56,8 +56,8 @@ describe('ReminderCoordinator', () => {
     expect(eventPublisher.emitAgentMarketWake).toHaveBeenCalledWith(
       'agent-1',
       expect.objectContaining({
-        wakeId: 'reminder:rem-001',
-        reason: 'reminder:Check BTC price',
+        wakeId: 'rem-001',
+        reason: 'Check BTC price',
         eventIds: ['rem-001'],
         source: 'reminder',
         context: { reminderId: 'rem-001', message: 'Check BTC price', scheduledBy: 'judge' },

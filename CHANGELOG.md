@@ -41,7 +41,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Agent runtime loop controls (2026-06-15): scout/judge turn caps and temperatures, scout token budget, wake timing, and venue-intelligence fanout caps are now operator-configurable through `agentRuntime` and forwarded into container runtime policy.
 
-- Agent wake semantics (2026-06-11): market and reminder wakes now carry typed source/context so the runtime can render specific watch, discovery, regime, and reminder trigger summaries instead of generic wake labels.
+- Agent wake semantics (2026-06-15): wake payloads now require typed sources end-to-end, reminder wakes no longer use legacy `reminder:` prefixes, and runtime reminder rendering depends on typed source/context instead of migration fallbacks.
 
 - **Migration squash (2026-06-10):** The 13 incremental migration files `0000_windy_serpent_society` through `0012_execute_code_programming_skill` were replaced with a single baseline (`0000_baseline.sql`) that represents the full schema at this point. Migration `0001_add_preferred_locale` is additive on top.
   - **Fresh databases:** run `pnpm --filter @herobids/db run migrate` as normal.
