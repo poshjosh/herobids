@@ -231,3 +231,173 @@ describe('SwapLiveExecutor', () => {
     expect(result.data.plan.status).toBe('completed');
   });
 });
+
+describe('SwapLiveExecutor — state transition coverage', () => {
+  it('produces Jupiter-specific execution evidence with venueRefId for recovery', async () => {
+    const venue = makeSwapVenue({
+      executeSwap: vi.fn().mockResolvedValue(ok({
+        executionRef: 'jupiter-sig-5xK3mR...',
+        inputAmount: quantity('100'),
+        outputAmount: quantity('0.666'),
+        timestamp: '2026-06-15T10:00:00Z',
+      } satisfies SwapReceipt)),
+    });
+
+    const stateChanges: Array<{ submissionState?: string; venueRefId?: string }> = [];
+    const executor = new SwapLiveExecutor({
+      swapVenue: venue,
+      idGen: makeIdGen(),
+      onOrderStateChange: async (order) => {
+        stateChanges.push({ submissionState: order.submissionState, venueRefId: order.venueRefId });
+      },
+    });
+
+    const plan = makePlan({ venue: 'jupiter' });
+    const result = await executor.execute(plan, price('150'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // venue_acknowledged state carries the transaction signature in the in-process callback payload
+    const acknowledged = stateChanges.find(s => s.submissionState === 'venue_acknowledged');
+    expect(acknowledged?.venueRefId).toBe('jupiter-sig-5xK3mR...');
+
+    // Terminal state also preserves the signature
+    const terminal = stateChanges.find(s => s.submissionState === 'terminal');
+    expect(terminal?.venueRefId).toBe('jupiter-sig-5xK3mR...');
+  });
+
+  it('produces 1inch-specific execution evidence with transaction hash for recovery', async () => {
+    const venue = makeSwapVenue({
+      executeSwap: vi.fn().mockResolvedValue(ok({
+        executionRef: '0xabc123def456...',
+        inputAmount: quantity('10'),
+        outputAmount: quantity('0.005'),
+        timestamp: '2026-06-15T10:00:00Z',
+      } satisfies SwapReceipt)),
+    });
+
+    const stateChanges: Array<{ submissionState?: string; venueRefId?: string }> = [];
+    const executor = new SwapLiveExecutor({
+      swapVenue: venue,
+      idGen: makeIdGen(),
+      onOrderStateChange: async (order) => {
+        stateChanges.push({ submissionState: order.submissionState, venueRefId: order.venueRefId });
+      },
+    });
+
+    const plan = makePlan({ venue: '1inch' });
+    const result = await executor.execute(plan, price('2000'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // venue_acknowledged state carries the transaction hash in the in-process callback payload
+    const acknowledged = stateChanges.find(s => s.submissionState === 'venue_acknowledged');
+    expect(acknowledged?.venueRefId).toBe('0xabc123def456...');
+  });
+
+  it('enters deterministic submission states enabling restart recovery for either venue', async () => {
+    const venue = makeSwapVenue();
+    const states: string[] = [];
+    const executor = new SwapLiveExecutor({
+      swapVenue: venue,
+      idGen: makeIdGen(),
+      onOrderStateChange: async (order) => { states.push(order.submissionState!); },
+    });
+
+    const result = await executor.execute(makePlan(), price('150'));
+    expect(result.ok).toBe(true);
+
+    // Full state sequence: prepared → submit_attempting → venue_acknowledged → terminal.
+    // This documents the generic swap executor state machine rather than venue-specific parity.
+    expect(states).toEqual(['prepared', 'submit_attempting', 'venue_acknowledged', 'terminal']);
+  });
+
+  it('quote failure halts at prepared → terminal without ambiguous state', async () => {
+    const venue = makeSwapVenue({
+      quote: vi.fn().mockResolvedValue(err({ code: 'QUOTE_FAILED', message: 'No route found' })),
+    });
+    const states: string[] = [];
+    const executor = new SwapLiveExecutor({
+      swapVenue: venue,
+      idGen: makeIdGen(),
+      onOrderStateChange: async (order) => { states.push(order.submissionState!); },
+    });
+
+    const result = await executor.execute(makePlan(), price('150'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Only prepared → terminal — no ambiguous submit_attempting state was entered
+    expect(states).toEqual(['prepared', 'terminal']);
+    expect(result.data.orders[0]!.status).toBe('rejected');
+  });
+
+  it('execution failure after submit_attempting enters terminal with rejection (recovery safe)', async () => {
+    const venue = makeSwapVenue({
+      executeSwap: vi.fn().mockResolvedValue(err({ code: 'SWAP_TX_FAILED', message: 'Reverted' })),
+    });
+    const states: string[] = [];
+    const executor = new SwapLiveExecutor({
+      swapVenue: venue,
+      idGen: makeIdGen(),
+      onOrderStateChange: async (order) => { states.push(order.submissionState!); },
+    });
+
+    const result = await executor.execute(makePlan(), price('150'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // prepared → submit_attempting → terminal (rejected, no venue_acknowledged)
+    expect(states).toEqual(['prepared', 'submit_attempting', 'terminal']);
+    expect(result.data.orders[0]!.status).toBe('rejected');
+  });
+
+  it('emits the venue_acknowledged callback payload used by confirmation pollers', async () => {
+    // This test covers the in-process callback payload emitted at venue_acknowledged.
+    // Persistence and restart recovery still need integration coverage at the actor/store boundary.
+    const venue = makeSwapVenue({
+      executeSwap: vi.fn().mockResolvedValue(ok({
+        executionRef: 'tx-hash-for-poller',
+        inputAmount: quantity('1500'),
+        outputAmount: quantity('10'),
+        timestamp: '2026-06-15T10:00:00Z',
+      } satisfies SwapReceipt)),
+    });
+
+    const acknowledgedOrders: Array<{
+      venueRefId?: string;
+      submissionState?: string;
+      clientOrderId?: string;
+      status: string;
+    }> = [];
+    const executor = new SwapLiveExecutor({
+      swapVenue: venue,
+      idGen: makeIdGen(),
+      clientOrderId: (planId, idx) => `swap:${planId}:${idx}`,
+      onOrderStateChange: async (order) => {
+        if (order.submissionState === 'venue_acknowledged') {
+          acknowledgedOrders.push({
+            venueRefId: order.venueRefId,
+            submissionState: order.submissionState,
+            clientOrderId: order.clientOrderId,
+            status: order.status,
+          });
+        }
+      },
+    });
+
+    await executor.execute(makePlan(), price('150'));
+
+    // The venue_acknowledged callback payload must carry:
+    // 1. venueRefId (the txRef the poller will check)
+    // 2. status: 'pending' (not terminal yet)
+    // 3. clientOrderId (for idempotent lookup)
+    expect(acknowledgedOrders).toHaveLength(1);
+    expect(acknowledgedOrders[0]).toMatchObject({
+      venueRefId: 'tx-hash-for-poller',
+      submissionState: 'venue_acknowledged',
+      clientOrderId: 'swap:plan-1:0',
+      status: 'pending',
+    });
+  });
+});

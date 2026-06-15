@@ -131,6 +131,38 @@ describe('assertLiveReadiness', () => {
         .toThrow('configured transaction signer');
     });
 
+    it('allows 1inch live mode when signer is present (credentials resolved upstream by adapter factory)', () => {
+      // In the real startup path, buildSwapAdapter() resolves 1inch credentials (privateKey + apiKey)
+      // from the DB and constructs the signer before the live gate is called. The gate only sees
+      // signerPresent: true after successful upstream resolution. credentialsFromDb/credentialsPresent
+      // reflect the orderbook-style credential model and are not checked for swap venues.
+      const input: LiveGateInput = {
+        ...VALID_LIVE_INPUT,
+        venueType: 'swap',
+        venue: '1inch',
+        credentialsFromDb: true,
+        credentialsPresent: true,
+        signerPresent: true,
+      };
+      const rollout = { ...DEFAULT_ROLLOUT, allowedVenues: ['1inch'] };
+      const result = assertLiveReadiness(rollout, input);
+      expect(result.effectiveMaxOrderNotional).toBeDefined();
+    });
+
+    it('rejects 1inch live mode when signer is missing', () => {
+      const input: LiveGateInput = {
+        ...VALID_LIVE_INPUT,
+        venueType: 'swap',
+        venue: '1inch',
+        credentialsFromDb: true,
+        credentialsPresent: true,
+        signerPresent: false,
+      };
+      const rollout = { ...DEFAULT_ROLLOUT, allowedVenues: ['1inch'] };
+      expect(() => assertLiveReadiness(rollout, input))
+        .toThrow('configured transaction signer');
+    });
+
     it('rejects env-var credential fallback when requireDbCredentials is true', () => {
       const input: LiveGateInput = { ...VALID_LIVE_INPUT, credentialsFromDb: false };
       expect(() => assertLiveReadiness(DEFAULT_ROLLOUT, input))

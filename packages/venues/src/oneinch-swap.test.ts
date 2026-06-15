@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { quantity, Decimal } from '@herobids/domain';
+import { quantity } from '@herobids/domain';
 import { OneInchSwapAdapter } from './oneinch-swap.js';
 
 const signerState = vi.hoisted(() => ({
@@ -66,70 +66,6 @@ function createAdapter(overrides?: Partial<ConstructorParameters<typeof OneInchS
   });
 }
 
-/**
- * Unit tests for OneInchSwapAdapter.
- * Tests raw amount conversions, quote parsing, and balance mapping.
- * Does NOT test network calls — those belong in integration tests.
- */
-describe('OneInch raw amount conversion', () => {
-  // Inline the same logic from the adapter for isolated testing
-  function toRawAmount(amount: string, decimals: number): string {
-    const d = new Decimal(amount);
-    const fixed = d.toFixed(decimals, Decimal.ROUND_DOWN);
-    const parts = fixed.split('.');
-    const intPart = parts[0] ?? '0';
-    const fracPart = (parts[1] ?? '').padEnd(decimals, '0').slice(0, decimals);
-    return BigInt(intPart + fracPart).toString();
-  }
-
-  function fromRawAmount(raw: string, decimals: number): string {
-    if (decimals === 0) return raw;
-    const padded = raw.padStart(decimals + 1, '0');
-    const intPart = padded.slice(0, padded.length - decimals);
-    const fracPart = padded.slice(padded.length - decimals);
-    return `${intPart}.${fracPart}`.replace(/\.?0+$/, '') || '0';
-  }
-
-  it('converts 1 USDC (6 decimals) to raw', () => {
-    expect(toRawAmount('1', 6)).toBe('1000000');
-  });
-
-  it('converts 0.5 ETH (18 decimals) to raw', () => {
-    expect(toRawAmount('0.5', 18)).toBe('500000000000000000');
-  });
-
-  it('converts 100 USDC to raw', () => {
-    expect(toRawAmount('100', 6)).toBe('100000000');
-  });
-
-  it('truncates excess precision (does not round up)', () => {
-    // 1.1234567 with 6 decimals → 1123456 (truncates the 7)
-    expect(toRawAmount('1.1234567', 6)).toBe('1123456');
-  });
-
-  it('converts raw 1000000 (6 decimals) to human-readable', () => {
-    expect(fromRawAmount('1000000', 6)).toBe('1');
-  });
-
-  it('converts raw 500000000000000000 (18 decimals) to human-readable', () => {
-    expect(fromRawAmount('500000000000000000', 18)).toBe('0.5');
-  });
-
-  it('converts raw 0 to "0"', () => {
-    expect(fromRawAmount('0', 6)).toBe('0');
-  });
-
-  it('handles 0-decimal tokens', () => {
-    expect(toRawAmount('42', 0)).toBe('42');
-    expect(fromRawAmount('42', 0)).toBe('42');
-  });
-
-  it('handles large amounts without precision loss', () => {
-    expect(toRawAmount('1000000', 18)).toBe('1000000000000000000000000');
-    expect(fromRawAmount('1000000000000000000000000', 18)).toBe('1000000');
-  });
-});
-
 describe('OneInch adapter behavior', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -187,6 +123,124 @@ describe('OneInch adapter behavior', () => {
     expect(signerState.readErc20Decimals).not.toHaveBeenCalled();
   });
 
+  it('converts human-readable quote inputs to raw units and returns scaled outputs', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      srcToken: { address: USDC_CONFIGURED },
+      dstToken: { address: WETH },
+      toAmount: '500000000000000000',
+    }));
+
+    const adapter = createAdapter();
+    const result = await adapter.quote({
+      inputAsset: USDC_CONFIGURED,
+      outputAsset: WETH,
+      amount: quantity('100'),
+      slippageBps: 50,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(calledUrl.pathname).toBe('/swap/v6.0/8453/quote');
+    expect(calledUrl.searchParams.get('src')).toBe(USDC_CONFIGURED);
+    expect(calledUrl.searchParams.get('dst')).toBe(WETH);
+    expect(calledUrl.searchParams.get('amount')).toBe('100000000');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected quote to succeed');
+    expect(result.data.inputAmount.toString()).toBe('100');
+    expect(result.data.expectedOutputAmount.toString()).toBe('0.5');
+    expect(result.data.minimumOutputAmount.toString()).toBe('0.4975');
+  });
+
+  it('normalizes inputAmount to executable precision (truncates excess decimals)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      srcToken: { address: USDC_CONFIGURED },
+      dstToken: { address: WETH },
+      toAmount: '500000000000000000',
+    }));
+
+    const adapter = createAdapter();
+    const result = await adapter.quote({
+      inputAsset: USDC_CONFIGURED,
+      outputAsset: WETH,
+      amount: quantity('1.1234567'), // 7 fractional digits, USDC has 6
+      slippageBps: 50,
+    });
+
+    // Verify the on-wire amount is truncated
+    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(calledUrl.searchParams.get('amount')).toBe('1123456'); // truncated to 6 decimals
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected quote to succeed');
+    // inputAmount must match the executable (truncated) value, not the original
+    expect(result.data.inputAmount.toString()).toBe('1.123456');
+  });
+
+  it('truncates fractional amounts to zero for zero-decimal assets', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      srcToken: { address: 'POINTS' },
+      dstToken: { address: USDC_CONFIGURED },
+      toAmount: '2500000',
+    }));
+
+    const adapter = createAdapter({
+      tokenDecimals: {
+        POINTS: 0,
+        [USDC_CONFIGURED]: 6,
+      },
+    });
+
+    const result = await adapter.quote({
+      inputAsset: 'POINTS',
+      outputAsset: USDC_CONFIGURED,
+      amount: quantity('42.9'),
+      slippageBps: 0,
+    });
+
+    // On-wire amount should be the truncated integer
+    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(calledUrl.searchParams.get('amount')).toBe('42');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected quote to succeed');
+    expect(result.data.inputAmount.toString()).toBe('42');
+  });
+
+  it('returns QUOTE_FAILED on non-200 quote response', async () => {
+    fetchMock.mockResolvedValue(new Response('Rate limited', { status: 429 }));
+
+    const adapter = createAdapter();
+    const result = await adapter.quote({
+      inputAsset: USDC_CONFIGURED,
+      outputAsset: WETH,
+      amount: quantity('1'),
+      slippageBps: 100,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected quote to fail');
+    expect(result.error.code).toBe('QUOTE_FAILED');
+    expect(result.error.message).toContain('429');
+  });
+
+  it('returns QUOTE_ERROR on aborted quote request', async () => {
+    fetchMock.mockRejectedValue(new DOMException('The operation was aborted', 'AbortError'));
+
+    const adapter = createAdapter();
+    const result = await adapter.quote({
+      inputAsset: USDC_CONFIGURED,
+      outputAsset: WETH,
+      amount: quantity('1'),
+      slippageBps: 100,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected quote to fail');
+    expect(result.error.code).toBe('QUOTE_ERROR');
+    expect(result.error.message).toContain('aborted');
+  });
+
   it('preserves configured asset ids when reporting balances', async () => {
     signerState.readErc20Balances.mockResolvedValue([
       { tokenAddress: USDC_LOWER, balance: 2_500_000n },
@@ -240,6 +294,30 @@ describe('OneInch adapter behavior', () => {
     expect(signerState.approveErc20.mock.invocationCallOrder[0]).toBeLessThan(
       signerState.sendTransaction.mock.invocationCallOrder[0],
     );
+  });
+
+  it('executeSwap truncates excess-precision inputAmount consistently with quote()', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap({
+      quoteData: { _slippageBps: 100 },
+      inputAsset: USDC_CONFIGURED,
+      outputAsset: WETH,
+      inputAmount: quantity('1.1234567'), // excess precision — 7 digits, USDC has 6
+      expectedOutputAmount: quantity('0.005'),
+      minimumOutputAmount: quantity('0.00495'),
+      priceImpact: 0,
+      expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    });
+
+    expect(result.ok).toBe(true);
+    // The on-wire amount sent to 1inch must be truncated to 6 decimals
+    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(calledUrl.searchParams.get('amount')).toBe('1123456');
   });
 
   it('applies the configured API rate limit', async () => {
@@ -429,53 +507,394 @@ describe('OneInch adapter behavior', () => {
   });
 });
 
-describe('OneInch quote response parsing', () => {
-  it('computes slippage-adjusted minimum output', () => {
-    const expectedOutput = '100';
-    const slippageBps = 50; // 0.5%
-    const slippageMultiplier = new Decimal(1).minus(new Decimal(slippageBps).div(10_000));
-    const minimumOutput = new Decimal(expectedOutput).mul(slippageMultiplier).toFixed(6, Decimal.ROUND_DOWN);
-    expect(minimumOutput).toBe('99.500000');
+describe('OneInch approval-flow regression coverage', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    signerState.sendTransaction.mockReset();
+    signerState.readErc20Balance.mockReset();
+    signerState.readErc20Balances.mockReset();
+    signerState.readErc20Allowance.mockReset();
+    signerState.readErc20Decimals.mockReset();
+    signerState.approveErc20.mockReset();
+    signerState.readNativeBalance.mockReset();
+    signerState.getPublicClient.mockReset();
+
+    signerState.sendTransaction.mockResolvedValue({
+      ok: true,
+      data: { transactionHash: '0xswaphash', gasUsed: 45_678n },
+    });
+    signerState.readErc20Allowance.mockResolvedValue(0n);
+    signerState.approveErc20.mockResolvedValue({
+      ok: true,
+      data: { transactionHash: '0xapprovehash', gasUsed: 21_000n },
+    });
   });
 
-  it('handles high slippage (5%)', () => {
-    const expectedOutput = '1000';
-    const slippageBps = 500;
-    const slippageMultiplier = new Decimal(1).minus(new Decimal(slippageBps).div(10_000));
-    const minimumOutput = new Decimal(expectedOutput).mul(slippageMultiplier).toFixed(6, Decimal.ROUND_DOWN);
-    expect(minimumOutput).toBe('950.000000');
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
-  it('handles zero slippage', () => {
-    const expectedOutput = '50.123456';
-    const slippageBps = 0;
-    const slippageMultiplier = new Decimal(1).minus(new Decimal(slippageBps).div(10_000));
-    const minimumOutput = new Decimal(expectedOutput).mul(slippageMultiplier).toFixed(6, Decimal.ROUND_DOWN);
-    expect(minimumOutput).toBe('50.123456');
+  const makeSwapQuote = () => ({
+    quoteData: { _slippageBps: 100 },
+    inputAsset: USDC_CONFIGURED,
+    outputAsset: WETH,
+    inputAmount: quantity('10'),
+    expectedOutputAmount: quantity('0.005'),
+    minimumOutputAmount: quantity('0.00495'),
+    priceImpact: 0,
+    expiresAt: new Date(Date.now() + 30_000).toISOString(),
+  });
+
+  it('skips approval when existing allowance is sufficient', async () => {
+    signerState.readErc20Allowance.mockResolvedValue(100_000_000n); // 100 USDC (well above 10)
+
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(true);
+    expect(signerState.approveErc20).not.toHaveBeenCalled();
+  });
+
+  it('re-approves when the fresh swap calldata returns a different spender', async () => {
+    const FIRST_SPENDER = '0x111111125421ca6dc452d289314280a0f8842a65';
+    const SECOND_SPENDER = '0x222222125421ca6dc452d289314280a0f8842a65';
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({
+        tx: { to: FIRST_SPENDER, data: '0xspender1', value: '0', gas: 210000 },
+        toAmount: '5000000000000000',
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        tx: { to: SECOND_SPENDER, data: '0xspender2', value: '0', gas: 210000 },
+        toAmount: '5000000000000000',
+      }));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(true);
+    expect(signerState.approveErc20).toHaveBeenCalledTimes(2);
+    expect(signerState.approveErc20).toHaveBeenNthCalledWith(1, USDC_CONFIGURED, FIRST_SPENDER, 10_000_000n);
+    expect(signerState.approveErc20).toHaveBeenNthCalledWith(2, USDC_CONFIGURED, SECOND_SPENDER, 10_000_000n);
+    expect(signerState.sendTransaction).toHaveBeenCalledWith(expect.objectContaining({ to: SECOND_SPENDER }));
+  });
+
+  it('performs zero-reset then re-approves when first approval reverts with existing non-zero allowance', async () => {
+    // Existing non-zero allowance but smaller than required
+    signerState.readErc20Allowance.mockResolvedValue(5_000_000n); // 5 USDC
+    // First approval fails with tx_reverted (simulates non-zero-to-non-zero restriction)
+    signerState.approveErc20
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.tx_reverted', message: 'approve reverted' } })
+      // Zero-reset succeeds
+      .mockResolvedValueOnce({ ok: true, data: { transactionHash: '0xreset', gasUsed: 21_000n } })
+      // Re-approve succeeds
+      .mockResolvedValueOnce({ ok: true, data: { transactionHash: '0xapprove2', gasUsed: 21_000n } });
+
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(true);
+    // First: approve 10M (fails), second: reset to 0, third: re-approve 10M
+    expect(signerState.approveErc20).toHaveBeenCalledTimes(3);
+    expect(signerState.approveErc20).toHaveBeenNthCalledWith(1, USDC_CONFIGURED, ONEINCH_SPENDER, 10_000_000n);
+    expect(signerState.approveErc20).toHaveBeenNthCalledWith(2, USDC_CONFIGURED, ONEINCH_SPENDER, 0n);
+    expect(signerState.approveErc20).toHaveBeenNthCalledWith(3, USDC_CONFIGURED, ONEINCH_SPENDER, 10_000_000n);
+  });
+
+  it('fails closed when zero-reset itself fails', async () => {
+    signerState.readErc20Allowance.mockResolvedValue(5_000_000n);
+    signerState.approveErc20
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.tx_reverted', message: 'approve reverted' } })
+      // Zero-reset also fails
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.tx_reverted', message: 'reset failed' } });
+
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('SWAP_ERROR');
+    expect(result.error.message).toContain('Failed to reset allowance');
+  });
+
+  it('fails closed when re-approve after reset also fails', async () => {
+    signerState.readErc20Allowance.mockResolvedValue(5_000_000n);
+    signerState.approveErc20
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.tx_reverted', message: 'approve reverted' } })
+      .mockResolvedValueOnce({ ok: true, data: { transactionHash: '0xreset', gasUsed: 21_000n } })
+      // Re-approve fails
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.tx_reverted', message: 'still failing' } });
+
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('SWAP_ERROR');
+    expect(result.error.message).toContain('Failed to approve');
+  });
+
+  it('does not attempt zero-reset on transient failure without existing allowance', async () => {
+    // No existing allowance
+    signerState.readErc20Allowance.mockResolvedValue(0n);
+    // Approval fails with non-revert error (transient)
+    signerState.approveErc20
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.rpc_timeout', message: 'RPC timeout' } });
+
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('SWAP_ERROR');
+    expect(result.error.message).toContain('Failed to approve');
+    // Only one approval attempt — no zero-reset because allowance was 0
+    expect(signerState.approveErc20).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attempt zero-reset on non-revert error even with existing allowance', async () => {
+    // Existing non-zero allowance
+    signerState.readErc20Allowance.mockResolvedValue(5_000_000n);
+    // Transient RPC failure — NOT a tx_reverted code
+    signerState.approveErc20
+      .mockResolvedValueOnce({ ok: false, error: { code: 'evm.rpc_timeout', message: 'timeout' } });
+
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '0', gas: 210000 },
+      toAmount: '5000000000000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap(makeSwapQuote());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Should fail without attempting zero-reset (only tx_reverted triggers reset path)
+    expect(signerState.approveErc20).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips approval entirely for native token (ETH) input', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({
+      tx: { to: ONEINCH_SPENDER, data: '0xabcdef', value: '200000000000000000', gas: 210000 },
+      toAmount: '5000000',
+    })));
+
+    const adapter = createAdapter();
+    const result = await adapter.executeSwap({
+      quoteData: { _slippageBps: 100 },
+      inputAsset: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      outputAsset: USDC_CONFIGURED,
+      inputAmount: quantity('0.2'),
+      expectedOutputAmount: quantity('5'),
+      minimumOutputAmount: quantity('4.95'),
+      priceImpact: 0,
+      expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(signerState.readErc20Allowance).not.toHaveBeenCalled();
+    expect(signerState.approveErc20).not.toHaveBeenCalled();
   });
 });
 
-describe('OneInch balance mapping', () => {
-  it('constructs balance entry from raw token balance and decimals', () => {
-    const rawBalance = '2500000'; // 2.5 USDC (6 decimals)
-    const decimals = 6;
-    const padded = rawBalance.padStart(decimals + 1, '0');
-    const intPart = padded.slice(0, padded.length - decimals);
-    const fracPart = padded.slice(padded.length - decimals);
-    const humanAmount = `${intPart}.${fracPart}`.replace(/\.?0+$/, '') || '0';
+describe('OneInch router-scoped transaction interpretation', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
 
-    const balance = { asset: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', amount: quantity(humanAmount) };
-    expect(balance.amount.toString()).toBe('2.5');
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as typeof fetch;
+    signerState.getPublicClient.mockReset();
   });
 
-  it('maps native ETH balance (18 decimals)', () => {
-    const rawBalance = '1000000000000000000'; // 1 ETH
-    const decimals = 18;
-    const padded = rawBalance.padStart(decimals + 1, '0');
-    const intPart = padded.slice(0, padded.length - decimals);
-    const fracPart = padded.slice(padded.length - decimals);
-    const humanAmount = `${intPart}.${fracPart}`.replace(/\.?0+$/, '') || '0';
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
 
-    expect(humanAmount).toBe('1');
+  it('excludes transactions with no router counterparty when routerAddress is configured', async () => {
+    const LP_POOL = '0xdead000000000000000000000000000000000002';
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([
+          // LP deposit — counterparty is LP_POOL, not router
+          {
+            transactionHash: '0xtx-lp',
+            address: USDC_LOWER,
+            blockNumber: 999n,
+            logIndex: 1,
+            args: { from: signerState.address, to: LP_POOL, value: 1_000_000n },
+          },
+        ])
+        .mockResolvedValueOnce([
+          // LP receipt
+          {
+            transactionHash: '0xtx-lp',
+            address: WETH,
+            blockNumber: 999n,
+            logIndex: 2,
+            args: { from: LP_POOL, to: signerState.address, value: 500_000_000_000_000n },
+          },
+        ]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_800n }),
+      getTransaction: vi.fn(),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+
+    const adapter = createAdapter({ routerAddress: ONEINCH_SPENDER });
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(0);
+  });
+
+  it('includes all bidirectional transfers when routerAddress is not configured', async () => {
+    const SOME_ADDRESS = '0xaaaa000000000000000000000000000000000001';
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            transactionHash: '0xtx-other',
+            address: USDC_LOWER,
+            blockNumber: 999n,
+            logIndex: 1,
+            args: { from: signerState.address, to: SOME_ADDRESS, value: 2_000_000n },
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            transactionHash: '0xtx-other',
+            address: WETH,
+            blockNumber: 999n,
+            logIndex: 2,
+            args: { from: SOME_ADDRESS, to: signerState.address, value: 1_000_000_000_000_000n },
+          },
+        ]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_800n }),
+      getTransaction: vi.fn(),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+
+    // No routerAddress → all bidirectional transfers are included
+    const adapter = createAdapter({ routerAddress: undefined });
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]!.executionRef).toBe('0xtx-other');
+  });
+
+  it('excludes one-sided transfers (deposits or withdrawals without both sides)', async () => {
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([
+          // Outgoing transfer only (no corresponding receive)
+          {
+            transactionHash: '0xtx-send',
+            address: USDC_LOWER,
+            blockNumber: 999n,
+            logIndex: 1,
+            args: { from: signerState.address, to: ONEINCH_SPENDER, value: 3_000_000n },
+          },
+        ])
+        .mockResolvedValueOnce([]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_800n }),
+      getTransaction: vi.fn(),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+
+    const adapter = createAdapter({ routerAddress: ONEINCH_SPENDER });
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Only one side (sent) → not a swap → excluded
+    expect(result.data).toHaveLength(0);
+  });
+
+  it('correctly identifies dominant asset in multi-transfer transactions', async () => {
+    // A swap with multiple token outputs — picks the dominant (largest) per side
+    const BONUS_TOKEN = '0xbbbb000000000000000000000000000000000001';
+    const publicClient = {
+      getBlockNumber: vi.fn().mockResolvedValue(1000n),
+      getLogs: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            transactionHash: '0xtx-multi',
+            address: USDC_LOWER,
+            blockNumber: 999n,
+            logIndex: 1,
+            args: { from: signerState.address, to: ONEINCH_SPENDER, value: 5_000_000n },
+          },
+        ])
+        .mockResolvedValueOnce([
+          // Main output: 2 WETH (18 decimals)
+          {
+            transactionHash: '0xtx-multi',
+            address: WETH,
+            blockNumber: 999n,
+            logIndex: 2,
+            args: { from: ONEINCH_SPENDER, to: signerState.address, value: 2_000_000_000_000_000_000n },
+          },
+          // Small bonus token (6 decimals, 0.001 value — smaller)
+          {
+            transactionHash: '0xtx-multi',
+            address: BONUS_TOKEN,
+            blockNumber: 999n,
+            logIndex: 3,
+            args: { from: ONEINCH_SPENDER, to: signerState.address, value: 1000n },
+          },
+        ]),
+      getBlock: vi.fn().mockResolvedValue({ timestamp: 1_717_156_800n }),
+      getTransaction: vi.fn(),
+    };
+    signerState.getPublicClient.mockReturnValue(publicClient);
+    // Provide decimals for the bonus token
+    signerState.readErc20Decimals.mockResolvedValue(6);
+
+    const adapter = createAdapter({ routerAddress: ONEINCH_SPENDER, tokenDecimals: { [USDC_CONFIGURED]: 6, [WETH]: 18, [BONUS_TOKEN]: 6 } });
+    const result = await adapter.fetchRecentTransactions(new Date('2024-05-31T00:00:00.000Z'));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toHaveLength(1);
+    // Output should be WETH (dominant = largest human-readable amount)
+    expect(result.data[0]!.outputAsset).toBe(WETH);
+    expect(result.data[0]!.outputAmount.toString()).toBe('2');
+    expect(result.data[0]!.inputAsset).toBe(USDC_CONFIGURED);
+    expect(result.data[0]!.inputAmount.toString()).toBe('5');
   });
 });
+

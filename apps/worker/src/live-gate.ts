@@ -59,8 +59,12 @@ export function assertLiveReadiness(
     );
   }
 
-  // Swap venues authenticate via wallet signing (private key), not via apiKey+secret.
-  // Credential checks only apply to orderbook venues that use traditional API credentials.
+  // Swap venues require a transaction signer (private key) for live execution.
+  // Some swap venues (e.g. 1inch) also require DB-backed credentials (apiKey) resolved
+  // upstream by the adapter factory — but by the time the live gate runs, the caller has
+  // already resolved those and reports signerPresent based on successful resolution.
+  // The gate checks only the signer requirement; credential resolution failures are caught
+  // earlier by buildSwapAdapter() before the gate is ever called.
   if (input.venueType !== 'swap') {
     if (liveRollout.requireDbCredentials && !input.credentialsFromDb) {
       throw new LiveGateError(

@@ -144,6 +144,15 @@ export class JupiterSwapAdapter implements SwapVenuePort {
     try {
       const base = this.apiUrl.endsWith('/') ? this.apiUrl : `${this.apiUrl}/`;
       const url = new URL('swap', base);
+
+      // Fail closed before calling Jupiter if we cannot actually sign and broadcast.
+      if (!this.signer) {
+        return err({
+          code: 'SWAP_SIGNING_UNAVAILABLE',
+          message: 'No Solana signer configured for Jupiter live execution. Configure a signer for live mode.',
+        });
+      }
+
       const response = await fetch(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,15 +171,6 @@ export class JupiterSwapAdapter implements SwapVenuePort {
       }
 
       const data = await response.json() as { swapTransaction: string; txid?: string };
-
-      // Live Jupiter execution is only authoritative once the transaction is
-      // actually signed and broadcast. Without a signer we fail closed.
-      if (!this.signer) {
-        return err({
-          code: 'SWAP_SIGNING_UNAVAILABLE',
-          message: 'No Solana signer configured for Jupiter live execution. Configure a signer for live mode.',
-        });
-      }
 
       // Sign and send the transaction via the Solana signer. The resulting
       // executionRef is authoritative for execution tracking, not for full-wallet

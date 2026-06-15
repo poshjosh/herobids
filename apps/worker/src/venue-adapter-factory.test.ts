@@ -374,6 +374,183 @@ describe('VenueAdapterFactory', () => {
         actorId: 'agent-1',
       })).rejects.toThrow('Unsupported swap venue meteora');
     });
+
+    it('returns signerPresent: true for Jupiter when private key is resolved from credential', async () => {
+      // Valid base58-encoded 64-byte Solana keypair (all 0xAB bytes — test-only)
+      const credData = JSON.stringify({ privateKey: '4S55ApgNWn8YKQL5J2uuxtfZrYXQZqBs8BUJTqGv3us4cAefggxxMLavbor7u47x4BfUhDRkfFBpW2rJTU6YMxux' });
+      const encryptedData = encryptForTest(credData, TEST_KEY);
+
+      const db: any = {};
+      db.select = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(() => {
+              const callCount = (db.select as ReturnType<typeof vi.fn>).mock.calls.length;
+              if (callCount === 1) {
+                return Promise.resolve([{ id: 'va-jup', venueAccountRef: 'wallet-addr-live', credentialId: 'cred-jup' }]);
+              }
+              return Promise.resolve([{ id: 'cred-jup', encryptedData }]);
+            }),
+          }),
+        }),
+      });
+      process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
+
+      const factory = makeFactory(db);
+      const result = await factory.buildSwapAdapter({
+        venueAccountId: 'va-jup',
+        venue: 'jupiter',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      });
+
+      expect(result.signerPresent).toBe(true);
+      expect(result.walletAddress).toBe('wallet-addr-live');
+      expect(result.credentialId).toBe('cred-jup');
+      expect(result.confirmationPoller).toBeDefined();
+    });
+
+    it('returns signerPresent: false for Jupiter when no credential is linked', async () => {
+      const db = makeDb({
+        venueAccount: { id: 'va-jup', venueAccountRef: 'wallet-shadow', credentialId: null },
+      });
+      const factory = makeFactory(db);
+
+      const result = await factory.buildSwapAdapter({
+        venueAccountId: 'va-jup',
+        venue: 'jupiter',
+        swapAssets: { baseAsset: 'SOL', quoteAsset: 'USDC', baseDecimals: 9, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      });
+
+      expect(result.signerPresent).toBe(false);
+      expect(result.walletAddress).toBe('wallet-shadow');
+    });
+
+    it('returns OneInchSwapAdapter with signerPresent true and confirmation poller for 1inch', async () => {
+      // Valid 32-byte hex private key for EVM signer
+      const credData = JSON.stringify({ privateKey: 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', apiKey: 'one-inch-api-key' });
+      const encryptedData = encryptForTest(credData, TEST_KEY);
+
+      const db: any = {};
+      db.select = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(() => {
+              const callCount = (db.select as ReturnType<typeof vi.fn>).mock.calls.length;
+              if (callCount === 1) {
+                return Promise.resolve([{ id: 'va-1inch', credentialId: 'cred-1inch' }]);
+              }
+              return Promise.resolve([{ id: 'cred-1inch', encryptedData }]);
+            }),
+          }),
+        }),
+      });
+      process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
+
+      const factory = makeFactory(db);
+      const result = await factory.buildSwapAdapter({
+        venueAccountId: 'va-1inch',
+        venue: '1inch',
+        swapAssets: { baseAsset: 'WETH', quoteAsset: 'USDC', baseDecimals: 18, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      });
+
+      expect(result.signerPresent).toBe(true);
+      expect(result.swapVenue.constructor.name).toBe('OneInchSwapAdapter');
+      expect(result.confirmationPoller).toBeDefined();
+      expect(result.credentialId).toBe('cred-1inch');
+    });
+
+    it('throws for 1inch when credential decryption fails', async () => {
+      const db: any = {};
+      db.select = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(() => {
+              const callCount = (db.select as ReturnType<typeof vi.fn>).mock.calls.length;
+              if (callCount === 1) {
+                return Promise.resolve([{ id: 'va-1inch', credentialId: 'cred-bad' }]);
+              }
+              return Promise.resolve([{ id: 'cred-bad', encryptedData: 'corrupted-garbage' }]);
+            }),
+          }),
+        }),
+      });
+      process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
+
+      const factory = makeFactory(db);
+      await expect(factory.buildSwapAdapter({
+        venueAccountId: 'va-1inch',
+        venue: '1inch',
+        swapAssets: { baseAsset: 'WETH', quoteAsset: 'USDC', baseDecimals: 18, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      })).rejects.toThrow('Failed to decrypt 1inch credentials');
+    });
+
+    it('throws for 1inch when privateKey is missing from decrypted credential', async () => {
+      const credData = JSON.stringify({ apiKey: 'one-inch-api-key' }); // no privateKey
+      const encryptedData = encryptForTest(credData, TEST_KEY);
+
+      const db: any = {};
+      db.select = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(() => {
+              const callCount = (db.select as ReturnType<typeof vi.fn>).mock.calls.length;
+              if (callCount === 1) {
+                return Promise.resolve([{ id: 'va-1inch', credentialId: 'cred-nokey' }]);
+              }
+              return Promise.resolve([{ id: 'cred-nokey', encryptedData }]);
+            }),
+          }),
+        }),
+      });
+      process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
+
+      const factory = makeFactory(db);
+      await expect(factory.buildSwapAdapter({
+        venueAccountId: 'va-1inch',
+        venue: '1inch',
+        swapAssets: { baseAsset: 'WETH', quoteAsset: 'USDC', baseDecimals: 18, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      })).rejects.toThrow('privateKey required');
+    });
+
+    it('throws for 1inch when apiKey is missing from decrypted credential', async () => {
+      const credData = JSON.stringify({ privateKey: '0xprivkey' }); // no apiKey
+      const encryptedData = encryptForTest(credData, TEST_KEY);
+
+      const db: any = {};
+      db.select = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(() => {
+              const callCount = (db.select as ReturnType<typeof vi.fn>).mock.calls.length;
+              if (callCount === 1) {
+                return Promise.resolve([{ id: 'va-1inch', credentialId: 'cred-noapikey' }]);
+              }
+              return Promise.resolve([{ id: 'cred-noapikey', encryptedData }]);
+            }),
+          }),
+        }),
+      });
+      process.env['CREDENTIAL_ENCRYPTION_KEY'] = TEST_KEY;
+
+      const factory = makeFactory(db);
+      await expect(factory.buildSwapAdapter({
+        venueAccountId: 'va-1inch',
+        venue: '1inch',
+        swapAssets: { baseAsset: 'WETH', quoteAsset: 'USDC', baseDecimals: 18, quoteDecimals: 6 },
+        actorType: 'agent',
+        actorId: 'agent-1',
+      })).rejects.toThrow('apiKey required');
+    });
   });
 
   describe('CredentialResolutionError', () => {

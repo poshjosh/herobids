@@ -219,7 +219,11 @@ export class OneInchSwapAdapter implements SwapVenuePort {
       const outputAsset = this.rememberAssetId(params.outputAsset);
       const inputDecimals = await this.getDecimals(inputAsset);
       const outputDecimals = await this.getDecimals(outputAsset);
+
       const rawAmount = this.toRawAmount(params.amount.toString(), inputDecimals);
+      // Normalize inputAmount to the actual executable amount after truncation to token decimals.
+      // This closes the drift between what the venue receives and what the quote object reports.
+      const normalizedInput = this.fromRawAmount(rawAmount, inputDecimals);
 
       const url = new URL(`${this.apiUrl}/quote`);
       url.searchParams.set('src', inputAsset);
@@ -257,7 +261,7 @@ export class OneInchSwapAdapter implements SwapVenuePort {
         quoteData: { ...data, _slippageBps: params.slippageBps },
         inputAsset,
         outputAsset,
-        inputAmount: quantity(params.amount.toString()),
+        inputAmount: quantity(normalizedInput),
         expectedOutputAmount: quantity(expectedOutput),
         minimumOutputAmount: quantity(minimumOutput),
         priceImpact: 0, // 1inch API v6 does not return price impact in quote response
