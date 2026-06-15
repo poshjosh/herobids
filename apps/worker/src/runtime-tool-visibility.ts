@@ -45,6 +45,7 @@ export interface RuntimeToolVisibilityController {
   snapshotToolBaselines(): void;
   applyToolVisibility(circuitBlockedTools?: Set<string>): void;
   setDependencyAvailability(dependency: RuntimeDependency, available: boolean, circuitBlockedTools?: Set<string>): void;
+  setToolAvailability(tool: string, available: boolean, circuitBlockedTools?: Set<string>): void;
   getDependencyDegradations(): Set<RuntimeDependency>;
   getDegradedExcludedTools(): Set<string>;
   allowedTools(): Set<string>;
@@ -59,13 +60,18 @@ export function createRuntimeToolVisibilityController(
   const baseRequiredToolsBySkill = new Map<string, string[]>();
   const degradedExcludedTools = new Set<string>();
   const dependencyDegradations = new Set<RuntimeDependency>();
+  let lastSnapshotDescriptor: RuntimeDescriptor | null = null;
 
   function snapshotToolBaselines(): void {
     const runtimeDescriptor = getDescriptor();
+    if (runtimeDescriptor === lastSnapshotDescriptor) {
+      return;
+    }
     baseRequiredToolsBySkill.clear();
     for (const skill of runtimeDescriptor.resolvedSkills) {
       baseRequiredToolsBySkill.set(skill.id, [...skill.requiredTools]);
     }
+    lastSnapshotDescriptor = runtimeDescriptor;
   }
 
   function applyToolVisibility(circuitBlockedTools = new Set<string>()): void {
@@ -100,6 +106,15 @@ export function createRuntimeToolVisibilityController(
     applyToolVisibility(circuitBlockedTools);
   }
 
+  function setToolAvailability(tool: string, available: boolean, circuitBlockedTools = new Set<string>()): void {
+    if (available) {
+      degradedExcludedTools.delete(tool);
+    } else {
+      degradedExcludedTools.add(tool);
+    }
+    applyToolVisibility(circuitBlockedTools);
+  }
+
   snapshotToolBaselines();
   applyToolVisibility();
 
@@ -107,6 +122,7 @@ export function createRuntimeToolVisibilityController(
     snapshotToolBaselines,
     applyToolVisibility,
     setDependencyAvailability,
+    setToolAvailability,
     getDependencyDegradations: () => new Set(dependencyDegradations),
     getDegradedExcludedTools: () => new Set(degradedExcludedTools),
     allowedTools: () => new Set(getVisibleToolNames(getDescriptor())),

@@ -7,7 +7,7 @@
 #   - Blocks link-local (169.254.169.254 — cloud metadata endpoints)
 #   - Uses public DNS (8.8.8.8, 8.8.4.4) instead of Docker-internal resolver
 #
-# Requires CAP_NET_ADMIN in the container.
+# Requires CAP_NET_ADMIN and CAP_SYS_ADMIN in the container.
 #
 # Usage: sandbox-exec.sh <command> [args...]
 #

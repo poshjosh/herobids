@@ -41,6 +41,8 @@ export interface ToolResult {
   success: boolean;
   data?: unknown;
   error?: string;
+  /** Machine-readable error code for non-success results. */
+  errorCode?: string;
   /** When true, the failure is transient (rate limit, timeout) and retrying may succeed. */
   retryable?: boolean;
   /**

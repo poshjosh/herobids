@@ -339,4 +339,100 @@ console.log(exists ? 'found' : 'not found');
     expect(secondResult.success).toBe(true);
     expect((secondResult.data as Record<string, unknown>)['stdout']).toContain('not found');
   });
+
+  it('marks sandbox infrastructure failures as non-fault and non-retryable', async () => {
+    vi.resetModules();
+
+    try {
+      const mockExec = vi.fn((
+        _command: string,
+        _options: Record<string, unknown>,
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        const error = Object.assign(new Error('sandbox failed'), {
+          code: 1,
+          stdout: '',
+          stderr: 'mount --make-shared /var/run/netns failed: Operation not permitted',
+        });
+        callback(error, '', error.stderr);
+        return {};
+      });
+
+      vi.doMock('node:child_process', () => ({ exec: mockExec }));
+      vi.doMock('node:fs/promises', async () => {
+        const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+        return {
+          ...actual,
+          access: vi.fn(async () => undefined),
+        };
+      });
+
+      const { codeTools: freshCodeTools } = await import('./code.js');
+      const freshExecuteCode = freshCodeTools.find((tool) => tool.name === 'execute_code');
+      expect(freshExecuteCode).toBeDefined();
+
+      const result = await freshExecuteCode!.execute(
+        { code: 'console.log("hello")', language: 'javascript', dependencies: [] },
+        makeCtx(),
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.retryable).toBe(false);
+      expect(result.fault).toBe(false);
+      expect(result.errorCode).toBe('execute_code.sandbox_infrastructure_error');
+      expect(result.error).toContain('Sandbox infrastructure error (non-recoverable)');
+      expect(result.error).toContain('mount --make-shared');
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.doUnmock('node:fs/promises');
+      vi.resetModules();
+    }
+  });
+
+  it('does not misclassify ordinary permission stderr as sandbox infrastructure failure', async () => {
+    vi.resetModules();
+
+    try {
+      const mockExec = vi.fn((
+        _command: string,
+        _options: Record<string, unknown>,
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        const error = Object.assign(new Error('script failed'), {
+          code: 1,
+          stdout: '',
+          stderr: 'User script error: Permission denied while opening ./output.txt',
+        });
+        callback(error, '', error.stderr);
+        return {};
+      });
+
+      vi.doMock('node:child_process', () => ({ exec: mockExec }));
+      vi.doMock('node:fs/promises', async () => {
+        const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+        return {
+          ...actual,
+          access: vi.fn(async () => undefined),
+        };
+      });
+
+      const { codeTools: freshCodeTools } = await import('./code.js');
+      const freshExecuteCode = freshCodeTools.find((tool) => tool.name === 'execute_code');
+      expect(freshExecuteCode).toBeDefined();
+
+      const result = await freshExecuteCode!.execute(
+        { code: 'console.error("Permission denied")', language: 'javascript', dependencies: [] },
+        makeCtx(),
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('execute_code.execution_failed');
+      expect(result.error).toBe('execute_code failed with exit code 1');
+      expect(result.fault).toBeUndefined();
+    } finally {
+      vi.doUnmock('node:child_process');
+      vi.doUnmock('node:fs/promises');
+      vi.resetModules();
+    }
+  });
 });

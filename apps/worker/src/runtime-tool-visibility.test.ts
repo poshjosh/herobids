@@ -108,6 +108,30 @@ describe('createRuntimeToolVisibilityController', () => {
     expect(controller.getDependencyDegradations()).not.toContain('market-data');
   });
 
+  it('can degrade and restore an individual tool', () => {
+    const descriptor = makeDescriptor([{ id: 'code', tools: ['execute_code', 'send_message'] }]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    controller.setToolAvailability('execute_code', false);
+    expect(descriptor.resolvedSkills[0]!.requiredTools).not.toContain('execute_code');
+    expect(controller.getDegradedExcludedTools()).toContain('execute_code');
+
+    controller.setToolAvailability('execute_code', true);
+    expect(descriptor.resolvedSkills[0]!.requiredTools).toContain('execute_code');
+    expect(controller.getDegradedExcludedTools()).not.toContain('execute_code');
+  });
+
+  it('preserves tool-level degradations across snapshotToolBaselines on the same descriptor', () => {
+    const descriptor = makeDescriptor([{ id: 'code', tools: ['execute_code', 'send_message'] }]);
+    const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());
+
+    controller.setToolAvailability('execute_code', false);
+    controller.snapshotToolBaselines();
+    controller.setToolAvailability('execute_code', true);
+
+    expect(descriptor.resolvedSkills[0]!.requiredTools).toContain('execute_code');
+  });
+
   it('clears dependency from degraded set when restored', () => {
     const descriptor = makeDescriptor([{ id: 'trade', tools: ['list_bots'] }]);
     const controller = createRuntimeToolVisibilityController(() => descriptor, new Set());

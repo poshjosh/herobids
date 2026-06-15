@@ -209,8 +209,9 @@ export class DockerAgentManager {
         Tmpfs: { '/tmp': `size=${this.tempStorageMb}m,noexec` },
         // PidsLimit enforces maxProcesses inside the container.
         PidsLimit: this.maxProcesses,
-        // CAP_NET_ADMIN required for sandbox-exec.sh network namespace creation
-        CapAdd: ['NET_ADMIN'],
+        // sandbox-exec.sh needs NET_ADMIN for network namespace wiring and
+        // SYS_ADMIN for ip netns mount propagation setup.
+        CapAdd: ['NET_ADMIN', 'SYS_ADMIN'],
         RestartPolicy: { Name: 'no' },
       },
       Labels: {

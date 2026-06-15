@@ -9,6 +9,7 @@ import {
   recordRegimeEvaluation,
   recordSessionCost,
   setCapabilityDegradation,
+  setToolCapabilityDegradation,
   recordVenueSignals,
   recordActiveWatches,
   recordActiveWatchSummary,
@@ -744,6 +745,17 @@ describe('runtime composition helpers', () => {
     expect(userContext).toContain('## Degraded Capabilities');
     expect(userContext).toContain('Market-data tools are temporarily unavailable.');
     expect(userContext).toContain('Guidance: Skip market-data lookups for now or retry next tick after recovery.');
+  });
+
+  it('renders degraded capability guidance when execute_code is disabled for the session', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+    setToolCapabilityDegradation(state, 'execute_code', true);
+
+    const userContext = buildTickUserContext(state, []);
+
+    expect(userContext).toContain('## Degraded Capabilities');
+    expect(userContext).toContain('Code-execution tools are temporarily unavailable.');
+    expect(userContext).toContain('Guidance: Do not retry execute_code this session. Continue without code execution or use other available tools.');
   });
 
   it('applyRuntimeMessage surfaces specific risk code and message for guardrail.triggered', () => {

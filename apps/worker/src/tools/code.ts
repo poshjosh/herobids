@@ -24,6 +24,14 @@ function getRuntimePolicy(): { defaultTimeoutMs?: number; defaultMaxOutputBytes?
 }
 
 const SANDBOX_SCRIPT = '/usr/local/bin/sandbox-exec.sh';
+const NON_RECOVERABLE_SANDBOX_PATTERNS = [
+  /mount --make-shared\s+\/var\/run\/netns.*(?:Operation not permitted|Permission denied)/i,
+  /ip netns add\b.*(?:Operation not permitted|Permission denied)/i,
+];
+
+function isNonRecoverableSandboxError(stderr: string): boolean {
+  return NON_RECOVERABLE_SANDBOX_PATTERNS.some((pattern) => pattern.test(stderr));
+}
 
 /**
  * Lightweight dependency-name validation.
@@ -56,7 +64,7 @@ const codeExecuteTool: AgentTool = {
       const policyDenied = ctx.capabilityEngine.checkAccess('execute_code', ctx.agentId, ctx.sessionId);
       if (policyDenied) {
         logger.warn({ agentId: ctx.agentId, reason: policyDenied }, 'execute_code denied by capability policy');
-        return { success: false, error: `capability policy denied: ${policyDenied}`, retryable: false };
+          return { success: false, error: `capability policy denied: ${policyDenied}`, errorCode: 'capability.policy_denied', retryable: false };
       }
       // recordStart is deferred until after all validation so that early-exit
       // paths (invalid deps, missing config) don't leave the concurrency counter
@@ -71,7 +79,7 @@ const codeExecuteTool: AgentTool = {
     // Validate dependency names
     const invalidDeps = dependencies.filter((d) => !isValidDependencyName(d));
     if (invalidDeps.length > 0) {
-      return { success: false, error: `invalid dependency names: ${invalidDeps.join(', ')}`, retryable: false };
+      return { success: false, error: `invalid dependency names: ${invalidDeps.join(', ')}`, errorCode: 'execute_code.invalid_dependencies', retryable: false };
     }
 
     // Read limits from the effective capability grant so operator/user policy changes
@@ -79,7 +87,7 @@ const codeExecuteTool: AgentTool = {
     const codeGrant = ctx.capabilityEngine?.getGrant('execute_code');
     const runtimePolicy = getRuntimePolicy();
     if (!runtimePolicy) {
-      return { success: false, error: 'execute_code requires AGENT_RUNTIME_CONFIG_JSON with tools.codeExecute defaults', retryable: false };
+      return { success: false, error: 'execute_code requires AGENT_RUNTIME_CONFIG_JSON with tools.codeExecute defaults', errorCode: 'execute_code.missing_runtime_policy', retryable: false };
     }
 
     const policyTimeout = codeGrant?.limits?.timeoutMs ?? runtimePolicy.defaultTimeoutMs ?? 30_000;
@@ -94,6 +102,7 @@ const codeExecuteTool: AgentTool = {
     let exitCode = 1;
     let success = false;
     let capabilityStarted = false;
+    let usedSandbox = false;
 
     try {
       await ensureWorkspaceDirs(paths);
@@ -122,6 +131,7 @@ const codeExecuteTool: AgentTool = {
       }
 
       const hasSandbox = await access(SANDBOX_SCRIPT).then(() => true).catch(() => false);
+      usedSandbox = hasSandbox;
 
       let shellCmd: string;
       if (language === 'javascript') {
@@ -182,14 +192,29 @@ const codeExecuteTool: AgentTool = {
         success: true,
         data: { stdout, stderr, exitCode: 0, durationMs },
       };
-    } else {
+    }
+
+    if (usedSandbox && isNonRecoverableSandboxError(stderr)) {
       return {
         success: false,
         data: { stdout, stderr, exitCode, durationMs },
-        error: `execute_code${label} failed with exit code ${exitCode}`,
+        errorCode: 'execute_code.sandbox_infrastructure_error',
+        error:
+          'Sandbox infrastructure error (non-recoverable): the execute_code sandbox ' +
+          'is misconfigured in this container. Do NOT retry — record this limitation ' +
+          `in memory. Detail: ${stderr.slice(0, 300)}`,
         retryable: false,
+        fault: false,
       };
     }
+
+    return {
+      success: false,
+      data: { stdout, stderr, exitCode, durationMs },
+      errorCode: 'execute_code.execution_failed',
+      error: `execute_code${label} failed with exit code ${exitCode}`,
+      retryable: false,
+    };
   },
 };
 

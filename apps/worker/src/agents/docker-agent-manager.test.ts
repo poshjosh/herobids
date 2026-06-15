@@ -213,6 +213,30 @@ describe('DockerAgentManager — stop failure recovery', () => {
   });
 });
 
+describe('DockerAgentManager — sandbox capabilities (bug #10)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('grants NET_ADMIN and SYS_ADMIN to agent containers', async () => {
+    const fetchMock = makeFetchForStart();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manager = new DockerAgentManager(BASE_CONFIG, makeAgentRepo() as any);
+    await manager.start(SPEC);
+
+    const createCall = fetchMock.mock.calls.find((call: unknown[]) =>
+      typeof call[0] === 'string' && (call[0] as string).includes('/create'),
+    );
+    expect(createCall).toBeDefined();
+
+    const init = createCall?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as {
+      HostConfig?: { CapAdd?: string[] };
+    };
+
+    expect(body.HostConfig?.CapAdd).toEqual(['NET_ADMIN', 'SYS_ADMIN']);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Bug #22 — LLM vars forwarded to agent container
 //

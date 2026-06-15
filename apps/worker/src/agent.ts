@@ -44,6 +44,7 @@ import {
   recordRegimeEvaluation,
   recordSessionCost,
   setCapabilityDegradation,
+  setToolCapabilityDegradation,
   recordVenueSignals,
   recordActiveWatchSummary,
   summarizeActiveWatches,
@@ -1090,6 +1091,13 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
         { fault: false },
       );
     }
+    if (toolVisibility.getDegradedExcludedTools().has(call.tool)) {
+      logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool temporarily unavailable due to runtime degradation — ignoring');
+      return rejectToolCall(
+        `tool degraded: ${call.tool} is temporarily unavailable due to a runtime limitation. Do not retry it this session.`,
+        { fault: false },
+      );
+    }
     logger.warn({ tool: call.tool, agentId: AGENT_ID }, 'Tool not in active skill set — ignoring');
     return rejectToolCall(`tool rejected: ${call.tool} is not available in the current skill set`, { fault: false });
   }
@@ -1186,9 +1194,14 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     const result = await tool.execute(validation.data, toolContext);
 
     if (!result.success) {
+      if (call.tool === 'execute_code' && result.errorCode === 'execute_code.sandbox_infrastructure_error') {
+        toolVisibility.setToolAvailability('execute_code', false, toolCircuitBreaker.getBlockedTools(tickCount));
+        setToolCapabilityDegradation(runtimeState, 'execute_code', true);
+      }
       const errorResult = JSON.stringify({
         ok: false,
         error: result.error ?? 'tool execution failed',
+        errorCode: result.errorCode,
         retryable: result.retryable,
         // Preserve fault classification: default to true (assume fault) unless explicitly false.
         fault: result.fault !== false,

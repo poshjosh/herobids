@@ -997,6 +997,20 @@ export function setCapabilityDegradation(
   }
 }
 
+export function setToolCapabilityDegradation(
+  state: RuntimeCompositionState,
+  tool: 'execute_code',
+  degraded: boolean,
+): void {
+  const summary = 'Code-execution tools are temporarily unavailable.';
+  const guidance = 'Do not retry execute_code this session. Continue without code execution or use other available tools.';
+
+  state.metrics.degradedCapabilities = state.metrics.degradedCapabilities.filter((entry) => entry.dependency !== tool);
+  if (degraded) {
+    state.metrics.degradedCapabilities.push({ dependency: tool, summary, guidance });
+  }
+}
+
 export function updatePortfolioSummary(
   state: RuntimeCompositionState,
   update: Partial<Omit<RuntimePortfolioSummary, 'freshness'>> & { freshness?: RuntimeFreshness },
