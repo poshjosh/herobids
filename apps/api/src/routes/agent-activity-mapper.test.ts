@@ -150,6 +150,43 @@ describe('mapRuntimeSession', () => {
     const entries = mapRuntimeSession(session);
     expect(entries.length).toBe(2);
     expect(entries[1]!.title).toBe('Session stopped');
+    // User-facing distinction from crashed: graceful stop is informational, not critical
+    expect(entries[1]!.severity).toBe('info');
+    expect(entries[1]!.category).toBe('runtime');
+  });
+
+  it('stopped and crashed sessions produce distinct user-facing signals (regression guard)', () => {
+    // Contract test: a persistence regression that turns a graceful stop into a crash
+    // must be caught by these assertions before it reaches the UI.
+    const makeSession = (status: 'stopped' | 'crashed'): RawRuntimeSession => ({
+      id: `sess-${status}`,
+      agentId: 'agent-1',
+      status,
+      lastHeartbeatAt: new Date('2026-06-11T12:05:00Z'),
+      cpuPct: null,
+      memoryBytes: null,
+      startedAt: new Date('2026-06-11T12:00:00Z'),
+      stoppedAt: new Date('2026-06-11T12:10:00Z'),
+    });
+
+    const stoppedEntries = mapRuntimeSession(makeSession('stopped'));
+    const crashedEntries = mapRuntimeSession(makeSession('crashed'));
+
+    const stoppedTerminal = stoppedEntries[1]!;
+    const crashedTerminal = crashedEntries[1]!;
+
+    // Stopped: graceful — informational severity, not critical
+    expect(stoppedTerminal.severity).toBe('info');
+    expect(stoppedTerminal.title).toBe('Session stopped');
+
+    // Crashed: abnormal — critical severity
+    expect(crashedTerminal.severity).toBe('critical');
+    expect(crashedTerminal.eventType).toBe('runtime.failed');
+    expect(crashedTerminal.title).toBe('Runtime crashed');
+
+    // The two must not be equal
+    expect(stoppedTerminal.severity).not.toBe(crashedTerminal.severity);
+    expect(stoppedTerminal.eventType).not.toBe(crashedTerminal.eventType);
   });
 });
 

@@ -529,4 +529,24 @@ describe('DockerAgentManager — session-aware container death', () => {
     expect(agentRepo.retireActiveSessionsWithStatus).not.toHaveBeenCalled();
     expect(agentRepo.updateAgent).not.toHaveBeenCalled();
   });
+
+  it('preserves stopped status when Docker die arrives after a graceful session_ended (ordering regression)', async () => {
+    // Regression guard for the mismatch bug: the agent runtime sends session_ended (status='stopped')
+    // before its container exits. Docker then fires a die event. The die handler must not
+    // reclassify the graceful stop as a crash.
+    //
+    // After session_ended: agent.status = 'stopped', getCurrentSession = null (terminal session).
+    // Die event must be a no-op — crash handling is skipped, status stays 'stopped'.
+    const agentRepo = makeAgentRepo();
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'agent-001', status: 'stopped' });
+    (agentRepo.getCurrentSession as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+    const manager = new DockerAgentManager(BASE_CONFIG as any, agentRepo as any);
+
+    await manager.onContainerDie('agent-001', 'docker_event', 'sess-001');
+
+    // Neither crash retirement nor agent status update should run
+    expect(agentRepo.retireActiveSessionsWithStatus).not.toHaveBeenCalled();
+    expect(agentRepo.updateAgent).not.toHaveBeenCalled();
+  });
 });

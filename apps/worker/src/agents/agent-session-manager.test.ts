@@ -1198,6 +1198,32 @@ describe('AgentSessionManager', () => {
     expect(onAgentStatusChange).toHaveBeenCalledWith('agent-crashed', 'user-1', 'crashed');
   });
 
+  it('ignores a stale session_ended when the session is already in a terminal state (ordering regression)', async () => {
+    // Regression guard: after session_ended marks a session as 'stopped', a second
+    // session_ended (e.g. from a delayed or duplicate message) must be a no-op.
+    // markSessionEnded returns false when the session is already terminal.
+    const { agentRepo, runtimeLauncher } = buildManager();
+    const onSessionStopped = vi.fn();
+    const onAgentStatusChange = vi.fn();
+
+    const manager = new AgentSessionManager(
+      agentRepo as any,
+      {} as any,
+      runtimeLauncher as any,
+      { budgets: TEST_RUNTIME_BUDGETS, onSessionStopped, onAgentStatusChange },
+    );
+
+    // Simulate: session_ended already processed (markSessionEnded returns false → already terminal)
+    (agentRepo.markSessionEnded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+
+    await manager.handleRuntimeSessionEnd('sess-already-stopped', 'agent-1', 'crashed');
+
+    // No further state mutations — the earlier 'stopped' status is preserved
+    expect(agentRepo.updateAgent).not.toHaveBeenCalled();
+    expect(onSessionStopped).not.toHaveBeenCalled();
+    expect(onAgentStatusChange).not.toHaveBeenCalled();
+  });
+
   describe('handleRuntimeFailure', () => {
     it('marks the session and agent crashed when a running trading actor fails', async () => {
       const { manager, agentRepo, runtimeLauncher } = buildManager();
