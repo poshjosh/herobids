@@ -1866,6 +1866,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     if (!this.deps.swapVenue || !this.deps.liveOrderTimeoutPolicy) {
       return;
     }
+    const swapVenue = this.deps.swapVenue;
 
     const openOrders = await this.deps.orderRepo.getOpenByInstance(this.botId);
     if (openOrders.length === 0) {
@@ -1883,7 +1884,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         return knownTxRefs;
       }
       txLookupAttempted = true;
-      const txResult = await this.deps.swapVenue.fetchRecentTransactions();
+      const txResult = await swapVenue.fetchRecentTransactions();
       if (!txResult.ok) {
         txLookupError = { code: txResult.error.code, message: txResult.error.message };
         return undefined;

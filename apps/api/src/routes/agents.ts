@@ -717,7 +717,7 @@ export async function agentRoutes(
       ...agentUpdates,
       ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
       ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
-      executionMode: executionMode.value ?? null,
+      ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       toolPolicy: effectiveToolPolicy,

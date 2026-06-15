@@ -704,7 +704,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       for (const { key, wake, lastWakeKey } of claimed) {
         if (stopped) return;
 
-        const payload: AgentMarketWakePayload = {
+        const payload = {
           wakeId: crypto.randomUUID(),
           reason: wake.primaryReason ?? 'market monitor',
           eventIds: wake.eventIds,
@@ -712,7 +712,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           requestedAt: new Date().toISOString(),
           source: wake.primarySource ?? 'watch_threshold',
           ...(wake.primaryContext !== undefined && { context: wake.primaryContext }),
-        };
+        } as AgentMarketWakePayload;
 
         await publisher.emitAgentMarketWake(wake.agentId, payload);
         await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);

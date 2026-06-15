@@ -596,6 +596,14 @@ export class OrderRepository {
       });
     });
   }
+
+  /** Update just the status of an order by ID */
+  async updateStatus(orderId: string, status: string): Promise<void> {
+    await this.db
+      .update(orders)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
+  }
 }
 
 export interface InsertBalanceSnapshot {

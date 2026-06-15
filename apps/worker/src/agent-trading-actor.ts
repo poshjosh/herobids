@@ -1255,6 +1255,7 @@ export class AgentTradingActor implements ExecutionActor {
 
   private async enforceLiveSwapConfirmationRecovery(): Promise<void> {
     if (!this.swapVenue || !this.deps.liveOrderTimeoutPolicy) return;
+    const swapVenue = this.swapVenue;
 
     const openOrders = await this.deps.orderRepo.getOpenByActorAndVenueAccount('agent', this.agentId, this.deps.venueAccountId);
     if (openOrders.length === 0) {
@@ -1272,7 +1273,7 @@ export class AgentTradingActor implements ExecutionActor {
         return knownTxRefs;
       }
       txLookupAttempted = true;
-      const txResult = await this.swapVenue.fetchRecentTransactions();
+      const txResult = await swapVenue.fetchRecentTransactions();
       if (!txResult.ok) {
         txLookupError = { code: txResult.error.code, message: txResult.error.message };
         return undefined;
