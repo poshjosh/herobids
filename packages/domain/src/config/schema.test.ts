@@ -329,6 +329,36 @@ describe('AgentRuntimePolicySchema', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('runtime loop-control fields are accessible via agent.ts destructuring pattern', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      llm: {
+        scout: { maxTurns: 8, maxTokens: 512, temperature: 0.2 },
+        judge: { maxTurns: 20, temperature: 0.4 },
+      },
+      wake: { minIntervalMs: 30_000, pollMs: 2_000 },
+      marketIntelligence: { maxRefreshedDexTargetsPerTick: 4 },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // Mirrors the destructuring pattern used in apps/worker/src/agent.ts.
+    // If agent.ts ever reintroduces hardcoded literals, this test still passes —
+    // its purpose is to guard the config interface so the fields remain reachable
+    // and that overrides flow through to the values the agent uses.
+    const agentRuntimePolicy = result.data;
+    const scoutLoopConfig = agentRuntimePolicy.llm.scout;
+    const judgeLoopConfig = agentRuntimePolicy.llm.judge;
+    const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
+
+    expect(scoutLoopConfig.maxTurns).toBe(8);
+    expect(judgeLoopConfig.maxTurns).toBe(20);
+    expect(marketIntelligencePolicy.maxRefreshedDexTargetsPerTick).toBe(4);
+    expect(agentRuntimePolicy.wake.pollMs).toBe(2_000);
+    expect(agentRuntimePolicy.wake.minIntervalMs).toBe(30_000);
+  });
 });
 
 describe('StrategyConfigSchema', () => {

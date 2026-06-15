@@ -317,9 +317,6 @@ const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.
 // even though the main loop increments it later.
 let tickCount = 0;
 
-const SCOUT_MAX_TURNS = 10;
-const JUDGE_MAX_TURNS = 25;
-
 class TickGateUnexpectedError extends Error {
   constructor(public readonly cause: unknown) {
     super('Unexpected tick-gate failure');
@@ -565,9 +562,12 @@ if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
     permanentlyExcludedTools.add(tool);
-  const scoutLoopConfig = agentRuntimePolicy.llm.scout;
-  const judgeLoopConfig = agentRuntimePolicy.llm.judge;
-  const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
+  }
+}
+
+const scoutLoopConfig = agentRuntimePolicy.llm.scout;
+const judgeLoopConfig = agentRuntimePolicy.llm.judge;
+const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
 
 const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
 const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ?? '60000', 10);
@@ -687,15 +687,11 @@ async function refreshVenueIntelligence(): Promise<void> {
   }
 
   const tradingProviders = extractTradingProviders();
-  const trackedPerpsSymbols = collectPerpsTrackedSymbols(sessionMetrics).slice(0, 3);
   const trackedPerpsSymbols = collectPerpsTrackedSymbols(sessionMetrics).slice(0, marketIntelligencePolicy.maxTrackedPerps);
   const trackedDexTargets = collectDexTrackedTargets(
     sessionMetrics,
     agentConfig.dexWatchlistSymbols,
   ).slice(0, marketIntelligencePolicy.maxTrackedDexTargets);
-    for (const target of trackedDexTargets.slice(0, marketIntelligencePolicy.maxRefreshedDexTargetsPerTick)) {
-  const WAKE_MIN_INTERVAL_MS = agentRuntimePolicy.wake.minIntervalMs;
-    maxTurns: scoutLoopConfig.maxTurns,
   const signals: Array<Parameters<typeof recordVenueSignals>[1][number]> = [];
 
   if (trackedPerpsSymbols.length > 0 && (tradingProviders.has('hyperliquid') || tradingProviders.has('bybit'))) {
@@ -784,7 +780,7 @@ async function refreshVenueIntelligence(): Promise<void> {
       recordMarketDataRejection('aggregated-discovery', { priority: 'discovery' });
     }
 
-    for (const target of trackedDexTargets.slice(0, 2)) {
+    for (const target of trackedDexTargets.slice(0, marketIntelligencePolicy.maxRefreshedDexTargetsPerTick)) {
       try {
         recordMarketDataAttempt('dexscreener');
         const searchResult = await marketDataRegistry.dexscreener.search(target.symbol);
@@ -1277,7 +1273,7 @@ let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let tickTimer: ReturnType<typeof setTimeout> | undefined;
 // Wake scheduling state — bounded early tick support
 let wakePending = false;
-const WAKE_MIN_INTERVAL_MS = 15_000; // Hard minimum between wake-driven ticks
+const WAKE_MIN_INTERVAL_MS = agentRuntimePolicy.wake.minIntervalMs; // sourced from agentRuntimePolicy.wake.minIntervalMs
 let lastWakeTickAt = 0;
 let nextTickDueAt = 0;
 let wakePollInFlight = false;
@@ -1670,7 +1666,7 @@ async function runTick(): Promise<void> {
         tickId,
         phase: 'scout',
         model: resolvedLightModel,
-        maxTurns: SCOUT_MAX_TURNS,
+        maxTurns: scoutLoopConfig.maxTurns,
       });
 
       // Check commercial spend state before dispatching LLM calls.
@@ -1719,13 +1715,12 @@ async function runTick(): Promise<void> {
           temperature: scoutLoopConfig.temperature,
           thinking: 'none',
         },
-          maxTurns: scoutLoopConfig.maxTurns,
+        maxTurns: scoutLoopConfig.maxTurns,
         initialMessages: [
           { role: 'system', content: scoutSystemPrompt },
           { role: 'user', content: userContext },
         ],
         tools: readOnlyScoutDefinitions,
-        maxTurns: SCOUT_MAX_TURNS,
         retryPolicy: agentRuntimePolicy.llm.retry,
         executeTool: async (toolCall) => {
           const allowedReadOnlyTool = readOnlyScoutTools.includes(toolCall.name);
@@ -1915,10 +1910,9 @@ async function runTick(): Promise<void> {
         temperature: judgeLoopConfig.temperature,
         thinking: judgeThinking.thinking,
       },
-        maxTurns: judgeLoopConfig.maxTurns,
+      maxTurns: judgeLoopConfig.maxTurns,
       initialMessages: messages,
       tools: judgeToolDefinitions,
-      maxTurns: JUDGE_MAX_TURNS,
       retryPolicy: agentRuntimePolicy.llm.retry,
       executeTool: async (toolCall) => executeTool({ tool: toolCall.name, args: toolCall.args }),
       onAssistantTurn: ({ result, assistantResponse, toolCalls, turnIndex }) => {
