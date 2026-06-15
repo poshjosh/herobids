@@ -306,6 +306,9 @@ importers:
       '@herobids/domain':
         specifier: workspace:*
         version: link:../packages/domain
+      '@herobids/venues':
+        specifier: workspace:*
+        version: link:../packages/venues
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(postgres@3.4.9)

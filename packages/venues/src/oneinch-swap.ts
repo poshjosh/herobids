@@ -244,15 +244,21 @@ export class OneInchSwapAdapter implements SwapVenuePort {
       }
 
       const data = await response.json() as {
-        srcToken: { address: string };
-        dstToken: { address: string };
-        toAmount: string;
+        srcToken?: { address: string };
+        dstToken?: { address: string };
+        toAmount?: string;
+        dstAmount?: string;
       };
 
-      this.rememberAssetId(data.srcToken.address);
-      this.rememberAssetId(data.dstToken.address);
+      if (data.srcToken) this.rememberAssetId(data.srcToken.address);
+      if (data.dstToken) this.rememberAssetId(data.dstToken.address);
 
-      const expectedOutput = this.fromRawAmount(data.toAmount, outputDecimals);
+      const rawOutputAmount = data.dstAmount ?? data.toAmount;
+      if (!rawOutputAmount) {
+        return err({ code: 'QUOTE_FAILED', message: '1inch quote response missing dstAmount/toAmount' });
+      }
+
+      const expectedOutput = this.fromRawAmount(rawOutputAmount, outputDecimals);
       // Apply slippage to compute minimum output
       const slippageMultiplier = new Decimal(1).minus(new Decimal(params.slippageBps).div(10_000));
       const minimumOutput = new Decimal(expectedOutput).mul(slippageMultiplier).toFixed(outputDecimals, Decimal.ROUND_DOWN);

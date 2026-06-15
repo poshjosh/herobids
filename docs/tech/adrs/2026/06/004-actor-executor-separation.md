@@ -9,12 +9,12 @@ HeroBids defines four actor types (`agent`, `bot`, `user`, `system`) and treats
 bots as first-class actors that submit decisions. However, a bot does not choose
 **what** to trade — it is configured with an explicit instrument and mechanically
 evaluates a strategy on that single pair. The entity that decides what to trade is
-either a human (user creates the bot with specific instrument) or an AI Agent
-(creates bots programmatically).
+either a human (user creates the bot with a specific instrument) or an agent
+(creates bots programmatically or trades directly).
 
-With the introduction of Automation Agents (rule-based, multi-instrument actors
-that discover and select instruments autonomously), we need to clarify the
-distinction between:
+With the unified agent model (agents have optional `technical` and `intelligence`
+capabilities), agents gain multi-instrument discovery and autonomous instrument
+selection. This makes the distinction between actors and executors critical:
 
 - **Actors** — entities with agency that decide what to trade
 - **Executors** — entities that execute decisions on a specific instrument
@@ -23,9 +23,8 @@ This distinction matters because:
 
 1. The product vision is "trade for me, I have this wallet." Users should interact
    with actors (agents), not executors (bots).
-2. Automation Agents need execution infrastructure but should not create full bots
-   for each instrument — that's heavyweight and semantically wrong (a bot implies
-   user-visible lifecycle).
+2. Agents with `technical` capabilities need per-instrument execution but should
+   not create heavyweight bot entities for each instrument.
 3. The system currently conflates "submitting a decision" (agency) with "executing
    a decision" (plumbing), leading to bots being labeled actors when they have no
    agency over instrument selection.
@@ -42,9 +41,9 @@ An actor is an entity that autonomously decides **what** to trade. It has:
 - Portfolio-level reasoning (manages multiple positions holistically)
 - Lifecycle authority (starts/stops its own execution)
 
-Actor types:
-- **AI Agent** — LLM-driven, multi-instrument, reasons via tools and prompts
-- **Automation Agent** — rule-driven, multi-instrument, reasons via indicators and filters
+In HeroBids, the only actor is the **Agent** — configured with `technical`
+capabilities (rule-based discovery + indicators), `intelligence` capabilities
+(LLM reasoning), or both. The capability mix determines behavior, not actor type.
 
 ### Executor (no agency)
 
@@ -66,51 +65,60 @@ Bots transition from "user-facing actor" to "internal executor":
 
 | Aspect | Before | After |
 |---|---|---|
-| User creates directly | Yes | Deprecated (agents create them, or they become invisible executors) |
+| User creates directly | Yes | Deprecated (agents handle this, or agent executes directly) |
 | Appears in user's dashboard | Yes (primary) | De-emphasized / hidden behind agent view |
 | Has agency | No (but labeled as actor) | No (correctly labeled as executor) |
-| Created by | User or AI Agent | AI Agent or Automation Agent (internally) |
-| ActorType in decisions | `'bot'` | `'bot'` (retained for audit — the executor that physically submitted) |
+| Created by | User or Agent | Agent (internally) or legacy user path |
+| ActorType in decisions | `'bot'` | `'bot'` (retained for audit — identifies the execution path) |
 
 ### Decision Attribution
 
 When a decision flows through the system:
 
 ```
-AI Agent decides "go long ETH"
+Agent (technical-only) decides "go long ETH" from indicator scan:
   → actorType: 'agent', actorId: <agent-id>
-  → executor submits the order (bot or inline)
-  → order attributed to originType: 'agent', executorType: 'bot'
-
-Automation Agent decides "go long ETH" (from indicator scan)
-  → actorType: 'agent', actorId: <automation-agent-id>
-  → execution happens inline (no separate bot entity needed)
+  → execution happens inline (no separate bot entity)
   → order attributed to actorType: 'agent'
+
+Agent (with intelligence) creates a bot for delegation:
+  → actorType: 'agent' on the decision
+  → bot executes the order: executorType: 'bot'
+  → order carries both originType: 'agent' and executorType: 'bot'
 ```
 
 ### Execution Without Bots
 
-Automation Agents may execute decisions without creating bot entities:
+Agents with `technical` capabilities may execute decisions without creating bot
+entities:
 - Use extracted execution infrastructure (plan → order → fill) directly
 - Track positions in agent-scoped state (one agent, multiple instrument positions)
 - No DB bot row per instrument — the agent IS the owner
 
-AI Agents may continue to create bots when they want independent lifecycle:
-- A bot gives the AI Agent a "set and forget" executor it can stop thinking about
-- This is a valid pattern — the AI Agent delegates execution
+Agents with `intelligence` may continue to create bots when they want independent
+lifecycle:
+- A bot gives the agent a "set and forget" executor it can stop thinking about
+- This is a valid pattern — the agent delegates execution
 - But it's the agent's choice, not a system requirement
+
+### Agents Cannot Create Agents
+
+Only users create agents. An agent that wants to test a strategy:
+- Adds `technical` to its own config (live market testing)
+- Calls the `run_backtest` tool (historical testing)
+
+This prevents infinite recursion and maintains clear human accountability.
 
 ## Consequences
 
-- Automation Agents can execute on N instruments without creating N bot DB rows
-- User-facing product simplifies to "My Agents" (AI or Automation)
+- Agents with `technical` can execute on N instruments without creating N bot rows
+- User-facing product simplifies to "My Agents" with capability indicators
 - Bot creation endpoints are retained but de-emphasized in user UX
 - `ActorType` enum unchanged (`'agent' | 'bot' | 'user' | 'system'`) — bots
   remain a valid executor type for audit purposes
-- Execution infrastructure must be extractable from `TradingActor` so both bots
-  and agents can reuse it (plan generation, order submission, fill accounting)
-- The existing `AgentTradingActor` (AI) continues to create bots when it wants —
-  this ADR does not remove that capability
+- Execution infrastructure must be extractable from `TradingActor` so both agents
+  (directly) and bots (as delegates) can reuse it
+- Existing AI agent bot-creation workflows continue to work unchanged
 - Future: bots may be fully hidden behind an "advanced" toggle in the UI
 
 ## Risks

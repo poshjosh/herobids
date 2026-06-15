@@ -12,12 +12,10 @@
  *   Default (no --execute): validates steps 1-2 only (safe, no funds at risk)
  *   --execute: validates all steps including real swap submission (requires funded wallet)
  *
- * Required env vars:
- *   JUPITER_WALLET_ADDRESS — Solana wallet public key
- *
- * Required for --execute:
- *   JUPITER_PRIVATE_KEY — Base58 Solana private key for signing
- *   SOLANA_RPC_URL — RPC endpoint (default: https://api.mainnet-beta.solana.com)
+ * Supported env var combinations:
+ *   1. SOLANA_WALLET_PRIVATE_KEY (+ SOLANA_RPC_URL) — derives wallet address from key
+ *   2. JUPITER_WALLET_ADDRESS alone — enough for dry-run (no signer)
+ *   3. JUPITER_WALLET_ADDRESS + JUPITER_PRIVATE_KEY (+ SOLANA_RPC_URL) — explicit address + key
  *
  * Optional:
  *   JUPITER_API_URL — Override Jupiter API base URL
@@ -25,24 +23,32 @@
  *   SLIPPAGE_BPS — Slippage in basis points (default: 100)
  *
  * Usage:
- *   JUPITER_WALLET_ADDRESS=... tsx scripts/ts/validate-jupiter-launch.ts
- *   JUPITER_WALLET_ADDRESS=... JUPITER_PRIVATE_KEY=... tsx scripts/ts/validate-jupiter-launch.ts --execute
+ *   SOLANA_WALLET_PRIVATE_KEY=... SOLANA_RPC_URL=... tsx scripts/ts/validate-jupiter-launch.ts
+ *   SOLANA_WALLET_PRIVATE_KEY=... SOLANA_RPC_URL=... tsx scripts/ts/validate-jupiter-launch.ts --execute
  */
 
-import { JupiterSwapAdapter } from '../../packages/venues/src/jupiter-swap.js';
-import { JupiterConfirmationPoller } from '../../packages/venues/src/jupiter-confirmation.js';
-import { quantity } from '../../packages/domain/src/index.js';
-import type { SolanaSignerPort } from '../../packages/venues/src/solana-signer.js';
+import { JupiterSwapAdapter, JupiterConfirmationPoller, SolanaSigner } from '@herobids/venues';
+import { quantity } from '@herobids/domain';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 const EXECUTE_MODE = process.argv.includes('--execute');
-const WALLET_ADDRESS = process.env['JUPITER_WALLET_ADDRESS'];
-const PRIVATE_KEY = process.env['JUPITER_PRIVATE_KEY'];
 const RPC_URL = process.env['SOLANA_RPC_URL'] ?? 'https://api.mainnet-beta.solana.com';
-const API_URL = process.env['JUPITER_API_URL'] ?? 'https://quote-api.jup.ag/v6';
+const API_URL = process.env['JUPITER_API_URL'] ?? 'https://api.jup.ag/swap/v1';
 const SWAP_AMOUNT = process.env['SWAP_AMOUNT'] ?? '0.01';
 const SLIPPAGE_BPS = parseInt(process.env['SLIPPAGE_BPS'] ?? '100', 10);
+
+// Resolve private key: prefer SOLANA_WALLET_PRIVATE_KEY, fall back to JUPITER_PRIVATE_KEY
+const PRIVATE_KEY = process.env['SOLANA_WALLET_PRIVATE_KEY'] ?? process.env['JUPITER_PRIVATE_KEY'];
+
+// Resolve wallet address: derive from key if available, otherwise require explicit env
+function resolveWalletAddress(): string | undefined {
+  if (PRIVATE_KEY) {
+    const signer = new SolanaSigner({ privateKey: PRIVATE_KEY, rpcUrl: RPC_URL });
+    return signer.address;
+  }
+  return process.env['JUPITER_WALLET_ADDRESS'];
+}
 
 // Known Solana token addresses
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -181,14 +187,16 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════');
   console.log('');
 
-  // Prerequisites
-  if (!WALLET_ADDRESS) {
-    fail('JUPITER_WALLET_ADDRESS is required');
+  // Prerequisites — resolve wallet address
+  const walletAddress = resolveWalletAddress();
+  if (!walletAddress) {
+    fail('Cannot determine wallet address. Provide SOLANA_WALLET_PRIVATE_KEY or JUPITER_WALLET_ADDRESS.');
     process.exit(2);
   }
+  info(`Wallet address: ${walletAddress}`);
 
   if (EXECUTE_MODE && !PRIVATE_KEY) {
-    fail('JUPITER_PRIVATE_KEY is required for --execute mode');
+    fail('Private key required for --execute. Provide SOLANA_WALLET_PRIVATE_KEY or JUPITER_PRIVATE_KEY.');
     process.exit(2);
   }
 
@@ -196,7 +204,7 @@ async function main() {
   const adapterNoSigner = new JupiterSwapAdapter({
     apiUrl: API_URL,
     rpcUrl: RPC_URL,
-    walletAddress: WALLET_ADDRESS,
+    walletAddress,
     tokenDecimals: TOKEN_DECIMALS,
     // No signer — deliberately omitted
   });
@@ -217,25 +225,12 @@ async function main() {
 
   // Steps 3-5: Live execution (only with --execute)
   if (EXECUTE_MODE) {
-    // Build a mock signer that delegates to the real private key
-    // In production, the signer is injected by the worker. For validation,
-    // we create a minimal signer implementation.
-    let signer: SolanaSignerPort | undefined;
-    try {
-      // Dynamic import to avoid requiring @solana/web3.js at module level
-      const { createSolanaKeypairSigner } = await import('../../packages/venues/src/solana-signer.js');
-      signer = createSolanaKeypairSigner(PRIVATE_KEY!, RPC_URL);
-    } catch (e) {
-      fail(`Failed to create signer: ${e instanceof Error ? e.message : String(e)}`);
-      info('Ensure @solana/web3.js is available and JUPITER_PRIVATE_KEY is valid base58');
-      printSummary();
-      process.exit(1);
-    }
+    const signer = new SolanaSigner({ privateKey: PRIVATE_KEY!, rpcUrl: RPC_URL });
 
     const adapterWithSigner = new JupiterSwapAdapter({
       apiUrl: API_URL,
       rpcUrl: RPC_URL,
-      walletAddress: WALLET_ADDRESS,
+      walletAddress,
       tokenDecimals: TOKEN_DECIMALS,
       signer,
     });

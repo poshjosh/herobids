@@ -14,7 +14,7 @@ import { ok, err, quantity, Decimal } from '@herobids/domain';
 import type { SolanaSignerPort } from './solana-signer.js';
 
 export interface JupiterSwapConfig {
-  /** Jupiter API base URL. Default: https://quote-api.jup.ag/v6 */
+  /** Jupiter API base URL. Default: https://api.jup.ag/swap/v1 */
   apiUrl?: string;
   /** RPC URL for on-chain balance lookups */
   rpcUrl?: string;
@@ -49,7 +49,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
   private readonly signer?: SolanaSignerPort;
 
   constructor(config: JupiterSwapConfig) {
-    this.apiUrl = config.apiUrl ?? 'https://quote-api.jup.ag/v6';
+    this.apiUrl = config.apiUrl ?? 'https://api.jup.ag/swap/v1';
     this.rpcUrl = config.rpcUrl ?? 'https://api.mainnet-beta.solana.com';
     this.walletAddress = config.walletAddress;
     this.timeoutMs = config.timeoutMs ?? 10_000;

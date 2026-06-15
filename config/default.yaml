@@ -31,7 +31,7 @@ venues:
     rateLimitPerSec: 10
     timeoutMs: 30000
   jupiter:
-    baseUrl: https://quote-api.jup.ag/v6
+    baseUrl: https://api.jup.ag/swap/v1
     rpcUrl: https://api.mainnet-beta.solana.com
     timeoutMs: 15000
   1inch:

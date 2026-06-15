@@ -89,13 +89,13 @@ check_api_health() {
 
 probe_jupiter() {
   # Verify the Jupiter Quote API is reachable by fetching a minimal quote
-  local probe_url="https://quote-api.jup.ag/v6/quote?inputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&outputMint=So11111111111111111111111111111111111111112&amount=1000000&slippageBps=100"
+  local probe_url="https://api.jup.ag/swap/v1/quote?inputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&outputMint=So11111111111111111111111111111111111111112&amount=1000000&slippageBps=100"
   local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" "${probe_url}" 2>/dev/null) || true
   if [[ "${http_code}" != "200" ]]; then
     fail "Jupiter API probe failed (HTTP ${http_code}). Is the Jupiter Quote API reachable from this environment?"
   fi
-  log "Jupiter API reachable (quote-api.jup.ag)"
+  log "Jupiter API reachable (api.jup.ag)"
 }
 
 probe_1inch() {
@@ -127,7 +127,7 @@ validate_jupiter_quote() {
   local output_mint="So11111111111111111111111111111111111111112"      # SOL
   local raw_amount="1000000"  # 1 USDC (6 decimals)
 
-  local quote_url="https://quote-api.jup.ag/v6/quote?inputMint=${input_mint}&outputMint=${output_mint}&amount=${raw_amount}&slippageBps=100"
+  local quote_url="https://api.jup.ag/swap/v1/quote?inputMint=${input_mint}&outputMint=${output_mint}&amount=${raw_amount}&slippageBps=100"
   local response http_code
   response=$(curl -s -w "\n%{http_code}" "${quote_url}" 2>/dev/null) || fail "Jupiter quote request failed (network error)"
   http_code=$(echo "${response}" | tail -1)

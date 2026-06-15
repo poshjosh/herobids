@@ -29,9 +29,8 @@
  *   ONEINCH_API_KEY=... ONEINCH_PRIVATE_KEY=... tsx scripts/ts/validate-1inch-launch.ts --execute
  */
 
-import { OneInchSwapAdapter } from '../../packages/venues/src/oneinch-swap.js';
-import { EvmConfirmationPoller } from '../../packages/venues/src/evm-confirmation.js';
-import { quantity } from '../../packages/domain/src/index.js';
+import { OneInchSwapAdapter, EvmConfirmationPoller } from '@herobids/venues';
+import { quantity } from '@herobids/domain';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 

@@ -27,7 +27,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function createAdapter(overrides?: Partial<ConstructorParameters<typeof JupiterSwapAdapter>[0]>): JupiterSwapAdapter {
   return new JupiterSwapAdapter({
     walletAddress: 'test-wallet-address-base58',
-    apiUrl: 'https://quote-api.jup.ag/v6',
+    apiUrl: 'https://api.jup.ag/swap/v1',
     rpcUrl: 'https://api.mainnet-beta.solana.com',
     tokenDecimals: {
       [SOL_MINT]: 9,
@@ -97,7 +97,7 @@ describe('JupiterSwapAdapter.quote', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
-    expect(calledUrl.pathname).toBe('/v6/quote');
+    expect(calledUrl.pathname).toBe('/swap/v1/quote');
     expect(calledUrl.searchParams.get('inputMint')).toBe(USDC_MINT);
     expect(calledUrl.searchParams.get('outputMint')).toBe(SOL_MINT);
     expect(calledUrl.searchParams.get('amount')).toBe('50000000'); // 50 USDC raw
