@@ -774,7 +774,9 @@ const runtime = new WorkerRuntime(
     const strategy = createStrategy(config.strategy);
 
     const venueAccountId = startupContext.sourceVenueAccountId;
-    if (!venueAccountId) {
+    // The resolver already validated the source-venue-account requirement per provider type.
+    // Consume the resolver's decision here rather than re-encoding provider-specific logic.
+    if (startupContext.sourceVenueAccountRequired && !venueAccountId) {
       throw new Error(`Bot ${botId} has no resolved source venue account — refusing to start`);
     }
     const instanceUserId = startupContext.userId ?? (rawConfig['userId'] as string | undefined);

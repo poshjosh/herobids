@@ -3,10 +3,10 @@
 > **Status semantics** — statuses in this backlog are **cumulative repo-state markers**, not branch-local completion flags. `DONE` means the feature is present in the current repository tree (HEAD). `IN_REVIEW` means a code review has been requested and the implementation is under review. `IN_PROGRESS` means active work is underway. Items without a status label are not yet started.
 
 1. DONE [Skill Tool Validation](skill-tool-validation/001-plan.md) - establish the shared tool-name trust boundary before any skill sync or startup wiring depends on it.
-2. IN_REVIEW [System Skill Startup Sync](system-skill-startup-sync/001-plan.md) - keep the database copy of system skills aligned with code once the tool contract is trustworthy.
-3. IN_REVIEW [Bug: Mismatch Between Agent And Runtime State](bug-mismatch-between-agent-and-runtime-state/001-plan.md) - fix terminal-state semantics before layering more deployment and lifecycle behavior on top.
-4. IN_REVIEW [Graceful Agent Deployment - Zero/Low Downtime](graceful-agent-deployment/000-graceful-agent-deployment.md) - add clean handoff and shutdown behavior after lifecycle state is consistent.
-5. IN_REVIEW [025 - Trading Binding Native Bot Startup Follow-Through](025-trading-binding-native-bot-startup-follow-through.md) - finish the binding-first startup migration once the worker lifecycle path is stable.
+2. DONE [System Skill Startup Sync](system-skill-startup-sync/001-plan.md) - keep the database copy of system skills aligned with code once the tool contract is trustworthy.
+3. DONE [Bug: Mismatch Between Agent And Runtime State](bug-mismatch-between-agent-and-runtime-state/001-plan.md) - fix terminal-state semantics before layering more deployment and lifecycle behavior on top.
+4. DONE [Graceful Agent Deployment - Zero/Low Downtime](graceful-agent-deployment/000-graceful-agent-deployment.md) - add clean handoff and shutdown behavior after lifecycle state is consistent.
+5. IN_PROGRESS [025 - Trading Binding Native Bot Startup Follow-Through](025-trading-binding-native-bot-startup-follow-through.md) - finish the binding-first startup migration once the worker lifecycle path is stable.
 6. IN_REVIEW [Agent Runtime Loop Controls](agent-runtime-loop-controls/001-plan.md) - make the core agent runtime tuning knobs configurable.
 7. IN_REVIEW [Agent Wake Semantics Ideal-State Plan](agent-wake-semantics-2/001-ideal-state-plan.md) - move wake delivery toward the typed, capability-aware contract.
 8. IN_REVIEW [Provider Registry For Credentials And Connections](provider-registry-credentials-and-connections/REVISED.md) - establish the backend-owned provider contract that the UI can render from.

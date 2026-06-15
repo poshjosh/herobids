@@ -643,7 +643,7 @@ export class AgentMessageBroker {
       if (this.botStart) {
         await this.botRepo.markBotRunning(payload.botId);
         try {
-          await this.botStart(payload.botId, agent.userId, bot.tradingBindingId ?? bot.venueAccountId, {
+          await this.botStart(payload.botId, agent.userId, bot.tradingBindingId, {
             ...effectiveConfig,
             venueAccountId: bot.venueAccountId,
           });
@@ -721,7 +721,7 @@ export class AgentMessageBroker {
 
       if (bot.status === 'running' && this.botRestart) {
         try {
-          await this.botRestart(payload.botId, agent.userId, bot.tradingBindingId ?? bot.venueAccountId, {
+          await this.botRestart(payload.botId, agent.userId, bot.tradingBindingId, {
             ...mergedConfig,
             venueAccountId: bot.venueAccountId,
           });

@@ -13,6 +13,22 @@ export interface VenueAccountStartupRow {
   credentialId: string | null;
 }
 
+export class BotStartupError extends Error {
+  constructor(
+    public readonly code:
+      | 'bot_not_found'
+      | 'missing_trading_binding_id'
+      | 'binding_not_found'
+      | 'binding_not_usable'
+      | 'missing_source_venue_account'
+      | 'source_venue_account_not_found',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'BotStartupError';
+  }
+}
+
 export interface BotStartupContext {
   botId: string;
   userId: string;
@@ -20,6 +36,8 @@ export interface BotStartupContext {
   provider: string;
   connectionId: string;
   sourceVenueAccountId: string | null;
+  /** True when the resolved provider requires a source venue account for execution. */
+  sourceVenueAccountRequired: boolean;
   venueAccount: VenueAccountStartupRow | null;
 }
 
@@ -45,22 +63,23 @@ function requiresSourceVenueAccount(venue: string, venueType: 'orderbook' | 'swa
 }
 
 function resolveTradingBindingId(bot: NonNullable<BotRow>, rawConfig: Record<string, unknown>): string {
+  // Only accept genuine tradingBindingId values — do NOT fall back to venueAccountId
+  // as a surrogate, since a venue-account ID is not a valid trading-binding ID and
+  // would cause misleading lookup failures in resolveBotStartupContext.
   return readStringValue(rawConfig, 'tradingBindingId')
     ?? bot.tradingBindingId
-    ?? readStringValue(rawConfig, 'venueAccountId')
-    ?? readStringValue(rawConfig, 'venue_account_id')
     ?? '';
 }
 
 export async function resolveBotStartupContext(params: ResolveBotStartupContextParams): Promise<BotStartupContext> {
   const bot = await params.botRepo.getBotById(params.botId);
   if (!bot) {
-    throw new Error(`Bot ${params.botId} not found — cannot resolve startup context`);
+    throw new BotStartupError('bot_not_found', `Bot ${params.botId} not found — cannot resolve startup context`);
   }
 
   const tradingBindingId = resolveTradingBindingId(bot, params.rawConfig);
   if (!tradingBindingId) {
-    throw new Error(`Bot ${params.botId} has no tradingBindingId in job config or persisted bot row — refusing to start`);
+    throw new BotStartupError('missing_trading_binding_id', `Bot ${params.botId} has no tradingBindingId in job config or persisted bot row — refusing to start`);
   }
 
   const [bindingRow] = await params.db
@@ -77,17 +96,17 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     .limit(1);
 
   if (!bindingRow) {
-    throw new Error(`Trading binding ${tradingBindingId} not found — cannot start bot ${params.botId}`);
+    throw new BotStartupError('binding_not_found', `Trading binding ${tradingBindingId} not found — cannot start bot ${params.botId}`);
   }
 
   if (bindingRow.bindingStatus !== 'active' || bindingRow.connectionStatus !== 'active') {
-    throw new Error(`Trading binding ${tradingBindingId} is not usable for startup — cannot start bot ${params.botId}`);
+    throw new BotStartupError('binding_not_usable', `Trading binding ${tradingBindingId} is not usable for startup — binding or connection is inactive`);
   }
 
   const sourceVenueAccountId = bindingRow.sourceVenueAccountId;
   const needsSourceVenueAccount = requiresSourceVenueAccount(params.venue, params.venueType);
   if (!sourceVenueAccountId && needsSourceVenueAccount) {
-    throw new Error(`Trading binding ${tradingBindingId} is missing sourceVenueAccountId — cannot start ${params.venueType} bot ${params.botId}`);
+    throw new BotStartupError('missing_source_venue_account', `Trading binding ${tradingBindingId} is missing sourceVenueAccountId — cannot start ${params.venueType} bot ${params.botId}`);
   }
 
   let venueAccount: VenueAccountStartupRow | null = null;
@@ -107,7 +126,7 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
 
     if (!venueAccountRow) {
       if (needsSourceVenueAccount) {
-        throw new Error(`Source venue account ${sourceVenueAccountId} not found — cannot start bot ${params.botId}`);
+        throw new BotStartupError('source_venue_account_not_found', `Source venue account ${sourceVenueAccountId} not found — cannot start bot ${params.botId}`);
       }
     } else {
       venueAccount = venueAccountRow;
@@ -121,6 +140,7 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     provider: bindingRow.provider,
     connectionId: bindingRow.connectionId,
     sourceVenueAccountId,
+    sourceVenueAccountRequired: needsSourceVenueAccount,
     venueAccount,
   };
 }

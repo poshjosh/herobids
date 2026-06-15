@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database, BotRepository } from '@herobids/db';
-import { resolveBotStartupContext } from './startup-context.js';
+import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 
 function makeDbMock(bindingRows: unknown[], venueAccountRows: unknown[]) {
   let selectCall = 0;
@@ -75,6 +75,7 @@ describe('resolveBotStartupContext', () => {
       provider: 'hyperliquid',
       connectionId: 'conn-1',
       sourceVenueAccountId: 'va-1',
+      sourceVenueAccountRequired: true,
       venueAccount: {
         id: 'va-1',
         userId: 'user-1',
@@ -125,6 +126,7 @@ describe('resolveBotStartupContext', () => {
 
     expect(context.tradingBindingId).toBe('binding-bot-2');
     expect(context.sourceVenueAccountId).toBe('va-2');
+    expect(context.sourceVenueAccountRequired).toBe(true);
     expect(context.venueAccount?.venueAccountRef).toBe('wallet-2');
   });
 
@@ -155,5 +157,61 @@ describe('resolveBotStartupContext', () => {
       venue: 'jupiter',
       venueType: 'swap',
     })).rejects.toThrow('missing sourceVenueAccountId');
+  });
+
+  it('throws BotStartupError with code binding_not_found for an unknown binding', async () => {
+    const db = makeDbMock([], []);
+    const botRepo = {
+      getBotById: vi.fn().mockResolvedValue({
+        id: 'bot-4',
+        userId: 'user-4',
+        venueAccountId: 'va-4',
+        tradingBindingId: 'binding-unknown',
+      }),
+    } satisfies Pick<BotRepository, 'getBotById'>;
+
+    const err = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId: 'bot-4',
+      rawConfig: { tradingBindingId: 'binding-unknown' },
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('binding_not_found');
+  });
+
+  it('throws BotStartupError with code missing_source_venue_account for required account', async () => {
+    const db = makeDbMock([
+      {
+        provider: 'hyperliquid',
+        connectionId: 'conn-5',
+        sourceVenueAccountId: null,
+        bindingStatus: 'active',
+        connectionStatus: 'active',
+      },
+    ], []);
+    const botRepo = {
+      getBotById: vi.fn().mockResolvedValue({
+        id: 'bot-5',
+        userId: 'user-5',
+        venueAccountId: 'va-5',
+        tradingBindingId: 'binding-5',
+      }),
+    } satisfies Pick<BotRepository, 'getBotById'>;
+
+    const err = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId: 'bot-5',
+      rawConfig: { tradingBindingId: 'binding-5' },
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('missing_source_venue_account');
   });
 });
