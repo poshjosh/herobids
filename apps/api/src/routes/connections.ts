@@ -8,6 +8,12 @@ import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
 import { checkConnectionLimit } from '../plan-guards.js';
+import {
+  credentialMatchesConnectionProvider,
+  providerAllowsCredential,
+  providerRequiresCredential,
+  providerSupportsConnections,
+} from '../providers/registry.js';
 
 export async function connectionRoutes(
   app: FastifyInstance,
@@ -80,6 +86,32 @@ export async function connectionRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
+    if (!providerSupportsConnections(parsed.data.provider) && parsed.data.provider === parsed.data.provider.trim().toLowerCase()) {
+      // Unknown lowercase provider IDs are treated as custom-mode providers and remain allowed.
+    } else if (!providerSupportsConnections(parsed.data.provider) && parsed.data.provider !== parsed.data.provider.trim()) {
+      return reply.status(400).send(
+        errorPayload('provider.invalid_id', 'Provider identifiers must not contain leading or trailing whitespace', {
+          provider: parsed.data.provider,
+        }),
+      );
+    }
+
+    if (providerRequiresCredential(parsed.data.provider) && !parsed.data.credentialId) {
+      return reply.status(400).send(
+        errorPayload('credential.required_for_provider', `Provider "${parsed.data.provider}" requires a credential`, {
+          provider: parsed.data.provider,
+        }),
+      );
+    }
+
+    if (!providerAllowsCredential(parsed.data.provider) && parsed.data.credentialId) {
+      return reply.status(400).send(
+        errorPayload('credential.not_allowed_for_provider', `Provider "${parsed.data.provider}" does not accept credentials`, {
+          provider: parsed.data.provider,
+        }),
+      );
+    }
+
     // If a credentialId is provided, verify it exists, belongs to this user,
     // and its venue matches the connection provider — prevents a Bybit credential
     // from being attached to a Hyperliquid connection, etc.
@@ -100,7 +132,7 @@ export async function connectionRoutes(
           }),
         );
       }
-      if (cred.venue !== parsed.data.provider) {
+      if (!credentialMatchesConnectionProvider(parsed.data.provider, cred.venue)) {
         return reply.status(400).send(
           errorPayload('credential.provider_mismatch', `Credential is for venue "${cred.venue}", not provider "${parsed.data.provider}"`, {
             credentialVenue: cred.venue,

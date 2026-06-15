@@ -43,6 +43,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Agent wake semantics (2026-06-15): wake payloads now require typed sources end-to-end, reminder wakes no longer use legacy `reminder:` prefixes, and runtime reminder rendering depends on typed source/context instead of migration fallbacks.
 
+- Provider registry for credentials and connections (2026-06-15): the API now publishes a typed provider catalog, credential and connection validation flow through the shared registry, and the web setup/credential/connection forms render from runtime provider metadata instead of hard-coded provider suggestions.
+
 - **Migration squash (2026-06-10):** The 13 incremental migration files `0000_windy_serpent_society` through `0012_execute_code_programming_skill` were replaced with a single baseline (`0000_baseline.sql`) that represents the full schema at this point. Migration `0001_add_preferred_locale` is additive on top.
   - **Fresh databases:** run `pnpm --filter @herobids/db run migrate` as normal.
   - **Existing databases that ran the old migrations:** run `bash scripts/shell/ops/apply-db-squash-fixup.sh` once, then run `pnpm --filter @herobids/db run db:migrate`. The helper records the new baseline hash in `drizzle.__drizzle_migrations` so the squashed baseline is skipped and `0001_add_preferred_locale` can apply safely.

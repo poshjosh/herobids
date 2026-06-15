@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { getToken, clearToken } from './session.js';
+import type { ProviderCatalogResponse } from '@herobids/domain';
 
 export class ApiError extends Error {
   constructor(
@@ -976,6 +977,10 @@ export const connections = {
   create: (data: { provider: string; label: string; credentialId?: string }) =>
     request<Connection>('/connections', { method: 'POST', body: JSON.stringify(data) }),
   revoke: (id: string) => request<void>(`/connections/${id}`, { method: 'DELETE' }),
+};
+
+export const providerCatalog = {
+  get: () => request<ProviderCatalogResponse>('/providers/catalog'),
 };
 
 // ---------------------------------------------------------------------------

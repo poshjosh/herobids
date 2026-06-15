@@ -1,9 +1,16 @@
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { connections as connectionsApi, credentials as credentialsApi } from '../../lib/api-client.js';
+import type { ProviderDefinition } from '@herobids/domain';
+import { connections as connectionsApi, credentials as credentialsApi, providerCatalog as providerCatalogApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
+
+const CUSTOM_PROVIDER_OPTION = '__custom__';
+
+function findProviderDisplayName(providers: readonly ProviderDefinition[] | undefined, providerId: string): string {
+  return providers?.find((provider) => provider.id === providerId)?.displayName ?? providerId;
+}
 
 export function ConnectionsPage() {
   const intl = useIntl();
@@ -13,6 +20,11 @@ export function ConnectionsPage() {
   const query = useQuery({
     queryKey: ['connections'],
     queryFn: () => connectionsApi.list(),
+  });
+
+  const catalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalogApi.get(),
   });
 
   const items = query.data?.connections ?? [];
@@ -43,7 +55,7 @@ export function ConnectionsPage() {
             <div>
               <div style={{ fontWeight: 600 }}>{conn.label}</div>
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                Provider: {conn.provider} · {conn.status}
+                Provider: {findProviderDisplayName(catalogQuery.data?.providers, conn.provider)} · {conn.status}
               </div>
             </div>
             {conn.status === 'active' && (
@@ -72,20 +84,40 @@ export function ConnectionsPage() {
 }
 
 function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [provider, setProvider] = useState('');
+  const [providerChoice, setProviderChoice] = useState(CUSTOM_PROVIDER_OPTION);
+  const [customProviderId, setCustomProviderId] = useState('');
   const [label, setLabel] = useState('');
   const [credentialId, setCredentialId] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const catalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalogApi.get(),
+  });
 
   const credQuery = useQuery({
     queryKey: ['credentials'],
     queryFn: () => credentialsApi.list(),
   });
 
+  const selectableProviders = (catalogQuery.data?.providers ?? []).filter(
+    (provider) => provider.status !== 'deprecated' && provider.connections,
+  );
+  const selectedProvider = selectableProviders.find((provider) => provider.id === providerChoice);
+  const effectiveProvider = providerChoice === CUSTOM_PROVIDER_OPTION ? customProviderId.trim() : providerChoice.trim();
+  const filteredCredentials = (credQuery.data?.credentials ?? []).filter((credential) => {
+    if (providerChoice === CUSTOM_PROVIDER_OPTION) {
+      return customProviderId.trim().length === 0 || credential.venue === customProviderId.trim();
+    }
+
+    const compatibleProviders = selectedProvider?.connections?.credentialProviderIds ?? [];
+    return compatibleProviders.length === 0 || compatibleProviders.includes(credential.venue);
+  });
+
   const create = useMutation({
     mutationFn: () =>
       connectionsApi.create({
-        provider: provider.trim(),
+        provider: effectiveProvider,
         label: label.trim(),
         ...(credentialId ? { credentialId } : {}),
       }),
@@ -97,12 +129,20 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
     <Modal title="New connection" onClose={onClose}>
       {error && <ErrorBanner message={error} />}
       <FieldLabel>Provider</FieldLabel>
-      <input
-        style={inputStyle}
-        placeholder="e.g. hyperliquid, telegram"
-        value={provider}
-        onChange={(e) => setProvider(e.target.value)}
-      />
+      <select style={inputStyle} value={providerChoice} onChange={(e) => setProviderChoice(e.target.value)}>
+        <option value={CUSTOM_PROVIDER_OPTION}>Custom</option>
+        {selectableProviders.map((provider) => (
+          <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+        ))}
+      </select>
+      {providerChoice === CUSTOM_PROVIDER_OPTION ? (
+        <input
+          style={{ ...inputStyle, marginTop: '8px' }}
+          placeholder="e.g. telegram"
+          value={customProviderId}
+          onChange={(e) => setCustomProviderId(e.target.value)}
+        />
+      ) : null}
       <FieldLabel>Label</FieldLabel>
       <input
         style={inputStyle}
@@ -117,15 +157,20 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
         onChange={(e) => setCredentialId(e.target.value)}
       >
         <option value="">— none —</option>
-        {(credQuery.data?.credentials ?? []).map((c) => (
+        {filteredCredentials.map((c) => (
           <option key={c.id} value={c.id}>{c.venue ? `${c.label} (${c.venue})` : c.label}</option>
         ))}
       </select>
+      {selectedProvider?.connections ? (
+        <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          {selectedProvider.connections.autoCreatesTradingBinding ? 'This provider auto-creates a trading binding.' : 'This provider does not auto-create a trading binding.'}
+        </div>
+      ) : null}
       <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <Button
           onClick={() => create.mutate()}
-          disabled={create.isPending || !provider.trim() || !label.trim()}
+          disabled={create.isPending || !effectiveProvider || !label.trim()}
         >
           Create
         </Button>

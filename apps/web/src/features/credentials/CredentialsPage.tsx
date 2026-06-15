@@ -1,15 +1,15 @@
 import { useIntl } from 'react-intl';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { credentials as credentialsApi } from '../../lib/api-client.js';
+import type { FieldDefinition, ProviderDefinition } from '@herobids/domain';
+import { credentials as credentialsApi, providerCatalog as providerCatalogApi } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 import { formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
-const PROVIDER_SUGGESTIONS = ['hyperliquid', 'bybit', 'jupiter', '1inch', 'gmail', 'n8n', 'custom'];
+const CUSTOM_PROVIDER_OPTION = '__custom__';
 
-/** Well-known secret key names per provider — used to pre-populate key fields when a template matches. */
 export const PROVIDER_TEMPLATES: Record<string, string[]> = {
   hyperliquid: ['apiKey', 'secret', 'walletAddress'],
   jupiter: ['privateKey'],
@@ -31,6 +31,18 @@ function createSecretEntry(): SecretEntry {
   };
 }
 
+function buildStructuredSecrets(fields: readonly FieldDefinition[], fieldValues: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    fields
+      .map((field) => [field.key, (fieldValues[field.key] ?? '').trim()] as const)
+      .filter(([, value]) => value.length > 0),
+  );
+}
+
+function findProviderDisplayName(providers: readonly ProviderDefinition[] | undefined, providerId: string): string {
+  return providers?.find((provider) => provider.id === providerId)?.displayName ?? providerId;
+}
+
 export function CredentialsPage() {
   const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
@@ -39,6 +51,11 @@ export function CredentialsPage() {
   const query = useQuery({
     queryKey: ['credentials'],
     queryFn: () => credentialsApi.list(),
+  });
+
+  const catalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalogApi.get(),
   });
 
   const deleteMutation = useMutation({
@@ -71,15 +88,11 @@ export function CredentialsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {items.map((credential) => (
             <Card key={credential.id} style={{ padding: '14px 20px' }}>
-              {(() => {
-                const provider = credential.venue;
-
-                return (
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider })}
+                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider: findProviderDisplayName(catalogQuery.data?.providers, credential.venue) })}
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'credentials.idLabel' }, { id: credential.id })}</div>
                 </div>
@@ -101,8 +114,6 @@ export function CredentialsPage() {
                   </Button>
                 </div>
               </div>
-                );
-              })()}
             </Card>
           ))}
         </div>
@@ -123,33 +134,35 @@ export function CredentialsPage() {
 
 function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const intl = useIntl();
-  const [provider, setProvider] = useState('');
+  const [providerChoice, setProviderChoice] = useState(CUSTOM_PROVIDER_OPTION);
+  const [customProviderId, setCustomProviderId] = useState('');
   const [label, setLabel] = useState('');
   const [secretEntries, setSecretEntries] = useState<SecretEntry[]>([createSecretEntry()]);
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
-  const applyProviderTemplate = (value: string) => {
-    setProvider(value);
-    const template = PROVIDER_TEMPLATES[value.trim().toLowerCase()];
-    // Only auto-populate/reset when no values have been entered yet — preserve user input.
-    const hasValues = secretEntries.some((e) => e.value.trim() !== '');
-    if (hasValues) return;
-    if (template) {
-      setSecretEntries(template.map((key) => ({ id: `tpl-${key}`, key, value: '' })));
-    } else {
-      // Unknown provider: reset to a single blank row (clear stale template keys).
-      setSecretEntries([createSecretEntry()]);
-    }
-  };
+  const catalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalogApi.get(),
+  });
+
+  const selectableProviders = (catalogQuery.data?.providers ?? []).filter(
+    (provider) => provider.status !== 'deprecated' && provider.credentials,
+  );
+  const selectedProvider = selectableProviders.find((provider) => provider.id === providerChoice);
+  const isCustomProvider = providerChoice === CUSTOM_PROVIDER_OPTION;
+  const effectiveProvider = isCustomProvider ? customProviderId.trim() : providerChoice.trim();
 
   const mutation = useMutation({
     mutationFn: () => credentialsApi.create({
-      provider: provider.trim(),
+      provider: effectiveProvider,
       label: label.trim(),
-      secrets: Object.fromEntries(
-        secretEntries
-          .map(({ key, value }) => [key.trim(), value.trim()] as const)
-          .filter(([key, value]) => key.length > 0 && value.length > 0),
-      ),
+      secrets: isCustomProvider
+        ? Object.fromEntries(
+            secretEntries
+              .map(({ key, value }) => [key.trim(), value.trim()] as const)
+              .filter(([key, value]) => key.length > 0 && value.length > 0),
+          )
+        : buildStructuredSecrets(selectedProvider?.credentials?.fields ?? [], fieldValues),
     }),
     onSuccess,
   });
@@ -171,25 +184,32 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
     setSecretEntries((entries) => entries.filter((_, currentIndex) => currentIndex !== index));
   };
 
-  const hasCompleteSecret = secretEntries.some((entry) => entry.key.trim() && entry.value.trim());
+  const hasCompleteSecret = isCustomProvider
+    ? secretEntries.some((entry) => entry.key.trim() && entry.value.trim())
+    : Object.values(fieldValues).some((value) => value.trim().length > 0);
 
   return (
     <Modal title={intl.formatMessage({ id: 'credentials.modal.title' })} onClose={onClose}>
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '16px' }}>
           <FieldLabel>{intl.formatMessage({ id: 'credentials.modal.provider' })}</FieldLabel>
-          <input
-            list="provider-suggestions"
-            value={provider}
-            onChange={(event) => applyProviderTemplate(event.target.value)}
-            placeholder={intl.formatMessage({ id: 'credentials.modal.providerPlaceholder' })}
-            style={inputStyle}
-          />
-          <datalist id="provider-suggestions">
-            {PROVIDER_SUGGESTIONS.map((suggestion) => (
-              <option key={suggestion} value={suggestion} />
+          <select value={providerChoice} onChange={(event) => setProviderChoice(event.target.value)} style={inputStyle}>
+            <option value={CUSTOM_PROVIDER_OPTION}>Custom</option>
+            {selectableProviders.map((provider) => (
+              <option key={provider.id} value={provider.id}>{provider.displayName}</option>
             ))}
-          </datalist>
+          </select>
+          {isCustomProvider ? (
+            <div style={{ marginTop: '8px' }}>
+              <input
+                value={customProviderId}
+                onChange={(event) => setCustomProviderId(event.target.value)}
+                placeholder={intl.formatMessage({ id: 'credentials.modal.providerPlaceholder' })}
+                style={inputStyle}
+              />
+            </div>
+          ) : null}
+          {catalogQuery.isLoading ? <div style={{ marginTop: '8px', fontSize: '12px' }}>Loading provider catalog...</div> : null}
         </div>
 
         <div style={{ marginBottom: '16px' }}>
@@ -204,32 +224,55 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
 
         <div style={{ marginBottom: '12px' }}>
           <FieldLabel>{intl.formatMessage({ id: 'credentials.modal.secrets' })}</FieldLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {secretEntries.map((entry, index) => (
-              <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}>
-                <input
-                  value={entry.key}
-                  onChange={(event) => updateEntry(index, 'key', event.target.value)}
-                  placeholder={intl.formatMessage({ id: 'credentials.modal.secretNamePlaceholder' })}
-                  style={inputStyle}
-                />
-                <input
-                  type="password"
-                  value={entry.value}
-                  onChange={(event) => updateEntry(index, 'value', event.target.value)}
-                  placeholder={intl.formatMessage({ id: 'credentials.modal.secretValuePlaceholder' })}
-                  style={inputStyle}
-                  autoComplete="new-password"
-                />
-                <Button variant="ghost" size="sm" onClick={() => removeEntry(index)} disabled={secretEntries.length === 1}>
-                  {intl.formatMessage({ id: 'common.remove' })}
-                </Button>
+          {isCustomProvider ? (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {secretEntries.map((entry, index) => (
+                  <div key={entry.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr auto', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      value={entry.key}
+                      onChange={(event) => updateEntry(index, 'key', event.target.value)}
+                      placeholder={intl.formatMessage({ id: 'credentials.modal.secretNamePlaceholder' })}
+                      style={inputStyle}
+                    />
+                    <input
+                      type="password"
+                      value={entry.value}
+                      onChange={(event) => updateEntry(index, 'value', event.target.value)}
+                      placeholder={intl.formatMessage({ id: 'credentials.modal.secretValuePlaceholder' })}
+                      style={inputStyle}
+                      autoComplete="new-password"
+                    />
+                    <Button variant="ghost" size="sm" onClick={() => removeEntry(index)} disabled={secretEntries.length === 1}>
+                      {intl.formatMessage({ id: 'common.remove' })}
+                    </Button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={{ marginTop: '8px' }}>
-            <Button variant="secondary" size="sm" onClick={addEntry}>{intl.formatMessage({ id: 'credentials.modal.addSecret' })}</Button>
-          </div>
+              <div style={{ marginTop: '8px' }}>
+                <Button variant="secondary" size="sm" onClick={addEntry}>{intl.formatMessage({ id: 'credentials.modal.addSecret' })}</Button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {(selectedProvider?.credentials?.fields ?? []).map((field) => (
+                <div key={field.key}>
+                  <FieldLabel>{field.label}</FieldLabel>
+                  <input
+                    type={field.secret || field.inputKind === 'password' ? 'password' : 'text'}
+                    value={fieldValues[field.key] ?? ''}
+                    onChange={(event) => setFieldValues((current) => ({ ...current, [field.key]: event.target.value }))}
+                    placeholder={field.placeholder ?? field.key}
+                    style={inputStyle}
+                    autoComplete="new-password"
+                  />
+                  {field.description ? (
+                    <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)' }}>{field.description}</div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
@@ -239,7 +282,7 @@ function CreateCredentialModal({ onClose, onSuccess }: { onClose: () => void; on
           <Button
             variant="primary"
             type="submit"
-            disabled={mutation.isPending || !provider.trim() || !label.trim() || !hasCompleteSecret}
+            disabled={mutation.isPending || !effectiveProvider || !label.trim() || !hasCompleteSecret}
           >
             {mutation.isPending ? intl.formatMessage({ id: 'credentials.modal.saving' }) : intl.formatMessage({ id: 'credentials.modal.save' })}
           </Button>

@@ -28,6 +28,7 @@ import { makeCatalogContext } from './llm-model-catalog.js';
 import { connectionRoutes } from './routes/connections.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';
 import { setupRoutes } from './routes/setup.js';
+import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
@@ -97,6 +98,7 @@ await capabilityRoutes(app, db, appConfig.plans, appConfig.agentRuntime.defaultB
 
 // ── Setup flows (guided orchestration over primitives) ────────────────────────
 await setupRoutes(app, db, appConfig.plans);
+await providerRoutes(app);
 
 // ── Platform primitives ───────────────────────────────────────────────────
 await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);

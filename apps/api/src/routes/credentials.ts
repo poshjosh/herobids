@@ -12,6 +12,8 @@ import { findCredentialDependents } from '../credential-dependents.js';
 import { checkCredentialLimit } from '../plan-guards.js';
 import type { LifecycleJob } from '../types.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
+import { findProviderRegistryEntry } from '../providers/registry.js';
+import { canonicalizeProviderSecrets, validateProviderSecrets, type ProviderValidationError } from '../providers/validator.js';
 
 /** Best-effort audit append — never fails the HTTP request if the mutation already succeeded */
 function auditAppend(journal: InstanceType<typeof PgJournal>, entry: Parameters<InstanceType<typeof PgJournal>['append']>[0], log: { error: (obj: unknown, msg: string) => void }): void {
@@ -27,84 +29,13 @@ export interface SecretValidationError {
   params?: Record<string, unknown>;
 }
 
-const SECRET_ALIASES_BY_VENUE: Record<string, Record<string, string[]>> = {
-  hyperliquid: {
-    apiKey: ['apikey'],
-    secret: ['secret', 'secretkey'],
-    walletAddress: ['walletaddress', 'accountaddress'],
-  },
-  bybit: {
-    apiKey: ['apikey'],
-    secret: ['secret', 'secretkey', 'apisecret'],
-  },
-  '1inch': {
-    apiKey: ['apikey'],
-    privateKey: ['privatekey'],
-  },
-};
-
-function normalizeSecretToken(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
 export function canonicalizeVenueSecrets(venue: string, secrets: Record<string, string>): Record<string, string> {
-  const aliases = SECRET_ALIASES_BY_VENUE[venue] ?? {};
-  const canonicalSecrets: Record<string, string> = {};
-
-  for (const [rawKey, rawValue] of Object.entries(secrets)) {
-    const trimmedKey = rawKey.trim();
-    if (!trimmedKey) {
-      continue;
-    }
-
-    const normalizedKey = normalizeSecretToken(trimmedKey);
-    const canonicalKey = Object.entries(aliases).find(([, knownAliases]) => knownAliases.includes(normalizedKey))?.[0] ?? trimmedKey;
-    canonicalSecrets[canonicalKey] = rawValue.trim();
-  }
-
-  return canonicalSecrets;
+  return canonicalizeProviderSecrets(venue, secrets, findProviderRegistryEntry(venue));
 }
 
 /** Venue-specific validation of credential secrets. Returns empty array if valid. */
 export function validateVenueSecrets(venue: string, secrets: Record<string, string>): SecretValidationError[] {
-  const errors: SecretValidationError[] = [];
-
-  if (venue === 'hyperliquid') {
-    if (!secrets['apiKey']?.trim()) {
-      errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey is required for Hyperliquid credentials', params: { field: 'apiKey', venue: 'hyperliquid' } });
-    }
-    if (!secrets['secret']?.trim()) {
-      errors.push({ field: 'secrets.secret', code: 'credential.validation_error.required', message: 'secret is required for Hyperliquid credentials', params: { field: 'secret', venue: 'hyperliquid' } });
-    }
-    if (!secrets['walletAddress']?.trim()) {
-      errors.push({ field: 'secrets.walletAddress', code: 'credential.validation_error.required', message: 'walletAddress is required for Hyperliquid credentials', params: { field: 'walletAddress', venue: 'hyperliquid' } });
-    } else if (!/^0x[0-9a-fA-F]{40}$/.test(secrets['walletAddress'])) {
-      errors.push({ field: 'secrets.walletAddress', code: 'credential.validation_error.invalid_wallet_address', message: 'walletAddress must be a valid EVM address (0x + 40 hex chars)', params: { field: 'walletAddress', venue: 'hyperliquid' } });
-    }
-  } else if (venue === 'bybit') {
-    if (!secrets['apiKey']?.trim()) {
-      errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey is required for Bybit credentials', params: { field: 'apiKey', venue: 'bybit' } });
-    }
-    if (!secrets['secret']?.trim()) {
-      errors.push({ field: 'secrets.secret', code: 'credential.validation_error.required', message: 'secret is required for Bybit credentials', params: { field: 'secret', venue: 'bybit' } });
-    }
-  } else if (venue === '1inch') {
-    const pk = secrets['privateKey']?.trim() ?? '';
-    if (!pk) {
-      errors.push({ field: 'secrets.privateKey', code: 'credential.validation_error.required', message: 'privateKey is required for 1inch credentials', params: { field: 'privateKey', venue: '1inch' } });
-    } else if (!/^(0x)?[0-9a-fA-F]{64}$/.test(pk)) {
-      errors.push({ field: 'secrets.privateKey', code: 'credential.validation_error.invalid_private_key', message: 'privateKey must be 64 hex chars (optionally 0x-prefixed)', params: { field: 'privateKey', venue: '1inch' } });
-    }
-    if (!secrets['apiKey']?.trim()) {
-      errors.push({ field: 'secrets.apiKey', code: 'credential.validation_error.required', message: 'apiKey (1inch developer portal key) is required for 1inch credentials', params: { field: 'apiKey', venue: '1inch' } });
-    }
-  } else if (venue === 'jupiter') {
-    if (!secrets['privateKey']?.trim()) {
-      errors.push({ field: 'secrets.privateKey', code: 'credential.validation_error.required', message: 'privateKey is required for Jupiter credentials', params: { field: 'privateKey', venue: 'jupiter' } });
-    }
-  }
-
-  return errors;
+  return validateProviderSecrets(venue, secrets, findProviderRegistryEntry(venue)) as ProviderValidationError[];
 }
 
 export async function credentialRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {

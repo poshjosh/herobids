@@ -10,8 +10,7 @@ import { provisionTradingTarget } from '../trading-provisioner.js';
 import { checkBindingLimit, checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
-
-const SUPPORTED_TRADING_PROVIDERS = new Set(['hyperliquid', 'jupiter', '1inch', 'bybit']);
+import { providerAllowsTradingSetup } from '../providers/registry.js';
 
 function credentialValidationPayload(errors: ReturnType<typeof validateVenueSecrets>) {
   const primary = errors[0]!;
@@ -44,7 +43,7 @@ export async function setupRoutes(
 
     const { provider, label, secrets, capability } = parsed.data;
 
-    if (capability === 'trading' && !SUPPORTED_TRADING_PROVIDERS.has(provider)) {
+    if (capability === 'trading' && !providerAllowsTradingSetup(provider)) {
       return reply.status(400).send(
         errorPayload(
           'capability.unsupported_provider',

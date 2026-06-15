@@ -19,10 +19,74 @@ import { describe, expect, it } from 'vitest';
 import { messages } from '../../app/i18n/locales/en.js';
 import { ProviderSetupForm, canAutoApplyProviderTemplate } from './ProviderSetupForm.js';
 
+const TEST_PROVIDER_CATALOG = {
+  schemaVersion: 'v1' as const,
+  etag: 'test-etag',
+  providers: [
+    {
+      id: 'hyperliquid',
+      displayName: 'Hyperliquid',
+      status: 'supported' as const,
+      categories: ['trading'],
+      credentials: { fields: [] },
+      connections: {
+        requiresCredential: false,
+        allowsCredential: true,
+        credentialProviderIds: ['hyperliquid'],
+        autoCreatesTradingBinding: true,
+      },
+    },
+    {
+      id: 'bybit',
+      displayName: 'Bybit',
+      status: 'supported' as const,
+      categories: ['trading'],
+      credentials: { fields: [] },
+      connections: {
+        requiresCredential: false,
+        allowsCredential: true,
+        credentialProviderIds: ['bybit'],
+        autoCreatesTradingBinding: true,
+      },
+    },
+    {
+      id: 'jupiter',
+      displayName: 'Jupiter',
+      status: 'supported' as const,
+      categories: ['trading', 'swap'],
+      credentials: { fields: [] },
+      connections: {
+        requiresCredential: false,
+        allowsCredential: true,
+        credentialProviderIds: ['jupiter'],
+        autoCreatesTradingBinding: true,
+      },
+    },
+    {
+      id: '1inch',
+      displayName: '1inch',
+      status: 'supported' as const,
+      categories: ['trading', 'swap'],
+      credentials: { fields: [] },
+      connections: {
+        requiresCredential: false,
+        allowsCredential: true,
+        credentialProviderIds: ['1inch'],
+        autoCreatesTradingBinding: true,
+      },
+    },
+  ],
+  customMode: {
+    credentials: { allowFreeformKeys: true },
+    connections: { allowFreeformProvider: true, autoCreatesTradingBinding: false },
+  },
+};
+
 function renderForm(defaultCapability?: 'trading'): string {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  qc.setQueryData(['providerCatalog'], TEST_PROVIDER_CATALOG);
   return renderToStaticMarkup(
     <QueryClientProvider client={qc}>
       <IntlProvider locale="en" messages={messages}>
@@ -82,14 +146,15 @@ describe('ProviderSetupForm rendering', () => {
     expect(html).toContain(messages['setup.form.addSecret']);
   });
 
-  it('renders datalist options for general provider suggestions by default', () => {
+  it('renders known provider options plus custom mode for general setup by default', () => {
     const html = renderForm();
-    for (const provider of ['hyperliquid', 'gmail', 'n8n', 'custom']) {
+    for (const provider of ['hyperliquid', 'bybit', 'jupiter', '1inch']) {
       expect(html).toContain(`value="${provider}"`);
     }
+    expect(html).toContain('value="__custom__"');
   });
 
-  it('renders trading-only provider suggestions in trading mode', () => {
+  it('renders trading-only provider options in trading mode', () => {
     const html = renderForm('trading');
     for (const provider of ['hyperliquid', 'bybit', 'jupiter', '1inch']) {
       expect(html).toContain(`value="${provider}"`);
