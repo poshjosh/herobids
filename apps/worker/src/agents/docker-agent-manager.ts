@@ -253,6 +253,10 @@ export class DockerAgentManager {
     await this.agentRepo.updateAgent(agentId, { status: 'stopped' });
 
     try {
+      // Docker stop timeout (?t=10): gives the agent runtime 10 seconds to drain
+      // in-flight work and exit cleanly via SIGTERM before Docker sends SIGKILL.
+      // The agent-side drain budget (SHUTDOWN_DRAIN_TIMEOUT_MS = 8 s) is set below
+      // this ceiling so the process can exit on its own before the hard kill fires.
       const res = await this.dockerRequest('POST', `/containers/${name}/stop`, undefined, '?t=10');
       if (!res.ok && res.status !== 404 && res.status !== 304) {
         throw new Error(`Docker container stop failed for agent ${agentId}: HTTP ${res.status}`);

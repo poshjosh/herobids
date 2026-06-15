@@ -1365,14 +1365,46 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
 /**
  * Unified shutdown path used by expiry, SIGTERM, and SIGINT.
  * Idempotent: clears timers (safe to call even if never set), drains Redis, exits.
+ *
+ * Drain contract: after stopping new work we wait up to SHUTDOWN_DRAIN_TIMEOUT_MS
+ * for any in-flight tick to complete before proceeding. This budget must stay within
+ * the Docker stop timeout (?t=10) so the process exits cleanly before Docker sends
+ * SIGKILL. Remaining time after drain is used for cleanup (Redis quit, session_ended).
  */
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 8_000;
+
+let shuttingDown = false;
+
 async function shutdown(reason: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info({ reason }, 'Agent runtime shutting down');
   running = false;
   clearInterval(heartbeatTimer);
   clearTimeout(tickTimer);
   stopWakeSignalPolling();
   nextTickDueAt = 0;
+
+  // Drain in-flight tick: wait up to SHUTDOWN_DRAIN_TIMEOUT_MS for any active tick
+  // to finish before tearing down Redis connections and exiting.
+  if (tickInFlight) {
+    logger.info({ drainTimeoutMs: SHUTDOWN_DRAIN_TIMEOUT_MS }, 'Waiting for in-flight tick to drain before shutdown');
+    const drainDeadline = Date.now() + SHUTDOWN_DRAIN_TIMEOUT_MS;
+    await new Promise<void>((resolve) => {
+      const poll = setInterval(() => {
+        if (!tickInFlight || Date.now() >= drainDeadline) {
+          clearInterval(poll);
+          if (tickInFlight) {
+            logger.warn({ reason }, 'Drain timeout reached — proceeding with shutdown while tick still in flight');
+          } else {
+            logger.info({ reason }, 'In-flight tick drained cleanly');
+          }
+          resolve();
+        }
+      }, 50);
+    });
+  }
+
   usageBillingService?.closeRuntimeWindow();
   await sendHeartbeat('degraded', reason).catch(() => { /* ignore */ });
   await publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED, {
