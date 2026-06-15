@@ -1,5 +1,5 @@
-import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload } from '@herobids/domain';
-import { formatAgentGoalLiteralBlock } from '@herobids/domain';
+import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, AgentMarketWakePayloadSchema } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
@@ -54,7 +54,7 @@ export interface RuntimeMarketWakeContext {
   source: 'watch_threshold' | 'discovery_delta' | 'regime_change';
   reason: string;
   requestedAt: string | null;
-  context: Record<string, unknown>;
+  context: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext;
 }
 
 export interface RuntimeVenueSignal {
@@ -612,19 +612,19 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       if (!wake || wake.source !== 'watch_threshold') {
         return null;
       }
-      const ctx = wake.context;
+      const ctx = wake.context as WatchThresholdWakeContext;
       return {
         id: 'watchTriggerContext',
         title: 'Watch Trigger Context',
         provider: 'watch-trigger-context',
         content: [
           `Summary: ${wake.reason}`,
-          `Watch ID: ${typeof ctx['watchId'] === 'string' ? ctx['watchId'] : 'unavailable'}`,
-          `Symbol: ${typeof ctx['symbol'] === 'string' ? ctx['symbol'] : 'unavailable'} (${typeof ctx['chain'] === 'string' ? ctx['chain'] : 'unavailable'})`,
-          `Condition: ${typeof ctx['condition'] === 'string' ? ctx['condition'] : 'unavailable'} ${typeof ctx['thresholdPrice'] === 'number' ? ctx['thresholdPrice'] : 'unavailable'}`,
-          `Current price: ${typeof ctx['currentPrice'] === 'number' ? ctx['currentPrice'] : 'unavailable'}`,
-          `Stale: ${typeof ctx['stale'] === 'boolean' ? String(ctx['stale']) : 'unavailable'}`,
-          `Triggered at: ${typeof ctx['triggeredAt'] === 'string' ? ctx['triggeredAt'] : (wake.requestedAt ?? 'unavailable')}`,
+          `Watch ID: ${ctx.watchId}`,
+          `Symbol: ${ctx.symbol} (${ctx.chain})`,
+          `Condition: ${ctx.condition} ${ctx.thresholdPrice}`,
+          `Current price: ${ctx.currentPrice}`,
+          `Stale: ${String(ctx.stale)}`,
+          `Triggered at: ${ctx.triggeredAt}`,
         ].join('\n'),
       };
     },
@@ -641,22 +641,22 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       if (!wake || wake.source !== 'discovery_delta') {
         return null;
       }
-      const ctx = wake.context;
-      const rank = typeof ctx['rank'] === 'number' ? String(ctx['rank']) : 'unavailable';
-      const liquidity = typeof ctx['liquidityUsd'] === 'number' ? `$${(ctx['liquidityUsd'] as number).toLocaleString()}` : 'unavailable';
-      const volume = typeof ctx['volume24hUsd'] === 'number' ? `$${(ctx['volume24hUsd'] as number).toLocaleString()}` : 'unavailable';
+      const ctx = wake.context as DiscoveryDeltaWakeContext;
+      const rank = ctx.rank !== undefined ? String(ctx.rank) : 'unavailable';
+      const liquidity = ctx.liquidityUsd !== undefined ? `$${ctx.liquidityUsd.toLocaleString()}` : 'unavailable';
+      const volume = ctx.volume24hUsd !== undefined ? `$${ctx.volume24hUsd.toLocaleString()}` : 'unavailable';
       return {
         id: 'discoveryTriggerContext',
         title: 'Discovery Trigger Context',
         provider: 'discovery-trigger-context',
         content: [
           `Summary: ${wake.reason}`,
-          `Symbol: ${typeof ctx['symbol'] === 'string' ? ctx['symbol'] : 'unavailable'} (${typeof ctx['network'] === 'string' ? ctx['network'] : 'unavailable'})`,
-          `Reason: ${typeof ctx['reason'] === 'string' ? ctx['reason'] : 'unavailable'}`,
+          `Symbol: ${ctx.symbol} (${ctx.network})`,
+          `Reason: ${ctx.reason}`,
           `Rank: ${rank}`,
           `Liquidity: ${liquidity}`,
           `Volume 24h: ${volume}`,
-          `Detected at: ${typeof ctx['detectedAt'] === 'string' ? ctx['detectedAt'] : (wake.requestedAt ?? 'unavailable')}`,
+          `Detected at: ${ctx.detectedAt}`,
         ].join('\n'),
       };
     },
@@ -673,17 +673,17 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       if (!wake || wake.source !== 'regime_change') {
         return null;
       }
-      const ctx = wake.context;
+      const ctx = wake.context as RegimeChangeWakeContext;
       return {
         id: 'regimeChangeContext',
         title: 'Regime Change Context',
         provider: 'regime-change-context',
         content: [
           `Summary: ${wake.reason}`,
-          `Benchmark: ${typeof ctx['benchmarkSymbol'] === 'string' ? ctx['benchmarkSymbol'] : 'unavailable'}`,
-          `Previous state: ${typeof ctx['previousState'] === 'string' ? ctx['previousState'] : 'unavailable'}`,
-          `Current state: ${typeof ctx['currentState'] === 'string' ? ctx['currentState'] : 'unavailable'}`,
-          `Changed at: ${typeof ctx['changedAt'] === 'string' ? ctx['changedAt'] : (wake.requestedAt ?? 'unavailable')}`,
+          `Benchmark: ${ctx.benchmarkSymbol}`,
+          `Previous state: ${ctx.previousState}`,
+          `Current state: ${ctx.currentState}`,
+          `Changed at: ${ctx.changedAt}`,
         ].join('\n'),
       };
     },
@@ -1236,37 +1236,34 @@ export function applyRuntimeMessage(
   }
 
   if (type === 'agent.market.wake') {
-    const wakeId = typeof payload['wakeId'] === 'string' ? payload['wakeId'] : '';
-    const reason = typeof payload['reason'] === 'string' ? payload['reason'] : '';
-    const requestedAt = typeof payload['requestedAt'] === 'string' ? payload['requestedAt'] : null;
-    const source = typeof payload['source'] === 'string' ? payload['source'] : null;
-    const context = (payload['context'] as Record<string, unknown> | undefined) ?? {};
+    const parsed = AgentMarketWakePayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      // Unrecognised or malformed wake — drop silently rather than rendering garbage
+      return '';
+    }
+    const wake = parsed.data;
+    const { wakeId, reason, requestedAt } = wake;
 
-    // Typed source check first — prefer structured payload over string-prefix convention
-    if (source === 'reminder') {
-      const reminderId = typeof context['reminderId'] === 'string' ? context['reminderId'] : wakeId || null;
-      const message = typeof context['message'] === 'string' ? context['message'] : reason;
-      const scheduledBy: 'scout' | 'judge' = context['scheduledBy'] === 'scout' ? 'scout' : 'judge';
-      state.metrics.currentReminder = { wakeId, reminderId, message, requestedAt, scheduledBy };
+    if (wake.source === 'reminder') {
+      const ctx = wake.context as ReminderWakeContext;
+      state.metrics.currentReminder = { wakeId, reminderId: ctx.reminderId, message: ctx.message, requestedAt, scheduledBy: ctx.scheduledBy };
       state.metrics.currentMarketWake = null;
-      const summary = `Reminder: ${message}`;
+      const summary = `Reminder: ${ctx.message}`;
       pushRecentEvent(state, type, summary);
       return summary;
     }
 
     state.metrics.currentReminder = null;
 
-    if (source === 'watch_threshold' || source === 'discovery_delta' || source === 'regime_change') {
-      state.metrics.currentMarketWake = { wakeId, source, reason, requestedAt, context };
-      const summary = reason || `Market wake: ${source}`;
+    if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change') {
+      state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context };
+      const summary = reason || `Market wake: ${wake.source}`;
       pushRecentEvent(state, type, summary);
       return summary;
     }
 
     state.metrics.currentMarketWake = null;
-    const summary = reason ? `Market wake: ${reason}` : 'Market wake';
-    pushRecentEvent(state, type, summary);
-    return summary;
+    return '';
   }
 
   if (type === 'instance.tool.result') {

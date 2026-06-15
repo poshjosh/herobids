@@ -324,16 +324,64 @@ export type WakePriority = z.infer<typeof WakePrioritySchema>;
 export const AgentMarketWakeSourceSchema = z.enum(['reminder', 'watch_threshold', 'discovery_delta', 'regime_change']);
 export type AgentMarketWakeSource = z.infer<typeof AgentMarketWakeSourceSchema>;
 
-export const AgentMarketWakePayloadSchema = z.object({
+// --- Source-specific wake context schemas ---
+
+export const ReminderWakeContextSchema = z.object({
+  reminderId: z.string().min(1),
+  message: z.string().min(1),
+  scheduledBy: z.enum(['scout', 'judge']),
+});
+export type ReminderWakeContext = z.infer<typeof ReminderWakeContextSchema>;
+
+export const WatchThresholdWakeContextSchema = z.object({
+  watchId: z.string().min(1),
+  symbol: z.string().min(1),
+  chain: z.string().min(1),
+  condition: z.enum(['above', 'below']),
+  thresholdPrice: z.number(),
+  currentPrice: z.number(),
+  stale: z.boolean(),
+  triggeredAt: z.string().datetime(),
+  note: z.string().optional(),
+});
+export type WatchThresholdWakeContext = z.infer<typeof WatchThresholdWakeContextSchema>;
+
+export const DiscoveryDeltaWakeContextSchema = z.object({
+  symbol: z.string().min(1),
+  network: z.string().min(1),
+  address: z.string().min(1),
+  reason: z.string().min(1),
+  rank: z.number().int().optional(),
+  liquidityUsd: z.number().optional(),
+  volume24hUsd: z.number().optional(),
+  detectedAt: z.string().datetime(),
+});
+export type DiscoveryDeltaWakeContext = z.infer<typeof DiscoveryDeltaWakeContextSchema>;
+
+export const RegimeChangeWakeContextSchema = z.object({
+  benchmarkSymbol: z.string().min(1),
+  previousState: z.string().min(1),
+  currentState: z.string().min(1),
+  changedAt: z.string().datetime(),
+  details: z.unknown().optional(),
+});
+export type RegimeChangeWakeContext = z.infer<typeof RegimeChangeWakeContextSchema>;
+
+const AgentMarketWakePayloadBaseSchema = z.object({
   wakeId: z.string().min(1),
   reason: z.string().min(1),
   eventIds: z.array(z.string().min(1)),
   priority: WakePrioritySchema,
   requestedAt: z.string().datetime(),
   notBefore: z.string().datetime().optional(),
-  source: AgentMarketWakeSourceSchema,
-  context: z.record(z.unknown()).optional(),
 });
+
+export const AgentMarketWakePayloadSchema = z.discriminatedUnion('source', [
+  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('reminder'), context: ReminderWakeContextSchema }),
+  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('watch_threshold'), context: WatchThresholdWakeContextSchema }),
+  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('discovery_delta'), context: DiscoveryDeltaWakeContextSchema }),
+  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('regime_change'), context: RegimeChangeWakeContextSchema }),
+]);
 
 export type AgentMarketWakePayload = z.infer<typeof AgentMarketWakePayloadSchema>;
 

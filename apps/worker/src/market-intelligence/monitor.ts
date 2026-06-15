@@ -8,6 +8,9 @@ import type {
   MarketRegimeChangedPayload,
   AgentMarketWakePayload,
   AgentMarketWakeSource,
+  WatchThresholdWakeContext,
+  DiscoveryDeltaWakeContext,
+  RegimeChangeWakeContext,
 } from '@herobids/domain';
 import { summarizeActiveWatches } from '../runtime-composition.js';
 
@@ -66,7 +69,7 @@ interface PendingWake {
   /** Typed wake source for the primary triggering event (first enqueue wins on coalesce). */
   primarySource?: AgentMarketWakeSource;
   /** Structured context specific to primarySource (first enqueue wins on coalesce). */
-  primaryContext?: Record<string, unknown>;
+  primaryContext?: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext;
 }
 
 export interface MarketMonitor {
@@ -611,7 +614,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     eventId: string,
     reason?: string,
     source?: AgentMarketWakeSource,
-    context?: Record<string, unknown>,
+    context?: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext,
   ): Promise<void> {
     return withWakeMutationLock(async () => {
       const key = wakeKey(agentId);
@@ -701,15 +704,19 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       for (const { key, wake, lastWakeKey } of claimed) {
         if (stopped) return;
 
+        if (!wake.primarySource || !wake.primaryContext) {
+          logger.warn({ agentId: wake.agentId }, 'Skipping wake flush: missing source or context');
+          continue;
+        }
         const payload: AgentMarketWakePayload = {
           wakeId: crypto.randomUUID(),
           reason: wake.primaryReason ?? 'market monitor',
           eventIds: wake.eventIds,
           priority: 'normal',
           requestedAt: new Date().toISOString(),
-          ...(wake.primarySource !== undefined ? { source: wake.primarySource } : {}),
-          ...(wake.primaryContext !== undefined ? { context: wake.primaryContext } : {}),
-        };
+          source: wake.primarySource,
+          context: wake.primaryContext,
+        } as AgentMarketWakePayload;
 
         await publisher.emitAgentMarketWake(wake.agentId, payload);
         await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);
