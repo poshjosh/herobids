@@ -18,6 +18,15 @@
 import { describe, it, expect } from 'vitest';
 import { PROVIDER_TEMPLATES } from './CredentialsPage.js';
 
+// Cross-surface catalog fixture: mirrors what apps/api returns from GET /providers/catalog.
+// Any mismatch here signals that PROVIDER_TEMPLATES needs updating when the registry changes.
+const CATALOG_CREDENTIAL_FIELDS: Record<string, string[]> = {
+  hyperliquid: ['apiKey', 'secret', 'walletAddress'],
+  jupiter: ['privateKey'],
+  bybit: ['apiKey', 'apiSecret'],
+  '1inch': ['apiKey'],
+};
+
 describe('PROVIDER_TEMPLATES map (bug 007)', () => {
   it('maps "hyperliquid" to ["privateKey"]', () => {
     expect(PROVIDER_TEMPLATES['hyperliquid']).toEqual(['apiKey', 'secret', 'walletAddress']);
@@ -112,5 +121,29 @@ describe('applyProviderTemplate logic (bug 007)', () => {
       { key: 'secret', value: '' },
       { key: 'walletAddress', value: '' },
     ]);
+  });
+});
+
+describe('Cross-surface catalog/template alignment', () => {
+  it('PROVIDER_TEMPLATES matches the credential fields from the API catalog fixture for every known provider', () => {
+    // This test guards against drift between:
+    //   - apps/api/src/providers/registry.ts (source of truth for required field keys)
+    //   - PROVIDER_TEMPLATES in CredentialsPage (drives pre-populated key hints)
+    // When a field is added to the registry, PROVIDER_TEMPLATES and this fixture both need updating.
+    for (const [providerId, expectedFields] of Object.entries(CATALOG_CREDENTIAL_FIELDS)) {
+      expect(
+        PROVIDER_TEMPLATES[providerId],
+        `PROVIDER_TEMPLATES["${providerId}"] does not match catalog fields`,
+      ).toEqual(expectedFields);
+    }
+  });
+
+  it('PROVIDER_TEMPLATES does not include providers absent from the catalog fixture', () => {
+    for (const providerId of Object.keys(PROVIDER_TEMPLATES)) {
+      expect(
+        CATALOG_CREDENTIAL_FIELDS[providerId],
+        `PROVIDER_TEMPLATES has "${providerId}" but it is not in the catalog fixture`,
+      ).toBeDefined();
+    }
   });
 });
