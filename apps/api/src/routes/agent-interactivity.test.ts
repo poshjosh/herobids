@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
-import { agentInteractivityRoutes } from './agent-interactivity.js';
+import { agentInteractivityRoutes, telegramWebhookHandler } from './agent-interactivity.js';
 import type { Database } from '@herobids/db';
+import type { AlertsConfig } from '@herobids/domain';
 import type { Redis } from 'ioredis';
 
 const TEST_USER_ID = 'user-1';
@@ -20,7 +21,7 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
 
 function makeChain(value: unknown[]) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['from', 'where', 'orderBy', 'limit', 'offset']) {
+  for (const m of ['from', 'innerJoin', 'where', 'orderBy', 'limit', 'offset']) {
     chain[m] = vi.fn(() => chain);
   }
   (chain as { then: unknown }).then = (
@@ -69,6 +70,27 @@ function buildMockRedis(overrides: Partial<Record<string, unknown>> = {}) {
     fetch: vi.fn(),
     ...overrides,
   } as unknown as Redis;
+}
+
+function buildAlertsConfig(telegramOverrides: Partial<AlertsConfig['telegram']> = {}): AlertsConfig {
+  return {
+    enabled: false,
+    dispatchIntervalMs: 10_000,
+    defaultCooldownMs: 0,
+    maxBatchSize: 10,
+    maxRetries: 3,
+    telegram: {
+      botToken: 'test-token',
+      webhookSecret: 'telegram-secret',
+      channels: [],
+      ...telegramOverrides,
+    },
+    email: {
+      apiKey: '',
+      fromEmail: '',
+      timeoutMs: 10_000,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -707,7 +729,7 @@ describe('GET /agents/telegram-bot', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // No alertsConfig → no botToken
-    await agentInteractivityRoutes(app, db, redis, { enabled: false, dispatchIntervalMs: 10000, defaultCooldownMs: 0, maxBatchSize: 10, maxRetries: 3, telegram: { botToken: '', channels: [] } });
+    await agentInteractivityRoutes(app, db, redis, buildAlertsConfig({ botToken: '' }));
 
     const res = await app.inject({ method: 'GET', url: '/agents/telegram-bot' });
     expect(res.statusCode).toBe(501);
@@ -723,7 +745,7 @@ describe('POST /agents/verify-telegram', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis, { enabled: false, dispatchIntervalMs: 10000, defaultCooldownMs: 0, maxBatchSize: 10, maxRetries: 3, telegram: { botToken: '', channels: [] } });
+    await agentInteractivityRoutes(app, db, redis, buildAlertsConfig({ botToken: '' }));
 
     const res = await app.inject({
       method: 'POST',
@@ -744,7 +766,7 @@ describe('POST /agents/verify-telegram', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await agentInteractivityRoutes(app, db, redis, { enabled: false, dispatchIntervalMs: 10000, defaultCooldownMs: 0, maxBatchSize: 10, maxRetries: 3, telegram: { botToken: 'test-token', channels: [] } });
+    await agentInteractivityRoutes(app, db, redis, buildAlertsConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -752,6 +774,300 @@ describe('POST /agents/verify-telegram', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(400);
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('POST /api/telegram/webhook', () => {
+  it('returns 501 when Telegram webhook auth is not fully configured', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig({ webhookSecret: '' }));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(501);
+    expect(res.json()).toEqual({ error: 'not_configured' });
+  });
+
+  it('returns 401 when the webhook secret header is missing or wrong', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig());
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      payload: {},
+    });
+    const wrong = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'wrong-secret' },
+      payload: {},
+    });
+
+    expect(missing.statusCode).toBe(401);
+    expect(wrong.statusCode).toBe(401);
+  });
+
+  it('returns 200 when the webhook secret header matches', async () => {
+    const app = Fastify();
+    await telegramWebhookHandler(app, buildAgentDb(null), buildMockRedis(), buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+  });
+
+  it('routes Telegram replies to the owning agent stream and confirms delivery', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        return makeChain(selectCount === 1
+          ? [{ userId: TEST_USER_ID }]
+          : [{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active' }]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: 'Adjust the watchlist',
+          reply_to_message: { message_id: 777 },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).toHaveBeenCalledWith(
+      `agent:outbound:${AGENT_ID}`,
+      '*',
+      'envelope',
+      expect.any(String),
+    );
+    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string)).toEqual(expect.objectContaining({
+      initiatorId: TEST_USER_ID,
+      agentId: AGENT_ID,
+      type: 'user.message',
+      payload: { message: 'Adjust the watchlist' },
+    }));
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://api.telegram.org/bottest-token/sendMessage',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+    expect((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body).toContain('Delivered to My Agent.');
+    fetchSpy.mockRestore();
+  });
+
+  it('sends a fallback when the reply target cannot be resolved or the agent is stopped', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+
+    for (const rows of [
+      [{ userId: TEST_USER_ID }, null],
+      [{ userId: TEST_USER_ID }, { agentId: AGENT_ID, agentName: 'My Agent', status: 'stopped' }],
+    ] as const) {
+      const redis = buildMockRedis();
+      let selectCount = 0;
+      const db = {
+        select: vi.fn().mockImplementation(() => {
+          selectCount += 1;
+          if (selectCount === 1) {
+            return makeChain(rows[0] ? [rows[0]] : []);
+          }
+          return makeChain(rows[1] ? [rows[1]] : []);
+        }),
+      } as unknown as Database;
+      const app = Fastify();
+      await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/telegram/webhook',
+        headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+        payload: {
+          message: {
+            chat: { id: '12345' },
+            text: 'Ping',
+            reply_to_message: { message_id: 888 },
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(redis.xadd).not.toHaveBeenCalled();
+    }
+
+    const bodies = fetchSpy.mock.calls.map((call) => String((call[1] as RequestInit | undefined)?.body ?? ''));
+    expect(bodies.some((body) => body.includes("I couldn't find which agent that reply belongs to."))).toBe(true);
+    expect(bodies.some((body) => body.includes('Agent My Agent is stopped and cannot receive messages right now.'))).toBe(true);
+    fetchSpy.mockRestore();
+  });
+
+  it('routes /to commands to matching agent names', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return makeChain([{ userId: TEST_USER_ID }]);
+        }
+        return makeChain([{ agentId: AGENT_ID, agentName: 'Momentum', status: 'active' }]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: '/to Momentum check BTC price',
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string)).toEqual(expect.objectContaining({
+      agentId: AGENT_ID,
+      payload: { message: 'check BTC price' },
+    }));
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('Delivered to Momentum.');
+    fetchSpy.mockRestore();
+  });
+
+  it('broadcasts /to all messages to each routable agent once', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return makeChain([{ userId: TEST_USER_ID }]);
+        }
+        return makeChain([
+          { agentId: 'agent-1', agentName: 'Momentum', status: 'active' },
+          { agentId: 'agent-2', agentName: 'DCA Bot', status: 'paused' },
+        ]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: '/to all daily summary please',
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).toHaveBeenCalledTimes(2);
+    const confirmationBody = String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '');
+    expect(confirmationBody).toContain('Delivered to Momentum.');
+    expect(confirmationBody).toContain('Delivered to DCA Bot.');
+    fetchSpy.mockRestore();
+  });
+
+  it('default-routes plain Telegram messages when exactly one agent can receive them', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return makeChain([{ userId: TEST_USER_ID }]);
+        }
+        return makeChain([{ agentId: AGENT_ID, agentName: 'Solo Agent', status: 'unhealthy' }]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: 'check ETH too',
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('Delivered to Solo Agent.');
+    fetchSpy.mockRestore();
+  });
+
+  it('prompts for /to when multiple agents are running and no command target is provided', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return makeChain([{ userId: TEST_USER_ID }]);
+        }
+        return makeChain([
+          { agentId: 'agent-1', agentName: 'Momentum', status: 'active' },
+          { agentId: 'agent-2', agentName: 'DCA Bot', status: 'starting' },
+        ]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: '12345' },
+          text: 'what is your P&L?',
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('Use /to <agent name> <message>');
     fetchSpy.mockRestore();
   });
 });

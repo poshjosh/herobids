@@ -349,6 +349,8 @@ alerts:
   maxRetries: 3                     # delivery attempts before permanent failure
   telegram:
     botToken: ""                    # override: TELEGRAM_BOT_TOKEN
+    webhookSecret: ""               # override: TELEGRAM_WEBHOOK_SECRET
+    # webhookUrl: "https://your-public-host/api/telegram/webhook"  # override: TELEGRAM_WEBHOOK_URL
     channels: []                    # configured via env-specific yaml
   email:
     apiKey: ""                      # Resend API key — override: RESEND_API_KEY
@@ -417,7 +419,6 @@ billing:
 
 # Commercial usage billing — metering, rate cards, spend-state enforcement, and credit ledger.
 usageBilling:
-  enabled: false                             # master switch for commercial billing enforcement
   defaultCurrency: USD
   runtimeChargeWindowMs: 60000              # coarse agent runtime metering window in ms
   warningThresholdsPct: [50, 80, 100]       # % of hard cap at which to emit spend warnings

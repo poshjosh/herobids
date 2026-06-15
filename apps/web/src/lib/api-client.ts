@@ -797,6 +797,10 @@ export interface Agent {
   dailyLossLimit: string | null;
   maxBots: number | null;
   maxSlippageBps: number | null;
+  maxOpenPositions: number | null;
+  maxPositionSizePct: string | null;
+  stopLossPct: string | null;
+  stopLossCooldownMs: number | null;
   tickIntervalMs: number | null;
   capital: string | null;
   createdAt: string;
@@ -865,6 +869,7 @@ export interface AgentPosition {
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
+  riskDefaults: () => request<{ maxOpenPositions: number; maxPositionSizePct: number; stopLossPct: number; stopLossCooldownMs: number }>('/agents/risk-defaults'),
   create: (data: {
     name: string;
     prompt: string;
@@ -883,6 +888,10 @@ export const agents = {
     dailyLossLimit?: string | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
+    maxOpenPositions?: number | null;
+    maxPositionSizePct?: number | null;
+    stopLossPct?: number | null;
+    stopLossCooldownMs?: number | null;
     tickIntervalMs?: number | null;
     capital?: string | null;
   }) =>
@@ -905,6 +914,10 @@ export const agents = {
     dailyLossLimit?: string | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
+    maxOpenPositions?: number | null;
+    maxPositionSizePct?: number | null;
+    stopLossPct?: number | null;
+    stopLossCooldownMs?: number | null;
     tickIntervalMs?: number | null;
     capital?: string | null;
   }) =>

@@ -14,6 +14,14 @@ function getTickIntervalMsOrThrow(value: string): number | undefined {
   return parsedTickInterval.tickIntervalMs;
 }
 
+function parseCooldownMsOrNull(value: string): number | null {
+  if (!value.trim()) {
+    return null;
+  }
+
+  return Math.round(Number.parseFloat(value) * 1000);
+}
+
 export interface CreateAgentIntentPayloadInput {
   name: string;
   goal: string;
@@ -35,6 +43,10 @@ export interface CreateAgentIntentPayloadInput {
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
 }
 
 export interface UpdateAgentPayloadInput {
@@ -50,6 +62,10 @@ export interface UpdateAgentPayloadInput {
   dailyLossLimit: string;
   maxBots: string;
   maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
   tickIntervalMins: string;
   capital: string;
   modelOverrideEnabled: boolean;
@@ -76,6 +92,10 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
+  maxOpenPositions?: number;
+  maxPositionSizePct?: number;
+  stopLossPct?: number;
+  stopLossCooldownMs?: number;
   tickIntervalMs?: number;
   capital?: string;
 } {
@@ -99,6 +119,10 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
     ...(input.dailyLossLimit.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
     ...(input.maxSlippageBps ? { maxSlippageBps: parseInt(input.maxSlippageBps, 10) } : {}),
+    ...(input.maxOpenPositions ? { maxOpenPositions: parseInt(input.maxOpenPositions, 10) } : {}),
+    ...(input.maxPositionSizePct ? { maxPositionSizePct: parseFloat(input.maxPositionSizePct) } : {}),
+    ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
+    ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
   };
 }
 
@@ -117,6 +141,10 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   dailyLossLimit: string | null;
   maxBots: number | null;
   maxSlippageBps: number | null;
+  maxOpenPositions: number | null;
+  maxPositionSizePct: number | null;
+  stopLossPct: number | null;
+  stopLossCooldownMs: number | null;
   tickIntervalMs: number | null;
   capital: string | null;
   provider: string | null;
@@ -141,6 +169,10 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     dailyLossLimit: input.dailyLossLimit.trim() || null,
     maxBots: input.hasBotManagementSkill && input.maxBots ? parseInt(input.maxBots, 10) : null,
     maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
+    maxOpenPositions: input.maxOpenPositions ? parseInt(input.maxOpenPositions, 10) : null,
+    maxPositionSizePct: input.maxPositionSizePct ? parseFloat(input.maxPositionSizePct) : null,
+    stopLossPct: input.stopLossPct ? parseFloat(input.stopLossPct) : null,
+    stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs),
     tickIntervalMs,
     capital: input.capital.trim() || null,
     provider: input.modelOverrideEnabled ? input.modelForm.provider || null : null,

@@ -174,7 +174,7 @@ export async function buildApp() {
   await botRoutes(app, lifecycleQueue, db, testPlansConfig as any);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)
-  await telegramWebhookHandler(app);
+  await telegramWebhookHandler(app, db, redisClient);
   await agentInteractivityRoutes(app, db, redisClient, undefined, undefined, testPlansConfig as any);
 
   await analyticsRoutes(app, db);

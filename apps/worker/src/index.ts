@@ -29,7 +29,7 @@ import { resolveSwapAssetsFromBinding } from './resolve-swap-assets.js';
 import { resolveBotStartupContext } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
-import { TelegramClient, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
+import { TelegramClient, forceReply, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
 import {
   AgentMessageBroker,
   AgentDecisionHandler,
@@ -48,6 +48,7 @@ import { createMarketDataCoordinator, createMarketMonitor } from './market-intel
 import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
+import { buildAgentRiskLimits } from './agent-risk-limits.js';
 
 async function resolveSwapTokenData(
   registry: ReturnType<typeof createProviderRegistry>,
@@ -267,6 +268,7 @@ const agentIntakeResolver = new AgentIntakeResolver({
   journal,
   markSource: oracleMarkSource,
   idGen,
+  agentRiskDefaults: appConfig.agentRiskDefaults,
 });
 
 const intakeResolver: DecisionIntakeResolver = {
@@ -368,6 +370,22 @@ const agentReconnectHandler = new AgentReconnectHandler(redisClient, agentRepo, 
 const workerTelegram = appConfig.alerts.telegram.botToken
   ? new TelegramClient(appConfig.alerts.telegram.botToken)
   : undefined;
+
+if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
+  if (!appConfig.alerts.telegram.webhookSecret) {
+    logger.warn('alerts.telegram.webhookUrl is configured without alerts.telegram.webhookSecret; skipping Telegram webhook registration');
+  } else {
+    const webhookResult = await workerTelegram.setWebhook(
+      appConfig.alerts.telegram.webhookUrl,
+      appConfig.alerts.telegram.webhookSecret,
+    );
+    if (!webhookResult.ok) {
+      logger.warn({ error: webhookResult.error }, 'Failed to register Telegram webhook');
+    } else {
+      logger.info({ url: appConfig.alerts.telegram.webhookUrl }, 'Registered Telegram webhook');
+    }
+  }
+}
 const platformAlerts = new PlatformAlertService(agentRepo, workerTelegram, appConfig.alerts.telegram.botToken || undefined);
 
 // Email client for agent send_message email fanout — disabled by default.
@@ -381,6 +399,41 @@ const workerEmail = appConfig.alerts.email.apiKey && appConfig.alerts.email.from
       },
     )
   : undefined;
+
+async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: string): Promise<void> {
+  if (!workerTelegram) {
+    return;
+  }
+
+  const agent = await agentRepo.getAgent(agentId);
+  if (!agent) {
+    return;
+  }
+
+  const telegramChatId = await agentRepo.getUserTelegramChatId(agentId);
+  if (!telegramChatId) {
+    return;
+  }
+
+  const text = `${agent.name} is now running. Reply to this message to send it instructions.`;
+  const outboundMessageId = await agentRepo.insertOutboundMessage({
+    agentId,
+    sessionId,
+    authoredBy: 'platform',
+    subject: 'Session started',
+    body: text,
+    messageClass: 'reminder',
+  });
+
+  const result = await workerTelegram.sendText(telegramChatId, text, forceReply());
+  if (!result.ok) {
+    await agentRepo.markOutboundMessageFailed(outboundMessageId, result.error.message).catch(() => undefined);
+    logger.warn({ agentId, error: result.error }, 'Failed to send Telegram session-started anchor');
+    return;
+  }
+
+  await agentRepo.markOutboundMessageSent(outboundMessageId, String(result.data.messageId), telegramChatId).catch(() => undefined);
+}
 
 // Late-bound subscribe callback: set once agentStreamConsumer is constructed below.
 // sessionManager.reconcileStartingSessions() only runs after sessionManager.start()
@@ -418,8 +471,6 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         // Determine venue type from venue name heuristic
         const venueType: 'orderbook' | 'swap' = (binding.venue === 'jupiter' || binding.venue === '1inch') ? 'swap' : 'orderbook';
         const agent = await agentRepo.getAgent(agentId);
-        const capitalStr = agent?.capital ?? null;
-        const dailyLossStr = agent?.dailyLossLimit ?? null;
         const agentDefaults = appConfig.agentRiskDefaults;
 
         // Resolve swap asset metadata from binding for non-paper swap modes
@@ -440,20 +491,14 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           venueAccountId: binding.venueAccountId,
           venue: binding.venue,
           venueType,
-          riskLimits: {
-            maxPositionSize: quantity(String(agentDefaults.maxPositionSize)),
-            maxOpenPositions: agentDefaults.maxOpenPositions,
-            maxDrawdown: dailyLossStr ? price(dailyLossStr) : price('1000000000'),
-            stopLossMaxUnrealizedLossPct: agentDefaults.stopLossMaxUnrealizedLossPct,
-            stopLossCooldownMs: agentDefaults.stopLossCooldownMs,
-            ...(capitalStr != null ? {
-              maxOrderNotional: price(String(parseFloat(capitalStr) * agentDefaults.maxOrderNotionalMultiplier)),
-              maxPositionSizePct: agentDefaults.maxPositionSizePct,
-              dailyMaxLossPct: dailyLossStr
-                ? (parseFloat(dailyLossStr) / parseFloat(capitalStr)) * 100
-                : agentDefaults.dailyMaxLossPct,
-            } : {}),
-          },
+          riskLimits: buildAgentRiskLimits({
+            capital: agent?.capital ?? null,
+            dailyLossLimit: agent?.dailyLossLimit ?? null,
+            maxOpenPositions: agent?.maxOpenPositions ?? null,
+            maxPositionSizePct: agent?.maxPositionSizePct ?? null,
+            stopLossPct: agent?.stopLossPct ?? null,
+            stopLossCooldownMs: agent?.stopLossCooldownMs ?? null,
+          }, agentDefaults),
           venueAdapterFactory,
           createStreamPoolHandle: venueType !== 'swap'
             ? (testnet: boolean) => createScopedStreamPoolHandle(publicStreamPool, binding.venue, testnet)
@@ -539,6 +584,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     });
     instanceExecutionModes.delete(agentId);
   },
+  onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
   usageBillingRepo: appConfig.usageBilling?.enabled ? new UsageBillingRepository(db) : undefined,
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,

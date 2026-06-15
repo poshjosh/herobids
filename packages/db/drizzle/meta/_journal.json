@@ -92,6 +92,27 @@
       "when": 1781455900000,
       "tag": "0012_add_realized_pnl_delta",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781460000000,
+      "tag": "0013_agent_execution_mode_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781463600000,
+      "tag": "0014_decision_failures",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1781501380730,
+      "tag": "0015_agent_risk_limits",
+      "breakpoints": true
     }
   ]
 }

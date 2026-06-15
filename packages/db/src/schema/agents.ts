@@ -39,6 +39,10 @@ export const agents = pgTable('agents', {
   dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD)
   maxBots: integer('max_bots'),                              // max concurrent bots (agent-level override)
   maxSlippageBps: integer('max_slippage_bps'),               // max slippage in basis points
+  maxOpenPositions: integer('max_open_positions'),
+  maxPositionSizePct: numeric('max_position_size_pct', { precision: 5, scale: 2 }),
+  stopLossPct: numeric('stop_loss_pct', { precision: 5, scale: 2 }),
+  stopLossCooldownMs: integer('stop_loss_cooldown_ms'),
   /** User-configured base cadence in milliseconds. Runtime may still widen this when idle or after failures. */
   tickIntervalMs: integer('tick_interval_ms'),
   /** Deployable allocation cap in USD — the amount the agent may trade with, not the full wallet balance. */

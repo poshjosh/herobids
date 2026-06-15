@@ -35,6 +35,9 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   STRIPE_WEBHOOK_SECRET: { path: 'billing.stripe.webhookSecret', type: 'string' },
   CREEM_API_KEY: { path: 'billing.creem.apiKey', type: 'string' },
   CREEM_WEBHOOK_SECRET: { path: 'billing.creem.webhookSecret', type: 'string' },
+  TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
+  TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
+  TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
 
 };
 

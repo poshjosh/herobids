@@ -13,6 +13,10 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
     capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
+    maxOpenPositions: '',
+    maxPositionSizePct: '',
+    stopLossPct: '',
+    stopLossCooldownSecs: '',
     ...value,
   };
 
@@ -44,6 +48,10 @@ describe('AgentControlsSection rendering', () => {
             capital: '',
             dailyLossLimit: '',
             maxSlippageBps: '',
+            maxOpenPositions: '',
+            maxPositionSizePct: '',
+            stopLossPct: '',
+            stopLossCooldownSecs: '',
           }}
           onChange={() => undefined}
           showBotControls={false}

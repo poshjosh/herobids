@@ -569,7 +569,6 @@ if (!DATABASE_URL) {
   const judgeLoopConfig = agentRuntimePolicy.llm.judge;
   const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
 
-const USAGE_BILLING_ENABLED = process.env['USAGE_BILLING_ENABLED'] === 'true';
 const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
 const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ?? '60000', 10);
 
@@ -584,7 +583,7 @@ const usageBillingService = createUsageBillingService(db, {
   hardCapMicrousd: agentConfig.usageBillingHardCapMicrousd,
   defaultRateCardName: DEFAULT_RATE_CARD_NAME,
   runtimeChargeWindowMs: RUNTIME_CHARGE_WINDOW_MS,
-  enabled: USAGE_BILLING_ENABLED && !!agentConfig.userId,
+  enabled: !!agentConfig.userId,
 });
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Telegram slash commands (2026-06-15): Telegram users can now route `/to` commands to one or more named agents, broadcast to all routable agents, and fall back to automatic delivery when exactly one agent is available.
+
+- Telegram reply threading (2026-06-15): agent Telegram messages now use reply anchors, new sessions send a first-boot Telegram anchor message, the public webhook routes replies back to the owning agent stream, and user-facing Telegram reply-threading documentation is now published.
+
+- Agent risk configuration UI (2026-06-15): added agent-level open-position, position-size, stop-loss, and stop-loss-cooldown controls across the agent API, worker risk-limit resolution, web create/edit forms, and the agents risk-defaults endpoint.
+
+- Payment provider selection and usage dashboard (2026-06-15): the billing page now always shows provider attribution and usage dashboard empty states even before a usage account exists, with focused render coverage for the no-account path.
+
 - Agent usage billing (2026-06-13): added usage metering, spend caps, included credits, top-up credits, and worker-side billing enforcement for LLM and runtime usage.
 
 - Commercial usage ledger (2026-06-13): added billing usage summary, event, breakdown, and period views on the existing billing surface, separate from trading fill history.
@@ -39,7 +47,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Agent naming for Telegram (2026-06-15): agent create and update validation now reserves `all` and `*` for Telegram broadcast targeting.
+
+- Telegram webhook configuration (2026-06-15): Telegram webhook authentication now uses a dedicated `alerts.telegram.webhookSecret`, and workers can register the configured `alerts.telegram.webhookUrl` with Telegram at startup.
+
 - Agent runtime loop controls (2026-06-15): scout/judge turn caps and temperatures, scout token budget, wake timing, and venue-intelligence fanout caps are now operator-configurable through `agentRuntime` and forwarded into container runtime policy.
+
+- Usage billing activation (2026-06-15): worker usage accounting no longer depends on a routine `USAGE_BILLING_ENABLED` container toggle, and the operator config surface no longer exposes `usageBilling.enabled`.
 
 - Agent wake semantics (2026-06-15): wake payloads now require typed sources end-to-end, reminder wakes no longer use legacy `reminder:` prefixes, and runtime reminder rendering depends on typed source/context instead of migration fallbacks.
 

@@ -18,7 +18,7 @@ import {
   AGENT_RUNTIME_ACTIVITY_TYPES,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
-import type { TelegramClient } from '../alerting/telegram-client.js';
+import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
 import type { AgentSessionManager } from './agent-session-manager.js';
@@ -433,7 +433,7 @@ export class AgentMessageBroker {
       await this.agentRepo.markOutboundMessageFailed(msgId, 'telegram_not_configured');
     } else {
       const text = formatAgentMessage(agent.name, payload.subject, body);
-      const result = await this.telegram.sendText(telegramChatId, text);
+      const result = await this.telegram.sendText(telegramChatId, text, forceReply());
 
       if (!result.ok) {
         logger.warn({ agentId: agent.id, error: result.error }, 'send_message Telegram delivery failed');

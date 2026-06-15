@@ -11,6 +11,10 @@ function renderModal(options: {
   capital?: string;
   dailyLossLimit?: string;
   maxSlippageBps?: number | '';
+  maxOpenPositions?: number | '';
+  maxPositionSizePct?: string;
+  stopLossPct?: string;
+  stopLossCooldownMs?: number | null;
   prompt?: string;
   tickIntervalMs?: number | null;
 } = {}): string {
@@ -21,6 +25,12 @@ function renderModal(options: {
   if (options.capabilityReadiness) {
     queryClient.setQueryData(['agents', 'agent-123', 'capability-readiness', 'trading'], options.capabilityReadiness);
   }
+  queryClient.setQueryData(['agents', 'risk-defaults'], {
+    maxOpenPositions: 10,
+    maxPositionSizePct: 100,
+    stopLossPct: 10,
+    stopLossCooldownMs: 300000,
+  });
 
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -50,6 +60,10 @@ function renderModal(options: {
             dailyLossLimit: options.dailyLossLimit ?? '250',
             maxBots: 2,
             maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
+            maxOpenPositions: options.maxOpenPositions === '' ? null : (options.maxOpenPositions ?? 5),
+            maxPositionSizePct: options.maxPositionSizePct ?? '100',
+            stopLossPct: options.stopLossPct ?? '10',
+            stopLossCooldownMs: options.stopLossCooldownMs === undefined ? 300000 : options.stopLossCooldownMs,
             tickIntervalMs: options.tickIntervalMs ?? null,
             capital: options.capital ?? '1500',
             createdAt: new Date().toISOString(),
@@ -99,6 +113,8 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain(messages['agents.create.tradingControls.title']);
     expect(html).toContain(messages['agents.controls.capital']);
     expect(html).toContain(messages['agents.controls.maxSlippage']);
+    expect(html).toContain(messages['agents.controls.maxOpenPositions']);
+    expect(html).toContain(messages['agents.controls.stopLossPct']);
   });
 
   it('hides the trading guardrails until capability readiness is loaded when no trading values are set', () => {
@@ -106,6 +122,10 @@ describe('EditAgentModal rendering', () => {
       capital: '',
       dailyLossLimit: '',
       maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownMs: null,
     });
 
     expect(html).not.toContain(messages['agents.create.tradingControls.title']);

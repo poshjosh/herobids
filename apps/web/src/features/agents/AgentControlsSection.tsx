@@ -13,6 +13,10 @@ export interface AgentControlsFormValue {
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
 }
 
 interface AgentControlsSectionProps {
@@ -28,11 +32,23 @@ export interface TradingGuardrailsFormValue {
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
+}
+
+export interface AgentRiskDefaultsView {
+  maxOpenPositions: number;
+  maxPositionSizePct: number;
+  stopLossPct: number;
+  stopLossCooldownMs: number;
 }
 
 interface TradingGuardrailsFieldsProps {
   value: TradingGuardrailsFormValue;
   onChange: (patch: Partial<TradingGuardrailsFormValue>) => void;
+  defaults?: AgentRiskDefaultsView | null;
 }
 
 export function AgentControlsSection({
@@ -166,8 +182,9 @@ export function AgentControlsSection({
   );
 }
 
-export function TradingGuardrailsFields({ value, onChange }: TradingGuardrailsFieldsProps) {
+export function TradingGuardrailsFields({ value, onChange, defaults = null }: TradingGuardrailsFieldsProps) {
   const intl = useIntl();
+  const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -179,7 +196,7 @@ export function TradingGuardrailsFields({ value, onChange }: TradingGuardrailsFi
           onChange={(event) => onChange({ capital: event.target.value })}
           placeholder={intl.formatMessage({ id: 'common.unlimited' })}
         />
-        <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+        <div style={helperTextStyle}>
           {intl.formatMessage({ id: 'agents.controls.capital.help' })}
         </div>
       </div>
@@ -192,6 +209,7 @@ export function TradingGuardrailsFields({ value, onChange }: TradingGuardrailsFi
           onChange={(event) => onChange({ dailyLossLimit: event.target.value })}
           placeholder={intl.formatMessage({ id: 'common.unlimited' })}
         />
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit.help' })}</div>
       </div>
 
       <div>
@@ -204,6 +222,63 @@ export function TradingGuardrailsFields({ value, onChange }: TradingGuardrailsFi
           onChange={(event) => onChange({ maxSlippageBps: event.target.value })}
           placeholder={intl.formatMessage({ id: 'common.default' })}
         />
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxOpenPositions' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={1}
+          value={value.maxOpenPositions}
+          onChange={(event) => onChange({ maxOpenPositions: event.target.value })}
+          placeholder={defaults ? String(defaults.maxOpenPositions) : intl.formatMessage({ id: 'common.default' })}
+        />
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxOpenPositions.help' })}</div>
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxPositionSizePct' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={0}
+          max={100}
+          step="0.01"
+          value={value.maxPositionSizePct}
+          onChange={(event) => onChange({ maxPositionSizePct: event.target.value })}
+          placeholder={defaults ? String(defaults.maxPositionSizePct) : intl.formatMessage({ id: 'common.default' })}
+        />
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxPositionSizePct.help' })}</div>
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.stopLossPct' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={0}
+          max={100}
+          step="0.01"
+          value={value.stopLossPct}
+          onChange={(event) => onChange({ stopLossPct: event.target.value })}
+          placeholder={defaults ? String(defaults.stopLossPct) : intl.formatMessage({ id: 'common.default' })}
+        />
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.stopLossPct.help' })}</div>
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.stopLossCooldown' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={0}
+          step={1}
+          value={value.stopLossCooldownSecs}
+          onChange={(event) => onChange({ stopLossCooldownSecs: event.target.value })}
+          placeholder={defaults ? String(Math.round(defaults.stopLossCooldownMs / 1000)) : intl.formatMessage({ id: 'common.default' })}
+        />
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.stopLossCooldown.help' })}</div>
       </div>
     </div>
   );

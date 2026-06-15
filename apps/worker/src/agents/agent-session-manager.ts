@@ -45,7 +45,12 @@ export interface AgentSessionManagerConfig {
     * Return `false` when the runtime is healthy but no trading actor/fallback was
     * established yet, so activation should be retried on a later heartbeat.
    */
-    onSessionActive?: (agentId: string, executionMode: string | null, sessionId: string) => boolean | void | Promise<boolean | void>;
+  onSessionActive?: (agentId: string, executionMode: string | null, sessionId: string) => boolean | void | Promise<boolean | void>;
+  /**
+   * Called once for brand-new sessions after they become active.
+   * Used to send an initial user-facing anchor message without duplicating it on recovery.
+   */
+  onSessionStarted?: (agentId: string, sessionId: string) => void | Promise<void>;
   /**
    * Called when an agent session is stopped.
    * Used to stop and deregister the AgentTradingActor from the actorRegistry.
@@ -467,6 +472,11 @@ export class AgentSessionManager {
         if (agent) {
           this.config.onAgentStatusChange(session.agentId, agent.userId, 'active');
         }
+      }
+      if (isFirstBoot && activationEstablished && this.config.onSessionStarted) {
+        Promise.resolve(this.config.onSessionStarted(session.agentId, session.id)).catch((err: unknown) => {
+          logger.warn({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to run onSessionStarted callback');
+        });
       }
     }
 

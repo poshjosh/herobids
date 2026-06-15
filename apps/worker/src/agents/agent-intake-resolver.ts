@@ -2,7 +2,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
-import type { MarkSource } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, MarkSource } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
 import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
@@ -10,6 +10,7 @@ import type { IdGenerator } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
 import type { TradingCyclePersistence } from '@herobids/engine';
 import pino from 'pino';
+import { buildAgentRiskLimits } from '../agent-risk-limits.js';
 
 const logger = pino({ name: 'agent-intake-resolver' });
 
@@ -26,6 +27,7 @@ export interface AgentIntakeResolverDeps {
   journal: Journal;
   markSource: MarkSource;
   idGen: IdGenerator & { planId(): string };
+  agentRiskDefaults: AgentRiskDefaultsConfig;
 }
 
 /**
@@ -57,7 +59,6 @@ export class AgentIntakeResolver {
 
     const openPositions = await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId);
     const capitalStr = agent?.capital ?? null;
-    const dailyLossStr = agent?.dailyLossLimit ?? '10000';
 
     const executor = new PaperExecutor(this.deps.idGen);
 
@@ -69,12 +70,14 @@ export class AgentIntakeResolver {
       venueAccountId: binding.venueAccountId,
       executor,
       journal: this.deps.journal,
-      riskLimits: {
-        maxPositionSize: quantity('1000000000'),
-        maxOpenPositions: 10,
-        maxDrawdown: price(dailyLossStr),
-        ...(capitalStr != null ? { maxOrderNotional: price(capitalStr), maxPositionSizePct: 100 } : {}),
-      },
+      riskLimits: buildAgentRiskLimits({
+        capital: capitalStr,
+        dailyLossLimit: agent.dailyLossLimit ?? null,
+        maxOpenPositions: agent.maxOpenPositions ?? null,
+        maxPositionSizePct: agent.maxPositionSizePct ?? null,
+        stopLossPct: agent.stopLossPct ?? null,
+        stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+      }, this.deps.agentRiskDefaults),
       markSource: this.deps.markSource,
       persistence: this.buildPersistence(agentId, binding.venueAccountId, binding.venue),
       idGen: { planId: () => this.deps.idGen.planId() },

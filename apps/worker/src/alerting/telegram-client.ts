@@ -7,6 +7,15 @@ export interface TelegramSendResult {
   messageId: number;
 }
 
+export type TelegramReplyMarkup = Record<string, unknown>;
+
+export function forceReply(): TelegramReplyMarkup {
+  return {
+    force_reply: true,
+    selective: true,
+  };
+}
+
 /**
  * Minimal Telegram Bot API client for sending alert messages.
  * Uses the sendMessage endpoint only.
@@ -25,7 +34,7 @@ export class TelegramClient {
   }
 
   /** Send a plain HTML text message directly to a chat. */
-  async sendText(chatId: string, text: string): Promise<Result<TelegramSendResult, { code: string; message: string }>> {
+  async sendText(chatId: string, text: string, replyMarkup?: TelegramReplyMarkup): Promise<Result<TelegramSendResult, { code: string; message: string }>> {
     try {
       const response = await fetch(`${this.baseUrl}/sendMessage`, {
         method: 'POST',
@@ -35,6 +44,7 @@ export class TelegramClient {
           text,
           parse_mode: 'HTML',
           disable_web_page_preview: true,
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
         }),
       });
 
@@ -49,6 +59,34 @@ export class TelegramClient {
       }
 
       return ok({ messageId: data.result!.message_id });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return err({ code: 'telegram.network_error', message });
+    }
+  }
+
+  async setWebhook(url: string, secretToken: string): Promise<Result<undefined, { code: string; message: string }>> {
+    try {
+      const response = await fetch(`${this.baseUrl}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          secret_token: secretToken,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        return err({ code: 'telegram.http_error', message: `HTTP ${response.status}: ${body}` });
+      }
+
+      const data = await response.json() as { ok: boolean; description?: string };
+      if (!data.ok) {
+        return err({ code: 'telegram.api_error', message: data.description ?? 'Unknown Telegram API error' });
+      }
+
+      return ok(undefined);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err({ code: 'telegram.network_error', message });

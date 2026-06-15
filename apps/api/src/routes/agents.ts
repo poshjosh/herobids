@@ -22,7 +22,7 @@ import {
   tradingBindings,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import { AgentRiskDefaultsSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
@@ -51,9 +51,15 @@ import {
 import type { AgentActivityEntry } from './agent-activity-types.js';
 
 // --- Request Schemas ---
+const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
+  const normalized = value.trim().toLowerCase();
+  return normalized !== 'all' && normalized !== '*';
+}, {
+  message: 'Agent name is reserved for Telegram broadcast targeting',
+});
 
 const CreateAgentSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: AgentNameSchema,
   prompt: z.string().min(1).max(4000),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
@@ -79,12 +85,16 @@ const CreateAgentSchema = z.object({
   dailyLossLimit: optionalPositiveDecimalStringSchema,
   maxBots: optionalPositiveIntegerSchema(),
   maxSlippageBps: optionalPositiveIntegerSchema(0),
+  maxOpenPositions: optionalPositiveIntegerSchema(),
+  maxPositionSizePct: z.number().min(0).max(100).optional(),
+  stopLossPct: z.number().min(0).max(100).optional(),
+  stopLossCooldownMs: optionalPositiveIntegerSchema(0),
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
 });
 
 const UpdateAgentSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: AgentNameSchema.optional(),
   prompt: z.string().min(1).max(4000).optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
@@ -111,6 +121,10 @@ const UpdateAgentSchema = z.object({
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
+  maxOpenPositions: nullablePositiveIntegerSchema(),
+  maxPositionSizePct: z.number().min(0).max(100).nullable().optional(),
+  stopLossPct: z.number().min(0).max(100).nullable().optional(),
+  stopLossCooldownMs: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
 });
@@ -123,6 +137,54 @@ type SkillAssignmentResolution = {
   skillId: string;
   skillRevisionId: string;
 };
+
+const DEFAULT_AGENT_RISK_DEFAULTS: AgentRiskDefaultsConfig = AgentRiskDefaultsSchema.parse({});
+
+function validateAgentRiskBounds(
+  input: {
+    maxOpenPositions?: number | null;
+    maxPositionSizePct?: number | null;
+    stopLossPct?: number | null;
+    stopLossCooldownMs?: number | null;
+  },
+  defaults: AgentRiskDefaultsConfig,
+): Array<{ code: 'custom'; path: string[]; message: string }> {
+  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
+
+  if (input.maxOpenPositions != null && input.maxOpenPositions > defaults.maxOpenPositions) {
+    issues.push({
+      code: 'custom',
+      path: ['maxOpenPositions'],
+      message: `maxOpenPositions cannot exceed the platform limit of ${defaults.maxOpenPositions}`,
+    });
+  }
+
+  if (input.maxPositionSizePct != null && input.maxPositionSizePct > defaults.maxPositionSizePct) {
+    issues.push({
+      code: 'custom',
+      path: ['maxPositionSizePct'],
+      message: `maxPositionSizePct cannot exceed the platform limit of ${defaults.maxPositionSizePct}%`,
+    });
+  }
+
+  if (input.stopLossPct != null && input.stopLossPct > defaults.stopLossMaxUnrealizedLossPct) {
+    issues.push({
+      code: 'custom',
+      path: ['stopLossPct'],
+      message: `stopLossPct cannot exceed the platform limit of ${defaults.stopLossMaxUnrealizedLossPct}%`,
+    });
+  }
+
+  if (input.stopLossCooldownMs != null && input.stopLossCooldownMs > defaults.stopLossCooldownMs) {
+    issues.push({
+      code: 'custom',
+      path: ['stopLossCooldownMs'],
+      message: `stopLossCooldownMs cannot exceed the platform limit of ${defaults.stopLossCooldownMs}ms`,
+    });
+  }
+
+  return issues;
+}
 
 function isSkillSelectableForUser(input: {
   skill: typeof skills.$inferSelect;
@@ -318,13 +380,28 @@ async function listSkillIdsByAgentId(db: Database, agentIds: string[]): Promise<
   return skillIdsByAgentId;
 }
 
-export async function agentRoutes(app: FastifyInstance, db: Database, plansConfig?: PlansConfig, llmCatalogContext?: OperatorLlmCatalogContext): Promise<void> {
+export async function agentRoutes(
+  app: FastifyInstance,
+  db: Database,
+  plansConfig?: PlansConfig,
+  llmCatalogContext?: OperatorLlmCatalogContext,
+  agentRiskDefaults: AgentRiskDefaultsConfig = DEFAULT_AGENT_RISK_DEFAULTS,
+): Promise<void> {
   function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
       return { canViewMarketplaceSkills: true };
     }
     return resolvePlanSkillEntitlements(plansConfig, planId, isAdmin);
   }
+
+  app.get('/agents/risk-defaults', async (_request, reply) => {
+    return reply.send({
+      maxOpenPositions: agentRiskDefaults.maxOpenPositions,
+      maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
+      stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
+      stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
+    });
+  });
 
   // --- CRUD ---
 
@@ -333,6 +410,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const parsed = CreateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const riskIssues = validateAgentRiskBounds(parsed.data, agentRiskDefaults);
+    if (riskIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: riskIssues });
     }
 
     const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
@@ -416,6 +498,10 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
       maxBots: parsed.data.maxBots ?? null,
       maxSlippageBps: parsed.data.maxSlippageBps ?? null,
+      maxOpenPositions: parsed.data.maxOpenPositions ?? null,
+      maxPositionSizePct: parsed.data.maxPositionSizePct != null ? String(parsed.data.maxPositionSizePct) : null,
+      stopLossPct: parsed.data.stopLossPct != null ? String(parsed.data.stopLossPct) : null,
+      stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
       tickIntervalMs: parsed.data.tickIntervalMs ?? null,
       capital: parsed.data.capital ?? null,
       createdAt: now,
@@ -470,6 +556,11 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
     const parsed = UpdateAgentSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+
+    const riskIssues = validateAgentRiskBounds(parsed.data, agentRiskDefaults);
+    if (riskIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: riskIssues });
     }
 
     const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
@@ -619,6 +710,8 @@ export async function agentRoutes(app: FastifyInstance, db: Database, plansConfi
 
     await db.update(agents).set({
       ...agentUpdates,
+      ...(agentUpdates.maxPositionSizePct !== undefined ? { maxPositionSizePct: agentUpdates.maxPositionSizePct != null ? String(agentUpdates.maxPositionSizePct) : null } : {}),
+      ...(agentUpdates.stopLossPct !== undefined ? { stopLossPct: agentUpdates.stopLossPct != null ? String(agentUpdates.stopLossPct) : null } : {}),
       executionMode: executionMode.value,
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),

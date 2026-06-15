@@ -88,7 +88,7 @@ await app.register(cors, {
 app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Telegram webhook — public (unauthenticated), token-validated
-await telegramWebhookHandler(app, appConfig.alerts);
+await telegramWebhookHandler(app, db, redisClient, appConfig.alerts);
 
 // Auth routes (public — Google OAuth flow + exchange endpoint)
 await authRoutes(app, appConfig.auth, db, redisClient, appConfig.plans.defaultPlanId, appConfig.plans);
@@ -104,7 +104,7 @@ await providerRoutes(app);
 await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm));
+await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm), appConfig.agentRiskDefaults);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate

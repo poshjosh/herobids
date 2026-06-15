@@ -38,6 +38,10 @@ interface IntentState {
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
 }
 
 export function AgentsPage() {
@@ -157,6 +161,10 @@ function CreateAgentFlow({
     capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
+    maxOpenPositions: '',
+    maxPositionSizePct: '',
+    stopLossPct: '',
+    stopLossCooldownSecs: '',
   });
   const [modelTouched, setModelTouched] = useState(false);
   const [telegramTouched, setTelegramTouched] = useState(false);
@@ -235,6 +243,10 @@ function CreateAgentFlow({
   const availableTradingBindings = (tradingBindingsQuery.data?.bindings ?? []).filter(
     (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
   );
+  const riskDefaultsQuery = useQuery({
+    queryKey: ['agents', 'risk-defaults'],
+    queryFn: () => agentsApi.riskDefaults(),
+  });
   const selectedTradingBinding = availableTradingBindings.find((binding) => binding.bindingId === intent.tradingBindingId) ?? null;
 
   const mutation = useMutation({
@@ -255,6 +267,10 @@ function CreateAgentFlow({
         capital: intent.capital,
         dailyLossLimit: intent.dailyLossLimit,
         maxSlippageBps: intent.maxSlippageBps,
+        maxOpenPositions: intent.maxOpenPositions,
+        maxPositionSizePct: intent.maxPositionSizePct,
+        stopLossPct: intent.stopLossPct,
+        stopLossCooldownSecs: intent.stopLossCooldownSecs,
       }));
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -443,6 +459,10 @@ function CreateAgentFlow({
               capital: intent.capital,
               dailyLossLimit: intent.dailyLossLimit,
               maxSlippageBps: intent.maxSlippageBps,
+              maxOpenPositions: intent.maxOpenPositions,
+              maxPositionSizePct: intent.maxPositionSizePct,
+              stopLossPct: intent.stopLossPct,
+              stopLossCooldownSecs: intent.stopLossCooldownSecs,
             }}
             showBotControls={hasBotManagementSkill}
             tickIntervalError={tickIntervalError}
@@ -515,7 +535,12 @@ function CreateAgentFlow({
                     capital: intent.capital,
                     dailyLossLimit: intent.dailyLossLimit,
                     maxSlippageBps: intent.maxSlippageBps,
+                    maxOpenPositions: intent.maxOpenPositions,
+                    maxPositionSizePct: intent.maxPositionSizePct,
+                    stopLossPct: intent.stopLossPct,
+                    stopLossCooldownSecs: intent.stopLossCooldownSecs,
                   }}
+                  defaults={riskDefaultsQuery.data ?? null}
                   onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
                 />
               </div>

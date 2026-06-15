@@ -134,6 +134,7 @@ export function BillingPage() {
   const usageSummary = usageSummaryQuery.data;
   const usageBreakdown = usageBreakdownQuery.data;
   const usageEvents = usageEventsQuery.data;
+  const usageAccount = usageSummary?.account ?? null;
 
   useEffect(() => {
     if (!usageSummary?.currentPeriod) return;
@@ -177,6 +178,9 @@ export function BillingPage() {
                   {intl.formatMessage({ id: 'billing.currentPlan' })}
                 </div>
                 <div style={{ fontSize: '18px', fontWeight: '600' }}>{summary.planLabel}</div>
+                <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                  {intl.formatMessage({ id: 'billing.providerLabel' }, { provider: summary.provider })}
+                </div>
                 {summary.billingInterval && (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                     {intl.formatMessage({ id: 'billing.billedInterval' }, { interval: intl.formatMessage({ id: `billing.interval.${summary.billingInterval}` }) })}
@@ -206,7 +210,6 @@ export function BillingPage() {
             </div>
           </Card>
 
-          {/* Subscription Status */}
           {summary.subscription && (
             <Card style={{ padding: '20px' }}>
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -247,7 +250,6 @@ export function BillingPage() {
             </Card>
           )}
 
-          {/* Available Plans */}
           {summary.availablePlans.length > 0 && (
             <Card style={{ padding: '20px' }}>
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -302,40 +304,57 @@ export function BillingPage() {
       )}
 
       {/* --------------- Usage Billing Section --------------- */}
-      {usageSummary?.account && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: summary ? '24px' : undefined }}>
-          {/* Spend-state warning banner */}
-          {(usageSummary.account.status === 'soft_limited' || usageSummary.account.status === 'hard_limited') && (
-            <div style={{
-              padding: '12px 16px',
-              background: usageSummary.account.status === 'hard_limited' ? 'var(--color-danger-bg, #fff5f5)' : 'var(--color-warning-bg, #fffbeb)',
-              border: `1px solid ${usageSummary.account.status === 'hard_limited' ? 'var(--color-danger, #e53e3e)' : 'var(--color-warning)'}`,
-              borderRadius: '8px',
-              color: usageSummary.account.status === 'hard_limited' ? 'var(--color-danger, #e53e3e)' : 'var(--color-warning-text, #92400e)',
-              fontSize: '13px',
-            }}>
-              {usageSummary.account.status === 'hard_limited'
-                ? 'Usage limit reached — AI agent actions are paused until your limit is adjusted or the billing period resets.'
-                : 'Approaching usage limit — agents may be paused if spending continues.'}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: summary ? '24px' : undefined }}>
+        {/* Spend-state warning banner */}
+        {usageAccount && (usageAccount.status === 'soft_limited' || usageAccount.status === 'hard_limited') && (
+          <div style={{
+            padding: '12px 16px',
+            background: usageAccount.status === 'hard_limited' ? 'var(--color-danger-bg, #fff5f5)' : 'var(--color-warning-bg, #fffbeb)',
+            border: `1px solid ${usageAccount.status === 'hard_limited' ? 'var(--color-danger, #e53e3e)' : 'var(--color-warning)'}`,
+            borderRadius: '8px',
+            color: usageAccount.status === 'hard_limited' ? 'var(--color-danger, #e53e3e)' : 'var(--color-warning-text, #92400e)',
+            fontSize: '13px',
+          }}>
+            {usageAccount.status === 'hard_limited'
+              ? 'Usage limit reached — AI agent actions are paused until your limit is adjusted or the billing period resets.'
+              : 'Approaching usage limit — agents may be paused if spending continues.'}
+          </div>
+        )}
+        <Card style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              AI Usage — Current Period
+            </div>
+            {usageSummary?.currentPeriod && (
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                {formatShortDate(intl, usageSummary.currentPeriod.periodStart)} - {formatShortDate(intl, usageSummary.currentPeriod.periodEnd)}
+              </div>
+            )}
+          </div>
+          {usageSummaryQuery.isLoading && <LoadingRows count={1} />}
+          {usageSummaryQuery.isError && (
+            <ErrorState
+              message={localizeApiError(intl, usageSummaryQuery.error, 'common.errorTitle')}
+              onRetry={() => void usageSummaryQuery.refetch()}
+            />
+          )}
+          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && !usageAccount && (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+              {intl.formatMessage({ id: 'billing.usage.emptyAccount' })}
             </div>
           )}
-
-          {/* Usage summary cards */}
-          {usageSummary.currentPeriod && (
-            <Card style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  AI Usage — Current Period
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {formatShortDate(intl, usageSummary.currentPeriod.periodStart)} - {formatShortDate(intl, usageSummary.currentPeriod.periodEnd)}
-                </div>
-              </div>
+          {!usageSummaryQuery.isLoading && !usageSummaryQuery.isError && usageAccount && !usageSummary?.currentPeriod && (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+              {intl.formatMessage({ id: 'billing.usage.emptyPeriod' })}
+            </div>
+          )}
+          {usageAccount && usageSummary?.currentPeriod && (
+            <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px' }}>
                 <div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Account Status</div>
-                  <div style={{ fontWeight: '500', color: usageAccountStatusLabel(usageSummary.account.status).color }}>
-                    {usageAccountStatusLabel(usageSummary.account.status).text}
+                  <div style={{ fontWeight: '500', color: usageAccountStatusLabel(usageAccount.status).color }}>
+                    {usageAccountStatusLabel(usageAccount.status).text}
                   </div>
                 </div>
                 <div>
@@ -358,7 +377,6 @@ export function BillingPage() {
                 )}
               </div>
 
-              {/* Threshold warnings */}
               {usageSummary.warnings.some((w) => w.reached) && (
                 <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {usageSummary.warnings.filter((w) => w.reached).map((w) => (
@@ -371,8 +389,9 @@ export function BillingPage() {
                   ))}
                 </div>
               )}
-            </Card>
+            </>
           )}
+        </Card>
 
           <Card style={{ padding: '20px' }}>
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -393,7 +412,7 @@ export function BillingPage() {
               />
               <Button
                 variant="secondary"
-                disabled={spendCapsMutation.isPending}
+                disabled={spendCapsMutation.isPending || !usageAccount}
                 onClick={() => {
                   const soft = softCapInput.trim() === '' ? null : Number.parseInt(softCapInput, 10);
                   const hard = hardCapInput.trim() === '' ? null : Number.parseInt(hardCapInput, 10);
@@ -428,7 +447,9 @@ export function BillingPage() {
             </div>
             {!usageSummary?.topUpsEnabled && (
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                Top-ups are not enabled for this plan.
+                {usageAccount
+                  ? 'Top-ups are not enabled for this plan.'
+                  : intl.formatMessage({ id: 'billing.usage.noAccountControls' })}
               </div>
             )}
           </Card>
@@ -497,11 +518,23 @@ export function BillingPage() {
           </Card>
 
           {/* By-meter breakdown */}
-          {usageBreakdown && usageBreakdown.byMeter.length > 0 && (
-            <Card style={{ padding: '20px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Usage by Meter
+          <Card style={{ padding: '20px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Usage by Meter
+            </div>
+            {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
+            {usageBreakdownQuery.isError && (
+              <ErrorState
+                message={localizeApiError(intl, usageBreakdownQuery.error, 'common.errorTitle')}
+                onRetry={() => void usageBreakdownQuery.refetch()}
+              />
+            )}
+            {usageBreakdown && usageBreakdown.byMeter.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+                {intl.formatMessage({ id: 'billing.usage.emptyBreakdown' })}
               </div>
+            )}
+            {usageBreakdown && usageBreakdown.byMeter.length > 0 && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -520,15 +553,27 @@ export function BillingPage() {
                   ))}
                 </tbody>
               </table>
-            </Card>
-          )}
+            )}
+          </Card>
 
           {/* By-agent breakdown */}
-          {usageBreakdown && usageBreakdown.byAgent.length > 0 && (
-            <Card style={{ padding: '20px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Usage by Agent
+          <Card style={{ padding: '20px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Usage by Agent
+            </div>
+            {usageBreakdownQuery.isLoading && <LoadingRows count={3} />}
+            {usageBreakdownQuery.isError && (
+              <ErrorState
+                message={localizeApiError(intl, usageBreakdownQuery.error, 'common.errorTitle')}
+                onRetry={() => void usageBreakdownQuery.refetch()}
+              />
+            )}
+            {usageBreakdown && usageBreakdown.byAgent.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+                {intl.formatMessage({ id: 'billing.usage.emptyBreakdown' })}
               </div>
+            )}
+            {usageBreakdown && usageBreakdown.byAgent.length > 0 && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -547,8 +592,8 @@ export function BillingPage() {
                   ))}
                 </tbody>
               </table>
-            </Card>
-          )}
+            )}
+          </Card>
 
           {/* Usage event ledger */}
           <Card style={{ padding: '20px' }}>
@@ -628,11 +673,23 @@ export function BillingPage() {
           </Card>
 
           {/* Historical periods */}
-          {periodsQuery.data && periodsQuery.data.periods.length > 0 && (
-            <Card style={{ padding: '20px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Billing Periods
+          <Card style={{ padding: '20px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Billing Periods
+            </div>
+            {periodsQuery.isLoading && <LoadingRows count={3} />}
+            {periodsQuery.isError && (
+              <ErrorState
+                message={localizeApiError(intl, periodsQuery.error, 'common.errorTitle')}
+                onRetry={() => void periodsQuery.refetch()}
+              />
+            )}
+            {periodsQuery.data && periodsQuery.data.periods.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+                {intl.formatMessage({ id: 'billing.usage.emptyPeriods' })}
               </div>
+            )}
+            {periodsQuery.data && periodsQuery.data.periods.length > 0 && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -655,10 +712,9 @@ export function BillingPage() {
                   ))}
                 </tbody>
               </table>
-            </Card>
-          )}
-        </div>
-      )}
+            )}
+          </Card>
+      </div>
     </PageShell>
   );
 }

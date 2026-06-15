@@ -177,6 +177,16 @@ export const ApiConfigSchema = z.object({
   publicBaseUrl: z.string().url().default('http://api:3000'),
 });
 
+export const AgentRiskDefaultsSchema = z.object({
+  maxOpenPositions: z.number().min(1).default(10),
+  maxPositionSizePct: z.number().min(0).max(100).default(100),
+  maxPositionSize: z.number().min(0).default(1_000_000),
+  stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).default(10),
+  dailyMaxLossPct: z.number().min(0).max(100).default(20),
+  stopLossCooldownMs: z.number().min(0).default(300_000),
+  maxOrderNotionalMultiplier: z.number().min(0).default(1),
+}).default({});
+
 export const StreamConfigSchema = z.object({
   private: z.object({
     reconnectBaseMs: z.number().min(100).default(1_000),
@@ -209,6 +219,10 @@ export const AlertsConfigSchema = z.object({
   telegram: z.object({
     /** Bot token resolved from TELEGRAM_BOT_TOKEN env var */
     botToken: z.string().default(''),
+    /** Shared secret token Telegram includes in webhook requests */
+    webhookSecret: z.string().default(''),
+    /** Public HTTPS webhook endpoint registered with Telegram */
+    webhookUrl: z.string().url().optional(),
     /** Telegram channel routing rules */
     channels: z.array(TelegramChannelConfigSchema).default([]),
   }).default({}),
@@ -330,8 +344,6 @@ export const PlansConfigSchema = z.object({
 });
 
 export const UsageBillingConfigSchema = z.object({
-  /** Master switch — set false to disable commercial billing (metering still writes for auditing) */
-  enabled: z.boolean().default(false),
   /** Default currency for all billing accounts */
   defaultCurrency: z.string().default('USD'),
   /** Window size in ms for coarse agent runtime metering */
@@ -764,15 +776,7 @@ export const AppConfigSchema = z.object({
     maxOpenPositions: z.number().min(1).default(10),
     maxPositionSizePct: z.number().min(0).max(100).default(25),
   }),
-  agentRiskDefaults: z.object({
-    maxOpenPositions: z.number().min(1).default(10),
-    maxPositionSizePct: z.number().min(0).max(100).default(100),
-    maxPositionSize: z.number().min(0).default(1_000_000),
-    stopLossMaxUnrealizedLossPct: z.number().min(0).max(100).default(10),
-    dailyMaxLossPct: z.number().min(0).max(100).default(20),
-    stopLossCooldownMs: z.number().min(0).default(300_000),
-    maxOrderNotionalMultiplier: z.number().min(0).default(1),
-  }).default({}),
+  agentRiskDefaults: AgentRiskDefaultsSchema,
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
   marking: MarkingConfigSchema.default({}),

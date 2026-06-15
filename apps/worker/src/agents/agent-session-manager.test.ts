@@ -645,6 +645,59 @@ describe('AgentSessionManager', () => {
       expect(onSessionActive).toHaveBeenCalledWith('agent-active-2', null, 'sess-active-2');
     });
 
+    it('fires onSessionStarted only for first-boot sessions, not recovery heartbeats', async () => {
+      const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+      const onSessionActive = vi.fn();
+      const onSessionStarted = vi.fn();
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        runtimeLauncher as any,
+        { budgets: TEST_RUNTIME_BUDGETS, onSessionActive, onSessionStarted },
+        reconnectHandler as any,
+      );
+
+      (agentRepo.getSession as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ id: 'sess-first', agentId: 'agent-first', status: 'starting' })
+        .mockResolvedValueOnce({ id: 'sess-recovery', agentId: 'agent-recovery', status: 'running' });
+      (agentRepo.getAgent as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ id: 'agent-first', userId: 'user-1', executionMode: 'paper' })
+        .mockResolvedValueOnce({ id: 'agent-first', userId: 'user-1', executionMode: 'paper' })
+        .mockResolvedValueOnce({ id: 'agent-recovery', userId: 'user-1', executionMode: 'paper' })
+        .mockResolvedValueOnce({ id: 'agent-recovery', userId: 'user-1', executionMode: 'paper' });
+
+      await manager.handleHeartbeat(
+        {
+          schemaVersion: 'v1',
+          messageId: 'msg-first',
+          correlationId: 'corr-first',
+          initiatorType: 'agent',
+          initiatorId: 'agent-first',
+          type: 'agent.runtime.heartbeat',
+          createdAt: new Date().toISOString(),
+          payload: {},
+        },
+        { sessionId: 'sess-first', status: 'ready' },
+      );
+
+      await manager.handleHeartbeat(
+        {
+          schemaVersion: 'v1',
+          messageId: 'msg-recovery',
+          correlationId: 'corr-recovery',
+          initiatorType: 'agent',
+          initiatorId: 'agent-recovery',
+          type: 'agent.runtime.heartbeat',
+          createdAt: new Date().toISOString(),
+          payload: {},
+        },
+        { sessionId: 'sess-recovery', status: 'ready' },
+      );
+
+      expect(onSessionStarted).toHaveBeenCalledTimes(1);
+      expect(onSessionStarted).toHaveBeenCalledWith('agent-first', 'sess-first');
+    });
+
     it('does NOT fire onSessionActive for a session that was already activated', async () => {
       const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
       const onSessionActive = vi.fn();

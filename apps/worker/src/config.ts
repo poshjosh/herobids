@@ -51,6 +51,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   // Alerts
   ALERTS_ENABLED: { path: 'alerts.enabled', type: 'boolean' },
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
+  TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
+  TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
   RESEND_API_KEY: { path: 'alerts.email.apiKey', type: 'string' },
   RESEND_FROM_EMAIL: { path: 'alerts.email.fromEmail', type: 'string' },
   RESEND_REPLY_TO_EMAIL: { path: 'alerts.email.replyToEmail', type: 'string' },

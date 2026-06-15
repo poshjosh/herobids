@@ -69,6 +69,51 @@ function makeJournal(events: JournalEventRow[] = []) {
 // --- Telegram client tests ---
 
 describe('TelegramClient', () => {
+  it('attaches ForceReply markup when provided to sendText', async () => {
+    const { TelegramClient, forceReply } = await import('./telegram-client.js');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(''),
+      json: vi.fn().mockResolvedValue({ ok: true, result: { message_id: 42 } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new TelegramClient('test-token');
+    const result = await client.sendText('chat-123', 'Reply here', forceReply());
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body as string);
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('https://api.telegram.org/bottest-token/sendMessage', expect.objectContaining({ method: 'POST' }));
+    expect(body).toEqual(expect.objectContaining({
+      chat_id: 'chat-123',
+      text: 'Reply here',
+      reply_markup: forceReply(),
+    }));
+    vi.unstubAllGlobals();
+  });
+
+  it('registers the Telegram webhook with the configured secret token', async () => {
+    const { TelegramClient } = await import('./telegram-client.js');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(''),
+      json: vi.fn().mockResolvedValue({ ok: true }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new TelegramClient('test-token');
+    const result = await client.setWebhook('https://example.com/api/telegram/webhook', 'secret-123');
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body as string);
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('https://api.telegram.org/bottest-token/setWebhook', expect.objectContaining({ method: 'POST' }));
+    expect(body).toEqual({
+      url: 'https://example.com/api/telegram/webhook',
+      secret_token: 'secret-123',
+    });
+    vi.unstubAllGlobals();
+  });
+
   it('returns ok on successful API call', async () => {
     const { TelegramClient } = await import('./telegram-client.js');
     const fetchMock = vi.fn().mockResolvedValue({

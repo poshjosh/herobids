@@ -222,6 +222,28 @@ describe('agent route plan enforcement', () => {
     expect(insertedValues).toHaveLength(0);
   });
 
+  it('rejects reserved Telegram broadcast names on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'all',
+        prompt: 'test',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string; details: Array<{ message: string }> }>().error).toBe('validation_error');
+    expect(res.json<{ details: Array<{ message: string }> }>().details[0]?.message).toBe('Agent name is reserved for Telegram broadcast targeting');
+  });
+
   it('blocks assigning free marketplace skills when marketplace access is disabled', async () => {
     const { agentRoutes } = await import('./agents.js');
     const plans = makePlansConfig();
@@ -470,6 +492,27 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('agent_not_editable');
+  });
+
+  it('rejects reserved Telegram broadcast names on update', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', name: 'Old Name', prompt: 'test' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { name: '*' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string; details: Array<{ message: string }> }>().error).toBe('validation_error');
+    expect(res.json<{ details: Array<{ message: string }> }>().details[0]?.message).toBe('Agent name is reserved for Telegram broadcast targeting');
   });
 
   it.each([
@@ -950,6 +993,10 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       tickIntervalMs: 600_000,
       dailyTokenBudget: 42_000,
       capital: '5000',
+      maxOpenPositions: 4,
+      maxPositionSizePct: '40',
+      stopLossPct: '2.5',
+      stopLossCooldownMs: 120000,
     };
     const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
 
@@ -966,6 +1013,10 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
         tickIntervalMs: 600_000,
         dailyLlmTokenBudget: 42_000,
         capital: '5000.00',
+        maxOpenPositions: 4,
+        maxPositionSizePct: 40,
+        stopLossPct: 2.5,
+        stopLossCooldownMs: 120000,
       },
     });
 
@@ -974,12 +1025,39 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       tickIntervalMs: 600_000,
       dailyTokenBudget: 42_000,
       capital: '5000',
+      maxOpenPositions: 4,
+      maxPositionSizePct: '40',
+      stopLossPct: '2.5',
+      stopLossCooldownMs: 120000,
     }));
     expect(res.json()).toEqual(expect.objectContaining({
       dailyLlmTokenBudget: 42_000,
       dailyTokenBudget: 42_000,
       capital: '5000',
+      maxOpenPositions: 4,
+      maxPositionSizePct: '40',
+      stopLossPct: '2.5',
+      stopLossCooldownMs: 120000,
     }));
+  });
+
+  it('returns the effective platform risk defaults', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/risk-defaults' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      maxOpenPositions: 10,
+      maxPositionSizePct: 100,
+      stopLossPct: 10,
+      stopLossCooldownMs: 300000,
+    });
   });
 
   it('rejects conflicting dailyLlmTokenBudget aliases on create', async () => {
@@ -1028,6 +1106,31 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('validation_error');
+  });
+
+  it('rejects risk limits above operator defaults on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'agent',
+        prompt: 'p',
+        maxOpenPositions: 999,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({ path: ['maxOpenPositions'] })],
+    });
   });
 
   it('persists tickIntervalMs on PATCH', async () => {
@@ -1079,6 +1182,43 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.statusCode).toBe(200);
     expect(updateSets).toContainEqual(expect.objectContaining({ capital: '750', dailyTokenBudget: 12_000 }));
     expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: 12_000 }));
+  });
+
+  it('persists explicit risk limit overrides on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+      tickIntervalMs: null, capital: '750', dailyTokenBudget: 12_000,
+      maxOpenPositions: 3, maxPositionSizePct: '55', stopLossPct: '4', stopLossCooldownMs: 180000,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { maxOpenPositions: 3, maxPositionSizePct: 55, stopLossPct: 4, stopLossCooldownMs: 180000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({
+      maxOpenPositions: 3,
+      maxPositionSizePct: '55',
+      stopLossPct: '4',
+      stopLossCooldownMs: 180000,
+    }));
+    expect(res.json()).toEqual(expect.objectContaining({
+      maxOpenPositions: 3,
+      maxPositionSizePct: '55',
+      stopLossPct: '4',
+      stopLossCooldownMs: 180000,
+    }));
   });
 
   it('clears tickIntervalMs when null is sent on PATCH', async () => {

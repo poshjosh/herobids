@@ -43,6 +43,7 @@ export {
   CreemConfigSchema,
   TelegramChannelConfigSchema,
   WebAccessToolsConfigSchema,
+  AgentRiskDefaultsSchema,
 } from './schema.js';
 
 export type {

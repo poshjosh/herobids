@@ -4,10 +4,11 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills } from '@herobids/db';
+import { agentOutboundMessages, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
@@ -28,6 +29,18 @@ const SendMessageSchema = z.object({
 
 const VerifyTelegramSchema = z.object({
   chatId: z.string().min(1),
+});
+
+const TelegramWebhookUpdateSchema = z.object({
+  message: z.object({
+    chat: z.object({
+      id: z.union([z.string(), z.number().int()]).transform((value) => String(value)),
+    }),
+    text: z.string().optional(),
+    reply_to_message: z.object({
+      message_id: z.number().int(),
+    }).optional(),
+  }).optional(),
 });
 
 const UpdateAgentSchema = z.object({
@@ -551,23 +564,179 @@ export async function agentInteractivityRoutes(
 // Telegram webhook handler — registered as a public (unauthenticated) route
 export async function telegramWebhookHandler(
   app: FastifyInstance,
+  db: Database,
+  redisClient: Redis,
   alertsConfig?: AlertsConfig,
 ): Promise<void> {
   const botToken = alertsConfig?.telegram?.botToken ?? '';
+  const webhookSecret = alertsConfig?.telegram?.webhookSecret ?? '';
+
+  async function sendTelegramText(chatId: string, text: string): Promise<void> {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+      }),
+    }).catch(() => undefined);
+  }
+
+  function agentCanReceiveTelegram(status: string): boolean {
+    return status !== 'stopped' && status !== 'crashed';
+  }
+
+  function buildEnvelope(agentId: string, userId: string, messageText: string) {
+    return {
+      schemaVersion: 'v1',
+      messageId: crypto.randomUUID(),
+      correlationId: crypto.randomUUID(),
+      initiatorType: 'user',
+      initiatorId: userId,
+      agentId,
+      type: 'user.message',
+      createdAt: new Date().toISOString(),
+      payload: { message: messageText },
+    };
+  }
+
+  async function deliverTelegramMessage(agentId: string, userId: string, messageText: string): Promise<void> {
+    const envelope = buildEnvelope(agentId, userId, messageText);
+    await redisClient.xadd(`agent:outbound:${agentId}`, '*', 'envelope', JSON.stringify(envelope));
+  }
 
   app.post<{ Body: unknown }>('/api/telegram/webhook', async (request, reply) => {
-    if (!botToken) {
+    if (!botToken || !webhookSecret) {
       return reply.status(501).send({ error: 'not_configured' });
     }
 
     // Validate the Telegram webhook secret token
     const secretHeader = (request.headers['x-telegram-bot-api-secret-token'] as string | undefined) ?? '';
-    if (!secretHeader || secretHeader !== botToken) {
+    if (!secretHeader || secretHeader !== webhookSecret) {
       return reply.status(401).send({ error: 'unauthorized' });
     }
 
-    // Acknowledge immediately — Telegram expects a fast response
-    // The update body can be processed asynchronously in a real implementation
+    const parsed = TelegramWebhookUpdateSchema.safeParse(request.body);
+    if (!parsed.success || !parsed.data.message) {
+      return reply.status(200).send({ ok: true });
+    }
+
+    const message = parsed.data.message;
+    if (!message.text || message.text.trim().length === 0) {
+      return reply.status(200).send({ ok: true });
+    }
+
+    const chatId = message.chat.id;
+    const userRows = await db.select({ userId: users.id })
+      .from(users)
+      .where(eq(users.telegramChatId, chatId))
+      .limit(1);
+    const userId = userRows[0]?.userId;
+
+    if (!userId) {
+      return reply.status(200).send({ ok: true });
+    }
+
+    if (!message.text || message.text.trim().length === 0) {
+      return reply.status(200).send({ ok: true });
+    }
+
+    const trimmedText = message.text.trim();
+
+    if (message.reply_to_message) {
+      const agentRows = await db.select({
+        agentId: agents.id,
+        agentName: agents.name,
+        status: agents.status,
+      })
+        .from(agentOutboundMessages)
+        .innerJoin(agents, eq(agentOutboundMessages.agentId, agents.id))
+        .where(and(
+          eq(agentOutboundMessages.telegramMessageId, String(message.reply_to_message.message_id)),
+          eq(agents.userId, userId),
+        ))
+        .limit(1);
+
+      const agent = agentRows[0] ?? null;
+      if (!agent) {
+        await sendTelegramText(chatId, "I couldn't find which agent that reply belongs to. The message may be too old.");
+        return reply.status(200).send({ ok: true });
+      }
+
+      if (!agentCanReceiveTelegram(agent.status)) {
+        await sendTelegramText(chatId, `Agent ${agent.agentName} is stopped and cannot receive messages right now.`);
+        return reply.status(200).send({ ok: true });
+      }
+
+      await deliverTelegramMessage(agent.agentId, userId, trimmedText);
+      await sendTelegramText(chatId, `Delivered to ${agent.agentName}.`);
+      return reply.status(200).send({ ok: true });
+    }
+
+    const userAgents = await db.select({
+      agentId: agents.id,
+      agentName: agents.name,
+      status: agents.status,
+    })
+      .from(agents)
+      .where(eq(agents.userId, userId));
+
+    const parsedCommand = parseTelegramCommand(trimmedText, userAgents.map((row) => row.agentName));
+    const commandBody = parsedCommand?.body.trim() ?? trimmedText;
+
+    if (parsedCommand?.targets.length) {
+      if (commandBody.length === 0) {
+        await sendTelegramText(chatId, 'Please include a message after the target.');
+        return reply.status(200).send({ ok: true });
+      }
+
+      const confirmations: string[] = [];
+      const deliveredAgentIds = new Set<string>();
+
+      for (const target of parsedCommand.targets) {
+        const isBroadcast = target === '*' || target.toLowerCase() === 'all';
+        const targetAgents = isBroadcast
+          ? userAgents.filter((row) => agentCanReceiveTelegram(row.status))
+          : userAgents.filter((row) => row.agentName.toLowerCase() === target.toLowerCase());
+
+        if (targetAgents.length === 0) {
+          confirmations.push(isBroadcast ? 'No running agents found.' : `No agent named ${target} found.`);
+          continue;
+        }
+
+        for (const targetAgent of targetAgents) {
+          if (deliveredAgentIds.has(targetAgent.agentId)) {
+            continue;
+          }
+          deliveredAgentIds.add(targetAgent.agentId);
+
+          if (!agentCanReceiveTelegram(targetAgent.status)) {
+            confirmations.push(`Agent ${targetAgent.agentName} is stopped and cannot receive messages right now.`);
+            continue;
+          }
+
+          await deliverTelegramMessage(targetAgent.agentId, userId, commandBody);
+          confirmations.push(`Delivered to ${targetAgent.agentName}.`);
+        }
+      }
+
+      await sendTelegramText(chatId, confirmations.join('\n'));
+      return reply.status(200).send({ ok: true });
+    }
+
+    const runningAgents = userAgents.filter((row) => agentCanReceiveTelegram(row.status));
+    if (runningAgents.length === 1) {
+      await deliverTelegramMessage(runningAgents[0]!.agentId, userId, commandBody);
+      await sendTelegramText(chatId, `Delivered to ${runningAgents[0]!.agentName}.`);
+      return reply.status(200).send({ ok: true });
+    }
+
+    if (runningAgents.length === 0) {
+      await sendTelegramText(chatId, 'No running agents found. Start an agent or reply to one of its Telegram messages.');
+      return reply.status(200).send({ ok: true });
+    }
+
+    await sendTelegramText(chatId, 'Multiple running agents found. Use /to <agent name> <message> to choose a target.');
     return reply.status(200).send({ ok: true });
   });
 }

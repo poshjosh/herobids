@@ -89,6 +89,15 @@ describe('AgentIntakeResolver', () => {
         journal: journal as any,
         markSource: markSource as any,
         idGen: idGen as any,
+        agentRiskDefaults: {
+          maxOpenPositions: 10,
+          maxPositionSizePct: 100,
+          maxPositionSize: 1000000000,
+          stopLossMaxUnrealizedLossPct: 10,
+          dailyMaxLossPct: 20,
+          stopLossCooldownMs: 300000,
+          maxOrderNotionalMultiplier: 1,
+        },
         ...overrides,
       },
       mocks: { db, agentRepo, positionRepo, markSource, journal },
@@ -146,7 +155,7 @@ describe('AgentIntakeResolver', () => {
       expect(result?.openPositionCount).toBe(2);
     });
 
-    it('applies agent-profile limits for drawdown and notional, uses permissive sentinel for position size', async () => {
+    it('applies agent-profile limits for drawdown and operator defaults for risk settings', async () => {
       const { deps } = makeDeps();
       const resolver = new AgentIntakeResolver(deps);
 
@@ -156,7 +165,31 @@ describe('AgentIntakeResolver', () => {
       expect(result?.riskLimits.maxOpenPositions).toBe(10);
       expect(result?.riskLimits.maxDrawdown.toString()).toBe('75');
       expect(result?.riskLimits.maxOrderNotional?.toString()).toBe('250');
+      expect(result?.riskLimits.maxPositionSizePct).toBe(100);
+      expect(result?.riskLimits.stopLossMaxUnrealizedLossPct).toBe(10);
+      expect(result?.riskLimits.stopLossCooldownMs).toBe(300000);
       expect(result?.equity?.toString()).toBe('250');
+    });
+
+    it('prefers explicit agent risk overrides when present', async () => {
+      const { deps, mocks } = makeDeps();
+      mocks.agentRepo.getAgent.mockResolvedValue({
+        id: 'agent-1',
+        capital: '250',
+        dailyLossLimit: '75',
+        maxOpenPositions: 3,
+        maxPositionSizePct: '40',
+        stopLossPct: '2.5',
+        stopLossCooldownMs: 120000,
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result?.riskLimits.maxOpenPositions).toBe(3);
+      expect(result?.riskLimits.maxPositionSizePct).toBe(40);
+      expect(result?.riskLimits.stopLossMaxUnrealizedLossPct).toBe(2.5);
+      expect(result?.riskLimits.stopLossCooldownMs).toBe(120000);
     });
 
     it('omits capital-based limits when agent has no capital configured', async () => {

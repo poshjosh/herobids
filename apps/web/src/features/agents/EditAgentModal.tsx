@@ -28,6 +28,10 @@ interface FormState {
   dailyLossLimit: string;
   maxBots: string;
   maxSlippageBps: string;
+  maxOpenPositions: string;
+  maxPositionSizePct: string;
+  stopLossPct: string;
+  stopLossCooldownSecs: string;
   tickIntervalMins: string;
   capital: string;
 }
@@ -64,6 +68,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     dailyLossLimit: initialData.dailyLossLimit ?? '',
     maxBots: initialData.maxBots != null ? String(initialData.maxBots) : '',
     maxSlippageBps: initialData.maxSlippageBps != null ? String(initialData.maxSlippageBps) : '',
+    maxOpenPositions: initialData.maxOpenPositions != null ? String(initialData.maxOpenPositions) : '',
+    maxPositionSizePct: initialData.maxPositionSizePct ?? '',
+    stopLossPct: initialData.stopLossPct ?? '',
+    stopLossCooldownSecs: initialData.stopLossCooldownMs != null ? String(initialData.stopLossCooldownMs / 1000) : '',
     tickIntervalMins: formatTickIntervalMinutesForInput(initialData.tickIntervalMs),
     capital: initialData.capital ?? '',
   });
@@ -80,6 +88,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     queryFn: async () => agentsApi.capabilityReadiness(agentId, 'trading') as Promise<CapabilityReadiness>,
   });
   const currentHasTradingCapability = tradingCapabilityQuery.data != null && tradingCapabilityQuery.data.state !== 'unconfigured';
+  const riskDefaultsQuery = useQuery({
+    queryKey: ['agents', 'risk-defaults'],
+    queryFn: () => agentsApi.riskDefaults(),
+  });
   const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
   const hasBotManagementSkill = form.skillIds.includes('bot-management');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(form.tickIntervalMins);
@@ -96,7 +108,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability;
   const showTradingControls = hasTradingCapability
-    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim());
+    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
@@ -128,6 +140,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
         dailyLossLimit: form.dailyLossLimit,
         maxBots: form.maxBots,
         maxSlippageBps: form.maxSlippageBps,
+        maxOpenPositions: form.maxOpenPositions,
+        maxPositionSizePct: form.maxPositionSizePct,
+        stopLossPct: form.stopLossPct,
+        stopLossCooldownSecs: form.stopLossCooldownSecs,
         tickIntervalMins: form.tickIntervalMins,
         preserveOriginalTickIntervalMs: !tickIntervalTouched,
         originalTickIntervalMs: initialData.tickIntervalMs ?? null,
@@ -307,6 +323,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                 capital: form.capital,
                 dailyLossLimit: form.dailyLossLimit,
                 maxSlippageBps: form.maxSlippageBps,
+                maxOpenPositions: form.maxOpenPositions,
+                maxPositionSizePct: form.maxPositionSizePct,
+                stopLossPct: form.stopLossPct,
+                stopLossCooldownSecs: form.stopLossCooldownSecs,
               }}
               showBotControls={hasBotManagementSkill}
               tickIntervalError={tickIntervalError}
@@ -331,7 +351,12 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                   capital: form.capital,
                   dailyLossLimit: form.dailyLossLimit,
                   maxSlippageBps: form.maxSlippageBps,
+                  maxOpenPositions: form.maxOpenPositions,
+                  maxPositionSizePct: form.maxPositionSizePct,
+                  stopLossPct: form.stopLossPct,
+                  stopLossCooldownSecs: form.stopLossCooldownSecs,
                 }}
+                defaults={riskDefaultsQuery.data ?? null}
                 onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
               />
             </div>
