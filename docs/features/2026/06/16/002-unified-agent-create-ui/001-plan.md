@@ -66,7 +66,7 @@ export interface TechnicalPreset {
   id: TechnicalPresetId;
   labelKey: string;       // i18n key
   descriptionKey: string; // i18n key
-  config: Partial<TechnicalConfig>;
+  patch: Partial<TechnicalConfigFormState> | null;
 }
 ```
 
@@ -114,8 +114,7 @@ candles: interval '1H', limit 100
 
 - [ ] Create `technical-presets.ts` with `TECHNICAL_PRESETS` array and
   `getTechnicalPresetConfig(id)` helper
-- [ ] Each preset's `config` is a partial `TechnicalConfig` — `deepMerge` with a
-  base default when applied
+- [ ] Each preset's `patch` is a `Partial<TechnicalConfigFormState> | null` — deep-merged with current form state when applied. Custom preset has `patch: null` (preserves current values).
 - [ ] Export `TechnicalPresetId` and `TECHNICAL_PRESETS` from the file
 - [ ] Unit test: applying each preset produces a valid `TechnicalConfig`
 
@@ -200,7 +199,7 @@ export interface TechnicalConfigFormState {
   confidence: {
     rsiWeight: string; macdCrossoverWeight: string; macdIncreasingWeight: string;
     volumeWeight: string; breakoutWeight: string; chochBullishWeight: string;
-    chochCounterSignalPenalty: string; priceActionWeight: string;
+    chochBearishPenalty: string; priceActionWeight: string;
     minConfidence: string; minReasons: string;
   };
 }
@@ -547,3 +546,14 @@ New keys to add:
 - [ ] All i18n keys present in `en.ts` and `hi.ts`
 - [ ] `pnpm lint` passes
 - [ ] `pnpm test` passes
+
+---
+
+## Outstanding Issues
+
+### [Phase 2 — Indicator preset definitions]
+- LOW: `ar.ts` / `hi.ts` — `agents.technical.filters.venue.required` uses English fallback text. Proper Arabic/Hindi translation needed.
+
+### [Phase 3 — TechnicalConfigSection component]
+- LOW: `ar.ts` / `hi.ts` — venue required validation message (`'Please select a venue.'`) is untranslated. Phase 8 should add proper translations.
+- LOW: `technical-config-helpers.test.ts` — missing newline at end of file.

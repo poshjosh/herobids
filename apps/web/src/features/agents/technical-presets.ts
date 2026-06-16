@@ -8,7 +8,11 @@ export interface TechnicalPreset {
   labelKey: string;
   /** i18n key for the description */
   descriptionKey: string;
-  /** Partial form state applied when preset is selected. Custom presets leave values as-is. */
+  /**
+   * Partial form state applied when preset is selected. Custom presets leave values as-is.
+   * Indicator sub-object patches are deep-merged: only the provided indicator keys are replaced,
+   * preserving unspecified fields within each indicator (partial indicator sub-objects are supported).
+   */
   patch: Partial<TechnicalConfigFormState> | null;
 }
 
@@ -107,3 +111,8 @@ export const TECHNICAL_PRESETS: TechnicalPreset[] = [
     patch: null,
   },
 ];
+
+/** Returns the form-state patch for a preset, or null for 'custom'. */
+export function getTechnicalPresetConfig(id: TechnicalPresetId): Partial<TechnicalConfigFormState> | null {
+  return TECHNICAL_PRESETS.find((p) => p.id === id)?.patch ?? null;
+}

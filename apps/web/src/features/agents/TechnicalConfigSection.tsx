@@ -9,9 +9,10 @@ import { applyPreset } from './technical-config-helpers.js';
 interface TechnicalConfigSectionProps {
   value: TechnicalConfigFormState;
   onChange: (state: TechnicalConfigFormState) => void;
+  showErrors?: boolean;
 }
 
-export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSectionProps) {
+export function TechnicalConfigSection({ value, onChange, showErrors }: TechnicalConfigSectionProps) {
   const intl = useIntl();
   const [showScanSettings, setShowScanSettings] = useState(false);
   const [showIndicators, setShowIndicators] = useState(true);
@@ -102,12 +103,16 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
                 setFilters({ venue, venueType: venueType as TechnicalConfigFormState['filters']['venueType'] });
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}
-              required
             >
               <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
-              <option value="hyperliquid">Hyperliquid</option>
-              <option value="jupiter">Jupiter</option>
+              <option value="hyperliquid">{intl.formatMessage({ id: 'agents.technical.filters.venue.hyperliquid' })}</option>
+              <option value="jupiter">{intl.formatMessage({ id: 'agents.technical.filters.venue.jupiter' })}</option>
             </select>
+            {showErrors && !value.filters.venue && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-error, #ef4444)' }}>
+                {intl.formatMessage({ id: 'agents.technical.filters.venue.required' })}
+              </p>
+            )}
           </div>
           <div style={{ flex: 1 }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venueType' })}</FieldLabel>
@@ -270,6 +275,7 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
         {showIndicators && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '12px' }}>
             <IndicatorRow
+              slug="rsi"
               label={intl.formatMessage({ id: 'agents.technical.indicators.rsi' })}
               enabled={value.indicators.rsi.enabled}
               onToggle={(enabled) => setIndicators({ rsi: { ...value.indicators.rsi, enabled } })}
@@ -284,6 +290,7 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
             </IndicatorRow>
 
             <IndicatorRow
+              slug="macd"
               label={intl.formatMessage({ id: 'agents.technical.indicators.macd' })}
               enabled={value.indicators.macd.enabled}
               onToggle={(enabled) => setIndicators({ macd: { ...value.indicators.macd, enabled } })}
@@ -296,6 +303,7 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
             </IndicatorRow>
 
             <IndicatorRow
+              slug="volume"
               label={intl.formatMessage({ id: 'agents.technical.indicators.volume' })}
               enabled={value.indicators.volume.enabled}
               onToggle={(enabled) => setIndicators({ volume: { ...value.indicators.volume, enabled } })}
@@ -309,6 +317,7 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
             </IndicatorRow>
 
             <IndicatorRow
+              slug="supportResistance"
               label={intl.formatMessage({ id: 'agents.technical.indicators.supportResistance' })}
               enabled={value.indicators.supportResistance.enabled}
               onToggle={(enabled) => setIndicators({ supportResistance: { ...value.indicators.supportResistance, enabled } })}
@@ -320,6 +329,7 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
             </IndicatorRow>
 
             <IndicatorRow
+              slug="choch"
               label={intl.formatMessage({ id: 'agents.technical.indicators.choch' })}
               enabled={value.indicators.choch.enabled}
               onToggle={(enabled) => setIndicators({ choch: { ...value.indicators.choch, enabled } })}
@@ -371,11 +381,13 @@ export function TechnicalConfigSection({ value, onChange }: TechnicalConfigSecti
 }
 
 function IndicatorRow({
+  slug,
   label,
   enabled,
   onToggle,
   children,
 }: {
+  slug: string;
   label: string;
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
@@ -386,13 +398,13 @@ function IndicatorRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: enabled ? '8px' : 0 }}>
         <input
           type="checkbox"
-          id={`ind-${label}`}
+          id={`ind-${slug}`}
           checked={enabled}
           onChange={(e) => onToggle(e.target.checked)}
           style={{ cursor: 'pointer' }}
         />
         <label
-          htmlFor={`ind-${label}`}
+          htmlFor={`ind-${slug}`}
           style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)', cursor: 'pointer' }}
         >
           {label}

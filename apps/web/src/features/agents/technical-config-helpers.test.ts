@@ -72,4 +72,18 @@ describe('technical config helpers', () => {
     expect(formState.scanIntervalMins).toBe('2');
     expect(formState.scanBatchSize).toBe('0');
   });
+
+  it('round-trips form state through payload and back without precision loss', () => {
+    const state = defaultTechnicalConfigFormState();
+    state.filters.venue = 'hyperliquid';
+    state.filters.venueType = 'orderbook';
+
+    const payload1 = technicalFormStateToPayload(state);
+    expect(payload1).not.toBeNull();
+
+    const roundTripped = technicalConfigToFormState(payload1 as Record<string, unknown>);
+    const payload2 = technicalFormStateToPayload(roundTripped);
+
+    expect(payload2).toEqual(payload1);
+  });
 });

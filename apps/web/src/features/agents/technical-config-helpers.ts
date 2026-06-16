@@ -101,7 +101,7 @@ const DEFAULT_CONFIDENCE = {
 };
 
 function hasNumericInput(value: string): boolean {
-  return value.trim() !== '';
+  return value.trim() !== '' && !Number.isNaN(Number(value.trim()));
 }
 
 function parseFloatOrFallback(value: string, fallback: number): number {
@@ -137,8 +137,18 @@ export function applyPreset(presetId: TechnicalPresetId, current: TechnicalConfi
     ...current,
     ...preset.patch,
     preset: presetId,
-    // Preserve filters since they are venue/user-specific
     filters: current.filters,
+    indicators: {
+      ...current.indicators,
+      ...(preset.patch?.indicators && Object.fromEntries(
+        Object.entries(preset.patch.indicators).map(([key, val]) => [
+          key,
+          { ...current.indicators[key as keyof typeof current.indicators], ...val }
+        ])
+      )),
+    },
+    confidence: { ...current.confidence, ...preset.patch?.confidence },
+    candles: preset.patch?.candles ?? current.candles,
   };
 }
 
