@@ -634,7 +634,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
         ...(state.context.workspaceRoot && hasVisibleWorkspacePathTooling(state)
           ? [
               `Workspace root: ${state.context.workspaceRoot}`,
-              'Use paths relative to workspace root, such as log.txt or sandbox/output.txt.',
+              'Use paths relative to workspace root, such as log.txt or folder/output.txt.',
             ]
           : []),
       ].join('\n'),

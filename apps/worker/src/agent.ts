@@ -1289,6 +1289,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       hgetall: redis.hgetall.bind(redis),
       hdel: redis.hdel.bind(redis),
       publish: redis.publish.bind(redis),
+      blpop: (key: string, timeoutSeconds: number) =>
+        redis.blpop(key, timeoutSeconds) as Promise<[string, string] | null>,
     },
     publishToInbound,
     botRepo: toolBotRepo,

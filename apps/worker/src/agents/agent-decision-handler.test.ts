@@ -51,6 +51,7 @@ describe('AgentDecisionHandler', () => {
       emitPlanStatus: vi.fn().mockResolvedValue(undefined),
       emitGuardrailTriggered: vi.fn().mockResolvedValue(undefined),
       emitExecutionResult: vi.fn().mockResolvedValue(undefined),
+      publishDecisionReply: vi.fn().mockResolvedValue(undefined),
     };
 
     const handler = new AgentDecisionHandler(agentRepo as any, intakeResolver as any, eventPublisher as any);
@@ -849,6 +850,251 @@ describe('AgentDecisionHandler', () => {
       })();
 
       await expect(handler.handleDecisionSubmit(envelope, payload)).resolves.not.toThrow();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // synchronous decision reply (_expectsReply)
+  // ---------------------------------------------------------------------------
+  describe('synchronous decision reply (_expectsReply)', () => {
+    function makePayload(overrides: Partial<Parameters<AgentDecisionHandler['handleDecisionSubmit']>[1]> = {}) {
+      return {
+        decisionId: 'dec-sync',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long' as const,
+        targetSize: '1',
+        rationaleSummary: 'sync reply test',
+        _expectsReply: true,
+        ...overrides,
+      };
+    }
+
+    const envelope = {
+      schemaVersion: 'v1' as const,
+      messageId: 'msg-sync',
+      correlationId: 'corr-sync',
+      initiatorType: 'agent' as const,
+      initiatorId: 'agent-1',
+      botId: 'inst-1',
+      type: 'agent.decision.submit',
+      createdAt: '2026-06-03T00:00:00.000Z',
+      payload: {},
+    };
+
+    // -----------------------------------------------------------------------
+    // publishes on acceptance
+    // -----------------------------------------------------------------------
+
+    it('publishes an accepted sync reply when the decision passes intake and risk', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: {
+          id: 'dec-sync-ok',
+          botId: 'inst-1',
+          instrumentId: 'BTC/USD:USD',
+          intent: 'go_long',
+          targetSize: { toString: () => '1' },
+          timestamp: '2026-06-03T00:00:00.000Z',
+        } as any,
+        plan: { id: 'plan-1', status: 'executing', action: 'open_long', venue: 'hyperliquid', symbol: 'BTC/USD:USD', orders: [] } as any,
+        riskRejected: false,
+        position: {
+          symbol: 'BTC/USD:USD',
+          side: 'flat',
+          size: { toString: () => '0' },
+          entryPrice: { toString: () => '0' },
+          realizedPnl: { toString: () => '0' },
+        } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'accepted', planId: 'plan-1' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // publishes on rejection (early gate: instrument mismatch)
+    // -----------------------------------------------------------------------
+
+    it('publishes a rejected sync reply on instrument mismatch', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ instrumentId: 'ETH/USD:USD', _expectsReply: true }),
+      );
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'rejected', code: 'instrument_mismatch', message: 'Decision instrument does not match the bot symbol' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // publishes on rejection (early gate: stale session)
+    // -----------------------------------------------------------------------
+
+    it('publishes a rejected sync reply on stale session', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      const agentRepo = (handler as unknown as { agentRepo: { isActiveSession: ReturnType<typeof vi.fn> } }).agentRepo;
+      agentRepo.isActiveSession.mockResolvedValueOnce(false);
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'rejected', code: 'stale_session', message: 'Decision rejected — runtime session is no longer the active session' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // publishes on rejection (intake rejection e.g. circuit breaker)
+    // -----------------------------------------------------------------------
+
+    it('publishes a rejected sync reply on intake rejection', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      const resolver = (handler as any).intakeResolver;
+      resolver.getIntakeDeps.mockReturnValueOnce({
+        rejected: true,
+        code: 'circuit_breaker_open',
+        message: 'Circuit breaker is open',
+        retryable: false,
+      });
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'rejected', code: 'circuit_breaker_open', message: 'Circuit breaker is open' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // publishes on risk gate rejection
+    // -----------------------------------------------------------------------
+
+    it('publishes a rejected sync reply when the risk gate rejects', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-risk', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' } } as any,
+        riskRejected: true,
+        riskError: { code: 'risk.max_order_notional_exceeded', message: 'Order notional exceeds limit', context: {} },
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'rejected', code: 'risk.max_order_notional_exceeded', message: 'Order notional exceeds limit' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // publishes on execution error
+    // -----------------------------------------------------------------------
+
+    it('publishes an error sync reply when the engine throws unexpectedly', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockRejectedValueOnce(new Error('Engine crash'));
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'error', code: 'execution_error', message: 'Engine crash' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // publishes on context hash mismatch
+    // -----------------------------------------------------------------------
+
+    it('publishes a rejected sync reply on context hash mismatch', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockRejectedValueOnce(
+        new DecisionContextHashMismatchError('expected', 'supplied'),
+      );
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        { status: 'rejected', code: 'context_hash_mismatch', message: 'Decision context hash does not match the server-resolved context' },
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // does NOT publish when _expectsReply is absent
+    // -----------------------------------------------------------------------
+
+    it('does NOT publish a sync reply when _expectsReply is absent', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-no-reply', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      const payload = makePayload();
+      delete (payload as any)._expectsReply;
+
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      expect(eventPublisher.publishDecisionReply).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // does NOT publish when _expectsReply is false
+    // -----------------------------------------------------------------------
+
+    it('does NOT publish a sync reply when _expectsReply is false', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-false', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: false }));
+
+      expect(eventPublisher.publishDecisionReply).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // does not crash when publishDecisionReply throws
+    // -----------------------------------------------------------------------
+
+    it('does not crash when publishDecisionReply throws (handler completes)', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-crash', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      (eventPublisher.publishDecisionReply as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Redis connection lost'));
+
+      await expect(
+        handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true })),
+      ).resolves.toBeUndefined();
     });
   });
 });

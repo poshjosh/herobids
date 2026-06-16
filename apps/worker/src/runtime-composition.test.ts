@@ -141,7 +141,7 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).toContain('Execution mode: paper');
     expect(prompt).not.toContain('Workspace root: /workspace');
-    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
     expect(prompt).toContain('Trading Venue');
     expect(prompt).toContain('hyperliquid (perpetuals)');
     expect(prompt).toContain('trade instruments use base tickers');
@@ -220,7 +220,7 @@ describe('runtime composition helpers', () => {
     }));
 
     expect(prompt).toContain('Workspace root: /workspace');
-    expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+    expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
   });
 
   it('omits workspace guidance when workspace tools are hidden by visibility budget', () => {
@@ -259,7 +259,7 @@ describe('runtime composition helpers', () => {
     }));
 
     expect(prompt).not.toContain('Workspace root: /workspace');
-    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
   });
 
   it('renders only the configured default executable trading venue', () => {

@@ -46,6 +46,8 @@ export const DecisionSubmitPayloadSchema = z.object({
   artifacts: z.array(z.record(z.unknown())).optional(),
   metadata: z.record(z.unknown()).optional(),
   safetyOverrideId: z.string().min(1).optional(),
+  /** Internal protocol flag — set by the submit_decision tool, not by clients. Signals the handler to publish a synchronous reply via Redis list. */
+  _expectsReply: z.boolean().optional(),
 });
 
 export type DecisionSubmitPayload = z.infer<typeof DecisionSubmitPayloadSchema>;

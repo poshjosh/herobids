@@ -30,6 +30,7 @@ const submitDecisionTool: AgentTool = {
 
     const crypto = await import('node:crypto');
     const decisionId = crypto.randomUUID();
+    const replyKey = `agent:decision:reply:${decisionId}`;
 
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
       decisionId,
@@ -40,11 +41,60 @@ const submitDecisionTool: AgentTool = {
       rationaleSummary: p.rationaleSummary,
       confidence: p.confidence,
       safetyOverrideId: p.safetyOverrideId,
+      // Signal to the handler that this decision expects a synchronous reply
+      _expectsReply: true,
     });
 
+    // Await the engine's reply (accepted, rejected, or error).
+    // Time out after 30s to avoid blocking the tick forever.
+    const reply = await ctx.redis.blpop(replyKey, 30);
+    if (!reply) {
+      return {
+        success: false,
+        error: 'Decision reply timed out after 30s — check the agent events stream for status.',
+        errorCode: 'decision_reply_timeout',
+      };
+    }
+
+    const [, raw] = reply;
+    let parsed: { status: string; code?: string; message?: string; planId?: string };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return {
+        success: false,
+        error: 'Decision reply was malformed — the engine returned an unreadable response.',
+        errorCode: 'decision_reply_malformed',
+      };
+    }
+
+    if (parsed.status === 'accepted') {
+      return {
+        success: true,
+        data: {
+          ok: true,
+          decisionId,
+          planId: parsed.planId,
+          note: 'Decision accepted by engine and sent for execution.',
+        },
+      };
+    }
+
+    if (parsed.status === 'rejected') {
+      return {
+        success: false,
+        error: parsed.message ?? 'Decision rejected by risk gate.',
+        errorCode: parsed.code ?? 'risk.rejected',
+        data: { decisionId },
+      };
+    }
+
+    // Error during processing
     return {
-      success: true,
-      data: { ok: true, decisionId, note: 'decision submitted to engine' },
+      success: false,
+      error: parsed.message ?? 'Decision could not be processed.',
+      errorCode: parsed.code ?? 'decision_processing_error',
+      data: { decisionId },
     };
   },
 };

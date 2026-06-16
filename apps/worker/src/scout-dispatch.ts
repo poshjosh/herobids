@@ -63,7 +63,7 @@ export function buildScoutSystemPrompt(params: {
     ...(includeWorkspaceContext
       ? [
           `Workspace root: ${params.workspaceRoot}`,
-          'Use paths relative to workspace root, such as log.txt or sandbox/output.txt.',
+          'Use paths relative to workspace root, such as log.txt or folder/output.txt.',
         ]
       : []),
     ...venueSection,

@@ -87,6 +87,18 @@ export class InstanceEventPublisher {
   }
 
   /**
+   * Publish a synchronous decision reply to a Redis list so the agent's
+   * submit_decision tool can BLPOP it and get immediate feedback.
+   * Errors propagate to the caller — it is the caller's responsibility to log and continue.
+   */
+  async publishDecisionReply(decisionId: string, reply: { status: 'accepted' | 'rejected' | 'error'; code?: string; message?: string; planId?: string }): Promise<void> {
+    const replyKey = `agent:decision:reply:${decisionId}`;
+    await this.redis.lpush(replyKey, JSON.stringify(reply));
+    // Expire after 60s to prevent leaking keys if the agent never reads
+    await this.redis.expire(replyKey, 60);
+  }
+
+  /**
    * Publish a protocol message to the instance's outbound Redis Stream.
    * Stream key: `agent:outbound:{agentId}`
    */

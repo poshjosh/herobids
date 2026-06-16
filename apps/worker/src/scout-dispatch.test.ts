@@ -64,7 +64,7 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).toContain('Nominal tick interval: 15m');
     expect(prompt).toContain('Expected next tick (UTC, tentative): 2026-06-11T06:57:39.174Z');
     expect(prompt).toContain('Workspace root: /workspace');
-    expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+    expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
     expect(prompt).toContain('Visible read-only tools: read_file, list_files.');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
     expect(prompt).toContain('Respond with JSON only. disposition must be "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.');
@@ -124,7 +124,7 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).toContain('jupiter (swap / DEX)');
     expect(prompt).toContain('trade instruments use pair symbols');
     expect(prompt).not.toContain('Workspace root:');
-    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or sandbox/output.txt.');
+    expect(prompt).not.toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
   });
 });
 

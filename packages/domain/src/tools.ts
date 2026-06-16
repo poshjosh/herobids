@@ -102,6 +102,8 @@ export interface ToolContext {
     hgetall: (key: string) => Promise<Record<string, string> | null>;
     hdel: (key: string, ...fields: string[]) => Promise<number>;
     publish: (channel: string, message: string) => Promise<number>;
+    /** Blocking list pop — used to await async decision replies. Returns [key, value] or null on timeout. */
+    blpop: (key: string, timeoutSeconds: number) => Promise<[string, string] | null>;
   };
   /** Publish agent protocol message to inbound stream */
   publishToInbound: (type: string, payload: Record<string, unknown>) => Promise<void>;

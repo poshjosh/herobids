@@ -71,6 +71,27 @@ export class AgentDecisionHandler {
     const effectiveBotId = tradingInstanceId ?? botId ?? effectiveAgentId;
     const resolveId = effectiveAgentId;
 
+    // Track outcome for synchronous reply to the agent's submit_decision tool
+    const expectsReply = payload._expectsReply === true;
+    let syncReply: { status: 'accepted' | 'rejected' | 'error'; code?: string; message?: string; planId?: string } | null = null;
+    const setSyncReply = (
+      status: 'accepted' | 'rejected' | 'error',
+      opts: { code?: string; message?: string; planId?: string },
+    ) => {
+      syncReply = { status, ...opts };
+    };
+    const publishSyncReply = async () => {
+      if (expectsReply && syncReply) {
+        try {
+          await this.eventPublisher.publishDecisionReply(payload.decisionId, syncReply);
+        } catch (err) {
+          logger.warn({ decisionId: payload.decisionId, err }, 'Failed to publish decision reply — agent will not receive synchronous feedback');
+        }
+      }
+    };
+
+    try {
+
     // 1. Verify agent is not paused.
     // A missing agents row is NOT treated as paused — it likely means the agent was
     // launched directly (e.g. via docker run) without going through the API provisioning
@@ -79,6 +100,7 @@ export class AgentDecisionHandler {
     const agent = await this.agentRepo.getAgent(effectiveAgentId);
     if (agent && (agent.status === 'paused' || agent.status === 'stopped')) {
       const msg = `Agent is ${agent.status} — cannot accept decisions`;
+      setSyncReply('rejected', { code: 'agent_paused', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'agent_paused',
@@ -96,6 +118,7 @@ export class AgentDecisionHandler {
     const isActiveSession = await this.agentRepo.isActiveSession(effectiveAgentId, runtimeSessionId);
     if (!isActiveSession) {
       const msg = 'Decision rejected — runtime session is no longer the active session';
+      setSyncReply('rejected', { code: 'stale_session', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'stale_session',
@@ -110,6 +133,7 @@ export class AgentDecisionHandler {
     const intakeResult = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
     if (!intakeResult) {
       const msg = 'No execution context — ensure the bot is active or the agent has an active trading grant';
+      setSyncReply('rejected', { code: 'instance_not_running', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'instance_not_running',
@@ -120,6 +144,7 @@ export class AgentDecisionHandler {
       return;
     }
     if (isIntakeRejection(intakeResult)) {
+      setSyncReply('rejected', { code: intakeResult.code, message: intakeResult.message });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: intakeResult.code,
@@ -133,6 +158,7 @@ export class AgentDecisionHandler {
 
     // Instrument mismatch check — skip for agents (multi-symbol)
     if (intakeDeps.actorType !== 'agent' && payload.instrumentId !== intakeDeps.symbol) {
+      setSyncReply('rejected', { code: 'instrument_mismatch', message: 'Decision instrument does not match the bot symbol' });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'instrument_mismatch',
@@ -149,6 +175,7 @@ export class AgentDecisionHandler {
     const context = await this.intakeResolver.getDecisionContext(resolveId, payload.instrumentId);
     if (!context) {
       const msg = 'No decision context available — bot may still be initializing or mark price unavailable';
+      setSyncReply('rejected', { code: 'no_context', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'no_context',
@@ -162,6 +189,7 @@ export class AgentDecisionHandler {
     const position = await this.intakeResolver.getPosition(resolveId, payload.instrumentId);
     if (!position) {
       const msg = 'Position state not available';
+      setSyncReply('rejected', { code: 'no_position_state', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'no_position_state',
@@ -207,6 +235,7 @@ export class AgentDecisionHandler {
 
       // Handle pre-execution rejection (e.g. swap token safety)
       if (result.preExecutionRejection) {
+        setSyncReply('rejected', { code: result.preExecutionRejection.code, message: result.preExecutionRejection.message });
         await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
           decisionId: payload.decisionId,
           code: result.preExecutionRejection.code,
@@ -222,6 +251,7 @@ export class AgentDecisionHandler {
         if (result.riskRejected) {
           const riskCode = result.riskError?.code ?? 'risk.rejected';
           const riskMsg = result.riskError?.message ?? 'Decision rejected by risk gate';
+          setSyncReply('rejected', { code: riskCode, message: riskMsg });
           await this.eventPublisher.emitGuardrailTriggered(effectiveBotId, {
             scope: 'risk_gate',
             code: riskCode,
@@ -234,6 +264,7 @@ export class AgentDecisionHandler {
         }
 
         // 6. Emit accepted — deferred until hash and risk checks pass.
+        setSyncReply('accepted', { planId: result.plan?.id });
         await this.eventPublisher.emitDecisionAccepted(effectiveBotId, {
           decisionId: payload.decisionId,
           acceptedAt: new Date().toISOString(),
@@ -306,6 +337,7 @@ export class AgentDecisionHandler {
       }
     } catch (err) {
       if (err instanceof DecisionContextHashMismatchError) {
+        setSyncReply('rejected', { code: 'context_hash_mismatch', message: 'Decision context hash does not match the server-resolved context' });
         await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
           decisionId: payload.decisionId,
           code: 'context_hash_mismatch',
@@ -322,6 +354,7 @@ export class AgentDecisionHandler {
 
       logger.error({ decisionId: payload.decisionId, err }, 'Decision execution failed');
       const errMsg = err instanceof Error ? err.message : 'Unknown execution error';
+      setSyncReply('error', { code: 'execution_error', message: errMsg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'execution_error',
@@ -329,6 +362,9 @@ export class AgentDecisionHandler {
         retryable: false,
       });
       this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'execution_error', failureMessage: errMsg, failureClass: 'error', retryable: false });
+    }
+    } finally {
+      await publishSyncReply();
     }
   }
 }
