@@ -373,6 +373,7 @@ function CreateAgentFlow({
           )}
 
           {showIntelligence && (
+          <>
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
             <select
@@ -417,6 +418,7 @@ function CreateAgentFlow({
                 : intl.formatMessage({ id: 'agents.create.skillPreset.includes' }, { skills: formatSkillSelection(selectedSkills, intl) })}
             </div>
           </div>
+          </>
           )}
 
           {showIntelligence && (

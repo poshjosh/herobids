@@ -41,8 +41,8 @@ export function CapabilitySelector({ value, onChange }: CapabilitySelectorProps)
   const intl = useIntl();
 
   return (
-    <div role="group" aria-label={intl.formatMessage({ id: 'agents.capability.title' })}>
-      <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+    <div role="group" aria-labelledby="capability-selector-label">
+      <div id="capability-selector-label" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
         {intl.formatMessage({ id: 'agents.capability.title' })}
       </div>
       <div style={{ display: 'flex', gap: '8px' }}>
