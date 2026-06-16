@@ -6,3 +6,4 @@ export type { LlmStrategyConfig, LlmDecisionArtifact, ArtifactCallback } from '.
 export { scoreCandidate, scanCandidates } from './scan-engine.js';
 export type { CandidateContext, ScoredSignal, ScanConfig, IndicatorConfig } from './scan-engine.js';
 export { MechanicalStrategy } from './mechanical-strategy.js';
+export { HybridStrategy } from './hybrid-strategy.js';
