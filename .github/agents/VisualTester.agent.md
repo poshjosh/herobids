@@ -7,12 +7,12 @@ handoffs:
     agent: BugFixer
     prompt: "The visual test found issues. Details are in `docs/tech/user-acceptance-tests.md`. Analyse and fix the bugs."
     send: true
-    model: Claude Sonnet 4.6
+    model: DeepSeek V4 Pro
   - label: Add Tests
     agent: Tester
     prompt: "The visual test passed. Write automated tests to cover the verified scenarios. `Check docs/tech/user-acceptance-tests.md` for test cases."
     send: true
-    model: Claude Sonnet 4.6
+    model: DeepSeek V4 Pro
 ---
 You are a visual testing agent. Your task is to verify features in the browser by interacting with the running application.
 

@@ -7,12 +7,12 @@ handoffs:
     agent: VisualTester
     prompt: "Code review passed. Verify the feature visually in the browser (if the project has a frontend). Run pre-flight checks first."
     send: true
-    model: Claude Sonnet 4.6
+    model: DeepSeek V4 Pro
   - label: Rework
     agent: Implementer
     prompt: "Code review feedback just completed. Address any of the review feedback you think is valid and needs addressing."
     send: true
-    model: GPT-5.4 mini
+    model: qwen3.6:35b-a3b-q4_K_M
 ---
 You are a code review agent. Your task is to review code and provide feedback. 
 

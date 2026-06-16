@@ -7,7 +7,7 @@ handoffs:
     agent: PlanCreator
     prompt: "Create or update an implementation plan based on the contemplation output above."
     send: true
-    model: GPT-5.4
+    model: qwen3.6:35b-a3b-q4_K_M
 ---
 Interview yourself relentlessly about every aspect of the proposed plan/solution until you arrive at a complete and consistent understanding. Walk down each branch of the design tree resolving dependencies between decisions one by one.
 

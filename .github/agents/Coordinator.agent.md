@@ -7,12 +7,12 @@ handoffs:
     agent: Implementer
     prompt: "Implement the plan. The plan or task-list to implement is provided as the argument. Sequentially implement each item in the plan/task-list."
     send: true
-    model: Claude Sonnet 4.6
+    model: DeepSeek V4 Pro
   - label: Review Code
     agent: CodeReviewer
     prompt: "The unstaged changes in the codebase represent new implementation. Review the code and provide feedback on any issues or improvements."
     send: true
-    model: GPT-5.4
+    model: qwen3.6:35b-a3b-q4_K_M
 ---
 You are an implementation coordinator agent. Your task is to coordinate the implemenation of a plan or task-list.
 

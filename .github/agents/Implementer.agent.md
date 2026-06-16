@@ -7,17 +7,17 @@ handoffs:
     agent: UnitTester
     prompt: "Write unit tests for the unstaged changes. Focus on the new/modified functions and edge cases."
     send: true
-    model: Claude Sonnet 4.6
+    model: DeepSeek V4 Pro
   - label: Review Code
     agent: CodeReviewer
     prompt: "The unstaged changes in the codebase represent new implementation. Review the code and provide feedback on any issues or improvements."
     send: true
-    model: GPT-5.4
+    model: qwen3.6:35b-a3b-q4_K_M
   - label: Contemplate
     agent: Contemplator
     prompt: "Implementation hit an open question that requires deeper analysis before proceeding. Think through the tradeoffs and recommend a direction."
     send: true
-    model: GPT-5.4
+    model: qwen3.6:35b-a3b-q4_K_M
 ---
 You are an implementation agent. Your task is to write clean, secure, production-ready code according to a provided plan or task.
 
