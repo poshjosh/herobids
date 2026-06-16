@@ -584,7 +584,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
   });
 
-  it('clears execution mode when trading skills are removed on PATCH', async () => {
+  it('does not explicitly set executionMode when trading skills are removed on PATCH', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: ['task-management'], modelPolicy: null, executionMode: null,
@@ -606,7 +606,11 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({ executionMode: null }));
+    // executionMode is NOT NULL in the schema — when no valid value exists
+    // (skills removed, no execution mode provided), the field is left unchanged
+    // rather than set to null (which would violate the DB constraint).
+    const hasExecutionMode = updateSets.some((set: Record<string, unknown>) => 'executionMode' in set);
+    expect(hasExecutionMode).toBe(false);
   });
 
   it('returns 400 for an invalid payload', async () => {
