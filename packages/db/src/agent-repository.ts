@@ -12,7 +12,7 @@ import {
   users,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig } from '@herobids/domain';
 
 // --- Agent ---
 
@@ -200,6 +200,24 @@ export class AgentRepository {
     const value = Object.keys(overrides).length === 0 ? null : overrides;
     await this.db.update(agents).set({
       riskOverrides: value,
+      updatedAt: new Date(),
+    }).where(eq(agents.id, agentId));
+  }
+
+  // --- Unified Agent Config ---
+
+  async getUnifiedConfig(agentId: string): Promise<UnifiedAgentConfig | null> {
+    const rows = await this.db.select({ unifiedConfig: agents.unifiedConfig })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    return rows[0]?.unifiedConfig ?? null;
+  }
+
+  async updateUnifiedConfig(agentId: string, config: UnifiedAgentConfig | null, executionMode?: string): Promise<void> {
+    await this.db.update(agents).set({
+      unifiedConfig: config,
+      ...(executionMode !== undefined ? { executionMode } : {}),
       updatedAt: new Date(),
     }).where(eq(agents.id, agentId));
   }

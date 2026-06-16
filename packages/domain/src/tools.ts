@@ -168,6 +168,15 @@ export interface ToolContext {
     getContract(): Promise<import('./agent-risk-contract.js').ResolvedAgentRiskContract>;
     adjustOverrides(overrides: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: import('./agent-risk-contract.js').ResolvedAgentRiskContract }>;
   };
+  /** Agent config operations for reading and updating the agent's unified config at runtime. */
+  agentConfigOps?: {
+    getCurrentConfig(): Promise<import('./config/schema.js').UnifiedAgentConfig | null>;
+    persistConfig(newConfig: import('./config/schema.js').UnifiedAgentConfig | null, executionMode?: string): Promise<void>;
+    appendJournal(type: string, payload: Record<string, unknown>): Promise<void>;
+    notifyActorConfigUpdate(newConfig: import('./config/schema.js').UnifiedAgentConfig | null): Promise<void>;
+    getLlmTickCount(): number;
+    getMinPaperCyclesBeforeLive(): number;
+  };
 }
 
 export interface AgentTool {
@@ -234,6 +243,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'start_bot',
   'stop_bot',
   'submit_decision',
+  'update_own_config',
   'watch_token',
   'write_file',
 ] as const;

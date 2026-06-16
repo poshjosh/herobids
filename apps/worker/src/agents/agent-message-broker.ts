@@ -88,6 +88,7 @@ export class AgentMessageBroker {
     private readonly botStop?: BotStopCallback,
     private readonly botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
+    readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -306,6 +307,13 @@ export class AgentMessageBroker {
         case AGENT_RUNTIME_ACTIVITY_TYPES.TOOL_RESULT:
           // Audit-only events — persisted with payload, no business side effects.
           break;
+
+        case AGENT_MESSAGE_TYPES.CONFIG_UPDATE: {
+          // Agent updated its own config — notify the actor to apply changes.
+          const configPayload = envelope.payload as { config: Record<string, unknown> | null };
+          this.onAgentConfigUpdate?.(effectiveAgentId, configPayload.config ?? null);
+          break;
+        }
 
         default:
           await this.agentRepo.markMessageProcessed(envelope.messageId, 'rejected', {

@@ -319,9 +319,9 @@ The runtime inspects config at startup to determine which phases to run.
 
 | Phase | Deliverable |
 |---|---|
-| 1 | Indicator suite: RSI, MACD, S/R, volume trend, CHOCH in `@herobids/market-data` |
-| 2 | Scan engine: multi-candidate scoring module in `@herobids/strategy` |
-| 3 | Agent runtime: technical phase in agent actor (discovery → score → decide) |
-| 4 | Execution extraction: reusable executor from `TradingActor` |
-| 5 | LLM enrichment: indicator results injected into AI agent context |
-| 6 | Self-config: AI agent can add/modify its own `technical` section |
+| 1 | Indicator suite: RSI, MACD, S/R, volume trend, CHOCH in `@herobids/market-data` | DONE |
+| 2 | Scan engine: multi-candidate scoring module in `@herobids/strategy` | DONE |
+| 3 | Agent runtime: technical phase in agent actor (discovery → score → decide) | DONE |
+| 4 | Execution extraction: reusable executor from `TradingActor` | DONE |
+| 5 | LLM enrichment: indicator results injected into AI agent context | DONE |
+| 6 | Self-config: AI agent can add/modify its own `technical` section | DONE |

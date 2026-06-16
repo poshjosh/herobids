@@ -15,6 +15,7 @@ import type {
   AgentMarketWakePayload,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
+import type { TechnicalScanState } from '../runtime-composition.js';
 import crypto from 'node:crypto';
 import pino from 'pino';
 
@@ -79,6 +80,10 @@ export class InstanceEventPublisher {
 
   async emitAgentMarketWake(agentId: string, payload: AgentMarketWakePayload): Promise<void> {
     await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE, payload);
+  }
+
+  async emitTechnicalScanCompleted(agentId: string, payload: TechnicalScanState): Promise<void> {
+    await this.publish(agentId, 'agent.technical.scan_completed', payload as unknown as Record<string, unknown>);
   }
 
   /**

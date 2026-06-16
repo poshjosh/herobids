@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@herobids/domain": "workspace:*",
-    "@herobids/llm": "workspace:*"
+    "@herobids/llm": "workspace:*",
+    "@herobids/market-data": "workspace:*"
   }
 }

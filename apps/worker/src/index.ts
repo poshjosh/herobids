@@ -557,6 +557,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
             agentState.deregisterOnCrash(agentId, sessionId, actor!);
             await sessionManager.handleRuntimeFailure(sessionId, agentId, agent?.userId, err);
           },
+          onTechnicalScanComplete: (scanAgentId, scan) => {
+            eventPublisher.emitTechnicalScanCompleted(scanAgentId, scan).catch((err: unknown) => {
+              logger.warn({ err, agentId: scanAgentId }, 'Failed to emit technical scan completed');
+            });
+          },
         });
 
         await actor.start();
@@ -652,7 +657,26 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
-const agentBroker = new AgentMessageBroker(redisClient, agentRepo, agentDecisionHandler, sessionManager, eventPublisher, workerTelegram, botRepo, botStartCallback, botLimitCheckCallback, botStopCallback, botRestartCallback, workerEmail);
+const agentBroker = new AgentMessageBroker(
+  redisClient,
+  agentRepo,
+  agentDecisionHandler,
+  sessionManager,
+  eventPublisher,
+  workerTelegram,
+  botRepo,
+  botStartCallback,
+  botLimitCheckCallback,
+  botStopCallback,
+  botRestartCallback,
+  workerEmail,
+  (agentId, config) => {
+    const actor = actorRegistry.get(agentId);
+    if (actor instanceof AgentTradingActor && actor.isRunning) {
+      actor.applyPendingConfigUpdate(config as Parameters<typeof actor.applyPendingConfigUpdate>[0]);
+    }
+  },
+);
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
 const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);

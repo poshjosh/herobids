@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
-import type { AgentRiskOverrides } from '@herobids/domain';
+import type { AgentRiskOverrides, UnifiedAgentConfig } from '@herobids/domain';
 import { users } from './users.js';
 
 /**
@@ -50,6 +50,8 @@ export const agents = pgTable('agents', {
   capital: numeric('capital', { precision: 20, scale: 8 }),
   /** Agent runtime risk overrides — only fields the agent has actively adjusted (separate from creator config). */
   riskOverrides: jsonb('risk_overrides').$type<AgentRiskOverrides | null>(),
+  /** Unified agent config — technical + intelligence + execution + risk overrides set by the agent at runtime. */
+  unifiedConfig: jsonb('unified_config').$type<UnifiedAgentConfig | null>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

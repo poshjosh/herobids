@@ -185,6 +185,8 @@ export const AgentRiskDefaultsSchema = z.object({
   dailyMaxLossPct: z.number().min(0).max(100).default(20),
   stopLossCooldownMs: z.number().min(0).default(300_000),
   maxOrderNotionalMultiplier: z.number().min(0).default(1),
+  /** Minimum paper/shadow LLM ticks before agent may promote itself to live mode. */
+  minPaperCyclesBeforeLive: z.number().int().min(0).default(10),
 }).default({});
 
 export const StreamConfigSchema = z.object({
@@ -1033,3 +1035,121 @@ export type RiskConfig = z.infer<typeof RiskConfigSchema>;
 export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
 export type MomentumParams = z.infer<typeof MomentumParamsSchema>;
 export type LlmParams = z.infer<typeof LlmParamsSchema>;
+
+// --- Agent Technical Config (automation-agents Phase 3) ---
+
+/**
+ * Regime filter params (mirrors RegimeParams from @herobids/market-data).
+ * Defined here so domain has no dependency on market-data.
+ */
+export const RegimeParamsSchema = z.object({
+  benchmarkSymbol: z.string().optional(),
+  emaFast: z.number().int().positive().optional(),
+  emaSlow: z.number().int().positive().optional(),
+  emaTrend: z.number().int().positive().optional(),
+  adxMin: z.number().min(0).optional(),
+  emaAlignment: z.enum(['bullish', 'bearish', 'any']).optional(),
+  marketStructure: z.enum(['higherHighs', 'lowerHighs', 'any']).optional(),
+  priceAboveVwap: z.boolean().optional(),
+  disableWhenChoppy: z.boolean().optional(),
+});
+
+export const IndicatorConfigSchema = z.object({
+  rsi: z.object({
+    enabled: z.boolean().default(true),
+    period: z.number().int().min(2).default(14),
+    healthyMin: z.number().default(40),
+    healthyMax: z.number().default(70),
+    overbought: z.number().default(80),
+    weakBelow: z.number().default(30),
+  }).default({}),
+  macd: z.object({
+    enabled: z.boolean().default(true),
+    fast: z.number().int().default(12),
+    slow: z.number().int().default(26),
+    signal: z.number().int().default(9),
+  }).default({}),
+  volume: z.object({
+    enabled: z.boolean().default(true),
+    strongRatio: z.number().default(1.5),
+    weakRatio: z.number().default(0.5),
+    recentBars: z.number().int().default(4),
+    avgBars: z.number().int().default(20),
+  }).default({}),
+  choch: z.object({
+    enabled: z.boolean().default(false),
+    swingLookback: z.number().int().default(5),
+    minSwingPct: z.number().default(0.01),
+    minSwings: z.number().int().default(4),
+    confirmBars: z.number().int().default(2),
+    rejectOnBearish: z.boolean().default(false),
+  }).default({}),
+  supportResistance: z.object({
+    enabled: z.boolean().default(false),
+    lookback: z.number().int().default(50),
+    breakoutThreshold: z.number().default(0.005),
+  }).default({}),
+  confidence: z.object({
+    rsiWeight: z.number().default(0.15),
+    macdCrossoverWeight: z.number().default(0.20),
+    macdIncreasingWeight: z.number().default(0.10),
+    volumeWeight: z.number().default(0.15),
+    breakoutWeight: z.number().default(0.15),
+    chochBullishWeight: z.number().default(0.15),
+    chochBearishPenalty: z.number().default(0.10),
+    priceActionWeight: z.number().default(0.10),
+    minConfidence: z.number().default(0.45),
+    minReasons: z.number().int().default(2),
+  }).default({}),
+});
+
+export const TechnicalConfigSchema = z.object({
+  filters: z.object({
+    venue: z.string(),
+    venueType: z.enum(['orderbook', 'swap']),
+    minVolume24hUsd: z.number().min(0).optional(),
+    minLiquidityUsd: z.number().min(0).optional(),
+    networks: z.array(z.string()).optional(),
+    symbols: z.array(z.string()).optional(),
+    excludeSymbols: z.array(z.string()).optional(),
+  }),
+  regime: RegimeParamsSchema.optional(),
+  indicators: IndicatorConfigSchema.default({}),
+  candles: z.object({
+    interval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+    limit: z.number().int().min(20).max(500).default(100),
+  }).default({}),
+  signalBias: z.enum(['trend-following', 'mean-reverting']).default('trend-following'),
+  scanIntervalMs: z.number().int().min(10_000).default(60_000),
+  scanBatchSize: z.number().int().min(1).max(50).default(5),
+});
+
+export const UnifiedAgentConfigSchema = z.object({
+  technical: TechnicalConfigSchema.optional(),
+  // Phase 5 placeholder — full IntelligenceConfigSchema defined in Phase 5
+  intelligence: z.record(z.unknown()).optional(),
+  execution: z.object({
+    mode: z.enum(['paper', 'shadow', 'live']).optional(),
+    positionSizeMode: z.enum(['fixed', 'percent_equity']).optional(),
+    fixedPositionSize: z.string().optional(),
+  }).optional(),
+  risk: z.object({
+    maxPositions: z.number().int().min(1).optional(),
+    maxPositionSizePct: z.number().min(0).max(100).optional(),
+    dailyMaxLossPct: z.number().min(0).max(100).optional(),
+    stopLossPct: z.number().min(0).optional(),
+    takeProfitPct: z.number().min(0).optional(),
+  }).optional(),
+}).superRefine((data, ctx) => {
+  if (!data.technical && !data.intelligence) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'At least one of "technical" or "intelligence" must be configured',
+    });
+  }
+});
+
+export type RegimeParams = z.infer<typeof RegimeParamsSchema>;
+export type IndicatorConfig = z.infer<typeof IndicatorConfigSchema>;
+export type TechnicalConfig = z.infer<typeof TechnicalConfigSchema>;
+export type UnifiedAgentConfig = z.infer<typeof UnifiedAgentConfigSchema>;

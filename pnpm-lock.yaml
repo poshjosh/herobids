@@ -274,6 +274,9 @@ importers:
       '@herobids/llm':
         specifier: workspace:*
         version: link:../llm
+      '@herobids/market-data':
+        specifier: workspace:*
+        version: link:../market-data
     devDependencies:
       '@types/node':
         specifier: ^25.9.1

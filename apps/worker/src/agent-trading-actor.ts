@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId } from '@herobids/domain';
+import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId, TechnicalConfig, RiskConfig } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
@@ -7,6 +7,11 @@ import type { VenueAdapterFactory } from './venue-adapter-factory.js';
 import { assertLiveReadiness } from './live-gate.js';
 import type { StreamConfig } from './trading-actor.js';
 import type { SwapConfirmationPoller } from '@herobids/venues';
+import type { PriceCandle, RegimeParams } from '@herobids/market-data';
+import { evaluateRegime } from '@herobids/market-data';
+import { runTechnicalPhase } from './technical-phase.js';
+import type { DiscoveredInstrument, FilterConfig } from './technical-phase.js';
+import type { TechnicalScanState } from './runtime-composition.js';
 import {
   PaperExecutor,
   ShadowExecutor,
@@ -32,6 +37,7 @@ import {
   computeSlippageBps,
   computeLiveTimeoutActions,
   evaluateOrderbookRecovery,
+  executeDecision,
 } from '@herobids/engine';
 import type {
   Executor,
@@ -51,6 +57,7 @@ import type {
   DecisionIntakeDeps,
   DecisionContext,
   LiveTimeoutPolicy,
+  InstrumentExecutorDeps,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -122,6 +129,16 @@ export interface AgentTradingActorDeps {
   liveOrderTimeoutPolicy?: LiveTimeoutPolicy & { checkIntervalMs?: number };
   /** Venue-specific swap confirmation poller for authoritative on-chain tx status checks */
   swapConfirmationPoller?: SwapConfirmationPoller;
+  /** Technical phase config — when present, a scan loop runs on `config.scanIntervalMs` */
+  technicalConfig?: TechnicalConfig;
+  /** Per-instance risk config used by the technical phase (maxOpenPositions, maxPositionSize) */
+  technicalRiskConfig?: RiskConfig;
+  /** Discover candidate instruments for the technical scan (injected for testability) */
+  discoverCandidates?: (filters: FilterConfig) => Promise<DiscoveredInstrument[]>;
+  /** Fetch OHLCV candles for the technical scan (injected for testability) */
+  fetchCandles?: (symbol: string, interval: string, limit: number) => Promise<PriceCandle[]>;
+  /** Callback invoked after each technical scan completes — used to forward results to the agent container */
+  onTechnicalScanComplete?: (agentId: string, scan: TechnicalScanState) => void | Promise<void>;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -200,6 +217,10 @@ export class AgentTradingActor implements ExecutionActor {
   /** True when swap live recovery enters an ambiguous state and intake must halt */
   private swapRecoveryHalted = false;
   private readonly swapRecoveryAlertedPlanIds = new Set<string>();
+  /** Scan timer for the technical phase (runs when config.technicalConfig is present) */
+  private technicalScanTimer?: ReturnType<typeof setInterval>;
+  /** Latest technical scan results — forwarded to agent container for LLM context enrichment */
+  private lastTechnicalScan?: TechnicalScanState;
 
   constructor(private readonly deps: AgentTradingActorDeps) {
     this.agentId = deps.agentId;
@@ -226,6 +247,7 @@ export class AgentTradingActor implements ExecutionActor {
         await this.rehydratePositions();
         await this.initializeRiskTrackers();
         this.logger.info({ mode: 'paper', venue: deps.venue, venueType: deps.venueType }, 'Agent trading actor started');
+        this.startTechnicalScanLoop();
         return;
       }
 
@@ -396,6 +418,7 @@ export class AgentTradingActor implements ExecutionActor {
       }
 
       this.logger.info({ mode: deps.executionMode, venue: deps.venue, venueType: deps.venueType }, 'Agent trading actor started');
+      this.startTechnicalScanLoop();
     } catch (err) {
       await this.stop();
       throw err;
@@ -462,6 +485,11 @@ export class AgentTradingActor implements ExecutionActor {
     if (this.liveOrderTimeoutTimer) {
       clearInterval(this.liveOrderTimeoutTimer);
       this.liveOrderTimeoutTimer = undefined;
+    }
+
+    if (this.technicalScanTimer) {
+      clearInterval(this.technicalScanTimer);
+      this.technicalScanTimer = undefined;
     }
 
     for (const feed of this.instrumentFeeds.values()) {
@@ -787,6 +815,8 @@ export class AgentTradingActor implements ExecutionActor {
     };
   }
 
+  getPosition(instrumentId: string): PositionState;
+  getPosition(instrumentId?: string): PositionState | undefined;
   getPosition(instrumentId?: string): PositionState | undefined {
     if (!instrumentId) return undefined;
     return this.positions.get(instrumentId) ?? flatPosition(this.deps.venue, instrumentId);
@@ -893,7 +923,7 @@ export class AgentTradingActor implements ExecutionActor {
   }
 
   /** Build intake deps specifically for stop-loss execution (bypasses stop-loss check) */
-  private buildIntakeDepsForStopLoss(instrumentId: string): DecisionIntakeDeps | undefined {
+  private buildIntakeDeps(instrumentId: string): DecisionIntakeDeps | undefined {
     if (!this.executor) return undefined;
     const swapDecisionMetadata = this.buildSwapDecisionMetadata(instrumentId);
     const precomputedPnl = this.computeUnrealizedPnl();
@@ -929,6 +959,33 @@ export class AgentTradingActor implements ExecutionActor {
     };
   }
 
+  private buildIntakeDepsForStopLoss(instrumentId: string): DecisionIntakeDeps | undefined {
+    return this.buildIntakeDeps(instrumentId);
+  }
+
+  private buildInstrumentExecutorDeps(instrumentId: string, snapshotPrice: string): InstrumentExecutorDeps | undefined {
+    if (!this.executor) return undefined;
+    return {
+      venue: this.deps.venue,
+      symbol: instrumentId,
+      venueAccountId: this.deps.venueAccountId,
+      executionMode: this.deps.executionMode,
+      venueType: this.deps.venueType,
+      venuePort: this.venuePort,
+      swapVenue: this.swapVenue,
+      riskLimits: this.deps.riskLimits,
+      idGen: this.deps.idGen,
+      fillRepo: this.deps.fillRepo,
+      orderRepo: this.deps.orderRepo,
+      positionRepo: this.deps.positionRepo,
+      journal: this.deps.journal,
+      snapshotPrice,
+      equityTracker: this.equityTracker,
+      dailyLossTracker: this.dailyLossTracker,
+      openPositionCount: this.getOpenPositionCount(),
+    };
+  }
+
   /** Count of non-flat positions across all instruments */
   private getOpenPositionCount(): number {
     let count = 0;
@@ -954,6 +1011,40 @@ export class AgentTradingActor implements ExecutionActor {
 
   get executionMode(): 'paper' | 'shadow' | 'live' {
     return this.deps.executionMode;
+  }
+
+  getLastTechnicalScan(): TechnicalScanState | undefined {
+    return this.lastTechnicalScan;
+  }
+
+  /**
+   * Apply a pending config update (called by the worker after agent.config.update message).
+   * - Updates technical scan loop if technical config changed.
+   * - Execution mode changes are noted but require a restart to take full effect.
+   */
+  applyPendingConfigUpdate(newConfig: { technical?: TechnicalConfig | null; execution?: { mode?: string } } | null): void {
+    if (!this.running) return;
+
+    const newTechnical = newConfig?.technical ?? undefined;
+    const currentTechnical = this.deps.technicalConfig;
+
+    const technicalChanged = JSON.stringify(newTechnical) !== JSON.stringify(currentTechnical);
+    if (technicalChanged) {
+      // Clear existing scan loop
+      if (this.technicalScanTimer) {
+        clearInterval(this.technicalScanTimer);
+        this.technicalScanTimer = undefined;
+      }
+      this.lastTechnicalScan = undefined;
+
+      // Update deps and restart loop if new technical config is present
+      this.deps.technicalConfig = newTechnical;
+      if (this.deps.technicalConfig) {
+        this.startTechnicalScanLoop();
+      } else {
+        this.logger.info('Technical scan loop stopped (technical config removed)');
+      }
+    }
   }
 
   async buildReconnectSnapshot(): Promise<ContextSnapshotPayload | undefined> {
@@ -1115,6 +1206,95 @@ export class AgentTradingActor implements ExecutionActor {
           await this.crash(crashReason);
         }
       });
+  }
+
+  private startTechnicalScanLoop(): void {
+    const { technicalConfig, discoverCandidates, fetchCandles } = this.deps;
+    if (!technicalConfig || !discoverCandidates || !fetchCandles) {
+      if (technicalConfig) {
+        this.logger.warn(
+          'Technical scan loop not started: discoverCandidates or fetchCandles not provided despite technical config being set',
+        );
+      }
+      return;
+    }
+
+    const intervalMs = technicalConfig.scanIntervalMs;
+    this.technicalScanTimer = setInterval(() => {
+      void this.runTechnicalScan();
+    }, intervalMs);
+    this.technicalScanTimer.unref?.();
+    this.logger.info({ intervalMs }, 'Technical scan loop started');
+  }
+
+  private async runTechnicalScan(): Promise<void> {
+    const { technicalConfig, discoverCandidates, fetchCandles, agentId, venueAccountId } = this.deps;
+    if (!technicalConfig || !discoverCandidates || !fetchCandles) return;
+    if (!this.running) return;
+
+    try {
+      const phaseResult = await runTechnicalPhase({
+        config: technicalConfig,
+        riskConfig: { ...(this.deps.technicalRiskConfig ?? {}), maxOpenPositions: this.deps.riskLimits.maxOpenPositions },
+        agentId,
+        venueAccountId,
+        discoverCandidates,
+        fetchCandles,
+        evaluateRegime: (params) => {
+          const candleFetcher = (symbol: string) =>
+            fetchCandles(symbol, technicalConfig.candles.interval, Math.max(200, technicalConfig.candles.limit));
+          return evaluateRegime(params as RegimeParams, candleFetcher);
+        },
+        submitDecision: (decision) => this.executeTechnicalDecision(decision),
+        getOpenPositions: () => [...this.positions.values()],
+        generateDecisionId: () => this.deps.idGen.decisionId(),
+        logger: this.logger,
+      });
+
+      const scan: TechnicalScanState = {
+        timestamp: new Date().toISOString(),
+        scanIntervalMs: technicalConfig.scanIntervalMs,
+        regimeResult: phaseResult.regimeResult,
+        signals: phaseResult.signals,
+        positionIndicators: phaseResult.positionIndicators,
+        summary: phaseResult.summary,
+      };
+      this.lastTechnicalScan = scan;
+
+      if (this.deps.onTechnicalScanComplete) {
+        await this.deps.onTechnicalScanComplete(agentId, scan);
+      }
+    } catch (err) {
+      this.logger.error({ err }, 'Technical scan loop error — will retry on next tick');
+    }
+  }
+
+  private async executeTechnicalDecision(decision: Decision): Promise<void> {
+    if (!this.executor || !this.running) return;
+
+    const instrumentId = decision.instrumentId as unknown as string;
+    const context = await this.getDecisionContext(instrumentId);
+    if (!context) {
+      this.logger.warn({ instrumentId }, 'Technical phase: could not build decision context — skipping');
+      return;
+    }
+
+    const currentPosition = this.getPosition(instrumentId) ?? flatPosition(this.deps.venue, instrumentId);
+    const executorDeps = this.buildInstrumentExecutorDeps(instrumentId, context.snapshot.price);
+    if (!executorDeps) return;
+
+    const result = await executeDecision(decision, currentPosition, {
+      ...executorDeps,
+      persistence: this.buildPersistence(instrumentId),
+    });
+
+    if (!result.error) {
+      if (result.newPosition.side === 'flat') {
+        this.positions.delete(instrumentId);
+      } else {
+        this.positions.set(instrumentId, result.newPosition);
+      }
+    }
   }
 
   private startLiveOrderTimeoutLoop(): void {

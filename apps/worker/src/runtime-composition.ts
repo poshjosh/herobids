@@ -1,8 +1,10 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext } from '@herobids/domain';
 import { formatAgentGoalLiteralBlock, AgentMarketWakePayloadSchema } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
+import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
+import type { PositionIndicatorUpdate } from './technical-phase.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
 
@@ -89,6 +91,15 @@ export interface RuntimeMarketSnapshot {
   freshness: RuntimeFreshness;
 }
 
+export interface TechnicalScanState {
+  timestamp: string;
+  scanIntervalMs: number;
+  regimeResult: RegimeResult | null;
+  signals: ScoredSignal[];
+  positionIndicators: PositionIndicatorUpdate[];
+  summary: { scanned: number; rejected: number; passed: number };
+}
+
 export interface RuntimeSessionCosts {
   llmTokensUsed: number;
   hiddenReasoningTokensUsed: number;
@@ -128,6 +139,7 @@ export interface RuntimeSessionMetrics {
   };
   sessionCosts: RuntimeSessionCosts;
   performance: RuntimePerformanceInputs;
+  lastTechnicalScan?: TechnicalScanState;
 }
 
 export interface RuntimeCompositionState {
@@ -163,6 +175,77 @@ const DEFAULT_SERVER_COST_PER_HOUR_USD = 0.02;
 const MAX_RECENT_EVENTS = 6;
 const MAX_ACTIVE_WATCHES_IN_CONTEXT = 10;
 const MAX_ACTIVE_WATCH_NOTE_CHARS = 40;
+const DEFAULT_MAX_SIGNALS_IN_CONTEXT = 10;
+
+export function buildTechnicalContextBlock(
+  scan: TechnicalScanState,
+  config?: { maxSignalsInContext?: number },
+): string | null {
+  const ageMs = Date.now() - Date.parse(scan.timestamp);
+  if (ageMs > 2 * scan.scanIntervalMs) {
+    return null;
+  }
+
+  const maxSignals = config?.maxSignalsInContext ?? DEFAULT_MAX_SIGNALS_IN_CONTEXT;
+  const topSignals = scan.signals.slice(0, maxSignals);
+
+  if (topSignals.length === 0 && scan.regimeResult === null && scan.positionIndicators.length === 0) {
+    return null;
+  }
+
+  const lines: string[] = [];
+  lines.push('## Technical Scan Results');
+
+  const regimePart = scan.regimeResult !== null
+    ? `Regime: ${scan.regimeResult.pass ? 'PASS' : 'BLOCK'} (ADX ${scan.regimeResult.details.adxValue.toFixed(0)}, ${scan.regimeResult.details.emaAlignment} alignment)`
+    : 'Regime: not evaluated';
+  lines.push(`Last scan: ${scan.timestamp} | ${regimePart}`);
+
+  if (topSignals.length > 0) {
+    lines.push('');
+    lines.push('### Top Signals (ranked by confidence)');
+    lines.push('| Symbol | Confidence | RSI | MACD | Volume | CHOCH | Reasons |');
+    lines.push('|--------|-----------|-----|------|--------|-------|---------|');
+    for (const signal of topSignals) {
+      const rsiStr = signal.indicators.rsi !== undefined ? String(signal.indicators.rsi.toFixed(0)) : '—';
+      const macdStr = signal.indicators.macdHistogram === undefined
+        ? '—'
+        : signal.indicators.macdHistogram > 0
+          ? '+bullish crossover'
+          : signal.indicators.macdHistogram < 0
+            ? '—bearish'
+            : '—';
+      const volStr = signal.indicators.volumeRatio !== undefined
+        ? `${signal.indicators.volumeRatio.toFixed(1)}x`
+        : '—';
+      const chochStr = signal.indicators.choch ? signal.indicators.choch : '—';
+      const reasons = signal.reasons.join(', ');
+      lines.push(`| ${signal.symbol} | ${signal.confidence.toFixed(2)} | ${rsiStr} | ${macdStr} | ${volStr} | ${chochStr} | ${reasons} |`);
+    }
+  }
+
+  const { scanned, rejected, passed } = scan.summary;
+  lines.push('');
+  lines.push(`### Rejected\n${scanned} instruments scanned, ${rejected} rejected (${passed} passed filters)`);
+
+  if (scan.positionIndicators.length > 0) {
+    const openIndicators = scan.positionIndicators.filter((p) => p.side === 'long');
+    if (openIndicators.length > 0) {
+      lines.push('');
+      lines.push('### Open Positions (indicator update)');
+      lines.push('| Symbol | Side | Entry | RSI | Signal |');
+      lines.push('|--------|------|-------|-----|--------|');
+      for (const ind of openIndicators) {
+        const entryStr = ind.entryPrice !== undefined ? `$${ind.entryPrice.toFixed(4)}` : '—';
+        const rsiStr = ind.rsi !== undefined ? String(ind.rsi.toFixed(0)) : '—';
+        const noteStr = ind.signalNote ?? '—';
+        lines.push(`| ${ind.symbol} | ${ind.side} | ${entryStr} | ${rsiStr} | ${noteStr} |`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
 
 function unavailableFreshness(note: string): RuntimeFreshness {
   return { state: 'unavailable', note };
@@ -832,11 +915,31 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     },
   },
   {
-    id: 'venue-intelligence',
+    id: 'technical-scan',
     costTier: 'cheap',
     section: 'dynamic',
     requiredFamilies: ['trading'],
     trimOrder: 4,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const scan = state.metrics.lastTechnicalScan;
+      if (!scan) return null;
+      const content = buildTechnicalContextBlock(scan);
+      if (!content) return null;
+      return {
+        id: 'technicalScan',
+        title: 'Technical Scan Results',
+        provider: 'technical-scan',
+        content,
+      };
+    },
+  },
+  {
+    id: 'venue-intelligence',
+    costTier: 'cheap',
+    section: 'dynamic',
+    requiredFamilies: ['trading'],
+    trimOrder: 5,
     build: (state) => {
       if (state.metrics.venueSignals.length === 0) {
         return null;
@@ -1162,6 +1265,13 @@ export function recordRegimeEvaluation(
   state.metrics.regime = { result, freshness };
 }
 
+export function recordTechnicalScan(
+  state: RuntimeCompositionState,
+  scan: TechnicalScanState,
+): void {
+  state.metrics.lastTechnicalScan = scan;
+}
+
 export function recordSessionCost(
   state: RuntimeCompositionState,
   usage: { tokensUsed?: number | null; thinkingTokens?: number | null; costUsd?: number | null },
@@ -1398,18 +1508,28 @@ export function applyRuntimeMessage(
     return summary;
   }
 
+  if (type === 'agent.technical.scan_completed') {
+    const scan = payload as unknown as TechnicalScanState;
+    if (
+      scan &&
+      typeof scan.timestamp === 'string' &&
+      Array.isArray(scan.signals) &&
+      typeof scan.summary === 'object' &&
+      scan.summary !== null
+    ) {
+      recordTechnicalScan(state, scan);
+      const summary = `Technical scan: ${scan.summary.passed}/${scan.summary.scanned} passed, regime=${scan.regimeResult?.pass ? 'pass' : scan.regimeResult ? 'blocked' : 'n/a'}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+    const summary = 'Technical scan completed';
+    pushRecentEvent(state, type, summary);
+    return summary;
+  }
+
   const summary = `Platform message: ${type}`;
   pushRecentEvent(state, type, summary);
   return summary;
-}
-
-export function buildContextBlocks(state: RuntimeCompositionState): RuntimeContextBlock[] {
-  const staticBlocks = buildBlockList(state, 'static').map(({ block }) => ({
-    ...block,
-    content: trimText(block.content, state.runtimeDescriptor.budgets.maxContextBlockChars),
-  }));
-  const dynamicBlocks = trimDynamicBlocks(state, buildBlockList(state, 'dynamic'));
-  return [...staticBlocks, ...dynamicBlocks];
 }
 
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, toolGuidanceByName?: Record<string, string>): string {

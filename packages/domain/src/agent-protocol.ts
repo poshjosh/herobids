@@ -397,6 +397,7 @@ export const AGENT_MESSAGE_TYPES = {
   SEND_MESSAGE: 'agent.message.send',
   MANAGE_BOT: 'agent.manage_bot',
   BOT_QUERY: 'agent.bot.query',
+  CONFIG_UPDATE: 'agent.config.update',
 } as const;
 
 export const INSTANCE_MESSAGE_TYPES = {
@@ -504,6 +505,12 @@ export const RuntimeToolResultPayloadSchema = z.object({
 });
 export type RuntimeToolResultPayload = z.infer<typeof RuntimeToolResultPayloadSchema>;
 
+export const ConfigUpdatePayloadSchema = z.object({
+  /** The new unified agent config, or null to clear. */
+  config: z.record(z.unknown()).nullable(),
+});
+export type ConfigUpdatePayload = z.infer<typeof ConfigUpdatePayloadSchema>;
+
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: DecisionSubmitPayloadSchema,
@@ -515,6 +522,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.SEND_MESSAGE]: SendMessagePayloadSchema,
   [AGENT_MESSAGE_TYPES.MANAGE_BOT]: ManageBotPayloadSchema,
   [AGENT_MESSAGE_TYPES.BOT_QUERY]: BotQueryPayloadSchema,
+  [AGENT_MESSAGE_TYPES.CONFIG_UPDATE]: ConfigUpdatePayloadSchema,
   [INSTANCE_MESSAGE_TYPES.CONTEXT_SNAPSHOT]: ContextSnapshotPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_ACCEPTED]: DecisionAcceptedPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.DECISION_REJECTED]: DecisionRejectedPayloadSchema,

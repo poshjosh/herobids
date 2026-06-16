@@ -32,7 +32,26 @@ export {
 	type SharedRateBudgetCoordinator,
 } from './rate-limiter.js';
 export { InMemoryProviderResponseCache, loadWithCache, type CachePolicy, type ProviderResponseCache } from './cache.js';
-export { ema, adx, vwap, detectMarketStructure } from './indicators.js';
+export {
+  ema,
+  adx,
+  vwap,
+  detectMarketStructure,
+  rsi,
+  macd,
+  type MacdResult,
+  findSupportResistance,
+  isBreakingResistance,
+  isBouncingSupport,
+  type SupportResistanceLevels,
+  volumeTrend,
+  detectSwingPoints,
+  classifyStructure,
+  detectCHOCH,
+  type SwingPoint,
+  type MarketStructureFromSwings,
+  type ChochSignal,
+} from './indicators.js';
 export {
 	convertDexScreenerSearchToDiscovery,
 	fetchDexScreenerBoostsLatest,

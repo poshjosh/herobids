@@ -79,6 +79,9 @@ export { computeDecisionContextHash, DecisionContextHashMismatchError, DECISION_
 export { submitDecisionForExecution } from './decision-intake.js';
 export type { DecisionIntakeDeps, DecisionIntakeResult, DecisionContext, PreExecutionRejection } from './decision-intake.js';
 
+export { executeDecision } from './instrument-executor.js';
+export type { InstrumentExecutorDeps, InstrumentExecutionResult } from './instrument-executor.js';
+
 export { reconcile, reconcileWithThresholds, Reconciler, createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './reconciliation/index.js';
 export type {
   LocalState,

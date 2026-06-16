@@ -18,18 +18,17 @@ import {
   Reconciler,
   createOrderbookVenueStateLoader,
   createSwapVenueStateLoader,
-  runTradingCycle,
   realClock,
   credentialUsedEvent,
   EquityTracker,
   DailyLossTracker,
   VenueCircuitBreaker,
   checkStopLoss,
-  submitDecisionForExecution,
   rehydrateDailyLoss,
   computeSlippageBps,
   computeLiveTimeoutActions,
   evaluateOrderbookRecovery,
+  executeDecision,
 } from '@herobids/engine';
 import type {
   Executor,
@@ -45,9 +44,9 @@ import type {
   StreamPoolHandle,
   Diff,
   TradingCyclePersistence,
-  DecisionIntakeDeps,
   DecisionContext,
   LiveTimeoutPolicy,
+  InstrumentExecutorDeps,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -636,9 +635,21 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     };
 
     try {
-      const result = await submitDecisionForExecution(decision, context, this.position, this.buildIntakeDepsForEmergency());
-      this.position = result.position;
-      return !result.executionFailed && result.position.side === 'flat';
+      const execResult = await executeDecision(decision, this.position, {
+        ...this.buildInstrumentExecutorDeps(context.snapshot.price),
+        executor: this.executor,
+        persistence: this.buildCyclePersistence(),
+        markSource: this.deps.markSource,
+        swapAssets: this.deps.swapAssets,
+        swapNetwork: this.deps.swapNetwork,
+        swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
+        swapTokenSafety: this.deps.swapTokenSafety,
+        swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
+        swapPositionTracker: this.swapPositionTracker,
+        lastStopLossExitMs: this.lastStopLossExitMs,
+      });
+      this.position = execResult.newPosition;
+      return !execResult.error && execResult.newPosition.side === 'flat';
     } catch (err) {
       this.logger.error({ err }, 'Crash policy auto_go_flat failed');
       return false;
@@ -809,10 +820,22 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     if (!context) return;
 
     try {
-      const result = await submitDecisionForExecution(decision, context, this.position, this.buildIntakeDepsForEmergency());
-      this.position = result.position;
+      const execResult = await executeDecision(decision, this.position, {
+        ...this.buildInstrumentExecutorDeps(context.snapshot.price),
+        executor: this.executor,
+        persistence: this.buildCyclePersistence(),
+        markSource: this.deps.markSource,
+        swapAssets: this.deps.swapAssets,
+        swapNetwork: this.deps.swapNetwork,
+        swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
+        swapTokenSafety: this.deps.swapTokenSafety,
+        swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
+        swapPositionTracker: this.swapPositionTracker,
+        lastStopLossExitMs: this.lastStopLossExitMs,
+      });
+      this.position = execResult.newPosition;
 
-      if (!result.executionFailed && result.position.side === 'flat') {
+      if (!execResult.error && execResult.newPosition.side === 'flat') {
         this.lastStopLossExitMs = Date.now();
         void this.deps.journal.append({
           actorType: 'bot',
@@ -1636,38 +1659,52 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         }
       }
 
-      const cycleResult = await runTradingCycle(snapshot, this.position, {
-        actorType: 'bot',
-        actorId: this.botId,
-        botId: this.botId,
-        venue: this.deps.venue,
-        symbol: this.deps.symbol,
-        venueAccountId: this.deps.venueAccountId,
-        venueType: this.deps.venueType,
+      // Evaluate strategy to produce a decision
+      const evalResult = await this.deps.strategy.evaluate(snapshot, this.strategyConfig);
+      if (!evalResult.ok) {
+        void this.deps.journal.append({
+          actorType: 'bot',
+          actorId: this.botId,
+          type: 'strategy.error' as JournalEventType,
+          payload: { code: evalResult.error.code, message: evalResult.error.message },
+        }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append strategy.error journal event'));
+        return;
+      }
+      const strategyDecision = evalResult.data;
+      if (!strategyDecision) return; // hold — strategy chose not to act
+
+      // Stamp actor context on the decision — preserve strategy's actorType/actorId when set
+      const tickDecision = {
+        ...strategyDecision,
+        venueAccountId: this.deps.venueAccountId as unknown as typeof strategyDecision.venueAccountId,
+        actorType: (strategyDecision.actorType ?? 'bot') as typeof strategyDecision.actorType,
+        actorId: strategyDecision.actorId || this.botId,
+        botId: (this.botId as BotId) ?? strategyDecision.botId,
+      };
+
+      // Delegate execution to executeDecision with full tick deps (pre-built executor +
+      // full persistence + oracle mark + swap safety + cooldown enforcement)
+      const execResult = await executeDecision(tickDecision, this.position, {
+        ...this.buildInstrumentExecutorDeps(snapshot.price.toString()),
+        executor: this.executor,
+        persistence: this.buildCyclePersistence(),
+        markSource: this.deps.markSource,
         swapAssets: this.deps.swapAssets,
         swapNetwork: this.deps.swapNetwork,
         swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
-        strategy: this.deps.strategy,
-        strategyConfig: this.strategyConfig,
-        executor: this.executor,
-        journal: this.deps.journal,
-        riskLimits: this.deps.riskLimits,
-        markSource: this.deps.markSource,
-        persistence: this.buildCyclePersistence(),
-        idGen: this.deps.idGen,
-        clock: realClock,
         swapTokenSafety: this.deps.swapTokenSafety,
         swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
-        equityTracker: this.equityTracker,
-        dailyLossTracker: this.dailyLossTracker,
+        swapPositionTracker: this.swapPositionTracker,
         lastStopLossExitMs: this.lastStopLossExitMs,
+        strategyParams: this.strategyConfig,
+        snapshotTimestamp: snapshot.timestamp,
       });
 
-      this.position = cycleResult.position;
+      this.position = execResult.newPosition;
 
       // Circuit breaker tracking
       if (this.circuitBreaker) {
-        if (cycleResult.executionFailed) {
+        if (execResult.error) {
           const tripped = this.circuitBreaker.recordError();
           if (tripped) {
             this.logger.error({ errorCount: this.circuitBreaker.errorCount }, 'Circuit breaker tripped — halting execution');
@@ -1678,15 +1715,14 @@ export class TradingActor implements InstanceActor, ExecutionActor {
               payload: { consecutiveErrors: this.circuitBreaker.errorCount },
             }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append circuit_breaker.tripped journal event'));
           }
-        } else if (cycleResult.decided && cycleResult.executionResult) {
+        } else if (execResult.executed) {
           this.circuitBreaker.recordSuccess();
         }
       }
 
       // Emit credential.used audit event for live order submissions
-      if (cycleResult.decided && cycleResult.executionResult && this.deps.executionMode === 'live' && this.deps.credentialId) {
-        // Count orders that were actually submitted to the venue and acknowledged.
-        const submittedCount = cycleResult.executionResult.orders.filter(
+      if (execResult.executed && this.deps.executionMode === 'live' && this.deps.credentialId) {
+        const submittedCount = (execResult.orders ?? []).filter(
           (o) => (o.type === 'market' || o.type === 'limit') && o.status !== 'rejected',
         ).length;
         if (submittedCount > 0) {
@@ -1702,14 +1738,14 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         }
       }
 
-      if (cycleResult.decided && cycleResult.executionResult) {
+      if (execResult.executed) {
         this.logger.info(
-          { intent: cycleResult.decision?.intent, fills: cycleResult.executionResult.fills.length, position: this.position.side },
+          { intent: tickDecision.intent, fills: execResult.fills.length, position: this.position.side },
           'Tick completed',
         );
-      } else if (cycleResult.preExecutionRejection) {
+      } else if (execResult.preExecutionRejection) {
         this.logger.warn(
-          { decision: cycleResult.decision?.intent, code: cycleResult.preExecutionRejection.code, scope: cycleResult.preExecutionRejection.scope },
+          { decision: tickDecision.intent, code: execResult.preExecutionRejection.code, scope: execResult.preExecutionRejection.scope },
           'Pre-execution guardrail rejected',
         );
         void this.deps.journal.append({
@@ -1717,23 +1753,23 @@ export class TradingActor implements InstanceActor, ExecutionActor {
           actorId: this.botId,
           type: 'guardrail.rejected',
           payload: {
-            scope: cycleResult.preExecutionRejection.scope,
-            code: cycleResult.preExecutionRejection.code,
-            message: cycleResult.preExecutionRejection.message,
-            retryable: cycleResult.preExecutionRejection.retryable,
-            intent: cycleResult.decision?.intent,
-            planId: cycleResult.plan?.id,
+            planId: execResult.planId,
+            scope: execResult.preExecutionRejection.scope,
+            code: execResult.preExecutionRejection.code,
+            message: execResult.preExecutionRejection.message,
+            retryable: execResult.preExecutionRejection.retryable,
+            intent: tickDecision.intent,
           },
         }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append guardrail.rejected journal event'));
-      } else if (cycleResult.riskRejected) {
-        this.logger.warn({ decision: cycleResult.decision?.intent }, 'Risk gate rejected');
-      } else if (cycleResult.executionFailed) {
-        this.logger.error({ decision: cycleResult.decision?.intent }, 'Execution failed');
+      } else if (execResult.riskRejected) {
+        this.logger.warn({ decision: tickDecision.intent }, 'Risk gate rejected');
+      } else if (execResult.error) {
+        this.logger.error({ decision: tickDecision.intent }, 'Execution failed');
         void this.deps.journal.append({
           actorType: 'bot',
           actorId: this.botId,
           type: 'execution.failure',
-          payload: { intent: cycleResult.decision?.intent, planId: cycleResult.plan?.id },
+          payload: { intent: tickDecision.intent },
         }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append execution.failure journal event'));
       }
     } catch (err) {
@@ -2309,31 +2345,25 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     };
   }
 
-  private buildIntakeDepsForEmergency(): DecisionIntakeDeps {
+  private buildInstrumentExecutorDeps(snapshotPrice: string): InstrumentExecutorDeps {
     return {
-      actorType: 'bot',
-      actorId: this.botId,
       venue: this.deps.venue,
       symbol: this.deps.symbol,
       venueAccountId: this.deps.venueAccountId,
-      venueType: this.deps.venueType,
-      swapAssets: this.deps.swapAssets,
-      swapNetwork: this.deps.swapNetwork,
-      swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
-      executor: this.executor,
-      journal: this.deps.journal,
+      executionMode: this.deps.executionMode,
+      venueType: this.deps.venueType ?? 'orderbook',
+      venuePort: this.deps.venuePort,
+      swapVenue: this.deps.swapVenue,
       riskLimits: this.deps.riskLimits,
-      markSource: this.deps.markSource,
-      persistence: this.buildCyclePersistence(),
       idGen: this.deps.idGen,
-      clock: realClock,
-      swapTokenSafety: this.deps.swapTokenSafety,
-      swapTokenSafetyThresholds: this.deps.swapTokenSafetyThresholds,
+      fillRepo: this.deps.fillRepo,
+      orderRepo: this.deps.orderRepo,
+      positionRepo: this.deps.positionRepo,
+      journal: this.deps.journal,
+      snapshotPrice,
       equityTracker: this.equityTracker,
       dailyLossTracker: this.dailyLossTracker,
-      openPositions: this.position.side !== 'flat' ? [this.position] : [],
-      lastStopLossExitMs: this.lastStopLossExitMs,
-      swapPositionTracker: this.swapPositionTracker,
+      openPositionCount: this.position.side !== 'flat' ? 1 : 0,
     };
   }
 

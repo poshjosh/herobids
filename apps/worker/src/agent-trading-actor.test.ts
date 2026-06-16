@@ -2321,4 +2321,75 @@ describe('AgentTradingActor', () => {
       await actor.stop();
     });
   });
+
+  describe('technical scan enrichment', () => {
+    it('calls onTechnicalScanComplete with scan results after a successful scan', async () => {
+      const onTechnicalScanComplete = vi.fn().mockResolvedValue(undefined);
+
+      const discoverCandidates = vi.fn().mockResolvedValue([
+        { symbol: 'ETH-PERP', instrumentId: 'ETH-PERP', volume24hUsd: 1_000_000 },
+      ]);
+
+      const fetchCandles = vi.fn().mockResolvedValue(
+        Array.from({ length: 50 }, (_, i) => ({
+          time: Date.now() - i * 60_000,
+          open: 1800,
+          high: 1850,
+          low: 1780,
+          close: 1820,
+          volume: 500,
+        })),
+      );
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'paper',
+        technicalConfig: {
+          scanIntervalMs: 60_000,
+          scanBatchSize: 5,
+          filters: {},
+          candles: { interval: '1h', limit: 50 },
+          indicators: {},
+          signalBias: 'trend-following',
+        },
+        discoverCandidates,
+        fetchCandles,
+        onTechnicalScanComplete,
+      }));
+
+      await actor.start();
+
+      // Run the scan directly
+      await (actor as any).runTechnicalScan();
+
+      expect(onTechnicalScanComplete).toHaveBeenCalledOnce();
+      const [calledAgentId, calledScan] = onTechnicalScanComplete.mock.calls[0]!;
+      expect(calledAgentId).toBe('agent-test-1');
+      expect(typeof calledScan.timestamp).toBe('string');
+      expect(calledScan.scanIntervalMs).toBe(60_000);
+      expect(Array.isArray(calledScan.signals)).toBe(true);
+      expect(calledScan.summary).toBeDefined();
+
+      // getLastTechnicalScan reflects the stored result
+      expect(actor.getLastTechnicalScan()).toBeDefined();
+      expect(actor.getLastTechnicalScan()?.summary).toEqual(calledScan.summary);
+
+      await actor.stop();
+    });
+
+    it('does not call onTechnicalScanComplete when technicalConfig is absent', async () => {
+      const onTechnicalScanComplete = vi.fn();
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'paper',
+        onTechnicalScanComplete,
+      }));
+
+      await actor.start();
+
+      expect(onTechnicalScanComplete).not.toHaveBeenCalled();
+      expect(actor.getLastTechnicalScan()).toBeUndefined();
+
+      await actor.stop();
+    });
+  });
 });

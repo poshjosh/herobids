@@ -44,6 +44,10 @@ export {
   TelegramChannelConfigSchema,
   WebAccessToolsConfigSchema,
   AgentRiskDefaultsSchema,
+  RegimeParamsSchema,
+  IndicatorConfigSchema,
+  TechnicalConfigSchema,
+  UnifiedAgentConfigSchema,
 } from './schema.js';
 
 export type {
@@ -77,4 +81,8 @@ export type {
   StripeConfig,
   CreemConfig,
   TelegramChannelConfig,
+  RegimeParams,
+  IndicatorConfig,
+  TechnicalConfig,
+  UnifiedAgentConfig,
 } from './schema.js';

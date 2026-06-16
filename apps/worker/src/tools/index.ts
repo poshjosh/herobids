@@ -13,6 +13,7 @@ import { watchTools } from './watch.js';
 import { webAccessTools } from './web-access.js';
 import { taskTools } from './tasks.js';
 import { riskLimitsTools } from './risk-limits.js';
+import { updateOwnConfigTools } from './update-own-config.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredToolNames = registry.list().map((tool) => tool.name).sort();
@@ -57,6 +58,7 @@ export function createToolRegistry(): ToolRegistry {
     ...webAccessTools,
     ...taskTools,
     ...riskLimitsTools,
+    ...updateOwnConfigTools,
   ];
 
   for (const tool of allTools) {

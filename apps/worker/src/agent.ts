@@ -12,7 +12,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract } from '@herobids/domain';
-import { createDatabase, BotRepository, AgentRepository } from '@herobids/db';
+import { createDatabase, BotRepository, AgentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
@@ -151,6 +151,7 @@ interface AgentConfig {
     maxPositionSize: number;
     maxOrderNotionalMultiplier: number;
     dailyMaxLossPct: number;
+    minPaperCyclesBeforeLive?: number;
   };
 }
 
@@ -1151,6 +1152,46 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Agent Config Operations — provides update_own_config tool access to unified config
+// ---------------------------------------------------------------------------
+
+function buildAgentConfigOps(): ToolContext['agentConfigOps'] {
+  if (!agentRepo || !db) {
+    return undefined;
+  }
+
+  const journal = new PgJournal(db);
+
+  return {
+    async getCurrentConfig() {
+      return agentRepo!.getUnifiedConfig(AGENT_ID!);
+    },
+
+    async persistConfig(newConfig, executionMode) {
+      await agentRepo!.updateUnifiedConfig(AGENT_ID!, newConfig, executionMode);
+    },
+
+    async appendJournal(type, payload) {
+      await journal.append({ actorType: 'agent', actorId: AGENT_ID!, type, payload });
+    },
+
+    async notifyActorConfigUpdate(newConfig) {
+      await publishToInbound(AGENT_MESSAGE_TYPES.CONFIG_UPDATE, { config: newConfig });
+    },
+
+    getLlmTickCount() {
+      // Uses LLM cycle count as a proxy for paper trading experience — this is an approximation.
+      // For precise paper trade counting, a separate paper-trades counter would be needed.
+      return tickCount;
+    },
+
+    getMinPaperCyclesBeforeLive() {
+      return (agentConfig.agentRiskDefaults?.minPaperCyclesBeforeLive as number | undefined) ?? 10;
+    },
+  };
+}
+
 interface ToolCall {
   tool: string;
   args: Record<string, unknown>;
@@ -1259,6 +1300,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     sessionMetrics,
     priceService: priceService ?? undefined,
     riskContractOps: buildRiskContractOps(),
+    agentConfigOps: buildAgentConfigOps(),
   };
 
   try {
