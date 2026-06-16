@@ -17,6 +17,7 @@ export const messages: Record<string, string> = {
   'nav.openNavigation': 'فتح التنقل',
   'nav.closeNavigation': 'إغلاق التنقل',
   'nav.signOut': 'تسجيل الخروج',
+  'nav.createAgent': 'وكيل ذكاء اصطناعي جديد',
 
   // Common
   'common.loading': 'جارٍ التحميل…',
@@ -287,7 +288,7 @@ export const messages: Record<string, string> = {
   'agents.risk.aggressive.description': 'مراكز أكبر وعوائد وخسائر أعلى',
   'agents.create.title': 'إنشاء وكيل ذكاء اصطناعي',
   'agents.create.goal': 'ما الذي يجب أن يفعله وكيل الذكاء الاصطناعي؟',
-  'agents.create.goalBoth': 'Instructions / Goal', // TODO: translate
+  'agents.create.goalBoth': 'تعليمات / هدف',
   'agents.create.goalPlaceholder': 'مثلاً نمِّ محفظتي على سولانا بشكل محافظ خلال 30 يوماً',  'agents.create.name': 'الاسم',
   'agents.create.namePlaceholder': 'مثلاً market-watch-01',  'agents.create.skillPreset': 'قالب المهارات',
   'agents.create.skillPreset.help': 'ابدأ بقالب جاهز أو اختر مخصصاً لتحديد المهارات يدوياً.',
@@ -317,7 +318,7 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'جارٍ الإنشاء…',
   'agents.create.tradingControls.title': 'ضوابط التداول',
   'agents.review.title': 'مراجعة وإنشاء وكيل ذكاء اصطناعي',
-  'agents.review.capabilityMode': 'Capability mode', // TODO: translate
+  'agents.review.capabilityMode': 'وضع القدرة',
   'agents.review.models': 'نماذج الذكاء الاصطناعي',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'يرث إعدادات النموذج المحفوظة لديك',
@@ -535,9 +536,6 @@ export const messages: Record<string, string> = {
   'status.active': 'نشط',
   'status.unhealthy': 'غير سليم',
 
-  // Sidebar
-  'nav.createAgent': 'وكيل ذكاء اصطناعي جديد',
-
   // Capability selector
   'agents.capability.title': 'كيف يجب أن يعمل وكيلك؟',
   'agents.capability.intelligence.label': 'الذكاء',
@@ -568,7 +566,7 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.venue.placeholder': 'اختر المنصة…',
   'agents.technical.filters.venue.hyperliquid': 'Hyperliquid',
   'agents.technical.filters.venue.jupiter': 'Jupiter',
-  'agents.technical.filters.venue.required': 'Please select a venue.',
+  'agents.technical.filters.venue.required': 'الرجاء اختيار منصة.',
   'agents.technical.filters.venueType': 'نوع المنصة',
   'agents.technical.filters.venueTypeAuto': 'تلقائي',
   'agents.technical.filters.minVolume': 'الحد الأدنى لحجم 24 ساعة (USD)',

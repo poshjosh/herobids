@@ -17,6 +17,7 @@ export const messages: Record<string, string> = {
   'nav.openNavigation': 'नेविगेशन खोलें',
   'nav.closeNavigation': 'नेविगेशन बंद करें',
   'nav.signOut': 'साइन आउट',
+  'nav.createAgent': 'नया AI एजेंट',
 
   // Common
   'common.loading': 'लोड हो रहा है…',
@@ -287,7 +288,7 @@ export const messages: Record<string, string> = {
   'agents.risk.aggressive.description': 'बड़ी पोज़िशनें, अधिक संभावित लाभ और हानि',
   'agents.create.title': 'AI एजेंट बनाएं',
   'agents.create.goal': 'AI एजेंट को क्या करना चाहिए?',
-  'agents.create.goalBoth': 'Instructions / Goal', // TODO: translate
+  'agents.create.goalBoth': 'निर्देश / लक्ष्य',
   'agents.create.goalPlaceholder': 'उदा. 30 दिनों में मेरी Solana पोर्टफोलियो को सावधानी से बढ़ाएं',
   'agents.create.name': 'नाम',
   'agents.create.namePlaceholder': 'उदा. market-watch-01',
@@ -319,7 +320,7 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'बनाया जा रहा है…',
   'agents.create.tradingControls.title': 'ट्रेडिंग गार्डरेल्स',
   'agents.review.title': 'समीक्षा और AI एजेंट निर्माण',
-  'agents.review.capabilityMode': 'Capability mode', // TODO: translate
+  'agents.review.capabilityMode': 'क्षमता मोड',
   'agents.review.models': 'AI मॉडल',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'आपकी सहेजी हुई मॉडल सेटिंग्स विरासत में लेता है',
@@ -537,9 +538,6 @@ export const messages: Record<string, string> = {
   'status.active': 'सक्रिय',
   'status.unhealthy': 'अस्वस्थ',
 
-  // Sidebar
-  'nav.createAgent': 'नया AI एजेंट',
-
   // Capability selector
   'agents.capability.title': 'आपका एजेंट कैसे काम करे?',
   'agents.capability.intelligence.label': 'इंटेलिजेंस',
@@ -570,7 +568,7 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.venue.placeholder': 'वेन्यू चुनें…',
   'agents.technical.filters.venue.hyperliquid': 'Hyperliquid',
   'agents.technical.filters.venue.jupiter': 'Jupiter',
-  'agents.technical.filters.venue.required': 'Please select a venue.',
+  'agents.technical.filters.venue.required': 'कृपया एक वेन्यू चुनें।',
   'agents.technical.filters.venueType': 'वेन्यू प्रकार',
   'agents.technical.filters.venueTypeAuto': 'स्वचालित',
   'agents.technical.filters.minVolume': 'न्यूनतम 24घं वॉल्यूम (USD)',

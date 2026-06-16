@@ -1310,11 +1310,7 @@ describe('agent routes — technical config persistence', () => {
         }),
       }),
     );
-    expect(res.json().technical).toMatchObject({
-      filters: TECHNICAL_STUB.filters,
-      signalBias: TECHNICAL_STUB.signalBias,
-      scanIntervalMs: TECHNICAL_STUB.scanIntervalMs,
-    });
+    expect(res.json().technical).toEqual(TECHNICAL_STUB);
   });
 
   it('PATCH /agents/:id with technical: null removes technical from unifiedConfig', async () => {
@@ -1425,6 +1421,7 @@ describe('agent routes — technical config persistence', () => {
         }),
       }),
     );
+    expect(res.json().technical).toEqual(TECHNICAL_STUB);
   });
 });
 

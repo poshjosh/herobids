@@ -17,6 +17,7 @@ export const messages: Record<string, string> = {
   'nav.openNavigation': 'Open navigation',
   'nav.closeNavigation': 'Close navigation',
   'nav.signOut': 'Sign out',
+  'nav.createAgent': 'New AI Agent',
 
   // Skills
   'skills.title': 'Skills',
@@ -536,9 +537,6 @@ export const messages: Record<string, string> = {
   'status.starting': 'starting',
   'status.active': 'active',
   'status.unhealthy': 'unhealthy',
-
-  // Sidebar
-  'nav.createAgent': 'New AI Agent',
 
   // Capability selector
   'agents.capability.title': 'How should your agent operate?',

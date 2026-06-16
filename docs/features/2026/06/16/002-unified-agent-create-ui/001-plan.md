@@ -551,20 +551,5 @@ New keys to add:
 
 ## Outstanding Issues
 
-### [Phase 2 — Indicator preset definitions]
-- LOW: `ar.ts` / `hi.ts` — `agents.technical.filters.venue.required` uses English fallback text. Proper Arabic/Hindi translation needed.
-
-### [Phase 3 — TechnicalConfigSection component]
-- LOW: `ar.ts` / `hi.ts` — venue required validation message (`'Please select a venue.'`) is untranslated. Phase 8 should add proper translations.
-- LOW: `technical-config-helpers.test.ts` — missing newline at end of file.
-
-### [Phase 5 — Create form updates]
-- LOW: `ar.ts` / `hi.ts` — `agents.create.goalBoth` and `agents.review.capabilityMode` are English stubs with `// TODO: translate` markers.
-
-### [Phase 7 — Sidebar Create AI Agent action]
-- LOW: `nav.createAgent` key is placed at the bottom of all locale files under a `// Sidebar` comment rather than in the `nav.*` block at the top. No functional impact.
-
-### [Phase 9 — Tests]
-- LOW: PATCH merge test verifies `updateSets` but not `res.json().technical` (response value for the merge path is not asserted).
-- LOW: `buildCreateAgentPayload` POST test uses `objectContaining` — partial match on `indicators`/`candles`/`scanBatchSize`. Stricter `.toEqual(TECHNICAL_STUB)` would catch silent field drops.
+_All previously outstanding issues have been resolved (2026-06-16)._
 
