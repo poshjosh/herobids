@@ -29,7 +29,7 @@
 #   TEST_PASSWORD         Password (≥ 8 characters)
 #                         Default: TradeTest123!
 #
-#   VENUE                 hyperliquid (default) | bybit
+#   VENUE                 hyperliquid (default) | bybit | 1inch
 #
 #   Hyperliquid secrets   (required when VENUE=hyperliquid)
 #     HL_API_KEY
@@ -39,6 +39,10 @@
 #   Bybit secrets         (required when VENUE=bybit)
 #     BYBIT_API_KEY
 #     BYBIT_SECRET
+#
+#   1inch swap secrets    (required when VENUE=1inch)
+#     ONEINCH_API_KEY     1inch developer portal API key
+#     ONEINCH_PRIVATE_KEY  EVM wallet private key (hex, with or without 0x prefix)
 #
 # Optional
 #   EXECUTION_MODE        paper (default) | shadow | live
@@ -169,8 +173,13 @@ validate_secrets() {
       [[ -n "${BYBIT_SECRET:-}"  ]] || die "BYBIT_SECRET is required for venue=bybit"
       ok "Bybit credentials present"
       ;;
+    1inch)
+      [[ -n "${ONEINCH_API_KEY:-}"    ]] || die "ONEINCH_API_KEY is required for venue=1inch"
+      [[ -n "${ONEINCH_PRIVATE_KEY:-}" ]] || die "ONEINCH_PRIVATE_KEY is required for venue=1inch"
+      ok "1inch credentials present"
+      ;;
     *)
-      die "Unsupported VENUE: $venue. Supported: hyperliquid, bybit"
+      die "Unsupported VENUE: $venue. Supported: hyperliquid, bybit, 1inch"
       ;;
   esac
 }

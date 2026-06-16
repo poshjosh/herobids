@@ -32,9 +32,12 @@
  *  Bybit (VENUE=bybit):
  *    BYBIT_API_KEY, BYBIT_SECRET
  *
+ *  1inch swap (VENUE=1inch):
+ *    ONEINCH_API_KEY, ONEINCH_PRIVATE_KEY
+ *
  * Optional env vars
  * ─────────────────
- *  VENUE                 hyperliquid (default) | bybit
+ *  VENUE                 hyperliquid (default) | bybit | 1inch
  *  EXECUTION_MODE        paper (default) | shadow | live
  *  TICK_INTERVAL_MS      60000 (default, 1 minute)
  *  TIMEOUT_MS            600000 (default, 10 minutes)
@@ -95,7 +98,15 @@ function venueSecrets(): Record<string, string> {
     }
     return { apiKey, secret };
   }
-  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit`);
+  if (VENUE === '1inch') {
+    const apiKey = process.env['ONEINCH_API_KEY'];
+    const privateKey = process.env['ONEINCH_PRIVATE_KEY'];
+    if (!apiKey || !privateKey) {
+      fatal('1inch requires ONEINCH_API_KEY and ONEINCH_PRIVATE_KEY');
+    }
+    return { apiKey, privateKey };
+  }
+  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit, 1inch`);
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +282,13 @@ function buildTradeTestDecision(): { instrumentId: string; targetSize: string } 
     return { instrumentId: 'BTC', targetSize: '0.001' };
   }
 
-  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit`);
+  if (VENUE === '1inch') {
+    // 1inch swap: go_long = buy WETH with USDC on Base.
+    // targetSize is the WETH amount (~$0.02 at current prices — minimal risk).
+    return { instrumentId: 'WETH', targetSize: '0.00001' };
+  }
+
+  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit, 1inch`);
 }
 
 async function createProviderLink(token: string): Promise<string> {
