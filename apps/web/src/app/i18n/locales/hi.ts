@@ -350,6 +350,7 @@ export const messages: Record<string, string> = {
   'agents.edit.dailyLossLimit': 'दैनिक हानि सीमा (USD)',
   'agents.edit.maxSlippage': 'अधिकतम स्लिपेज (bps)',
   'agents.edit.saving': 'सहेजा जा रहा है…',
+  'agents.edit.intelligenceIgnoredWarning': 'केवल Technical मोड पर स्विच करने पर: एजेंट की LLM कॉन्फ़िगरेशन (लक्ष्य, स्किल्स, मॉडल) रनटाइम पर अनदेखी होगी लेकिन डिलीट नहीं होगी। इसे पुनः सक्षम करने के लिए Intelligence या Both पर वापस स्विच करें।',
 
   // Agent controls (shared create/edit labels)
   'agents.create.controls.title': 'नियंत्रण और गति',

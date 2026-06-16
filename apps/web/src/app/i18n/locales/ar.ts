@@ -348,6 +348,7 @@ export const messages: Record<string, string> = {
   'agents.edit.dailyLossLimit': 'حد الخسارة اليومية (USD)',
   'agents.edit.maxSlippage': 'أقصى انزلاق (bps)',
   'agents.edit.saving': 'جارٍ الحفظ…',
+  'agents.edit.intelligenceIgnoredWarning': 'التبديل إلى وضع التقني فقط: ستُتجاهل تهيئة الذكاء الاصطناعي للوكيل (الهدف، المهارات، النموذج) في وقت التشغيل لكنها لن تُحذف. عُد إلى وضع الذكاء أو كليهما لإعادة تفعيلها.',
 
   // Agent controls (shared create/edit labels)
   'agents.create.controls.title': 'الضوابط والإيقاع',

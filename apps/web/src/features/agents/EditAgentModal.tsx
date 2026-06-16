@@ -207,6 +207,12 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
             />
           </div>
 
+          {form.capabilityMode === 'technical' && initialCapabilityMode !== 'technical' && (
+            <p style={{ fontSize: '12px', color: 'var(--color-warning)', background: 'var(--color-warning-subtle)', padding: '8px 10px', borderRadius: '6px', margin: '0 0 14px', lineHeight: '1.5' }}>
+              {intl.formatMessage({ id: 'agents.edit.intelligenceIgnoredWarning' })}
+            </p>
+          )}
+
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.name' })}</FieldLabel>
             <input style={inputStyle} value={form.name} onChange={set('name')} required maxLength={100} />

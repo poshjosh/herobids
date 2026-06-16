@@ -350,6 +350,7 @@ export const messages: Record<string, string> = {
   'agents.edit.dailyLossLimit': 'Daily loss limit (USD)',
   'agents.edit.maxSlippage': 'Max slippage (bps)',
   'agents.edit.saving': 'Saving…',
+  'agents.edit.intelligenceIgnoredWarning': 'Switching to Technical-only: the agent's LLM configuration (goal, skills, model) will be ignored at runtime but is not deleted. Switch back to Intelligence or Both to re-enable it.',
 
   // Agent controls (shared create/edit labels)
   'agents.create.controls.title': 'Controls & cadence',
