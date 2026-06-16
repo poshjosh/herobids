@@ -1,11 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, Fragment } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
 
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const { user, logout } = useSession();
   const intl = useIntl();
 
@@ -81,16 +80,17 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
       <div style={{ padding: '12px 8px 8px', flex: 1 }}>
         <NavGroup>
           {NAV_ITEMS.map((item) => (
-            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
+            <Fragment key={item.path}>
+              <NavItem {...item} active={isActive(item.path)} onNavigate={onClose} />
+              {item.path === '/agents' && (
+                <SidebarAction
+                  label={intl.formatMessage({ id: 'nav.createAgent' })}
+                  path="/agents?create=1"
+                  onNavigate={onClose}
+                />
+              )}
+            </Fragment>
           ))}
-          <SidebarAction
-            label={intl.formatMessage({ id: 'nav.createAgent' })}
-            path="/agents?create=1"
-            onNavigate={() => {
-              void navigate('/agents?create=1');
-              onClose?.();
-            }}
-          />
         </NavGroup>
 
         <SectionLabel>{intl.formatMessage({ id: 'nav.manage' })}</SectionLabel>
@@ -243,11 +243,12 @@ function NavItem({ path, label, icon, active, onNavigate }: { path: string; labe
   );
 }
 
-function SidebarAction({ label, onNavigate }: { label: string; path: string; onNavigate: () => void }) {
+function SidebarAction({ label, path, onNavigate }: { label: string; path: string; onNavigate?: () => void }) {
+  const navigate = useNavigate();
   return (
     <button
       type="button"
-      onClick={onNavigate}
+      onClick={() => { void navigate(path); onNavigate?.(); }}
       aria-label={label}
       style={{
         display: 'flex',
