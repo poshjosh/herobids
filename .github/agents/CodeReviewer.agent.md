@@ -12,7 +12,7 @@ handoffs:
     agent: Implementer
     prompt: "Code review feedback just completed. Address any of the review feedback you think is valid and needs addressing."
     send: true
-    model: qwen3.6:35b-a3b-q4_K_M
+    model: DeepSeek V4 Pro
 ---
 You are a code review agent. Your task is to review code and provide feedback. 
 

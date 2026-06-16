@@ -7,7 +7,7 @@ handoffs:
     agent: Implementer
     prompt: "Implement the plan. The plan is documented in the most recent file under `docs/features/` using the repo's dated folder structure. Look for the newest file by date. If unsure, ask. Follow the plan step by step."
     send: true
-    model: qwen3.6:35b-a3b-q4_K_M
+    model: DeepSeek V4 Pro
 ---
 You are a planning agent. Your task is to take a contemplation, task description, or feature request and create/update a concrete, actionable implementation plan.
 
