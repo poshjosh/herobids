@@ -1054,53 +1054,65 @@ export const RegimeParamsSchema = z.object({
   disableWhenChoppy: z.boolean().optional(),
 });
 
+export const RsiParamsSchema = z.object({
+  enabled: z.boolean().default(true),
+  period: z.number().int().min(2).default(14),
+  healthyMin: z.number().default(40),
+  healthyMax: z.number().default(70),
+  overbought: z.number().default(80),
+  weakBelow: z.number().default(30),
+}).default({});
+
+export const MacdParamsSchema = z.object({
+  enabled: z.boolean().default(true),
+  fast: z.number().int().default(12),
+  slow: z.number().int().default(26),
+  signal: z.number().int().default(9),
+}).default({});
+
+export const VolumeParamsSchema = z.object({
+  enabled: z.boolean().default(true),
+  strongRatio: z.number().default(1.5),
+  weakRatio: z.number().default(0.5),
+  recentBars: z.number().int().default(4),
+  avgBars: z.number().int().default(20),
+}).default({});
+
+export const ChochParamsSchema = z.object({
+  enabled: z.boolean().default(false),
+  swingLookback: z.number().int().default(5),
+  minSwingPct: z.number().default(0.01),
+  minSwings: z.number().int().default(4),
+  confirmBars: z.number().int().default(2),
+  rejectOnBearish: z.boolean().default(false),
+}).default({});
+
+export const SupportResistanceParamsSchema = z.object({
+  enabled: z.boolean().default(false),
+  lookback: z.number().int().default(50),
+  breakoutThreshold: z.number().default(0.005),
+}).default({});
+
+export const ConfidenceWeightsSchema = z.object({
+  rsiWeight: z.number().default(0.15),
+  macdCrossoverWeight: z.number().default(0.20),
+  macdIncreasingWeight: z.number().default(0.10),
+  volumeWeight: z.number().default(0.15),
+  breakoutWeight: z.number().default(0.15),
+  chochBullishWeight: z.number().default(0.15),
+  chochBearishPenalty: z.number().default(0.10),
+  priceActionWeight: z.number().default(0.10),
+  minConfidence: z.number().default(0.45),
+  minReasons: z.number().int().default(2),
+}).default({});
+
 export const IndicatorConfigSchema = z.object({
-  rsi: z.object({
-    enabled: z.boolean().default(true),
-    period: z.number().int().min(2).default(14),
-    healthyMin: z.number().default(40),
-    healthyMax: z.number().default(70),
-    overbought: z.number().default(80),
-    weakBelow: z.number().default(30),
-  }).default({}),
-  macd: z.object({
-    enabled: z.boolean().default(true),
-    fast: z.number().int().default(12),
-    slow: z.number().int().default(26),
-    signal: z.number().int().default(9),
-  }).default({}),
-  volume: z.object({
-    enabled: z.boolean().default(true),
-    strongRatio: z.number().default(1.5),
-    weakRatio: z.number().default(0.5),
-    recentBars: z.number().int().default(4),
-    avgBars: z.number().int().default(20),
-  }).default({}),
-  choch: z.object({
-    enabled: z.boolean().default(false),
-    swingLookback: z.number().int().default(5),
-    minSwingPct: z.number().default(0.01),
-    minSwings: z.number().int().default(4),
-    confirmBars: z.number().int().default(2),
-    rejectOnBearish: z.boolean().default(false),
-  }).default({}),
-  supportResistance: z.object({
-    enabled: z.boolean().default(false),
-    lookback: z.number().int().default(50),
-    breakoutThreshold: z.number().default(0.005),
-  }).default({}),
-  confidence: z.object({
-    rsiWeight: z.number().default(0.15),
-    macdCrossoverWeight: z.number().default(0.20),
-    macdIncreasingWeight: z.number().default(0.10),
-    volumeWeight: z.number().default(0.15),
-    breakoutWeight: z.number().default(0.15),
-    chochBullishWeight: z.number().default(0.15),
-    chochBearishPenalty: z.number().default(0.10),
-    priceActionWeight: z.number().default(0.10),
-    minConfidence: z.number().default(0.45),
-    minReasons: z.number().int().default(2),
-  }).default({}),
+  rsi: RsiParamsSchema,
+  macd: MacdParamsSchema,
+  volume: VolumeParamsSchema,
+  choch: ChochParamsSchema,
+  supportResistance: SupportResistanceParamsSchema,
+  confidence: ConfidenceWeightsSchema,
 });
 
 export const TechnicalConfigSchema = z.object({
@@ -1150,6 +1162,12 @@ export const UnifiedAgentConfigSchema = z.object({
 });
 
 export type RegimeParams = z.infer<typeof RegimeParamsSchema>;
+export type RsiParams = z.infer<typeof RsiParamsSchema>;
+export type MacdParams = z.infer<typeof MacdParamsSchema>;
+export type VolumeParams = z.infer<typeof VolumeParamsSchema>;
+export type ChochParams = z.infer<typeof ChochParamsSchema>;
+export type SupportResistanceParams = z.infer<typeof SupportResistanceParamsSchema>;
+export type ConfidenceWeights = z.infer<typeof ConfidenceWeightsSchema>;
 export type IndicatorConfig = z.infer<typeof IndicatorConfigSchema>;
 export type TechnicalConfig = z.infer<typeof TechnicalConfigSchema>;
 export type UnifiedAgentConfig = z.infer<typeof UnifiedAgentConfigSchema>;
