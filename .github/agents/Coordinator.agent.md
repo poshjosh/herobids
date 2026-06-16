@@ -26,10 +26,9 @@ Follow these steps to implement all the items in the plan or task-list provided 
 
    a. If there is no item marked PENDING, then all items have been implemented: 
    
-      i. print any "Outstanding Issues" 
-      ii. on a new line print "ALL COMPLETED". 
-      iii. if there is a CHANGELOG.md, update it - keep it brief
-      iv. STOP.
+      i. if there is a CHANGELOG.md, update it - keep it brief
+      ii. print a brief descriptive message for the user including any "Outstanding Issues" 
+      iii. STOP.
 
    b. If there is an item marked PENDING, go to Step 3 with that item's text (or link to the item's document/resource if present) as the target/argument. 
 
