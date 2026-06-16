@@ -18,7 +18,7 @@ import type { SwapPositionTracker } from './swap-position-tracker.js';
 
 /** Minimal fill persistence. Structurally compatible with @herobids/db FillRepository. */
 interface FillRepo {
-  insertFill(fill: PersistFillParams): Promise<void>;
+  insertFill(fill: PersistFillParams): Promise<string>;
 }
 
 /** Minimal order persistence. Structurally compatible with @herobids/db OrderRepository. */

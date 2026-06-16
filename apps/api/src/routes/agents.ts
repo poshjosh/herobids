@@ -30,7 +30,6 @@ import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
-  hasSkillCapabilityFamily,
   hasModelFieldsWithoutProvider,
   mergeModelPolicy,
   nullablePositiveDecimalStringSchema,
@@ -661,7 +660,6 @@ export async function agentRoutes(
       executionModeProvided: parsed.data.executionMode !== undefined,
       currentExecutionMode: agent.executionMode,
     });
-    const hasTradingSkills = hasSkillCapabilityFamily(mergedSkillIds, 'trading');
     if (executionMode.issue) {
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
@@ -748,7 +746,7 @@ export async function agentRoutes(
       ...agentUpdates,
       ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
       ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
-      executionMode: hasTradingSkills ? executionMode.value : null,
+      ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),

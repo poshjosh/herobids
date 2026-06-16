@@ -178,9 +178,11 @@ wait_healthy postgres
 wait_healthy redis
 
 # Run migrations (idempotent — safe to re-run)
+# Always rebuild the migrate image to pick up new migration files
 log "Running DB migrations…"
+docker compose -f "${ROOT}/docker-compose.yaml" build migrate 2>&1 | tail -1
 docker compose -f "${ROOT}/docker-compose.yaml" run --rm migrate 2>/dev/null || \
-  docker compose -f "${ROOT}/docker-compose.yaml" up --no-deps --exit-code-from migrate migrate
+  docker compose -f "${ROOT}/docker-compose.yaml" up --no-deps --build --exit-code-from migrate migrate
 
 DATABASE_URL="postgres://herobids:herobids@localhost:5432/herobids"
 REDIS_URL="redis://localhost:6379"
