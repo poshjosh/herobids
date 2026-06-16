@@ -1247,3 +1247,184 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Technical config persistence (Phase 1 / Phase 9)
+// ---------------------------------------------------------------------------
+describe('agent routes — technical config persistence', () => {
+  const TECHNICAL_STUB = {
+    filters: { venue: 'hyperliquid', venueType: 'orderbook' as const },
+    indicators: {
+      rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70, overbought: 80, weakBelow: 30 },
+      macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+      volume: { enabled: true, strongRatio: 1.5, weakRatio: 0.5, recentBars: 4, avgBars: 20 },
+      choch: { enabled: false, swingLookback: 5, minSwingPct: 0.01, confirmBars: 2, rejectOnBearish: false },
+      supportResistance: { enabled: false, lookback: 50, breakoutThreshold: 0.005 },
+      confidence: {
+        rsiWeight: 0.15, macdCrossoverWeight: 0.2, macdIncreasingWeight: 0.1,
+        volumeWeight: 0.15, breakoutWeight: 0.15, chochBullishWeight: 0.15,
+        chochBearishPenalty: 0.1, priceActionWeight: 0.1,
+        minConfidence: 0.45, minReasons: 2,
+      },
+    },
+    candles: { interval: '15m' as const, limit: 100 },
+    signalBias: 'trend-following' as const,
+    scanIntervalMs: 60_000,
+    scanBatchSize: 5,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('POST /agents with technical config stores it in unifiedConfig', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: { technical: TECHNICAL_STUB },
+    };
+    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'technical agent', technical: TECHNICAL_STUB },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        unifiedConfig: expect.objectContaining({
+          technical: expect.objectContaining({
+            filters: TECHNICAL_STUB.filters,
+            signalBias: TECHNICAL_STUB.signalBias,
+            scanIntervalMs: TECHNICAL_STUB.scanIntervalMs,
+          }),
+        }),
+      }),
+    );
+    expect(res.json().technical).toMatchObject({
+      filters: TECHNICAL_STUB.filters,
+      signalBias: TECHNICAL_STUB.signalBias,
+      scanIntervalMs: TECHNICAL_STUB.scanIntervalMs,
+    });
+  });
+
+  it('PATCH /agents/:id with technical: null removes technical from unifiedConfig', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      name: 'technical agent',
+      prompt: '',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: null,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        toolPolicy: null,
+        modelPolicy: null,
+        unifiedConfig: { technical: TECHNICAL_STUB },
+      }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { technical: null },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ unifiedConfig: null }));
+    expect(res.json().technical).toBeNull();
+  });
+
+  it('GET /agents/:id includes technical from unifiedConfig in the response', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const agentRow = {
+      id: 'agent-1',
+      status: 'stopped',
+      userId: TEST_USER_ID,
+      modelPolicy: null,
+      skillIds: [],
+      unifiedConfig: { technical: TECHNICAL_STUB },
+    };
+    const { db } = buildDb({ agentRows: [agentRow] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().technical).toEqual(TECHNICAL_STUB);
+  });
+
+  it('PATCH /agents/:id with technical config merges it into unifiedConfig', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+      unifiedConfig: { someOtherKey: 'value', technical: TECHNICAL_STUB },
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        skillIds: [],
+        toolPolicy: null,
+        modelPolicy: null,
+        unifiedConfig: { someOtherKey: 'value' },
+      }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { technical: TECHNICAL_STUB },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(
+      expect.objectContaining({
+        unifiedConfig: expect.objectContaining({
+          someOtherKey: 'value',
+          technical: expect.objectContaining({
+            filters: TECHNICAL_STUB.filters,
+            signalBias: TECHNICAL_STUB.signalBias,
+            scanIntervalMs: TECHNICAL_STUB.scanIntervalMs,
+          }),
+        }),
+      }),
+    );
+  });
+});
+
