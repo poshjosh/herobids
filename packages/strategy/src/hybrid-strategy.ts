@@ -62,10 +62,10 @@ export class HybridStrategy implements Strategy {
       },
     };
 
-    // 4. Map hybrid params to LLM config format
+    // 4. Map hybrid params to LLM config format — prefer heavyModel for the conviction call
     const llmConfig = {
       ...hybridParams,
-      model: hybridParams.lightModel ?? hybridParams.heavyModel,
+      model: hybridParams.heavyModel ?? hybridParams.lightModel,
     };
 
     return this.llm.evaluate(enrichedSnapshot, llmConfig);

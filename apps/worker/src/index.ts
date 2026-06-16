@@ -978,6 +978,7 @@ const runtime = new WorkerRuntime(
           swapNetwork != null
             ? { config: sharedMarketDataRegistry.configs.geckoterminal, network: swapNetwork }
             : null,
+          config.venueType === 'swap' ? 'swap' : 'orderbook',
         )
       : undefined;
 
@@ -1050,6 +1051,12 @@ const runtime = new WorkerRuntime(
       },
       swapConfirmationPoller,
       candleFetcher,
+      riskPlaybook: (config.risk.maxNewPositionsPerDay != null || config.risk.avoidParabolicMovePct != null)
+        ? {
+            maxNewPositionsPerDay: config.risk.maxNewPositionsPerDay,
+            avoidParabolicMovePct: config.risk.avoidParabolicMovePct,
+          }
+        : undefined,
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
           agentStreamConsumer.unsubscribe(instanceId);

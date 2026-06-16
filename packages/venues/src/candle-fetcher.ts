@@ -33,12 +33,14 @@ export class VenueCandleFetcher implements CandleFetcher {
   constructor(
     private readonly binanceCfg: BinanceCandlesConfig,
     private readonly geckoTerminalCfg: GeckoCandleFetcherConfig | null,
+    private readonly venueType: 'orderbook' | 'swap' = 'orderbook',
   ) {}
 
   fetchCandles(symbol: string, interval: string, limit: number): Promise<PriceCandle[]> {
-    if (isPoolAddress(symbol)) {
+    const useGecko = this.venueType === 'swap' || isPoolAddress(symbol);
+    if (useGecko) {
       if (!this.geckoTerminalCfg) {
-        return Promise.reject(new Error(`VenueCandleFetcher: GeckoTerminal config not provided for pool address '${symbol}'`));
+        return Promise.reject(new Error(`VenueCandleFetcher: GeckoTerminal config not provided for swap symbol '${symbol}'`));
       }
       const timeframe = mapIntervalToTimeframe(interval);
       return fetchGeckoTerminalCandles(this.geckoTerminalCfg.network, symbol, this.geckoTerminalCfg.config, { timeframe, limit });

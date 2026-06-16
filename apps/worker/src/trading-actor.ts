@@ -144,6 +144,8 @@ export interface TradingActorDeps {
   swapConfirmationPoller?: SwapConfirmationPoller;
   /** Candle fetcher for OHLCV data (optional — used by mechanical/hybrid strategy phases) */
   candleFetcher?: CandleFetcher;
+  /** Risk-config values forwarded to strategy via snapshot.data (mechanical/hybrid playbook guards) */
+  riskPlaybook?: { maxNewPositionsPerDay?: number; avoidParabolicMovePct?: number };
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -208,6 +210,9 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   /** True when swap live recovery entered an ambiguous state and requires manual intervention */
   private swapRecoveryHalted = false;
   private readonly swapRecoveryAlertedPlanIds = new Set<string>();
+  /** In-memory counter of new positions opened today (resets on date change) */
+  private newPositionsToday = 0;
+  private newPositionsDate = '';
 
   constructor(
     botId: string,
@@ -1661,6 +1666,26 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         }
       }
 
+      // Enrich snapshot with position state and risk playbook values for strategy consumption
+      const today = snapshot.timestamp.slice(0, 10);
+      if (today !== this.newPositionsDate) {
+        this.newPositionsToday = 0;
+        this.newPositionsDate = today;
+      }
+      snapshot = {
+        ...snapshot,
+        data: {
+          ...snapshot.data,
+          openPositionSize: this.position.size.toString(),
+          hasOpenPosition: this.position.side !== 'flat',
+          newPositionsToday: this.newPositionsToday,
+          ...(this.deps.riskPlaybook?.maxNewPositionsPerDay != null && { maxNewPositionsPerDay: this.deps.riskPlaybook.maxNewPositionsPerDay }),
+          ...(this.deps.riskPlaybook?.avoidParabolicMovePct != null && { avoidParabolicMovePct: this.deps.riskPlaybook.avoidParabolicMovePct }),
+        },
+      };
+
+      const previousSide = this.position.side;
+
       // Evaluate strategy to produce a decision
       const evalResult = await this.deps.strategy.evaluate(snapshot, this.strategyConfig);
       if (!evalResult.ok) {
@@ -1703,6 +1728,11 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       });
 
       this.position = execResult.newPosition;
+
+      // Track new position entries for daily counter
+      if (previousSide === 'flat' && this.position.side !== 'flat') {
+        this.newPositionsToday++;
+      }
 
       // Circuit breaker tracking
       if (this.circuitBreaker) {
