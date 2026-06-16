@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Unified Agent Create/Edit UI (2026-06-16): agent creation and editing now supports capability selection (Intelligence / Technical / Both). Technical-only agents use rule-based indicator scanning with no LLM cost. New `TechnicalConfigSection` with preset strategies (Momentum Breakout, Mean Reversion, Conservative, Custom), discovery filters, scan settings, indicator toggles, and confidence weights. Sidebar now has a persistent "New AI Agent" action below the AI Agents nav item. Full API support for `technical` config in create/update/read endpoints.
+
 - Venue validation shell wrappers (2026-06-15): `scripts/shell/tests/validate-jupiter.sh` and `validate-1inch.sh` source credentials from `.env.venue-validation` and run canonical dry-run or live validation with `--execute`.
 
 - Telegram slash commands (2026-06-15): Telegram users can now route `/to` commands to one or more named agents, broadcast to all routable agents, and fall back to automatic delivery when exactly one agent is available.
