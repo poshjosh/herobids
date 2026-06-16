@@ -80,6 +80,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
+    // swapAssets validation for swap-venue bots is deferred to BotConfigSchema at
+    // worker startup — it enforces stricter constraints (int / 0–18 range for
+    // decimals) than an ad-hoc gate here could.
+
     if (plansConfig) {
       const planId = request.userPlanId || 'free';
       const result = await db.transaction(async (tx) => {

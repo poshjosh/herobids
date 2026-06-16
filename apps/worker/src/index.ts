@@ -492,15 +492,12 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         const capitalStr = agent?.capital ?? null;
         const agentDefaults = appConfig.agentRiskDefaults;
 
-        // Resolve swap asset metadata from binding for non-paper swap modes
+        // Resolve swap asset metadata from binding for non-paper swap modes.
+        // Agents can proceed without swapAssets — decimals are resolved at decision time.
+        // Bots are validated at startup by BotConfigSchema (swapAssets required for swap venues).
         let resolvedSwapAssets: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number } | undefined;
         if (venueType === 'swap') {
           resolvedSwapAssets = resolveSwapAssetsFromBinding(binding);
-          if (!resolvedSwapAssets && mode !== 'paper') {
-            throw new Error(
-              `Swap binding ${binding.id} missing swapAssets metadata (bindingProfile.swapAssets) for agent ${agentId} in ${mode} mode`,
-            );
-          }
         }
 
         let actor: AgentTradingActor | undefined;
