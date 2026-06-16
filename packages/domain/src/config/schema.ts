@@ -968,6 +968,8 @@ export const RiskConfigSchema = z.object({
   minSwapTokenVolume24hUsd: z.number().min(0).optional(),
   minSwapTokenAgeHours: z.number().min(0).optional(),
   allowSwapTokenSafetyOverride: z.boolean().optional(),
+  maxNewPositionsPerDay: z.number().int().min(0).optional(),
+  avoidParabolicMovePct: z.number().min(0).optional(),
 });
 
 export const MomentumParamsSchema = z.object({
@@ -988,55 +990,7 @@ export const LlmParamsSchema = z.object({
   baseUrl: z.string().url().optional(),
 });
 
-export const StrategyConfigSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('momentum'), params: MomentumParamsSchema.default({}) }),
-  z.object({ type: z.literal('llm'), params: LlmParamsSchema }),
-]);
-
-export const ExecutionConfigSchema = z.object({
-  mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
-  slippageBps: z.number().min(0).optional(),
-});
-
-export const BotConfigSchema = z.object({
-  strategy: StrategyConfigSchema,
-  risk: RiskConfigSchema.default({}),
-  execution: ExecutionConfigSchema.default({}),
-  venue: z.string(),
-  symbol: z.string(),
-  venueType: z.enum(['orderbook', 'swap']).default('orderbook'),
-  shadowPollIntervalMs: z.number().min(100).default(2000),
-  /** Explicit swap asset identifiers — required for swap venues to avoid fragile symbol parsing */
-  swapAssets: z.object({
-    baseAsset: z.string(),
-    quoteAsset: z.string(),
-    /** Decimal places for the base asset (e.g. 9 for SOL). Required for raw-unit conversion. */
-    baseDecimals: z.number().int().min(0).max(18),
-    /** Decimal places for the quote asset (e.g. 6 for USDC). Required for raw-unit conversion. */
-    quoteDecimals: z.number().int().min(0).max(18),
-  }).optional(),
-}).refine(
-  (data) => data.venueType !== 'swap' || data.swapAssets !== undefined,
-  { message: 'swapAssets is required when venueType is "swap"', path: ['swapAssets'] },
-).refine(
-  (data) => data.venueType !== 'swap' || data.execution.mode !== 'paper',
-  { message: 'Swap venues cannot run in paper mode (no price source). Use shadow mode.', path: ['execution', 'mode'] },
-).refine(
-  (data) => {
-    // Enforce venue string matches venueType to prevent config/adapter mismatch
-    if (data.venueType === 'swap') return (SWAP_VENUES as readonly string[]).includes(data.venue);
-    return (ORDERBOOK_VENUES as readonly string[]).includes(data.venue);
-  },
-  { message: 'venue must match venueType: swap venues are [jupiter, 1inch], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
-);
-
-export type BotConfig = z.infer<typeof BotConfigSchema>;
-export type RiskConfig = z.infer<typeof RiskConfigSchema>;
-export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
-export type MomentumParams = z.infer<typeof MomentumParamsSchema>;
-export type LlmParams = z.infer<typeof LlmParamsSchema>;
-
-// --- Agent Technical Config (automation-agents Phase 3) ---
+// --- Indicator sub-schemas (Phase 0 — shared by TechnicalConfig and MechanicalParams) ---
 
 /**
  * Regime filter params (mirrors RegimeParams from @herobids/market-data).
@@ -1114,6 +1068,95 @@ export const IndicatorConfigSchema = z.object({
   supportResistance: SupportResistanceParamsSchema,
   confidence: ConfidenceWeightsSchema,
 });
+
+export const MechanicalParamsSchema = z.object({
+  // Candle fetching
+  candleInterval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
+  candleLimit: z.number().int().min(20).max(500).default(100),
+
+  // Indicator suite — reuses named sub-schemas from Phase 0
+  indicators: IndicatorConfigSchema.default({}),
+
+  // Signal interpretation
+  signalBias: z.enum(['trend-following', 'mean-reverting']).default('trend-following'),
+
+  // Sentiment (optional — skipped when not configured)
+  sentiment: z.object({
+    enabled: z.boolean().default(false),
+  }).default({}),
+
+  // Position sizing — same pattern as existing MomentumStrategy
+  positionSize: z.string().min(1),  // decimal string, e.g. "100"
+  positionSizeMode: z.enum(['fixed', 'percent_equity']).default('fixed'),
+});
+
+export const HybridParamsSchema = z.object({
+  mechanical: MechanicalParamsSchema,
+  // Minimal LLM config — provider + dual-model selection (lightModel for signal, heavyModel for conviction)
+  provider: z.string().optional(),
+  lightModel: z.string().optional(),
+  heavyModel: z.string().optional(),
+  maxTokens: z.number().int().min(1).default(1024),
+  timeoutMs: z.number().min(1000).default(30_000),
+  baseUrl: z.string().url().optional(),
+}).refine(
+  (d) => (d.lightModel == null && d.heavyModel == null) || d.provider != null,
+  { message: 'provider is required when lightModel or heavyModel is set', path: ['provider'] },
+);
+
+export const StrategyConfigSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('momentum'), params: MomentumParamsSchema.default({}) }),
+  z.object({ type: z.literal('llm'), params: LlmParamsSchema }),
+  z.object({ type: z.literal('mechanical'), params: MechanicalParamsSchema }),
+  z.object({ type: z.literal('hybrid'), params: HybridParamsSchema }),
+]);
+
+export const ExecutionConfigSchema = z.object({
+  mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
+  slippageBps: z.number().min(0).optional(),
+});
+
+export const BotConfigSchema = z.object({
+  strategy: StrategyConfigSchema,
+  risk: RiskConfigSchema.default({}),
+  execution: ExecutionConfigSchema.default({}),
+  venue: z.string(),
+  symbol: z.string(),
+  venueType: z.enum(['orderbook', 'swap']).default('orderbook'),
+  shadowPollIntervalMs: z.number().min(100).default(2000),
+  /** Explicit swap asset identifiers — required for swap venues to avoid fragile symbol parsing */
+  swapAssets: z.object({
+    baseAsset: z.string(),
+    quoteAsset: z.string(),
+    /** Decimal places for the base asset (e.g. 9 for SOL). Required for raw-unit conversion. */
+    baseDecimals: z.number().int().min(0).max(18),
+    /** Decimal places for the quote asset (e.g. 6 for USDC). Required for raw-unit conversion. */
+    quoteDecimals: z.number().int().min(0).max(18),
+  }).optional(),
+}).refine(
+  (data) => data.venueType !== 'swap' || data.swapAssets !== undefined,
+  { message: 'swapAssets is required when venueType is "swap"', path: ['swapAssets'] },
+).refine(
+  (data) => data.venueType !== 'swap' || data.execution.mode !== 'paper',
+  { message: 'Swap venues cannot run in paper mode (no price source). Use shadow mode.', path: ['execution', 'mode'] },
+).refine(
+  (data) => {
+    // Enforce venue string matches venueType to prevent config/adapter mismatch
+    if (data.venueType === 'swap') return (SWAP_VENUES as readonly string[]).includes(data.venue);
+    return (ORDERBOOK_VENUES as readonly string[]).includes(data.venue);
+  },
+  { message: 'venue must match venueType: swap venues are [jupiter, 1inch], orderbook venues are [hyperliquid, bybit]', path: ['venue'] },
+);
+
+export type BotConfig = z.infer<typeof BotConfigSchema>;
+export type RiskConfig = z.infer<typeof RiskConfigSchema>;
+export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
+export type MomentumParams = z.infer<typeof MomentumParamsSchema>;
+export type LlmParams = z.infer<typeof LlmParamsSchema>;
+export type MechanicalParams = z.infer<typeof MechanicalParamsSchema>;
+export type HybridParams = z.infer<typeof HybridParamsSchema>;
+
+// --- Agent Technical Config (automation-agents Phase 3) ---
 
 export const TechnicalConfigSchema = z.object({
   filters: z.object({
