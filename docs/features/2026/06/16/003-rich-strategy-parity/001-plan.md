@@ -326,11 +326,33 @@ This extraction should be planned when the bot UI spec is written.
 
 ## Definition of Done
 
-- [ ] `RsiParamsSchema`, `MacdParamsSchema`, etc. extracted and exported from `schema.ts`
-- [ ] `IndicatorConfigSchema` and `TechnicalConfigSchema` behavior unchanged
-- [ ] `MechanicalStrategy` and `HybridStrategy` implemented and tested
-- [ ] `CandleFetcher` port defined and wired into `TradingActor`
-- [ ] `createStrategy()` handles 'mechanical' and 'hybrid'
-- [ ] Bot can be configured with `strategy.type = 'mechanical'` and execute trades
-- [ ] `pnpm lint` passes
-- [ ] `pnpm test` passes
+- [x] `RsiParamsSchema`, `MacdParamsSchema`, etc. extracted and exported from `schema.ts`
+- [x] `IndicatorConfigSchema` and `TechnicalConfigSchema` behavior unchanged
+- [x] `MechanicalStrategy` and `HybridStrategy` implemented and tested
+- [x] `CandleFetcher` port defined and wired into `TradingActor`
+- [x] `createStrategy()` handles 'mechanical' and 'hybrid'
+- [x] `pnpm lint` passes
+- [x] `pnpm test` passes
+- [ ] Bot can be configured with `strategy.type = 'mechanical'` and execute trades (integration test — deferred)
+
+---
+
+## Outstanding Issues
+
+### [Phase 3 — CandleFetcher]
+- **LOW**: `TradingActorDeps.candleFetcher` is technically redundant — the strategy already captures the fetcher at construction time and the actor never reads `deps.candleFetcher` directly. The field is inert state. Consider removing it or adding a comment clarifying it is reserved for future actor-level use.
+- **LOW**: `mapIntervalToTimeframe` in `VenueCandleFetcher` coarsens granularity for GeckoTerminal (e.g. `'4H'` → `'hour'`) with a warning log only. Strategies using `candleInterval: '4H'` against Jupiter tokens will receive 1-hour candles.
+
+### [Phase 4 — MechanicalStrategy]
+- **MEDIUM**: `avoidParabolicMovePct` and `maxNewPositionsPerDay` are injected via `snapshot.data` — if the TradingActor never populates them, these checks silently pass. The TradingActor snapshot builder should be audited to confirm both fields are populated from `RiskConfigSchema` before calling `strategy.evaluate()`.
+
+### [Phase 5 — HybridStrategy]
+- **LOW**: `MechanicalStrategy` generates a `decisionId` in the hybrid pre-check pass that is silently discarded when the LLM makes the final decision. The mechanical ID is never persisted or logged — consider surfacing it in hybrid decision metadata for traceability.
+- **LOW**: Mechanical metadata keys (`confidence`, `reasons`, `indicators`) injected into the LLM snapshot are accessed via string index on `Record<string, unknown>`. If `MechanicalStrategy` renames these keys, `HybridStrategy` will inject `undefined` silently with no type error.
+
+### [Phase 6 — Factory/Wiring]
+- **LOW**: Startup guard error messages reference the internal type name `CandleFetcher`. Should reference the operator config key (`appConfig.marketData`) for better operator diagnostics.
+- **LOW**: `createStrategy()` has no exhaustiveness `default` branch. Adding `const _never: never = strategyConfig` as the default would catch future unhandled union variants at compile time.
+
+### [Integration test — deferred]
+- Integration test: bot with `strategy.type = 'mechanical'` config exercises the full path from tick → candle fetch → indicator scoring → decision. This is the remaining unmet Definition of Done item.
