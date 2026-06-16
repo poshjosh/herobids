@@ -606,8 +606,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    // executionMode is notNull in DB — when trading skills are removed, the existing value is preserved (not nulled)
-    expect(updateSets).not.toContainEqual(expect.objectContaining({ executionMode: null }));
+    expect(updateSets).toContainEqual(expect.objectContaining({ executionMode: null }));
   });
 
   it('returns 400 for an invalid payload', async () => {

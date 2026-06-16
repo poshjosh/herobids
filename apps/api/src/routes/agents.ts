@@ -23,13 +23,14 @@ import {
   tradingBindings,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { AgentRiskDefaultsSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { AgentRiskDefaultsSchema, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
+  hasSkillCapabilityFamily,
   hasModelFieldsWithoutProvider,
   mergeModelPolicy,
   nullablePositiveDecimalStringSchema,
@@ -62,7 +63,8 @@ const AgentNameSchema = z.string().min(1).max(100).refine((value) => {
 
 const CreateAgentSchema = z.object({
   name: AgentNameSchema,
-  prompt: z.string().min(1).max(4000),
+  prompt: z.string().max(4000).optional(),
+  technical: TechnicalConfigSchema.optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
@@ -93,11 +95,19 @@ const CreateAgentSchema = z.object({
   stopLossCooldownMs: optionalPositiveIntegerSchema(0),
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
+}).superRefine((data, ctx) => {
+  if (!data.technical && !data.prompt) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['prompt'],
+      message: 'prompt is required when no technical config is provided',
+    });
+  }
 });
 
 const UpdateAgentSchema = z.object({
   name: AgentNameSchema.optional(),
-  prompt: z.string().min(1).max(4000).optional(),
+  prompt: z.string().max(4000).optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
@@ -129,6 +139,7 @@ const UpdateAgentSchema = z.object({
   stopLossCooldownMs: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
+  technical: TechnicalConfigSchema.nullable().optional(),
 });
 
 const PauseAgentSchema = z.object({
@@ -487,7 +498,7 @@ export async function agentRoutes(
       id: agentId,
       userId: request.userId,
       name: parsed.data.name,
-      prompt: parsed.data.prompt,
+      prompt: parsed.data.prompt ?? '',
       status: 'stopped',
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
@@ -506,6 +517,7 @@ export async function agentRoutes(
       stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
       tickIntervalMs: parsed.data.tickIntervalMs ?? null,
       capital: parsed.data.capital ?? null,
+      ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -515,7 +527,7 @@ export async function agentRoutes(
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
     const riskContract = resolveAgentRiskContractForResponse(agent!, agentRiskDefaults);
-    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), riskContract });
+    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), technical: (agent!.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null, riskContract });
   });
 
   // List user's agents
@@ -524,9 +536,12 @@ export async function agentRoutes(
       .where(eq(agents.userId, request.userId))
       .orderBy(agents.createdAt);
     const skillIdsByAgentId = await listSkillIdsByAgentId(db, rows.map((row) => row.id));
-    return reply.send(rows.map((agent) => decorateAgentResponse({
-      ...agent,
-      skillIds: skillIdsByAgentId.get(agent.id) ?? [],
+    return reply.send(rows.map((agent) => ({
+      ...decorateAgentResponse({
+        ...agent,
+        skillIds: skillIdsByAgentId.get(agent.id) ?? [],
+      }),
+      technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null,
     })));
   });
 
@@ -551,7 +566,7 @@ export async function agentRoutes(
 
     const skillIds = await listSkillIdsForAgent(db, id);
     const riskContract = resolveAgentRiskContractForResponse(agent, agentRiskDefaults);
-    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), riskContract, activeSession: session ?? null });
+    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null, riskContract, activeSession: session ?? null });
   });
 
   // Update agent
@@ -646,6 +661,7 @@ export async function agentRoutes(
       executionModeProvided: parsed.data.executionMode !== undefined,
       currentExecutionMode: agent.executionMode,
     });
+    const hasTradingSkills = hasSkillCapabilityFamily(mergedSkillIds, 'trading');
     if (executionMode.issue) {
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
@@ -706,9 +722,23 @@ export async function agentRoutes(
       notificationPolicy: notificationPolicyInput,
       maxPositionSizePct: rawMaxPositionSizePct,
       stopLossPct: rawStopLossPct,
+      technical: technicalUpdate,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
+
+    // Merge technical into unifiedConfig — only touch the 'technical' key, preserve other keys
+    let unifiedConfigPatch: Record<string, unknown> | null | undefined = undefined;
+    if (technicalUpdate !== undefined) {
+      const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
+      if (technicalUpdate === null) {
+        const { technical: _t, ...rest } = current;
+        void _t;
+        unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
+      } else {
+        unifiedConfigPatch = { ...current, technical: technicalUpdate };
+      }
+    }
 
     const effectiveNotificationPolicy = notificationPolicyInput !== undefined
       ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
@@ -718,9 +748,10 @@ export async function agentRoutes(
       ...agentUpdates,
       ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
       ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
-      ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
+      executionMode: hasTradingSkills ? executionMode.value : null,
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
+      ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),
@@ -731,7 +762,7 @@ export async function agentRoutes(
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
     const riskContract = resolveAgentRiskContractForResponse(updated!, agentRiskDefaults);
-    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), riskContract });
+    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), technical: (updated!.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null, riskContract });
   });
 
   // Delete agent

@@ -803,6 +803,7 @@ export interface Agent {
   stopLossCooldownMs: number | null;
   tickIntervalMs: number | null;
   capital: string | null;
+  technical: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

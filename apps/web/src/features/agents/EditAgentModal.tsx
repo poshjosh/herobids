@@ -10,6 +10,9 @@ import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/
 import { buildUpdateAgentPayload } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { formatTickIntervalMinutesForInput, getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
+import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
+import { TechnicalConfigSection } from './TechnicalConfigSection.js';
+import { defaultTechnicalConfigFormState, technicalConfigToFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -20,6 +23,8 @@ interface EditAgentModalProps {
 interface FormState {
   name: string;
   prompt: string;
+  capabilityMode: CapabilityMode;
+  technicalConfig: TechnicalConfigFormState;
   skillIds: string[];
   executionMode: string;
   telegramChatId: string;
@@ -40,6 +45,10 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const intl = useIntl();
   const qc = useQueryClient();
   const hasExplicitModelOverride = Boolean(initialData.provider || initialData.lightModel || initialData.heavyModel);
+  const initialPrompt = extractAgentObjective(initialData.prompt);
+  const initialCapabilityMode: CapabilityMode = initialData.technical
+    ? (initialPrompt.trim() ? 'both' : 'technical')
+    : 'intelligence';
   const skillsQuery = useQuery({
     queryKey: ['skills'],
     queryFn: () => skillsApi.list({ scope: 'selectable' }),
@@ -59,7 +68,11 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
 
   const [form, setForm] = useState<FormState>({
     name: initialData.name,
-    prompt: extractAgentObjective(initialData.prompt),
+    prompt: initialPrompt,
+    capabilityMode: initialCapabilityMode,
+    technicalConfig: initialData.technical
+      ? technicalConfigToFormState(initialData.technical)
+      : defaultTechnicalConfigFormState(),
     skillIds: initialData.skillIds ?? [],
     executionMode: initialData.executionMode ?? '',
     telegramChatId: initialData.telegramChatId ?? '',
@@ -104,11 +117,14 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const effectiveTickIntervalMs = initialTickIntervalIsLegacy && !tickIntervalTouched
     ? (initialData.tickIntervalMs ?? null)
     : null;
-  const hasTradingCapability = skillsQuery.isSuccess
+  const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
+  const showTechnical = form.capabilityMode === 'technical' || form.capabilityMode === 'both';
+  const hasTradingCapability = showIntelligence && (skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
-    : currentHasTradingCapability;
+    : currentHasTradingCapability);
   const showTradingControls = hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
+  const technicalConfigInvalid = showTechnical && !form.technicalConfig.filters.venue.trim();
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
@@ -127,9 +143,14 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
   const mutation = useMutation({
     mutationFn: () => {
       const skillIds = Array.from(new Set([...preservedSkillIds, ...form.skillIds.filter((skillId) => selectableSkillIds.has(skillId))]));
+      const technicalPayload = (form.capabilityMode === 'technical' || form.capabilityMode === 'both')
+        ? technicalFormStateToPayload(form.technicalConfig)
+        : null;
       return agentsApi.update(agentId, buildUpdateAgentPayload({
         name: form.name,
         prompt: form.prompt,
+        capabilityMode: form.capabilityMode,
+        technical: technicalPayload,
         skillIds,
         hasBotManagementSkill,
         executionMode: form.executionMode,
@@ -161,12 +182,11 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (tickIntervalError != null) {
+    if (tickIntervalError != null || technicalConfigInvalid || !form.name.trim() || (showIntelligence && !form.prompt.trim())) {
       return;
     }
     mutation.mutate();
   };
-
   const fieldGap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '14px' };
 
   return (
@@ -180,22 +200,44 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
         }}
       >
         <form id="edit-agent-form" onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '14px' }}>
+            <CapabilitySelector
+              value={form.capabilityMode}
+              onChange={(capabilityMode) => setForm((prev) => ({ ...prev, capabilityMode }))}
+            />
+          </div>
+
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.name' })}</FieldLabel>
             <input style={inputStyle} value={form.name} onChange={set('name')} required maxLength={100} />
           </div>
 
+          {showIntelligence && (
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.objective' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
               value={form.prompt}
               onChange={set('prompt')}
-              required
+              required={showIntelligence}
               maxLength={4000}
             />
           </div>
+          )}
 
+          {showTechnical && (
+            <div style={{ marginBottom: '14px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
+                {intl.formatMessage({ id: 'agents.technical.title' })}
+              </div>
+              <TechnicalConfigSection
+                value={form.technicalConfig}
+                onChange={(technicalConfig) => setForm((prev) => ({ ...prev, technicalConfig }))}
+              />
+            </div>
+          )}
+
+          {showIntelligence && (
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
             <SkillPicker
@@ -212,6 +254,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               )}
             </div>
           </div>
+          )}
 
           {hasTradingCapability && (
             <div style={fieldGap}>
@@ -228,13 +271,16 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
             </div>
           )}
 
+          {showIntelligence && (
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.selectedSkills' })}</FieldLabel>
             <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>
               {formatSkillSelection(selectableSkills.filter((skill) => form.skillIds.includes(skill.id)), intl)}
             </div>
           </div>
+          )}
 
+          {showIntelligence && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
             <div>
               <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
@@ -305,8 +351,9 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                   </Button>
                 </div>
               </>
-            )}
+            )}         
           </div>
+          )}
 
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.telegramChatId' })}</FieldLabel>
@@ -372,7 +419,12 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
           variant="primary"
           type="submit"
           form="edit-agent-form"
-          disabled={mutation.isPending || tickIntervalError != null || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
+          disabled={mutation.isPending
+            || !form.name.trim()
+            || (showIntelligence && !form.prompt.trim())
+            || technicalConfigInvalid
+            || tickIntervalError != null
+            || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
         >
           {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
         </Button>

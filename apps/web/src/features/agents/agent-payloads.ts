@@ -1,4 +1,6 @@
 import type { ProviderSetupResult } from '../../lib/api-client.js';
+import type { CapabilityMode } from './CapabilitySelector.js';
+import type { TechnicalConfig } from './technical-config-helpers.js';
 import { parseTickIntervalMinutesInput } from './tick-interval.js';
 
 function getTickIntervalMsOrThrow(value: string): number | undefined {
@@ -25,6 +27,8 @@ function parseCooldownMsOrNull(value: string): number | null {
 export interface CreateAgentIntentPayloadInput {
   name: string;
   goal: string;
+  capabilityMode: CapabilityMode;
+  technical: TechnicalConfig | null;
   skillIds: string[];
   hasBotManagementSkill: boolean;
   requiresTradingSetup: boolean;
@@ -52,6 +56,8 @@ export interface CreateAgentIntentPayloadInput {
 export interface UpdateAgentPayloadInput {
   name: string;
   prompt: string;
+  capabilityMode: CapabilityMode;
+  technical: TechnicalConfig | null;
   skillIds: string[];
   hasBotManagementSkill: boolean;
   executionMode: string;
@@ -98,15 +104,18 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   stopLossCooldownMs?: number;
   tickIntervalMs?: number;
   capital?: string;
+  technical?: TechnicalConfig;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
+  const includeTechnical = input.capabilityMode === 'technical' || input.capabilityMode === 'both';
 
   return {
     name: input.name.trim(),
-    prompt: input.goal.trim(),
-    skillIds: [...input.skillIds],
+    prompt: includeIntelligence ? input.goal.trim() : '',
+    skillIds: includeIntelligence ? [...input.skillIds] : [],
     ...(input.requiresTradingSetup ? { executionMode: input.executionMode } : {}),
-    ...(!input.modelPayload.inherits && input.modelPayload.provider ? {
+    ...(includeIntelligence && !input.modelPayload.inherits && input.modelPayload.provider ? {
       provider: input.modelPayload.provider,
       ...(input.modelPayload.lightModel ? { lightModel: input.modelPayload.lightModel } : {}),
       ...(input.modelPayload.heavyModel ? { heavyModel: input.modelPayload.heavyModel } : {}),
@@ -123,6 +132,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.maxPositionSizePct ? { maxPositionSizePct: parseFloat(input.maxPositionSizePct) } : {}),
     ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
     ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
+    ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
   };
 }
 
@@ -150,6 +160,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
+  technical?: TechnicalConfig | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -158,11 +169,14 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     ? (input.originalTickIntervalMs ?? null)
     : parsedTickInterval ?? null;
 
+  const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
+  const includeTechnical = input.capabilityMode === 'technical' || input.capabilityMode === 'both';
+
   return {
     name: input.name.trim(),
-    prompt: input.prompt.trim(),
-    skillIds: [...input.skillIds],
-    executionMode: input.hasTradingCapability ? (input.executionMode || null) : null,
+    ...(includeIntelligence ? { prompt: input.prompt.trim() } : { prompt: '' }),
+    skillIds: includeIntelligence ? [...input.skillIds] : [],
+    executionMode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
     telegramChatId: input.telegramChatId.trim() || null,
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
@@ -175,8 +189,10 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs),
     tickIntervalMs,
     capital: input.capital.trim() || null,
-    provider: input.modelOverrideEnabled ? input.modelForm.provider || null : null,
-    lightModel: input.modelOverrideEnabled ? input.modelForm.lightModel || null : null,
-    heavyModel: input.modelOverrideEnabled ? input.modelForm.heavyModel || null : null,
+    provider: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.provider || null : null,
+    lightModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.lightModel || null : null,
+    heavyModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.heavyModel || null : null,
+    // Send technical: null to explicitly remove it when switching away from technical mode
+    ...(includeTechnical ? { technical: input.technical } : { technical: null }),
   };
 }

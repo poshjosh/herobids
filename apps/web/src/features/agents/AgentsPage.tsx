@@ -14,6 +14,9 @@ import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
+import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
+import { TechnicalConfigSection } from './TechnicalConfigSection.js';
+import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -21,6 +24,8 @@ type CreateStep = 'intent' | 'review';
 interface IntentState {
   name: string;
   goal: string;
+  capabilityMode: CapabilityMode;
+  technicalConfig: TechnicalConfigFormState;
   skillPreset: SkillPresetId;
   skillIds: string[];
   executionMode: 'paper' | 'shadow' | 'live';
@@ -145,6 +150,8 @@ function CreateAgentFlow({
   const [intent, setIntent] = useState<IntentState>({
     name: '',
     goal: '',
+    capabilityMode: 'intelligence',
+    technicalConfig: defaultTechnicalConfigFormState(),
     skillPreset: 'trading',
     skillIds: resolveSkillPresetSkillIds('trading'),
     executionMode: 'paper',
@@ -235,7 +242,9 @@ function CreateAgentFlow({
     { provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel },
     savedModelSettings,
   );
-  const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
+  const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
+  const showTechnical = intent.capabilityMode === 'technical' || intent.capabilityMode === 'both';
+  const requiresTradingSetup = showIntelligence && (intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading'));
   const tradingBindingsQuery = useQuery({
     queryKey: ['capabilities', 'trading', 'bindings'],
     queryFn: () => capabilitiesApi.tradingBindings(),
@@ -251,9 +260,14 @@ function CreateAgentFlow({
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const technicalPayload = (intent.capabilityMode === 'technical' || intent.capabilityMode === 'both')
+        ? technicalFormStateToPayload(intent.technicalConfig)
+        : null;
       const agent = await agentsApi.create(buildCreateAgentPayload({
         name: intent.name,
         goal: intent.goal,
+        capabilityMode: intent.capabilityMode,
+        technical: technicalPayload,
         skillIds: intent.skillIds,
         hasBotManagementSkill,
         requiresTradingSetup,
@@ -281,6 +295,12 @@ function CreateAgentFlow({
     },
     onSuccess: (agent) => onCreated(agent.id),
   });
+
+  const createDisabled = mutation.isPending
+    || !intent.name.trim()
+    || (showIntelligence && !intent.goal.trim())
+    || (showTechnical && !intent.technicalConfig.filters.venue.trim())
+    || tickIntervalError != null;
 
   if (showSetup) {
     return (
@@ -321,6 +341,11 @@ function CreateAgentFlow({
     return (
       <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <CapabilitySelector
+            value={intent.capabilityMode}
+            onChange={(capabilityMode) => setIntent((state) => ({ ...state, capabilityMode }))}
+          />
+
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.name' })}</FieldLabel>
             <input
@@ -334,6 +359,7 @@ function CreateAgentFlow({
             />
           </div>
 
+          {showIntelligence && (
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.goal' })}</FieldLabel>
             <textarea
@@ -341,10 +367,12 @@ function CreateAgentFlow({
               value={intent.goal}
               onChange={(e) => setIntent((state) => ({ ...state, goal: e.target.value }))}
               placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
-              required
+              required={showIntelligence}
             />
           </div>
+          )}
 
+          {showIntelligence && (
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
             <select
@@ -389,7 +417,9 @@ function CreateAgentFlow({
                 : intl.formatMessage({ id: 'agents.create.skillPreset.includes' }, { skills: formatSkillSelection(selectedSkills, intl) })}
             </div>
           </div>
+          )}
 
+          {showIntelligence && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
             <div>
               <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
@@ -418,6 +448,19 @@ function CreateAgentFlow({
               }}
             />
           </div>
+          )}
+
+          {showTechnical && (
+            <div style={{ padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
+                {intl.formatMessage({ id: 'agents.technical.title' })}
+              </div>
+              <TechnicalConfigSection
+                value={intent.technicalConfig}
+                onChange={(technicalConfig) => setIntent((state) => ({ ...state, technicalConfig }))}
+              />
+            </div>
+          )}
 
           {requiresTradingSetup && (
             <div>
@@ -552,7 +595,7 @@ function CreateAgentFlow({
             <Button
               variant="primary"
               type="button"
-              disabled={!intent.name.trim() || !intent.goal.trim() || tickIntervalError != null}
+              disabled={createDisabled}
               onClick={() => setStep('review')}
             >
               {intl.formatMessage({ id: 'agents.create.review' })}
@@ -572,25 +615,38 @@ function CreateAgentFlow({
           </tbody>
         </table>
 
-        <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
-          {intent.goal}
-        </div>
+        {showIntelligence && (
+          <div style={{ padding: '12px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.04))', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
+            {intent.goal}
+          </div>
+        )}
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
             {requiresTradingSetup && <ReviewRow label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(intent.executionMode, intl)} />}
-            <ReviewRow
-              label={intl.formatMessage({ id: 'agents.review.models' })}
-              value={modelPayload.inherits
-                ? intl.formatMessage({ id: 'agents.review.models.inherit' })
-                : intent.provider
-                ? intl.formatMessage(
-                  { id: 'agents.review.models.value' },
-                  { provider: intent.provider, lightModel: intent.lightModel || intl.formatMessage({ id: 'common.default' }), heavyModel: intent.heavyModel || intl.formatMessage({ id: 'common.default' }) },
-                )
-                : intl.formatMessage({ id: 'agents.review.models.inherit' })}
-            />
-            <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />
+            {showIntelligence && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.review.models' })}
+                value={modelPayload.inherits
+                  ? intl.formatMessage({ id: 'agents.review.models.inherit' })
+                  : intent.provider
+                  ? intl.formatMessage(
+                    { id: 'agents.review.models.value' },
+                    { provider: intent.provider, lightModel: intent.lightModel || intl.formatMessage({ id: 'common.default' }), heavyModel: intent.heavyModel || intl.formatMessage({ id: 'common.default' }) },
+                  )
+                  : intl.formatMessage({ id: 'agents.review.models.inherit' })}
+              />
+            )}
+            {showIntelligence && <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />}
+            {showTechnical && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.technicalConfig.filters.venue} />}
+            {showTechnical && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}
+                value={intl.formatMessage({ id: `agents.technical.scan.signalBias.${intent.technicalConfig.signalBias === 'trend-following' ? 'trendFollowing' : 'meanReverting'}` })}
+              />
+            )}
+            {showTechnical && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
+            {showTechnical && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
               value={requiresTradingSetup
@@ -614,9 +670,9 @@ function CreateAgentFlow({
             <Button
               variant="primary"
               type="button"
-              disabled={mutation.isPending || !intent.name.trim() || !intent.goal.trim() || tickIntervalError != null}
+              disabled={createDisabled}
               onClick={() => {
-                if (tickIntervalError != null) {
+                if (createDisabled) {
                   return;
                 }
                 mutation.mutate();

@@ -1,11 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { buildCreateAgentPayload, buildUpdateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
 
+const TECHNICAL_CONFIG = {
+  filters: {
+    venue: 'hyperliquid',
+    venueType: 'orderbook' as const,
+    minVolume24hUsd: 0,
+  },
+  indicators: {
+    rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70, overbought: 80, weakBelow: 30 },
+    macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+    volume: { enabled: true, strongRatio: 1.5, weakRatio: 0.5, recentBars: 4, avgBars: 20 },
+    choch: { enabled: false, swingLookback: 5, minSwingPct: 0.01, confirmBars: 2, rejectOnBearish: false },
+    supportResistance: { enabled: false, lookback: 50, breakoutThreshold: 0.005 },
+    confidence: {
+      rsiWeight: 0.15,
+      macdCrossoverWeight: 0.2,
+      macdIncreasingWeight: 0.1,
+      volumeWeight: 0.15,
+      breakoutWeight: 0.15,
+      chochBullishWeight: 0.15,
+      chochBearishPenalty: 0.1,
+      priceActionWeight: 0,
+      minConfidence: 0,
+      minReasons: 2,
+    },
+  },
+  candles: { interval: '15m' as const, limit: 100 },
+  signalBias: 'trend-following' as const,
+  scanIntervalMs: 60_000,
+  scanBatchSize: 5,
+};
+
 describe('agent payload builders', () => {
   it('buildCreateAgentPayload stores only the trimmed goal in prompt', () => {
     expect(buildCreateAgentPayload({
       name: '  market-watch-01  ',
       goal: '  Trade BTC on breakouts  ',
+      capabilityMode: 'intelligence',
+      technical: null,
       skillIds: ['bot-management', 'trading'],
       hasBotManagementSkill: true,
       requiresTradingSetup: true,
@@ -35,6 +68,8 @@ describe('agent payload builders', () => {
     expect(buildCreateAgentPayload({
       name: 'agent',
       goal: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
       skillIds: [],
       hasBotManagementSkill: false,
       requiresTradingSetup: false,
@@ -73,6 +108,37 @@ describe('agent payload builders', () => {
     });
   });
 
+  it('buildCreateAgentPayload includes technical config and clears intelligence fields in technical-only mode', () => {
+    expect(buildCreateAgentPayload({
+      name: '  technical scout  ',
+      goal: 'This should not be sent',
+      capabilityMode: 'technical',
+      technical: TECHNICAL_CONFIG,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'paper',
+      modelPayload: { inherits: false, provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      maxBots: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    })).toEqual({
+      name: 'technical scout',
+      prompt: '',
+      skillIds: [],
+      technical: TECHNICAL_CONFIG,
+    });
+  });
+
   it('resolveCreateAgentBindingId returns null when no binding is present', () => {
     expect(resolveCreateAgentBindingId(null)).toBeNull();
   });
@@ -92,6 +158,8 @@ describe('agent payload builders', () => {
     expect(buildUpdateAgentPayload({
       name: '  Momentum scout  ',
       prompt: '  Watch BTC and trade breakouts.  ',
+      capabilityMode: 'intelligence',
+      technical: null,
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
@@ -130,6 +198,7 @@ describe('agent payload builders', () => {
       provider: null,
       lightModel: null,
       heavyModel: null,
+      technical: null,
     });
   });
 
@@ -137,6 +206,8 @@ describe('agent payload builders', () => {
     expect(buildUpdateAgentPayload({
       name: 'Momentum scout',
       prompt: 'Watch BTC and trade breakouts.',
+      capabilityMode: 'intelligence',
+      technical: null,
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',
@@ -160,10 +231,80 @@ describe('agent payload builders', () => {
     }).tickIntervalMs).toBe(90_000);
   });
 
+  it('buildUpdateAgentPayload preserves both intelligence and technical fields in both mode', () => {
+    const payload = buildUpdateAgentPayload({
+      name: '  Hybrid scout  ',
+      prompt: '  Watch BTC and scan order flow.  ',
+      capabilityMode: 'both',
+      technical: TECHNICAL_CONFIG,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: '',
+      hasTradingCapability: false,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxBots: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: true,
+      modelForm: { provider: 'openai', lightModel: 'gpt-4.1-mini', heavyModel: 'gpt-4.1' },
+    });
+
+    expect(payload.name).toBe('Hybrid scout');
+    expect(payload.prompt).toBe('Watch BTC and scan order flow.');
+    expect(payload.skillIds).toEqual(['trading']);
+    expect(payload.provider).toBe('openai');
+    expect(payload.lightModel).toBe('gpt-4.1-mini');
+    expect(payload.heavyModel).toBe('gpt-4.1');
+    expect(payload.technical).toEqual(TECHNICAL_CONFIG);
+  });
+
+  it('buildUpdateAgentPayload clears execution mode in technical-only mode even when the current agent used to trade', () => {
+    expect(buildUpdateAgentPayload({
+      name: '  Technical scout  ',
+      prompt: 'legacy objective',
+      capabilityMode: 'technical',
+      technical: TECHNICAL_CONFIG,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxBots: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    })).toMatchObject({
+      name: 'Technical scout',
+      prompt: '',
+      skillIds: [],
+      executionMode: null,
+      technical: TECHNICAL_CONFIG,
+    });
+  });
+
   it('rejects invalid tick intervals in create payloads instead of silently dropping them', () => {
     expect(() => buildCreateAgentPayload({
       name: 'agent',
       goal: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
       skillIds: [],
       hasBotManagementSkill: false,
       requiresTradingSetup: false,
@@ -188,6 +329,8 @@ describe('agent payload builders', () => {
     expect(() => buildUpdateAgentPayload({
       name: 'Momentum scout',
       prompt: 'Watch BTC and trade breakouts.',
+      capabilityMode: 'intelligence',
+      technical: null,
       skillIds: ['trading'],
       hasBotManagementSkill: false,
       executionMode: 'paper',

@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
 
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, logout } = useSession();
   const intl = useIntl();
 
@@ -82,6 +83,14 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           {NAV_ITEMS.map((item) => (
             <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
+          <SidebarAction
+            label={intl.formatMessage({ id: 'nav.createAgent' })}
+            path="/agents?create=1"
+            onNavigate={() => {
+              void navigate('/agents?create=1');
+              onClose?.();
+            }}
+          />
         </NavGroup>
 
         <SectionLabel>{intl.formatMessage({ id: 'nav.manage' })}</SectionLabel>
@@ -231,5 +240,32 @@ function NavItem({ path, label, icon, active, onNavigate }: { path: string; labe
       <span style={{ fontSize: '16px', opacity: 0.8 }}>{icon}</span>
       {label}
     </Link>
+  );
+}
+
+function SidebarAction({ label, onNavigate }: { label: string; path: string; onNavigate: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onNavigate}
+      aria-label={label}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 10px 4px 18px',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        fontSize: '12px',
+        color: 'var(--color-text-muted)',
+        borderRadius: '6px',
+        textAlign: 'left',
+        width: '100%',
+      }}
+    >
+      <span style={{ fontSize: '11px' }}>+</span>
+      {label}
+    </button>
   );
 }

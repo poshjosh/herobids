@@ -4,9 +4,6 @@ Extend the agent creation and editing UI to support the new unified agent model
 (intelligence + technical capabilities). Add a persistent "Create AI Agent" action
 to the sidebar. Intelligence is pre-selected by default.
 
-**Depends on:** Phases 1–6 of `docs/features/2026/06/16/001-automation-agents.md`
-(backend unified agent model, TechnicalConfigSchema, scan engine, etc.)
-
 **Preset awareness:** Indicator presets defined here should be designed as plain
 config objects extractable to a shared presets registry, to maintain parity with
 the forthcoming bot mechanical strategy presets
@@ -29,7 +26,7 @@ the forthcoming bot mechanical strategy presets
 
 ---
 
-## Phase 1 — API schema updates
+## DONE: Phase 1 — API schema updates
 
 **Files:** `apps/api/src/routes/agents.ts`
 
@@ -53,7 +50,7 @@ config. This must be added before the UI can send or receive it.
 
 ---
 
-## Phase 2 — Indicator preset definitions
+## PENDING: Phase 2 — Indicator preset definitions
 
 **File:** `apps/web/src/features/agents/technical-presets.ts` (new)
 
@@ -124,7 +121,7 @@ candles: interval '1H', limit 100
 
 ---
 
-## Phase 3 — `TechnicalConfigSection` component
+## PENDING: Phase 3 — `TechnicalConfigSection` component
 
 **File:** `apps/web/src/features/agents/TechnicalConfigSection.tsx` (new)
 
@@ -233,7 +230,7 @@ export interface TechnicalConfigFormState {
 
 ---
 
-## Phase 4 — Capability selector component
+## PENDING: Phase 4 — Capability selector component
 
 **File:** `apps/web/src/features/agents/CapabilitySelector.tsx` (new)
 
@@ -268,7 +265,7 @@ type CapabilityMode = 'intelligence' | 'technical' | 'both';
 
 ---
 
-## Phase 5 — Create form updates
+## PENDING: Phase 5 — Create form updates
 
 **File:** `apps/web/src/features/agents/AgentsPage.tsx`
 
@@ -321,7 +318,7 @@ interface IntentState {
 
 ---
 
-## Phase 6 — Edit form updates
+## PENDING: Phase 6 — Edit form updates
 
 **File:** `apps/web/src/features/agents/EditAgentModal.tsx`
 
@@ -371,7 +368,7 @@ interface FormState {
 
 ---
 
-## Phase 7 — Sidebar "Create AI Agent" action
+## PENDING: Phase 7 — Sidebar "Create AI Agent" action
 
 **File:** `apps/web/src/app/layout/Sidebar.tsx`
 
@@ -429,7 +426,7 @@ Add to `NAV_ITEMS` group, directly after the agents item:
 
 ---
 
-## Phase 8 — i18n strings
+## PENDING: Phase 8 — i18n strings
 
 **File:** `apps/web/src/app/i18n/locales/en.ts`
 
@@ -501,7 +498,7 @@ New keys to add:
 
 ---
 
-## Phase 9 — Tests
+## PENDING: Phase 9 — Tests
 
 **Files:**
 - `apps/web/src/features/agents/technical-config-helpers.test.ts` (new)
@@ -550,17 +547,3 @@ New keys to add:
 - [ ] All i18n keys present in `en.ts` and `hi.ts`
 - [ ] `pnpm lint` passes
 - [ ] `pnpm test` passes
-
----
-
-## Implementation Order
-
-1. Phase 1 (API schema) — unblocks the rest; must ship first
-2. Phase 2 (presets) — pure data, no deps
-3. Phase 3 (helpers + TechnicalConfigSection) — depends on Phase 2
-4. Phase 4 (CapabilitySelector) — independent
-5. Phase 5 (create form) — depends on 3 + 4
-6. Phase 6 (edit form) — depends on 3 + 4
-7. Phase 7 (sidebar) — independent, can ship any time
-8. Phase 8 (i18n) — alongside 3–7
-9. Phase 9 (tests) — alongside each phase
