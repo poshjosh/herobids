@@ -287,6 +287,7 @@ export const messages: Record<string, string> = {
   'agents.risk.aggressive.description': 'مراكز أكبر وعوائد وخسائر أعلى',
   'agents.create.title': 'إنشاء وكيل ذكاء اصطناعي',
   'agents.create.goal': 'ما الذي يجب أن يفعله وكيل الذكاء الاصطناعي؟',
+  'agents.create.goalBoth': 'Instructions / Goal', // TODO: translate
   'agents.create.goalPlaceholder': 'مثلاً نمِّ محفظتي على سولانا بشكل محافظ خلال 30 يوماً',  'agents.create.name': 'الاسم',
   'agents.create.namePlaceholder': 'مثلاً market-watch-01',  'agents.create.skillPreset': 'قالب المهارات',
   'agents.create.skillPreset.help': 'ابدأ بقالب جاهز أو اختر مخصصاً لتحديد المهارات يدوياً.',
@@ -316,6 +317,7 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'جارٍ الإنشاء…',
   'agents.create.tradingControls.title': 'ضوابط التداول',
   'agents.review.title': 'مراجعة وإنشاء وكيل ذكاء اصطناعي',
+  'agents.review.capabilityMode': 'Capability mode', // TODO: translate
   'agents.review.models': 'نماذج الذكاء الاصطناعي',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'يرث إعدادات النموذج المحفوظة لديك',

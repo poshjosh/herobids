@@ -175,6 +175,7 @@ function CreateAgentFlow({
   });
   const [modelTouched, setModelTouched] = useState(false);
   const [telegramTouched, setTelegramTouched] = useState(false);
+  const [showIntentErrors, setShowIntentErrors] = useState(false);
 
   const meQuery = useQuery({
     queryKey: ['me'],
@@ -361,7 +362,7 @@ function CreateAgentFlow({
 
           {showIntelligence && (
           <div>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.goal' })}</FieldLabel>
+            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'both' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
             <textarea
               style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
               value={intent.goal}
@@ -460,6 +461,7 @@ function CreateAgentFlow({
               <TechnicalConfigSection
                 value={intent.technicalConfig}
                 onChange={(technicalConfig) => setIntent((state) => ({ ...state, technicalConfig }))}
+                showErrors={showIntentErrors}
               />
             </div>
           )}
@@ -597,8 +599,12 @@ function CreateAgentFlow({
             <Button
               variant="primary"
               type="button"
-              disabled={createDisabled}
-              onClick={() => setStep('review')}
+              onClick={() => {
+                setShowIntentErrors(true);
+                if (!createDisabled) {
+                  setStep('review');
+                }
+              }}
             >
               {intl.formatMessage({ id: 'agents.create.review' })}
             </Button>
@@ -614,6 +620,10 @@ function CreateAgentFlow({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
             <ReviewRow label={intl.formatMessage({ id: 'agents.create.name' })} value={intent.name.trim()} />
+            <ReviewRow
+              label={intl.formatMessage({ id: 'agents.review.capabilityMode' })}
+              value={intl.formatMessage({ id: `agents.capability.${intent.capabilityMode}.label` })}
+            />
           </tbody>
         </table>
 
@@ -666,7 +676,7 @@ function CreateAgentFlow({
         {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
-          <Button variant="ghost" onClick={() => setStep('intent')} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
+          <Button variant="ghost" onClick={() => { setStep('intent'); setShowIntentErrors(false); }} type="button">{intl.formatMessage({ id: 'common.back' })}</Button>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
             <Button

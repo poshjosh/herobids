@@ -287,6 +287,7 @@ export const messages: Record<string, string> = {
   'agents.risk.aggressive.description': 'बड़ी पोज़िशनें, अधिक संभावित लाभ और हानि',
   'agents.create.title': 'AI एजेंट बनाएं',
   'agents.create.goal': 'AI एजेंट को क्या करना चाहिए?',
+  'agents.create.goalBoth': 'Instructions / Goal', // TODO: translate
   'agents.create.goalPlaceholder': 'उदा. 30 दिनों में मेरी Solana पोर्टफोलियो को सावधानी से बढ़ाएं',
   'agents.create.name': 'नाम',
   'agents.create.namePlaceholder': 'उदा. market-watch-01',
@@ -318,6 +319,7 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'बनाया जा रहा है…',
   'agents.create.tradingControls.title': 'ट्रेडिंग गार्डरेल्स',
   'agents.review.title': 'समीक्षा और AI एजेंट निर्माण',
+  'agents.review.capabilityMode': 'Capability mode', // TODO: translate
   'agents.review.models': 'AI मॉडल',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'आपकी सहेजी हुई मॉडल सेटिंग्स विरासत में लेता है',
