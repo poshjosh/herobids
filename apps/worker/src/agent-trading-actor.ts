@@ -265,19 +265,25 @@ export class AgentTradingActor implements ExecutionActor {
         this.credentialsPresent = !!(result.credentials.apiKey.trim() && result.credentials.secret.trim());
         this.streamPool = deps.createStreamPoolHandle?.(result.credentials.testnet) ?? deps.streamPool;
       } else if (deps.venueType === 'swap') {
-        if (!deps.swapAssets) {
-          throw new Error(`Swap venue ${deps.venue} requires explicit swapAssets metadata for agent ${deps.agentId}`);
+        // Agents can start without pre-configured swapAssets — they decide
+        // tokens dynamically via submit_decision. Decimals are resolved on-demand
+        // at decision time. Bots must have swapAssets at creation (validated by
+        // BotConfigSchema). When swapAssets are absent the swap venue adapter is
+        // skipped; the actor starts in a swap-capable-but-unconfigured state.
+        if (deps.swapAssets) {
+          const result = await deps.venueAdapterFactory.buildSwapAdapter({
+            venueAccountId: deps.venueAccountId,
+            venue: deps.venue,
+            swapAssets: deps.swapAssets,
+            actorType: 'agent',
+            actorId: deps.agentId,
+          });
+          this.swapVenue = result.swapVenue;
+          this.signerPresent = result.signerPresent;
+          this.swapConfirmationPoller = result.confirmationPoller ?? deps.swapConfirmationPoller;
+        } else {
+          this.logger.warn({ venue: deps.venue, agentId: deps.agentId }, 'Agent started without swapAssets — swap execution unavailable until swapAssets are configured');
         }
-        const result = await deps.venueAdapterFactory.buildSwapAdapter({
-          venueAccountId: deps.venueAccountId,
-          venue: deps.venue,
-          swapAssets: deps.swapAssets,
-          actorType: 'agent',
-          actorId: deps.agentId,
-        });
-        this.swapVenue = result.swapVenue;
-        this.signerPresent = result.signerPresent;
-        this.swapConfirmationPoller = result.confirmationPoller ?? deps.swapConfirmationPoller;
       }
 
       // Live-mode startup gate (fail-closed) — same check bots go through

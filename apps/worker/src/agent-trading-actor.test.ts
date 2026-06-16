@@ -897,7 +897,7 @@ describe('AgentTradingActor', () => {
       await actor.stop();
     });
 
-    it('throws for swap venues when swapAssets metadata is missing', async () => {
+    it('starts without swapAssets for swap venues (agents resolve tokens dynamically)', async () => {
       const factory = makeVenueAdapterFactory();
       const actor = new AgentTradingActor(makeBaseDeps({
         executionMode: 'shadow',
@@ -907,7 +907,9 @@ describe('AgentTradingActor', () => {
         venueAdapterFactory: factory as any,
       }));
 
-      await expect(actor.start()).rejects.toThrow('requires explicit swapAssets metadata');
+      // Agents can start without pre-configured swapAssets — they decide tokens
+      // dynamically via submit_decision. The swap venue adapter is simply skipped.
+      await expect(actor.start()).resolves.toBeUndefined();
       expect(factory.buildSwapAdapter).not.toHaveBeenCalled();
     });
   });

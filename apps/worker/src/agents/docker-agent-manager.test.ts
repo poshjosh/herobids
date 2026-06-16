@@ -211,6 +211,19 @@ describe('DockerAgentManager — stop failure recovery', () => {
     expect(agentRepo.updateAgent).toHaveBeenNthCalledWith(1, 'agent-001', { status: 'stopped' });
     expect(agentRepo.updateAgent).toHaveBeenNthCalledWith(2, 'agent-001', { status: 'crashed' });
   });
+
+  it('preserves crashed status when agent is already crashed', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const agentRepo = makeAgentRepo();
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'agent-001', status: 'crashed' });
+
+    const manager = new DockerAgentManager(BASE_CONFIG, agentRepo as any);
+    await manager.stop('agent-001');
+
+    expect(agentRepo.updateAgent).not.toHaveBeenCalledWith('agent-001', { status: 'stopped' });
+  });
 });
 
 describe('DockerAgentManager — sandbox capabilities (bug #10)', () => {

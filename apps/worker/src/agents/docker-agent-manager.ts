@@ -248,10 +248,24 @@ export class DockerAgentManager {
    * itself fails unexpectedly we revert the status to `crashed` so that crash
    * detection remains active — otherwise the container could keep running while
    * the DB reports `stopped` and any subsequent die event is silently ignored.
+   *
+   * When the agent is already `crashed` we preserve that status — the crash was
+   * already recorded and overwriting it with `stopped` would lose diagnostic state.
+   *
+   * There is an accepted TOCTOU risk: between the getAgent check and the
+   * updateAgent write another process could mark the agent crashed, and we would
+   * overwrite it with `stopped`. The window is extremely narrow (two consecutive
+   * awaits) and a conditional repository update would add surface area
+   * disproportionate to the risk.
    */
   async stop(agentId: string): Promise<void> {
     const name = `herobids-agent-${agentId}`;
-    await this.agentRepo.updateAgent(agentId, { status: 'stopped' });
+    const currentAgent = await this.agentRepo.getAgent(agentId).catch(() => null);
+    const preserveCrashed = currentAgent?.status === 'crashed';
+
+    if (!preserveCrashed) {
+      await this.agentRepo.updateAgent(agentId, { status: 'stopped' });
+    }
 
     try {
       // Docker stop timeout (?t=10): gives the agent runtime 10 seconds to drain
