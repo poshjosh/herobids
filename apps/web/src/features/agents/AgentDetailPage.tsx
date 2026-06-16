@@ -219,7 +219,7 @@ export function AgentDetailPage() {
     hasTradingCapability && agent.executionMode ? `Execution mode: ${formatExecutionMode(agent.executionMode, intl)}` : null,
   ].filter((item): item is string => item !== null);
   const lifecycleError = startMutation.error ?? pauseMutation.error ?? resumeMutation.error ?? stopMutation.error ?? deleteMutation.error;
-  const canStop = ['active', 'starting', 'paused', 'unhealthy'].includes(agent.status);
+  const canStop = ['active', 'starting', 'paused', 'unhealthy', 'crashed'].includes(agent.status);
   const runtimeAlert = agent.status === 'crashed'
     ? intl.formatMessage({ id: 'agents.detail.runtimeAlert.crashed' })
     : (agent.activeSession?.status === 'unhealthy' && agent.status !== 'stopped')

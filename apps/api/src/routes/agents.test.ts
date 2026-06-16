@@ -1429,3 +1429,105 @@ describe('agent routes — technical config persistence', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// POST /agents/:id/stop
+// ---------------------------------------------------------------------------
+describe('POST /agents/:id/stop', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['active'],
+    ['starting'],
+    ['paused'],
+    ['unhealthy'],
+    ['crashed'],
+  ])('stops a %s agent and returns { status: "stopped" }', async (status) => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status, userId: TEST_USER_ID }],
+      sessionRows: [{ id: 'session-1', agentId: 'agent-1', status: 'running' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/stop' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'stopped' });
+    expect(updateSets).toContainEqual(expect.objectContaining({ status: 'stopped', pauseState: null }));
+  });
+
+  it('returns { status: "stopped" } when agent is already stopped (idempotent)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/stop' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'stopped' });
+    // No update should be issued for an already-stopped agent
+    expect(updateSets.filter((s) => s['status'] === 'stopped')).toHaveLength(0);
+  });
+
+  it('returns 404 when the agent is not found', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({ agentRows: [] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/stop' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('not_found');
+  });
+
+  it('returns 404 when the user does not own the agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb();
+
+    const app = Fastify();
+    decorateWithAuth(app, 'other-user');
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/stop' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('not_found');
+  });
+
+  it('retires active runtime sessions when stopping', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'active', userId: TEST_USER_ID }],
+      sessionRows: [
+        { id: 'session-1', agentId: 'agent-1', status: 'running' },
+        { id: 'session-2', agentId: 'agent-1', status: 'starting' },
+        { id: 'session-3', agentId: 'agent-1', status: 'unhealthy' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/stop' });
+
+    expect(res.statusCode).toBe(200);
+    // Agent status update and session retirements should be in updateSets
+    const sessionUpdates = updateSets.filter((s) => s['status'] === 'stopped' && s['stoppedAt'] !== undefined);
+    expect(sessionUpdates.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
