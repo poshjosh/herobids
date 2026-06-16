@@ -1,7 +1,7 @@
 # Plan: Agent Swap Assets Resolution
 
 **Date:** 2026-06-16  
-**Status:** Draft  
+**Status:** Step 1 FIXED, Steps 2-3 deferred  
 
 ## Problem
 
