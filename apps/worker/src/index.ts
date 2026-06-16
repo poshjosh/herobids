@@ -12,7 +12,7 @@ import { VenueAdapterFactory } from './venue-adapter-factory.js';
 import { AgentTradingActor } from './agent-trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
-import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
+import { MomentumStrategy, LlmStrategy, MechanicalStrategy, HybridStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
@@ -21,7 +21,7 @@ import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
 import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
-import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
+import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
@@ -684,7 +684,7 @@ const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined,
 const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, eventPublisher);
 
 // Strategy factory keyed by config.strategy.type
-function createStrategy(strategyConfig: StrategyConfig): Strategy {
+function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFetcher): Strategy {
   switch (strategyConfig.type) {
     case 'momentum':
       return new MomentumStrategy(() => idGen.decisionId());
@@ -693,6 +693,19 @@ function createStrategy(strategyConfig: StrategyConfig): Strategy {
         () => idGen.decisionId(),
         async (artifact) => { await backtestingRepo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
       );
+    case 'mechanical': {
+      if (!candleFetcher) throw new Error(`'mechanical' strategy requires marketData to be configured (CandleFetcher unavailable)`);
+      return new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
+    }
+    case 'hybrid': {
+      if (!candleFetcher) throw new Error(`'hybrid' strategy requires marketData to be configured (CandleFetcher unavailable)`);
+      const mechanical = new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
+      const llm = new LlmStrategy(
+        () => idGen.decisionId(),
+        async (artifact) => { await backtestingRepo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
+      );
+      return new HybridStrategy(mechanical, llm);
+    }
   }
 }
 
@@ -813,8 +826,6 @@ const runtime = new WorkerRuntime(
       venue: config.venue,
       venueType: config.venueType,
     });
-
-    const strategy = createStrategy(config.strategy);
 
     const venueAccountId = startupContext.sourceVenueAccountId;
     // The resolver already validated the source-venue-account requirement per provider type.
@@ -961,6 +972,17 @@ const runtime = new WorkerRuntime(
       );
     }
 
+    const candleFetcher: CandleFetcher | undefined = sharedMarketDataRegistry
+      ? new VenueCandleFetcher(
+          sharedMarketDataRegistry.configs.binance,
+          swapNetwork != null
+            ? { config: sharedMarketDataRegistry.configs.geckoterminal, network: swapNetwork }
+            : null,
+        )
+      : undefined;
+
+    const strategy = createStrategy(config.strategy, candleFetcher);
+
     const deps: TradingActorDeps = {
       strategy,
       journal,
@@ -1027,14 +1049,7 @@ const runtime = new WorkerRuntime(
         marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
       },
       swapConfirmationPoller,
-      candleFetcher: sharedMarketDataRegistry
-        ? new VenueCandleFetcher(
-            sharedMarketDataRegistry.configs.binance,
-            swapNetwork != null
-              ? { config: sharedMarketDataRegistry.configs.geckoterminal, network: swapNetwork }
-              : null,
-          )
-        : undefined,
+      candleFetcher,
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
           agentStreamConsumer.unsubscribe(instanceId);
