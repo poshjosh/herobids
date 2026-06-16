@@ -19,10 +19,13 @@ export class MechanicalStrategy implements Strategy {
   readonly id = 'mechanical-v1';
   readonly name = 'Mechanical Strategy';
 
+  private _playbookWarned = false;
+
   constructor(
     private readonly candleFetcher: CandleFetcher,
     private readonly sentimentProvider: SentimentProvider | null,
     private readonly idGen: () => string,
+    private readonly debug?: (msg: string, ctx?: Record<string, unknown>) => void,
   ) {}
 
   async evaluate(
@@ -81,7 +84,17 @@ export class MechanicalStrategy implements Strategy {
     }
 
     // Playbook: avoidParabolicMovePct — skip entry if last candle's move is too large
-    const avoidParabolicMovePct = extractNumber(snapshot.data, 'avoidParabolicMovePct');
+    const avoidParabolicMovePct = snapshot.playbook?.avoidParabolicMovePct;
+
+    // Diagnostic: if playbook is entirely absent but this is a live path (data has position state),
+    // the TradingActor may have forgotten to populate it. Log once per strategy lifetime.
+    if (!this._playbookWarned && snapshot.playbook === undefined && snapshot.data?.['hasOpenPosition'] !== undefined) {
+      this._playbookWarned = true;
+      this.debug?.('snapshot.playbook absent — playbook guards skipped (TradingActor may need updating)', {
+        symbol: snapshot.symbol,
+      });
+    }
+
     if (avoidParabolicMovePct != null) {
       const lastCandle = candles[candles.length - 1]!;
       const movePct = Math.abs((lastCandle.close - lastCandle.open) / lastCandle.open) * 100;
@@ -94,8 +107,12 @@ export class MechanicalStrategy implements Strategy {
     }
 
     // Playbook: maxNewPositionsPerDay — skip if daily new-position limit reached
-    const newPositionsToday = extractNumber(snapshot.data, 'newPositionsToday');
-    const maxNewPositionsPerDay = extractNumber(snapshot.data, 'maxNewPositionsPerDay');
+    // newPositionsToday is runtime position state (counter), not a playbook guard,
+    // so it lives in snapshot.data alongside openPositionSize / hasOpenPosition.
+    const newPositionsToday = typeof snapshot.data?.['newPositionsToday'] === 'number'
+      ? (snapshot.data['newPositionsToday'] as number)
+      : undefined;
+    const maxNewPositionsPerDay = snapshot.playbook?.maxNewPositionsPerDay;
     if (newPositionsToday != null && maxNewPositionsPerDay != null && newPositionsToday >= maxNewPositionsPerDay) {
       if (hasOpenPosition) {
         return ok(makeDecision(snapshot, 'go_flat', '0', this.idGen, { reason: 'daily_limit_reached' }));
@@ -140,12 +157,6 @@ function resolveHasOpenPosition(snapshot: MarketSnapshot): boolean {
   if (typeof size === 'number') return size !== 0;
   if (typeof size === 'string') return size !== '0' && size !== '';
   return snapshot.data['hasOpenPosition'] === true;
-}
-
-function extractNumber(data: Record<string, unknown> | undefined, key: string): number | undefined {
-  if (!data) return undefined;
-  const v = data[key];
-  return typeof v === 'number' ? v : undefined;
 }
 
 function makeDecision(

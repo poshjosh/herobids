@@ -1674,13 +1674,15 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       }
       snapshot = {
         ...snapshot,
+        playbook: {
+          maxNewPositionsPerDay: this.deps.riskPlaybook?.maxNewPositionsPerDay,
+          avoidParabolicMovePct: this.deps.riskPlaybook?.avoidParabolicMovePct,
+        },
         data: {
           ...snapshot.data,
           openPositionSize: this.position.size.toString(),
           hasOpenPosition: this.position.side !== 'flat',
           newPositionsToday: this.newPositionsToday,
-          ...(this.deps.riskPlaybook?.maxNewPositionsPerDay != null && { maxNewPositionsPerDay: this.deps.riskPlaybook.maxNewPositionsPerDay }),
-          ...(this.deps.riskPlaybook?.avoidParabolicMovePct != null && { avoidParabolicMovePct: this.deps.riskPlaybook.avoidParabolicMovePct }),
         },
       };
 

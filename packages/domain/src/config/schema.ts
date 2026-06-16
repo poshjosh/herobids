@@ -972,6 +972,20 @@ export const RiskConfigSchema = z.object({
   avoidParabolicMovePct: z.number().min(0).optional(),
 });
 
+/**
+ * Risk playbook values forwarded from RiskConfigSchema into the strategy snapshot.
+ * These are risk/safety guards consumed by MechanicalStrategy (and eventually
+ * HybridStrategy) during evaluate(). The TradingActor must populate this on every
+ * snapshot; if absent, the checks silently pass — which is correct when the user
+ * did not configure those guards, but is a bug if the actor forgot to populate.
+ */
+export const RiskPlaybookSchema = z.object({
+  maxNewPositionsPerDay: z.number().int().min(0).optional(),
+  avoidParabolicMovePct: z.number().min(0).optional(),
+}).default({});
+
+export type RiskPlaybook = z.infer<typeof RiskPlaybookSchema>;
+
 export const MomentumParamsSchema = z.object({
   lookbackPeriod: z.number().int().min(2).default(5),
   threshold: z.number().min(0).default(0.02),

@@ -158,11 +158,11 @@ Also extend `StrategyConfigSchema` discriminated union:
 
 ### Checklist
 
-- [ ] Add `MechanicalParamsSchema` and `HybridParamsSchema` to `schema.ts`
-- [ ] Add `MechanicalParams` and `HybridParams` inferred types
-- [ ] Extend `StrategyConfigSchema` with 'mechanical' and 'hybrid' variants
-- [ ] Extend `RiskConfigSchema` with `maxNewPositionsPerDay` and `avoidParabolicMovePct`
-- [ ] Export all new schemas and types from `packages/domain/src/index.ts`
+- [x] Add `MechanicalParamsSchema` and `HybridParamsSchema` to `schema.ts`
+- [x] Add `MechanicalParams` and `HybridParams` inferred types
+- [x] Extend `StrategyConfigSchema` with 'mechanical' and 'hybrid' variants
+- [x] Extend `RiskConfigSchema` with `maxNewPositionsPerDay` and `avoidParabolicMovePct`
+- [x] Export all new schemas and types from `packages/domain/src/index.ts`
 - [ ] `pnpm lint` passes
 
 ---
@@ -245,13 +245,13 @@ doesn't fit cleanly, extract the scoring core into a shared function both can ca
 
 ### Checklist
 
-- [ ] Create `mechanical-strategy.ts`
-- [ ] Reuse `scoreCandidate()` — do not reimplement indicator scoring
-- [ ] Implement playbook checks (`avoidParabolicMovePct`, `maxNewPositionsPerDay`)
-- [ ] Export from `packages/strategy/src/index.ts`
-- [ ] Unit tests: returns `go_long` when all signals align; returns `null` when
+- [x] Create `mechanical-strategy.ts`
+- [x] Reuse `scoreCandidate()` — do not reimplement indicator scoring
+- [x] Implement playbook checks (`avoidParabolicMovePct`, `maxNewPositionsPerDay`)
+- [x] Export from `packages/strategy/src/index.ts`
+- [x] Unit tests: returns `go_long` when all signals align; returns `null` when
   RSI overbought; returns `go_flat` below exit threshold
-- [ ] `pnpm lint` passes
+- [x] `pnpm lint` passes
 
 ---
 
@@ -344,7 +344,7 @@ This extraction should be planned when the bot UI spec is written.
 - **LOW**: `mapIntervalToTimeframe` in `VenueCandleFetcher` coarsens granularity for GeckoTerminal (e.g. `'4H'` → `'hour'`) with a warning log only. Strategies using `candleInterval: '4H'` against Jupiter tokens will receive 1-hour candles.
 
 ### [Phase 4 — MechanicalStrategy]
-- **MEDIUM**: `avoidParabolicMovePct` and `maxNewPositionsPerDay` are injected via `snapshot.data` — if the TradingActor never populates them, these checks silently pass. The TradingActor snapshot builder should be audited to confirm both fields are populated from `RiskConfigSchema` before calling `strategy.evaluate()`.
+- **MEDIUM**: ~~`avoidParabolicMovePct` and `maxNewPositionsPerDay` are injected via `snapshot.data` — if the TradingActor never populates them, these checks silently pass. The TradingActor snapshot builder should be audited to confirm both fields are populated from `RiskConfigSchema` before calling `strategy.evaluate()`.~~ **RESOLVED (2026-06-16):** Added typed `RiskPlaybookSchema` and `snapshot.playbook` field to `MarketSnapshot`. The playbook values are now carried through a typed property rather than an untyped string-key lookup in `snapshot.data`. The `TradingActor.tick()` populates `snapshot.playbook`, `MechanicalStrategy` reads from it, and the backtesting `runBacktest` passes `riskPlaybook` through `BacktestConfig`. A debug hook on `MechanicalStrategy` detects when `playbook` is absent on a live-looking snapshot. No more silent-skip risk from key renames.
 
 ### [Phase 5 — HybridStrategy]
 - **LOW**: `MechanicalStrategy` generates a `decisionId` in the hybrid pre-check pass that is silently discarded when the LLM makes the final decision. The mechanical ID is never persisted or logged — consider surfacing it in hybrid decision metadata for traceability.

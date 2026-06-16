@@ -33,6 +33,11 @@ const BASE_SNAPSHOT: MarketSnapshot = {
   timestamp: '2026-01-01T00:00:00Z',
 };
 
+// NOTE: When spreading BASE_SNAPSHOT in tests, add new fields after the spread
+// (e.g. { ...BASE_SNAPSHOT, playbook: {...}, data: {...} }). This ensures
+// explicit fields override BASE_SNAPSHOT defaults. Reversing the order would
+// cause the spread of BASE_SNAPSHOT to overwrite the explicit fields.
+
 // Minimum valid MechanicalParamsSchema config (positionSize is required)
 const BASE_CONFIG = {
   positionSize: '100',
@@ -127,7 +132,7 @@ describe('MechanicalStrategy', () => {
 
     const snapshot: MarketSnapshot = {
       ...BASE_SNAPSHOT,
-      data: { avoidParabolicMovePct: 5 },
+      playbook: { avoidParabolicMovePct: 5 },
     };
 
     const result = await strat.evaluate(snapshot, BASE_CONFIG);
@@ -146,7 +151,8 @@ describe('MechanicalStrategy', () => {
 
     const snapshot: MarketSnapshot = {
       ...BASE_SNAPSHOT,
-      data: { avoidParabolicMovePct: 5, openPositionSize: '100' },
+      playbook: { avoidParabolicMovePct: 5 },
+      data: { openPositionSize: '100' },
     };
 
     const result = await strat.evaluate(snapshot, BASE_CONFIG);
@@ -163,7 +169,8 @@ describe('MechanicalStrategy', () => {
 
     const snapshot: MarketSnapshot = {
       ...BASE_SNAPSHOT,
-      data: { newPositionsToday: 3, maxNewPositionsPerDay: 3 },
+      playbook: { maxNewPositionsPerDay: 3 },
+      data: { newPositionsToday: 3 },
     };
 
     const result = await strat.evaluate(snapshot, BASE_CONFIG);
@@ -180,7 +187,8 @@ describe('MechanicalStrategy', () => {
 
     const snapshot: MarketSnapshot = {
       ...BASE_SNAPSHOT,
-      data: { newPositionsToday: 2, maxNewPositionsPerDay: 3 },
+      playbook: { maxNewPositionsPerDay: 3 },
+      data: { newPositionsToday: 2 },
     };
 
     const result = await strat.evaluate(snapshot, BASE_CONFIG);
@@ -245,5 +253,44 @@ describe('MechanicalStrategy', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('strategy.candle_fetch_failed');
     }
+  });
+
+  it('calls debug callback once when playbook is absent but position state exists', async () => {
+    const debug = vi.fn();
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen, debug);
+    // Must return a signal so we don't early-exit before the debug check
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      playbook: undefined,
+      data: { hasOpenPosition: true },
+    };
+
+    await strat.evaluate(snapshot, BASE_CONFIG);
+
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledWith(
+      'snapshot.playbook absent — playbook guards skipped (TradingActor may need updating)',
+      { symbol: SYMBOL },
+    );
+  });
+
+  it('does not fire playbook-absent debug more than once across multiple ticks', async () => {
+    const debug = vi.fn();
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen, debug);
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      playbook: undefined,
+      data: { hasOpenPosition: true },
+    };
+
+    await strat.evaluate(snapshot, BASE_CONFIG);
+    await strat.evaluate(snapshot, BASE_CONFIG);
+    await strat.evaluate(snapshot, BASE_CONFIG);
+
+    expect(debug).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,4 @@
-import type { Strategy, MarketSnapshot, MarkSource } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, MarkSource, RiskPlaybook } from '@herobids/domain';
 import type { Executor, Journal, RiskLimits, TradingCyclePersistence, TradingCycleResult } from '@herobids/engine';
 import { runTradingCycle, flatPosition, PaperExecutor, InMemoryJournal } from '@herobids/engine';
 import type { PositionState } from '@herobids/engine';
@@ -43,6 +43,13 @@ export interface BacktestConfig {
   executor?: Executor;
   /** Optional journal (defaults to InMemoryJournal) */
   journal?: Journal;
+  /**
+   * Risk playbook values forwarded to the strategy snapshot.
+   * When set, backtest snapshots carry the same playbook guards that the live
+   * TradingActor would inject (maxNewPositionsPerDay, avoidParabolicMovePct).
+   * Omit to skip playbook guards (appropriate for strategies that don't use them).
+   */
+  riskPlaybook?: RiskPlaybook;
 }
 
 /** No-op persistence for backtests that don't need DB writes */
@@ -104,7 +111,13 @@ export async function runBacktest(
   for (let i = 0; i < config.warmUpFrames; i++) {
     const frame = feed.frame(i);
     clock.advance(frame.timestamp);
-    const snapshot: MarketSnapshot = { symbol: frame.symbol, price: frame.price, timestamp: frame.timestamp, data: frame.data };
+    const snapshot: MarketSnapshot = {
+      symbol: frame.symbol,
+      price: frame.price,
+      timestamp: frame.timestamp,
+      data: frame.data,
+      playbook: config.riskPlaybook,
+    };
     // Evaluate strategy to build up internal state (e.g. lookback buffers).
     // Errors during warm-up indicate corrupted internal state — fail fast.
     const warmUpResult = await config.strategy.evaluate(snapshot, config.strategyConfig);
@@ -120,7 +133,13 @@ export async function runBacktest(
     const frame = feed.frame(i);
     clock.advance(frame.timestamp);
 
-    const snapshot: MarketSnapshot = { symbol: frame.symbol, price: frame.price, timestamp: frame.timestamp, data: frame.data };
+    const snapshot: MarketSnapshot = {
+      symbol: frame.symbol,
+      price: frame.price,
+      timestamp: frame.timestamp,
+      data: frame.data,
+      playbook: config.riskPlaybook,
+    };
 
     const result = await runTradingCycle(snapshot, position, {
       actorType: 'system',

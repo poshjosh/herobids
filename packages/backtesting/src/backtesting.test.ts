@@ -273,6 +273,77 @@ describe('runBacktest', () => {
       warmUpFrames: 5,
     })).rejects.toThrow('Strategy error during warm-up frame 1');
   });
+
+  it('forwards riskPlaybook to snapshot during warm-up and trading frames', async () => {
+    const receivedPlaybooks: Array<{ phase: string; playbook: unknown }> = [];
+    const playbookAware: Strategy = {
+      id: 'playbook-aware',
+      name: 'Playbook Aware',
+      evaluate: async (snapshot: MarketSnapshot): Promise<any> => {
+        receivedPlaybooks.push({ phase: 'trading', playbook: snapshot.playbook });
+        return ok(null);
+      },
+    };
+
+    // Override the warm-up path: use a spy that also records warm-up snapshots.
+    // We can't easily spy on internal warm-up calls, so instead we set warmUpFrames=0
+    // and verify trading frames receive the playbook. For warm-up coverage, set
+    // warmUpFrames>0 and check that the trading frames that follow also get it.
+    const frames = makeFrames(5);
+    const feed = new ArrayHistoricalDataFeed(frames);
+
+    await runBacktest(feed, {
+      runId: 'test-playbook-forward',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: playbookAware,
+      strategyConfig: {},
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      warmUpFrames: 0,
+      riskPlaybook: { avoidParabolicMovePct: 7, maxNewPositionsPerDay: 3 },
+    });
+
+    expect(receivedPlaybooks.length).toBe(5);
+    for (const entry of receivedPlaybooks) {
+      expect(entry.phase).toBe('trading');
+      expect(entry.playbook).toEqual({ avoidParabolicMovePct: 7, maxNewPositionsPerDay: 3 });
+    }
+  });
+
+  it('forwards riskPlaybook during warm-up frames (verified via strategy that records all calls)', async () => {
+    const allSnapshots: MarketSnapshot[] = [];
+    const recordingStrategy: Strategy = {
+      id: 'recording',
+      name: 'Recording',
+      evaluate: async (snapshot: MarketSnapshot): Promise<any> => {
+        allSnapshots.push(snapshot);
+        return ok(null);
+      },
+    };
+
+    const frames = makeFrames(6);
+    const feed = new ArrayHistoricalDataFeed(frames);
+
+    await runBacktest(feed, {
+      runId: 'test-playbook-warmup',
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      venueAccountId: 'va-1',
+      strategy: recordingStrategy,
+      strategyConfig: {},
+      riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+      warmUpFrames: 2,
+      riskPlaybook: { maxNewPositionsPerDay: 5 },
+    });
+
+    // 2 warm-up + 4 trading = 6 calls
+    expect(allSnapshots.length).toBe(6);
+    // All snapshots should carry the playbook
+    for (const snap of allSnapshots) {
+      expect(snap.playbook).toEqual({ maxNewPositionsPerDay: 5 });
+    }
+  });
 });
 
 /**

@@ -1,6 +1,7 @@
 import type { Result, DomainError } from '../result.js';
 import type { Decision } from '../models/decision.js';
 import type { Price } from '../values/money.js';
+import type { RiskPlaybook } from '../config/schema.js';
 
 /** Strategy error */
 export interface StrategyError extends DomainError {
@@ -15,6 +16,13 @@ export interface MarketSnapshot {
   /** Optional additional data the strategy may need */
   data?: Record<string, unknown>;
   timestamp: string;
+  /**
+   * Risk playbook guards forwarded from RiskConfigSchema.
+   * Populated by the TradingActor before calling strategy.evaluate().
+   * If absent or individual fields are undefined, the corresponding
+   * playbook check is treated as "not configured" and skipped.
+   */
+  playbook?: RiskPlaybook;
 }
 
 /**
