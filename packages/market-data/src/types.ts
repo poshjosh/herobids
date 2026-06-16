@@ -1,3 +1,5 @@
+export type { PriceCandle } from '@herobids/domain';
+
 export const PROVIDER_REQUEST_CLASSES = [
   'execution-critical',
   'price-support',
@@ -28,14 +30,6 @@ export interface RequestGate {
   acquire(): Promise<void>;
 }
 
-export interface PriceCandle {
-  timestamp: string; // ISO 8601
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
 
 export interface TokenInfo {
   address: string;

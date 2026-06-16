@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
+import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort, CandleFetcher } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
 import type { SwapConfirmationPoller } from '@herobids/venues';
@@ -142,6 +142,8 @@ export interface TradingActorDeps {
   liveOrderTimeoutPolicy?: LiveTimeoutPolicy;
   /** Venue-specific swap confirmation poller for authoritative on-chain tx status checks */
   swapConfirmationPoller?: SwapConfirmationPoller;
+  /** Candle fetcher for OHLCV data (optional — used by mechanical/hybrid strategy phases) */
+  candleFetcher?: CandleFetcher;
 }
 
 interface StartupPendingLiveOrderSnapshot {

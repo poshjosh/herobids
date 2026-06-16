@@ -16,7 +16,7 @@ import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { PublicStreamPool, OracleMarkSource } from '@herobids/venues';
+import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
@@ -1027,6 +1027,14 @@ const runtime = new WorkerRuntime(
         marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
       },
       swapConfirmationPoller,
+      candleFetcher: sharedMarketDataRegistry
+        ? new VenueCandleFetcher(
+            sharedMarketDataRegistry.configs.binance,
+            swapNetwork != null
+              ? { config: sharedMarketDataRegistry.configs.geckoterminal, network: swapNetwork }
+              : null,
+          )
+        : undefined,
       onCrashed: async (instanceId: string) => {
           actorRegistry.delete(instanceId);
           agentStreamConsumer.unsubscribe(instanceId);

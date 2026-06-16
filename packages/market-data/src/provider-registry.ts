@@ -60,6 +60,10 @@ export interface ProviderRegistry {
   discovery: {
     discover(options?: { networks?: string[]; maxResults?: number; minLiquidityUsd?: number }): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof discoverTokens>>>>;
   };
+  configs: {
+    binance: BinanceCandlesConfig;
+    geckoterminal: GeckoTerminalConfig;
+  };
 }
 
 function splitBudget(total: number, burstCapacity: number | undefined, maxWaitMs: number | undefined, reservationClass: ProviderRequestClass, reserved: number): SharedBudgetConfig {
@@ -318,6 +322,10 @@ export function createProviderRegistry(
         }),
         allowStale: true,
       }),
+    },
+    configs: {
+      binance: binanceConfig,
+      geckoterminal: geckoCandleConfig,
     },
   };
 }

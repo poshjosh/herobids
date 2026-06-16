@@ -13,5 +13,7 @@
     "build": "tsc --build",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@herobids/domain": "workspace:*"
+  }
 }
