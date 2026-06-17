@@ -81,7 +81,8 @@ export function AgentTradesTable({ agentId, executionMode, isActive }: Props) {
         <tbody>
           {items.map((row: AgentPosition) => {
             const pnlNum = parseFloat(row.realizedPnl);
-            const pnlColor = pnlNum > 0 ? 'var(--color-success)' : pnlNum < 0 ? 'var(--color-error)' : 'var(--color-text)';
+            const pnlColor = pnlNum > 0 ? 'var(--color-success)' : pnlNum < 0 ? 'var(--color-danger)' : 'var(--color-text)';
+            const pnlDisplay = pnlNum > 0 ? `+${row.realizedPnl}` : row.realizedPnl;
             const statusLabel = row.status === 'open'
               ? intl.formatMessage({ id: 'agents.trades.statusOpen' })
               : intl.formatMessage({ id: 'agents.trades.statusClosed' });
@@ -107,7 +108,7 @@ export function AgentTradesTable({ agentId, executionMode, isActive }: Props) {
                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{row.entryPrice}</td>
                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{row.exitPrice ?? '—'}</td>
                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{row.size}</td>
-                <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontFamily: 'monospace', color: pnlColor }}>{row.realizedPnl}</td>
+                <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontFamily: 'monospace', color: pnlColor }}>{pnlDisplay}</td>
                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{formatHoldMs(row.holdMs)}</td>
                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{modeLabel}</td>
                 <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}><RelativeTime timestamp={row.openedAt} /></td>
