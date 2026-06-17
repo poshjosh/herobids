@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { agents, bots, fills, users } from '@herobids/db';
+import { agents, bots, connections, fills, tradingBindings, users, venueAccounts } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
@@ -325,6 +325,31 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
 
       // Create a bot owned by the agent
       const [owner] = await ctx.db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, agentId));
+
+      // Insert the venue account first to satisfy the FK constraint
+      await ctx.db.insert(venueAccounts).values({
+        id: venueAccountId,
+        userId: owner!.userId,
+        venue: 'hyperliquid',
+        label: 'test-va-mixed',
+      });
+
+      // Insert connection and trading binding to satisfy FK constraints
+      const connectionId = 'conn-mixed';
+      await ctx.db.insert(connections).values({
+        id: connectionId,
+        userId: owner!.userId,
+        provider: 'hyperliquid',
+        label: 'test-conn-mixed',
+      });
+      await ctx.db.insert(tradingBindings).values({
+        id: 'tb-mixed',
+        userId: owner!.userId,
+        connectionId,
+        provider: 'hyperliquid',
+        label: 'test-tb-mixed',
+      });
+
       await ctx.db.insert(bots).values({
         id: botId,
         userId: owner!.userId,
