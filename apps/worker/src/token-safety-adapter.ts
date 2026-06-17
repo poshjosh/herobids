@@ -18,6 +18,12 @@ import type { TokenSafetyOverrideRepository } from '@herobids/db';
 export interface ResolvedSwapTokenData extends TokenInfo {
   poolCreatedAt?: string;
   ageResolution: 'available' | 'missing' | 'indeterminate';
+  /** True when this data was synthesised from a canonical (operator-whitelisted) token entry,
+   *  not from live DexScreener data. Consumers should treat liquidity/volume as symbolic. */
+  isCanonical?: boolean;
+  /** False when the data is synthetic (canonical fallback). Consumers must check this
+   *  before relying on numeric thresholds like liquidityUsd or volume24hUsd. */
+  hasRealMarketData?: boolean;
 }
 
 export interface TokenSafetyAdapterDeps {

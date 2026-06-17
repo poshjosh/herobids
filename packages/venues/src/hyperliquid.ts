@@ -11,6 +11,7 @@ import type {
   VenueOrder,
   VenueFill,
   VenueProfile,
+  VenueCapabilities,
   Subscription,
   PrivateStreamHandlers,
   PublicStreamHandlers,
@@ -62,6 +63,7 @@ export interface HyperliquidAdapterConfig {
  * Uses ccxt under the hood.
  */
 export class HyperliquidAdapter implements OrderbookVenuePort {
+  private static capabilitiesWarned = false;
   private readonly exchange: InstanceType<typeof ccxt.hyperliquid>;
   private readonly rateLimiter: TokenBucketRateLimiter;
   private readonly adapterConfig: HyperliquidAdapterConfig;
@@ -84,10 +86,38 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
     );
   }
 
+  // TODO: Verify actual Hyperliquid API capabilities.
+  // These defaults are optimistic — Hyperliquid supports PO and reduceOnly
+  // but amend-in-place semantics differ from CEX norms (modify via order ID).
+  // Validate against current HL API before relying on these in live trading.
+  getCapabilities(): VenueCapabilities {
+    if (!HyperliquidAdapter.capabilitiesWarned) {
+      HyperliquidAdapter.capabilitiesWarned = true;
+      console.warn('[HyperliquidAdapter] getCapabilities() returns optimistic defaults — verify against HL API docs before live trading');
+    }
+    return {
+      limitOrderSubmission: true,
+      amendInPlace: false,
+      cancelAndReplace: true,
+      postOnly: true,
+      reduceOnly: true,
+      supportedTimeInForce: ['GTC', 'IOC', 'FOK', 'PO'],
+      supportsClientOrderId: true,
+      supportsLookupByClientOrderId: true,
+      supportsLookupByVenueRefId: true,
+    };
+  }
+
   async submitOrder(cmd: OrderCommand): Promise<Result<OrderReceipt, VenueError>> {
     return this.withRateLimit(async () => {
       const orderType = cmd.type === 'market' ? 'market' : 'limit';
       const priceValue = cmd.price ? cmd.price.toNumber() : undefined;
+
+      const params: Record<string, unknown> = {};
+      if (cmd.clientOrderId) params.clientOrderId = cmd.clientOrderId;
+      if (cmd.timeInForce) params.timeInForce = cmd.timeInForce;
+      if (cmd.postOnly) params.postOnly = true;
+      if (cmd.reduceOnly) params.reduceOnly = true;
 
       const response = await this.exchange.createOrder(
         cmd.symbol,
@@ -95,7 +125,7 @@ export class HyperliquidAdapter implements OrderbookVenuePort {
         cmd.side,
         cmd.quantity.toNumber(),
         priceValue,
-        cmd.clientOrderId ? { clientOrderId: cmd.clientOrderId } : undefined,
+        Object.keys(params).length > 0 ? params : undefined,
       );
 
       const receipt: OrderReceipt = {

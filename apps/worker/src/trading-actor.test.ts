@@ -3,6 +3,7 @@ import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
 import { price, quantity, ok, err } from '@herobids/domain';
 import type { OrderId, FillId, BotId } from '@herobids/domain';
+import { FULL_CAPABILITIES } from '@herobids/tests/fixtures/venue-capabilities.js';
 
 /**
  * Minimal stubs for TradingActor lifecycle tests.
@@ -78,6 +79,7 @@ describe('TradingActor lifecycle', () => {
     it('throws if reconciliation first pass returns null (venue fetch failed)', async () => {
       // A venuePort that fails all fetches — causing reconciler.runPass() to return null
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(err({ code: 'NETWORK_ERROR', message: 'timeout' })),
         fetchBalances: vi.fn().mockResolvedValue(err({ code: 'NETWORK_ERROR', message: 'timeout' })),
@@ -99,6 +101,7 @@ describe('TradingActor lifecycle', () => {
     it('throws if reconciliation detects drift and driftAlertOnly is false', async () => {
       // A venuePort that returns positions different from local state
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([
           { symbol: 'BTC/USD:USD', side: 'long', size: quantity('5'), entryPrice: price('48000') },
@@ -122,6 +125,7 @@ describe('TradingActor lifecycle', () => {
 
     it('does NOT throw when driftAlertOnly is true', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([
           { symbol: 'BTC/USD:USD', side: 'long', size: quantity('5'), entryPrice: price('48000') },
@@ -148,6 +152,7 @@ describe('TradingActor lifecycle', () => {
   describe('private stream startup blocking', () => {
     it('throws if private stream connection fails in shadow mode', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -541,6 +546,7 @@ describe('TradingActor lifecycle', () => {
       };
 
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -654,6 +660,7 @@ describe('TradingActor lifecycle', () => {
       };
 
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -691,6 +698,7 @@ describe('TradingActor lifecycle', () => {
   describe('live mode', () => {
     it('captures startup pending-live snapshot in live mode', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -761,6 +769,7 @@ describe('TradingActor lifecycle', () => {
 
     it('selects LiveExecutor and starts successfully with reconciliation + stream', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -799,6 +808,7 @@ describe('TradingActor lifecycle', () => {
 
     it('skips tick when unresolved live plans exist', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -856,6 +866,7 @@ describe('TradingActor lifecycle', () => {
 
     it('keeps plan executing when direct clientOrderId lookup finds an open venue order', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -916,6 +927,7 @@ describe('TradingActor lifecycle', () => {
     it('cancels stale live limit orders via timeout policy', async () => {
       const cancelOrder = vi.fn().mockResolvedValue(ok({ cancelled: true }));
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -999,6 +1011,7 @@ describe('TradingActor lifecycle', () => {
     it('escalates stale live market orders as recovery-required', async () => {
       const cancelOrder = vi.fn();
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -1263,6 +1276,7 @@ describe('TradingActor lifecycle', () => {
     it('private stream disconnect pauses live actor', async () => {
       let stateChangeHandler: ((state: string) => void) | undefined;
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -1308,6 +1322,7 @@ describe('TradingActor lifecycle', () => {
       let stateChangeHandler: ((state: string) => void) | undefined;
       const onCrashed = vi.fn().mockResolvedValue(undefined);
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -1339,6 +1354,7 @@ describe('TradingActor lifecycle', () => {
 
     it('emits credential.used event on successful live order submission', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -1398,6 +1414,7 @@ describe('TradingActor lifecycle', () => {
 
     it('does not emit credential.used when credentialId is not set', async () => {
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -1684,6 +1701,7 @@ describe('TradingActor lifecycle', () => {
         timestamp: new Date().toISOString(),
       }));
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),
@@ -1744,6 +1762,7 @@ describe('TradingActor lifecycle', () => {
       // Slow venue that rejects after a delay — we get prepared + submit_attempting before rejection
       const submitOrder = vi.fn().mockResolvedValue(err({ code: 'VENUE_REJECT', message: 'insufficient margin' }));
       const venuePort = {
+      getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), timestamp: new Date().toISOString() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
         fetchBalances: vi.fn().mockResolvedValue(ok({ balances: [], timestamp: new Date().toISOString() })),

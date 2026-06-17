@@ -41,6 +41,7 @@ export interface TokenInfo {
   liquidityUsd: number;
   priceChange24hPct: number;
   dexId: string;
+  poolCreatedAt?: string;
 }
 
 export interface FreshnessMetadata {

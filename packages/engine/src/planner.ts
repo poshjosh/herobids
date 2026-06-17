@@ -2,6 +2,7 @@ import type { Decision } from '@herobids/domain';
 import type { OrderSide, OrderType } from '@herobids/domain';
 import type { Price, Quantity } from '@herobids/domain';
 import type { Position } from '@herobids/domain';
+import type { TimeInForce } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 
 /**
@@ -31,6 +32,12 @@ export interface PlannedOrder {
   type: OrderType;
   quantity: Quantity;
   price?: Price;
+  /** Time-in-force for limit orders (default: GTC). */
+  timeInForce?: TimeInForce;
+  /** Whether the order should only post liquidity (maker-only). */
+  postOnly?: boolean;
+  /** Whether the order should only reduce position (never increase). */
+  reduceOnly?: boolean;
   /** Explicit swap routing params — populated when venueType is 'swap' and swapAssets are configured */
   swapParams?: { inputAsset: string; outputAsset: string; amount: Quantity };
 }
@@ -116,9 +123,11 @@ export function planDecision(decision: Decision, deps: PlannerDeps): ExecutionPl
 
     case 'go_short': {
       if (venueType === 'swap') {
-        action = 'close';
         // Spot swap venues can reduce or close existing base holdings,
         // but they cannot open or reverse into a borrowed short.
+        // When already flat, produces a no-op close plan (zero orders) —
+        // the caller should treat this as nothing-to-do.
+        action = 'close';
         if (currentSide === 'long' && currentSize.gt(0)) {
           orders.push({
             side: 'sell',

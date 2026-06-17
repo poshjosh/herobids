@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { LiveExecutor } from './live-executor.js';
 import { quantity, price } from '@herobids/domain';
 import type { OrderId, FillId } from '@herobids/domain';
-import type { OrderbookVenuePort, OrderCommand, OrderReceipt, VenueError } from '@herobids/domain';
+import type { OrderbookVenuePort, OrderCommand, OrderReceipt, VenueError, VenueCapabilities } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
+import { FULL_CAPABILITIES } from '@herobids/tests/fixtures/venue-capabilities.js';
 import type { ExecutionPlan } from './planner.js';
 
 function makeIdGen() {
@@ -33,8 +34,10 @@ function makePlan(overrides?: Partial<ExecutionPlan>): ExecutionPlan {
 
 function makeVenuePort(
   submitFn: (cmd: OrderCommand) => Promise<Result<OrderReceipt, VenueError>>,
+  capabilities?: Partial<VenueCapabilities>,
 ): OrderbookVenuePort {
   return {
+    getCapabilities: () => ({ ...FULL_CAPABILITIES, ...capabilities }),
     submitOrder: submitFn,
     cancelOrder: vi.fn(),
     amendOrder: vi.fn(),
@@ -256,6 +259,118 @@ describe('LiveExecutor', () => {
       if (!result.ok) return;
       expect(result.data.plan.status).toBe('failed');
       expect(result.data.orders[0]!.status).toBe('rejected');
+    });
+  });
+
+  describe('capability gating', () => {
+    it('rejects limit order with unsupported time-in-force', async () => {
+      const venuePort = makeVenuePort(
+        async () => { throw new Error('Should not be called'); },
+        { supportedTimeInForce: ['GTC'] },
+      );
+
+      const plan = makePlan({
+        orders: [
+          { side: 'buy', type: 'limit', quantity: quantity('1'), price: price('3000'), timeInForce: 'IOC' as const },
+        ],
+      });
+
+      const executor = new LiveExecutor({
+        venuePort,
+        idGen: makeIdGen(),
+        clientOrderId: (planId, idx) => `${planId}-${idx}`,
+      });
+
+      const result = await executor.execute(plan, price('3000'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.plan.status).toBe('failed');
+      expect(result.data.orders[0]!.status).toBe('rejected');
+    });
+
+    it('rejects limit order with unsupported post-only', async () => {
+      const venuePort = makeVenuePort(
+        async () => { throw new Error('Should not be called'); },
+        { postOnly: false },
+      );
+
+      const plan = makePlan({
+        orders: [
+          { side: 'buy', type: 'limit', quantity: quantity('1'), price: price('3000'), postOnly: true },
+        ],
+      });
+
+      const executor = new LiveExecutor({
+        venuePort,
+        idGen: makeIdGen(),
+        clientOrderId: (planId, idx) => `${planId}-${idx}`,
+      });
+
+      const result = await executor.execute(plan, price('3000'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.plan.status).toBe('failed');
+      expect(result.data.orders[0]!.status).toBe('rejected');
+    });
+
+    it('rejects limit order with unsupported reduce-only', async () => {
+      const venuePort = makeVenuePort(
+        async () => { throw new Error('Should not be called'); },
+        { reduceOnly: false },
+      );
+
+      const plan = makePlan({
+        orders: [
+          { side: 'sell', type: 'limit', quantity: quantity('0.5'), price: price('3000'), reduceOnly: true },
+        ],
+      });
+
+      const executor = new LiveExecutor({
+        venuePort,
+        idGen: makeIdGen(),
+        clientOrderId: (planId, idx) => `${planId}-${idx}`,
+      });
+
+      const result = await executor.execute(plan, price('3000'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.plan.status).toBe('failed');
+      expect(result.data.orders[0]!.status).toBe('rejected');
+    });
+
+    it('accepts limit order when all capabilities are met', async () => {
+      const venuePort = makeVenuePort(async (cmd) => ({
+        ok: true as const,
+        data: {
+          orderId: 'venue-oid-cap' as OrderId,
+          clientOrderId: cmd.clientOrderId,
+          status: 'open' as const,
+          venueRefId: 'vref-cap',
+          timestamp: '2026-01-01T00:00:02Z',
+        },
+      }));
+
+      const plan = makePlan({
+        orders: [
+          { side: 'buy', type: 'limit', quantity: quantity('1'), price: price('3000'), timeInForce: 'IOC' as const, postOnly: true, reduceOnly: false },
+        ],
+      });
+
+      const executor = new LiveExecutor({
+        venuePort,
+        idGen: makeIdGen(),
+        clientOrderId: (planId, idx) => `${planId}-${idx}`,
+      });
+
+      const result = await executor.execute(plan, price('3000'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.plan.status).toBe('executing');
+      expect(result.data.orders[0]!.status).toBe('open');
     });
   });
 

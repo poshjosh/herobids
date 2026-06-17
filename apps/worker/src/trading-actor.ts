@@ -1031,12 +1031,16 @@ export class TradingActor implements InstanceActor, ExecutionActor {
               lookupAmbiguous = lookupResult.ambiguous;
             }
 
+            // noOrdersPlanned is always false here — plans with zero orders
+            // are caught by the planOrders.length === 0 guard above.
+            const noOrdersPlanned = !Array.isArray(plan.plannedOrders) || plan.plannedOrders.length === 0;
             const decision = evaluateOrderbookRecovery({
               orders: planOrders,
               hasOpenOrders,
               matchedFillCount: matchedFills.length,
               matchedOrdersFromLookup: lookupMatchedOrders,
               lookupAmbiguous,
+              noOrdersPlanned,
             });
 
             await this.deps.journal.append({

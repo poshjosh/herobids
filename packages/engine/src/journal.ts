@@ -16,6 +16,8 @@ export type JournalEventType =
   | 'order.filled'
   | 'order.partial'
   | 'order.cancelled'
+  | 'order.expired'
+  | 'order.replaced'
   | 'order.rejected'
   | 'fill.recorded'
   | 'fill.private_stream'
@@ -107,6 +109,8 @@ export function orderEvent(order: ManagedOrder): Omit<JournalEntry, 'id' | 'crea
     filled: 'order.filled',
     partial: 'order.partial',
     cancelled: 'order.cancelled',
+    expired: 'order.expired',
+    replaced: 'order.replaced',
     rejected: 'order.rejected',
   };
   return {

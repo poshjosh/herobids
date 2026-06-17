@@ -1,8 +1,11 @@
 export { canTransition, isTerminal } from './order-state.js';
-export type { ManagedOrder, FillEvent } from './order-state.js';
+export type { ManagedOrder, FillEvent, OrderTransition, LiveSubmissionState } from './order-state.js';
 
 export { OrderManager } from './order-manager.js';
-export type { OrderManagerError, CreateOrderParams, AcknowledgeParams, ApplyFillParams } from './order-manager.js';
+export type { OrderManagerDeps, OrderManagerError, CreateOrderParams, AcknowledgeParams, ApplyFillParams } from './order-manager.js';
+
+export { decideOrderUpdateAction } from './order-update-decision.js';
+export type { OrderUpdateRequest, OrderUpdateAction } from './order-update-decision.js';
 
 export { planDecision } from './planner.js';
 export type { ExecutionPlan, PlanAction, PlannedOrder, PlannerDeps } from './planner.js';
@@ -21,7 +24,7 @@ export { computeLiveTimeoutActions } from './live-timeout-manager.js';
 export type { LiveTimeoutPolicy, LiveTimeoutOrder, LiveTimeoutAction } from './live-timeout-manager.js';
 
 export { evaluateOrderbookRecovery } from './live-recovery.js';
-export type { LiveRecoveryOrder, LiveRecoveryMatchedOrder, EvaluateOrderbookRecoveryInput, LiveRecoveryDecision } from './live-recovery.js';
+export type { LiveRecoveryOrder, LiveRecoveryMatchedOrder, EvaluateOrderbookRecoveryInput, LiveRecoveryDecision, LiveRecoveryReason } from './live-recovery.js';
 
 export { SwapLiveExecutor } from './swap-live-executor.js';
 export type { SwapLiveExecutorDeps } from './swap-live-executor.js';

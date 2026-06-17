@@ -10,6 +10,7 @@ import type {
   VenueError,
   VenueOrder,
   VenueFill,
+  VenueCapabilities,
   Subscription,
   PrivateStreamHandlers,
   PublicStreamHandlers,
@@ -62,6 +63,7 @@ interface BybitExchangeWithAccountMode extends Omit<InstanceType<typeof ccxt.byb
  * Uses ccxt under the hood.
  */
 export class BybitAdapter implements OrderbookVenuePort {
+  private static capabilitiesWarned = false;
   private readonly exchange: InstanceType<typeof ccxt.bybit>;
   private readonly rateLimiter: TokenBucketRateLimiter;
   private readonly adapterConfig: BybitAdapterConfig;
@@ -88,10 +90,37 @@ export class BybitAdapter implements OrderbookVenuePort {
     void this.getAccountMode().catch(() => undefined);
   }
 
+  // TODO: Verify actual Bybit API capabilities per-account-type.
+  // These defaults are optimistic — review against Bybit V5 API docs
+  // and adjust for unified margin vs. classic account differences.
+  getCapabilities(): VenueCapabilities {
+    if (!BybitAdapter.capabilitiesWarned) {
+      BybitAdapter.capabilitiesWarned = true;
+      console.warn('[BybitAdapter] getCapabilities() returns optimistic defaults — verify against V5 API docs before live trading');
+    }
+    return {
+      limitOrderSubmission: true,
+      amendInPlace: true,
+      cancelAndReplace: true,
+      postOnly: true,
+      reduceOnly: true,
+      supportedTimeInForce: ['GTC', 'IOC', 'FOK', 'PO'],
+      supportsClientOrderId: true,
+      supportsLookupByClientOrderId: true,
+      supportsLookupByVenueRefId: true,
+    };
+  }
+
   async submitOrder(cmd: OrderCommand): Promise<Result<OrderReceipt, VenueError>> {
     return this.withRateLimit(async () => {
       const orderType = cmd.type === 'market' ? 'market' : 'limit';
       const priceValue = cmd.price ? cmd.price.toNumber() : undefined;
+
+      const params: Record<string, unknown> = {};
+      if (cmd.clientOrderId) params.clientOrderId = cmd.clientOrderId;
+      if (cmd.timeInForce) params.timeInForce = cmd.timeInForce;
+      if (cmd.postOnly) params.postOnly = true;
+      if (cmd.reduceOnly) params.reduceOnly = true;
 
       const response = await this.exchange.createOrder(
         cmd.symbol,
@@ -99,7 +128,7 @@ export class BybitAdapter implements OrderbookVenuePort {
         cmd.side,
         cmd.quantity.toNumber(),
         priceValue,
-        cmd.clientOrderId ? { clientOrderId: cmd.clientOrderId } : undefined,
+        Object.keys(params).length > 0 ? params : undefined,
       );
 
       const receipt: OrderReceipt = {

@@ -3,6 +3,7 @@ import { createOrderbookVenueStateLoader, createSwapVenueStateLoader } from './v
 import { ok, err, quantity, price } from '@herobids/domain';
 import type { OrderbookVenuePort, SwapVenuePort } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
+import { FULL_CAPABILITIES } from '@herobids/tests/fixtures/venue-capabilities.js';
 import { Decimal } from '@herobids/domain';
 
 function makeLogger() {
@@ -18,6 +19,7 @@ function makeOrderbookVenue(overrides: Partial<{
   orders: Result<any, any>;
 }> = {}): OrderbookVenuePort {
   return {
+    getCapabilities: () => FULL_CAPABILITIES,
     fetchPositions: vi.fn().mockResolvedValue(overrides.positions ?? ok([])),
     fetchBalances: vi.fn().mockResolvedValue(overrides.balances ?? ok({ balances: [], timestamp: '2026-05-24T12:00:00Z' })),
     fetchRecentFills: vi.fn().mockResolvedValue(overrides.fills ?? ok([])),

@@ -4,6 +4,7 @@ import type { AgentTradingActorDeps } from './agent-trading-actor.js';
 import { price, quantity, ok } from '@herobids/domain';
 import { PaperExecutor, ShadowExecutor, LiveExecutor } from '@herobids/engine';
 import type { OrderId, FillId } from '@herobids/domain';
+import { FULL_CAPABILITIES } from '@herobids/tests/fixtures/venue-capabilities.js';
 
 function makeIdGen() {
   let c = 0;
@@ -247,6 +248,7 @@ describe('AgentTradingActor', () => {
       };
 
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
@@ -371,6 +373,7 @@ describe('AgentTradingActor', () => {
       };
 
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
@@ -1388,6 +1391,7 @@ describe('AgentTradingActor', () => {
         { asset: 'USDC', free: price('10000'), locked: price('0'), total: price('10000') },
       ];
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
@@ -1432,6 +1436,7 @@ describe('AgentTradingActor', () => {
         getLastReconciledAtForInstance: vi.fn().mockResolvedValue(null),
       };
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
@@ -1507,6 +1512,7 @@ describe('AgentTradingActor', () => {
         }),
       };
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
@@ -1547,6 +1553,7 @@ describe('AgentTradingActor', () => {
         markCompleted: vi.fn().mockResolvedValue(undefined),
       };
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),
@@ -1589,6 +1596,7 @@ describe('AgentTradingActor', () => {
         ]),
       };
       const venuePort = {
+        getCapabilities: () => FULL_CAPABILITIES,
         fetchTicker: vi.fn().mockResolvedValue(ok({ last: price('50000'), bid: price('49990'), ask: price('50010'), timestamp: new Date().toISOString() })),
         subscribePrivate: vi.fn().mockResolvedValue(ok({ unsubscribe: vi.fn().mockResolvedValue(undefined), onStateChange: vi.fn() })),
         fetchPositions: vi.fn().mockResolvedValue(ok([])),

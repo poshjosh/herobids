@@ -17,6 +17,7 @@ export default defineConfig({
       '@herobids/backtesting': new URL('./packages/backtesting/src/index.ts', import.meta.url).pathname,
       '@herobids/llm': new URL('./packages/llm/src/index.ts', import.meta.url).pathname,
       '@herobids/market-data': new URL('./packages/market-data/src/index.ts', import.meta.url).pathname,
+      '@herobids/tests': new URL('./tests', import.meta.url).pathname,
     },
   },
 });

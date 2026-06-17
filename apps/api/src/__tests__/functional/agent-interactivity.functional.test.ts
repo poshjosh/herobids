@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { agents, users } from '@herobids/db';
+import { agents, bots, fills, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
@@ -265,7 +265,7 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
   // ─── GET /agents/:id/trades ───────────────────────────────────────────────
 
   describe('GET /agents/:id/trades', () => {
-    it('returns an empty trades array when the agent has no managed bots', async () => {
+    it('returns an empty trades array when the agent has no managed bots or native fills', async () => {
       const id = await createAgent();
 
       const res = await ctx.app.inject({
@@ -278,6 +278,150 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
       const body = res.json<{ agentId: string; trades: unknown[] }>();
       expect(body.agentId).toBe(id);
       expect(Array.isArray(body.trades)).toBe(true);
+      expect(body.trades).toHaveLength(0);
+    });
+
+    it('agent-native fills appear in response', async () => {
+      const agentId = await createAgent();
+      const venueAccountId = 'va-agent-native';
+      const fillId = 'fill-agent-native';
+
+      await ctx.db.insert(fills).values({
+        id: fillId,
+        orderId: 'ord-agent-native',
+        venueAccountId,
+        actorType: 'agent',
+        actorId: agentId,
+        venueRefId: 'venue-ref-1',
+        venue: 'jupiter',
+        symbol: 'USDC/USD',
+        side: 'buy',
+        quantity: '1000',
+        price: '1.0',
+        fee: '0.3',
+        feeCurrency: 'USDC',
+        filledAt: new Date('2026-06-17T10:00:00Z'),
+      });
+
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${agentId}/trades`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ agentId: string; trades: Array<Record<string, unknown>> }>();
+      expect(body.agentId).toBe(agentId);
+      expect(Array.isArray(body.trades)).toBe(true);
+      expect(body.trades).toHaveLength(1);
+      expect(body.trades[0]!.actorType).toBe('agent');
+      expect(body.trades[0]!.actorId).toBe(agentId);
+    });
+
+    it('both agent-native and bot fills appear together', async () => {
+      const agentId = await createAgent();
+      const botId = 'bot-test-mixed';
+      const venueAccountId = 'va-bot-mixed';
+
+      // Create a bot owned by the agent
+      const [owner] = await ctx.db.select({ userId: agents.userId }).from(agents).where(eq(agents.id, agentId));
+      await ctx.db.insert(bots).values({
+        id: botId,
+        userId: owner!.userId,
+        venueAccountId,
+        tradingBindingId: 'tb-mixed',
+        config: { strategy: { type: 'momentum' } },
+        status: 'stopped',
+        creatorType: 'agent',
+        creatorId: agentId,
+      });
+
+      // Insert agent-native fill
+      await ctx.db.insert(fills).values({
+        id: 'fill-agent-mixed',
+        orderId: 'ord-agent-mixed',
+        venueAccountId,
+        actorType: 'agent',
+        actorId: agentId,
+        venueRefId: 'venue-ref-agent',
+        venue: 'jupiter',
+        symbol: 'USDC/USD',
+        side: 'buy',
+        quantity: '1000',
+        price: '1.0',
+        filledAt: new Date('2026-06-17T10:00:00Z'),
+      });
+
+      // Insert bot fill
+      await ctx.db.insert(fills).values({
+        id: 'fill-bot-mixed',
+        orderId: 'ord-bot-mixed',
+        venueAccountId,
+        actorType: 'bot',
+        actorId: botId,
+        venueRefId: 'venue-ref-bot',
+        venue: 'jupiter',
+        symbol: 'SOL/USD',
+        side: 'sell',
+        quantity: '10',
+        price: '150.0',
+        filledAt: new Date('2026-06-17T11:00:00Z'),
+      });
+
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${agentId}/trades`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ agentId: string; trades: Array<Record<string, unknown>> }>();
+      expect(body.agentId).toBe(agentId);
+      expect(Array.isArray(body.trades)).toBe(true);
+      expect(body.trades).toHaveLength(2);
+
+      const actorTypes = body.trades.map((t) => t.actorType);
+      expect(actorTypes).toContain('agent');
+      expect(actorTypes).toContain('bot');
+    });
+
+    it('agent with no bots — only agent-native fills', async () => {
+      const agentId = await createAgent();
+      const venueAccountId = 'va-agent-only';
+
+      // Ensure no bots exist for this agent
+      const existingBots = await ctx.db.select({ id: bots.id }).from(bots)
+        .where(eq(bots.creatorId, agentId));
+      expect(existingBots).toHaveLength(0);
+
+      // Insert only an agent-native fill
+      await ctx.db.insert(fills).values({
+        id: 'fill-agent-only',
+        orderId: 'ord-agent-only',
+        venueAccountId,
+        actorType: 'agent',
+        actorId: agentId,
+        venueRefId: 'venue-ref-agent-only',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD',
+        side: 'buy',
+        quantity: '0.5',
+        price: '60000',
+        filledAt: new Date('2026-06-17T12:00:00Z'),
+      });
+
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/agents/${agentId}/trades`,
+        headers: authHeader(),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ agentId: string; trades: Array<Record<string, unknown>> }>();
+      expect(body.agentId).toBe(agentId);
+      expect(Array.isArray(body.trades)).toBe(true);
+      expect(body.trades).toHaveLength(1);
+      expect(body.trades[0]!.actorType).toBe('agent');
     });
   });
 

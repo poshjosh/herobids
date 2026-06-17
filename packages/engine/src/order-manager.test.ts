@@ -165,6 +165,101 @@ describe('OrderManager', () => {
     });
   });
 
+  describe('expire', () => {
+    it('expires a pending order', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'limit', quantity: quantity('1'), price: price('100') });
+      const result = mgr.expire(orderId(1), 'timeout');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.status).toBe('expired');
+        expect(result.data.submissionState).toBe('terminal');
+        expect(result.data.transitionHistory).toBeDefined();
+        expect(result.data.transitionHistory).toHaveLength(1);
+        expect(result.data.transitionHistory![0]!.to).toBe('expired');
+      }
+    });
+
+    it('expires an open order', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'limit', quantity: quantity('1'), price: price('100') });
+      mgr.acknowledge(orderId(1), { venueRefId: 'ref' });
+      const result = mgr.expire(orderId(1));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.data.status).toBe('expired');
+    });
+
+    it('rejects expire on filled order', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'market', quantity: quantity('1') });
+      mgr.applyFill(orderId(1), { fillId: fillId(1), quantity: quantity('1'), price: price('100'), filledAt: '2026-01-01T00:00:00Z' });
+      const result = mgr.expire(orderId(1));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('engine.invalid_transition');
+    });
+
+    it('rejects expire on already expired order', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'limit', quantity: quantity('1'), price: price('100') });
+      mgr.expire(orderId(1));
+      const result = mgr.expire(orderId(1));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('engine.invalid_transition');
+    });
+  });
+
+  describe('replace', () => {
+    it('replaces an open order with a replacement order ID', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'limit', quantity: quantity('1'), price: price('100') });
+      mgr.acknowledge(orderId(1), { venueRefId: 'ref' });
+      const result = mgr.replace(orderId(1), orderId(2), 'amend-and-replace');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.status).toBe('replaced');
+        expect(result.data.submissionState).toBe('terminal');
+        expect(result.data.transitionHistory).toBeDefined();
+        expect(result.data.transitionHistory).toHaveLength(2); // open transition + replaced
+        expect(result.data.transitionHistory![1]!.to).toBe('replaced');
+        expect(result.data.transitionHistory![1]!.replacementOrderId).toBe(orderId(2));
+      }
+    });
+
+    it('replaces a partial order', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'limit', quantity: quantity('10'), price: price('100') });
+      mgr.acknowledge(orderId(1), { venueRefId: 'ref' });
+      mgr.applyFill(orderId(1), { fillId: fillId(1), quantity: quantity('3'), price: price('100'), filledAt: '2026-01-01T00:00:00Z' });
+      const result = mgr.replace(orderId(1), orderId(3));
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.status).toBe('replaced');
+        expect(result.data.filledQuantity.equals(quantity('3'))).toBe(true);
+      }
+    });
+
+    it('rejects replace on filled order', () => {
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'market', quantity: quantity('1') });
+      mgr.applyFill(orderId(1), { fillId: fillId(1), quantity: quantity('1'), price: price('100'), filledAt: '2026-01-01T00:00:00Z' });
+      const result = mgr.replace(orderId(1), orderId(2));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('engine.invalid_transition');
+    });
+  });
+
+  describe('transitionHistory cap', () => {
+    it('caps transitionHistory at 50 entries', () => {
+      // Create a large-quantity order and apply many partial fills
+      // to generate transitions without reaching a terminal state
+      mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'limit', quantity: quantity('100'), price: price('100') });
+      mgr.acknowledge(orderId(1), { venueRefId: 'ref' });
+
+      // Apply 51 partial fills of quantity 1 each (pending→open, open→partial, then partial→partial × 51)
+      for (let i = 0; i < 51; i++) {
+        mgr.applyFill(orderId(1), { fillId: fillId(i + 10), quantity: quantity('1'), price: price('100'), filledAt: new Date().toISOString() });
+      }
+
+      const order = mgr.get(orderId(1))!;
+      expect(order.transitionHistory).toBeDefined();
+      expect(order.transitionHistory!.length).toBeLessThanOrEqual(50);
+      expect(order.transitionHistoryCapped).toBe(true);
+    });
+  });
+
   describe('queries', () => {
     it('getActive returns non-terminal orders', () => {
       mgr.create({ id: orderId(1), botId: instanceId, venue: 'hl', symbol: 'BTC', side: 'buy', type: 'market', quantity: quantity('1') });

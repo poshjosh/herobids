@@ -404,7 +404,7 @@ export class ExecutionPlanRepository {
 }
 
 /** Terminal order statuses — orders that can no longer change */
-const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'rejected'];
+const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'expired', 'replaced', 'rejected'];
 
 /**
  * Repository for order queries (read-only for reconciliation).

@@ -3,6 +3,7 @@ import type { OrderId } from '@herobids/domain';
 import type { Price } from '@herobids/domain';
 import type { OrderbookVenuePort, OrderCommand } from '@herobids/domain';
 import { ok, quantity } from '@herobids/domain';
+import { validateOrderAttributes } from '@herobids/domain';
 import type { Executor, ExecutionResult, EngineError } from './executor.js';
 import type { ExecutionPlan } from './planner.js';
 import type { ManagedOrder } from './order-state.js';
@@ -21,7 +22,8 @@ export interface LiveExecutorDeps {
  * LiveExecutor — submits real orders to the venue.
  *
  * Key invariants:
- * - Supports market and minimal limit orders.
+ * - Supports market and limit orders with optional time-in-force, post-only, and reduce-only.
+ * - Gates advanced attributes (post-only, reduce-only, non-GTC TIF) on venue capabilities.
  * - Does NOT fabricate fills — fills arrive asynchronously from private stream or reconciliation.
  * - Returns acknowledged orders with real venueRefId values.
  * - Rejects unsupported order types (swap) rather than falling through.
@@ -33,6 +35,7 @@ export class LiveExecutor implements Executor {
   async execute(plan: ExecutionPlan, currentPrice: Price): Promise<Result<ExecutionResult, EngineError>> {
     const now = new Date().toISOString();
     const orders: ManagedOrder[] = [];
+    const capabilities = this.deps.venuePort.getCapabilities();
 
     for (let i = 0; i < plan.orders.length; i++) {
       const planned = plan.orders[i]!;
@@ -40,16 +43,23 @@ export class LiveExecutor implements Executor {
 
       const unsupported = planned.type !== 'market' && planned.type !== 'limit';
       if (unsupported) {
-        const rejected = this.buildRejectedOrder(
-          plan,
-          planned,
-          now,
-          clientOrderId,
-          currentPrice,
-        );
+        const rejected = await this.rejectOrder(plan, planned, now, clientOrderId, currentPrice);
         orders.push(rejected);
-        await this.deps.onOrderStateChange?.(rejected);
         continue;
+      }
+
+      // Validate venue capabilities for requested limit-order attributes
+      if (planned.type === 'limit') {
+        const attrCheck = validateOrderAttributes(capabilities, {
+          timeInForce: planned.timeInForce,
+          postOnly: planned.postOnly,
+          reduceOnly: planned.reduceOnly,
+        });
+        if (!attrCheck.ok) {
+          const rejected = await this.rejectOrder(plan, planned, now, clientOrderId, currentPrice, attrCheck.error.message);
+          orders.push(rejected);
+          continue;
+        }
       }
 
       const orderId = this.deps.idGen.orderId();
@@ -68,6 +78,9 @@ export class LiveExecutor implements Executor {
         type: planned.type,
         quantity: planned.quantity,
         price: planned.price,
+        timeInForce: planned.timeInForce,
+        postOnly: planned.postOnly,
+        reduceOnly: planned.reduceOnly,
         referencePrice: currentPrice,
         status: 'pending',
         submissionState: 'prepared',
@@ -96,6 +109,9 @@ export class LiveExecutor implements Executor {
         quantity: planned.quantity,
         price: planned.price,
         clientOrderId,
+        timeInForce: planned.timeInForce,
+        postOnly: planned.postOnly,
+        reduceOnly: planned.reduceOnly,
       };
 
       const submitResult = await this.deps.venuePort.submitOrder(cmd);
@@ -145,6 +161,22 @@ export class LiveExecutor implements Executor {
     return ok({ plan: resultPlan, orders, fills: [] });
   }
 
+  private async rejectOrder(
+    plan: ExecutionPlan,
+    planned: ExecutionPlan['orders'][number],
+    now: string,
+    clientOrderId: string,
+    referencePrice: Price,
+    reason?: string,
+  ): Promise<ManagedOrder> {
+    if (reason) {
+      console.warn(`[LiveExecutor] rejecting order for plan ${plan.id}: ${reason}`);
+    }
+    const rejected = this.buildRejectedOrder(plan, planned, now, clientOrderId, referencePrice);
+    await this.deps.onOrderStateChange?.(rejected);
+    return rejected;
+  }
+
   private buildRejectedOrder(
     plan: ExecutionPlan,
     planned: ExecutionPlan['orders'][number],
@@ -166,6 +198,9 @@ export class LiveExecutor implements Executor {
       type: planned.type,
       quantity: planned.quantity,
       price: planned.price,
+      timeInForce: planned.timeInForce,
+      postOnly: planned.postOnly,
+      reduceOnly: planned.reduceOnly,
       referencePrice,
       status: 'rejected',
       submissionState: 'terminal',

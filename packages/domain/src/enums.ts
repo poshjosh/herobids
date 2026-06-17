@@ -8,6 +8,8 @@ export type OrderStatus =
   | 'partial'      // partially filled
   | 'filled'       // fully filled
   | 'cancelled'    // cancelled by user or system
+  | 'expired'      // timed out or venue-expired
+  | 'replaced'     // replaced by a newer order (cancel-and-replace or amend)
   | 'rejected';    // rejected by venue or risk gate
 
 export type ExecutionMode = 'paper' | 'shadow' | 'live';

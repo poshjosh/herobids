@@ -3,6 +3,7 @@ import type { OrderId } from '../values/ids.js';
 import type { Price, Quantity } from '../values/money.js';
 import type { OrderSide, OrderType, OrderStatus } from '../enums.js';
 import type { Subscription, PrivateStreamHandlers, PublicStreamHandlers } from './subscription.js';
+import type { VenueCapabilities, TimeInForce } from '../trading/venue-capability.js';
 
 /** Venue-specific error */
 export interface VenueError extends DomainError {
@@ -19,6 +20,12 @@ export interface OrderCommand {
   price?: Price;
   /** Client-generated ID for idempotency */
   clientOrderId?: string;
+  /** Time-in-force for limit orders (default: GTC). */
+  timeInForce?: TimeInForce;
+  /** Whether the order should only post liquidity (maker-only). */
+  postOnly?: boolean;
+  /** Whether the order should only reduce position (never increase). */
+  reduceOnly?: boolean;
 }
 
 /** Command to cancel an order */
@@ -113,6 +120,9 @@ export interface VenueFill {
  * Stateful order lifecycle: submit → amend → cancel.
  */
 export interface OrderbookVenuePort {
+  /** Declare which advanced order-management capabilities this venue supports. */
+  getCapabilities(): VenueCapabilities;
+
   submitOrder(cmd: OrderCommand): Promise<Result<OrderReceipt, VenueError>>;
   cancelOrder(cmd: CancelCommand): Promise<Result<void, VenueError>>;
   amendOrder(cmd: AmendCommand): Promise<Result<OrderReceipt, VenueError>>;

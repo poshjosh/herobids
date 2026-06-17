@@ -4,7 +4,7 @@ import type { Price, Quantity } from '@herobids/domain';
 import type { OrderSide, OrderType } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
-import type { ManagedOrder, FillEvent } from './order-state.js';
+import type { ManagedOrder, FillEvent, OrderTransition } from './order-state.js';
 import { canTransition, isTerminal } from './order-state.js';
 
 /** Error codes specific to the order manager */
@@ -49,6 +49,15 @@ export interface ApplyFillParams {
   filledAt: string;
 }
 
+// ── Dependencies (callbacks for structured event emission) ───────────────────
+
+export interface OrderManagerDeps {
+  /** Called when the transition history cap is reached for an order.
+   *  Consumers should emit a structured monitoring event (e.g. journal entry)
+   *  so operators can detect pathological amend/replace loops. */
+  onTransitionCapReached?: (order: ManagedOrder, maxEntries: number) => void;
+}
+
 /**
  * OrderManager — stateful tracker for orders within a trading instance.
  *
@@ -61,7 +70,12 @@ export interface ApplyFillParams {
  * One OrderManager per trading instance (actor).
  */
 export class OrderManager {
+  private readonly deps: OrderManagerDeps;
   private readonly orders = new Map<OrderId, ManagedOrder>();
+
+  constructor(deps: OrderManagerDeps = {}) {
+    this.deps = deps;
+  }
 
   /** Create a new order in pending state */
   create(params: CreateOrderParams): ManagedOrder {
@@ -104,6 +118,7 @@ export class OrderManager {
         context: { orderId, from: order.status, to: 'open' },
       });
     }
+    this.recordTransition(order, 'open', 'venue acknowledged');
     order.status = 'open';
     order.venueRefId = params.venueRefId;
     order.updatedAt = new Date().toISOString();
@@ -133,7 +148,8 @@ export class OrderManager {
       });
     }
 
-    // Compute new weighted average fill price
+    // Compute new weighted average fill price.
+    // newFilledQty > 0 is guaranteed by the overfill guard above.
     const prevNotional = order.avgFillPrice
       ? order.avgFillPrice.times(order.filledQuantity)
       : new Decimal(0);
@@ -155,6 +171,7 @@ export class OrderManager {
 
     order.filledQuantity = newFilledQty;
     order.avgFillPrice = newAvgPrice;
+    this.recordTransition(order, targetStatus, `fill ${params.fillId}: ${params.quantity.toString()} @ ${params.price.toString()}`, undefined, params.fillId);
     order.status = targetStatus;
     order.updatedAt = new Date().toISOString();
 
@@ -192,6 +209,7 @@ export class OrderManager {
         context: { orderId, from: order.status, to: 'cancelled' },
       });
     }
+    this.recordTransition(order, 'cancelled', 'order cancelled');
     order.status = 'cancelled';
     order.updatedAt = new Date().toISOString();
     return ok(order);
@@ -210,9 +228,84 @@ export class OrderManager {
         context: { orderId, from: order.status, to: 'rejected', reason },
       });
     }
+    this.recordTransition(order, 'rejected', reason ?? 'order rejected');
     order.status = 'rejected';
     order.updatedAt = new Date().toISOString();
     return ok(order);
+  }
+
+  /** Expire an order (timeout or venue expiry) */
+  expire(orderId: OrderId, reason?: string): Result<ManagedOrder, OrderManagerError> {
+    const order = this.orders.get(orderId);
+    if (!order) {
+      return err({ code: 'engine.order_not_found', message: `Order ${orderId} not found` });
+    }
+    if (!canTransition(order.status, 'expired')) {
+      return err({
+        code: 'engine.invalid_transition',
+        message: `Cannot expire order ${orderId} in state ${order.status}`,
+        context: { orderId, from: order.status, to: 'expired', reason },
+      });
+    }
+    this.recordTransition(order, 'expired', reason ?? 'order expired');
+    order.status = 'expired';
+    if (order.submissionState !== 'venue_acknowledged') {
+      order.submissionState = 'terminal';
+    }
+    order.updatedAt = new Date().toISOString();
+    return ok(order);
+  }
+
+  /** Mark an order as replaced by a newer order (amend or cancel-and-replace lineage) */
+  replace(orderId: OrderId, replacementOrderId: OrderId, reason?: string): Result<ManagedOrder, OrderManagerError> {
+    const order = this.orders.get(orderId);
+    if (!order) {
+      return err({ code: 'engine.order_not_found', message: `Order ${orderId} not found` });
+    }
+    if (!canTransition(order.status, 'replaced')) {
+      return err({
+        code: 'engine.invalid_transition',
+        message: `Cannot replace order ${orderId} in state ${order.status}`,
+        context: { orderId, from: order.status, to: 'replaced', reason },
+      });
+    }
+    this.recordTransition(order, 'replaced', reason ?? 'order replaced', replacementOrderId);
+    order.status = 'replaced';
+    order.submissionState = 'terminal';
+    order.updatedAt = new Date().toISOString();
+    return ok(order);
+  }
+
+  private recordTransition(order: ManagedOrder, to: ManagedOrder['status'], reason: string, replacementOrderId?: OrderId, fillId?: FillId): void {
+    const transition: OrderTransition = {
+      from: order.status,
+      to,
+      reason,
+      timestamp: new Date().toISOString(),
+      replacementOrderId,
+      fillId,
+    };
+    if (!order.transitionHistory) {
+      order.transitionHistory = [];
+    }
+    // Cap at 50 entries to prevent unbounded growth from repeated amend/replace cycles.
+    // When the cap is exceeded, older entries are silently dropped — warn so operators
+    // can detect pathological amend/replace loops.
+    const MAX_TRANSITIONS = 50;
+    if (order.transitionHistory.length >= MAX_TRANSITIONS) {
+      if (this.deps.onTransitionCapReached) {
+        this.deps.onTransitionCapReached(order, MAX_TRANSITIONS);
+      } else {
+        console.warn(
+          `[OrderManager] transitionHistory cap reached for order ${order.id} ` +
+          `(status=${order.status}, ${order.transitionHistory.length} entries). ` +
+          'No onTransitionCapReached callback registered — older entries dropped silently.',
+        );
+      }
+      order.transitionHistory = order.transitionHistory.slice(-(MAX_TRANSITIONS - 1));
+      order.transitionHistoryCapped = true;
+    }
+    order.transitionHistory.push(transition);
   }
 
   /** Get an order by ID */

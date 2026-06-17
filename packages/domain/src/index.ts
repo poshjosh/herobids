@@ -13,4 +13,5 @@ export * from './runtime-composition.js';
 export * from './tools.js';
 export * from './agent-risk-contract.js';
 export * from './trading/execution-capability.js';
+export * from './trading/venue-capability.js';
 export * from './trading/actor-health.js';
