@@ -187,7 +187,7 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
       marketDataConfig: appConfig.marketData,
       overrideRepo: tokenSafetyOverrideRepo,
       resolveTokenData: (network, tokenAddress) => {
-        if (!sharedMarketDataRegistry) {
+        if (!sharedMarketDataRegistry || !appConfig.marketData) {
           return Promise.resolve(null);
         }
         return resolveSwapTokenData(sharedMarketDataRegistry, network, tokenAddress, appConfig.marketData);
