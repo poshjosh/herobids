@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Hetzner production deployment infrastructure (2026-06-17): Caddy reverse proxy with Let's Encrypt TLS, production Docker Compose overlay, Terraform configs for Hetzner Cloud (CPX22, fsn1, Ubuntu 24.04), cloud-init first-boot provisioning (Docker CE, UFW, fail2ban, git clone, backups, systemd), and deploy scripts (provision, push, setup-env, seed-admin, logs, deploy orchestrator). See `infra/hetzner/`.
+
 - Rich Strategy Parity — mechanical and hybrid strategies (2026-06-16): bots can now be configured with `strategy.type: 'mechanical'` (deep technical analysis via RSI, MACD, volume, CHOCH, S/R, regime with no LLM) or `'hybrid'` (mechanical pre-check gating an LLM final-judgment call). Added `CandleFetcher` port and `VenueCandleFetcher` adapter routing Hyperliquid→Binance and Jupiter→GeckoTerminal. Added `SentimentProvider` port (no concrete adapter yet). Extracted named indicator sub-schemas (`RsiParamsSchema` etc.) from `IndicatorConfigSchema`. Consolidated `PriceCandle` to domain.
 
 - Unified Agent Create/Edit UI (2026-06-16): agent creation and editing now supports capability selection (Intelligence / Technical / Both). Technical-only agents use rule-based indicator scanning with no LLM cost. New `TechnicalConfigSection` with preset strategies (Momentum Breakout, Mean Reversion, Conservative, Custom), discovery filters, scan settings, indicator toggles, and confidence weights. Sidebar now has a persistent "New AI Agent" action below the AI Agents nav item. Full API support for `technical` config in create/update/read endpoints.

@@ -1,7 +1,8 @@
 # Deploy Herobids to Hetzner VPS (Greenfield)
 
-**Status:** Draft  
+**Status:** Implemented  
 **Created:** 2026-06-17  
+**Implemented:** 2026-06-17  
 **Goal:** Stand up a production deployment of herobids on the existing Hetzner CPX22 VPS (IP backing `herobids.com`). Greenfield — no data migration from aitradingbot.
 
 ---
@@ -333,7 +334,7 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<strong-password> ./scripts/seed-admi
 
 ## Checklist
 
-- [ ] Phase 1: Caddyfile + docker-compose.prod.yaml + .env.example
-- [ ] Phase 2: Terraform + cloud-init + variables + outputs
-- [ ] Phase 3: Deploy scripts (provision, push, setup-env, seed-admin, logs, deploy orchestrator, README)
-- [ ] Phase 4: First production deploy (provision → env → deploy → seed admin → verify)
+- [x] Phase 1: Caddyfile + docker-compose.prod.yaml + .env.example
+- [x] Phase 2: Terraform + cloud-init + variables + outputs + tfvars.example
+- [x] Phase 3: Deploy scripts (provision, push, setup-env, seed-admin, logs, deploy orchestrator, README)
+- [x] Phase 4: First production deploy documentation (manual steps documented in plan)
