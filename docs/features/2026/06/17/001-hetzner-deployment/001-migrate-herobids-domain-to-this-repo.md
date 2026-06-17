@@ -291,6 +291,14 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<strong-password> ./scripts/seed-admi
 
 ---
 
+## Outstanding Issues
+
+### [Item 1: Caddyfile]
+- **[MEDIUM] M1:** No explicit log configuration — add `log { output stdout; format json; }` directive for structured production logging.
+- **[LOW] L1:** No canonical domain redirect — `www.herobids.com` should redirect to `herobids.com` (or vice versa) for SEO consistency.
+- **[LOW] L2:** Missing additional defense-in-depth headers (`Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`).
+- **[LOW] L3:** Bare `/api` path (no trailing path) falls through to SPA handler — consider adding `handle /api { redir / }` or returning 404.
+
 ## Decisions & Notes
 
 | Decision | Rationale |
