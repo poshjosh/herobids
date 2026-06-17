@@ -293,6 +293,14 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<strong-password> ./scripts/seed-admi
 
 ## Outstanding Issues
 
+### [Item 7: cloud-init.yaml]
+- **[MEDIUM] M1:** `deploy_ssh_private_key` has no non-empty validation in variables.tf (compare with hcloud_token).
+- **[LOW] L1:** `/var/log/herobids-backup.log` grows unbounded — add logrotate config.
+- **[LOW] L2:** `app_domain` template variable passed but unused in cloud-init body.
+
+### [Item 6: outputs.tf]
+- **[LOW] L1:** Inconsistent attribute ordering in `ssh_command` output (`value` before `description`; others have `description` first).
+
 ### [Item 3: .env.example]
 - **[LOW] L1:** Awkward phrasing on AUTH_JWT_SECRET/AUTH_SECRET clarification comment — could be reworded for clarity.
 - **[LOW] L2:** Venue API Keys section sits between RPC endpoints and Billing — consider grouping venue config together.

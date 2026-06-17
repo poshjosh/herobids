@@ -78,11 +78,11 @@ resource "hcloud_server" "default" {
   firewall_ids = [hcloud_firewall.default.id]
 
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    git_repo_url          = var.git_repo_url
-    git_branch            = var.git_branch
-    app_domain            = var.app_domain
-    deploy_ssh_private_key = var.deploy_ssh_private_key
-    server_name           = var.server_name
+    git_repo_url                = var.git_repo_url
+    git_branch                  = var.git_branch
+    app_domain                  = var.app_domain
+    deploy_ssh_private_key_b64  = base64encode(var.deploy_ssh_private_key)
+    server_name                 = var.server_name
   })
 
   labels = {

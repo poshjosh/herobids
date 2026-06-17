@@ -1,0 +1,112 @@
+#cloud-config
+# Herobids first-boot provisioning for Ubuntu 24.04.
+# Template variables (substituted by Terraform templatefile):
+#   ${git_repo_url}           — Private repo URL (SSH, with deploy key)
+#   ${git_branch}             — Git branch to deploy
+#   ${app_domain}             — Application domain name
+#   ${deploy_ssh_private_key_b64} — SSH deploy key (base64-encoded)
+#   ${server_name}            — Server hostname
+
+package_update: true
+package_upgrade: true
+
+hostname: ${server_name}
+
+# ── Write files (hardcoded content, no template vars with newlines) ──
+
+write_files:
+  - path: /etc/cron.d/herobids-backup
+    permissions: '0644'
+    content: |
+      # Daily Postgres backup with 14-day retention
+      0 3 * * * root docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/docker-compose.prod.yaml exec -T postgres pg_dump -U herobids herobids > /opt/herobids-backup/herobids-$(date +\%Y\%m\%d).sql 2>> /var/log/herobids-backup.log || logger -t herobids-backup "pg_dump failed"
+
+  - path: /etc/systemd/system/herobids.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Herobids Trading Platform
+      Requires=docker.service
+      After=docker.service network-online.target
+
+      [Service]
+      Type=simple
+      WorkingDirectory=/opt/herobids
+      ExecStart=docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/docker-compose.prod.yaml up
+      ExecStop=docker compose -f /opt/herobids/docker-compose.yaml -f /opt/herobids/docker-compose.prod.yaml down
+      Restart=always
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+
+# ── Boot commands ──────────────────────────────────────────
+
+runcmd:
+  # ── 1. Install Docker CE, UFW, fail2ban ──────────────────
+  - |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Add Docker's official GPG key and apt repository
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+
+    apt-get update -y
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin ufw fail2ban
+
+    systemctl enable docker
+    systemctl start docker
+    systemctl enable fail2ban
+    systemctl start fail2ban
+
+  # ── 2. Configure UFW ─────────────────────────────────────
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+
+  # ── 3. Write deploy SSH key and configure SSH ────────────
+  - |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Write deploy SSH key (base64-encoded to handle multi-line keys safely in YAML)
+    echo '${deploy_ssh_private_key_b64}' | base64 -d > /root/.ssh/deploy_key
+    chmod 600 /root/.ssh/deploy_key
+
+    # Scan and trust the git host
+    GIT_HOST=$(echo "${git_repo_url}" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+    ssh-keyscan -H "$GIT_HOST" > /tmp/known_hosts_git 2>/dev/null || true
+    if [ -s /tmp/known_hosts_git ]; then
+      cat /tmp/known_hosts_git >> /root/.ssh/known_hosts
+      sort -u -o /root/.ssh/known_hosts /root/.ssh/known_hosts
+    fi
+    chmod 644 /root/.ssh/known_hosts
+
+  # ── 4. Clone herobids repo ───────────────────────────────
+  - |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Clone repo
+    if [ ! -d /opt/herobids/.git ]; then
+      GIT_SSH_COMMAND="ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
+        git clone "${git_repo_url}" /opt/herobids
+      cd /opt/herobids && git checkout "${git_branch}"
+    else
+      cd /opt/herobids && git fetch --all && git reset --hard "origin/${git_branch}"
+    fi
+    cd /opt/herobids && git config core.sshCommand "ssh -i /root/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
+
+  # ── 5. Create .env from .env.example ─────────────────────
+  - cp -n /opt/herobids/.env.example /opt/herobids/.env
+
+  # ── 6. Setup backup directory ────────────────────────────
+  - mkdir -p /opt/herobids-backup
+
+  # ── 7. Enable systemd service (don't start — .env must be filled first) ──
+  - systemctl daemon-reload
+  - systemctl enable herobids.service
