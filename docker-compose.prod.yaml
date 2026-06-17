@@ -1,0 +1,51 @@
+# Production overlay for docker-compose.yaml.
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+#
+# Changes from the base dev compose:
+#   - Restart policies (unless-stopped) on postgres, redis, web
+#   - Caddy reverse proxy added (TLS termination, Let's Encrypt)
+#   - Production auth URLs set on the API service
+#   - Web depends_on api (healthy); caddy depends_on web (started)
+#
+# NOTE: Docker Compose merges sequence attributes (ports) by concatenation,
+# not replacement — host port bindings for postgres (5432), redis (6379),
+# api (3000), and web (5173) from the base compose cannot be removed via
+# override alone. In production the Hetzner UFW firewall (cloud-init) only
+# allows ports 22, 80, 443 — all other Docker-published ports are blocked
+# at the host level.
+
+services:
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  api:
+    environment:
+      AUTH_PUBLIC_BASE_URL: https://herobids.com
+      AUTH_FRONTEND_ORIGIN: https://herobids.com
+
+  web:
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:

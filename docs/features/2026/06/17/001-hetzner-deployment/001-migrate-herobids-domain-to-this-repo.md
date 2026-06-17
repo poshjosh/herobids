@@ -293,6 +293,13 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<strong-password> ./scripts/seed-admi
 
 ## Outstanding Issues
 
+### [Item 2: docker-compose.prod.yaml]
+- **[LOW] L1:** Header comment should mention `worker` + `docker-proxy` are inherited unchanged.
+- **[LOW] L2:** Hardcoded auth URLs (`https://herobids.com`) — consider `${VAR:-default}` substitution for staging reuse.
+- **[LOW] L3:** No healthcheck on `caddy` service — add `caddy version` healthcheck.
+- **[LOW] L4:** Header comment should clarify that production secrets come from `.env` on the server.
+- **[LOW] L5:** `env_file` merge behavior (required: false from base) — operator awareness note, no action needed.
+
 ### [Item 1: Caddyfile]
 - **[MEDIUM] M1:** No explicit log configuration — add `log { output stdout; format json; }` directive for structured production logging.
 - **[LOW] L1:** No canonical domain redirect — `www.herobids.com` should redirect to `herobids.com` (or vice versa) for SEO consistency.
