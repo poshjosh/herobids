@@ -18,6 +18,9 @@ import pino from 'pino';
 
 const logger = pino({ name: 'agent-session-manager' });
 
+/** Per-agent timeout for Redis stream subscription during survived-session recovery. */
+const STREAM_SUBSCRIBE_TIMEOUT_MS = 10_000;
+
 export interface AgentSessionManagerConfig {
   /** Heartbeat timeout in ms — mark runtime unhealthy after this. Default: 30000 */
   heartbeatTimeoutMs: number;
@@ -126,18 +129,45 @@ export class AgentSessionManager {
   private async registerSurvivedSessions(): Promise<void> {
     if (this.stopping) return;
     const sessions = await this.agentRepo.getSessionsByStatuses(['running', 'launching', 'unhealthy']);
-    const subscribedAgents = new Set<string>();
+
+    // Register recovered runtime handles for all survived sessions.
+    // This is synchronous and must complete before we accept any stop requests
+    // (stopSession awaits this.readyPromise).
     for (const session of sessions) {
       if (!this.runtimeLauncher.hasRuntime(session.id)) {
         this.runtimeLauncher.registerRecoveredRuntime(session.agentId, session.id);
       }
-      // Re-subscribe to the agent's Redis inbound stream so this worker
-      // reads heartbeats from the still-running container.
-      if (this.config.streamSubscribe && !subscribedAgents.has(session.agentId)) {
-        subscribedAgents.add(session.agentId);
-        await this.config.streamSubscribe(session.agentId).catch((err: unknown) => {
-          logger.error({ err, agentId: session.agentId }, 'Failed to subscribe to survived agent stream');
-        });
+    }
+
+    // Re-subscribe to agent Redis inbound streams concurrently so that one
+    // slow or hanging subscription (e.g. unresponsive Redis) does not block
+    // registration of all remaining survived sessions. Each subscription is
+    // wrapped in a timeout as a safety net.
+    if (this.config.streamSubscribe) {
+      const uniqueAgentIds = [...new Set(sessions.map((s) => s.agentId))];
+      let failedCount = 0;
+      await Promise.allSettled(
+        uniqueAgentIds.map((agentId) => {
+          let timeoutId: ReturnType<typeof setTimeout>;
+          return Promise.race([
+            this.config.streamSubscribe!(agentId).then(() => clearTimeout(timeoutId)),
+            new Promise<never>((_, reject) => {
+              timeoutId = setTimeout(
+                () => reject(new Error(`streamSubscribe timed out after ${STREAM_SUBSCRIBE_TIMEOUT_MS}ms`)),
+                STREAM_SUBSCRIBE_TIMEOUT_MS,
+              );
+            }),
+          ]).catch((err: unknown) => {
+            failedCount += 1;
+            logger.error({ err, agentId }, 'Failed to subscribe to survived agent stream');
+          });
+        }),
+      );
+      if (failedCount > 0) {
+        logger.warn(
+          { failedCount, total: uniqueAgentIds.length },
+          'Some survived agent stream subscriptions failed during recovery',
+        );
       }
     }
   }
