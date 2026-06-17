@@ -79,7 +79,7 @@ REDIS_URL=redis://redis:6379
 
 # ── API / Auth ────────────────────────────────────────────
 PORT=3000
-AUTH_SECRET=<32+ char random string>
+AUTH_JWT_SECRET=<32+ char random string>
 AUTH_PUBLIC_BASE_URL=https://herobids.com
 AUTH_FRONTEND_ORIGIN=https://herobids.com
 
@@ -257,7 +257,7 @@ After completing all phases, the operator should have this checklist of **remain
 
 | Variable | Where | Notes |
 |----------|-------|-------|
-| `AUTH_SECRET` | Server `/opt/herobids/.env` | Generate: `openssl rand -hex 32` |
+| `AUTH_JWT_SECRET` | Server `/opt/herobids/.env` | Generate: `openssl rand -hex 32` |
 | `AUTH_PUBLIC_BASE_URL` | Server `/opt/herobids/.env` | Set to `https://herobids.com` |
 | `AUTH_FRONTEND_ORIGIN` | Server `/opt/herobids/.env` | Set to `https://herobids.com` |
 | LLM API keys | Server `/opt/herobids/.env` | OpenAI, Anthropic, etc. as needed |
@@ -292,6 +292,10 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=<strong-password> ./scripts/seed-admi
 ---
 
 ## Outstanding Issues
+
+### [Item 3: .env.example]
+- **[LOW] L1:** Awkward phrasing on AUTH_JWT_SECRET/AUTH_SECRET clarification comment — could be reworded for clarity.
+- **[LOW] L2:** Venue API Keys section sits between RPC endpoints and Billing — consider grouping venue config together.
 
 ### [Item 2: docker-compose.prod.yaml]
 - **[LOW] L1:** Header comment should mention `worker` + `docker-proxy` are inherited unchanged.
