@@ -51,6 +51,13 @@ docker-volumes/
 # Drizzle
 drizzle/meta/.snapshot.json
 
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!.tfvars.example
+
 # Misc
 *.pid
 *.seed
