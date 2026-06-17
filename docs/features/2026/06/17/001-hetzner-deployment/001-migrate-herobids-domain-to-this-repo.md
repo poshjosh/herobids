@@ -123,7 +123,7 @@ Terraform resources for the Hetzner server:
 | `location` | `fsn1` | Datacenter |
 | `image` | `ubuntu-24.04` | OS image |
 | `ssh_public_key_path` | (required) | Path to SSH public key |
-| `ssh_private_key_path` | (required) | Path to SSH private key |
+| `deploy_ssh_private_key` | (required) | Private SSH key content for deploy key access to git repo |
 | `git_repo_url` | (required) | Herobids repo URL (private, with deploy key) |
 | `git_branch` | `main` | Branch to deploy |
 | `app_domain` | `herobids.com` | Domain name |

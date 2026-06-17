@@ -81,7 +81,7 @@ resource "hcloud_server" "default" {
     git_repo_url          = var.git_repo_url
     git_branch            = var.git_branch
     app_domain            = var.app_domain
-    ssh_private_key_path  = var.ssh_private_key_path
+    deploy_ssh_private_key = var.deploy_ssh_private_key
     server_name           = var.server_name
   })
 
