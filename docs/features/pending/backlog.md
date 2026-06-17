@@ -7,6 +7,15 @@ Sources consolidated here:
 [gap analysis](2026-06-10-gap-analysis.md)
 
 ---
+17 June 2026
+
+| # | Issue | Reason |
+|---|-------|--------|
+| 1 | Make venue capabilities config-driven | Larger architectural change — needs plan/contemplation |
+| 6 | Commit untracked order-update-decision.ts and order-lifecycle-manager.ts | These appear complete but were not in the original plan to address |
+| 7 | `fillEvidence` on every decision path | Design decision — not a bug, needs broader discussion |
+
+---
 
 ## Feature Plans
 
