@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────
+# Terraform Variables Template — Herobids Hetzner Deployment
+# ─────────────────────────────────────────────────────────────
+#
+# Copy this file to terraform.tfvars and fill in your values:
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is gitignored — never commit real secrets.
+# ─────────────────────────────────────────────────────────────
+
+# ── Provider ──────────────────────────────────────────────
+
+hcloud_token = "your-hetzner-cloud-api-token"  # required, sensitive
+
+# ── Server ────────────────────────────────────────────────
+
+# server_name = "herobids"
+# server_type = "cpx22"
+# location    = "fsn1"
+# image       = "ubuntu-24.04"
+
+# ── SSH ───────────────────────────────────────────────────
+
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"  # required
+
+deploy_ssh_private_key = <<-EOT
+-----BEGIN OPENSSH PRIVATE KEY-----
+your-private-key-content-here
+-----END OPENSSH PRIVATE KEY-----
+EOT
+# required, sensitive — the private key used as a deploy key for git clone
+
+# ── Deployment ────────────────────────────────────────────
+
+git_repo_url = "git@github.com:your-org/herobids.git"  # required
+
+# git_branch = "main"
+# app_domain = "herobids.com"
+
+# ─────────────────────────────────────────────────────────────
+# Sensitive variables (hcloud_token, deploy_ssh_private_key)
+# are marked sensitive in Terraform and will not appear in
+# plan/apply output. Store terraform.tfvars securely.
+# ─────────────────────────────────────────────────────────────
