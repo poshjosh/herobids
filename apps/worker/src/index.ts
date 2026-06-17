@@ -45,7 +45,7 @@ import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/i
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { createProviderRegistry, type RedisEvalClient } from '@herobids/market-data';
+import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, type MarketDataConfig, type RedisEvalClient } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
@@ -54,14 +54,28 @@ async function resolveSwapTokenData(
   registry: ReturnType<typeof createProviderRegistry>,
   network: string,
   tokenAddress: string,
+  marketDataConfig: MarketDataConfig,
 ): Promise<ResolvedSwapTokenData | null> {
-  const searchResult = await registry.dexscreener.search(tokenAddress);
+  // Resolve symbol or alias → canonical address so that inputs like "ETH"
+  // resolve before the exact-address filter against DexScreener results.
+  // Falls through to the original tokenAddress if no canonical match exists.
+  //
+  // The exact-address filter is still essential in the fallback path: when
+  // the input is an unknown symbol (no canonical match), resolvedAddress is
+  // the raw user input and DexScreener may return loosely-related tokens.
+  // The filter discards those, ensuring we only return data for the exact
+  // token the caller requested — whether originally an address or a symbol.
+  const policy = resolveTokenSafetyPolicyConfig(marketDataConfig);
+  const canonical = lookupCanonical(tokenAddress, network, policy.canonicalTokens);
+  const resolvedAddress = canonical?.address ?? tokenAddress;
+
+  const searchResult = await registry.dexscreener.search(resolvedAddress);
   // Same token can appear in multiple pools — pick the highest-liquidity match
   // to align with the market-data selection semantics used elsewhere.
   const exactMatch = searchResult.data
     .filter((token) => (
       token.network.toLowerCase() === network.toLowerCase()
-      && token.address.toLowerCase() === tokenAddress.toLowerCase()
+      && token.address.toLowerCase() === resolvedAddress.toLowerCase()
     ))
     .sort((a, b) => b.liquidityUsd - a.liquidityUsd)[0];
 
@@ -84,7 +98,7 @@ async function resolveSwapTokenData(
     });
     const discoveryMatch = discoveryResult.data.find((token) => (
       token.network.toLowerCase() === network.toLowerCase()
-      && token.address.toLowerCase() === tokenAddress.toLowerCase()
+      && token.address.toLowerCase() === resolvedAddress.toLowerCase()
     ));
 
     if (!discoveryMatch) {
@@ -164,11 +178,20 @@ const sharedMarketDataRegistry = appConfig.marketData
   ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient })
   : undefined;
 
+// The outer guard (appConfig.marketData && sharedMarketDataRegistry) prevents
+// creation when the registry is absent. The inner null-check defends against
+// a theoretical edge case where the closure is invoked after the module-level
+// variable is reassigned (capture-by-reference, not by value).
 const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
   ? createSwapTokenSafetyAdapter({
       marketDataConfig: appConfig.marketData,
       overrideRepo: tokenSafetyOverrideRepo,
-      resolveTokenData: (network, tokenAddress) => resolveSwapTokenData(sharedMarketDataRegistry, network, tokenAddress),
+      resolveTokenData: (network, tokenAddress) => {
+        if (!sharedMarketDataRegistry) {
+          return Promise.resolve(null);
+        }
+        return resolveSwapTokenData(sharedMarketDataRegistry, network, tokenAddress, appConfig.marketData);
+      },
     })
   : undefined;
 
