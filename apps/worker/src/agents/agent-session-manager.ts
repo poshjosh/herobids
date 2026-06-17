@@ -115,15 +115,29 @@ export class AgentSessionManager {
    * Pre-register launcher handles for sessions that are already running/launching/unhealthy
    * in the DB but have no in-memory handle on this worker.
    *
+   * Also re-subscribes to the Redis inbound stream for each survived agent so that
+   * heartbeats published by the still-running container are consumed by this worker.
+   * Without the stream subscription, heartbeats accumulate in Redis but are never read,
+   * causing the health monitor to falsely mark the agent as unhealthy after deploy.
+   *
    * Called at startup so that stop requests issued before the first post-restart heartbeat
    * do not leave survived containers running outside platform control.
    */
   private async registerSurvivedSessions(): Promise<void> {
     if (this.stopping) return;
     const sessions = await this.agentRepo.getSessionsByStatuses(['running', 'launching', 'unhealthy']);
+    const subscribedAgents = new Set<string>();
     for (const session of sessions) {
       if (!this.runtimeLauncher.hasRuntime(session.id)) {
         this.runtimeLauncher.registerRecoveredRuntime(session.agentId, session.id);
+      }
+      // Re-subscribe to the agent's Redis inbound stream so this worker
+      // reads heartbeats from the still-running container.
+      if (this.config.streamSubscribe && !subscribedAgents.has(session.agentId)) {
+        subscribedAgents.add(session.agentId);
+        await this.config.streamSubscribe(session.agentId).catch((err: unknown) => {
+          logger.error({ err, agentId: session.agentId }, 'Failed to subscribe to survived agent stream');
+        });
       }
     }
   }
