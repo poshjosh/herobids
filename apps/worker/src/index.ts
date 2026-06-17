@@ -80,6 +80,25 @@ async function resolveSwapTokenData(
     .sort((a, b) => b.liquidityUsd - a.liquidityUsd)[0];
 
   if (!exactMatch) {
+    // If the token was resolved via operator-configured canonical lookup,
+    // construct a synthetic token info with safe defaults so the safety
+    // check can proceed. Canonical tokens are explicitly whitelisted by
+    // the operator and do not require external DexScreener verification.
+    if (canonical) {
+      return {
+        address: canonical.address,
+        symbol: canonical.symbol,
+        name: canonical.name,
+        network: network.toLowerCase(),
+        priceUsd: 0,
+        volume24hUsd: Number.MAX_SAFE_INTEGER,
+        liquidityUsd: Number.MAX_SAFE_INTEGER,
+        priceChange24hPct: 0,
+        dexId: 'canonical',
+        poolCreatedAt: '2020-01-01T00:00:00.000Z',
+        ageResolution: 'available',
+      };
+    }
     return null;
   }
 

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, notInArray, sql, asc } from 'drizzle-orm';
+import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
@@ -487,7 +487,9 @@ export async function agentInteractivityRoutes(
     });
   });
 
-  // GET /agents/:id/trades — fills (trades) attributed to bots owned by this agent
+  // GET /agents/:id/trades — fills (trades) attributed to this agent.
+  // Includes both agent-native fills (actorType='agent') and fills from bots
+  // created by the agent (actorType='bot').
   app.get<{ Params: { id: string } }>('/agents/:id/trades', async (request, reply) => {
     const { id } = request.params;
 
@@ -499,12 +501,16 @@ export async function agentInteractivityRoutes(
       .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
     const agentBotIds = agentBots.map((b) => b.id);
 
+    // Agent-native fills (actorType='agent') OR bot fills (actorType='bot' for agent-created bots)
+    const agentNativeCondition = and(eq(fills.actorType, 'agent'), eq(fills.actorId, id));
     if (agentBotIds.length === 0) {
-      return reply.send({ agentId: id, trades: [] });
+      const trades = await db.select().from(fills).where(agentNativeCondition);
+      return reply.send({ agentId: id, trades });
     }
 
+    const botCondition = and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds));
     const trades = await db.select().from(fills)
-      .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)));
+      .where(or(agentNativeCondition, botCondition));
 
     return reply.send({ agentId: id, trades });
   });
