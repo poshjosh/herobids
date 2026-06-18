@@ -9,6 +9,12 @@ import {
 } from './dexscreener.js';
 import { discoverTokens } from './discovery.js';
 import {
+  NoopDiscoverySeenTracker,
+  RedisDiscoverySeenTracker,
+  type DiscoverySeenClient,
+  type DiscoverySeenTracker,
+} from './discovery-seen-tracker.js';
+import {
   fetchGeckoTerminalCandles,
   fetchGeckoTerminalNewPools,
   fetchGeckoTerminalTopPools,
@@ -30,6 +36,7 @@ import type { MarketDataConfig, ProviderRequestClass } from './types.js';
 export interface ProviderRegistryOptions {
   coordinator?: SharedRateBudgetCoordinator;
   redisClient?: RedisEvalClient;
+  discoverySeenClient?: DiscoverySeenClient;
   cache?: ProviderResponseCache;
   fetchFn?: typeof fetch;
 }
@@ -91,6 +98,14 @@ export function createProviderRegistry(
   const coordinator = options.coordinator ?? createSharedRateBudgetCoordinator({ redisClient: options.redisClient });
   const cache = options.cache ?? new InMemoryProviderResponseCache();
   const fetchFn = options.fetchFn;
+
+  const seenTracker: DiscoverySeenTracker =
+    options.discoverySeenClient && config.discovery.antistalenessCooldownHours > 0
+      ? new RedisDiscoverySeenTracker(
+          options.discoverySeenClient,
+          config.discovery.antistalenessTokenTtlHours * 60 * 60 * 1000,
+        )
+      : new NoopDiscoverySeenTracker();
 
   const dexscreenerBudget = splitBudget(
     config.dexscreener.search.requestsPerMinute + config.dexscreener.discovery.requestsPerMinute,
@@ -322,6 +337,8 @@ export function createProviderRegistry(
             maxResults,
             minLiquidityUsd: discoveryOptions?.minLiquidityUsd,
             extraGeckoTerminalPages: config.discovery.geckoTerminalExtraPages,
+            antistalenessCooldownHours: config.discovery.antistalenessCooldownHours,
+            seenTracker,
           }),
           allowStale: true,
         });

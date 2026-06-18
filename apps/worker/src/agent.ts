@@ -622,7 +622,7 @@ if (MARKET_DATA_CONFIG_RAW) {
 
 let marketDataRegistry: ProviderRegistry | null = null;
 if (marketDataConfig) {
-  marketDataRegistry = createProviderRegistry(marketDataConfig, { redisClient: redis });
+  marketDataRegistry = createProviderRegistry(marketDataConfig, { redisClient: redis, discoverySeenClient: redis });
 } else {
   logger.warn('MARKET_DATA_CONFIG_JSON not set — market-data intelligence tools will be unavailable');
   for (const tool of MARKET_DATA_TOOLS) {

@@ -209,7 +209,9 @@ export interface MarketDataConfig {
   };
   discovery: {
     maxResults: number;
-    geckoTerminalExtraPages?: number;
+    geckoTerminalExtraPages: number;
+    antistalenessCooldownHours: number;
+    antistalenessTokenTtlHours: number;
   };
   timeoutMs: number;
 }

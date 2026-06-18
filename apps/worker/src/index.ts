@@ -194,7 +194,7 @@ const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
 const decisionFailureRepo = new DecisionFailureRepository(db);
 
 const sharedMarketDataRegistry = appConfig.marketData
-  ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient })
+  ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
   : undefined;
 
 // The outer guard (appConfig.marketData && sharedMarketDataRegistry) prevents

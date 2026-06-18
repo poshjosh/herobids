@@ -17,6 +17,7 @@ import {
   type CoinMarketCapConfig,
 } from './coinmarketcap.js';
 import type { DiscoveredToken } from './types.js';
+import type { DiscoverySeenTracker } from './discovery-seen-tracker.js';
 
 export interface DiscoveryConfig {
   dexscreener: DexScreenerConfig;
@@ -26,6 +27,8 @@ export interface DiscoveryConfig {
   maxResults?: number;
   minLiquidityUsd?: number;
   extraGeckoTerminalPages?: number;
+  antistalenessCooldownHours?: number;
+  seenTracker?: DiscoverySeenTracker;
 }
 
 function tokenKey(token: DiscoveredToken): string {
@@ -163,16 +166,26 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
         return right.volume24hUsd - left.volume24hUsd;
       }
       return right.liquidityUsd - left.liquidityUsd;
-    })
-    .slice(0, maxResults);
+    });
 
-  if (!config.coinmarketcap) return merged;
+  const cooldownMs = (config.antistalenessCooldownHours ?? 0) * 60 * 60 * 1000;
+  const reordered = (config.seenTracker && cooldownMs > 0)
+    ? await config.seenTracker.applyAntiStaleness(merged, cooldownMs)
+    : merged;
+
+  const sliced = reordered.slice(0, maxResults);
+
+  if (config.seenTracker && cooldownMs > 0) {
+    await config.seenTracker.markSeen(sliced);
+  }
+
+  if (!config.coinmarketcap) return sliced;
 
   // Enrichment pass — runs after merge/filter/sort, one batch call per network slice, fail-soft
   try {
-    return await enrichByNetworkSlice(merged, config.coinmarketcap);
+    return await enrichByNetworkSlice(sliced, config.coinmarketcap);
   } catch {
     // CMC enrichment failure must not abort discovery results from other providers
-    return merged;
+    return sliced;
   }
 }

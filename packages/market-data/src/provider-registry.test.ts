@@ -44,6 +44,7 @@ function createConfig() {
       apiKey: '',
       cacheTtlMs: 3_600_000,
     },
+    discovery: { maxResults: 50, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 4, antistalenessTokenTtlHours: 24 },
   };
 }
 
