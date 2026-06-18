@@ -189,11 +189,48 @@ marketData:
         USDC:
           address: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
           name: USD Coin
+          aliases: []
+        USDT:
+          address: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB
+          name: Tether USD
+          aliases: []
+        JUP:
+          address: JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN
+          name: Jupiter
+          aliases: []
+        BONK:
+          address: DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+          name: Bonk
+          aliases: []
+        RAY:
+          address: 4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R
+          name: Raydium
+          aliases: []
       base:
         WETH:
           address: "0x4200000000000000000000000000000000000006"
           name: Wrapped Ether
           aliases: [ETH]
+        USDC:
+          address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+          name: USD Coin
+          aliases: []
+        USDT:
+          address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"
+          name: Bridged Tether USD
+          aliases: []
+        DAI:
+          address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"
+          name: Dai Stablecoin
+          aliases: []
+        WBTC:
+          address: "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c"
+          name: Wrapped Bitcoin
+          aliases: [BTC]
+        cbBTC:
+          address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf"
+          name: Coinbase Wrapped BTC
+          aliases: []
   discovery:
     maxResults: 50          # Default when agent does not specify a limit; agent may request 1–100 per call
     geckoTerminalExtraPages: 0    # Set to 1 to fetch page 2 of GT trending + top pools (~35 extra tokens, 4 extra req/run)
