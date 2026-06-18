@@ -45,7 +45,7 @@ import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/i
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, type MarketDataConfig, type RedisEvalClient, type TokenInfo } from '@herobids/market-data';
+import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, type RedisEvalClient, type TokenInfo } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
