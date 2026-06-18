@@ -125,6 +125,7 @@ function makeGoodToken() {
     dexId: 'raydium',
     poolCreatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
     ageResolution: 'available' as const,
+    hasRealMarketData: true,
   };
 }
 
