@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { callLlmProvider, stripReasoningContent } from './llm-provider.js';
+import { callLlmProvider, stripReasoningContent, toOpenAiMessages } from './llm-provider.js';
+import type { LlmMessage } from './llm-provider.js';
 
 describe('callLlmProvider thinking controls', () => {
   const originalEnv = { ...process.env };
@@ -618,5 +619,136 @@ describe('callLlmProvider thinking budget config', () => {
     // No thinking block should appear in the body when mode is 'none'
     expect(body['thinking']).toBeUndefined();
     expect(body['max_tokens']).toBe(512);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toOpenAiMessages — message formatting
+// ---------------------------------------------------------------------------
+
+describe('toOpenAiMessages', () => {
+  const makeAssistantMsg = (content: string, toolCalls?: LlmMessage['toolCalls']): LlmMessage => ({
+    role: 'assistant',
+    content,
+    ...(toolCalls ? { toolCalls } : {}),
+  });
+
+  const makeToolCall = (name: string, args: Record<string, unknown> = {}): NonNullable<LlmMessage['toolCalls']>[number] => ({
+    id: `call_${name}`,
+    name,
+    args,
+  });
+
+  it('(a) assistant with tool calls and empty content → content field omitted', () => {
+    const messages: LlmMessage[] = [
+      makeAssistantMsg('', [makeToolCall('get_price', { symbol: 'BTC' })]),
+    ];
+
+    const result = toOpenAiMessages(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty('content');
+    expect(result[0]!['role']).toBe('assistant');
+    expect(result[0]!['tool_calls']).toEqual([
+      {
+        id: 'call_get_price',
+        type: 'function',
+        function: { name: 'get_price', arguments: '{"symbol":"BTC"}' },
+      },
+    ]);
+  });
+
+  it('(b) assistant without tool calls and empty content → { content: \'\' }', () => {
+    const messages: LlmMessage[] = [
+      makeAssistantMsg(''),
+    ];
+
+    const result = toOpenAiMessages(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!['role']).toBe('assistant');
+    expect(result[0]!['content']).toBe('');
+    expect(result[0]).not.toHaveProperty('tool_calls');
+  });
+
+  it('(c) assistant with non-empty content → { content: \'...\' }', () => {
+    const messages: LlmMessage[] = [
+      makeAssistantMsg('Here is my analysis of the market conditions.'),
+    ];
+
+    const result = toOpenAiMessages(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!['role']).toBe('assistant');
+    expect(result[0]!['content']).toBe('Here is my analysis of the market conditions.');
+    expect(result[0]).not.toHaveProperty('tool_calls');
+  });
+
+  it('assistant with tool calls and non-empty content → both content and tool_calls present', () => {
+    const messages: LlmMessage[] = [
+      makeAssistantMsg('Fetching price data now.', [makeToolCall('get_price', { symbol: 'ETH' })]),
+    ];
+
+    const result = toOpenAiMessages(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!['content']).toBe('Fetching price data now.');
+    expect(result[0]!['tool_calls']).toEqual([
+      {
+        id: 'call_get_price',
+        type: 'function',
+        function: { name: 'get_price', arguments: '{"symbol":"ETH"}' },
+      },
+    ]);
+  });
+
+  it('multiple tool calls with empty content → content field omitted', () => {
+    const messages: LlmMessage[] = [
+      makeAssistantMsg('', [
+        makeToolCall('get_price', { symbol: 'BTC' }),
+        makeToolCall('get_funding_rates', { symbols: ['BTC', 'ETH'] }),
+      ]),
+    ];
+
+    const result = toOpenAiMessages(messages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty('content');
+    const toolCalls = result[0]!['tool_calls'] as Array<Record<string, unknown>>;
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls[0]!['function']['name']).toBe('get_price');
+    expect(toolCalls[1]!['function']['name']).toBe('get_funding_rates');
+  });
+
+  it('mixed messages (system, user, assistant, tool) are all converted correctly', () => {
+    const messages: LlmMessage[] = [
+      { role: 'system', content: 'You are a trading agent.' },
+      { role: 'user', content: 'What is the price of BTC?' },
+      makeAssistantMsg('', [makeToolCall('get_price', { symbol: 'BTC' })]),
+      { role: 'tool', content: '{"price": 97000}', toolCallId: 'call_get_price', toolName: 'get_price' },
+      makeAssistantMsg('BTC is trading at $97,000.'),
+    ];
+
+    const result = toOpenAiMessages(messages);
+
+    expect(result).toHaveLength(5);
+    // system
+    expect(result[0]!['role']).toBe('system');
+    expect(result[0]!['content']).toBe('You are a trading agent.');
+    // user
+    expect(result[1]!['role']).toBe('user');
+    expect(result[1]!['content']).toBe('What is the price of BTC?');
+    // assistant with tool calls, empty content
+    expect(result[2]!['role']).toBe('assistant');
+    expect(result[2]).not.toHaveProperty('content');
+    expect(result[2]!['tool_calls']).toHaveLength(1);
+    // tool result
+    expect(result[3]!['role']).toBe('tool');
+    expect(result[3]!['content']).toBe('{"price": 97000}');
+    expect(result[3]!['tool_call_id']).toBe('call_get_price');
+    // assistant with content, no tool calls
+    expect(result[4]!['role']).toBe('assistant');
+    expect(result[4]!['content']).toBe('BTC is trading at $97,000.');
+    expect(result[4]).not.toHaveProperty('tool_calls');
   });
 });

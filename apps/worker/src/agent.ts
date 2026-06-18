@@ -1401,6 +1401,10 @@ function addToHistory(role: 'user' | 'assistant', content: string, options?: { t
     ? content.slice(0, runtimeState.runtimeDescriptor.budgets.maxToolResultChars)
     : content;
 
+  // Skip empty messages — they pollute conversation history and can cause
+  // provider rejections (e.g. Ollama/Qwen rejects `content: null`).
+  if (normalizedContent.length === 0) return;
+
   conversationHistory.push({ role, content: normalizedContent });
   // Keep only the most recent messages
   while (conversationHistory.length > runtimeState.runtimeDescriptor.budgets.maxHistoryMessages) {

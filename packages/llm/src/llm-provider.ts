@@ -370,7 +370,7 @@ function resolveApiKey(provider: string): string | undefined {
   return process.env[envKey] ?? process.env['LLM_API_KEY'];
 }
 
-function toOpenAiMessages(messages: LlmMessage[]): Array<Record<string, unknown>> {
+export function toOpenAiMessages(messages: LlmMessage[]): Array<Record<string, unknown>> {
   return messages.map((message) => {
     if (message.role === 'assistant') {
       const toolCalls = message.toolCalls?.map((toolCall) => ({
@@ -381,10 +381,21 @@ function toOpenAiMessages(messages: LlmMessage[]): Array<Record<string, unknown>
           arguments: JSON.stringify(toolCall.args),
         },
       }));
+      const hasToolCalls = toolCalls && toolCalls.length > 0;
+      // Omit `content` when empty and tool calls are present:
+      // DeepSeek (and some other providers) reject `content: null` with
+      // "invalid message content type: <nil>".
+      // Use empty string instead of null for messages without tool calls
+      // to avoid the same rejection.
+      const contentField = message.content.length > 0
+        ? { content: message.content }
+        : hasToolCalls
+          ? {}
+          : { content: '' };
       return {
         role: 'assistant',
-        content: message.content.length > 0 ? message.content : null,
-        ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+        ...contentField,
+        ...(hasToolCalls ? { tool_calls: toolCalls } : {}),
       };
     }
 
