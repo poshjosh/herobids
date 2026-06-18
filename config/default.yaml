@@ -194,6 +194,8 @@ marketData:
           address: "0x4200000000000000000000000000000000000006"
           name: Wrapped Ether
           aliases: [ETH]
+  discovery:
+    maxResults: 50          # Default when agent does not specify a limit; agent may request 1–100 per call
   timeoutMs: 5000
 
 llm:

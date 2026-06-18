@@ -297,31 +297,34 @@ export function createProviderRegistry(
       }),
     },
     discovery: {
-      discover: (discoveryOptions) => loadWithCache({
-        provider: 'aggregated-discovery',
-        requestClass: 'discovery',
-        cache,
-        cacheKey: `discovery:${(discoveryOptions?.networks ?? []).join(',')}:${discoveryOptions?.maxResults ?? 20}:${discoveryOptions?.minLiquidityUsd ?? 10_000}`,
-        policy: (() => {
-          const baseTtl = Math.min(
-            config.dexscreener.discovery.cacheTtlMs ?? 0,
-            config.geckoterminal.discovery.cacheTtlMs ?? 0,
-          );
-          const ttlMs = config.coinMarketCap.enabled
-            ? Math.min(baseTtl, config.coinMarketCap.cacheTtlMs)
-            : baseTtl;
-          return { ttlMs, staleWhileRevalidateMs: ttlMs };
-        })(),
-        loader: () => discoverTokens({
-          dexscreener: dexscreenerDiscoveryConfig,
-          geckoterminal: geckoDiscoveryConfig,
-          coinmarketcap: cmcConfig,
-          networks: discoveryOptions?.networks ?? ['solana', 'base'],
-          maxResults: discoveryOptions?.maxResults,
-          minLiquidityUsd: discoveryOptions?.minLiquidityUsd,
-        }),
-        allowStale: true,
-      }),
+      discover: (discoveryOptions) => {
+        const maxResults = discoveryOptions?.maxResults ?? config.discovery.maxResults;
+        return loadWithCache({
+          provider: 'aggregated-discovery',
+          requestClass: 'discovery',
+          cache,
+          cacheKey: `discovery:${(discoveryOptions?.networks ?? []).join(',')}:${maxResults}:${discoveryOptions?.minLiquidityUsd ?? 10_000}`,
+          policy: (() => {
+            const baseTtl = Math.min(
+              config.dexscreener.discovery.cacheTtlMs ?? 0,
+              config.geckoterminal.discovery.cacheTtlMs ?? 0,
+            );
+            const ttlMs = config.coinMarketCap.enabled
+              ? Math.min(baseTtl, config.coinMarketCap.cacheTtlMs)
+              : baseTtl;
+            return { ttlMs, staleWhileRevalidateMs: ttlMs };
+          })(),
+          loader: () => discoverTokens({
+            dexscreener: dexscreenerDiscoveryConfig,
+            geckoterminal: geckoDiscoveryConfig,
+            coinmarketcap: cmcConfig,
+            networks: discoveryOptions?.networks ?? ['solana', 'base'],
+            maxResults,
+            minLiquidityUsd: discoveryOptions?.minLiquidityUsd,
+          }),
+          allowStale: true,
+        });
+      },
     },
     configs: {
       binance: binanceConfig,

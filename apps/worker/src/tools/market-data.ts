@@ -191,7 +191,7 @@ const searchTokensTool: AgentTool = {
 
 const DiscoverTokensParamsSchema = z.object({
   network: z.string().optional().describe('Filter discovery to a specific network (e.g. "solana")'),
-  limit: z.number().int().positive().max(50).optional().describe('Maximum number of tokens to return (1-50)'),
+  limit: z.number().int().positive().max(100).optional().describe('Maximum number of tokens to return (1-100)'),
   minLiquidityUsd: z.number().positive().optional().describe('Minimum liquidity in USD'),
 });
 

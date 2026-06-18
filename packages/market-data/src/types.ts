@@ -207,6 +207,9 @@ export interface MarketDataConfig {
     };
     canonicalTokens: Record<string, Record<string, { address: string; name: string; aliases: string[] }>>;
   };
+  discovery: {
+    maxResults: number;
+  };
   timeoutMs: number;
 }
 

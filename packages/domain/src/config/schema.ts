@@ -582,6 +582,9 @@ export const MarketDataConfigSchema = z.object({
     apiKey: z.string().default(''),
     cacheTtlMs: z.number().int().min(0).default(3_600_000),
   }).default({}),
+  discovery: z.object({
+    maxResults: z.number().int().min(1).max(100).default(50),
+  }).default({}),
   tokenSafety: TokenSafetyConfigSchema.default({}),
   timeoutMs: z.number().min(1000).default(5000),
 }).superRefine((data, ctx) => {
