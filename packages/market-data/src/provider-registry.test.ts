@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createProviderRegistry } from './provider-registry.js';
 import { InMemoryProviderResponseCache, loadWithCache } from './cache.js';
 import { type SharedBudgetAcquireRequest, type SharedRateBudgetCoordinator } from './rate-limiter.js';
@@ -100,6 +100,132 @@ describe('createProviderRegistry', () => {
     expect(second.meta.freshness.source).toBe('cache');
     expect(second.meta.freshness.ageMs).toBe(5_000);
     expect(second.data[0]?.annualizedFundingRatePct).toBeCloseTo(87.6, 5);
+  });
+
+  it('uses config.discovery.maxResults as the default when discoveryOptions.maxResults is absent', async () => {
+    const config = {
+      ...createConfig(),
+      discovery: { maxResults: 3, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 0, antistalenessTokenTtlHours: 24 },
+    };
+    const registry = createProviderRegistry(config, {
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.includes('token-boosts') || url.includes('token-profiles')) {
+          return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+        }
+        if (url.includes('trending_pools')) {
+          return {
+            ok: true, status: 200, statusText: 'OK',
+            json: async () => ({
+              data: Array.from({ length: 5 }, (_, i) => ({
+                id: `pool-${i}`,
+                attributes: { address: `pool-${i}`, base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' },
+                relationships: { base_token: { data: { id: `bt-${i}` } }, quote_token: { data: { id: 'qt-u' } } },
+              })),
+              included: [
+                ...Array.from({ length: 5 }, (_, i) => ({ id: `bt-${i}`, attributes: { address: `token-${i}`, symbol: `TK${i}`, name: `Token${i}` } })),
+                { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+              ],
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+      },
+    });
+    const result = await registry.discovery.discover({ networks: ['solana'], minLiquidityUsd: 0 });
+    expect(result.data).toHaveLength(3);
+  });
+
+  it('uses discoveryOptions.maxResults when explicitly provided, overriding the config default', async () => {
+    const registry = createProviderRegistry(createConfig(), {
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.includes('token-boosts') || url.includes('token-profiles')) {
+          return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+        }
+        if (url.includes('trending_pools')) {
+          return {
+            ok: true, status: 200, statusText: 'OK',
+            json: async () => ({
+              data: Array.from({ length: 5 }, (_, i) => ({
+                id: `pool-${i}`,
+                attributes: { address: `pool-${i}`, base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' },
+                relationships: { base_token: { data: { id: `bt-${i}` } }, quote_token: { data: { id: 'qt-u' } } },
+              })),
+              included: [
+                ...Array.from({ length: 5 }, (_, i) => ({ id: `bt-${i}`, attributes: { address: `token-${i}`, symbol: `TK${i}`, name: `Token${i}` } })),
+                { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+              ],
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+      },
+    });
+    const result = await registry.discovery.discover({ networks: ['solana'], maxResults: 2, minLiquidityUsd: 0 });
+    expect(result.data).toHaveLength(2);
+  });
+
+  it('creates a RedisDiscoverySeenTracker and calls markSeen when discoverySeenClient is provided and antistalenessCooldownHours > 0', async () => {
+    const zadd = vi.fn().mockResolvedValue(1);
+    const zrangebyscore = vi.fn().mockResolvedValue([]);
+    const zremrangebyscore = vi.fn().mockResolvedValue(1);
+    const config = {
+      ...createConfig(),
+      discovery: { maxResults: 50, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 1, antistalenessTokenTtlHours: 24 },
+    };
+    const registry = createProviderRegistry(config, {
+      discoverySeenClient: { zadd, zrangebyscore, zremrangebyscore },
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.includes('token-boosts') || url.includes('token-profiles')) {
+          return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+        }
+        if (url.includes('trending_pools')) {
+          return {
+            ok: true, status: 200, statusText: 'OK',
+            json: async () => ({
+              data: [{ id: 'pool-1', attributes: { address: 'pool-1', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' }, relationships: { base_token: { data: { id: 'bt-1' } }, quote_token: { data: { id: 'qt-u' } } } }],
+              included: [{ id: 'bt-1', attributes: { address: 'token-1', symbol: 'TK1', name: 'Token1' } }, { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } }],
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+      },
+    });
+    await registry.discovery.discover({ networks: ['solana'], minLiquidityUsd: 0 });
+    expect(zadd).toHaveBeenCalled();
+  });
+
+  it('uses NoopDiscoverySeenTracker and does not call discoverySeenClient methods when antistalenessCooldownHours is 0', async () => {
+    const zadd = vi.fn().mockResolvedValue(1);
+    const zrangebyscore = vi.fn().mockResolvedValue([]);
+    const zremrangebyscore = vi.fn().mockResolvedValue(1);
+    const config = {
+      ...createConfig(),
+      discovery: { maxResults: 50, geckoTerminalExtraPages: 0, antistalenessCooldownHours: 0, antistalenessTokenTtlHours: 24 },
+    };
+    const registry = createProviderRegistry(config, {
+      discoverySeenClient: { zadd, zrangebyscore, zremrangebyscore },
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.includes('token-boosts') || url.includes('token-profiles')) {
+          return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+        }
+        if (url.includes('trending_pools')) {
+          return {
+            ok: true, status: 200, statusText: 'OK',
+            json: async () => ({
+              data: [{ id: 'pool-1', attributes: { address: 'pool-1', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' }, relationships: { base_token: { data: { id: 'bt-1' } }, quote_token: { data: { id: 'qt-u' } } } }],
+              included: [{ id: 'bt-1', attributes: { address: 'token-1', symbol: 'TK1', name: 'Token1' } }, { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } }],
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+      },
+    });
+    await registry.discovery.discover({ networks: ['solana'], minLiquidityUsd: 0 });
+    expect(zadd).not.toHaveBeenCalled();
   });
 });
 

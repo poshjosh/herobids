@@ -276,3 +276,15 @@ describe('check_regime tool', () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe('DiscoverTokensParamsSchema', () => {
+  it('accepts limit: 100', () => {
+    const result = discoverTokensTool!.parametersSchema.safeParse({ limit: 100 });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects limit: 101', () => {
+    const result = discoverTokensTool!.parametersSchema.safeParse({ limit: 101 });
+    expect(result.success).toBe(false);
+  });
+});

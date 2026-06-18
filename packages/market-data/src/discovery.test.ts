@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { discoverTokens } from './discovery.js';
+import type { DiscoverySeenTracker } from './discovery-seen-tracker.js';
 import { TokenBucketRateLimiter } from './rate-limiter.js';
 
 const originalFetch = globalThis.fetch;
@@ -894,5 +895,168 @@ describe('discoverTokens', () => {
     });
 
     expect(cmcCalled).toBe(false);
+  });
+
+  it('makes 2 trending and 2 top-pools calls per network when extraGeckoTerminalPages is 1, but still 1 new-pools call', async () => {
+    let trendingCalls = 0;
+    let topPoolsCalls = 0;
+    let newPoolsCalls = 0;
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('trending_pools')) trendingCalls++;
+      if (url.includes('new_pools')) {
+        newPoolsCalls++;
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{ id: 'pool-new', attributes: { address: 'pool-new', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' }, relationships: { base_token: { data: { id: 'bt-new' } }, quote_token: { data: { id: 'qt-new' } } } }],
+            included: [{ id: 'bt-new', attributes: { address: 'new-token', symbol: 'NEW', name: 'NewToken' } }, { id: 'qt-new', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } }],
+          }),
+        } as Response;
+      }
+      if (url.includes('pools?sort=')) topPoolsCalls++;
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      extraGeckoTerminalPages: 1,
+      minLiquidityUsd: 0,
+    });
+
+    expect(trendingCalls).toBe(2);
+    expect(topPoolsCalls).toBe(2);
+    expect(newPoolsCalls).toBe(1);
+  });
+
+  it('calls applyAntiStaleness with the pre-slice merged list and markSeen with the sliced result', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: Array.from({ length: 3 }, (_, i) => ({
+              id: `pool-${i}`,
+              attributes: { address: `pool-${i}`, base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' },
+              relationships: { base_token: { data: { id: `bt-${i}` } }, quote_token: { data: { id: 'qt-u' } } },
+            })),
+            included: [
+              ...Array.from({ length: 3 }, (_, i) => ({ id: `bt-${i}`, attributes: { address: `token-${i}`, symbol: `TK${i}`, name: `Token${i}` } })),
+              { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+            ],
+          }),
+        } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const appliedWith: unknown[][] = [];
+    const markedWith: unknown[][] = [];
+    const seenTracker: DiscoverySeenTracker = {
+      async applyAntiStaleness(tokens) {
+        appliedWith.push([...tokens]);
+        return tokens;
+      },
+      async markSeen(tokens) {
+        markedWith.push([...tokens]);
+      },
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+      maxResults: 2,
+      antistalenessCooldownHours: 1,
+      seenTracker,
+    });
+
+    expect(appliedWith).toHaveLength(1);
+    expect(appliedWith[0]).toHaveLength(3);
+    expect(markedWith).toHaveLength(1);
+    expect(markedWith[0]).toHaveLength(2);
+  });
+
+  it('does not call seenTracker methods when antistalenessCooldownHours is 0', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{ id: 'pool-1', attributes: { address: 'pool-1', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' }, relationships: { base_token: { data: { id: 'bt-1' } }, quote_token: { data: { id: 'qt-u' } } } }],
+            included: [{ id: 'bt-1', attributes: { address: 'token-1', symbol: 'TK1', name: 'Token1' } }, { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } }],
+          }),
+        } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const appliedWith: unknown[][] = [];
+    const markedWith: unknown[][] = [];
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+      antistalenessCooldownHours: 0,
+      seenTracker: {
+        async applyAntiStaleness(tokens) { appliedWith.push([...tokens]); return tokens; },
+        async markSeen(tokens) { markedWith.push([...tokens]); },
+      },
+    });
+
+    expect(appliedWith).toHaveLength(0);
+    expect(markedWith).toHaveLength(0);
+  });
+
+  it('returns tokens normally and does not throw when seenTracker is absent', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('trending_pools')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            data: [{ id: 'pool-1', attributes: { address: 'pool-1', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' }, relationships: { base_token: { data: { id: 'bt-1' } }, quote_token: { data: { id: 'qt-u' } } } }],
+            included: [{ id: 'bt-1', attributes: { address: 'token-1', symbol: 'TK1', name: 'Token1' } }, { id: 'qt-u', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } }],
+          }),
+        } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+      maxResults: 10,
+      antistalenessCooldownHours: 1,
+      // seenTracker absent
+    });
+
+    expect(result).toHaveLength(1);
   });
 });

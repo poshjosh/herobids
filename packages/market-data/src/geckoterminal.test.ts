@@ -1,0 +1,62 @@
+import { describe, expect, it } from 'vitest';
+import { fetchGeckoTerminalTrendingPools, fetchGeckoTerminalTopPools } from './geckoterminal.js';
+import { TokenBucketRateLimiter } from './rate-limiter.js';
+
+function makePoolResponse() {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({
+      data: [{
+        id: 'pool-1',
+        attributes: { address: 'pool-1', base_token_price_usd: '1.0', volume_usd: { h24: '10000' }, reserve_in_usd: '20000' },
+        relationships: { base_token: { data: { id: 'bt-1' } }, quote_token: { data: { id: 'qt-1' } } },
+      }],
+      included: [
+        { id: 'bt-1', attributes: { address: 'token-1', symbol: 'TK1', name: 'Token1' } },
+        { id: 'qt-1', attributes: { address: 'usdc', symbol: 'USDC', name: 'USD Coin' } },
+      ],
+    }),
+  } as Response;
+}
+
+describe('fetchGeckoTerminalTrendingPools', () => {
+  it('appends ?page=2 to the URL and uses trending_pools_p2 as the discovery vector', async () => {
+    let capturedUrl = '';
+    const config = {
+      baseUrl: 'https://api.geckoterminal.com',
+      timeoutMs: 5_000,
+      rateLimiter: new TokenBucketRateLimiter({ requestsPerMinute: 1_000 }),
+      fetchFn: async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+        capturedUrl = String(input);
+        return makePoolResponse();
+      },
+    };
+
+    const result = await fetchGeckoTerminalTrendingPools('solana', config, 2);
+
+    expect(capturedUrl).toBe('https://api.geckoterminal.com/api/v2/networks/solana/trending_pools?page=2');
+    expect(result[0]?.discoveryVectors).toEqual(['trending_pools_p2']);
+  });
+});
+
+describe('fetchGeckoTerminalTopPools', () => {
+  it('appends &page=2 to the URL and uses top_pools_p2 as the discovery vector', async () => {
+    let capturedUrl = '';
+    const config = {
+      baseUrl: 'https://api.geckoterminal.com',
+      timeoutMs: 5_000,
+      rateLimiter: new TokenBucketRateLimiter({ requestsPerMinute: 1_000 }),
+      fetchFn: async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+        capturedUrl = String(input);
+        return makePoolResponse();
+      },
+    };
+
+    const result = await fetchGeckoTerminalTopPools('solana', config, 2);
+
+    expect(capturedUrl).toBe('https://api.geckoterminal.com/api/v2/networks/solana/pools?sort=h24_volume_usd_desc&page=2');
+    expect(result[0]?.discoveryVectors).toEqual(['top_pools_p2']);
+  });
+});
