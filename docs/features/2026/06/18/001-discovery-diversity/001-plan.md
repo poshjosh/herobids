@@ -370,3 +370,28 @@ Phase 1 (config shape). Phase 2 is independent of Phase 3.
 ## Implementation order
 
 Phases are independent except Phase 2 depends on Phase 1 for the shared `discovery` config block in `MarketDataConfig`, and Phase 3 similarly depends on Phase 1. The recommended order is 1 → 2 → 3 → 4 (tests written alongside each phase).
+
+---
+
+## Outstanding Issues
+
+### [Phase 1 — maxResults config key]
+- **LOW** (`packages/market-data/src/token-search.test.ts`): `makeMarketDataConfig()` fixture is missing the new required `discovery` field. Type-incorrect but does not affect test correctness at runtime since `searchTokensWithPolicy` does not read `discovery`. Risk: misleads future test authors copying the fixture.
+- **LOW** (no test): No unit test for the config-driven default path in `provider-registry.ts` — existing tests pass `limit` explicitly or mock the registry entirely. Covered indirectly by Phase 4 additions.
+
+### [Phase 2 — GeckoTerminal page 2]
+- **MEDIUM** (`packages/market-data/src/types.ts`): `geckoTerminalExtraPages` is marked optional (`?`) but the Zod schema provides `.default(0)`, so the runtime value is always a `number`. This creates a misleading interface — consumers may add unnecessary `?? 0` guards.
+- **MEDIUM** (`packages/market-data/src/discovery.test.ts`): No tests for page > 1 URL construction or fan-out count (e.g. `?page=2` vs `&page=2`, correct call counts). Partially addressed in Phase 4 `geckoterminal.test.ts`.
+- **LOW** (`packages/market-data/src/geckoterminal.ts`): Vector labels are asymmetric — page 1 is `trending_pools`, page 2 is `trending_pools_p2`. No `_p1` suffix. Intentional for backward compatibility but prevents uniform `trending_pools_p*` glob matching across all pages.
+- **LOW** (`config/default.yaml`): Comment `(4 extra req/run)` is only accurate for the default 2-network setup. With N networks the cost is `N × 2` extra calls per extra page.
+
+### [Phase 3 — Anti-staleness Redis filter]
+- **MEDIUM** (`packages/domain/src/config/schema.ts`): No cross-field validation ensures `antistalenessTokenTtlHours >= antistalenessCooldownHours`. A misconfigured `{cooldownHours: 6, ttlHours: 2}` passes schema validation but silently degrades anti-staleness (tokens are pruned before the cooldown window reaches them).
+- **MEDIUM** (`packages/market-data/src/discovery.test.ts`): `discoverTokens` integration path for `seenTracker` (pre-slice vs post-slice, `cooldownMs > 0` guard, absent tracker) is not fully covered in isolation from `provider-registry`. Partially addressed by Phase 4 additions.
+- **LOW** (`packages/market-data/src/discovery-seen-tracker.ts`): Redis sorted-set keys are never given a key-level `EXPIRE`. If a network is removed from config, its key remains as an empty set indefinitely. Functionally harmless (near-zero memory cost) but does not self-clean.
+
+### [Phase 4 — Tests]
+- **MEDIUM** (`packages/market-data/src/provider-registry.test.ts`): Tracker-wiring test only asserts `zadd` was called (markSeen). Missing assertion that `zrangebyscore` was called (applyAntiStaleness). A future bug bypassing the reorder step would go undetected.
+- **MEDIUM** (`apps/worker/src/tools/market-data.test.ts`): Lower boundary of `DiscoverTokensParamsSchema.limit` untested (`limit: 0` should fail; `limit: 1` should pass).
+- **LOW** (`packages/market-data/src/geckoterminal.test.ts`): No baseline test for `page=1` (default). A regression appending `?page=1` to all default calls would not be caught in this file.
+- **LOW** (`packages/market-data/src/provider-registry.test.ts`): NoopDiscoverySeenTracker test only asserts `zadd` not called; does not assert `zrangebyscore` and `zremrangebyscore` are also silent.
