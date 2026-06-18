@@ -209,6 +209,7 @@ export interface MarketDataConfig {
   };
   discovery: {
     maxResults: number;
+    geckoTerminalExtraPages?: number;
   };
   timeoutMs: number;
 }

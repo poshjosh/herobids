@@ -321,6 +321,7 @@ export function createProviderRegistry(
             networks: discoveryOptions?.networks ?? ['solana', 'base'],
             maxResults,
             minLiquidityUsd: discoveryOptions?.minLiquidityUsd,
+            extraGeckoTerminalPages: config.discovery.geckoTerminalExtraPages,
           }),
           allowStale: true,
         });

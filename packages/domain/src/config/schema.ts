@@ -584,6 +584,7 @@ export const MarketDataConfigSchema = z.object({
   }).default({}),
   discovery: z.object({
     maxResults: z.number().int().min(1).max(100).default(50),
+    geckoTerminalExtraPages: z.number().int().min(0).max(10).default(0),
   }).default({}),
   tokenSafety: TokenSafetyConfigSchema.default({}),
   timeoutMs: z.number().min(1000).default(5000),

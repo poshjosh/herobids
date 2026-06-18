@@ -149,11 +149,13 @@ export async function fetchGeckoTerminalCandles(
 export async function fetchGeckoTerminalTrendingPools(
   network: string,
   config: GeckoTerminalConfig,
+  page = 1,
 ): Promise<DiscoveredToken[]> {
+  const pageParam = page > 1 ? `?page=${page}` : '';
   return fetchPools(
     network,
-    `/api/v2/networks/${encodeURIComponent(network)}/trending_pools`,
-    'trending_pools',
+    `/api/v2/networks/${encodeURIComponent(network)}/trending_pools${pageParam}`,
+    page > 1 ? `trending_pools_p${page}` : 'trending_pools',
     config,
   );
 }
@@ -161,11 +163,13 @@ export async function fetchGeckoTerminalTrendingPools(
 export async function fetchGeckoTerminalTopPools(
   network: string,
   config: GeckoTerminalConfig,
+  page = 1,
 ): Promise<DiscoveredToken[]> {
+  const pageParam = page > 1 ? `&page=${page}` : '';
   return fetchPools(
     network,
-    `/api/v2/networks/${encodeURIComponent(network)}/pools?sort=h24_volume_usd_desc`,
-    'top_pools',
+    `/api/v2/networks/${encodeURIComponent(network)}/pools?sort=h24_volume_usd_desc${pageParam}`,
+    page > 1 ? `top_pools_p${page}` : 'top_pools',
     config,
   );
 }

@@ -196,6 +196,7 @@ marketData:
           aliases: [ETH]
   discovery:
     maxResults: 50          # Default when agent does not specify a limit; agent may request 1–100 per call
+    geckoTerminalExtraPages: 0    # Set to 1 to fetch page 2 of GT trending + top pools (~35 extra tokens, 4 extra req/run)
   timeoutMs: 5000
 
 llm:

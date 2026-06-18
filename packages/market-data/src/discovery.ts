@@ -25,6 +25,7 @@ export interface DiscoveryConfig {
   networks: string[];
   maxResults?: number;
   minLiquidityUsd?: number;
+  extraGeckoTerminalPages?: number;
 }
 
 function tokenKey(token: DiscoveredToken): string {
@@ -124,13 +125,16 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
       ]
     : [];
 
+  const extraPages = config.extraGeckoTerminalPages ?? 0;
+  const pageNumbers = [1, ...Array.from({ length: extraPages }, (_, i) => i + 2)];
+
   const results = await Promise.allSettled([
     fetchDexScreenerTrending(config.dexscreener),
     fetchDexScreenerBoostsLatest(config.dexscreener),
     fetchDexScreenerProfilesLatest(config.dexscreener),
     ...networks.flatMap((network) => [
-      fetchGeckoTerminalTrendingPools(network, config.geckoterminal),
-      fetchGeckoTerminalTopPools(network, config.geckoterminal),
+      ...pageNumbers.map((page) => fetchGeckoTerminalTrendingPools(network, config.geckoterminal, page)),
+      ...pageNumbers.map((page) => fetchGeckoTerminalTopPools(network, config.geckoterminal, page)),
       fetchGeckoTerminalNewPools(network, config.geckoterminal),
     ]),
     ...cmcFanOut,
