@@ -232,6 +232,18 @@ export class AgentRuntimeLauncher {
   }
 
   /**
+   * Stop and remove a container by agentId alone — no session handle required.
+   * Used when the agent has been deleted and there is no session to look up
+   * (e.g. Redis-triggered cleanup after API DELETE /agents/:id).
+   */
+  async stopByAgentId(agentId: string): Promise<void> {
+    // Constructor guarantees dockerManager is defined when mode='docker'.
+    if (this.mode === 'docker') {
+      await this.dockerManager!.stopById(agentId);
+    }
+  }
+
+  /**
    * Stop all in-memory tracked runtimes.
    *
    * **Do NOT call this on normal worker shutdown.** Agent containers are designed

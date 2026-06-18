@@ -128,6 +128,7 @@ const redisConnection = {
 // Redis client for lease management (separate from BullMQ's internal connection)
 const redisClient = new Redis(redisConnection);
 let botStopSubscriber: Redis | undefined;
+let agentCleanupSubscriber: Redis | undefined;
 const workerId = `worker-${crypto.randomUUID().slice(0, 8)}`;
 const lease = new InstanceLease(redisClient, workerId, 30);
 
@@ -1222,6 +1223,7 @@ process.on('SIGTERM', async () => {
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
   await botStopSubscriber?.quit();
+  await agentCleanupSubscriber?.quit();
   await redisClient.quit();
   process.exit(0);
 });
@@ -1242,6 +1244,7 @@ process.on('SIGINT', async () => {
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
   await botStopSubscriber?.quit();
+  await agentCleanupSubscriber?.quit();
   await redisClient.quit();
   process.exit(0);
 });
@@ -1265,6 +1268,30 @@ botStopSubscriber.on('pmessage', (_pattern: string, channel: string, _message: s
   logger.info({ botId }, 'Received bot:stop signal — stopping instance directly');
   runtime.stopInstanceDirect(botId).catch((err: unknown) => {
     logger.error({ err, botId }, 'Failed to stop instance via bot:stop signal');
+  });
+});
+
+// Subscribe to API-originated agent cleanup signals (agent:cleanup:{agentId}).
+// The API publishes to this channel after DELETE /agents/:id so the worker can
+// stop and remove the Docker container that still has no corresponding DB row.
+//
+// Uses a separate Redis connection (not the main redisClient) to avoid
+// interfering with BullMQ's internal connection management.
+const agentCleanupInFlight = new Set<string>();
+agentCleanupSubscriber = new Redis(redisConnection);
+agentCleanupSubscriber.psubscribe('agent:cleanup:*', (err) => {
+  if (err) logger.error({ err }, 'Failed to subscribe to agent:cleanup:* channels');
+});
+agentCleanupSubscriber.on('pmessage', (_pattern: string, channel: string, _message: string) => {
+  const agentId = channel.replace('agent:cleanup:', '');
+  if (!agentId) return;
+  // Debounce duplicate cleanup signals within 1s (Redis pub/sub has no delivery guarantees).
+  if (agentCleanupInFlight.has(agentId)) return;
+  agentCleanupInFlight.add(agentId);
+  setTimeout(() => agentCleanupInFlight.delete(agentId), 1_000);
+  logger.info({ agentId }, 'Received agent:cleanup signal — stopping container');
+  agentRuntimeLauncher.stopByAgentId(agentId).catch((err: unknown) => {
+    logger.error({ err, agentId }, 'Failed to stop agent container via cleanup signal');
   });
 });
 

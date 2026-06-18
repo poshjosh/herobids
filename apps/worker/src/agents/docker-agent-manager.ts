@@ -264,7 +264,11 @@ export class DockerAgentManager {
     const preserveCrashed = currentAgent?.status === 'crashed';
 
     if (!preserveCrashed) {
-      await this.agentRepo.updateAgent(agentId, { status: 'stopped' });
+      // Best-effort: the agent may have been deleted (e.g. Redis-triggered
+      // cleanup after API DELETE). Proceed with Docker stop regardless.
+      await this.agentRepo.updateAgent(agentId, { status: 'stopped' }).catch((err: unknown) => {
+        logger.warn({ err, agentId }, 'Failed to update agent status before container stop — agent may have been deleted');
+      });
     }
 
     try {

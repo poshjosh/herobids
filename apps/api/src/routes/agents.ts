@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, inArray, notInArray, desc, sql, or, asc } from 'drizzle-orm';
+import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import {
   agents,
@@ -398,6 +399,7 @@ export async function agentRoutes(
   plansConfig?: PlansConfig,
   llmCatalogContext?: OperatorLlmCatalogContext,
   agentRiskDefaults: AgentRiskDefaultsConfig = DEFAULT_AGENT_RISK_DEFAULTS,
+  redisClient?: Redis,
 ): Promise<void> {
   function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
     if (!plansConfig) {
@@ -790,6 +792,17 @@ export async function agentRoutes(
     await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
     await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
     await db.delete(agents).where(eq(agents.id, id));
+
+    // Signal the worker to stop and remove the Docker container for this agent.
+    // Best-effort — the 204 response does not guarantee the worker received or
+    // processed this signal. The worker's periodic reconciliation is the safety net
+    // for missed deliveries (Redis pub/sub has no delivery guarantees).
+    if (redisClient) {
+      redisClient.publish(`agent:cleanup:${id}`, JSON.stringify({ agentId: id })).catch((err: unknown) => {
+        app.log.warn({ err, agentId: id }, 'Failed to publish agent cleanup signal to Redis');
+      });
+    }
+
     return reply.status(204).send();
   });
 
