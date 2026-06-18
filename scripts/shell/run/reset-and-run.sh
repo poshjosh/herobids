@@ -5,6 +5,7 @@
 #   1. docker compose down -v --remove-orphans + docker system prune
 #   2. scripts/shell/run/build-and-run.sh  (build, lint, agent image, compose up, Ollama warmup, seed admin)
 #   3. scripts/shell/ops/quick-setup.sh   (API-level user account + credential + connection setup)
+#   4. scripts/shell/run/create-agents.sh (create thyper + t1inch trading agents)
 #
 # Usage:
 #   scripts/shell/run/reset-and-run.sh
@@ -83,6 +84,9 @@ else
 
   log "Step 3b: Running quick-setup.sh..."
   bash "$SCRIPT_DIR/../ops/quick-setup.sh" || error_exit "quick-setup.sh failed"
+
+  log "Step 3c: Running create-agents.sh..."
+  bash "$SCRIPT_DIR/create-agents.sh" || error_exit "create-agents.sh failed"
 fi
 
 log "Reset and run complete. Stack services are ready; Ollama warmup may still be running in background when enabled."
