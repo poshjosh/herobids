@@ -130,8 +130,8 @@ export function createSwapTokenSafetyAdapter(deps: TokenSafetyAdapterDeps): Swap
           message: `Token age could not be resolved for ${request.tokenSymbol ?? request.tokenAddress} on ${request.network}`,
           retryable: allowOverrides,
           details: {
-            liquidityUsd: tokenData.liquidityUsd,
-            volume24hUsd: tokenData.volume24hUsd,
+            liquidityUsd: tokenData.hasRealMarketData ? tokenData.liquidityUsd : undefined,
+            volume24hUsd: tokenData.hasRealMarketData ? tokenData.volume24hUsd : undefined,
             reasonCodes,
           },
           overrideTicket,
@@ -146,8 +146,10 @@ export function createSwapTokenSafetyAdapter(deps: TokenSafetyAdapterDeps): Swap
           tokenAddress: request.tokenAddress,
           tokenSymbol: request.tokenSymbol,
           overridden: false,
-          liquidityUsd: tokenData.liquidityUsd,
-          volume24hUsd: tokenData.volume24hUsd,
+          // Omit synthetic sentinel values when token data came from a
+          // canonical fallback rather than live market data.
+          liquidityUsd: tokenData.hasRealMarketData ? tokenData.liquidityUsd : undefined,
+          volume24hUsd: tokenData.hasRealMarketData ? tokenData.volume24hUsd : undefined,
           ageHours: safety.ageHours,
         });
       }
@@ -183,8 +185,8 @@ export function createSwapTokenSafetyAdapter(deps: TokenSafetyAdapterDeps): Swap
         message,
         retryable: allowOverrides,
         details: {
-          liquidityUsd: tokenData.liquidityUsd,
-          volume24hUsd: tokenData.volume24hUsd,
+          liquidityUsd: tokenData.hasRealMarketData ? tokenData.liquidityUsd : undefined,
+          volume24hUsd: tokenData.hasRealMarketData ? tokenData.volume24hUsd : undefined,
           ageHours: safety.ageHours,
           reasonCodes,
         },

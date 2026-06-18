@@ -45,71 +45,27 @@ import type { DecisionIntakeResolver, ContextSnapshotResolver } from './agents/i
 import { UserEventPublisher } from './user-event-publisher.js';
 import { ActorHealthPublisher } from './actor-health-publisher.js';
 import { createMarketDataCoordinator, createMarketMonitor } from './market-intelligence/index.js';
-import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, type MarketDataConfig, type RedisEvalClient } from '@herobids/market-data';
+import { createProviderRegistry, lookupCanonical, resolveTokenSafetyPolicyConfig, type MarketDataConfig, type RedisEvalClient, type TokenInfo } from '@herobids/market-data';
 import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
+import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
 
-async function resolveSwapTokenData(
+async function enrichTokenWithDiscovery(
   registry: ReturnType<typeof createProviderRegistry>,
   network: string,
-  tokenAddress: string,
-  marketDataConfig: MarketDataConfig,
-): Promise<ResolvedSwapTokenData | null> {
-  // Resolve symbol or alias → canonical address so that inputs like "ETH"
-  // resolve before the exact-address filter against DexScreener results.
-  // Falls through to the original tokenAddress if no canonical match exists.
-  //
-  // The exact-address filter is still essential in the fallback path: when
-  // the input is an unknown symbol (no canonical match), resolvedAddress is
-  // the raw user input and DexScreener may return loosely-related tokens.
-  // The filter discards those, ensuring we only return data for the exact
-  // token the caller requested — whether originally an address or a symbol.
-  const policy = resolveTokenSafetyPolicyConfig(marketDataConfig);
-  const canonical = lookupCanonical(tokenAddress, network, policy.canonicalTokens);
-  const resolvedAddress = canonical?.address ?? tokenAddress;
-
-  const searchResult = await registry.dexscreener.search(resolvedAddress);
-  // Same token can appear in multiple pools — pick the highest-liquidity match
-  // to align with the market-data selection semantics used elsewhere.
-  const exactMatch = searchResult.data
-    .filter((token) => (
-      token.network.toLowerCase() === network.toLowerCase()
-      && token.address.toLowerCase() === resolvedAddress.toLowerCase()
-    ))
-    .sort((a, b) => b.liquidityUsd - a.liquidityUsd)[0];
-
-  if (!exactMatch) {
-    // If the token was resolved via operator-configured canonical lookup,
-    // construct a synthetic token info with safe defaults so the safety
-    // check can proceed. Canonical tokens are explicitly whitelisted by
-    // the operator and do not require external DexScreener verification.
-    if (canonical) {
-      return {
-        address: canonical.address,
-        symbol: canonical.symbol,
-        name: canonical.name,
-        network: network.toLowerCase(),
-        priceUsd: 0,
-        volume24hUsd: Number.MAX_SAFE_INTEGER,
-        liquidityUsd: Number.MAX_SAFE_INTEGER,
-        priceChange24hPct: 0,
-        dexId: 'canonical',
-        poolCreatedAt: '2020-01-01T00:00:00.000Z',
-        ageResolution: 'available',
-      };
-    }
-    return null;
-  }
-
-  if ((exactMatch as typeof exactMatch & { poolCreatedAt?: string }).poolCreatedAt) {
-    return {
-      ...exactMatch,
-      ageResolution: 'available',
-    };
+  resolvedAddress: string,
+  match: TokenInfo,
+): Promise<ResolvedSwapTokenData> {
+  if ((match as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt) {
+    return { ...match, ageResolution: 'available', hasRealMarketData: true };
   }
 
   try {
+    // Discovery is a targeted lookup for a specific token address to find
+    // poolCreatedAt.  minLiquidityUsd: 0 maximises the chance of finding the
+    // token in any pool — safety thresholds are enforced downstream by
+    // evaluateTokenSafety, not here.
     const discoveryResult = await registry.discovery.discover({
       networks: [network],
       maxResults: 250,
@@ -121,22 +77,18 @@ async function resolveSwapTokenData(
     ));
 
     if (!discoveryMatch) {
-      return {
-        ...exactMatch,
-        ageResolution: 'indeterminate',
-      };
+      return { ...match, ageResolution: 'indeterminate', hasRealMarketData: true };
     }
 
     return {
-      ...exactMatch,
-      poolCreatedAt: discoveryMatch.poolCreatedAt ?? (exactMatch as typeof exactMatch & { poolCreatedAt?: string }).poolCreatedAt,
+      ...match,
+      poolCreatedAt: discoveryMatch.poolCreatedAt ?? (match as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt,
       ageResolution: discoveryMatch.poolCreatedAt ? 'available' : 'missing',
+      hasRealMarketData: true,
     };
   } catch {
-    return {
-      ...exactMatch,
-      ageResolution: 'indeterminate',
-    };
+    console.warn('[enrichTokenWithDiscovery] discovery lookup failed for', { network, resolvedAddress });
+    return { ...match, ageResolution: 'indeterminate', hasRealMarketData: true };
   }
 }
 
@@ -205,11 +157,30 @@ const swapTokenSafety = appConfig.marketData && sharedMarketDataRegistry
   ? createSwapTokenSafetyAdapter({
       marketDataConfig: appConfig.marketData,
       overrideRepo: tokenSafetyOverrideRepo,
-      resolveTokenData: (network, tokenAddress) => {
+      resolveTokenData: async (network, tokenAddress) => {
         if (!sharedMarketDataRegistry || !appConfig.marketData) {
-          return Promise.resolve(null);
+          return null;
         }
-        return resolveSwapTokenData(sharedMarketDataRegistry, network, tokenAddress, appConfig.marketData);
+        const canonicalResolver: CanonicalResolver = {
+          resolve: (symbol, net) => {
+            const policy = resolveTokenSafetyPolicyConfig(appConfig.marketData!);
+            return lookupCanonical(symbol, net, policy.canonicalTokens);
+          },
+        };
+        const dexScreenerProvider: DexScreenerProvider = {
+          search: (addr) => sharedMarketDataRegistry.dexscreener.search(addr),
+        };
+        const result = await resolveSwapTokenData(
+          dexScreenerProvider, network, tokenAddress, canonicalResolver,
+        );
+        if (!result) return null;
+        // Enrich with discovery data when pool creation timestamp is missing
+        // from the DexScreener result (handled by the resolver for canonical
+        // synthetic fallback, needed only for live DexScreener matches).
+        if (!result.poolCreatedAt && result.hasRealMarketData) {
+          return enrichTokenWithDiscovery(sharedMarketDataRegistry, network, result.address, result);
+        }
+        return result;
       },
     })
   : undefined;
