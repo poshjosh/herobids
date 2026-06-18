@@ -94,7 +94,7 @@ export interface DecisionContext {
  * Pre-execution rejection — a guardrail rejection before execution starts.
  */
 export interface PreExecutionRejection {
-  scope: 'risk_gate' | 'swap_token_safety';
+  scope: 'risk_gate' | 'swap_token_safety' | 'planner';
   code: string;
   message: string;
   retryable: boolean;
@@ -181,6 +181,26 @@ export async function submitDecisionForExecution(
   };
 
   if (plan.orders.length === 0) {
+    // go_flat from a flat position is a deliberate no-op — the position is already at target.
+    // Any other intent that produces no orders (e.g. go_short on a swap venue from flat, which
+    // cannot open a borrowed short) should surface a rejection so callers receive actionable
+    // feedback instead of a silent success with no trade history.
+    if (resolvedDecision.intent !== 'go_flat') {
+      return {
+        decision: resolvedDecision,
+        riskRejected: false,
+        position,
+        executionFailed: false,
+        preExecutionRejection: {
+          scope: 'planner',
+          code: 'no_orders_planned',
+          message: deps.venueType === 'swap' && resolvedDecision.intent === 'go_short'
+            ? `Swap venues cannot open short positions — go_short is only valid when closing an existing long position`
+            : `Intent '${resolvedDecision.intent}' produced no orders — position may already be at target`,
+          retryable: false,
+        },
+      };
+    }
     return { decision: resolvedDecision, riskRejected: false, position, executionFailed: false };
   }
 
