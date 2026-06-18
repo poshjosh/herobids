@@ -380,7 +380,6 @@ Phases are independent except Phase 2 depends on Phase 1 for the shared `discove
 - **LOW** (no test): No unit test for the config-driven default path in `provider-registry.ts` — existing tests pass `limit` explicitly or mock the registry entirely. Covered indirectly by Phase 4 additions.
 
 ### [Phase 2 — GeckoTerminal page 2]
-- **MEDIUM** (`packages/market-data/src/types.ts`): `geckoTerminalExtraPages` is marked optional (`?`) but the Zod schema provides `.default(0)`, so the runtime value is always a `number`. This creates a misleading interface — consumers may add unnecessary `?? 0` guards.
 - **MEDIUM** (`packages/market-data/src/discovery.test.ts`): No tests for page > 1 URL construction or fan-out count (e.g. `?page=2` vs `&page=2`, correct call counts). Partially addressed in Phase 4 `geckoterminal.test.ts`.
 - **LOW** (`packages/market-data/src/geckoterminal.ts`): Vector labels are asymmetric — page 1 is `trending_pools`, page 2 is `trending_pools_p2`. No `_p1` suffix. Intentional for backward compatibility but prevents uniform `trending_pools_p*` glob matching across all pages.
 - **LOW** (`config/default.yaml`): Comment `(4 extra req/run)` is only accurate for the default 2-network setup. With N networks the cost is `N × 2` extra calls per extra page.
