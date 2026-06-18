@@ -12,7 +12,7 @@ handoffs:
     agent: CodeReviewer
     prompt: "The unstaged changes in the codebase represent new implementation. Review the code and provide feedback on any issues or improvements."
     send: true
-    model: qwen3.6:35b-a3b-q4_K_M
+    model: GPT-5.4
 ---
 You are an implementation coordinator agent. Your task is to coordinate the implemenation of a plan or task-list.
 
