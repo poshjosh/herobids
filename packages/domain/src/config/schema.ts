@@ -587,6 +587,14 @@ export const MarketDataConfigSchema = z.object({
     geckoTerminalExtraPages: z.number().int().min(0).max(10).default(0),
     antistalenessCooldownHours: z.number().min(0).default(4),
     antistalenessTokenTtlHours: z.number().min(1).default(24),
+  }).superRefine((data, ctx) => {
+    if (data.antistalenessTokenTtlHours < data.antistalenessCooldownHours) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'antistalenessTokenTtlHours must be >= antistalenessCooldownHours',
+        path: ['antistalenessTokenTtlHours'],
+      });
+    }
   }).default({}),
   tokenSafety: TokenSafetyConfigSchema.default({}),
   timeoutMs: z.number().min(1000).default(5000),

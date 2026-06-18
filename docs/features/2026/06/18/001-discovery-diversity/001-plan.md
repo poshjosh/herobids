@@ -381,11 +381,9 @@ Phases are independent except Phase 2 depends on Phase 1 for the shared `discove
 
 ### [Phase 2 — GeckoTerminal page 2]
 - **MEDIUM** (`packages/market-data/src/discovery.test.ts`): No tests for page > 1 URL construction or fan-out count (e.g. `?page=2` vs `&page=2`, correct call counts). Partially addressed in Phase 4 `geckoterminal.test.ts`.
-- **LOW** (`packages/market-data/src/geckoterminal.ts`): Vector labels are asymmetric — page 1 is `trending_pools`, page 2 is `trending_pools_p2`. No `_p1` suffix. Intentional for backward compatibility but prevents uniform `trending_pools_p*` glob matching across all pages.
 - **LOW** (`config/default.yaml`): Comment `(4 extra req/run)` is only accurate for the default 2-network setup. With N networks the cost is `N × 2` extra calls per extra page.
 
 ### [Phase 3 — Anti-staleness Redis filter]
-- **MEDIUM** (`packages/domain/src/config/schema.ts`): No cross-field validation ensures `antistalenessTokenTtlHours >= antistalenessCooldownHours`. A misconfigured `{cooldownHours: 6, ttlHours: 2}` passes schema validation but silently degrades anti-staleness (tokens are pruned before the cooldown window reaches them).
 - **MEDIUM** (`packages/market-data/src/discovery.test.ts`): `discoverTokens` integration path for `seenTracker` (pre-slice vs post-slice, `cooldownMs > 0` guard, absent tracker) is not fully covered in isolation from `provider-registry`. Partially addressed by Phase 4 additions.
 - **LOW** (`packages/market-data/src/discovery-seen-tracker.ts`): Redis sorted-set keys are never given a key-level `EXPIRE`. If a network is removed from config, its key remains as an empty set indefinitely. Functionally harmless (near-zero memory cost) but does not self-clean.
 
