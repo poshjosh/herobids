@@ -58,9 +58,8 @@ Host-level security:
 
 ```bash
 # 1. Copy and fill in terraform variables
+# Edit terraform.tfvars — !!! See: infra/hetzner/docs/setup-tfvars.md !!!
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — required: hcloud_token, ssh_public_key_path,
-#   deploy_ssh_private_key, git_repo_url
 
 # 2. Provision the server (Terraform init + apply)
 ./scripts/provision.sh
