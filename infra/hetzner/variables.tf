@@ -23,7 +23,7 @@ variable "server_name" {
 variable "server_type" {
   type        = string
   description = "Hetzner instance type"
-  default     = "cpx22"
+  default     = "cx22"
 
   validation {
     condition     = can(regex("^(cx|ccx|cpx|CAX)\\d+$", var.server_type))
