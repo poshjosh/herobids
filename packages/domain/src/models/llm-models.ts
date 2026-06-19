@@ -13,20 +13,25 @@ export interface LlmProviderDefinition {
 /**
  * Single source of truth for all LLM providers.
  * To add a provider, add one entry here — KNOWN_LLM_PROVIDERS
- * and LLM_PROVIDER_MODELS are derived automatically.
+ * is derived automatically.
  * The record key MUST match the `id` field.
  */
 export const PROVIDER_DEFINITIONS = {
   openai: {
     id: 'openai',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+    models: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'],
     catalogMode: 'static',
   },
   anthropic: {
     id: 'anthropic',
-    models: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-3-5'],
+    models: ['claude-opus-4-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-haiku-3-5'],
     catalogMode: 'static',
   },
+  deepseek: {
+    id: 'deepseek',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    catalogMode: 'static',
+  },  
   openrouter: {
     id: 'openrouter',
     models: ['anthropic/claude-sonnet-4-5', 'openai/gpt-4o', 'meta-llama/llama-3.3-70b-instruct'],
@@ -70,15 +75,6 @@ export type LlmProviderId = keyof typeof PROVIDER_DEFINITIONS;
 
 export const KNOWN_LLM_PROVIDERS = Object.keys(PROVIDER_DEFINITIONS) as readonly LlmProviderId[];
 
-/**
- * Derived from PROVIDER_DEFINITIONS for backward compatibility.
- * Prefer PROVIDER_DEFINITIONS[provider].models for new code.
- */
-export const LLM_PROVIDER_MODELS: Record<LlmProviderId, string[]> =
-  Object.fromEntries(
-    Object.entries(PROVIDER_DEFINITIONS).map(([id, def]) => [id, def.models]),
-  ) as Record<LlmProviderId, string[]>;
-
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function isKnownLlmProvider(provider: string): provider is LlmProviderId {
@@ -86,9 +82,8 @@ function isKnownLlmProvider(provider: string): provider is LlmProviderId {
 }
 
 export function getLlmProviderModels(provider: string): string[] {
-  return isKnownLlmProvider(provider) ? LLM_PROVIDER_MODELS[provider] : [];
+  return isKnownLlmProvider(provider) ? PROVIDER_DEFINITIONS[provider].models : [];
 }
-
 
 const CurrentAiModelConfigSchema = z.object({
   provider: z.string().min(1),

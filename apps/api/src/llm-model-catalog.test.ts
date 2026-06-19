@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { LLM_PROVIDER_MODELS, PROVIDER_DEFINITIONS } from '@herobids/domain';
+import { PROVIDER_DEFINITIONS } from '@herobids/domain';
 import { getAvailableProviders, getProviderCatalogEntry, type OperatorLlmCatalogContext } from './llm-model-catalog.js';
 
 const ORIGINAL_NODE_ENV = process.env['NODE_ENV'];
@@ -13,8 +13,6 @@ type MutableProviderDefinitions = Record<string, {
   devOnly?: boolean;
   isMultiProvider?: boolean;
 }>;
-
-type MutableProviderModels = Record<string, string[]>;
 
 const BASE_CONTEXT: OperatorLlmCatalogContext = {
   provider: 'openai',
@@ -66,15 +64,13 @@ describe('getAvailableProviders', () => {
 
 describe('getProviderCatalogEntry', () => {
   it('preserves isMultiProvider metadata for registry-defined static providers', async () => {
-    const providerDefinitions = PROVIDER_DEFINITIONS as unknown as MutableProviderDefinitions;
-    const providerModels = LLM_PROVIDER_MODELS as MutableProviderModels;
-    providerDefinitions['deepseek'] = {
+    const mutableDefinitions = PROVIDER_DEFINITIONS as unknown as MutableProviderDefinitions;
+    mutableDefinitions['deepseek'] = {
       id: 'deepseek',
       models: ['deepseek-chat'],
       catalogMode: 'static',
       isMultiProvider: true,
     };
-    providerModels['deepseek'] = ['deepseek-chat'];
 
     try {
       const entry = await getProviderCatalogEntry('deepseek', BASE_CONTEXT);
@@ -84,8 +80,7 @@ describe('getProviderCatalogEntry', () => {
         isMultiProvider: true,
       });
     } finally {
-      delete providerDefinitions['deepseek'];
-      delete providerModels['deepseek'];
+      delete mutableDefinitions['deepseek'];
     }
   });
 });

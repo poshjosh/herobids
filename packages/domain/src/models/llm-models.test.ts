@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   PROVIDER_DEFINITIONS,
   KNOWN_LLM_PROVIDERS,
-  LLM_PROVIDER_MODELS,
   getLlmProviderModels,
   validateLlmModelSelection,
   type LlmProviderDefinition,
@@ -68,22 +67,6 @@ describe('KNOWN_LLM_PROVIDERS', () => {
 
   it('does not contain duplicates', () => {
     expect(new Set(KNOWN_LLM_PROVIDERS).size).toBe(KNOWN_LLM_PROVIDERS.length);
-  });
-});
-
-describe('LLM_PROVIDER_MODELS', () => {
-  it('contains exactly the same providers as PROVIDER_DEFINITIONS', () => {
-    const modelKeys = Object.keys(LLM_PROVIDER_MODELS).sort();
-    const defKeys = Object.keys(PROVIDER_DEFINITIONS).sort();
-    expect(modelKeys).toEqual(defKeys);
-  });
-
-  it('each provider models match PROVIDER_DEFINITIONS.models', () => {
-    for (const [provider, models] of Object.entries(LLM_PROVIDER_MODELS)) {
-      const def = PROVIDER_DEFINITIONS[provider as keyof typeof PROVIDER_DEFINITIONS];
-      expect(def).toBeDefined();
-      expect(models).toEqual(def.models);
-    }
   });
 });
 

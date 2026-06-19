@@ -2,9 +2,9 @@
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 
 llm:
-  provider: openrouter                # LLM provider: openrouter | openai | anthropic | ollama
-  model: anthropic/claude-sonnet-4-5  # Model name passed to the provider e.g. 
-  tickIntervalMs: 900000              # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+  provider: deepseek                # LLM provider: openrouter | openai | anthropic | ollama
+  model: deepseek-v4-flash          # Model name passed to the provider e.g. 
+  tickIntervalMs: 900000            # Agent reasoning loop interval in ms (how often the agent calls the LLM)
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
