@@ -7,6 +7,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.19-a
+
 ### Added
 
 - Discovery diversity (2026-06-18): removes the hardcoded 20-token ceiling from `discoverTokens`. `marketData.discovery.maxResults` (default 50) now controls the limit; agents may request 1–100 per call. GeckoTerminal page-2 support added (opt-in via `geckoTerminalExtraPages: 1`, off by default) expands the raw candidate pool by ~35 tokens per run. Anti-staleness Redis tracking (`antistalenessCooldownHours: 4`, `antistalenessTokenTtlHours: 24`) reorders fresh tokens to the top of each discovery run, preventing the same narrow set from dominating every tick. Redis failure is fail-soft: discovery completes normally with the standard sorted list. See `docs/features/2026/06/18/001-discovery-diversity/`.
