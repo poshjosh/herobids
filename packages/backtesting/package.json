@@ -1,6 +1,6 @@
 {
   "name": "@herobids/backtesting",
-  "version": "0.0.1-2026.06.19-e",
+  "version": "0.0.1-2026.06.19-f",
   "type": "module",
   "exports": {
     ".": {

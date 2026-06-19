@@ -20,7 +20,8 @@ RUN pnpm --filter @herobids/domain run build && \
 
 # ── deploy: agent entry point only ───────────────────────────────────────────
 FROM build AS deploy
-RUN pnpm --filter @herobids/worker deploy --prod /deploy/agent
+RUN echo "inject-workspace-packages=true" >> .npmrc && \
+    pnpm --filter @herobids/worker deploy --prod /deploy/agent
     
 # ── runtime image ─────────────────────────────────────────────────────────────
 # Installs network sandboxing tools required by scripts/sandbox-exec.sh.

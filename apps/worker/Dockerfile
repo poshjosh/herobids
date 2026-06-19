@@ -21,7 +21,8 @@ RUN pnpm --filter @herobids/domain run build && \
 
 # ── deploy: self-contained production layout ─────────────────────────────────
 FROM build AS deploy
-RUN pnpm --filter @herobids/worker deploy --prod /deploy/worker
+RUN echo "inject-workspace-packages=true" >> .npmrc && \
+    pnpm --filter @herobids/worker deploy --prod /deploy/worker
     
 # ── runtime image ─────────────────────────────────────────────────────────────
 # WORKDIR mirrors apps/worker depth so that the config loader resolves

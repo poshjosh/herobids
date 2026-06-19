@@ -1,6 +1,6 @@
 {
   "name": "@herobids/llm",
-  "version": "0.0.1-2026.06.19-e",
+  "version": "0.0.1-2026.06.19-f",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
