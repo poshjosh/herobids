@@ -64,38 +64,28 @@ cp terraform.tfvars.example terraform.tfvars
 # 2. Provision the server (Terraform init + apply)
 ./scripts/provision.sh
 
-# 3. Upload your .env file (production secrets)
+# 3. Copy and fill in environment variables
+# Edit .env.prod
+cp ../../.env.example .env.prod
+
+# 4. Upload your .env file (production secrets)
 ./scripts/setup-env.sh --file .env.prod
 
-# 4. Full deploy (env upload → push → seed admin → health verify)
+# 5. Full deploy (env upload → push → seed admin → health verify)
 ./deploy.sh --env-file .env.prod
 
-# 5. Seed admin user (one-time — the deploy script runs this automatically if
+# 6. Seed admin user (one-time — the deploy script runs this automatically if
 #    ADMIN_EMAIL and ADMIN_PASSWORD are set, otherwise run it manually)
 ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=strong-pass ./scripts/seed-admin.sh
 ```
 
-### Required `.env` variables
+**Note:**
 
-The `.env.prod` file must include at minimum:
+For environment variables:
 
-```bash
-AUTH_JWT_SECRET=<32+ char random string>     # generate: openssl rand -hex 32
-AUTH_PUBLIC_BASE_URL=https://herobids.com
-AUTH_FRONTEND_ORIGIN=https://herobids.com
+- Database and Redis URLs default to docker-compose values and do not need to be in `.env` unless using external services.
 
-> **Note:** `AUTH_PUBLIC_BASE_URL` and `AUTH_FRONTEND_ORIGIN` are hardcoded in
-> `docker-compose.prod.yaml` (which takes precedence over `.env`). For custom
-> domains, edit the compose file directly — changing only `.env` has no effect.
-
-OPENAI_API_KEY=sk-...                        # LLM provider
-ANTHROPIC_API_KEY=sk-ant-...                 # LLM provider (optional)
-HYPERLIQUID_ACCOUNT_ADDRESS=0x...            # Venue API keys
-HYPERLIQUID_API_KEY=0x...
-HYPERLIQUID_SECRET=0x...
-```
-
-Database and Redis URLs default to docker-compose values and do not need to be in `.env` unless using external services.
+- `AUTH_PUBLIC_BASE_URL` and `AUTH_FRONTEND_ORIGIN` are hardcoded in `docker-compose.prod.yaml` (which takes precedence over `.env`). For custom domains, edit the compose file directly — changing only `.env` has no effect.
 
 ## Day-to-Day Operations
 
