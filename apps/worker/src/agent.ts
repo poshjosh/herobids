@@ -242,6 +242,10 @@ const costProfile = resolveAgentCostProfile({
   baseTickIntervalMs: TICK_INTERVAL_MS,
   tickIntervalMs: agentConfig.tickIntervalMs,
 });
+// When the agent's resolved provider differs from the operator's default provider,
+// don't inherit the operator-configured baseUrl (e.g. Ollama's localhost URL) —
+// let callLlmProvider resolve it from the provider name instead.
+const resolvedBaseUrl = resolvedProvider !== LLM_PROVIDER ? undefined : LLM_BASE_URL;
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -1869,7 +1873,7 @@ async function runTick(): Promise<void> {
           model: resolvedLightModel,
           maxTokens: scoutLoopConfig.maxTokens,
           timeoutMs: LLM_TIMEOUT_MS,
-          baseUrl: LLM_BASE_URL,
+          baseUrl: resolvedBaseUrl,
         },
         requestBase: {
           maxTokens: scoutLoopConfig.maxTokens,
@@ -2064,7 +2068,7 @@ async function runTick(): Promise<void> {
         model: costProfile.heavyModel,
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,
-        baseUrl: LLM_BASE_URL,
+        baseUrl: resolvedBaseUrl,
         thinking: agentRuntimePolicy.llm.thinking,
       },
       requestBase: {

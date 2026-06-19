@@ -187,6 +187,7 @@ export class DockerAgentManager {
       ...(process.env['DATABASE_URL'] ? [`DATABASE_URL=${process.env['DATABASE_URL']}`] : []),
       // LLM API keys must be in the worker's environment and forwarded explicitly
       ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
+      ...(process.env['LLM_API_KEY_DEEPSEEK'] ? [`LLM_API_KEY_DEEPSEEK=${process.env['LLM_API_KEY_DEEPSEEK']}`] : []),
       ...(process.env['LLM_API_KEY_OPENROUTER'] ? [`LLM_API_KEY_OPENROUTER=${process.env['LLM_API_KEY_OPENROUTER']}`] : []),
       ...(process.env['LLM_API_KEY_ANTHROPIC'] ? [`LLM_API_KEY_ANTHROPIC=${process.env['LLM_API_KEY_ANTHROPIC']}`] : []),
       ...(process.env['LLM_API_KEY_OPENAI'] ? [`LLM_API_KEY_OPENAI=${process.env['LLM_API_KEY_OPENAI']}`] : []),
