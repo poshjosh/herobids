@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- LLM provider catalog metadata: preserve `isMultiProvider` on non-OpenRouter catalog responses and clarify that one-line registry additions apply to static providers only.
+
 ## 0.0.1-2026.06.19-f
 ## 0.0.1-2026.06.19-e
 ## 0.0.1-2026.06.19-d

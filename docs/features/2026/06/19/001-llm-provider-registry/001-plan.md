@@ -12,7 +12,7 @@ This is error-prone, duplicates metadata, and creates friction for operators who
 
 ## Goal
 
-Make adding a new provider a **single-line change** in one file (`packages/domain/src/models/llm-models.ts`) while maintaining type safety and keeping the API layer clean.
+Make adding a new provider with a static catalog a **single-line change** in one file (`packages/domain/src/models/llm-models.ts`) while maintaining type safety and keeping the API layer clean.
 
 ## Design
 
@@ -31,6 +31,8 @@ export interface ProviderDefinition {
 ### Single Source of Truth in Domain
 
 All provider metadata moves into `PROVIDER_DEFINITIONS` in domain. The API layer imports and uses this directly — no duplicate definitions.
+
+Dynamic providers still require API support for their runtime catalog strategy. This plan removes duplicated metadata; it does not make new dynamic-provider integrations zero-code.
 
 ### Key Invariants
 
@@ -57,7 +59,8 @@ All provider metadata moves into `PROVIDER_DEFINITIONS` in domain. The API layer
 - Remove local `PROVIDER_METADATA` definition
 - Import `PROVIDER_DEFINITIONS` from domain
 - Use it directly in `isProviderAllowed()` and other lookup functions
-- No functional changes — just refactoring
+- Preserve generic metadata like `isMultiProvider` on all catalog responses
+- Existing dynamic-provider implementations remain provider-specific
 
 ### Step 3: Update worker config (if needed)
 
@@ -95,7 +98,7 @@ All provider metadata moves into `PROVIDER_DEFINITIONS` in domain. The API layer
 
 - [ ] `pnpm lint` passes (no type errors)
 - [ ] `pnpm test` passes (all existing tests still pass)
-- [ ] Adding a new provider is a single-line change in domain
+- [ ] Adding a new static provider is a single-line change in domain
 - [ ] API catalog functions correctly with imported registry
 - [ ] No duplicate metadata between domain and API
 

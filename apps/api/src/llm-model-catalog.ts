@@ -1,4 +1,5 @@
-import { KNOWN_LLM_PROVIDERS as KNOWN_PROVIDERS, LLM_PROVIDER_MODELS, getLlmProviderModels, validateLlmModelSelection } from '@herobids/domain';
+import { KNOWN_LLM_PROVIDERS as KNOWN_PROVIDERS, PROVIDER_DEFINITIONS, getLlmProviderModels, validateLlmModelSelection } from '@herobids/domain';
+import type { LlmProviderDefinition } from '@herobids/domain';
 import { discoverOllamaModels, normalizeOllamaCatalogUrl } from './ollama-model-discovery.js';
 
 // --- Provider catalog metadata ---
@@ -22,28 +23,8 @@ export interface ProviderCatalogEntry {
   isMultiProvider?: boolean;
 }
 
-type LlmProviderCatalogMode = 'static' | 'dynamic';
-
-interface LlmProviderMetadata {
-  catalogMode: LlmProviderCatalogMode;
-  staticModels: string[];
-  /** Only show this provider in non-production environments (e.g. Ollama). */
-  devOnly?: boolean;
-  /** This provider routes to multiple underlying LLM providers. */
-  isMultiProvider?: boolean;
-}
-
-const PROVIDER_METADATA: Record<string, LlmProviderMetadata> = {
-  openai: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.openai },
-  anthropic: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.anthropic },
-  openrouter: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.openrouter, isMultiProvider: true },
-  together: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.together },
-  fireworks: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.fireworks },
-  mistral: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.mistral },
-  cohere: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.cohere },
-  google: { catalogMode: 'static', staticModels: LLM_PROVIDER_MODELS.google },
-  ollama: { catalogMode: 'dynamic', staticModels: LLM_PROVIDER_MODELS.ollama, devOnly: true },
-};
+// Provider metadata is now owned by domain — see PROVIDER_DEFINITIONS in @herobids/domain.
+const PROVIDER_METADATA = PROVIDER_DEFINITIONS;
 
 // --- Operator context ---
 
@@ -502,12 +483,14 @@ export async function getProviderCatalogEntry(
     return {
       provider,
       models: mapProviderModels(models, () => ({ label: 'Free', source: 'local' })),
+      isMultiProvider,
     };
   }
 
   return {
     provider,
     models: mapProviderModels(models),
+    isMultiProvider,
   };
 }
 

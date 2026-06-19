@@ -1,9 +1,20 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { getAvailableProviders, type OperatorLlmCatalogContext } from './llm-model-catalog.js';
+import { LLM_PROVIDER_MODELS, PROVIDER_DEFINITIONS } from '@herobids/domain';
+import { getAvailableProviders, getProviderCatalogEntry, type OperatorLlmCatalogContext } from './llm-model-catalog.js';
 
 const ORIGINAL_NODE_ENV = process.env['NODE_ENV'];
 const ORIGINAL_LLM_API_KEY_OPENAI = process.env['LLM_API_KEY_OPENAI'];
 const ORIGINAL_LLM_API_KEY_OLLAMA = process.env['LLM_API_KEY_OLLAMA'];
+
+type MutableProviderDefinitions = Record<string, {
+  id: string;
+  models: string[];
+  catalogMode: 'static' | 'dynamic';
+  devOnly?: boolean;
+  isMultiProvider?: boolean;
+}>;
+
+type MutableProviderModels = Record<string, string[]>;
 
 const BASE_CONTEXT: OperatorLlmCatalogContext = {
   provider: 'openai',
@@ -35,12 +46,12 @@ describe('getAvailableProviders', () => {
     expect(getAvailableProviders({ ...BASE_CONTEXT, provider: 'ollama', baseUrl: 'http://localhost:11434/v1' })).toEqual(['openai', 'ollama']);
   });
 
-  it('hides dev-only providers outside development when only an API key is set (no explicit operator baseUrl)', () => {
-    setEnv('NODE_ENV', 'test');
+  it('hides dev-only providers in production when only an API key is set (no explicit operator baseUrl)', () => {
+    setEnv('NODE_ENV', 'production');
     setEnv('LLM_API_KEY_OPENAI', 'openai-key');
     setEnv('LLM_API_KEY_OLLAMA', 'ollama-key');
 
-    // Operator did NOT set provider: 'ollama' — context has no baseUrl for ollama → hidden
+    // Operator did NOT set provider: 'ollama' — context has no baseUrl for ollama → hidden in production
     expect(getAvailableProviders({ ...BASE_CONTEXT })).toEqual(['openai']);
   });
 
@@ -50,5 +61,31 @@ describe('getAvailableProviders', () => {
     setEnv('LLM_API_KEY_OLLAMA', 'ollama-key');
 
     expect(getAvailableProviders({ ...BASE_CONTEXT, provider: 'ollama', baseUrl: 'http://localhost:11434/v1' })).toEqual(['openai', 'ollama']);
+  });
+});
+
+describe('getProviderCatalogEntry', () => {
+  it('preserves isMultiProvider metadata for registry-defined static providers', async () => {
+    const providerDefinitions = PROVIDER_DEFINITIONS as unknown as MutableProviderDefinitions;
+    const providerModels = LLM_PROVIDER_MODELS as MutableProviderModels;
+    providerDefinitions['deepseek'] = {
+      id: 'deepseek',
+      models: ['deepseek-chat'],
+      catalogMode: 'static',
+      isMultiProvider: true,
+    };
+    providerModels['deepseek'] = ['deepseek-chat'];
+
+    try {
+      const entry = await getProviderCatalogEntry('deepseek', BASE_CONTEXT);
+      expect(entry).toEqual({
+        provider: 'deepseek',
+        models: [{ id: 'deepseek-chat' }],
+        isMultiProvider: true,
+      });
+    } finally {
+      delete providerDefinitions['deepseek'];
+      delete providerModels['deepseek'];
+    }
   });
 });
