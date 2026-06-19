@@ -99,20 +99,40 @@ describe('AgentActivityTimeline', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatDetailValue', () => {
-  it('serializes a plain object to JSON, not [object Object]', () => {
-    const result = formatDetailValue({ toolName: 'list_positions', status: 'ok' });
-    expect(result).toBe('{"toolName":"list_positions","status":"ok"}');
-    expect(result).not.toBe('[object Object]');
+  it('renders a plain object as labelled rows, not [object Object]', () => {
+    const node = formatDetailValue({ toolName: 'list_positions', status: 'ok' });
+    const html = renderToStaticMarkup(<>{node}</>);
+    expect(html).toContain('toolName');
+    expect(html).toContain('list_positions');
+    expect(html).toContain('status');
+    expect(html).toContain('ok');
+    expect(html).not.toContain('[object Object]');
   });
 
-  it('serializes a nested object to JSON', () => {
-    const result = formatDetailValue({ a: 1, nested: { b: 2 } });
-    expect(result).toBe('{"a":1,"nested":{"b":2}}');
+  it('renders a nested object recursively as labelled rows', () => {
+    const node = formatDetailValue({ a: 1, nested: { b: 2 } });
+    const html = renderToStaticMarkup(<>{node}</>);
+    expect(html).toContain('nested');
+    expect(html).toContain('b');
+    expect(html).toContain('2');
   });
 
-  it('serializes an array to JSON', () => {
+  it('joins array values as a comma-separated string', () => {
     const result = formatDetailValue([1, 'two', 3]);
-    expect(result).toBe('[1,"two",3]');
+    expect(result).toBe('1, two, 3');
+  });
+
+  it('renders arrays of objects without falling back to [object Object]', () => {
+    const node = formatDetailValue([
+      { toolName: 'list_positions', status: 'ok' },
+      { toolName: 'get_balance', status: 'error' },
+    ]);
+    const html = renderToStaticMarkup(<>{node}</>);
+    expect(html).toContain('[0]');
+    expect(html).toContain('list_positions');
+    expect(html).toContain('[1]');
+    expect(html).toContain('get_balance');
+    expect(html).not.toContain('[object Object]');
   });
 
   it('preserves string values unchanged', () => {
@@ -135,10 +155,24 @@ describe('formatDetailValue', () => {
   it('preserves undefined as a string', () => {
     expect(formatDetailValue(undefined)).toBe('undefined');
   });
+
+  it('renders finishReason error value in danger colour', () => {
+    const node = formatDetailValue('error', 'finishReason');
+    const html = renderToStaticMarkup(<>{node}</>);
+    expect(html).toContain('var(--color-danger)');
+    expect(html).toContain('error');
+  });
+
+  it('renders errorMessage value in danger colour', () => {
+    const node = formatDetailValue('something went wrong', 'errorMessage');
+    const html = renderToStaticMarkup(<>{node}</>);
+    expect(html).toContain('var(--color-danger)');
+    expect(html).toContain('something went wrong');
+  });
 });
 
 describe('AgentActivityDetailFields', () => {
-  it('renders the expanded detail view with object payloads serialized as JSON', () => {
+  it('renders nested object detail values as labelled rows, not JSON', () => {
     const entryWithObjectDetail: AgentActivityEntry = {
       ...baseEntry,
       id: 'e-obj',
@@ -158,8 +192,32 @@ describe('AgentActivityDetailFields', () => {
     );
 
     expect(html).toContain('payload');
-    expect(html).toContain('{&quot;toolName&quot;:&quot;list_positions&quot;,&quot;status&quot;:&quot;ok&quot;,&quot;count&quot;:3}');
+    expect(html).toContain('toolName');
+    expect(html).toContain('list_positions');
+    expect(html).toContain('status');
+    expect(html).toContain('ok');
+    expect(html).toContain('count');
     expect(html).not.toContain('[object Object]');
+  });
+
+  it('renders structured detail values without invalid inline block nesting', () => {
+    const entryWithObjectDetail: AgentActivityEntry = {
+      ...baseEntry,
+      id: 'e-inline-block',
+      detail: {
+        payload: { toolName: 'list_positions', status: 'ok' },
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={{}}>
+        <div>
+          <AgentActivityDetailFields entry={entryWithObjectDetail} />
+        </div>
+      </IntlProvider>,
+    );
+
+    expect(html).not.toContain('<span style="word-break:break-all"><div');
   });
 
   it('renders nullish detail values explicitly', () => {

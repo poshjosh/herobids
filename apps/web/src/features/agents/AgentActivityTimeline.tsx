@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import type { AgentActivityEntry, AgentActivityCategory, AgentActivitySeverity } from '../../lib/api-client.js';
 import { RelativeTime } from '../../lib/ui.js';
+import type { ReactNode } from 'react';
 
 // ---------------------------------------------------------------------------
 // Category → icon mapping
@@ -24,8 +25,51 @@ const SEVERITY_COLORS: Record<AgentActivitySeverity, string> = {
   critical: 'var(--color-danger)',
 };
 
-export function formatDetailValue(value: unknown): string {
-  return typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+export function formatDetailValue(value: unknown, key?: string): ReactNode {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return (
+      <div
+        style={{
+          paddingLeft: '10px',
+          borderLeft: '2px solid var(--color-border-subtle)',
+          marginTop: '2px',
+        }}
+      >
+        {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
+          <DetailRow key={k} label={k} value={formatDetailValue(v, k)} />
+        ))}
+      </div>
+    );
+  }
+  if (Array.isArray(value)) {
+    const hasStructuredItems = value.some((item) => typeof item === 'object' && item !== null);
+    if (!hasStructuredItems) {
+      return value.map((item) => String(item)).join(', ');
+    }
+    return (
+      <div
+        style={{
+          paddingLeft: '10px',
+          borderLeft: '2px solid var(--color-border-subtle)',
+          marginTop: '2px',
+        }}
+      >
+        {value.map((item, index) => (
+          <DetailRow key={index} label={`[${index}]`} value={formatDetailValue(item)} />
+        ))}
+      </div>
+    );
+  }
+  const str = String(value);
+  const isErrorValue = (key === 'finishReason' && str === 'error') || key === 'errorMessage';
+  if (isErrorValue) {
+    return (
+      <span style={{ color: 'var(--color-danger)', fontWeight: 500 }}>
+        {str}
+      </span>
+    );
+  }
+  return str;
 }
 
 export function AgentActivityDetailFields({ entry }: { entry: AgentActivityEntry }) {
@@ -38,13 +82,8 @@ export function AgentActivityDetailFields({ entry }: { entry: AgentActivityEntry
       {entry.traceId && <DetailRow label="Trace ID" value={entry.traceId.slice(0, 12)} />}
       {entry.direction && <DetailRow label="Direction" value={entry.direction} />}
       {entry.processingStatus && <DetailRow label="Status" value={entry.processingStatus} />}
-      {/* Render detail fields */}
       {Object.entries(entry.detail).map(([key, value]) => (
-        <DetailRow
-          key={key}
-          label={key}
-          value={formatDetailValue(value)}
-        />
+        <DetailRow key={key} label={key} value={formatDetailValue(value, key)} />
       ))}
     </>
   );
@@ -152,11 +191,11 @@ function TimelineRow({ entry, isLast }: TimelineRowProps) {
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: '8px', padding: '2px 0' }}>
-      <span style={{ fontWeight: 500, minWidth: '110px', color: 'var(--color-text-muted)' }}>{label}</span>
-      <span style={{ wordBreak: 'break-all' }}>{value}</span>
+      <span style={{ fontWeight: 500, minWidth: '110px', color: 'var(--color-text-muted)', flexShrink: 0 }}>{label}</span>
+      <div style={{ wordBreak: 'break-all', minWidth: 0, flex: 1 }}>{value}</div>
     </div>
   );
 }

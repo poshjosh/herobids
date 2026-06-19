@@ -1953,6 +1953,7 @@ async function runTick(): Promise<void> {
         model: resolvedLightModel,
         turnsUsed: scoutLoopResult.ok ? scoutLoopResult.turnsUsed : 0,
         finishReason: !scoutLoopResult.ok ? 'error' : scoutLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
+        errorMessage: !scoutLoopResult.ok ? scoutLoopResult.error.message : undefined,
       });
 
       if (!scoutLoopResult.ok) {
@@ -2120,6 +2121,7 @@ async function runTick(): Promise<void> {
       model: costProfile.heavyModel,
       turnsUsed: judgeLoopResult.ok ? judgeLoopResult.turnsUsed : 0,
       finishReason: !judgeLoopResult.ok ? 'error' : judgeLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
+      errorMessage: !judgeLoopResult.ok ? judgeLoopResult.error.message : undefined,
     });
 
     if (!judgeLoopResult.ok) {

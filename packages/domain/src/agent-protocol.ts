@@ -484,6 +484,7 @@ export const LlmCompletedPayloadSchema = z.object({
   model: z.string().min(1),
   turnsUsed: z.number().int().min(0),
   finishReason: z.string().min(1),
+  errorMessage: z.string().optional(),
   tokensUsed: z.number().int().min(0).optional(),
   thinkingTokens: z.number().int().min(0).optional(),
 });
