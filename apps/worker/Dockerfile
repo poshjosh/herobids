@@ -21,9 +21,7 @@ RUN pnpm --filter @herobids/domain run build && \
 
 # ── deploy: self-contained production layout ─────────────────────────────────
 FROM build AS deploy
-RUN mkdir -p /deploy/worker && \
-    cp -r apps/worker/node_modules /deploy/worker/node_modules && \
-    cp -r apps/worker/dist /deploy/worker/dist
+RUN pnpm --filter @herobids/worker deploy --prod /deploy/worker
     
 # ── runtime image ─────────────────────────────────────────────────────────────
 # WORKDIR mirrors apps/worker depth so that the config loader resolves

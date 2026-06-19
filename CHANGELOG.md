@@ -7,18 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.19-e
 ## 0.0.1-2026.06.19-d
-
-- Expand workspace fix from previous release to api
-
-### Fixed
-
 ## 0.0.1-2026.06.19-c
-
-### Fixed
-
-- Expand workspace fix from previous release
-
 ## 0.0.1-2026.06.19-b
 
 ### Fixed

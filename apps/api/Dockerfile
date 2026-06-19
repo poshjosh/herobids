@@ -21,9 +21,7 @@ RUN pnpm --filter @herobids/domain run build && \
 
 # ── deploy: self-contained production layout ─────────────────────────────────
 FROM build AS deploy
-RUN mkdir -p /deploy/api && \
-    cp -r apps/api/node_modules /deploy/api/node_modules && \
-    cp -r apps/api/dist /deploy/api/dist
+RUN pnpm --filter @herobids/api deploy --prod /deploy/api
     
 # ── runtime image ─────────────────────────────────────────────────────────────
 # WORKDIR mirrors apps/api depth so that the config loader resolves
