@@ -178,7 +178,7 @@ export async function callLlmWithRetry(
         return { result, attempts: attempt + 1, delaysMs, classification };
       }
       delayMs = classification.retryAfterMs ?? defaultRateLimitBackoffMs;
-    } else if (result.error.code === 'provider.timeout') {
+    } else if (result.error.code === 'provider.timeout' || result.error.code === 'provider.network_error') {
       if (attempt >= maxRetries) {
         return { result, attempts: attempt + 1, delaysMs, classification };
       }

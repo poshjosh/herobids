@@ -126,6 +126,42 @@ describe('callLlmWithRetry', () => {
     expect(sleep).toHaveBeenCalledWith(10_000);
   });
 
+  it('retries network errors and eventually succeeds', async () => {
+    const call = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'provider.network_error', message: 'fetch failed', retryable: true } })
+      .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 10, latencyMs: 10, cached: false } });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const result = await callLlmWithRetry(
+      { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+      { call, sleep },
+    );
+
+    expect(result.result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(sleep).toHaveBeenCalledWith(5_000);
+  });
+
+  it('stops retrying network errors after maxRetries', async () => {
+    const networkError = { ok: false, error: { code: 'provider.network_error', message: 'fetch failed', retryable: true } };
+    const call = vi.fn()
+      .mockResolvedValueOnce(networkError)
+      .mockResolvedValueOnce(networkError)
+      .mockResolvedValueOnce(networkError);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const result = await callLlmWithRetry(
+      { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+      { call, sleep, maxRetries: 2 },
+    );
+
+    expect(result.result.ok).toBe(false);
+    expect(result.attempts).toBe(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
   describe('custom retry config parameters', () => {
     it('uses custom timeoutBackoffMs for timeout retries', async () => {
       const call = vi.fn()
