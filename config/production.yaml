@@ -2,6 +2,7 @@
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 
 llm:
-  provider: deepseek                # LLM provider: openrouter | openai | anthropic | ollama
-  model: deepseek-v4-flash          # Model name passed to the provider e.g. 
-  tickIntervalMs: 900000            # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+  provider: deepseek                 # LLM provider: openrouter | openai | anthropic | ollama | deepseek
+  model: deepseek-v4-flash           # Model name passed to the provider e.g. deepseek-v4-flash
+  baseUrl: https://api.deepseek.com  # DeepSeek API base URL (OpenAI-compatible)
+  tickIntervalMs: 900000             # Agent reasoning loop interval in ms (how often the agent calls the LLM)
