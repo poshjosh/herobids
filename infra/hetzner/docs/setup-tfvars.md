@@ -38,13 +38,23 @@ deploy_ssh_private_key = <<-EOT
 EOT
 ```
 
-### Step 4: Set git_repo_url to SSH format
+### Step 4: Update your ~/.ssh/config
+
+Add the following:
+
+```
+Host 91.99.144.212
+    User root
+    IdentityFile ~/.ssh/herobids_deploy_key
+```    
+
+### Step 5: Set git_repo_url to SSH format
 
 ```hcl
 git_repo_url = "git@github.com:poshjosh/herobids.git"
 ```
 
-### Step 5: Test connectivity (optional but recommended)
+### Step 6: Test connectivity (optional but recommended)
 
 ```bash
 ssh -i ~/.ssh/herobids_deploy_key -T git@github.com
@@ -59,7 +69,7 @@ You should see: `Hi poshjosh! You've successfully authenticated...`
 ```hcl
 hcloud_token = "s2...sa"
 
-ssh_public_key_path = "~/.ssh/id_ed25519.pub"  # or your actual key path
+ssh_public_key_path = "~/.ssh/herobids_deploy_key.pub"  # or your actual key path
 
 deploy_ssh_private_key = <<-EOT
 -----BEGIN OPENSSH PRIVATE KEY-----
