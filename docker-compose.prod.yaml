@@ -23,13 +23,15 @@ services:
 
   api:
     environment:
-      NODE_ENV: production
+      # TODO: staging-setup Change from staging to production
+      NODE_ENV: staging
       AUTH_PUBLIC_BASE_URL: https://herobids.com
       AUTH_FRONTEND_ORIGIN: https://herobids.com
 
   worker:
     environment:
-      NODE_ENV: production
+      # TODO: staging-setup Change from staging to production
+      NODE_ENV: staging
 
   web:
     restart: unless-stopped

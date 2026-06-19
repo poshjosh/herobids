@@ -1,0 +1,16 @@
+# Operator configuration — self-documenting reference.
+# Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
+
+llm:
+  # provider: openrouter          # LLM provider: openrouter | openai | anthropic | ollama
+  provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
+  # model: openrouter/owl-alpha   # Model name passed to the provider 
+  model: qwen3.6:35b-a3b-q4_K_M # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
+  # 1. ollama must be served locally, i.e. listening on all networks
+  # 2. the host below must be ollama's host's IP, NOT localhost
+  baseUrl: http://192.168.2.195:11434/v1  # Ollama: use host.docker.internal, NOT localhost inside Docker
+  tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+
+# Alerting — dispatches journal events to Telegram channels.
+alerts:
+  enabled: true                   # master switch — override: ALERTS_ENABLED

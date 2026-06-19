@@ -393,7 +393,7 @@ function isProviderExplicitlyConfigured(provider: string): boolean {
 
 function isProviderAllowed(provider: string): boolean {
   const meta = PROVIDER_METADATA[provider];
-  if (meta?.devOnly && process.env['NODE_ENV'] !== 'development') {
+  if (meta?.devOnly && process.env['NODE_ENV'] === 'production') {
     return false;
   }
   return true;
