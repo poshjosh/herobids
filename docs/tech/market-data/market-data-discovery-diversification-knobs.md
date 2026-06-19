@@ -8,7 +8,7 @@ Here are all the knobs that control discovery diversification, from the operator
 
 | Goal | Change | Notes |
 |---|---|---|
-| See more tokens per run | Raise `marketData.discovery.maxResults` | Capped at 100 by tool schema |
+| See more tokens per run | Raise `marketData.discovery.maxResults` from 50 | Capped at 100 by tool schema |
 | See more *different* tokens over time | Keep `antistalenessCooldownHours` at 4+ | This is the real diversity driver |
 | Expand the raw candidate pool | Set `geckoTerminalExtraPages: 1` | Costs 4 GT API calls/run — verify rate-limit budget first |
 | Admit smaller/riskier tokens | Lower `tokenSafety.defaults.minLiquidityUsd` | Also affects `search_tokens` |

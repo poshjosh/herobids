@@ -24,7 +24,7 @@ export interface ProviderCatalogEntry {
 }
 
 // Provider metadata is now owned by domain — see PROVIDER_DEFINITIONS in @herobids/domain.
-const PROVIDER_METADATA = PROVIDER_DEFINITIONS;
+const PROVIDER_METADATA = PROVIDER_DEFINITIONS as Record<string, LlmProviderDefinition>;
 
 // --- Operator context ---
 
