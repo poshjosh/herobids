@@ -1,6 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { eq, count, sql, gte } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users, bots, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
@@ -15,7 +18,18 @@ const AGENT_CONTAINER_FILTER = encodeURIComponent(JSON.stringify({ label: ['hero
 const PROVIDER_COUNTERS_HASH_KEY = 'market-intel:provider-counters:v2';
 const LEGACY_PROVIDER_COUNTERS_KEY = 'market-intel:provider-counters';
 
-const VERSION = process.env['npm_package_version'] ?? '0.0.1';
+function parseAppVersion(): string {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const pkgPath = join(__dirname, '../../package.json');
+    return JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+  } catch {
+    return 'parse-failed';
+  }
+}
+
+const VERSION = parseAppVersion();
 
 // Docker socket path — standard on Linux; customisable via env.
 const DOCKER_SOCKET = process.env['DOCKER_SOCKET_PATH'] ?? '/var/run/docker.sock';
