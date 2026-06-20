@@ -12,7 +12,7 @@ import { VenueAdapterFactory } from './venue-adapter-factory.js';
 import { AgentTradingActor } from './agent-trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
-import { MomentumStrategy, LlmStrategy, MechanicalStrategy, HybridStrategy } from '@herobids/strategy';
+import { LlmStrategy, MechanicalStrategy, HybridStrategy, translateMomentumToMechanicalParams } from '@herobids/strategy';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
@@ -20,7 +20,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher } from '@herobid
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS, requireMomentumForMechanical } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
@@ -703,10 +703,28 @@ function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFe
 
   // For non-DCA, key on decisionMode to select the engine
   switch (strategyConfig.decisionMode) {
-    case 'mechanical':
-      requireMomentumForMechanical(strategyConfig.type, 'live');
-      // Exception: type = 'momentum' still routes to MomentumStrategy (deprecated, see MomentumStrategy JSDoc)
-      return new MomentumStrategy(() => idGen.decisionId());
+    case 'mechanical': {
+      if (strategyConfig.type !== 'momentum') {
+        throw new Error(
+          `'mechanical' decisionMode is only supported for strategyType='momentum' in live trading. `
+          + `Got type='${strategyConfig.type}'.`,
+        );
+      }
+      if (!candleFetcher) {
+        throw new Error(`'mechanical' strategy requires marketData to be configured (CandleFetcher unavailable)`);
+      }
+      const mechanical = new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
+      // Translate momentum-style params (lookbackPeriod, threshold, positionSize) to mechanical-style params
+      const mechanicalWrapper: Strategy = {
+        id: mechanical.id,
+        name: mechanical.name,
+        evaluate: async (snapshot: MarketSnapshot, rawConfig: Record<string, unknown>) => {
+          const translated = translateMomentumToMechanicalParams(rawConfig);
+          return mechanical.evaluate(snapshot, translated);
+        },
+      };
+      return mechanicalWrapper;
+    }
 
     case 'llm':
       return new LlmStrategy(

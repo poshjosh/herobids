@@ -1000,13 +1000,6 @@ export const RiskPlaybookSchema = z.object({
 
 export type RiskPlaybook = z.infer<typeof RiskPlaybookSchema>;
 
-export const MomentumParamsSchema = z.object({
-  lookbackPeriod: z.number().int().min(2).default(5),
-  threshold: z.number().min(0).default(0.02),
-  positionSize: z.string().default('1'),
-  instrumentId: z.string().optional(),
-});
-
 export const LlmParamsSchema = z.object({
   provider: z.string(),
   model: z.string(),
@@ -1182,20 +1175,6 @@ export function extractStrategyFromConfig(
   };
 }
 
-/**
- * Throws if a mechanical strategy is requested for a non-momentum trading style.
- * Mechanical strategy unification (range, swing, scalper, contrarian) is tracked in
- * docs/features/2026/06/20/002-mechanical-strategy-unification.
- */
-export function requireMomentumForMechanical(strategyType: string, context: 'backtesting' | 'live'): void {
-  if (strategyType !== 'momentum') {
-    throw new Error(
-      `'mechanical' decisionMode is only supported for strategyType='momentum' in ${context} trading. `
-      + `Got type='${strategyType}'. Use type='momentum' or wait for mechanical strategy unification.`,
-    );
-  }
-}
-
 export const StrategySchema = z.object({
   type: z.enum(['momentum', 'range', 'contrarian', 'swing', 'scalper', 'dca']),
   decisionMode: z.enum(['mechanical', 'llm', 'hybrid']).optional(),
@@ -1246,7 +1225,6 @@ export const BotConfigSchema = z.object({
 export type BotConfig = z.infer<typeof BotConfigSchema>;
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;
 export type StrategyConfig = z.infer<typeof StrategySchema>;
-export type MomentumParams = z.infer<typeof MomentumParamsSchema>;
 export type LlmParams = z.infer<typeof LlmParamsSchema>;
 export type MechanicalParams = z.infer<typeof MechanicalParamsSchema>;
 export type HybridParams = z.infer<typeof HybridParamsSchema>;

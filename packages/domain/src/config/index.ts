@@ -18,7 +18,6 @@ export {
   RiskPlaybookSchema,
   StrategySchema,
   ExecutionConfigSchema,
-  MomentumParamsSchema,
   LlmParamsSchema,
   MechanicalParamsSchema,
   HybridParamsSchema,
@@ -60,7 +59,6 @@ export {
   IntelligenceConfigSchema,
   deriveStrategyPreset,
   extractStrategyFromConfig,
-  requireMomentumForMechanical,
 } from './schema.js';
 
 export type {
@@ -72,7 +70,6 @@ export type {
   RiskConfig,
   RiskPlaybook,
   StrategyConfig,
-  MomentumParams,
   LlmParams,
   MechanicalParams,
   HybridParams,

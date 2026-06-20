@@ -10,10 +10,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - `extractStrategyFromConfig()` domain helper — type-safe strategy extraction from bot configs
-- `requireMomentumForMechanical()` domain helper — shared mechanical strategy guard for backtesting and live paths
 - `decisionMode` and `executionModes` filters on analytics endpoints with Zod enum validation
 - Agent tool schemas for `create_bot` and `adjust_bot_config` (`BotConfigInputSchema`, `StrategyInputSchema`)
 - `IntelligenceConfigSchema` in `UnifiedAgentConfigSchema` — agents can now update their own intelligence config
+- `translateMomentumToMechanicalParams()` — bridges old momentum-style params to the new mechanical engine
+- Short signal support in scan engine — dual bullish/bearish confidence tracking produces `go_short` intents
 
 ### Changed
 
@@ -22,12 +23,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Bot config `venue`/`venueType` are now optional at parse time — stamped by the broker at creation
 - `deriveStrategyPreset` JSDoc documents intentional pass-through for unmapped types
 - `agent-message-broker` resolves venue account and venue type from trading binding before creating bots
+- **Momentum → Mechanical migration**: `MomentumStrategy`, `MomentumParamsSchema`, and `requireMomentumForMechanical` removed. Momentum bots now route through `MechanicalStrategy` via param translation. Mechanical strategy passes through signal intent (`go_long`/`go_short`) instead of always `go_long`.
 
 ### Fixed
 
-- Duplicated mechanical strategy restriction error messages in `backtest-runtime.ts` and `index.ts` deduplicated
 - Blueprint config extraction uses `extractStrategyFromConfig()` instead of inline `as Record<string, unknown>` casts
 - `AnalyticsQuery` type now correctly derived from `AnalyticsQuerySchema` (was `AnalyticsBodySchema`)
+- `translateMomentumToMechanicalParams` clamps `candleLimit` to schema minimum (20) — prevents `strategy.config_invalid` errors for bots with small `lookbackPeriod` values
 
 ## 0.0.1-2026.06.19-g
 

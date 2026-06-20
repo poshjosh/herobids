@@ -384,7 +384,7 @@ describe('scanCandidates', () => {
     expect(results.length).toBe(2);
   });
 
-  it('filters out candidates that produce no signal', () => {
+  it('produces bearish signal when bearish confidence exceeds bullish', () => {
     const config: ScanConfig = {
       signalBias: 'trend-following',
       indicators: {
@@ -393,16 +393,19 @@ describe('scanCandidates', () => {
         confidence: { minConfidence: 0.10, minReasons: 1 },
       },
     };
-    // candlesA produces a signal (RSI ~50, trend-following)
-    // candlesB is overbought → hard reject → null
+    // candlesA produces a bullish signal (RSI ~50, trend-following)
+    // candlesB is overbought → now produces a bearish signal instead of hard reject
     const candlesA = makeFlatRsiCandles(30);
     const candlesB = makeOverboughtCandles(30);
 
     const results = scanCandidates(
-      [candidate(candlesA, 'VALID'), candidate(candlesB, 'REJECTED')],
+      [candidate(candlesA, 'VALID'), candidate(candlesB, 'OVERBOUGHT')],
       config,
     );
-    expect(results.length).toBe(1);
+    expect(results.length).toBe(2);
     expect(results[0]!.symbol).toBe('VALID');
+    expect(results[0]!.intent).toBe('go_long');
+    expect(results[1]!.symbol).toBe('OVERBOUGHT');
+    expect(results[1]!.intent).toBe('go_short');
   });
 });

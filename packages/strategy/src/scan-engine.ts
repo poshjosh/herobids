@@ -29,12 +29,13 @@ export interface ScoredSignal {
   instrumentId: string;
   confidence: number;
   reasons: string[];
-  intent: 'go_long'; // Only long signals emitted in Phase 2; 'go_short' not yet implemented
+  intent: 'go_long' | 'go_short';
   indicators: {
     rsi?: number;
     macdHistogram?: number;
     volumeRatio?: number;
     breakingResistance?: boolean;
+    breakingSupport?: boolean;
     choch?: 'bullish' | 'bearish' | null;
   };
 }
@@ -156,8 +157,11 @@ export function scoreCandidate(
     minReasons: indicators.confidence?.minReasons ?? 2,
   };
 
-  let confidence = 0;
-  const reasons: string[] = [];
+  // Track bullish and bearish confidence separately so we can pick the stronger signal
+  let bullishConfidence = 0;
+  let bearishConfidence = 0;
+  const bullishReasons: string[] = [];
+  const bearishReasons: string[] = [];
   const indicatorValues: ScoredSignal['indicators'] = {};
 
   // ─── RSI ──────────────────────────────────────────────────────────────────
@@ -168,20 +172,23 @@ export function scoreCandidate(
     if (!isNaN(lastRsi)) {
       indicatorValues.rsi = lastRsi;
 
-      if (lastRsi > rsiCfg.overbought) {
-        return null; // HARD REJECT
-      }
-
       if (signalBias === 'trend-following') {
         if (lastRsi >= rsiCfg.healthyMin && lastRsi <= rsiCfg.healthyMax) {
-          confidence += confCfg.rsiWeight;
-          reasons.push('RSI in healthy range');
+          bullishConfidence += confCfg.rsiWeight;
+          bullishReasons.push('RSI in healthy range');
+        } else if (lastRsi > rsiCfg.overbought) {
+          // Overbought = bearish confirmation for trend-following shorts
+          bearishConfidence += confCfg.rsiWeight;
+          bearishReasons.push('RSI overbought');
         }
       } else {
         // mean-reverting
         if (lastRsi < rsiCfg.weakBelow) {
-          confidence += confCfg.rsiWeight;
-          reasons.push('RSI oversold');
+          bullishConfidence += confCfg.rsiWeight;
+          bullishReasons.push('RSI oversold');
+        } else if (lastRsi > rsiCfg.overbought) {
+          bearishConfidence += confCfg.rsiWeight;
+          bearishReasons.push('RSI overbought (mean reversion short)');
         }
       }
     }
@@ -202,16 +209,26 @@ export function scoreCandidate(
       if (curr > 0) {
         // Crossover: histogram crossed from non-positive to positive
         if (prev <= 0) {
-          confidence += confCfg.macdCrossoverWeight;
-          reasons.push('MACD bullish crossover');
+          bullishConfidence += confCfg.macdCrossoverWeight;
+          bullishReasons.push('MACD bullish crossover');
         }
         // Increasing: current bar higher than previous
         if (curr > prev) {
-          confidence += confCfg.macdIncreasingWeight;
-          reasons.push('MACD histogram increasing');
+          bullishConfidence += confCfg.macdIncreasingWeight;
+          bullishReasons.push('MACD histogram increasing');
+        }
+      } else if (curr < 0) {
+        // Bearish path: histogram crossed from non-negative to negative
+        if (prev >= 0) {
+          bearishConfidence += confCfg.macdCrossoverWeight;
+          bearishReasons.push('MACD bearish crossover');
+        }
+        // Decreasing (more negative): increasing bearish momentum
+        if (curr < prev) {
+          bearishConfidence += confCfg.macdIncreasingWeight;
+          bearishReasons.push('MACD histogram decreasing');
         }
       }
-      // curr <= 0: neutral, no contribution
     }
   }
 
@@ -221,34 +238,66 @@ export function scoreCandidate(
     indicatorValues.volumeRatio = ratio;
 
     if (ratio >= volumeCfg.strongRatio) {
-      confidence += confCfg.volumeWeight;
-      reasons.push('Strong volume');
+      // Volume is direction-agnostic — it confirms whichever directional signal
+      // ends up winning. We add to both sides so the final direction pick is
+      // still driven by directional indicators (RSI, MACD, S/R, CHOCH) while
+      // volume boosts the overall confidence score of the selected signal.
+      // If applied after direction selection instead, volume would inflate the
+      // loser's confidence too — this approach is simpler and equally correct.
+      bullishConfidence += confCfg.volumeWeight;
+      bearishConfidence += confCfg.volumeWeight;
+      bullishReasons.push('Strong volume');
+      bearishReasons.push('Strong volume');
     }
-    // <= weakRatio: neutral, no contribution
   }
 
   // ─── Support / Resistance ─────────────────────────────────────────────────
   if (srCfg.enabled && candles.length > 0) {
     const levels = findSupportResistance(candles, srCfg.lookback);
     const lastClose = candles[candles.length - 1]!.close;
+
     if (signalBias === 'trend-following') {
-      const breaking = isBreakingResistance(lastClose, levels.resistances, srCfg.breakoutThreshold);
-      if (breaking) {
-        confidence += confCfg.breakoutWeight;
-        reasons.push('Breaking resistance');
+      // Bullish: breaking resistance
+      const breakingRes = isBreakingResistance(lastClose, levels.resistances, srCfg.breakoutThreshold);
+      if (breakingRes) {
+        bullishConfidence += confCfg.breakoutWeight;
+        bullishReasons.push('Breaking resistance');
         indicatorValues.breakingResistance = true;
       } else {
         indicatorValues.breakingResistance = false;
       }
+      // Bearish: breaking support (price falls below a support level)
+      const brokenSupports = levels.supports.filter((s) => s >= lastClose);
+      if (brokenSupports.length > 0) {
+        const nearest = Math.min(...brokenSupports);
+        if (lastClose >= nearest * (1 - srCfg.breakoutThreshold)) {
+          bearishConfidence += confCfg.breakoutWeight;
+          bearishReasons.push('Breaking support');
+          indicatorValues.breakingSupport = true;
+        } else {
+          indicatorValues.breakingSupport = false;
+        }
+      } else {
+        indicatorValues.breakingSupport = false;
+      }
     } else {
+      // mean-reverting
       const bouncing = isBouncingSupport(lastClose, levels.supports, srCfg.breakoutThreshold);
       if (bouncing) {
-        confidence += confCfg.breakoutWeight;
-        reasons.push('Bouncing off support');
-        indicatorValues.breakingResistance = false;
-      } else {
-        indicatorValues.breakingResistance = false;
+        bullishConfidence += confCfg.breakoutWeight;
+        bullishReasons.push('Bouncing off support');
       }
+      // Bearish mean-reversion: testing resistance from below = potential short
+      const nearResistances = levels.resistances.filter((r) => r >= lastClose);
+      if (nearResistances.length > 0) {
+        const nearest = Math.min(...nearResistances);
+        if (nearest <= lastClose * (1 + srCfg.breakoutThreshold)) {
+          bearishConfidence += confCfg.breakoutWeight;
+          bearishReasons.push('Testing resistance (mean reversion short)');
+        }
+      }
+      indicatorValues.breakingResistance = false;
+      indicatorValues.breakingSupport = false;
     }
   }
 
@@ -264,29 +313,36 @@ export function scoreCandidate(
 
       if (choch?.type === 'bullish') {
         if (signalBias === 'trend-following') {
-          confidence += confCfg.chochBullishWeight;
-          reasons.push('Bullish CHOCH');
+          bullishConfidence += confCfg.chochBullishWeight;
+          bullishReasons.push('Bullish CHOCH');
         } else {
-          // mean-reverting: bullish CHOCH is counter-signal — penalize
-          confidence = Math.max(0, confidence - confCfg.chochBearishPenalty);
+          // mean-reverting: bullish CHOCH is counter-signal — penalize bullish side
+          bullishConfidence = Math.max(0, bullishConfidence - confCfg.chochBearishPenalty);
         }
       } else if (choch?.type === 'bearish') {
         if (signalBias === 'trend-following') {
           if (chochCfg.rejectOnBearish) {
-            return null; // HARD REJECT
+            // Suppress bullish path entirely, but short path may still qualify
+            bullishConfidence = 0;
           }
+          bearishConfidence += confCfg.chochBullishWeight;
+          bearishReasons.push('Bearish CHOCH');
         } else {
           // mean-reverting: bearish CHOCH = capitulation = entry signal
-          confidence += confCfg.chochBullishWeight;
-          reasons.push('Bearish CHOCH (reversal)');
+          bullishConfidence += confCfg.chochBullishWeight;
+          bullishReasons.push('Bearish CHOCH (reversal)');
         }
       }
     }
   }
 
-  // ─── Confidence filter ────────────────────────────────────────────────────
-  confidence = Math.min(1, confidence);
+  // ─── Pick direction ──────────────────────────────────────────────────────
+  const useBearish = bearishConfidence > bullishConfidence;
+  const confidence = Math.min(1, useBearish ? bearishConfidence : bullishConfidence);
+  const reasons = useBearish ? bearishReasons : bullishReasons;
+  const intent: 'go_long' | 'go_short' = useBearish ? 'go_short' : 'go_long';
 
+  // ─── Confidence filter ────────────────────────────────────────────────────
   if (confidence < confCfg.minConfidence || reasons.length < confCfg.minReasons) {
     return null;
   }
@@ -296,7 +352,7 @@ export function scoreCandidate(
     instrumentId,
     confidence,
     reasons,
-    intent: 'go_long',
+    intent,
     indicators: indicatorValues,
   };
 }

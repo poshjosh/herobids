@@ -140,9 +140,9 @@ export class MechanicalStrategy implements Strategy {
       return ok(null);
     }
 
-    // 6. Entry confirmed → go_long
+    // 6. Entry confirmed → pass signal intent through (go_long or go_short)
     return ok(
-      makeDecision(snapshot, 'go_long', params.positionSize, this.idGen, {
+      makeDecision(snapshot, signal.intent, params.positionSize, this.idGen, {
         confidence: adjustedConfidence,
         reasons: signal.reasons,
         indicators: signal.indicators,
@@ -161,7 +161,7 @@ function resolveHasOpenPosition(snapshot: MarketSnapshot): boolean {
 
 function makeDecision(
   snapshot: MarketSnapshot,
-  intent: 'go_long' | 'go_flat',
+  intent: 'go_long' | 'go_short' | 'go_flat',
   size: string,
   idGen: () => string,
   metadata?: Record<string, unknown>,

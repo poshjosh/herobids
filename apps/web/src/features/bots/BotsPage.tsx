@@ -16,7 +16,10 @@ const STRATEGY_PRESETS = [
     value: 'momentum',
     label: 'Momentum',
     description: 'Trend-following strategy that buys strength and sells weakness',
-    // Params match MomentumParamsSchema: lookbackPeriod (singular), threshold, positionSize
+    // The factory translates momentum params to MechanicalParams:
+    // - lookbackPeriod -> candleLimit (clamped to schema minimum 20)
+    // - threshold -> indicators.confidence.minConfidence (×5 multiplier)
+    // - positionSize carried over directly
     config: { strategy: { type: 'momentum', params: { lookbackPeriod: 14, threshold: 0.02, positionSize: '1' } } },
   },
 ] as const;

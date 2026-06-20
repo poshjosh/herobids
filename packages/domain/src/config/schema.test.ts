@@ -6,7 +6,6 @@ import {
   MarkingConfigSchema,
   AgentRuntimePolicySchema,
   StrategySchema,
-  MomentumParamsSchema,
   LlmParamsSchema,
 } from './schema.js';
 
@@ -438,24 +437,6 @@ describe('StrategySchema', () => {
   });
 });
 
-describe('MomentumParamsSchema', () => {
-  it('provides all defaults when empty object given', () => {
-    const result = MomentumParamsSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.lookbackPeriod).toBe(5);
-      expect(result.data.threshold).toBe(0.02);
-      expect(result.data.positionSize).toBe('1');
-      expect(result.data.instrumentId).toBeUndefined();
-    }
-  });
-
-  it('rejects non-integer lookbackPeriod', () => {
-    const result = MomentumParamsSchema.safeParse({ lookbackPeriod: 3.5 });
-    expect(result.success).toBe(false);
-  });
-});
-
 describe('LlmParamsSchema', () => {
   it('rejects empty object (requires provider and model)', () => {
     const result = LlmParamsSchema.safeParse({});
@@ -526,8 +507,7 @@ describe('StrategySchema (BotConfigSchema.strategy)', () => {
   it('passes params through as-is — params are intentionally unvalidated (flexible tuning)', () => {
     // params is z.record(z.unknown()) by design — each trading style has its
     // own tuning surface and no single param schema fits all. Validation of
-    // type-specific params (e.g. MomentumParamsSchema thresholds) is done
-    // at the strategy execution layer, not at config parse time.
+    // type-specific params is done at the strategy execution layer, not at config parse time.
     const result = StrategySchema.safeParse({
       type: 'momentum',
       decisionMode: 'mechanical',
@@ -541,24 +521,6 @@ describe('StrategySchema (BotConfigSchema.strategy)', () => {
         extraField: true,
       });
     }
-  });
-});
-
-describe('MomentumParamsSchema', () => {
-  it('applies all defaults', () => {
-    const result = MomentumParamsSchema.safeParse({});
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.lookbackPeriod).toBe(5);
-      expect(result.data.threshold).toBe(0.02);
-      expect(result.data.positionSize).toBe('1');
-      expect(result.data.instrumentId).toBeUndefined();
-    }
-  });
-
-  it('rejects non-integer lookbackPeriod', () => {
-    const result = MomentumParamsSchema.safeParse({ lookbackPeriod: 3.5 });
-    expect(result.success).toBe(false);
   });
 });
 
