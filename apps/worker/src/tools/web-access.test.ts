@@ -120,7 +120,7 @@ describe('search_web tool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe('search_web requires TAVILY_API_KEY');
     expect(result.retryable).toBe(false);
-    expect(result).not.toHaveProperty('fault');
+    expect(result.fault).toBe(false);
   });
 
   it('truncates response when combined payload exceeds maxResponseBytes', async () => {

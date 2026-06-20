@@ -428,7 +428,7 @@ console.log(exists ? 'found' : 'not found');
       expect(result.success).toBe(false);
       expect(result.errorCode).toBe('execute_code.execution_failed');
       expect(result.error).toBe('execute_code failed with exit code 1');
-      expect(result.fault).toBeUndefined();
+      expect(result.fault).toBe(false);
     } finally {
       vi.doUnmock('node:child_process');
       vi.doUnmock('node:fs/promises');
