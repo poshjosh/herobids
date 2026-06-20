@@ -38,7 +38,7 @@ const BotConfigInputSchema = z.object({
 // --- create_bot ---
 
 const CreateBotParamsSchema = z.object({
-  venueAccountId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Venue account ID to use. Omit to use default trading binding.'),
+  bindingId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Trading binding ID to use. You can find this in the Capability Readiness section as "binding=<id>". Omit to use your default trading binding.'),
   config: BotConfigInputSchema.optional().describe('Bot configuration (strategy, symbol, risk params). venue is resolved from your trading binding automatically.'),
   rationale: z.string().max(500).optional().describe('Brief rationale for creating this bot. Used for audit.'),
 });
@@ -50,11 +50,11 @@ const createBotTool: AgentTool = {
   parameters: convertZodToJsonSchema(CreateBotParamsSchema),
   category: 'execute-trade',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { venueAccountId, config, rationale } = params as z.infer<typeof CreateBotParamsSchema>;
+    const { bindingId, config, rationale } = params as z.infer<typeof CreateBotParamsSchema>;
 
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
       action: 'create_and_start',
-      venueAccountId,
+      bindingId,
       config,
       rationale,
     });

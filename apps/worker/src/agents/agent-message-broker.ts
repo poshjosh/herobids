@@ -561,21 +561,41 @@ export class AgentMessageBroker {
       if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
 
       // Resolve the binding using the same runtime descriptor the agent sees in its prompt.
-      // Preserve explicit venue-account targeting when the agent selected one.
+      // Primary path: bindingId (the agent sees this in its readiness summary).
+      // Fallback: venueAccountId (legacy — deprecated).
       const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
       const grantedTradingBindings = capabilityDescriptor.grantedBindingsByFamily['trading'] ?? [];
-      const requestedBindings = payload.venueAccountId
-        ? grantedTradingBindings.filter((candidate) => candidate.sourceVenueAccountId === payload.venueAccountId)
-        : [];
       const defaultBindingId = capabilityDescriptor.defaultBindingByFamily['trading'];
-      const binding = requestedBindings[0]
-        ?? grantedTradingBindings.find((candidate) => candidate.bindingId === defaultBindingId);
 
-      if (payload.venueAccountId && requestedBindings.length === 0) {
-        throw new Error(`No trading capability binding found for venue account ${payload.venueAccountId}`);
-      }
-      if (requestedBindings.length > 1) {
-        throw new Error(`Multiple trading capability bindings found for venue account ${payload.venueAccountId}`);
+      let binding: (typeof grantedTradingBindings)[number] | undefined;
+
+      if (payload.bindingId) {
+        // Primary: resolve by bindingId — what the agent sees in readiness
+        const byBindingId = grantedTradingBindings.filter(
+          (candidate) => candidate.bindingId === payload.bindingId,
+        );
+        if (byBindingId.length === 0) {
+          throw new Error(`No trading capability binding found with bindingId ${payload.bindingId}`);
+        }
+        if (byBindingId.length > 1) {
+          throw new Error(`Multiple trading capability bindings found with bindingId ${payload.bindingId}`);
+        }
+        binding = byBindingId[0];
+      } else if (payload.venueAccountId) {
+        // Legacy fallback: resolve by sourceVenueAccountId
+        const byVenueAccountId = grantedTradingBindings.filter(
+          (candidate) => candidate.sourceVenueAccountId === payload.venueAccountId,
+        );
+        if (byVenueAccountId.length === 0) {
+          throw new Error(`No trading capability binding found for venue account ${payload.venueAccountId}`);
+        }
+        if (byVenueAccountId.length > 1) {
+          throw new Error(`Multiple trading capability bindings found for venue account ${payload.venueAccountId}`);
+        }
+        binding = byVenueAccountId[0];
+      } else {
+        // Default: use the agent's default trading binding
+        binding = grantedTradingBindings.find((candidate) => candidate.bindingId === defaultBindingId);
       }
       if (!binding || !binding.readiness.effectiveReady) {
         throw new Error('No ready trading capability binding found for this agent — cannot create bot');

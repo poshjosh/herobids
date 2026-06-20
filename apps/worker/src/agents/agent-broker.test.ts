@@ -1005,6 +1005,148 @@ describe('AgentMessageBroker', () => {
       }));
     });
 
+    it('resolves the binding by bindingId when provided', async () => {
+      agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
+        grantedBindingsByFamily: {
+          trading: [
+            {
+              bindingId: 'binding-1',
+              sourceVenueAccountId: 'va-001',
+              readiness: { effectiveReady: true },
+            },
+            {
+              bindingId: 'binding-2',
+              sourceVenueAccountId: 'va-002',
+              readiness: { effectiveReady: true },
+            },
+          ],
+        },
+        defaultBindingByFamily: { trading: 'binding-1' },
+      }));
+
+      const botRepo = {
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-by-bindingid'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
+      };
+      const botStart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          bindingId: 'binding-2',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+        tradingBindingId: 'binding-2',
+        venueAccountId: 'va-002',
+      }));
+    });
+
+    it('rejects when bindingId does not match any granted binding', async () => {
+      const botRepo = {
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-never'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+      };
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        vi.fn().mockResolvedValue(undefined),
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          bindingId: 'nonexistent',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
+        },
+      }));
+
+      expect(result.accepted).toBe(false);
+      expect(result.error).toMatch(/no trading capability binding found with bindingid nonexistent/i);
+      expect(botRepo.createBot).not.toHaveBeenCalled();
+    });
+
+    it('uses the default binding when no bindingId is provided', async () => {
+      agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
+        grantedBindingsByFamily: {
+          trading: [
+            {
+              bindingId: 'binding-1',
+              sourceVenueAccountId: 'va-001',
+              readiness: { effectiveReady: true },
+            },
+            {
+              bindingId: 'binding-2',
+              sourceVenueAccountId: 'va-002',
+              readiness: { effectiveReady: true },
+            },
+          ],
+        },
+        defaultBindingByFamily: { trading: 'binding-2' },
+      }));
+
+      const botRepo = {
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-default'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
+      };
+      const botStart = vi.fn().mockResolvedValue(undefined);
+
+      const brokerWithBot = new AgentMessageBroker(
+        {} as any,
+        agentRepo as any,
+        decisionHandler,
+        sessionManager,
+        eventPublisher,
+        undefined,
+        botRepo as any,
+        botStart,
+      );
+
+      const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
+        },
+      }));
+
+      expect(result.accepted).toBe(true);
+      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+        tradingBindingId: 'binding-2',
+        venueAccountId: 'va-002',
+      }));
+    });
+
     it('rejects create_and_start when the requested venue account maps to multiple bindings', async () => {
       agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
         grantedBindingsByFamily: {

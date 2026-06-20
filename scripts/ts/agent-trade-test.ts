@@ -52,6 +52,7 @@
  */
 
 import { execSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -917,13 +918,27 @@ async function runBookkeepingAudit(
 // Phase 4: Teardown
 // ---------------------------------------------------------------------------
 
-async function teardown(token: string, agentId: string): Promise<void> {
+async function teardown(token: string, agentId: string, agentBotId: string | null): Promise<void> {
   section('Phase 4: Teardown');
 
   if (SKIP_TEARDOWN) {
-    warn('SKIP_TEARDOWN=1 — leaving agent running for manual inspection');
+    warn('SKIP_TEARDOWN=1 — leaving agent and bot running for manual inspection');
     warn(`  Agent ID: ${agentId}`);
+    if (agentBotId) warn(`  Bot ID: ${agentBotId}`);
     return;
+  }
+
+  // Stop and delete the bot first (cleanup before agent deletion)
+  if (agentBotId) {
+    try {
+      execSync(
+        `docker compose exec -T postgres psql -U herobids -d herobids -c "DELETE FROM bots WHERE id = '${agentBotId}'"`,
+        { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+      );
+      ok(`Bot ${agentBotId} deleted`);
+    } catch (err) {
+      warn(`Bot cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // Stop
@@ -998,6 +1013,84 @@ async function main(): Promise<void> {
   await startAgent(token, agentId);
   ok(`Agent ${agentId} is starting`);
 
+  // Phase 2.5: Agent bot creation
+  let agentBotId: string | null = null;
+  {
+    section('Phase 2.5: Agent bot creation');
+
+    // Wait for the agent runtime to subscribe to its Redis stream
+    await sleep(5000);
+
+    // Publish a manage_bot message to the agent's inbound Redis stream.
+    // This exercises the exact broker path that was broken by the bindingId/venueAccountId confusion.
+    const botCreatePayload = {
+      action: 'create_and_start',
+      bindingId,
+      config: {
+        strategy: {
+          type: 'momentum',
+          decisionMode: 'mechanical',
+          params: {
+            lookbackPeriod: 14,
+            entryThreshold: 0.5,
+            exitThreshold: 0.3,
+            adxThreshold: 20,
+            momentumWindow: 7,
+          },
+        },
+        symbol: 'BTC',
+        execution: { mode: 'paper', slippageBps: 5 },
+        risk: { stopLossPct: 3, takeProfitPct: 6, maxDrawdownPct: 5, maxPositionSizePct: 10 },
+      },
+    };
+
+    const envelope = {
+      schemaVersion: 'v1',
+      messageId: crypto.randomUUID(),
+      correlationId: 'e2e-bot-creation',
+      initiatorType: 'agent',
+      initiatorId: agentId,
+      agentId,
+      type: 'agent.manage_bot',
+      createdAt: new Date().toISOString(),
+      payload: botCreatePayload,
+    };
+
+    const envelopeJson = JSON.stringify(envelope).replace(/'/g, "'\\''");
+    try {
+      execSync(
+        `docker compose exec -T redis redis-cli XADD 'agent:inbound:${agentId}' '*' envelope '${envelopeJson}'`,
+        { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 },
+      );
+      ok('Manage-bot message published to agent inbound stream');
+    } catch (err) {
+      fatal(`Failed to publish to agent inbound stream: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Poll for the bot to appear in the bot list (created by the broker)
+    const botDeadline = Date.now() + 30_000;
+    let botFound = false;
+    while (Date.now() < botDeadline) {
+      await sleep(3_000);
+      const botsRes = await apiRequest<{ bots?: Array<{ id: string; status: string; creatorType: string; creatorId: string }> }>(
+        'GET', '/bots', { token },
+      );
+      if (botsRes.status === 200 && Array.isArray(botsRes.body.bots)) {
+        const agentBots = botsRes.body.bots.filter((b) => b.creatorId === agentId);
+        if (agentBots.length > 0) {
+          agentBotId = agentBots[0].id;
+          ok(`Bot created — id=${agentBotId} status=${agentBots[0].status}`);
+          botFound = true;
+          break;
+        }
+      }
+    }
+
+    if (!botFound) {
+      fatal('Bot was not created within 30s — broker may have rejected the manage_bot message');
+    }
+  }
+
   // Phase 3
   let outcome = await watchAgent(token, agentId);
 
@@ -1017,7 +1110,7 @@ async function main(): Promise<void> {
   }
 
   // Phase 4
-  await teardown(token, agentId);
+  await teardown(token, agentId, agentBotId);
 
   // Result
   console.log('');
