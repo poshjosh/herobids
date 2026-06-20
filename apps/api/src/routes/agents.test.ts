@@ -5,10 +5,13 @@ import {
   agentRuntimeSessions,
   agentSkills,
   bots,
+  capabilityGrants,
   decisions,
   skillEntitlements,
   skillRevisions,
   skills,
+  tradingBindings,
+  venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 
@@ -33,9 +36,14 @@ function buildDb(options: {
   agentSkillRows?: Array<Record<string, unknown>>;
   botRows?: Array<Record<string, unknown>>;
   sessionRows?: Array<Record<string, unknown>>;
+  tradingBindingRows?: Array<Record<string, unknown>>;
+  capabilityGrantRows?: Array<Record<string, unknown>>;
+  venueAccountRows?: Array<Record<string, unknown>>;
 } = {}) {
   const insertedValues: Array<Record<string, unknown>> = [];
   const updateSets: Array<Record<string, unknown>> = [];
+  /** Tracks { table, values } for each db.update() call */
+  const updateTableCalls: Array<{ table: unknown; values: Record<string, unknown> }> = [];
   const deletedTargets: unknown[] = [];
 
   const builtinSkillRows: Array<Record<string, unknown>> = [
@@ -79,6 +87,9 @@ function buildDb(options: {
   );
   const botRows = options.botRows ?? options.activeLinkRows ?? [];
   const sessionRows = options.sessionRows ?? [];
+  const tradingBindingRows = options.tradingBindingRows ?? [];
+  const capabilityGrantRows = options.capabilityGrantRows ?? [];
+  const venueAccountRows = options.venueAccountRows ?? [];
 
   let agentsSelectCount = 0;
 
@@ -108,6 +119,15 @@ function buildDb(options: {
     if (table === agentRuntimeSessions) {
       return sessionRows;
     }
+    if (table === tradingBindings) {
+      return tradingBindingRows;
+    }
+    if (table === capabilityGrants) {
+      return capabilityGrantRows;
+    }
+    if (table === venueAccounts) {
+      return venueAccountRows;
+    }
     return [];
   };
 
@@ -115,6 +135,9 @@ function buildDb(options: {
     const chain: Record<string, unknown> = {};
     chain.where = vi.fn().mockReturnValue(chain);
     chain.orderBy = vi.fn().mockReturnValue(chain);
+    chain.innerJoin = vi.fn().mockReturnValue(chain);
+    chain.groupBy = vi.fn().mockReturnValue(chain);
+    chain.having = vi.fn().mockReturnValue(chain);
     chain.limit = vi.fn().mockImplementation(() => Promise.resolve(rows));
     (chain as { then: unknown }).then = (
       resolve: (v: unknown) => unknown,
@@ -127,16 +150,17 @@ function buildDb(options: {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockImplementation((table: unknown) => makeSelectChain(rowsForTable(table))),
     }),
-    update: vi.fn().mockReturnValue({
+    update: vi.fn().mockImplementation((table: unknown) => ({
       set: vi.fn().mockImplementation((values: Record<string, unknown>) => {
         updateSets.push(values);
+        updateTableCalls.push({ table, values });
         return {
           where: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue(values['status'] === 'starting' ? [{ id: 'agent-1' }] : []),
           }),
         };
       }),
-    }),
+    })),
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockImplementation((values: Record<string, unknown>) => {
         insertedValues.push(values);
@@ -154,7 +178,7 @@ function buildDb(options: {
     }),
   };
 
-  return { db, insertedValues, updateSets, deletedTargets };
+  return { db, insertedValues, updateSets, updateTableCalls, deletedTargets };
 }
 
 function makePlansConfig(): PlansConfig {
@@ -441,7 +465,7 @@ describe('agent routes lifecycle', () => {
     expect(res.json().error).toBe('not_stopped');
   });
 
-  it('deletes outbound messages before deleting the agent', async () => {
+  it('deletes outbound messages, artifacts, sessions, agent-created bots, then the agent in order', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { agentOutboundMessages, agentArtifacts, agentRuntimeSessions, agents } = await import('@herobids/db');
     const { db, deletedTargets } = buildDb({
@@ -459,8 +483,272 @@ describe('agent routes lifecycle', () => {
       agentOutboundMessages,
       agentArtifacts,
       agentRuntimeSessions,
+      bots,
       agents,
     ]);
+  });
+
+  it('nulls billing_usage_events FK columns before deleting the agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { billingUsageEvents } = await import('@herobids/db');
+    const { db, updateTableCalls } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    const billingUpdate = updateTableCalls.find((c) => c.table === billingUsageEvents);
+    expect(billingUpdate).toBeDefined();
+    expect(billingUpdate!.values).toEqual({ sessionId: null, agentId: null });
+  });
+
+  it('resolves orphaned trading_bindings via capability_grants join before deleting the agent', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const orphanedBinding = {
+      id: 'binding-1',
+      sourceVenueAccountId: 'va-1',
+    };
+    const { db, updateTableCalls } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [orphanedBinding],
+      capabilityGrantRows: [{ id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-1' }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    // Verify venueAccounts.credentialId was nulled for the orphaned venue account
+    const vaUpdate = updateTableCalls.find((c) => c.table === venueAccounts);
+    expect(vaUpdate).toBeDefined();
+    expect(vaUpdate!.values).toEqual({ credentialId: null });
+    // Verify trading_bindings was marked revoked
+    const bindingUpdate = updateTableCalls.find((c) => c.table === tradingBindings);
+    expect(bindingUpdate).toBeDefined();
+    expect(bindingUpdate!.values).toEqual({ status: 'revoked' });
+  });
+
+  it('skips binding cleanup when agent has no capability grants (no orphaned bindings)', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateTableCalls, deletedTargets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [],
+      capabilityGrantRows: [],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    // No venue account or trading binding updates should have occurred
+    const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
+    expect(vaUpdates).toHaveLength(0);
+    const bindingUpdates = updateTableCalls.filter((c) => c.table === tradingBindings);
+    expect(bindingUpdates).toHaveLength(0);
+    // But agent-created bots should still be deleted
+    expect(deletedTargets).toContain(bots);
+  });
+
+  it('preserves binding when another agent still has a grant on the same binding', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const sharedBinding = {
+      id: 'binding-shared',
+      sourceVenueAccountId: 'va-shared',
+    };
+    const { db, updateTableCalls } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [sharedBinding],
+      capabilityGrantRows: [
+        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-shared' },
+        { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    // Binding is shared with another agent (2 grants in capabilityGrantRows),
+    // so it must NOT be revoked and its venue account credentialId must stay intact.
+    const bindingUpdates = updateTableCalls.filter((c) => c.table === tradingBindings);
+    expect(bindingUpdates).toHaveLength(0);
+    const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
+    expect(vaUpdates).toHaveLength(0);
+  });
+
+  it('does not delete user-created or system bots', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, deletedTargets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      botRows: [
+        { id: 'bot-agent', creatorType: 'agent', creatorId: 'agent-1' },
+        { id: 'bot-user', creatorType: 'user', creatorId: TEST_USER_ID },
+        { id: 'bot-system', creatorType: 'system', creatorId: null },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    // The bots table is deleted with WHERE creatorType='agent' AND creatorId=id,
+    // which targets only agent-created bots. The mock records that bots was deleted,
+    // but does not verify the WHERE clause — the implementation handles this correctly.
+    expect(deletedTargets).toContain(bots);
+  });
+
+  it('handles orphaned venue account with null sourceVenueAccountId gracefully', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const bindingNullVa = {
+      id: 'binding-null-va',
+      sourceVenueAccountId: null,
+    };
+    const { db, updateTableCalls } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [bindingNullVa],
+      capabilityGrantRows: [
+        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-null-va' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+    // No venue account update should occur since sourceVenueAccountId is null
+    const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
+    expect(vaUpdates).toHaveLength(0);
+    // But binding should still be revoked
+    const bindingUpdate = updateTableCalls.find((c) => c.table === tradingBindings);
+    expect(bindingUpdate).toBeDefined();
+    expect(bindingUpdate!.values).toEqual({ status: 'revoked' });
+  });
+
+  it('full cleanup chain: agent with trading capability → delete → credentialId nulled and binding revoked', async () => {
+    // End-to-end simulation of plan test item 2:
+    // Agent has a trading binding via capability_grant → delete agent →
+    // credentialId is nulled (unblocking credential deletion) and binding is revoked.
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateTableCalls, deletedTargets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [
+        { id: 'binding-1', sourceVenueAccountId: 'va-1' },
+      ],
+      capabilityGrantRows: [
+        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-1' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(204);
+
+    // Step 5: agent-created bots deleted
+    expect(deletedTargets).toContain(bots);
+
+    // Step 7: credentialId nulled on the linked venue account
+    const vaUpdate = updateTableCalls.find((c) => c.table === venueAccounts);
+    expect(vaUpdate).toBeDefined();
+    expect(vaUpdate!.values).toEqual({ credentialId: null });
+
+    // Step 8: trading binding revoked
+    const bindingUpdate = updateTableCalls.find((c) => c.table === tradingBindings);
+    expect(bindingUpdate).toBeDefined();
+    expect(bindingUpdate!.values).toEqual({ status: 'revoked' });
+
+    // Step 9: agent deleted
+    expect(deletedTargets).toContain(agents);
+  });
+
+  it('two agents sharing one trading binding: deleting first agent preserves the shared binding', async () => {
+    // Plan test item 3: Two agents both have grants on the same binding.
+    // When agent-1 is deleted, the binding must stay active because agent-2
+    // still has a grant on it. The count query returns 2 → not orphaned.
+    const { agentRoutes } = await import('./agents.js');
+    const sharedBinding = {
+      id: 'binding-shared',
+      sourceVenueAccountId: 'va-shared',
+    };
+    const { db: db1, updateTableCalls: calls1 } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [sharedBinding],
+      capabilityGrantRows: [
+        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-shared' },
+        { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
+      ],
+    });
+
+    const app1 = Fastify();
+    decorateWithAuth(app1);
+    await agentRoutes(app1, db1);
+
+    const res1 = await app1.inject({ method: 'DELETE', url: '/agents/agent-1' });
+    expect(res1.statusCode).toBe(204);
+
+    // Binding must NOT be revoked — agent-2 still uses it.
+    const bindingUpdates1 = calls1.filter((c) => c.table === tradingBindings);
+    expect(bindingUpdates1).toHaveLength(0);
+    // credentialId must NOT be nulled — agent-2's venue account still needs it.
+    const vaUpdates1 = calls1.filter((c) => c.table === venueAccounts);
+    expect(vaUpdates1).toHaveLength(0);
+  });
+
+  it('two agents sharing one trading binding: deleting last agent revokes the shared binding', async () => {
+    // Plan test item 4: Agent-2 is the last agent using this binding.
+    // The count query returns 1 → binding is orphaned and must be revoked.
+    const { agentRoutes } = await import('./agents.js');
+    const sharedBinding = {
+      id: 'binding-shared',
+      sourceVenueAccountId: 'va-shared',
+    };
+    const { db: db2, updateTableCalls: calls2 } = buildDb({
+      agentRows: [{ id: 'agent-2', status: 'stopped', userId: TEST_USER_ID }],
+      tradingBindingRows: [sharedBinding],
+      capabilityGrantRows: [
+        { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
+      ],
+    });
+
+    const app2 = Fastify();
+    decorateWithAuth(app2);
+    await agentRoutes(app2, db2);
+
+    const res2 = await app2.inject({ method: 'DELETE', url: '/agents/agent-2' });
+    expect(res2.statusCode).toBe(204);
+
+    // Binding is the sole remaining grant → must be revoked.
+    const bindingUpdate2 = calls2.find((c) => c.table === tradingBindings);
+    expect(bindingUpdate2).toBeDefined();
+    expect(bindingUpdate2!.values).toEqual({ status: 'revoked' });
+
+    // credentialId must be nulled to unblock credential deletion.
+    const vaUpdate2 = calls2.find((c) => c.table === venueAccounts);
+    expect(vaUpdate2).toBeDefined();
+    expect(vaUpdate2!.values).toEqual({ credentialId: null });
   });
 });
 

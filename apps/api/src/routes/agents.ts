@@ -22,6 +22,7 @@ import {
   skillUsageEvents,
   skills,
   tradingBindings,
+  venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { AgentRiskDefaultsSchema, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig } from '@herobids/domain';
@@ -781,16 +782,61 @@ export async function agentRoutes(
       );
     }
 
-    // Delete the agent — explicitly cascade-delete child rows before the parent.
-    // billing_usage_events.agent_id and .session_id both have ON DELETE NO ACTION —
-    // null them both out to preserve billing history while removing FK constraints.
+    // Agent deletion cleanup — execution order resolves all FK chains.
+    // See docs/features/2026/06/20/003-agent-deletion-cleanup/001-plan.md.
+    // 1-3. DELETE agent-scoped child rows (explicit)
+    await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
+    await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
+    await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
+    // 4. NULL billing_usage_events refs (ON DELETE NO ACTION → preserve history)
     await db
       .update(billingUsageEvents)
       .set({ sessionId: null, agentId: null })
       .where(eq(billingUsageEvents.agentId, id));
-    await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
-    await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
-    await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
+    // 5. DELETE agent-created bots (must precede binding/venue_account cleanup)
+    await db.delete(bots).where(
+      and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)),
+    );
+    // 6. RESOLVE orphaned trading_bindings. Only revoke when this agent is the
+    //    sole grant holder — shared bindings with other active agents stay active.
+    //    Per-binding grant-count queries (N+1). Acceptable: agents rarely have
+    //    more than a handful of trading bindings. If that changes, replace with
+    //    a single GROUP BY / HAVING count(*) = 1 query.
+    const agentBindings = await db
+      .select({ id: tradingBindings.id, sourceVenueAccountId: tradingBindings.sourceVenueAccountId })
+      .from(tradingBindings)
+      .innerJoin(capabilityGrants, eq(capabilityGrants.bindingId, tradingBindings.id))
+      .where(eq(capabilityGrants.agentId, id));
+    const orphanedBindings: typeof agentBindings = [];
+    for (const binding of agentBindings) {
+      const allGrants = await db
+        .select()
+        .from(capabilityGrants)
+        .where(eq(capabilityGrants.bindingId, binding.id));
+      if (allGrants.length === 1) {
+        orphanedBindings.push(binding);
+      }
+    }
+    // 7. NULL venue_accounts.credentialId on orphaned venue accounts (unblocks credential deletion).
+    // 8. MARK orphaned trading_bindings as revoked (preserves audit trail).
+    if (orphanedBindings.length > 0) {
+      const orphanedVenueAccountIds = [...new Set(
+        orphanedBindings
+          .map((b) => b.sourceVenueAccountId)
+          .filter((vaId): vaId is string => vaId !== null),
+      )];
+      if (orphanedVenueAccountIds.length > 0) {
+        await db
+          .update(venueAccounts)
+          .set({ credentialId: null })
+          .where(inArray(venueAccounts.id, orphanedVenueAccountIds));
+      }
+      await db
+        .update(tradingBindings)
+        .set({ status: 'revoked' })
+        .where(inArray(tradingBindings.id, orphanedBindings.map((b) => b.id)));
+    }
+    // 9. DELETE agents (cascades: agent_skills, agent_credentials, capability_grants, capability_grant_audit)
     await db.delete(agents).where(eq(agents.id, id));
 
     // Signal the worker to stop and remove the Docker container for this agent.

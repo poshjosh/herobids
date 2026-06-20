@@ -412,7 +412,7 @@ export function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function ErrorBanner({ message }: { message: string }) {
+export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
   return (
     <div
       style={{
@@ -423,9 +423,31 @@ export function ErrorBanner({ message }: { message: string }) {
         color: 'var(--color-danger)',
         fontSize: '13px',
         marginBottom: '16px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '10px',
       }}
     >
-      {message}
+      <span style={{ flex: 1 }}>{message}</span>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--color-danger)',
+            cursor: 'pointer',
+            fontSize: '16px',
+            lineHeight: 1,
+            padding: '0 2px',
+            opacity: 0.7,
+          }}
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

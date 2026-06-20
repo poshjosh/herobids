@@ -2,7 +2,7 @@ import { useIntl } from 'react-intl';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { FieldDefinition, ProviderDefinition } from '@herobids/domain';
-import { credentials as credentialsApi, providerCatalog as providerCatalogApi } from '../../lib/api-client.js';
+import { credentials as credentialsApi, providerCatalog as providerCatalogApi, ApiError } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 import { formatShortDate } from '../../lib/formatting.js';
@@ -46,6 +46,7 @@ function findProviderDisplayName(providers: readonly ProviderDefinition[] | unde
 export function CredentialsPage() {
   const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -60,7 +61,19 @@ export function CredentialsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => credentialsApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['credentials'] }),
+    onSuccess: () => {
+      setDeleteError(null);
+      void qc.invalidateQueries({ queryKey: ['credentials'] });
+    },
+    onError: (error: ApiError) => {
+      if (error.code === 'credential_in_use') {
+        setDeleteError(intl.formatMessage({ id: 'credentials.deleteBlocked' }, {
+          venueAccounts: (error.params?.blockingVenueAccountIds as string[])?.join(', ') ?? '',
+          bots: (error.params?.blockingBotIds as string[])?.join(', ') ?? '',
+          connections: (error.params?.blockingConnectionIds as string[])?.join(', ') ?? '',
+        }));
+      }
+    },
   });
 
   const items = query.data?.credentials ?? [];
@@ -72,6 +85,8 @@ export function CredentialsPage() {
         subtitle={intl.formatMessage({ id: 'credentials.subtitle' })}
         action={<Button variant="primary" onClick={() => setShowCreate(true)}>{intl.formatMessage({ id: 'credentials.addButton' })}</Button>}
       />
+
+      {deleteError && <ErrorBanner message={deleteError} onDismiss={() => setDeleteError(null)} />}
 
       {query.isLoading && <LoadingRows count={3} />}
       {query.isError && <ErrorState message={localizeApiError(intl, query.error, 'common.errorTitle')} onRetry={() => void query.refetch()} />}
