@@ -855,14 +855,18 @@ const runtime = new WorkerRuntime(
       );
     }
     const config = parseResult.data;
+    // venue and venueType are stamped by the broker before persistence — always
+    // present at runtime for any bot that reaches this reclaim path.
+    const venue = config.venue!;
+    const venueType = config.venueType!;
 
     const startupContext = await resolveBotStartupContext({
       db,
       botRepo,
       botId,
       rawConfig,
-      venue: config.venue,
-      venueType: config.venueType,
+      venue,
+      venueType,
     });
 
     const venueAccountId = startupContext.sourceVenueAccountId;
@@ -884,10 +888,10 @@ const runtime = new WorkerRuntime(
     let swapConfirmationPoller: import('@herobids/venues').SwapConfirmationPoller | undefined;
 
     // Resolve adapters via shared factory
-    if (config.venueType !== 'swap') {
+    if (venueType !== 'swap') {
       const result = await venueAdapterFactory.buildOrderbookAdapter({
         venueAccountId: resolvedVenueAccountId,
-        venue: config.venue,
+        venue,
         actorType: 'bot',
         actorId: botId,
         executionMode: config.execution.mode,
@@ -899,7 +903,7 @@ const runtime = new WorkerRuntime(
     } else if (config.swapAssets) {
       const result = await venueAdapterFactory.buildSwapAdapter({
         venueAccountId: resolvedVenueAccountId,
-        venue: config.venue,
+        venue,
         swapAssets: config.swapAssets,
         actorType: 'bot',
         actorId: botId,
@@ -916,8 +920,8 @@ const runtime = new WorkerRuntime(
     // --- Live-mode startup gate (fail-closed) ---
     const liveGateResult = assertLiveReadiness(appConfig.liveRollout, {
       executionMode: config.execution.mode,
-      venue: config.venue,
-      venueType: config.venueType,
+      venue,
+      venueType,
       venueAccountId: resolvedVenueAccountId,
       credentialsFromDb: !!resolvedCredentialId,
       credentialsPresent,
@@ -947,11 +951,11 @@ const runtime = new WorkerRuntime(
     let recordReferenceMark: TradingActorDeps['recordReferenceMark'];
 
     if (appConfig.marketDataRecording.enabled) {
-      const recorder = new MarketDataRecorder(config.venue);
+      const recorder = new MarketDataRecorder(venue);
       const corpusId = await backtestingRepo.insertCorpus({
         name: `${botId}-${new Date().toISOString()}`,
         source: 'live-recording',
-        venue: config.venue,
+        venue,
         symbols: [config.symbol],
         userId: instanceUserId,
         metadata: {
@@ -1000,14 +1004,14 @@ const runtime = new WorkerRuntime(
       };
     }
 
-    const swapNetwork = config.venueType !== 'swap'
+    const swapNetwork = venueType !== 'swap'
       ? undefined
-      : config.venue === 'jupiter'
+      : venue === 'jupiter'
         ? 'solana'
         : appConfig.venues['1inch']?.tokenSafetyNetwork
           ?? inferOneInchTokenSafetyNetwork(appConfig.venues['1inch']?.chainId);
 
-    if (config.venueType === 'swap' && config.venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !swapNetwork) {
+    if (venueType === 'swap' && venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !swapNetwork) {
       throw new CredentialResolutionError(
         `Unsupported 1inch chainId ${String(appConfig.venues['1inch']?.chainId)} for token safety on bot ${botId}`,
       );
@@ -1019,7 +1023,7 @@ const runtime = new WorkerRuntime(
           swapNetwork != null
             ? { config: sharedMarketDataRegistry.configs.geckoterminal, network: swapNetwork }
             : null,
-          config.venueType === 'swap' ? 'swap' : 'orderbook',
+          venueType === 'swap' ? 'swap' : 'orderbook',
         )
       : undefined;
 
@@ -1052,16 +1056,16 @@ const runtime = new WorkerRuntime(
       reconciliationConfig,
       executionMode: config.execution.mode,
       streamConfig,
-      venue: config.venue,
+      venue,
       symbol: config.symbol,
       venueAccountId: resolvedVenueAccountId,
-      venueType: config.venueType,
+      venueType,
       swapAssets: config.swapAssets,
       swapNetwork,
-      swapBaseTokenAddress: config.venueType === 'swap' ? config.swapAssets?.baseAsset : undefined,
+      swapBaseTokenAddress: venueType === 'swap' ? config.swapAssets?.baseAsset : undefined,
       swapVenue,
-      streamPool: config.venueType !== 'swap'
-        ? createScopedStreamPoolHandle(publicStreamPool, config.venue, testnet)
+      streamPool: venueType !== 'swap'
+        ? createScopedStreamPoolHandle(publicStreamPool, venue, testnet)
         : undefined,
       markSource: new MarkSelector(
         { stalenessThresholdMs: appConfig.marking.stalenessThresholdMs },

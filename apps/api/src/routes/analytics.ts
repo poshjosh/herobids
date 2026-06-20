@@ -96,7 +96,7 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
   if (query.decisionModes && query.decisionModes.length > 0) {
     const modeSet = new Set(query.decisionModes);
     targetMeta = targetMeta.filter((b) =>
-      b.decisionMode !== null && modeSet.has(b.decisionMode)
+      b.decisionMode !== null && modeSet.has(b.decisionMode as 'mechanical' | 'llm' | 'hybrid')
     );
   }
 
@@ -104,7 +104,7 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
   if (query.executionModes && query.executionModes.length > 0) {
     const modeSet = new Set(query.executionModes);
     targetMeta = targetMeta.filter((b) =>
-      b.executionMode !== null && modeSet.has(b.executionMode)
+      b.executionMode !== null && modeSet.has(b.executionMode as 'paper' | 'shadow' | 'live')
     );
   }
 
