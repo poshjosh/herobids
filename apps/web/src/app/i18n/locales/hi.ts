@@ -239,6 +239,8 @@ export const messages: Record<string, string> = {
   'credentials.idLabel': 'आईडी: {id}',
   'credentials.addedDate': '{date} को जोड़ा गया',
   'credentials.deleteConfirm': 'क्रेडेंशियल "{label}" हटाएँ?',
+  'credentials.deleteBlocked': 'क्रेडेंशियल हटा नहीं सकते। अभी भी संदर्भित: वेन्यू अकाउंट: {venueAccounts}; बॉट: {bots}; कनेक्शन: {connections}; एजेंट क्रेडेंशियल: {agentCredentials}. पहले इन्हें हटाएँ।',
+  'credentials.deleteFailed': 'क्रेडेंशियल हटाने में विफल। कृपया पुनः प्रयास करें।',
   'credentials.modal.title': 'प्रदाता क्रेडेंशियल जोड़ें',
   'credentials.modal.provider': 'प्रदाता',
   'credentials.modal.providerPlaceholder': 'उदा. hyperliquid, gmail, n8n',
@@ -250,6 +252,10 @@ export const messages: Record<string, string> = {
   'credentials.modal.addSecret': 'सीक्रेट जोड़ें',
   'credentials.modal.saving': 'सहेजा जा रहा है…',
   'credentials.modal.save': 'प्रदाता क्रेडेंशियल सहेजें',
+
+  // Venue Accounts
+  'venueAccounts.deleteBlocked': 'वेन्यू अकाउंट हटा नहीं सकते — अभी भी बॉट द्वारा संदर्भित: {blockingBotIds}. पहले इन्हें हटाएँ।',
+  'venueAccounts.deleteFailed': 'वेन्यू अकाउंट हटाने में विफल। कृपया पुनः प्रयास करें।',
 
   // Agents
   'agents.title': 'AI एजेंट',

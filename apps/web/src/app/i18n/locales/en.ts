@@ -239,6 +239,8 @@ export const messages: Record<string, string> = {
   'credentials.idLabel': 'ID: {id}',
   'credentials.addedDate': 'Added {date}',
   'credentials.deleteConfirm': 'Delete credential "{label}"?',
+  'credentials.deleteBlocked': 'Cannot delete credential. Still referenced by: venue accounts: {venueAccounts}; bots: {bots}; connections: {connections}; agent credentials: {agentCredentials}. Remove these first.',
+  'credentials.deleteFailed': 'Failed to delete credential. Please try again.',
   'credentials.modal.title': 'Add provider credential',
   'credentials.modal.provider': 'Provider',
   'credentials.modal.providerPlaceholder': 'e.g. hyperliquid, gmail, n8n',
@@ -250,6 +252,10 @@ export const messages: Record<string, string> = {
   'credentials.modal.addSecret': 'Add secret',
   'credentials.modal.saving': 'Saving…',
   'credentials.modal.save': 'Save provider credential',
+
+  // Venue Accounts
+  'venueAccounts.deleteBlocked': 'Cannot delete venue account — still referenced by bots: {blockingBotIds}. Remove these first.',
+  'venueAccounts.deleteFailed': 'Failed to delete venue account. Please try again.',
 
   // Agents
   'agents.title': 'AI Agents',

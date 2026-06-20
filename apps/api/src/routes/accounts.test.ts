@@ -54,6 +54,9 @@ function buildMockDb() {
         };
       }),
     })),
+    delete: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
   } as any;
 }
 
@@ -376,5 +379,151 @@ describe('POST /venue-accounts credential validation', () => {
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('credential.not_found');
+  });
+});
+
+describe('DELETE /venue-accounts/:id', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    credentialLookupResult = [];
+  });
+
+  it('returns 404 when venue account not found', async () => {
+    credentialLookupResult = [];
+    const app = Fastify();
+    const db = buildMockDb();
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/venue-accounts/missing-id',
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('not_found');
+  });
+
+  it('deletes venue account successfully when no bots reference it', async () => {
+    // Override select to control return values for the delete path
+    const selectMock = vi.fn();
+    // 1st select: find account
+    selectMock.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 'va-1', label: 'Test', venue: 'hyperliquid', credentialId: null }]),
+      }),
+    });
+    // 2nd select: pre-check bots (returns none)
+    selectMock.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    // Remaining selects: no-op
+    selectMock.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    });
+
+    const app = Fastify();
+    const db = buildMockDb();
+    db.select = selectMock;
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/venue-accounts/va-1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.status).toBe('deleted');
+    expect(body.venueAccountId).toBe('va-1');
+  });
+
+  it('returns 409 when bots reference the venue account', async () => {
+    const selectMock = vi.fn();
+    // 1st select: find account
+    selectMock.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 'va-1', label: 'Test', venue: 'hyperliquid', credentialId: null }]),
+      }),
+    });
+    // 2nd select: pre-check bots (returns blocking bot)
+    selectMock.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 'bot-1' }]),
+      }),
+    });
+    selectMock.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    });
+
+    const app = Fastify();
+    const db = buildMockDb();
+    db.select = selectMock;
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/venue-accounts/va-1',
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('venue_account_in_use');
+    expect(body.blockingBotIds).toEqual(['bot-1']);
+  });
+
+  it('returns 409 on FK violation during concurrent link (race condition)', async () => {
+    const selectMock = vi.fn();
+    // 1st select: find account
+    selectMock.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 'va-1', label: 'Test', venue: 'hyperliquid', credentialId: null }]),
+      }),
+    });
+    // 2nd select: pre-check bots (passes — no bots yet)
+    selectMock.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    // 3rd+ selects: catch block re-queries bots (finds the raced-in bot)
+    selectMock.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 'bot-raced' }]),
+      }),
+    });
+
+    const app = Fastify();
+    const db = buildMockDb();
+    db.select = selectMock;
+
+    // Override delete to throw FK violation (bot linked between pre-check and delete)
+    const fkError = new Error('update or delete on table "venue_accounts" violates foreign key constraint') as Error & { code: string };
+    fkError.code = '23503';
+    db.delete = vi.fn().mockReturnValue({
+      where: vi.fn().mockRejectedValue(fkError),
+    });
+
+    decorateWithAuth(app);
+    await venueAccountRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/venue-accounts/va-1',
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('venue_account_in_use');
+    expect(body.blockingBotIds).toEqual(['bot-raced']);
   });
 });

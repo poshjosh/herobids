@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts, userCredentials } from '@herobids/db';
+import { venueAccounts, userCredentials, bots } from '@herobids/db';
 import type { AppConfig, PlansConfig } from '@herobids/domain';
 import { HyperliquidAdapter } from '@herobids/venues';
 import { JupiterSwapAdapter, OneInchSwapAdapter } from '@herobids/venues';
@@ -176,5 +176,55 @@ export async function venueAccountRoutes(
   app.get('/venue-accounts', async (request, reply) => {
     const accounts = await db.select().from(venueAccounts).where(eq(venueAccounts.userId, request.userId));
     return reply.send({ venueAccounts: accounts });
+  });
+
+  // Delete venue account
+  app.delete<{ Params: { id: string } }>('/venue-accounts/:id', async (request, reply) => {
+    const { id } = request.params;
+
+    const [account] = await db
+      .select({ id: venueAccounts.id, label: venueAccounts.label, venue: venueAccounts.venue, credentialId: venueAccounts.credentialId })
+      .from(venueAccounts)
+      .where(and(eq(venueAccounts.id, id), eq(venueAccounts.userId, request.userId)));
+
+    if (!account) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    // Block deletion if any bots reference this venue account.
+    // bots.venueAccountId has ON DELETE RESTRICT — must check before attempting delete.
+    const blockingBots = await db
+      .select({ id: bots.id })
+      .from(bots)
+      .where(eq(bots.venueAccountId, id));
+
+    if (blockingBots.length > 0) {
+      return reply.status(409).send({
+        error: 'venue_account_in_use',
+        venueAccountId: id,
+        blockingBotIds: blockingBots.map((b) => b.id),
+      });
+    }
+
+    try {
+      await db.delete(venueAccounts).where(eq(venueAccounts.id, id));
+    } catch (err: unknown) {
+      // FK violation — bot linked between pre-check and delete
+      const pgErr = err as { code?: string };
+      if (pgErr.code === '23503') {
+        const concurrentBots = await db
+          .select({ id: bots.id })
+          .from(bots)
+          .where(eq(bots.venueAccountId, id));
+        return reply.status(409).send({
+          error: 'venue_account_in_use',
+          venueAccountId: id,
+          blockingBotIds: concurrentBots.map((b) => b.id),
+        });
+      }
+      throw err;
+    }
+
+    return reply.send({ status: 'deleted', venueAccountId: id });
   });
 }

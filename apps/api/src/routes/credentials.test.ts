@@ -71,7 +71,7 @@ vi.mock('@herobids/engine', () => ({
   credentialDeletedEvent: vi.fn((payload) => ({ type: 'credential.deleted', payload })),
 }));
 
-const mockFindCredentialDependents = vi.fn().mockResolvedValue({ venueAccountIds: [], runningInstanceIds: [], activeConnectionIds: [] });
+const mockFindCredentialDependents = vi.fn().mockResolvedValue({ venueAccountIds: [], runningInstanceIds: [], activeConnectionIds: [], blockingAgentCredentials: [] });
 
 vi.mock('../credential-dependents.js', () => ({
   findCredentialDependents: (...args: unknown[]) => mockFindCredentialDependents(...args),
@@ -496,6 +496,7 @@ describe('credential audit events', () => {
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1', 'inst-2'],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
 
       const app = Fastify();
@@ -533,6 +534,7 @@ describe('credential audit events', () => {
         venueAccountIds: ['va-1'],
         runningInstanceIds: [],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
 
       const app = Fastify();
@@ -630,6 +632,7 @@ describe('credential audit events', () => {
         venueAccountIds: [],
         runningInstanceIds: [],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
 
       const app = Fastify();
@@ -659,6 +662,7 @@ describe('credential audit events', () => {
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1'],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
 
       const app = Fastify();
@@ -677,6 +681,40 @@ describe('credential audit events', () => {
       expect(body.credentialId).toBe('cred-3');
       expect(body.blockingVenueAccountIds).toEqual(['va-1', 'va-2']);
       expect(body.blockingBotIds).toEqual(['inst-1']);
+
+      // Must not delete the row
+      expect(deleteWasCalled).toBe(false);
+      // Must not emit audit event
+      expect(mockJournalAppend).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when agent credentials still reference the credential', async () => {
+      mockDbRows = [{ id: 'cred-ac', venue: 'hyperliquid', userId: TEST_USER_ID }];
+      mockFindCredentialDependents.mockResolvedValueOnce({
+        venueAccountIds: [],
+        runningInstanceIds: [],
+        activeConnectionIds: [],
+        blockingAgentCredentials: [{ id: 'ac-1', label: 'My Trading Agent' }, { id: 'ac-2', label: null }],
+      });
+
+      const app = Fastify();
+      const db = buildMockDb();
+      decorateWithAuth(app);
+      await credentialRoutes(app, buildMockQueue(), db);
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/credentials/cred-ac',
+      });
+
+      expect(res.statusCode).toBe(409);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('credential_in_use');
+      expect(body.credentialId).toBe('cred-ac');
+      expect(body.blockingAgentCredentials).toEqual([
+        { id: 'ac-1', label: 'My Trading Agent' },
+        { id: 'ac-2', label: null },
+      ]);
 
       // Must not delete the row
       expect(deleteWasCalled).toBe(false);
@@ -707,6 +745,7 @@ describe('credential audit events', () => {
         venueAccountIds: [],
         runningInstanceIds: [],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
 
       const app = Fastify();
@@ -722,6 +761,7 @@ describe('credential audit events', () => {
         venueAccountIds: ['va-raced'],
         runningInstanceIds: [],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
       decorateWithAuth(app);
       await credentialRoutes(app, buildMockQueue(), db);
@@ -746,6 +786,7 @@ describe('credential audit events', () => {
         venueAccountIds: ['va-1'],
         runningInstanceIds: ['inst-1', 'inst-2'],
         activeConnectionIds: [],
+        blockingAgentCredentials: [],
       });
 
       const app = Fastify();

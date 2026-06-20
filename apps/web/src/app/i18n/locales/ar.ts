@@ -239,6 +239,8 @@ export const messages: Record<string, string> = {
   'credentials.idLabel': 'المعرّف: {id}',
   'credentials.addedDate': 'أضيفت {date}',
   'credentials.deleteConfirm': 'حذف بيانات الاعتماد "{label}"؟',
+  'credentials.deleteBlocked': 'لا يمكن حذف بيانات الاعتماد. لا تزال مستخدمة من قبل: حسابات المنصة: {venueAccounts}؛ الروبوتات: {bots}؛ الاتصالات: {connections}؛ بيانات اعتماد الوكيل: {agentCredentials}. قم بإزالتها أولاً.',
+  'credentials.deleteFailed': 'فشل حذف بيانات الاعتماد. يرجى المحاولة مرة أخرى.',
   'credentials.modal.title': 'إضافة بيانات اعتماد',
   'credentials.modal.provider': 'المزوّد',
   'credentials.modal.providerPlaceholder': 'مثلاً hyperliquid أو gmail أو n8n',
@@ -250,6 +252,10 @@ export const messages: Record<string, string> = {
   'credentials.modal.addSecret': 'إضافة سر',
   'credentials.modal.saving': 'جارٍ الحفظ…',
   'credentials.modal.save': 'حفظ بيانات الاعتماد',
+
+  // Venue Accounts
+  'venueAccounts.deleteBlocked': 'لا يمكن حذف حساب المنصة — لا يزال مستخدمًا من قبل البوتات: {blockingBotIds}. قم بإزالتها أولاً.',
+  'venueAccounts.deleteFailed': 'فشل حذف حساب المنصة. يرجى المحاولة مرة أخرى.',
 
   // Agents
   'agents.title': 'وكلاء الذكاء الاصطناعي',

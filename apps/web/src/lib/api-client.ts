@@ -502,6 +502,7 @@ export const venueAccounts = {
   list: () => request<{ venueAccounts: VenueAccount[] }>('/venue-accounts'),
   create: (data: { venue: string; label: string; venueAccountRef?: string; credentialId?: string }) =>
     request<VenueAccount>('/venue-accounts', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/venue-accounts/${id}`, { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------

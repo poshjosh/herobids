@@ -71,7 +71,13 @@ export function CredentialsPage() {
           venueAccounts: (error.params?.blockingVenueAccountIds as string[])?.join(', ') ?? '',
           bots: (error.params?.blockingBotIds as string[])?.join(', ') ?? '',
           connections: (error.params?.blockingConnectionIds as string[])?.join(', ') ?? '',
+          agentCredentials: ((error.params?.blockingAgentCredentials as Array<{ id: string; label: string | null }>) ?? [])
+            .map((ac) => ac.label ?? ac.id)
+            .join(', ') || 'none',
         }));
+      } else {
+        // Catch-all: surface any unexpected error to the user
+        setDeleteError(intl.formatMessage({ id: 'credentials.deleteFailed' }));
       }
     },
   });

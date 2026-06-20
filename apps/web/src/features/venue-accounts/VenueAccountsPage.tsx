@@ -1,6 +1,7 @@
+import { useIntl } from 'react-intl';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { venueAccounts as venueAccountsApi, credentials as credentialsApi } from '../../lib/api-client.js';
+import { venueAccounts as venueAccountsApi, credentials as credentialsApi, ApiError } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
 
@@ -10,12 +11,33 @@ const JUPITER_VENUES = ['jupiter'];  // resolved via venueAccountRef (wallet add
 const ONEINCH_VENUES = ['1inch'];    // resolved via DB credential (privateKey + apiKey)
 
 export function VenueAccountsPage() {
+  const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: ['venue-accounts'],
     queryFn: () => venueAccountsApi.list(),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => venueAccountsApi.delete(id),
+    onSuccess: () => {
+      setDeleteError(null);
+      void qc.invalidateQueries({ queryKey: ['venue-accounts'] });
+    },
+    onError: (error: ApiError) => {
+      if (error.code === 'venue_account_in_use') {
+        setDeleteError(
+          intl.formatMessage({ id: 'venueAccounts.deleteBlocked' }, {
+            blockingBotIds: (error.params?.blockingBotIds as string[])?.join(', ') ?? 'none',
+          })
+        );
+      } else {
+        setDeleteError(intl.formatMessage({ id: 'venueAccounts.deleteFailed' }));
+      }
+    },
   });
 
   const items = query.data?.venueAccounts ?? [];
@@ -27,6 +49,8 @@ export function VenueAccountsPage() {
         subtitle="Advanced venue accounts and wallets used by trading capability bindings"
         action={<Button variant="primary" onClick={() => setShowCreate(true)}>Add trading account</Button>}
       />
+
+      {deleteError && <ErrorBanner message={deleteError} onDismiss={() => setDeleteError(null)} />}
 
       {query.isLoading && <LoadingRows count={3} />}
       {query.isError && <ErrorState message={(query.error as Error).message} onRetry={() => void query.refetch()} />}
@@ -50,8 +74,22 @@ export function VenueAccountsPage() {
                     {va.venue}{JUPITER_VENUES.includes(va.venue) && va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
                   </div>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {va.credentialId ? 'Credentials linked' : 'No credentials'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    {va.credentialId ? 'Credentials linked' : 'No credentials'}
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Delete venue account "${va.label}"?`)) {
+                        deleteMutation.mutate(va.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </div>
             </Card>
