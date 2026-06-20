@@ -7,6 +7,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.20-a
+
 ### Added
 
 - `extractStrategyFromConfig()` domain helper — type-safe strategy extraction from bot configs
