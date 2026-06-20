@@ -808,7 +808,7 @@ export async function agentRoutes(
     // 5. NULL remaining billing_usage_events refs by agentId (catches events with null sessionId)
     await db
       .update(billingUsageEvents)
-      .set({ agentId: null })
+      .set({ sessionId: null, agentId: null })
       .where(and(eq(billingUsageEvents.agentId, id), isNull(billingUsageEvents.sessionId)));
     // 6. DELETE agent-created bots (must precede binding/venue_account cleanup)
     await db.delete(bots).where(

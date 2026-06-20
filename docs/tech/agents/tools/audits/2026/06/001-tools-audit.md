@@ -136,3 +136,80 @@
 | `list_tasks` | `status` | no | — | Default: "pending" |
 | `complete_task` | `id` | yes | **no** | Must get from list_tasks first |
 | `schedule_reminder` | `message` | yes | **yes** | Agent composes reminder text |
+
+### bots.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `create_bot` | `bindingId` | no | **no** | Must find from Capability Readiness section as "binding=<id>"; omit to use default |
+| `create_bot` | `config.symbol` | yes (nested) | **no** | Agent must discover/choose a symbol |
+| `create_bot` | `config.strategy.type` | yes (nested) | **yes** | Agent picks from: momentum, range, contrarian, swing, scalper, dca |
+| `create_bot` | `config.strategy.decisionMode` | yes (nested) | **yes** | mechanical / llm / hybrid |
+| `create_bot` | `config.strategy.params` | no | — | Optional record; strategy-specific params |
+| `create_bot` | `config.execution.mode` | no | **yes** | paper / shadow / live |
+| `create_bot` | `config.execution.slippageBps` | no | **no** | Agent must estimate or ask; not provided by system |
+| `create_bot` | `config.risk` | no | **no** | Optional record; agent must reason about risk params |
+| `create_bot` | `rationale` | no | **yes** | Agent composes brief rationale (max 500 chars) |
+| `list_bots` | `days` | no | — | Optional filter; returns bots created within N days |
+| `get_bot_status` | `botId` | yes | **no** | Must get from list_bots first |
+| `stop_bot` | `botId` | yes | **no** | Must get from list_bots first |
+| `start_bot` | `botId` | yes | **no** | Must get from list_bots first |
+| `start_bot` | `rationale` | no | **yes** | Brief rationale for restarting (max 500 chars) |
+| `adjust_bot_config` | `botId` | yes | **no** | Must get from list_bots or get_bot_status first |
+| `adjust_bot_config` | `config.strategy.type` | no | **yes** | Partial update; same enum as create_bot |
+| `adjust_bot_config` | `config.strategy.decisionMode` | no | **yes** | Partial update; mechanical / llm / hybrid |
+| `adjust_bot_config` | `config.strategy.params` | no | — | Optional partial strategy params |
+| `adjust_bot_config` | `config.execution.mode` | no | **yes** | paper / shadow / live |
+| `adjust_bot_config` | `config.execution.slippageBps` | no | **no** | Agent must estimate or ask |
+| `adjust_bot_config` | `config.risk` | no | **no** | Optional record; agent must reason about risk params |
+| `adjust_bot_config` | `config.symbol` | no | **no** | Optional symbol override |
+
+### index.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| — | — | — | — | No tools defined; re-exports all tool groups and creates the registry |
+
+### price.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `get_price` | `symbol` | yes | **no** | Agent must reason from market data / user input to pick a token |
+| `get_price` | `chain` | yes | **no** | Must know the chain context; use "any" when unsure — supports hyperliquid, solana, ethereum, bsc, base, arbitrum, polygon, avalanche, any |
+
+### registry.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| — | — | — | — | No tools defined; infrastructure for registration and JSON Schema conversion |
+
+### risk-limits.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `get_risk_limits` | — | no | — | No args; returns effective limits with source, mutability, and operator ceiling |
+| `adjust_risk_limits` | `maxOpenPositions` | no | **no** | Optional; set null to reset to operator default |
+| `adjust_risk_limits` | `maxPositionSizePct` | no | **no** | Optional 0-100; agent must reason about position sizing |
+| `adjust_risk_limits` | `stopLossPct` | no | **no** | Optional 0-100; agent may adjust based on strategy |
+| `adjust_risk_limits` | `stopLossCooldownMs` | no | **no** | Optional; agent may adjust cooldown duration |
+
+### update-own-config.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `update_own_config` | `technical` | no | **no** | Optional; TechnicalConfigSchema or null to remove. Agent may not know valid scanning params |
+| `update_own_config` | `intelligence` | no | **yes** | Optional; IntelligenceConfigSchema or null. Agent knows its own reasoning mode |
+| `update_own_config` | `execution.mode` | no | **yes** | paper / shadow / live; agent may request mode changes (with safety gates) |
+| `update_own_config` | `execution.positionSizeMode` | no | **yes** | fixed / percent_equity; agent chooses sizing approach |
+| `update_own_config` | `execution.fixedPositionSize` | no | **no** | String; agent must compute based on capital |
+| `update_own_config` | `risk.maxPositions` | no | **no** | min 1; agent reasons about concurrency needs |
+| `update_own_config` | `risk.maxPositionSizePct` | no | **no** | 0-100; agent reasons about position sizing |
+| `update_own_config` | `risk.dailyMaxLossPct` | no | **no** | 0-100; agent may adjust based on strategy |
+| `update_own_config` | `risk.stopLossPct` | no | **no** | min 0; agent may adjust stop-loss threshold |
+| `update_own_config` | `risk.takeProfitPct` | no | **no** | min 0; agent may adjust take-profit threshold |
+
+### workspace.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| — | — | — | — | No tools defined; utility functions for workspace path resolution and sandbox management |
