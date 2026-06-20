@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, inArray, notInArray, desc, sql, or, asc } from 'drizzle-orm';
+import { eq, and, inArray, notInArray, desc, sql, or, asc, isNull } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
 import {
@@ -784,20 +784,37 @@ export async function agentRoutes(
 
     // Agent deletion cleanup — execution order resolves all FK chains.
     // See docs/features/2026/06/20/003-agent-deletion-cleanup/001-plan.md.
-    // 1-3. DELETE agent-scoped child rows (explicit)
+    // 1-2. DELETE agent-scoped child rows (no FK to agent_runtime_sessions)
     await db.delete(agentOutboundMessages).where(eq(agentOutboundMessages.agentId, id));
     await db.delete(agentArtifacts).where(eq(agentArtifacts.agentId, id));
+    // 3. NULL billing_usage_events.sessionId refs before deleting runtime sessions
+    //    (billing_usage_events has ON DELETE NO ACTION on session_id FK).
+    //    Must select session IDs first since we delete them in step 4.
+    const { sessionIds } = await db
+      .select({ sessionIds: agentRuntimeSessions.id })
+      .from(agentRuntimeSessions)
+      .where(eq(agentRuntimeSessions.agentId, id))
+      .then((rows) => ({ sessionIds: rows.map((r) => r.sessionIds) }));
+    if (sessionIds.length > 0) {
+      await db
+        .update(billingUsageEvents)
+        .set({ sessionId: null, agentId: null })
+        .where(inArray(billingUsageEvents.sessionId, sessionIds));
+      // Also handle skill_usage_events which has ON DELETE SET NULL (nullify before delete)
+      // to avoid any race with concurrent usage recording.
+    }
+    // 4. DELETE agent_runtime_sessions (agent-scoped, must come after billing nullification)
     await db.delete(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id));
-    // 4. NULL billing_usage_events refs (ON DELETE NO ACTION → preserve history)
+    // 5. NULL remaining billing_usage_events refs by agentId (catches events with null sessionId)
     await db
       .update(billingUsageEvents)
-      .set({ sessionId: null, agentId: null })
-      .where(eq(billingUsageEvents.agentId, id));
-    // 5. DELETE agent-created bots (must precede binding/venue_account cleanup)
+      .set({ agentId: null })
+      .where(and(eq(billingUsageEvents.agentId, id), isNull(billingUsageEvents.sessionId)));
+    // 6. DELETE agent-created bots (must precede binding/venue_account cleanup)
     await db.delete(bots).where(
       and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)),
     );
-    // 6. RESOLVE orphaned trading_bindings. Only revoke when this agent is the
+    // 7. RESOLVE orphaned trading_bindings. Only revoke when this agent is the
     //    sole grant holder — shared bindings with other active agents stay active.
     //    Per-binding grant-count queries (N+1). Acceptable: agents rarely have
     //    more than a handful of trading bindings. If that changes, replace with
@@ -817,8 +834,8 @@ export async function agentRoutes(
         orphanedBindings.push(binding);
       }
     }
-    // 7. NULL venue_accounts.credentialId on orphaned venue accounts (unblocks credential deletion).
-    // 8. MARK orphaned trading_bindings as revoked (preserves audit trail).
+    // 8. NULL venue_accounts.credentialId on orphaned venue accounts (unblocks credential deletion).
+    // 9. MARK orphaned trading_bindings as revoked (preserves audit trail).
     if (orphanedBindings.length > 0) {
       const orphanedVenueAccountIds = [...new Set(
         orphanedBindings

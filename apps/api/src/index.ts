@@ -34,6 +34,37 @@ import { loadConfig } from './config.js';
 import type { LifecycleJob, BacktestJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
 
+// ---------------------------------------------------------------------------
+// Process-level error handlers
+// Without these, Node.js ≥ 16 crashes the process on any unhandled rejection
+// or uncaught exception, which in Docker (restart: unless-stopped) causes a
+// restart loop making the API intermittently unavailable (401 → ECONNREFUSED).
+// ---------------------------------------------------------------------------
+
+process.on('unhandledRejection', (reason: unknown) => {
+  // eslint-disable-next-line no-console
+  console.error('[FATAL] Unhandled Rejection — the process will exit.', reason instanceof Error ? reason.stack : reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error: Error) => {
+  // eslint-disable-next-line no-console
+  console.error('[FATAL] Uncaught Exception — the process will exit.', error.stack);
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  // eslint-disable-next-line no-console
+  console.error('[FATAL] SIGTERM received — the process will exit.');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  // eslint-disable-next-line no-console
+  console.error('[FATAL] SIGINT received — the process will exit.');
+  process.exit(0);
+});
+
 const appConfig = loadConfig();
 
 const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';

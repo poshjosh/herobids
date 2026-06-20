@@ -372,6 +372,17 @@ export class AgentSessionManager {
       } catch (err) {
         logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Failed to launch starting session');
 
+        // Clean up the session and revert agent status so the agent can be retried.
+        // Without this, the session stays in 'launching' and the agent in 'starting'
+        // indefinitely — the health monitor eventually times it out, but the error
+        // is silent and the operator sees an unresponsive agent with no diagnostics.
+        await this.agentRepo.markSessionStopped(session.id, new Date()).catch((cleanupErr: unknown) => {
+          logger.error({ cleanupErr, sessionId: session.id }, 'Failed to mark session stopped after launch failure');
+        });
+        await this.agentRepo.updateAgent(session.agentId, { status: 'stopped' }).catch((cleanupErr: unknown) => {
+          logger.error({ cleanupErr, agentId: session.agentId }, 'Failed to revert agent status after launch failure');
+        });
+
         this.platformAlerts?.fireAlert(PLATFORM_ALERT_EVENTS.EXECUTION_CRITICAL_FAILURE, {
           agentId: session.agentId,
           sessionId: session.id,
