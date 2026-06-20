@@ -83,6 +83,8 @@ if [[ -z "${SERVER_IP}" ]]; then
   echo "Usage: $0 [<server-ip>]" >&2
   echo "  Or run from the terraform directory to auto-detect:" >&2
   echo "    cd infra/hetzner && terraform output -raw server_ipv4" >&2
+  echo "  Or provide the IP directly:" >&2
+  echo "    infra/hetzner/scripts/seed-admin.sh <server-ip>" >&2
   echo "" >&2
   echo "terraform not found in PATH; provide server IP as argument: $0 <ip>" >&2
   exit 1
