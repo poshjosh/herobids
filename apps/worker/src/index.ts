@@ -1180,6 +1180,7 @@ const marketIntelCoordinator = appConfig.marketData
           discoveryPollMs: miConfig.discoveryPollMs,
           regimePollMs: miConfig.regimePollMs,
           enabled: miConfig.enabled,
+          discoveryMaxResults: appConfig.marketData.discovery.maxResults,
         },
         { redis: redisClient, providerRegistry: sharedMarketDataRegistry!, publisher: eventPublisher, monitor: marketMonitor },
       );

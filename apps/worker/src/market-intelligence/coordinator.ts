@@ -23,6 +23,8 @@ export interface CoordinatorConfig {
   benchmarkSymbols?: string[];
   /** Enable/disable the coordinator. Default: true */
   enabled?: boolean;
+  /** Max discovery results per poll. Default: 50 */
+  discoveryMaxResults?: number;
 }
 
 export interface CoordinatorDeps {
@@ -50,6 +52,7 @@ export function createMarketDataCoordinator(
     networks = ['solana'],
     benchmarkSymbols = ['BTC'],
     enabled = true,
+    discoveryMaxResults = 50,
   } = config;
 
   const { redis, providerRegistry } = deps;
@@ -203,7 +206,7 @@ export function createMarketDataCoordinator(
     const capturedAt = new Date().toISOString();
 
     try {
-      const result = await providerRegistry.discovery.discover({ networks, maxResults: 25 });
+      const result = await providerRegistry.discovery.discover({ networks, maxResults: discoveryMaxResults });
       if (stopped) return;
       const tokens = result.data ?? [];
 
