@@ -1023,32 +1023,45 @@ async function main(): Promise<void> {
 
     // Publish a manage_bot message to the agent's inbound Redis stream.
     // This exercises the exact broker path that was broken by the bindingId/venueAccountId confusion.
+
+    // Build venue-aware bot config — swap venues (1inch) require swapAssets and cannot use paper mode.
+    const botSymbol = VENUE === '1inch' ? 'WETH' : 'BTC';
+    const botConfig: Record<string, unknown> = {
+      strategy: {
+        type: 'momentum',
+        decisionMode: 'mechanical',
+        params: {
+          lookbackPeriod: 14,
+          entryThreshold: 0.5,
+          exitThreshold: 0.3,
+          adxThreshold: 20,
+          momentumWindow: 7,
+        },
+      },
+      symbol: botSymbol,
+      execution: { mode: EXECUTION_MODE, slippageBps: 5 },
+      risk: { stopLossPct: 3, takeProfitPct: 6, maxDrawdownPct: 5, maxPositionSizePct: 10 },
+    };
+    if (VENUE === '1inch') {
+      botConfig['swapAssets'] = {
+        baseAsset: 'WETH',
+        quoteAsset: 'USDC',
+        baseDecimals: 18,
+        quoteDecimals: 6,
+      };
+    }
+
     const botCreatePayload = {
       action: 'create_and_start',
       bindingId,
-      config: {
-        strategy: {
-          type: 'momentum',
-          decisionMode: 'mechanical',
-          params: {
-            lookbackPeriod: 14,
-            entryThreshold: 0.5,
-            exitThreshold: 0.3,
-            adxThreshold: 20,
-            momentumWindow: 7,
-          },
-        },
-        symbol: 'BTC',
-        execution: { mode: 'paper', slippageBps: 5 },
-        risk: { stopLossPct: 3, takeProfitPct: 6, maxDrawdownPct: 5, maxPositionSizePct: 10 },
-      },
+      config: botConfig,
     };
 
     const envelope = {
       schemaVersion: 'v1',
       messageId: crypto.randomUUID(),
       correlationId: 'e2e-bot-creation',
-      initiatorType: 'agent',
+      initiatorType: 'system',
       initiatorId: agentId,
       agentId,
       type: 'agent.manage_bot',
