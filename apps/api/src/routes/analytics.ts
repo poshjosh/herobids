@@ -15,8 +15,13 @@ const AnalyticsQuerySchema = z.object({
   agentIds: z.union([z.string(), z.array(z.string())]).optional().transform((v) =>
     v === undefined ? undefined : Array.isArray(v) ? v : [v],
   ),
-  decisionModes: z.union([z.string(), z.array(z.string())]).optional().transform((v) =>
-    v === undefined ? undefined : Array.isArray(v) ? v : [v],
+  decisionModes: z.preprocess(
+    (v) => v === undefined ? undefined : (Array.isArray(v) ? v : [v]),
+    z.array(z.enum(['mechanical', 'llm', 'hybrid'])).optional(),
+  ),
+  executionModes: z.preprocess(
+    (v) => v === undefined ? undefined : (Array.isArray(v) ? v : [v]),
+    z.array(z.enum(['paper', 'shadow', 'live'])).optional(),
   ),
   sessions: z.union([z.string(), z.array(z.string())]).optional().transform((v) =>
     v === undefined ? undefined : Array.isArray(v) ? v : [v],
@@ -29,14 +34,15 @@ const AnalyticsBodySchema = z.object({
   to: z.string().datetime().optional(),
   botIds: z.array(z.string()).optional(),
   agentIds: z.array(z.string()).optional(),
-  decisionModes: z.array(z.string()).optional(),
+  decisionModes: z.array(z.enum(['mechanical', 'llm', 'hybrid'])).optional(),
+  executionModes: z.array(z.enum(['paper', 'shadow', 'live'])).optional(),
   sessions: z.array(z.string()).optional(),
   groupBy: z.enum(['day', 'week', 'session', 'strategy']).optional().default('day'),
 });
 
-type AnalyticsQuery = z.infer<typeof AnalyticsBodySchema>;
+type AnalyticsQuery = z.infer<typeof AnalyticsQuerySchema>;
 
-type BotMeta = { id: string; executionMode: string | null; strategyPreset: string | null };
+type BotMeta = { id: string; executionMode: string | null; decisionMode: string | null; strategyType: string | null };
 type SessionRange = { sessionId: string; start: number; end: number | null };
 type GroupData = { period: string; eventCount: number; decisionCount: number; fillCount: number; realizedPnl: number };
 
@@ -54,7 +60,8 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
     return {
       id: b.id,
       executionMode: (execution?.['mode'] as string | undefined) ?? null,
-      strategyPreset: (strategy?.['preset'] as string | undefined) ?? null,
+      decisionMode: (strategy?.['decisionMode'] as string | undefined) ?? null,
+      strategyType: (strategy?.['type'] as string | undefined) ?? null,
     };
   });
 
@@ -85,10 +92,20 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
     }
   }
 
-  // 4. Apply decisionModes filter — keep bots with matching execution mode
+  // 4. Apply decisionModes filter — keep bots with matching strategy.decisionMode (mechanical|llm|hybrid)
   if (query.decisionModes && query.decisionModes.length > 0) {
     const modeSet = new Set(query.decisionModes);
-    targetMeta = targetMeta.filter((b) => b.executionMode !== null && modeSet.has(b.executionMode));
+    targetMeta = targetMeta.filter((b) =>
+      b.decisionMode !== null && modeSet.has(b.decisionMode)
+    );
+  }
+
+  // 4b. Apply executionModes filter — keep bots with matching execution.mode (paper|shadow|live)
+  if (query.executionModes && query.executionModes.length > 0) {
+    const modeSet = new Set(query.executionModes);
+    targetMeta = targetMeta.filter((b) =>
+      b.executionMode !== null && modeSet.has(b.executionMode)
+    );
   }
 
   const targetBotIds = targetMeta.map((b) => b.id);
@@ -170,7 +187,7 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
     : rawPosRows;
 
   // 8. groupKey function covering all four modes
-  const botStrategyMap = new Map(targetMeta.map((b) => [b.id, b.strategyPreset ?? 'unknown']));
+  const botStrategyMap = new Map(targetMeta.map((b) => [b.id, b.strategyType ?? 'unknown']));
 
   const groupKey = (createdAt: Date, actorId: string | null): string => {
     switch (query.groupBy) {

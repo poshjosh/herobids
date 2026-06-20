@@ -5,7 +5,7 @@ import {
   PublicStreamConfigSchema,
   MarkingConfigSchema,
   AgentRuntimePolicySchema,
-  StrategyConfigSchema,
+  StrategySchema,
   MomentumParamsSchema,
   LlmParamsSchema,
 } from './schema.js';
@@ -48,7 +48,7 @@ describe('UsageBillingConfigSchema', () => {
 
 describe('BotConfigSchema', () => {
   const validBase = {
-    strategy: { type: 'momentum' },
+    strategy: { type: 'momentum', decisionMode: 'mechanical' },
     venue: 'hyperliquid',
     symbol: 'SOL/USDC',
   };
@@ -91,11 +91,15 @@ describe('BotConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('defaults venueType to orderbook', () => {
-    const result = BotConfigSchema.safeParse(validBase);
+  it('accepts config without venue and venueType (stamped by broker)', () => {
+    const result = BotConfigSchema.safeParse({
+      strategy: { type: 'momentum', decisionMode: 'mechanical' },
+      symbol: 'SOL/USDC',
+    });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.venueType).toBe('orderbook');
+      expect(result.data.venue).toBeUndefined();
+      expect(result.data.venueType).toBeUndefined();
     }
   });
 
@@ -361,127 +365,75 @@ describe('AgentRuntimePolicySchema', () => {
   });
 });
 
-describe('StrategyConfigSchema', () => {
-  it('accepts momentum strategy with defaults', () => {
-    const result = StrategyConfigSchema.safeParse({ type: 'momentum' });
+describe('StrategySchema', () => {
+  it('accepts momentum strategy with mechanical decisionMode', () => {
+    const result = StrategySchema.safeParse({ type: 'momentum', decisionMode: 'mechanical' });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.type).toBe('momentum');
-      expect(result.data.params.lookbackPeriod).toBe(5);
-      expect(result.data.params.threshold).toBe(0.02);
-      expect(result.data.params.positionSize).toBe('1');
+      expect(result.data.decisionMode).toBe('mechanical');
     }
   });
 
-  it('accepts momentum strategy with custom params', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'momentum',
-      params: { lookbackPeriod: 10, threshold: 0.05, positionSize: '2.5', instrumentId: 'BTC/USD:USD' },
-    });
+  it('accepts momentum strategy with llm decisionMode', () => {
+    const result = StrategySchema.safeParse({ type: 'momentum', decisionMode: 'llm' });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.params.lookbackPeriod).toBe(10);
-      expect(result.data.params.instrumentId).toBe('BTC/USD:USD');
+      expect(result.data.type).toBe('momentum');
+      expect(result.data.decisionMode).toBe('llm');
     }
   });
 
-  it('rejects momentum with lookbackPeriod below 2', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'momentum',
-      params: { lookbackPeriod: 1 },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects momentum with negative threshold', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'momentum',
-      params: { threshold: -0.01 },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts llm strategy with required fields', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4' },
-    });
+  it('accepts dca strategy without decisionMode (timer-driven)', () => {
+    const result = StrategySchema.safeParse({ type: 'dca' });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.type).toBe('llm');
-      expect(result.data.params.maxTokens).toBe(1024);
-      expect(result.data.params.timeoutMs).toBe(30_000);
-      expect(result.data.params.positionSize).toBe('1');
+      expect(result.data.type).toBe('dca');
+      expect(result.data.decisionMode).toBeUndefined();
     }
   });
 
-  it('accepts llm strategy with all fields', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: {
-        provider: 'openai',
-        model: 'gpt-4o',
-        promptVersion: 'v2',
-        maxTokens: 2048,
-        timeoutMs: 60_000,
-        instrumentId: 'ETH/USD:USD',
-        positionSize: '0.5',
-        baseUrl: 'https://proxy.example.com/v1',
-      },
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.params.baseUrl).toBe('https://proxy.example.com/v1');
+  it('accepts all trading styles with decisionMode', () => {
+    const styles = ['range', 'contrarian', 'swing', 'scalper'] as const;
+    for (const style of styles) {
+      const result = StrategySchema.safeParse({ type: style, decisionMode: 'mechanical' });
+      expect(result.success).toBe(true);
     }
   });
 
-  it('rejects llm strategy without provider', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { model: 'gpt-4' },
-    });
+  it('rejects non-DCA strategy without decisionMode', () => {
+    const result = StrategySchema.safeParse({ type: 'momentum' });
     expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].path).toContain('decisionMode');
+    }
   });
 
-  it('rejects llm strategy without model', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai' },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects llm with maxTokens below 1', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4', maxTokens: 0 },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects llm with timeoutMs below 1000', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4', timeoutMs: 500 },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects llm with invalid baseUrl', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4', baseUrl: 'not-a-url' },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects unknown strategy type', () => {
-    const result = StrategyConfigSchema.safeParse({ type: 'unknown', params: {} });
+  it('rejects invalid trading style', () => {
+    const result = StrategySchema.safeParse({ type: 'unknown', decisionMode: 'mechanical' });
     expect(result.success).toBe(false);
   });
 
   it('rejects missing type field', () => {
-    const result = StrategyConfigSchema.safeParse({ params: {} });
+    const result = StrategySchema.safeParse({ decisionMode: 'mechanical' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts strategy with params', () => {
+    const result = StrategySchema.safeParse({
+      type: 'momentum',
+      decisionMode: 'mechanical',
+      params: { lookbackPeriod: 10, threshold: 0.05 },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.params?.lookbackPeriod).toBe(10);
+    }
+  });
+
+  it('accepts strategy stringified as the old "type" was a string — new schema requires object', () => {
+    // This tests the error message when agent sends strategy as a string
+    const result = StrategySchema.safeParse('momentum');
     expect(result.success).toBe(false);
   });
 });
@@ -526,19 +478,20 @@ describe('LlmParamsSchema', () => {
   });
 });
 
-describe('StrategyConfigSchema (discriminated union)', () => {
-  it('accepts momentum type with default params', () => {
-    const result = StrategyConfigSchema.safeParse({ type: 'momentum' });
+describe('StrategySchema (BotConfigSchema.strategy)', () => {
+  it('accepts momentum with mechanical decisionMode and accepts type-specific params in params', () => {
+    const result = StrategySchema.safeParse({ type: 'momentum', decisionMode: 'mechanical', params: { lookbackPeriod: 10 } });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.type).toBe('momentum');
-      expect(result.data.params.positionSize).toBe('1');
+      expect(result.data.decisionMode).toBe('mechanical');
     }
   });
 
-  it('accepts momentum type with custom params', () => {
-    const result = StrategyConfigSchema.safeParse({
+  it('allows params to carry any trading-style tuning data', () => {
+    const result = StrategySchema.safeParse({
       type: 'momentum',
+      decisionMode: 'mechanical',
       params: { lookbackPeriod: 10, threshold: 0.05, positionSize: '2.5' },
     });
     expect(result.success).toBe(true);
@@ -551,99 +504,43 @@ describe('StrategyConfigSchema (discriminated union)', () => {
     }
   });
 
-  it('rejects momentum with lookbackPeriod < 2', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'momentum',
-      params: { lookbackPeriod: 1 },
-    });
+  it('rejects invalid type string', () => {
+    const result = StrategySchema.safeParse({ type: 'llm', decisionMode: 'mechanical' });
     expect(result.success).toBe(false);
   });
 
-  it('rejects momentum with negative threshold', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'momentum',
-      params: { threshold: -0.01 },
-    });
+  it('rejects momentum without decisionMode (non-DCA)', () => {
+    const result = StrategySchema.safeParse({ type: 'momentum' });
     expect(result.success).toBe(false);
   });
 
-  it('accepts llm type with required params', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4' },
-    });
+  it('accepts dca without decisionMode', () => {
+    const result = StrategySchema.safeParse({ type: 'dca' });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.type).toBe('llm');
-      expect(result.data.params.maxTokens).toBe(1024);
-      expect(result.data.params.timeoutMs).toBe(30_000);
-      expect(result.data.params.positionSize).toBe('1');
+      expect(result.data.type).toBe('dca');
+      expect(result.data.decisionMode).toBeUndefined();
     }
   });
 
-  it('accepts llm type with all optional params', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: {
-        provider: 'anthropic',
-        model: 'claude-4',
-        promptVersion: 'v2',
-        maxTokens: 2048,
-        timeoutMs: 60_000,
-        instrumentId: 'BTC/USD:USD',
-        positionSize: '0.5',
-      },
+  it('passes params through as-is — params are intentionally unvalidated (flexible tuning)', () => {
+    // params is z.record(z.unknown()) by design — each trading style has its
+    // own tuning surface and no single param schema fits all. Validation of
+    // type-specific params (e.g. MomentumParamsSchema thresholds) is done
+    // at the strategy execution layer, not at config parse time.
+    const result = StrategySchema.safeParse({
+      type: 'momentum',
+      decisionMode: 'mechanical',
+      params: { lookbackPeriod: -1, threshold: 'invalid', extraField: true },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.params.promptVersion).toBe('v2');
-      expect(result.data.params.instrumentId).toBe('BTC/USD:USD');
+      expect(result.data.params).toEqual({
+        lookbackPeriod: -1,
+        threshold: 'invalid',
+        extraField: true,
+      });
     }
-  });
-
-  it('rejects llm type without provider', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { model: 'gpt-4' },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects llm type without model', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai' },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects llm type with maxTokens < 1', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4', maxTokens: 0 },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects llm type with timeoutMs < 1000', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'llm',
-      params: { provider: 'openai', model: 'gpt-4', timeoutMs: 500 },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects unknown strategy type', () => {
-    const result = StrategyConfigSchema.safeParse({
-      type: 'unknown_strategy',
-      params: {},
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects missing type field', () => {
-    const result = StrategyConfigSchema.safeParse({ params: {} });
-    expect(result.success).toBe(false);
   });
 });
 

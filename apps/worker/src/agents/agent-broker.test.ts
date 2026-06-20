@@ -340,7 +340,7 @@ describe('AgentMessageBroker', () => {
       ));
       const botRepo = {
         getBotsByCreator: vi.fn().mockResolvedValue([
-          { id: 'bot-a', status: 'running', config: { strategyPreset: 'momentum', symbol: 'BTC-USD' } },
+          { id: 'bot-a', status: 'running', config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-USD' } },
         ]),
       };
       const brokerWithBot = new AgentMessageBroker(
@@ -422,7 +422,7 @@ describe('AgentMessageBroker', () => {
         payload: {
           action: 'create_and_start',
           venueAccountId: 'va-001',
-          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
         ...overrides,
       };
@@ -435,6 +435,7 @@ describe('AgentMessageBroker', () => {
         createBot: vi.fn().mockResolvedValue('bot-new-001'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
       };
     }
 
@@ -562,7 +563,7 @@ describe('AgentMessageBroker', () => {
         payload: {
           action: 'create_and_start',
           venueAccountId: 'va-001',
-          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
         ...overrides,
       };
@@ -572,8 +573,8 @@ describe('AgentMessageBroker', () => {
       it('emits a bot list result', async () => {
         const botRepo = {
           getBotsByCreator: vi.fn().mockResolvedValue([
-            { id: 'bot-a', status: 'running', config: { strategyPreset: 'momentum', symbol: 'BTC-USD' } },
-            { id: 'bot-b', status: 'stopped', config: { strategyPreset: 'mean-reversion', symbol: 'ETH-USD' } },
+            { id: 'bot-a', status: 'running', config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-USD' } },
+            { id: 'bot-b', status: 'stopped', config: { strategy: { type: 'scalper', decisionMode: 'mechanical' }, symbol: 'ETH-USD' } },
           ]),
         };
 
@@ -608,7 +609,7 @@ describe('AgentMessageBroker', () => {
             message: 'Found 2 bot(s)',
             data: [
               expect.objectContaining({ id: 'bot-a', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' }),
-              expect.objectContaining({ id: 'bot-b', status: 'stopped', strategyPreset: 'mean-reversion', symbol: 'ETH-USD' }),
+              expect.objectContaining({ id: 'bot-b', status: 'stopped', strategyPreset: 'scalper', symbol: 'ETH-USD' }),
             ],
           }),
         );
@@ -855,8 +856,9 @@ describe('AgentMessageBroker', () => {
         createBot: vi.fn().mockResolvedValue('bot-abc'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([
-          { id: 'bot-abc', status: 'running', config: { strategyPreset: 'momentum', symbol: 'BTC-USD' } },
+          { id: 'bot-abc', status: 'running', config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-USD' } },
         ]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -892,6 +894,7 @@ describe('AgentMessageBroker', () => {
         createBot: vi.fn().mockResolvedValue('bot-xyz'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -922,6 +925,7 @@ describe('AgentMessageBroker', () => {
         getBotsByCreator: vi.fn().mockResolvedValue([
           { id: 'bot-min', status: 'stopped', config: {} },
         ]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -967,6 +971,7 @@ describe('AgentMessageBroker', () => {
         createBot: vi.fn().mockResolvedValue('bot-targeted'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
       };
       const botStart = vi.fn().mockResolvedValue(undefined);
 
@@ -985,7 +990,7 @@ describe('AgentMessageBroker', () => {
         payload: {
           action: 'create_and_start',
           venueAccountId: 'va-002',
-          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
       }));
 
@@ -1025,6 +1030,7 @@ describe('AgentMessageBroker', () => {
         createBot: vi.fn().mockResolvedValue('bot-ambiguous'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -1042,7 +1048,7 @@ describe('AgentMessageBroker', () => {
         payload: {
           action: 'create_and_start',
           venueAccountId: 'va-002',
-          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: {}, venueType: 'orderbook' },
+          config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
       }));
 
@@ -1123,6 +1129,7 @@ describe('AgentMessageBroker', () => {
         createBot: vi.fn().mockResolvedValue('bot-cap'),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
       };
       const botStart = vi.fn().mockResolvedValue(undefined);
 
@@ -1144,7 +1151,7 @@ describe('AgentMessageBroker', () => {
           config: {
             venue: 'hyperliquid',
             symbol: 'BTC-USD',
-            strategy: {},
+            strategy: { type: 'momentum', decisionMode: 'mechanical' },
             venueType: 'orderbook',
             risk: { maxDrawdownPct: 10, maxOrderNotional: '2500' },
           },
@@ -1152,9 +1159,12 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
+      // maxDrawdownPct is not a RiskConfigSchema field — it is stripped by
+      // BotConfigSchema.safeParse() validation. The capital clamp on
+      // maxOrderNotional (2500 → 1000) is what this test cares about.
       expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
         config: expect.objectContaining({
-          risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '1000' }),
+          risk: expect.objectContaining({ maxOrderNotional: '1000' }),
         }),
       }));
       expect(botStart).toHaveBeenCalledWith(
@@ -1351,8 +1361,11 @@ describe('AgentMessageBroker', () => {
           venueAccountId: 'va-001',
           status: 'running',
           config: {
-            strategy: { type: 'momentum', threshold: 2 },
+            strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
             risk: { maxDrawdownPct: 10 },
+            symbol: 'BTC-USD',
+            venue: 'hyperliquid',
+            venueType: 'orderbook',
           },
           creatorType: 'agent',
           creatorId: 'agent-123',
@@ -1384,17 +1397,17 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', {
-        strategy: { type: 'momentum', threshold: 5 },
-        risk: { maxDrawdownPct: 10 },
+      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
+        strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
+        risk: expect.objectContaining({ maxDrawdownPct: 10 }),
         executionMode: 'shadow',
-      });
-      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', {
-        strategy: { type: 'momentum', threshold: 5 },
-        risk: { maxDrawdownPct: 10 },
+      }));
+      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', expect.objectContaining({
+        strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
+        risk: expect.objectContaining({ maxDrawdownPct: 10 }),
         executionMode: 'shadow',
         venueAccountId: 'va-001',
-      });
+      }));
     });
 
     it('clamps adjusted risk.maxOrderNotional to agent capital', async () => {
@@ -1415,8 +1428,11 @@ describe('AgentMessageBroker', () => {
           tradingBindingId: 'va-001',
           status: 'running',
           config: {
-            strategy: { type: 'momentum', threshold: 2 },
+            strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
             risk: { maxDrawdownPct: 10, maxOrderNotional: '2000' },
+            symbol: 'BTC-USD',
+            venue: 'hyperliquid',
+            venueType: 'orderbook',
           },
           creatorType: 'agent',
           creatorId: 'agent-123',
@@ -1448,15 +1464,15 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', {
-        strategy: { type: 'momentum', threshold: 2 },
-        risk: { maxDrawdownPct: 10, maxOrderNotional: '750' },
-      });
-      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', {
-        strategy: { type: 'momentum', threshold: 2 },
-        risk: { maxDrawdownPct: 10, maxOrderNotional: '750' },
+      expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
+        strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
+        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
+      }));
+      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', expect.objectContaining({
+        strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
+        risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
         venueAccountId: 'va-001',
-      });
+      }));
     });
 
     describe('adjust_config rollback', () => {
@@ -1468,8 +1484,11 @@ describe('AgentMessageBroker', () => {
             venueAccountId: 'va-001',
             status: 'running',
             config: {
-              strategy: { type: 'momentum', threshold: 2 },
+              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
               risk: { maxDrawdownPct: 10 },
+              symbol: 'BTC-USD',
+              venue: 'hyperliquid',
+              venueType: 'orderbook',
             },
             creatorType: 'agent',
             creatorId: 'agent-123',
@@ -1502,14 +1521,12 @@ describe('AgentMessageBroker', () => {
         }));
 
         expect(result.accepted).toBe(false);
-        expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', {
-          strategy: { type: 'momentum', threshold: 5 },
-          risk: { maxDrawdownPct: 10 },
-        });
-        expect(botRepo.restoreBotConfig).toHaveBeenCalledWith('bot-run', {
-          strategy: { type: 'momentum', threshold: 2 },
-          risk: { maxDrawdownPct: 10 },
-        });
+        expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
+          strategy: expect.objectContaining({ threshold: 5 }),
+        }));
+        expect(botRepo.restoreBotConfig).toHaveBeenCalledWith('bot-run', expect.objectContaining({
+          strategy: expect.objectContaining({ threshold: 2 }),
+        }));
       });
 
       it('still fails gracefully when restart enqueue AND config rollback both fail', async () => {
@@ -1520,8 +1537,11 @@ describe('AgentMessageBroker', () => {
             venueAccountId: 'va-001',
             status: 'running',
             config: {
-              strategy: { type: 'momentum', threshold: 2 },
+              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
               risk: { maxDrawdownPct: 10 },
+              symbol: 'BTC-USD',
+              venue: 'hyperliquid',
+              venueType: 'orderbook',
             },
             creatorType: 'agent',
             creatorId: 'agent-123',
@@ -1565,8 +1585,11 @@ describe('AgentMessageBroker', () => {
             venueAccountId: 'va-001',
             status: 'running',
             config: {
-              strategy: { type: 'momentum', threshold: 2 },
+              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
               risk: { maxDrawdownPct: 10 },
+              symbol: 'BTC-USD',
+              venue: 'hyperliquid',
+              venueType: 'orderbook',
             },
             creatorType: 'agent',
             creatorId: 'agent-123',
@@ -1612,7 +1635,10 @@ describe('AgentMessageBroker', () => {
             venueAccountId: 'va-001',
             status: 'stopped',
             config: {
-              strategy: { type: 'momentum', threshold: 2 },
+              strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
+              symbol: 'BTC-USD',
+              venue: 'hyperliquid',
+              venueType: 'orderbook',
             },
             creatorType: 'agent',
             creatorId: 'agent-123',

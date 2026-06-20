@@ -3,7 +3,7 @@ import type { Queue } from 'bullmq';
 import { z } from 'zod';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal } from '@herobids/db';
-import { StrategyConfigSchema, Decimal } from '@herobids/domain';
+import { StrategySchema, Decimal } from '@herobids/domain';
 import type { PlansConfig } from '@herobids/domain';
 import { parseCsvToFrames } from '@herobids/backtesting';
 import { checkBacktestLimit } from '../plan-guards.js';
@@ -130,7 +130,7 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       }
 
       // Validate strategy config at the API boundary
-      const strategyParse = StrategyConfigSchema.safeParse({ type: strategyType, params: config['strategyParams'] ?? config });
+      const strategyParse = StrategySchema.safeParse({ type: strategyType, decisionMode: (config['strategy'] as Record<string, unknown> | undefined)?.['decisionMode'] as string | undefined ?? 'mechanical', params: config['strategyParams'] ?? config });
       if (!strategyParse.success) {
         return reply.status(400).send({
           error: 'Invalid strategy config',
@@ -194,8 +194,9 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       return reply.status(400).send({ error: 'Invalid validation request', details: parsed.error.issues });
     }
 
-    const baselineParse = StrategyConfigSchema.safeParse({
+    const baselineParse = StrategySchema.safeParse({
       type: parsed.data.baseline.strategyType,
+      decisionMode: (parsed.data.baseline.config['strategy'] as Record<string, unknown> | undefined)?.['decisionMode'] as string | undefined ?? 'mechanical',
       params: parsed.data.baseline.config['strategyParams'] ?? parsed.data.baseline.config,
     });
     if (!baselineParse.success) {
@@ -205,8 +206,9 @@ export async function backtestRoutes(app: FastifyInstance, backtestQueue: Queue<
       });
     }
 
-    const candidateParse = StrategyConfigSchema.safeParse({
+    const candidateParse = StrategySchema.safeParse({
       type: parsed.data.candidate.strategyType,
+      decisionMode: (parsed.data.candidate.config['strategy'] as Record<string, unknown> | undefined)?.['decisionMode'] as string | undefined ?? 'mechanical',
       params: parsed.data.candidate.config['strategyParams'] ?? parsed.data.candidate.config,
     });
     if (!candidateParse.success) {

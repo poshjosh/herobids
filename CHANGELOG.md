@@ -7,6 +7,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `extractStrategyFromConfig()` domain helper — type-safe strategy extraction from bot configs
+- `requireMomentumForMechanical()` domain helper — shared mechanical strategy guard for backtesting and live paths
+- `decisionMode` and `executionModes` filters on analytics endpoints with Zod enum validation
+- Agent tool schemas for `create_bot` and `adjust_bot_config` (`BotConfigInputSchema`, `StrategyInputSchema`)
+- `IntelligenceConfigSchema` in `UnifiedAgentConfigSchema` — agents can now update their own intelligence config
+
+### Changed
+
+- **Strategy schema**: `StrategyConfigSchema` replaced with `StrategySchema` — `type` (trading style) and `decisionMode` (engine: mechanical/llm/hybrid) are now separate fields
+- Blueprint `strategyPreset` column dropped (migration `0019_chubby_sway`) — derived at read time via `extractStrategyFromConfig()`
+- Bot config `venue`/`venueType` are now optional at parse time — stamped by the broker at creation
+- `deriveStrategyPreset` JSDoc documents intentional pass-through for unmapped types
+- `agent-message-broker` resolves venue account and venue type from trading binding before creating bots
+
+### Fixed
+
+- Duplicated mechanical strategy restriction error messages in `backtest-runtime.ts` and `index.ts` deduplicated
+- Blueprint config extraction uses `extractStrategyFromConfig()` instead of inline `as Record<string, unknown>` casts
+- `AnalyticsQuery` type now correctly derived from `AnalyticsQuerySchema` (was `AnalyticsBodySchema`)
+
 ## 0.0.1-2026.06.19-g
 
 ### Added

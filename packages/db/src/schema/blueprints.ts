@@ -18,8 +18,7 @@ export const blueprints = pgTable('blueprints', {
   configVersion: integer('config_version').notNull().default(1),
   /** Visibility: private (owner only) | public (any authenticated user can read) */
   visibility: text('visibility').notNull().default('private'),
-  /** Optional preset key this blueprint was derived from (e.g. 'momentum') */
-  strategyPreset: text('strategy_preset'),
+  /** Row creation timestamp */
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

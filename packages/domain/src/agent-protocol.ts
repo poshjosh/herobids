@@ -255,6 +255,7 @@ export const InstanceStatusPayloadSchema = z.object({
   managedBots: z.array(z.object({
     id: z.string(),
     status: z.string(),
+    /** Derived from strategy.type at read time — never stored in JSONB config */
     strategyPreset: z.string().optional(),
     symbol: z.string().optional(),
   })).optional(),

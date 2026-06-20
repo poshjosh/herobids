@@ -1132,12 +1132,78 @@ export const HybridParamsSchema = z.object({
   { message: 'provider is required when lightModel or heavyModel is set', path: ['provider'] },
 );
 
-export const StrategyConfigSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('momentum'), params: MomentumParamsSchema.default({}) }),
-  z.object({ type: z.literal('llm'), params: LlmParamsSchema }),
-  z.object({ type: z.literal('mechanical'), params: MechanicalParamsSchema }),
-  z.object({ type: z.literal('hybrid'), params: HybridParamsSchema }),
-]);
+/**
+ * Strategy schema — splits trading style (type) from decision engine (decisionMode).
+ * - type: what market logic (momentum, range, contrarian, swing, scalper, dca)
+ * - decisionMode: how decisions are made (mechanical, llm, hybrid)
+ * - params: tuning parameters for the trading style (indicator thresholds, LLM config, etc.)
+ *
+ * decisionMode is optional for DCA (timer-driven, no signal evaluation) and
+ * required for all other types.
+ */
+/**
+ * Derive the strategyPreset display label from a strategy.type value.
+ * strategyPreset is a UI/display concept only — never stored in config JSONB.
+ *
+ * Mapped types return their display label (currently identity — momentum → 'momentum').
+ * Unmapped types fall through to the raw type string as a pass-through display label.
+ * The pass-through is intentional: new trading styles added to the type enum
+ * do not require a PRESET_MAP update before they appear in UI lists.
+ */
+export function deriveStrategyPreset(strategyType: string | undefined): string | null {
+  if (!strategyType) return null;
+  const PRESET_MAP: Record<string, string> = {
+    momentum: 'momentum',
+    mechanical: 'mechanical',
+  };
+  return PRESET_MAP[strategyType] ?? strategyType;
+}
+
+/**
+ * Safely extract the strategy sub-object from a bot config (JSONB rows, agent payloads, etc.).
+ * Returns { type, decisionMode, params } when config has a valid strategy block, or null.
+ *
+ * Prefer this helper over inline `as Record<string, unknown>` casts which silently
+ * suppress type errors that the StrategySchema is meant to catch.
+ */
+export function extractStrategyFromConfig(
+  config: unknown,
+): { type: string; decisionMode?: string; params?: Record<string, unknown> } | null {
+  if (config == null || typeof config !== 'object') return null;
+  const c = config as Record<string, unknown>;
+  const strategy = c['strategy'];
+  if (strategy == null || typeof strategy !== 'object') return null;
+  const s = strategy as Record<string, unknown>;
+  if (typeof s['type'] !== 'string') return null;
+  return {
+    type: s['type'] as string,
+    decisionMode: typeof s['decisionMode'] === 'string' ? s['decisionMode'] as string : undefined,
+    params: s['params'] != null && typeof s['params'] === 'object' ? s['params'] as Record<string, unknown> : undefined,
+  };
+}
+
+/**
+ * Throws if a mechanical strategy is requested for a non-momentum trading style.
+ * Mechanical strategy unification (range, swing, scalper, contrarian) is tracked in
+ * docs/features/2026/06/20/002-mechanical-strategy-unification.
+ */
+export function requireMomentumForMechanical(strategyType: string, context: 'backtesting' | 'live'): void {
+  if (strategyType !== 'momentum') {
+    throw new Error(
+      `'mechanical' decisionMode is only supported for strategyType='momentum' in ${context} trading. `
+      + `Got type='${strategyType}'. Use type='momentum' or wait for mechanical strategy unification.`,
+    );
+  }
+}
+
+export const StrategySchema = z.object({
+  type: z.enum(['momentum', 'range', 'contrarian', 'swing', 'scalper', 'dca']),
+  decisionMode: z.enum(['mechanical', 'llm', 'hybrid']).optional(),
+  params: z.record(z.unknown()).optional(),
+}).refine(
+  (s) => s.type === 'dca' || s.decisionMode !== undefined,
+  { message: 'decisionMode is required for non-DCA strategies', path: ['decisionMode'] },
+);
 
 export const ExecutionConfigSchema = z.object({
   mode: z.enum(['paper', 'shadow', 'live']).default('paper'),
@@ -1145,12 +1211,12 @@ export const ExecutionConfigSchema = z.object({
 });
 
 export const BotConfigSchema = z.object({
-  strategy: StrategyConfigSchema,
+  strategy: StrategySchema,
   risk: RiskConfigSchema.default({}),
   execution: ExecutionConfigSchema.default({}),
-  venue: z.string(),
+  venue: z.string().optional(),
   symbol: z.string(),
-  venueType: z.enum(['orderbook', 'swap']).default('orderbook'),
+  venueType: z.enum(['orderbook', 'swap']).optional(),
   shadowPollIntervalMs: z.number().min(100).default(2000),
   /** Explicit swap asset identifiers — required for swap venues to avoid fragile symbol parsing */
   swapAssets: z.object({
@@ -1169,6 +1235,7 @@ export const BotConfigSchema = z.object({
   { message: 'Swap venues cannot run in paper mode (no price source). Use shadow mode.', path: ['execution', 'mode'] },
 ).refine(
   (data) => {
+    if (!data.venue || !data.venueType) return true; // venue/venueType are stamped by the broker
     // Enforce venue string matches venueType to prevent config/adapter mismatch
     if (data.venueType === 'swap') return (SWAP_VENUES as readonly string[]).includes(data.venue);
     return (ORDERBOOK_VENUES as readonly string[]).includes(data.venue);
@@ -1178,7 +1245,7 @@ export const BotConfigSchema = z.object({
 
 export type BotConfig = z.infer<typeof BotConfigSchema>;
 export type RiskConfig = z.infer<typeof RiskConfigSchema>;
-export type StrategyConfig = z.infer<typeof StrategyConfigSchema>;
+export type StrategyConfig = z.infer<typeof StrategySchema>;
 export type MomentumParams = z.infer<typeof MomentumParamsSchema>;
 export type LlmParams = z.infer<typeof LlmParamsSchema>;
 export type MechanicalParams = z.infer<typeof MechanicalParamsSchema>;
@@ -1207,10 +1274,17 @@ export const TechnicalConfigSchema = z.object({
   scanBatchSize: z.number().int().min(1).max(50).default(5),
 });
 
+export const IntelligenceConfigSchema = z.object({
+  provider: z.string().optional(),
+  lightModel: z.string().optional(),
+  heavyModel: z.string().optional(),
+  maxTokens: z.number().int().min(1).optional(),
+  wakeIntervalMs: z.number().int().min(10_000).optional(),
+});
+
 export const UnifiedAgentConfigSchema = z.object({
   technical: TechnicalConfigSchema.optional(),
-  // Phase 5 placeholder — full IntelligenceConfigSchema defined in Phase 5
-  intelligence: z.record(z.unknown()).optional(),
+  intelligence: IntelligenceConfigSchema.optional(),
   execution: z.object({
     mode: z.enum(['paper', 'shadow', 'live']).optional(),
     positionSizeMode: z.enum(['fixed', 'percent_equity']).optional(),
@@ -1232,6 +1306,7 @@ export const UnifiedAgentConfigSchema = z.object({
   }
 });
 
+export type IntelligenceConfig = z.infer<typeof IntelligenceConfigSchema>;
 export type RegimeParams = z.infer<typeof RegimeParamsSchema>;
 export type RsiParams = z.infer<typeof RsiParamsSchema>;
 export type MacdParams = z.infer<typeof MacdParamsSchema>;

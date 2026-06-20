@@ -20,7 +20,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher } from '@herobid
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS, requireMomentumForMechanical } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
@@ -694,20 +694,26 @@ const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined,
 
 const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, eventPublisher);
 
-// Strategy factory keyed by config.strategy.type
+// Strategy factory keyed by config.strategy.type (trading style) and config.strategy.decisionMode (engine)
 function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFetcher): Strategy {
-  switch (strategyConfig.type) {
-    case 'momentum':
+  // DCA is timer-driven, no signal evaluation — route to DCA executor
+  if (strategyConfig.type === 'dca') {
+    throw new Error('DCA strategy not yet implemented — use momentum/range/swing/scalper/contrarian with a decisionMode');
+  }
+
+  // For non-DCA, key on decisionMode to select the engine
+  switch (strategyConfig.decisionMode) {
+    case 'mechanical':
+      requireMomentumForMechanical(strategyConfig.type, 'live');
+      // Exception: type = 'momentum' still routes to MomentumStrategy (deprecated, see MomentumStrategy JSDoc)
       return new MomentumStrategy(() => idGen.decisionId());
+
     case 'llm':
       return new LlmStrategy(
         () => idGen.decisionId(),
         async (artifact) => { await backtestingRepo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
       );
-    case 'mechanical': {
-      if (!candleFetcher) throw new Error(`'mechanical' strategy requires marketData to be configured (CandleFetcher unavailable)`);
-      return new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
-    }
+
     case 'hybrid': {
       if (!candleFetcher) throw new Error(`'hybrid' strategy requires marketData to be configured (CandleFetcher unavailable)`);
       const mechanical = new MechanicalStrategy(candleFetcher, null, () => idGen.decisionId());
@@ -717,6 +723,9 @@ function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFe
       );
       return new HybridStrategy(mechanical, llm);
     }
+
+    default:
+      throw new Error(`Unsupported decisionMode: ${strategyConfig.decisionMode}`);
   }
 }
 

@@ -82,7 +82,9 @@ export async function runBacktest(
   // LLM strategies must not run warm-up frames — they perform provider I/O on every evaluate()
   // call, which wastes tokens and hides provider failures during frames that are supposed to be
   // non-trading warm-up. Stateless strategies like LLM have no lookback buffer to fill.
-  const isLlm = config.strategyType === 'llm' || config.strategy.id.startsWith('llm');
+  const strategyConfig = config.strategyConfig;
+  const decisionMode = (strategyConfig['decisionMode'] as string | undefined) ?? config.strategyType;
+  const isLlm = decisionMode === 'llm' || config.strategy.id.startsWith('llm');
   if (config.warmUpFrames > 0 && isLlm) {
     throw new Error(
       `warmUpFrames must be 0 for LLM strategies (got ${config.warmUpFrames}). `

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { eq, and, or, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { blueprints, bots } from '@herobids/db';
+import { extractStrategyFromConfig } from '@herobids/domain';
 
 // --- Static preset catalogue ---
 
@@ -15,7 +16,7 @@ const PRESETS: Record<PresetKey, { name: string; description: string; configData
     name: 'Momentum',
     description: 'Trend-following strategy using momentum indicators.',
     configData: {
-      strategy: { type: 'momentum', lookbackPeriod: 14, entryThreshold: 0.02, exitThreshold: 0.01 },
+      strategy: { type: 'momentum', decisionMode: 'mechanical', lookbackPeriod: 14, entryThreshold: 0.02, exitThreshold: 0.01 },
       risk: { maxPositionSize: 1000, stopLossPercent: 2, takeProfitPercent: 4 },
       execution: { mode: 'paper', orderType: 'market' },
     },
@@ -33,7 +34,7 @@ const PRESETS: Record<PresetKey, { name: string; description: string; configData
     name: 'Range',
     description: 'Range-bound trading: buy at support, sell at resistance.',
     configData: {
-      strategy: { type: 'range', supportLevel: null, resistanceLevel: null, bufferPercent: 0.5 },
+      strategy: { type: 'range', decisionMode: 'mechanical', supportLevel: null, resistanceLevel: null, bufferPercent: 0.5 },
       risk: { maxPositionSize: 1000, stopLossPercent: 3 },
       execution: { mode: 'paper', orderType: 'limit' },
     },
@@ -42,7 +43,7 @@ const PRESETS: Record<PresetKey, { name: string; description: string; configData
     name: 'Swing',
     description: 'Multi-day swing trading on higher timeframes using RSI.',
     configData: {
-      strategy: { type: 'swing', timeframe: '4h', entryRsi: 30, exitRsi: 70 },
+      strategy: { type: 'swing', decisionMode: 'mechanical', timeframe: '4h', entryRsi: 30, exitRsi: 70 },
       risk: { maxPositionSize: 2000, stopLossPercent: 5, takeProfitPercent: 10 },
       execution: { mode: 'paper', orderType: 'limit' },
     },
@@ -51,7 +52,7 @@ const PRESETS: Record<PresetKey, { name: string; description: string; configData
     name: 'Scalper',
     description: 'High-frequency small-profit scalping with tight stops.',
     configData: {
-      strategy: { type: 'scalper', targetProfitBps: 10, maxHoldMinutes: 5 },
+      strategy: { type: 'scalper', decisionMode: 'mechanical', targetProfitBps: 10, maxHoldMinutes: 5 },
       risk: { maxPositionSize: 500, stopLossPercent: 0.5 },
       execution: { mode: 'paper', orderType: 'limit' },
     },
@@ -60,7 +61,7 @@ const PRESETS: Record<PresetKey, { name: string; description: string; configData
     name: 'Contrarian',
     description: 'Counter-trend strategy fading extreme RSI moves.',
     configData: {
-      strategy: { type: 'contrarian', rsiOverbought: 80, rsiOversold: 20, lookbackPeriod: 14 },
+      strategy: { type: 'contrarian', decisionMode: 'mechanical', rsiOverbought: 80, rsiOversold: 20, lookbackPeriod: 14 },
       risk: { maxPositionSize: 1000, stopLossPercent: 3, takeProfitPercent: 6 },
       execution: { mode: 'paper', orderType: 'limit' },
     },
@@ -68,7 +69,7 @@ const PRESETS: Record<PresetKey, { name: string; description: string; configData
 };
 
 const DEFAULTS = {
-  strategy: { type: 'momentum', lookbackPeriod: 14 },
+  strategy: { type: 'momentum', decisionMode: 'mechanical', lookbackPeriod: 14 },
   risk: { maxPositionSize: 1000, stopLossPercent: 2 },
   execution: { mode: 'paper', orderType: 'market' },
 };
@@ -79,14 +80,12 @@ const CreateBlueprintSchema = z.object({
   name: z.string().min(1).max(120),
   configData: z.record(z.unknown()),
   description: z.string().max(500).optional(),
-  strategyPreset: z.enum(PRESET_KEYS).optional(),
 });
 
 const UpdateBlueprintSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   configData: z.record(z.unknown()).optional(),
   description: z.string().max(500).nullable().optional(),
-  strategyPreset: z.enum(PRESET_KEYS).nullable().optional(),
 });
 
 const FromPresetSchema = z.object({
@@ -173,7 +172,6 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
       configData,
       configVersion: 1,
       visibility: 'private',
-      strategyPreset: parsed.data.preset,
       createdAt: now,
       updatedAt: now,
     });
@@ -186,7 +184,11 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
   app.get('/blueprints', async (request, reply) => {
     const rows = await db.select().from(blueprints)
       .where(eq(blueprints.userId, request.userId));
-    return reply.send({ blueprints: rows });
+    const blueprintsWithType = rows.map((b) => ({
+      ...b,
+      strategyType: extractStrategyFromConfig(b.configData)?.type ?? null,
+    }));
+    return reply.send({ blueprints: blueprintsWithType });
   });
 
   // POST /blueprints — create a new blueprint
@@ -206,7 +208,6 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
       configData: parsed.data.configData,
       configVersion: 1,
       visibility: 'private',
-      strategyPreset: parsed.data.strategyPreset ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -219,7 +220,10 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
   app.get<{ Params: { id: string } }>('/blueprints/:id', async (request, reply) => {
     const bp = await resolveBlueprintForRead(db, request.params.id, request.userId);
     if (!bp) return reply.status(404).send({ error: 'not_found' });
-    return reply.send(bp);
+    return reply.send({
+      ...bp,
+      strategyType: extractStrategyFromConfig(bp.configData)?.type ?? null,
+    });
   });
 
   // PUT /blueprints/:id — update blueprint and increment configVersion
@@ -245,7 +249,6 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
       };
       if (parsed.data.name !== undefined) updateFields.name = parsed.data.name;
       if (parsed.data.description !== undefined) updateFields.description = parsed.data.description ?? null;
-      if (parsed.data.strategyPreset !== undefined) updateFields.strategyPreset = parsed.data.strategyPreset ?? null;
       if (parsed.data.configData !== undefined) {
         // Section-level merge with existing configData: treat each top-level key
         // as a section and shallow-merge plain object values one level deep.
@@ -316,7 +319,6 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
       configData: bp.configData,
       configVersion: 1,
       visibility: 'private',
-      strategyPreset: bp.strategyPreset,
       createdAt: now,
       updatedAt: now,
     });

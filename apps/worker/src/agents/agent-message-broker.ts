@@ -16,6 +16,10 @@ import {
   MESSAGE_PAYLOAD_SCHEMAS,
   AGENT_MESSAGE_TYPES,
   AGENT_RUNTIME_ACTIVITY_TYPES,
+  BotConfigSchema,
+  venueTypeFromProvider,
+  deriveStrategyPreset,
+  extractStrategyFromConfig,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
@@ -351,6 +355,15 @@ export class AgentMessageBroker {
     }
   }
 
+  /**
+   * Derive the strategyPreset display label from a bot's stored config.
+   * Delegates to the shared deriveStrategyPreset utility in @herobids/domain.
+   */
+  private deriveStrategyPresetFromBotConfig(config: Record<string, unknown>): string | undefined {
+    const strategy = extractStrategyFromConfig(config);
+    return strategy ? (deriveStrategyPreset(strategy.type) ?? undefined) : undefined;
+  }
+
   private async handleArtifactPublish(agentId: string, _envelope: MessageEnvelope, payload: ArtifactPublishPayload): Promise<void> {
     const agent = await this.agentRepo.getAgent(agentId);
     if (!agent) {
@@ -589,13 +602,36 @@ export class AgentMessageBroker {
         throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
       }
 
-      const effectiveConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
+      // Resolve venue account from the binding and stamp venue/venueType unconditionally
+      const venueAccount = await this.botRepo.getVenueAccountById(binding.sourceVenueAccountId);
+      if (!venueAccount) {
+        throw new Error(`Cannot resolve venue account ${binding.sourceVenueAccountId} from trading binding — cannot create bot`);
+      }
+      const venueType = venueTypeFromProvider(venueAccount.venue);
+      if (!venueType) {
+        throw new Error(`Unsupported venue "${venueAccount.venue}" resolved from trading binding — cannot create bot`);
+      }
+      const rawConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
+      // Stamp venue/venueType unconditionally — agent-provided values are discarded
+      rawConfig['venue'] = venueAccount.venue;
+      rawConfig['venueType'] = venueType;
+
+      // Validate the full config against BotConfigSchema before persisting
+      const validation = BotConfigSchema.safeParse(rawConfig);
+      if (!validation.success) {
+        const issues = validation.error.issues.map((i) =>
+          `${i.path.join('.') || 'root'}: ${i.message}`
+        ).join('; ');
+        throw new Error(`Bot config is invalid: ${issues}`);
+      }
+
+      const validatedConfig = validation.data as Record<string, unknown>;
 
       const botId = await this.botRepo.createBot({
         userId: agent.userId,
         tradingBindingId: binding.bindingId,
         venueAccountId: binding.sourceVenueAccountId,
-        config: effectiveConfig,
+        config: validatedConfig,
         creatorType: 'agent',
         creatorId: agent.id,
       });
@@ -606,7 +642,7 @@ export class AgentMessageBroker {
         // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
         await this.botRepo.markBotRunning(botId);
         await this.botStart(botId, agent.userId, binding.bindingId, {
-          ...effectiveConfig,
+          ...validatedConfig,
           venueAccountId: binding.sourceVenueAccountId,
         });
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
@@ -621,7 +657,7 @@ export class AgentMessageBroker {
         managedBots: agentBots.map((b) => ({
           id: b.id,
           status: b.status,
-          strategyPreset: (b.config as Record<string, unknown>)?.['strategyPreset'] as string | undefined,
+          strategyPreset: this.deriveStrategyPresetFromBotConfig(b.config as Record<string, unknown>),
           symbol: (b.config as Record<string, unknown>)?.['symbol'] as string | undefined,
         })),
       });
@@ -681,7 +717,7 @@ export class AgentMessageBroker {
         managedBots: agentBots.map((b) => ({
           id: b.id,
           status: b.status,
-          strategyPreset: (b.config as Record<string, unknown>)?.['strategyPreset'] as string | undefined,
+          strategyPreset: this.deriveStrategyPresetFromBotConfig(b.config as Record<string, unknown>),
           symbol: (b.config as Record<string, unknown>)?.['symbol'] as string | undefined,
         })),
       });
@@ -719,6 +755,15 @@ export class AgentMessageBroker {
         mergeBotConfig(bot.config as Record<string, unknown>, payload.config),
         agent.capital ?? null,
       );
+
+      // Validate the merged config against BotConfigSchema before persisting
+      const validation = BotConfigSchema.safeParse(mergedConfig);
+      if (!validation.success) {
+        const issues = validation.error.issues.map((i) =>
+          `${i.path.join('.') || 'root'}: ${i.message}`
+        ).join('; ');
+        throw new Error(`Bot config is invalid after merge: ${issues}`);
+      }
 
       // Consistency model: we persist the merged config then enqueue a restart.
       // If the process crashes between these steps the bot keeps running with
@@ -776,7 +821,7 @@ export class AgentMessageBroker {
         data: bots.map((bot) => ({
           id: bot.id,
           status: bot.status,
-          strategyPreset: (bot.config as Record<string, unknown>)?.['strategyPreset'] as string | undefined,
+          strategyPreset: this.deriveStrategyPresetFromBotConfig(bot.config as Record<string, unknown>),
           symbol: (bot.config as Record<string, unknown>)?.['symbol'] as string | undefined,
         })),
       });

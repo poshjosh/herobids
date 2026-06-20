@@ -1,16 +1,45 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, deriveStrategyPreset, extractStrategyFromConfig } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'tools:bots' });
 
+// --- Agent-facing strategy input — discriminated union on strategy type ---
+
+const StrategyInputSchema = z.discriminatedUnion('type', [
+  // DCA: timer-driven, no decision mode
+  z.object({
+    type: z.literal('dca'),
+    params: z.record(z.unknown()).optional(),
+  }).describe('Dollar-cost averaging — buys on a fixed schedule, no signal required'),
+
+  // Signal-based: decisionMode selects the engine
+  z.object({
+    type: z.enum(['momentum', 'range', 'contrarian', 'swing', 'scalper']),
+    decisionMode: z.enum(['mechanical', 'llm', 'hybrid'])
+      .describe('mechanical = indicator rules; llm = LLM decides; hybrid = indicators pre-filter then LLM'),
+    params: z.record(z.unknown()).optional(),
+  }),
+]);
+
+const BotConfigInputSchema = z.object({
+  symbol: z.string().describe('Trading symbol, e.g. "HYPE-USDT"'),
+  strategy: StrategyInputSchema,
+  execution: z.object({
+    mode: z.enum(['paper', 'shadow', 'live']).optional(),
+    slippageBps: z.number().optional(),
+  }).optional(),
+  risk: z.record(z.unknown()).optional(),
+  // venue and venueType are omitted — injected from the trading binding by the broker
+});
+
 // --- create_bot ---
 
 const CreateBotParamsSchema = z.object({
   venueAccountId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Venue account ID to use. Omit to use default trading binding.'),
-  config: z.object({}).passthrough().optional().describe('Bot configuration object (strategy preset, symbol, risk params, etc.)'),
+  config: BotConfigInputSchema.optional().describe('Bot configuration (strategy, symbol, risk params). venue is resolved from your trading binding automatically.'),
   rationale: z.string().max(500).optional().describe('Brief rationale for creating this bot. Used for audit.'),
 });
 
@@ -66,7 +95,7 @@ const listBotsTool: AgentTool = {
         bots: botRows.map((b) => ({
           id: b.id,
           status: b.status,
-          strategyPreset: b.config['strategyPreset'] ?? null,
+          strategyPreset: deriveStrategyPreset(extractStrategyFromConfig(b.config)?.type),
           symbol: b.config['symbol'] ?? null,
           createdAt: b.createdAt.toISOString(),
         })),
@@ -105,7 +134,7 @@ const getBotStatusTool: AgentTool = {
         ok: true,
         id: bot.id,
         status: bot.status,
-        strategyPreset: bot.config['strategyPreset'] ?? null,
+        strategyPreset: deriveStrategyPreset(extractStrategyFromConfig(bot.config)?.type),
         symbol: bot.config['symbol'] ?? null,
         config: bot.config,
         startedAt: bot.startedAt?.toISOString() ?? null,
@@ -225,9 +254,27 @@ const startBotTool: AgentTool = {
 
 // --- adjust_bot_config ---
 
+/**
+ * Partial strategy input for adjust_config — allows partial updates without requiring
+ * the full strategy object (type, decisionMode etc.). Full validation happens at merge time.
+ */
+const StrategyPartialInputSchema = z.object({
+  type: z.enum(['momentum', 'range', 'contrarian', 'swing', 'scalper', 'dca']).optional(),
+  decisionMode: z.enum(['mechanical', 'llm', 'hybrid']).optional(),
+  params: z.record(z.unknown()).optional(),
+});
+
 const AdjustBotConfigParamsSchema = z.object({
   botId: z.string().min(1).describe('ID of the bot to reconfigure'),
-  config: z.object({}).passthrough().describe('Partial config object to merge with existing bot config'),
+  config: z.object({
+    strategy: StrategyPartialInputSchema.optional().describe('Updated strategy fields (partial merge)'),
+    execution: z.object({
+      mode: z.enum(['paper', 'shadow', 'live']).optional(),
+      slippageBps: z.number().optional(),
+    }).optional(),
+    risk: z.record(z.unknown()).optional(),
+    symbol: z.string().optional(),
+  }).describe('Partial config object to merge with existing bot config'),
 });
 
 function deepMergeConfig(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {

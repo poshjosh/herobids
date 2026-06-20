@@ -5,7 +5,7 @@ import { BacktestingRepository, PgJournal, DecisionRepository } from '@herobids/
 import { MomentumStrategy, LlmStrategy } from '@herobids/strategy';
 import { runBacktest, ArrayHistoricalDataFeed, runValidation } from '@herobids/backtesting';
 import type { HistoricalFrame, ValidationThresholds, BacktestConfig } from '@herobids/backtesting';
-import { quantity, price } from '@herobids/domain';
+import { quantity, price, requireMomentumForMechanical } from '@herobids/domain';
 import type { Strategy } from '@herobids/domain';
 import crypto from 'node:crypto';
 
@@ -117,18 +117,25 @@ export class BacktestRuntime {
     logger.info('Backtest runtime stopped');
   }
 
-  private createStrategy(strategyType: string): Strategy {
+  private createStrategy(strategyType: string, decisionMode?: string): Strategy {
     const repo = new BacktestingRepository(this.db);
-    switch (strategyType) {
-      case 'momentum':
+    // DCA is timer-driven, no signal evaluation
+    if (strategyType === 'dca') {
+      throw new Error('DCA strategy not yet implemented for backtesting');
+    }
+    // Key on decisionMode to select the engine
+    switch (decisionMode ?? 'mechanical') {
+      case 'mechanical':
+        requireMomentumForMechanical(strategyType, 'backtesting');
         return new MomentumStrategy(() => crypto.randomUUID());
       case 'llm':
         return new LlmStrategy(
           () => crypto.randomUUID(),
           async (artifact) => { await repo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
         );
+      // hybrid not yet wired — backtesting does not run indicator pre-filtering
       default:
-        throw new Error(`Unknown strategy type: ${strategyType}`);
+        throw new Error(`Unsupported decisionMode for backtesting: ${decisionMode}. Only mechanical and llm are available.`);
     }
   }
 
@@ -143,7 +150,9 @@ export class BacktestRuntime {
       throw new Error('Backtest job missing strategyType or config');
     }
 
-    const strategy = this.createStrategy(job.strategyType);
+    const strategyConfig = job.config;
+    const decisionMode = (strategyConfig['strategy'] as Record<string, unknown> | undefined)?.['decisionMode'] as string | undefined;
+    const strategy = this.createStrategy(job.strategyType, decisionMode);
     const config = this.buildReplayConfig({
       runId: job.runId,
       role: 'backtest',
@@ -189,8 +198,10 @@ export class BacktestRuntime {
       throw new Error('Validation job missing baseline or candidate strategy config');
     }
 
-    const baselineStrategy = this.createStrategy(job.baseline.strategyType);
-    const candidateStrategy = this.createStrategy(job.candidate.strategyType);
+    const baselineDecisionMode = (job.baseline.config?.['strategy'] as Record<string, unknown> | undefined)?.['decisionMode'] as string | undefined;
+    const candidateDecisionMode = (job.candidate.config?.['strategy'] as Record<string, unknown> | undefined)?.['decisionMode'] as string | undefined;
+    const baselineStrategy = this.createStrategy(job.baseline.strategyType, baselineDecisionMode);
+    const candidateStrategy = this.createStrategy(job.candidate.strategyType, candidateDecisionMode);
     const baselineConfig = this.buildReplayConfig({
       runId: `${job.runId}-baseline`,
       role: 'baseline',

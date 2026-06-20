@@ -1,3 +1,10 @@
+/**
+ * @deprecated Use MechanicalStrategy with signalBias='trend-following' instead.
+ * MomentumStrategy is retained temporarily while MechanicalStrategy is verified
+ * to fully cover momentum trading use cases.
+ * Removal tracked in docs/features/2026/06/20/002-mechanical-strategy-unification/001-plan.md
+ */
+
 import type { Strategy, MarketSnapshot, StrategyError } from '@herobids/domain';
 import type { Decision } from '@herobids/domain';
 import type { DecisionId, VenueAccountId, InstrumentId } from '@herobids/domain';

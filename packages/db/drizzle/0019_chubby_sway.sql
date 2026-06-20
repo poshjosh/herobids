@@ -1,0 +1,1 @@
+ALTER TABLE "blueprints" DROP COLUMN "strategy_preset";

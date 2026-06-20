@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { TechnicalConfigSchema, UnifiedAgentConfigSchema } from '@herobids/domain';
+import { TechnicalConfigSchema, IntelligenceConfigSchema, UnifiedAgentConfigSchema } from '@herobids/domain';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 const UpdateOwnConfigPayloadSchema = z.object({
   technical: TechnicalConfigSchema.or(z.null()).optional(),
+  intelligence: IntelligenceConfigSchema.or(z.null()).optional(),
   execution: z.object({
     mode: z.enum(['paper', 'shadow', 'live']).optional(),
     positionSizeMode: z.enum(['fixed', 'percent_equity']).optional(),
@@ -23,7 +24,7 @@ type UpdateOwnConfigPayload = z.infer<typeof UpdateOwnConfigPayloadSchema>;
 
 const updateOwnConfigTool: AgentTool = {
   name: 'update_own_config',
-  description: "Update this agent's own configuration. Can add, modify, or remove the technical section. Can change execution mode and risk parameters. Cannot remove intelligence (would deactivate reasoning). Changes are persisted to DB and take effect on the next cycle.",
+  description: "Update this agent's own configuration. Can add, modify, or remove the technical, intelligence, execution, and risk sections. Cannot remove both technical and intelligence (would deactivate reasoning). Changes are persisted to DB and take effect on the next cycle.",
   parametersSchema: UpdateOwnConfigPayloadSchema,
   parameters: convertZodToJsonSchema(UpdateOwnConfigPayloadSchema),
   category: 'write-database',
@@ -120,6 +121,8 @@ const updateOwnConfigTool: AgentTool = {
  * Deep-merges a partial config update into the current config.
  * - If `technical` is null in the update, the technical field is removed.
  * - If `technical` is an object, it replaces (not merges) the technical section.
+ * - If `intelligence` is null, the intelligence field is removed.
+ * - If `intelligence` is an object, it replaces (not merges) the intelligence section.
  * - execution and risk sub-objects are shallow-merged with existing values.
  */
 function deepMergeConfig(
@@ -133,6 +136,14 @@ function deepMergeConfig(
       delete base.technical;
     } else if (update.technical !== undefined) {
       base.technical = update.technical;
+    }
+  }
+
+  if ('intelligence' in update) {
+    if (update.intelligence === null) {
+      delete base.intelligence;
+    } else if (update.intelligence !== undefined) {
+      base.intelligence = update.intelligence;
     }
   }
 

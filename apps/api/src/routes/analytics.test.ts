@@ -27,7 +27,7 @@ function makeChain(value: unknown[]) {
 const now = new Date('2026-01-15T10:00:00Z');
 const bot1 = {
   id: 'bot-1',
-  config: { strategy: { preset: 'momentum' }, execution: { mode: 'paper' } },
+  config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, execution: { mode: 'paper' } },
 };
 const event1 = {
   id: 'e-1',
@@ -95,19 +95,78 @@ describe('GET /analytics', () => {
     expect(body.groups[0].decisionCount).toBe(1);
   });
 
-  it('decisionModes filter excludes bots with non-matching execution mode', async () => {
+  it('decisionModes filter excludes bots with non-matching decisionMode', async () => {
+    const db = buildAnalyticsDb([bot1], [], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    // bot1 has decisionMode=mechanical; filter to llm should exclude it
+    const res = await app.inject({ method: 'GET', url: '/analytics?decisionModes=llm' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().groups).toEqual([]);
+  });
+
+  it('decisionModes filter includes bots with matching decisionMode', async () => {
+    const db = buildAnalyticsDb([bot1], [event1], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    // bot1 has decisionMode=mechanical; filter to mechanical should include its events
+    const res = await app.inject({ method: 'GET', url: '/analytics?decisionModes=mechanical' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().groups.length).toBeGreaterThan(0);
+  });
+
+  it('rejects invalid decisionModes value', async () => {
+    const db = buildAnalyticsDb([], [], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    // 'shadow' is an execution mode, not a valid decisionMode
+    const res = await app.inject({ method: 'GET', url: '/analytics?decisionModes=shadow' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('executionModes filter excludes bots with non-matching execution mode', async () => {
     const db = buildAnalyticsDb([bot1], [], []);
     const app = Fastify();
     decorateWithAuth(app);
     await analyticsRoutes(app, db);
 
     // bot1 has mode=paper; filter to live should exclude it
-    const res = await app.inject({ method: 'GET', url: '/analytics?decisionModes=live' });
+    const res = await app.inject({ method: 'GET', url: '/analytics?executionModes=live' });
     expect(res.statusCode).toBe(200);
     expect(res.json().groups).toEqual([]);
   });
 
-  it('strategy groupBy groups events by strategy preset', async () => {
+  it('executionModes filter includes bots with matching execution mode', async () => {
+    const db = buildAnalyticsDb([bot1], [event1], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    // bot1 has mode=paper; filter to paper should include its events
+    const res = await app.inject({ method: 'GET', url: '/analytics?executionModes=paper' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().groups.length).toBeGreaterThan(0);
+  });
+
+  it('rejects invalid executionModes value', async () => {
+    const db = buildAnalyticsDb([], [], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?executionModes=invalid' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('strategy groupBy groups events by strategy type', async () => {
     const db = buildAnalyticsDb([bot1], [event1], []);
     const app = Fastify();
     decorateWithAuth(app);
@@ -154,8 +213,36 @@ describe('POST /analytics/query', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('rejects invalid decisionModes value in POST body', async () => {
+    const db = buildAnalyticsDb([], [], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/analytics/query',
+      payload: { decisionModes: ['shadow'], groupBy: 'day' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects invalid executionModes value in POST body', async () => {
+    const db = buildAnalyticsDb([], [], []);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/analytics/query',
+      payload: { executionModes: ['invalid'], groupBy: 'day' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('botIds filter scopes results to specified bots', async () => {
-    const bot2 = { id: 'bot-2', config: { strategy: { preset: 'dca' }, execution: { mode: 'paper' } } };
+    const bot2 = { id: 'bot-2', config: { strategy: { type: 'dca' }, execution: { mode: 'paper' } } };
     // DB returns both bots but we filter to bot-2
     const db = buildAnalyticsDb([bot1, bot2], [], []);
     const app = Fastify();

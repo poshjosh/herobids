@@ -16,7 +16,7 @@ export {
   BotConfigSchema,
   RiskConfigSchema,
   RiskPlaybookSchema,
-  StrategyConfigSchema,
+  StrategySchema,
   ExecutionConfigSchema,
   MomentumParamsSchema,
   LlmParamsSchema,
@@ -57,6 +57,10 @@ export {
   IndicatorConfigSchema,
   TechnicalConfigSchema,
   UnifiedAgentConfigSchema,
+  IntelligenceConfigSchema,
+  deriveStrategyPreset,
+  extractStrategyFromConfig,
+  requireMomentumForMechanical,
 } from './schema.js';
 
 export type {
@@ -103,4 +107,5 @@ export type {
   IndicatorConfig,
   TechnicalConfig,
   UnifiedAgentConfig,
+  IntelligenceConfig,
 } from './schema.js';

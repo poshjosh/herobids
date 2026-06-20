@@ -31,9 +31,20 @@ Suggest specific changes to enhance the code. Outline the sequence of suggested 
 - Dependencies between steps
 - Any risks or open questions
 
-Each item on the list should have a priority level (critial, high, medium, low). Each item on the list should also be actionable and specific. If there are any uncertainties or assumptions in your suggestions, clearly state them.
+Each item on the list should have a priority level (critical, high, medium, low). Each item on the list should also be actionable and specific. If there are any uncertainties or assumptions in your suggestions, clearly state them.
 
 Note what should be unit tested vs integration tested vs visually verified.
+
+## Priority Definitions
+
+Each finding must be classified with one of the following priority levels.
+
+| Priority | Definition | Examples |
+|----------|-----------|----------|
+| **Critical** | Blocks deployment or causes data/capital loss. Must fix before merge. | Type safety violation (`any`/`@ts-ignore`) in a trading path; missing Zod validation at a public API boundary; error swallowed in an async loop; risk gate bypass; migration/schema mismatch |
+| **High** | Correctness or security issue that will cause failures in production. Should fix before merge. | Plan alignment deviation (implementation doesn't match acceptance criteria); incorrect domain port usage; missing test for a high-risk change; hardcoded literal where operator config should be used |
+| **Medium** | Maintainability, clarity, or moderate risk. Fix recommended but can defer. | Misleading naming that could cause future bugs; duplicated logic that should be abstracted; missing typed error codes (generic `Error` strings); incomplete edge case handling in non-critical paths |
+| **Low** | Stylistic or minor improvement with no behavioral cost. Never blocks completion. | Naming nitpicks; formatting; comments/docstrings; unused imports in test files |
 
 ## Handoff Rules
 

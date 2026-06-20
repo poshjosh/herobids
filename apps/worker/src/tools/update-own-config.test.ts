@@ -46,7 +46,7 @@ describe('update_own_config tool', () => {
 
   it('adds technical config — merges and persists', async () => {
     const ops = makeOps({
-      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { model: 'gpt-4' } }),
+      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { provider: 'openai', lightModel: 'gpt-4' } }),
     });
     const ctx = makeCtx(ops);
 
@@ -56,13 +56,13 @@ describe('update_own_config tool', () => {
     expect(ops.persistConfig).toHaveBeenCalledOnce();
     const [persisted] = (ops.persistConfig as ReturnType<typeof vi.fn>).mock.calls[0] as [UnifiedAgentConfig, string?];
     expect(persisted.technical).toMatchObject({ filters: { venue: 'hyperliquid' } });
-    expect((persisted as Record<string, unknown>).intelligence).toEqual({ model: 'gpt-4' });
+    expect((persisted as Record<string, unknown>).intelligence).toEqual({ provider: 'openai', lightModel: 'gpt-4' });
   });
 
   it('removes technical (sets to null) when intelligence is present', async () => {
     const ops = makeOps({
       getCurrentConfig: vi.fn().mockResolvedValue({
-        intelligence: { model: 'gpt-4' },
+        intelligence: { provider: 'openai', lightModel: 'gpt-4' },
         technical: MINIMAL_TECHNICAL,
       }),
     });
@@ -73,7 +73,7 @@ describe('update_own_config tool', () => {
     expect(result.success).toBe(true);
     const [persisted] = (ops.persistConfig as ReturnType<typeof vi.fn>).mock.calls[0] as [UnifiedAgentConfig, string?];
     expect(persisted.technical).toBeUndefined();
-    expect((persisted as Record<string, unknown>).intelligence).toEqual({ model: 'gpt-4' });
+    expect((persisted as Record<string, unknown>).intelligence).toEqual({ provider: 'openai', lightModel: 'gpt-4' });
   });
 
   it('rejects removing technical when there is no intelligence config', async () => {
@@ -91,7 +91,7 @@ describe('update_own_config tool', () => {
 
   it('rejects invalid config (Zod validation failure)', async () => {
     const ops = makeOps({
-      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { model: 'gpt-4' } }),
+      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { provider: 'openai', lightModel: 'gpt-4' } }),
     });
     const ctx = makeCtx(ops);
 
@@ -160,7 +160,7 @@ describe('update_own_config tool', () => {
 
   it('journals config change with before/after snapshot', async () => {
     const currentConfig: UnifiedAgentConfig = {
-      intelligence: { model: 'gpt-4' },
+      intelligence: { provider: 'openai', lightModel: 'gpt-4' },
     };
     const ops = makeOps({
       getCurrentConfig: vi.fn().mockResolvedValue(currentConfig),
@@ -179,7 +179,7 @@ describe('update_own_config tool', () => {
 
   it('persists config to DB via persistConfig', async () => {
     const ops = makeOps({
-      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { model: 'gpt-4' } }),
+      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { provider: 'openai', lightModel: 'gpt-4' } }),
     });
     const ctx = makeCtx(ops);
 
@@ -228,18 +228,33 @@ describe('update_own_config tool', () => {
     expect(persisted.execution?.fixedPositionSize).toBe('100');
   });
 
-  it('ignores attempts to modify intelligence field (not in schema)', async () => {
+  it('rejects removing intelligence without technical (would leave agent deactivated)', async () => {
     const ops = makeOps({
-      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { model: 'gpt-4' } }),
+      getCurrentConfig: vi.fn().mockResolvedValue({ intelligence: { provider: 'openai', lightModel: 'gpt-4' } }),
     });
     const ctx = makeCtx(ops);
 
-    // Zod strips the unknown 'intelligence' key because it's not in UpdateOwnConfigPayloadSchema
-    const result = await updateOwnConfigTool.execute({ intelligence: null } as unknown as Record<string, unknown>, ctx);
+    // Removing intelligence without adding technical should be rejected
+    const result = await updateOwnConfigTool.execute({ intelligence: null }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/technical.*intelligence|intelligence.*technical/i);
+    expect(ops.persistConfig).not.toHaveBeenCalled();
+  });
+
+  it('replaces intelligence field when new value is provided', async () => {
+    const ops = makeOps({
+      getCurrentConfig: vi.fn().mockResolvedValue({
+        intelligence: { provider: 'openai', lightModel: 'gpt-4' },
+        technical: MINIMAL_TECHNICAL,
+      }),
+    });
+    const ctx = makeCtx(ops);
+
+    const result = await updateOwnConfigTool.execute({ intelligence: { provider: 'anthropic', lightModel: 'claude-3-haiku' } }, ctx);
 
     expect(result.success).toBe(true);
     const [persisted] = (ops.persistConfig as ReturnType<typeof vi.fn>).mock.calls[0] as [UnifiedAgentConfig];
-    // intelligence must be preserved from the current config — not nulled out
-    expect((persisted as Record<string, unknown>).intelligence).toEqual({ model: 'gpt-4' });
+    expect((persisted as Record<string, unknown>).intelligence).toEqual({ provider: 'anthropic', lightModel: 'claude-3-haiku' });
   });
 });
