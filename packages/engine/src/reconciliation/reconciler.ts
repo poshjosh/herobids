@@ -47,6 +47,11 @@ export interface ReconcilerDeps {
   getLastReconciledAt?: () => Promise<Date | null>;
   /** Whether balance mismatches should be treated as authoritative drift or observational telemetry. */
   balanceDiffMode?: 'authoritative' | 'observational';
+  /**
+   * If true, position-only drift is expected (simulated fills, no real venue positions)
+   * and is logged at INFO instead of WARN. Used by shadow/paper mode agents.
+   */
+  isShadowOrPaper?: boolean;
 }
 
 /**
@@ -149,10 +154,27 @@ export class Reconciler {
           'Reconciliation pass: drift within acceptable threshold',
         );
       } else {
-        this.deps.logger.warn(
-          { venueAccountId: this.deps.venueAccountId, diffCount: result.diffs.length, diffs: result.diffs },
-          'Reconciliation pass: drift detected',
-        );
+        // This branch fires only when classifyResult returned 'drift_detected'.
+        // classifyResult may downgrade certain patterns (e.g. balance-only diffs
+        // → observed_variance), so by the time we reach here all higher-level
+        // classifications have been exhausted and the remaining diffs are genuine.
+        //
+        // Shadow/paper modes produce simulated fills that never land on the venue,
+        // so position-only drift is expected. Log at INFO to avoid noise.
+        const isPositionOnly = this.deps.isShadowOrPaper &&
+          result.diffs.length > 0 &&
+          result.diffs.every((d) => d.type === 'position_mismatch');
+        if (isPositionOnly) {
+          this.deps.logger.info(
+            { venueAccountId: this.deps.venueAccountId, diffCount: result.diffs.length, diffs: result.diffs },
+            'Reconciliation pass: drift detected (shadow/paper — position-only, expected)',
+          );
+        } else {
+          this.deps.logger.warn(
+            { venueAccountId: this.deps.venueAccountId, diffCount: result.diffs.length, diffs: result.diffs },
+            'Reconciliation pass: drift detected',
+          );
+        }
       }
 
       // 6. Notify

@@ -138,6 +138,17 @@ export class HyperliquidPrivateStream implements Subscription {
     try {
       const msg = JSON.parse(data.toString()) as HyperliquidWsMessage;
 
+      // Hyperliquid application-level ping — respond with pong to keep connection alive.
+      // The server sends {"type":"ping"} every ~50s; missing pong → server closes connection.
+      if (msg.type === 'ping') {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: 'pong' }));
+        } else {
+          this.logger.warn('Cannot respond to ping — WebSocket not OPEN');
+        }
+        return;
+      }
+
       if (msg.channel === 'userFills' || msg.channel === 'fills') {
         this.handleFills(msg.data);
       } else if (msg.channel === 'orderUpdates') {
@@ -251,8 +262,9 @@ export class HyperliquidPrivateStream implements Subscription {
 }
 
 interface HyperliquidWsMessage {
-  channel: string;
-  data: unknown;
+  channel?: string;
+  type?: string;
+  data?: unknown;
 }
 
 function mapWsOrderStatus(status: string | undefined): string {

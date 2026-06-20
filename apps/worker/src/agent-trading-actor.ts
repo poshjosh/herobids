@@ -1185,7 +1185,10 @@ export class AgentTradingActor implements ExecutionActor {
 
     this.privateStream.onStateChange((state: SubscriptionState) => {
       if (state === 'disconnected' || state === 'reconnecting') {
-        if (!this.paused) {
+        // Shadow/paper modes use simulated fills — no real venue confirmations arrive
+        // via the private stream, so disconnecting it shouldn't block decision intake.
+        // The reconciler catches drift on its own schedule.
+        if (!this.paused && this.deps.executionMode !== 'shadow' && this.deps.executionMode !== 'paper') {
           this.paused = true;
           this.logger.warn('Private stream disconnected — pausing decision intake');
         }
@@ -2561,6 +2564,7 @@ export class AgentTradingActor implements ExecutionActor {
       venueAccountId: this.deps.venueAccountId,
       balanceDiffMode: this.deps.venueType === 'swap' ? 'observational' : 'authoritative',
       logger: this.logger,
+      isShadowOrPaper: this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper',
       getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId),
     });
 
