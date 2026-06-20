@@ -140,6 +140,7 @@ const watchTokenTool: AgentTool = {
         success: false,
         error: `unsupported chain: ${chain}`,
         retryable: false,
+        fault: false,
       };
     }
 
@@ -149,6 +150,7 @@ const watchTokenTool: AgentTool = {
         success: false,
         error: validationError,
         retryable: false,
+        fault: false,
       };
     }
 
@@ -236,7 +238,7 @@ const removeWatchTool: AgentTool = {
     const deleted = await ctx.redis.hdel(watchesKey(ctx.agentId), watchId);
 
     if (deleted === 0) {
-      return { success: false, error: `watch ${watchId} not found`, retryable: false };
+      return { success: false, error: `watch ${watchId} not found`, retryable: false, fault: false };
     }
 
     await refreshWatchSummaryCache(ctx);

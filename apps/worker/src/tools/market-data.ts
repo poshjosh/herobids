@@ -182,7 +182,7 @@ const searchTokensTool: AgentTool = {
         };
       }
       logger.warn({ err, tool: 'search_tokens' }, 'search_tokens failed');
-      return { success: false, error: message, retryable: false };
+      return { success: false, error: message, retryable: false, fault: false };
     }
   },
 };
@@ -232,7 +232,7 @@ const discoverTokensTool: AgentTool = {
         };
       }
       logger.warn({ err, tool: 'discover_tokens' }, 'discover_tokens failed');
-      return { success: false, error: message, retryable: false };
+      return { success: false, error: message, retryable: false, fault: false };
     }
   },
 };
@@ -271,9 +271,23 @@ const checkRegimeTool: AgentTool = {
     const regimeParams = params as RegimeParams;
 
     try {
-      const result = await evaluateRegime(regimeParams, (symbol) => {
+      const result = await evaluateRegime(regimeParams, async (symbol) => {
         ctx.recordMarketDataAttempt?.(regimeCandleProvider.id);
-        return regimeCandleProvider.fetchCandles(ctx.marketDataRegistry!, symbol, { interval: '1h', limit: 200 });
+        try {
+          return await regimeCandleProvider.fetchCandles(ctx.marketDataRegistry!, symbol, {
+            interval: '1h',
+            limit: 200,
+          });
+        } catch (fetchErr: unknown) {
+          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+          if (msg.includes('400') || msg.includes('status 400') || msg.includes('Bad Request')) {
+            throw new Error(
+              `Symbol not available on ${regimeCandleProvider.id}: "${symbol}". ` +
+              `Use a major benchmark like BTC, ETH, or SOL for regime evaluation.`,
+            );
+          }
+          throw fetchErr;
+        }
       });
       return { success: true, data: { ok: true, ...result } };
     } catch (err) {
@@ -287,7 +301,7 @@ const checkRegimeTool: AgentTool = {
         };
       }
       logger.warn({ err, tool: 'check_regime' }, 'check_regime failed');
-      return { success: false, error: message, retryable: false };
+      return { success: false, error: message, retryable: false, fault: false };
     }
   },
 };
@@ -324,7 +338,7 @@ const getFundingRatesTool: AgentTool = {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error';
       logger.warn({ err, tool: 'get_funding_rates' }, 'get_funding_rates failed');
-      return { success: false, error: message, retryable: false };
+      return { success: false, error: message, retryable: false, fault: false };
     }
   },
 };
@@ -361,7 +375,7 @@ const getMarketOverviewTool: AgentTool = {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error';
       logger.warn({ err, tool: 'get_market_overview' }, 'get_market_overview failed');
-      return { success: false, error: message, retryable: false };
+      return { success: false, error: message, retryable: false, fault: false };
     }
   },
 };

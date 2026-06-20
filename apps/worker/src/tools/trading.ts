@@ -51,6 +51,7 @@ const submitDecisionTool: AgentTool = {
     if (!reply) {
       return {
         success: false,
+        fault: false,
         error: 'Decision reply timed out after 30s — check the agent events stream for status.',
         errorCode: 'decision_reply_timeout',
       };
@@ -63,6 +64,7 @@ const submitDecisionTool: AgentTool = {
     } catch {
       return {
         success: false,
+        fault: false,
         error: 'Decision reply was malformed — the engine returned an unreadable response.',
         errorCode: 'decision_reply_malformed',
       };
@@ -83,6 +85,7 @@ const submitDecisionTool: AgentTool = {
     if (parsed.status === 'rejected') {
       return {
         success: false,
+        fault: false,
         error: parsed.message ?? 'Decision rejected by risk gate.',
         errorCode: parsed.code ?? 'risk.rejected',
         data: { decisionId },
@@ -92,6 +95,7 @@ const submitDecisionTool: AgentTool = {
     // Error during processing
     return {
       success: false,
+      fault: false,
       error: parsed.message ?? 'Decision could not be processed.',
       errorCode: parsed.code ?? 'decision_processing_error',
       data: { decisionId },

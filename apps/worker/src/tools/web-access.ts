@@ -227,7 +227,7 @@ const webSearchTool: AgentTool = {
     try {
       const apiKey = process.env['TAVILY_API_KEY'];
       if (!apiKey) {
-        return { success: false, error: 'search_web requires TAVILY_API_KEY', retryable: false };
+        return { success: false, error: 'search_web requires TAVILY_API_KEY', retryable: false, fault: false };
       }
 
       const { query, maxResults } = params as z.infer<typeof WebSearchParamsSchema>;
@@ -265,7 +265,7 @@ const webSearchTool: AgentTool = {
       if (!response.ok) {
         const errText = await response.text().catch(() => '');
         logger.warn({ agentId: ctx.agentId, status: response.status }, 'search_web Tavily request failed');
-        return { success: false, error: `Tavily API error: ${response.status} ${errText.slice(0, 200)}`, retryable: response.status >= 500 };
+        return { success: false, error: `Tavily API error: ${response.status} ${errText.slice(0, 200)}`, retryable: response.status >= 500, fault: response.status >= 500 };
       }
 
       const json = await response.json() as { results?: Array<{ title?: string; url?: string; content?: string; score?: number }> };
@@ -282,6 +282,7 @@ const webSearchTool: AgentTool = {
           success: false,
           error: `search_web response could not fit within maxResponseBytes (${maxResponseBytes})`,
           retryable: false,
+          fault: false,
         };
       }
 
@@ -291,7 +292,7 @@ const webSearchTool: AgentTool = {
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes('abort') || msg.includes('timeout');
       logger.warn({ agentId: ctx.agentId, error: msg }, 'search_web failed');
-      return { success: false, error: `search_web failed: ${msg}`, retryable: isTimeout };
+      return { success: false, error: `search_web failed: ${msg}`, retryable: isTimeout, fault: isTimeout ? undefined : false };
     } finally {
       if (ctx.capabilityEngine) {
         ctx.capabilityEngine.recordEnd('search_web', ctx.sessionId, {
@@ -504,7 +505,7 @@ const browseUrlTool: AgentTool = {
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes('abort') || msg.includes('timeout');
       logger.warn({ agentId: ctx.agentId, error: msg }, 'browse_url failed');
-      return { success: false, error: `browse_url failed: ${msg}`, retryable: isTimeout };
+      return { success: false, error: `browse_url failed: ${msg}`, retryable: isTimeout, fault: isTimeout ? undefined : false };
     } finally {
       if (ctx.capabilityEngine) {
         ctx.capabilityEngine.recordEnd('browse_url', ctx.sessionId, {
@@ -648,7 +649,7 @@ const readDocumentTool: AgentTool = {
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes('abort') || msg.includes('timeout');
       logger.warn({ agentId: ctx.agentId, error: msg }, 'read_document failed');
-      return { success: false, error: `read_document failed: ${msg}`, retryable: isTimeout };
+      return { success: false, error: `read_document failed: ${msg}`, retryable: isTimeout, fault: isTimeout ? undefined : false };
     } finally {
       if (ctx.capabilityEngine) {
         ctx.capabilityEngine.recordEnd('read_document', ctx.sessionId, {

@@ -133,10 +133,10 @@ const scheduleReminderTool: AgentTool = {
 
     const triggerDate = new Date(triggerAt);
     if (isNaN(triggerDate.getTime())) {
-      return { success: false, error: 'triggerAt is not a valid datetime' };
+      return { success: false, error: 'triggerAt is not a valid datetime', fault: false };
     }
     if (triggerDate.getTime() <= Date.now()) {
-      return { success: false, error: 'triggerAt must be in the future' };
+      return { success: false, error: 'triggerAt must be in the future', fault: false };
     }
 
     const id = crypto.randomUUID();

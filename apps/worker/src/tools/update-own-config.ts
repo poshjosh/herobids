@@ -48,6 +48,7 @@ const updateOwnConfigTool: AgentTool = {
       return {
         success: false,
         error: 'Cannot remove technical config: agent has no intelligence config either. Removing technical would leave the agent with no active configuration mode.',
+        fault: false,
       };
     }
 
@@ -59,6 +60,7 @@ const updateOwnConfigTool: AgentTool = {
         // null/unknown → live: always rejected
         return {
           success: false,
+          fault: false,
           error: "Cannot promote directly to live mode from an unconfigured state. Start with paper or shadow mode first.",
         };
       }
@@ -68,6 +70,7 @@ const updateOwnConfigTool: AgentTool = {
         if (paperCycles < minRequired) {
           return {
             success: false,
+            fault: false,
             error: `Cannot promote from paper to live: only ${paperCycles} paper cycle(s) completed, need at least ${minRequired}. Continue in paper mode to accumulate more cycles.`,
           };
         }
@@ -84,7 +87,7 @@ const updateOwnConfigTool: AgentTool = {
       const issues = validation.error.issues
         .map(({ path, message }) => `${path.length > 0 ? path.join('.') : 'root'}: ${message}`)
         .join('; ');
-      return { success: false, error: `Config validation failed: ${issues}` };
+      return { success: false, fault: false, error: `Config validation failed: ${issues}` };
     }
 
     const newConfig = validation.data;

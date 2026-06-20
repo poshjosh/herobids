@@ -64,13 +64,13 @@ const adjustRiskLimitsTool: AgentTool = {
     if (p.stopLossCooldownMs !== undefined) overrides.stopLossCooldownMs = p.stopLossCooldownMs ?? null;
 
     if (Object.keys(overrides).length === 0) {
-      return { success: false, error: 'No fields provided to adjust' };
+      return { success: false, error: 'No fields provided to adjust', fault: false };
     }
 
     const result = await ctx.riskContractOps.adjustOverrides(overrides);
 
     if (!result.ok) {
-      return { success: false, error: result.error };
+      return { success: false, error: result.error, fault: false };
     }
 
     return {

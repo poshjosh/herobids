@@ -64,7 +64,7 @@ const codeExecuteTool: AgentTool = {
       const policyDenied = ctx.capabilityEngine.checkAccess('execute_code', ctx.agentId, ctx.sessionId);
       if (policyDenied) {
         logger.warn({ agentId: ctx.agentId, reason: policyDenied }, 'execute_code denied by capability policy');
-          return { success: false, error: `capability policy denied: ${policyDenied}`, errorCode: 'capability.policy_denied', retryable: false };
+          return { success: false, error: `capability policy denied: ${policyDenied}`, errorCode: 'capability.policy_denied', retryable: false, fault: false };
       }
       // recordStart is deferred until after all validation so that early-exit
       // paths (invalid deps, missing config) don't leave the concurrency counter
@@ -79,7 +79,7 @@ const codeExecuteTool: AgentTool = {
     // Validate dependency names
     const invalidDeps = dependencies.filter((d) => !isValidDependencyName(d));
     if (invalidDeps.length > 0) {
-      return { success: false, error: `invalid dependency names: ${invalidDeps.join(', ')}`, errorCode: 'execute_code.invalid_dependencies', retryable: false };
+      return { success: false, error: `invalid dependency names: ${invalidDeps.join(', ')}`, errorCode: 'execute_code.invalid_dependencies', retryable: false, fault: false };
     }
 
     // Read limits from the effective capability grant so operator/user policy changes
@@ -214,6 +214,7 @@ const codeExecuteTool: AgentTool = {
       errorCode: 'execute_code.execution_failed',
       error: `execute_code${label} failed with exit code ${exitCode}`,
       retryable: false,
+      fault: false,
     };
   },
 };

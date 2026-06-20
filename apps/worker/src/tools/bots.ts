@@ -82,7 +82,7 @@ const listBotsTool: AgentTool = {
     const { days } = params as z.infer<typeof ListBotsParamsSchema>;
 
     if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
+      return { success: false, error: 'direct db access not available', fault: false };
     }
 
     const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
@@ -120,12 +120,12 @@ const getBotStatusTool: AgentTool = {
     const { botId } = params as z.infer<typeof GetBotStatusParamsSchema>;
 
     if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
+      return { success: false, error: 'direct db access not available', fault: false };
     }
 
     const bot = await ctx.botRepo.getBotById(botId);
     if (!bot || bot.creatorType !== 'agent' || bot.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent` };
+      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
     }
 
     return {
@@ -160,12 +160,12 @@ const stopBotTool: AgentTool = {
     const { botId } = params as z.infer<typeof StopBotParamsSchema>;
 
     if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
+      return { success: false, error: 'direct db access not available', fault: false };
     }
 
     const stopTarget = await ctx.botRepo.getBotById(botId);
     if (!stopTarget || stopTarget.creatorType !== 'agent' || stopTarget.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent` };
+      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
     }
 
     const previousStatus = stopTarget.status;
@@ -190,7 +190,7 @@ const stopBotTool: AgentTool = {
       } catch (rollbackErr) {
         logger.error({ rollbackErr, botId }, 'CRITICAL: failed to restore bot state after stop signal failure');
       }
-      return { success: false, data: { ok: false, botId, previousStatus, note: 'failed to signal bot stop' } };
+      return { success: false, data: { ok: false, botId, previousStatus, note: 'failed to signal bot stop' }, fault: false };
     }
 
     return { success: true, data: { ok: true, botId, previousStatus, note: 'bot stopped' } };
@@ -214,16 +214,16 @@ const startBotTool: AgentTool = {
     const { botId, rationale } = params as z.infer<typeof StartBotParamsSchema>;
 
     if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
+      return { success: false, error: 'direct db access not available', fault: false };
     }
 
     const startTarget = await ctx.botRepo.getBotById(botId);
     if (!startTarget || startTarget.creatorType !== 'agent' || startTarget.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent` };
+      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
     }
 
     if (startTarget.status === 'running') {
-      return { success: false, error: `bot ${botId} is already running` };
+      return { success: false, error: `bot ${botId} is already running`, fault: false };
     }
 
     await ctx.botRepo.markBotRunning(botId);
@@ -245,7 +245,7 @@ const startBotTool: AgentTool = {
       } catch (rollbackErr) {
         logger.error({ rollbackErr, botId }, 'CRITICAL: failed to restore bot state after start enqueue failure');
       }
-      return { success: false, data: { ok: false, botId, note: 'failed to submit bot start' } };
+      return { success: false, data: { ok: false, botId, note: 'failed to submit bot start' }, fault: false };
     }
 
     return { success: true, data: { ok: true, botId, status: 'running', note: 'bot start submitted' } };
@@ -299,12 +299,12 @@ const adjustBotConfigTool: AgentTool = {
     const { botId, config } = params as z.infer<typeof AdjustBotConfigParamsSchema>;
 
     if (!ctx.botRepo) {
-      return { success: false, error: 'direct db access not available' };
+      return { success: false, error: 'direct db access not available', fault: false };
     }
 
     const configTarget = await ctx.botRepo.getBotById(botId);
     if (!configTarget || configTarget.creatorType !== 'agent' || configTarget.creatorId !== ctx.agentId) {
-      return { success: false, error: `bot ${botId} not found or not owned by this agent` };
+      return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
     }
 
     const merged = deepMergeConfig(configTarget.config, config);

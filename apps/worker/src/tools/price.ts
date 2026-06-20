@@ -109,6 +109,7 @@ const getPriceTool: AgentTool = {
         success: false,
         error: validationError,
         retryable: false,
+        fault: false,
       };
     }
 
@@ -127,7 +128,7 @@ const getPriceTool: AgentTool = {
       return {
         success: false,
         error: 'price lookup failed',
-        retryable: false,
+        fault: false,
       };
     }
 
@@ -136,6 +137,7 @@ const getPriceTool: AgentTool = {
         success: false,
         error: result.error?.message ?? 'price lookup failed',
         retryable: result.error?.code === 'price.source_failed',
+        fault: false,
       };
     }
 

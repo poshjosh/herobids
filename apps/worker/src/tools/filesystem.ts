@@ -29,7 +29,7 @@ const writeFileTool: AgentTool = {
 
     const reservedErr = checkReservedDir(relativePath);
     if (reservedErr) {
-      return { success: false, error: reservedErr, retryable: false };
+      return { success: false, error: reservedErr, retryable: false, fault: false };
     }
 
     const paths = getWorkspacePaths(ctx.agentId);
@@ -37,7 +37,7 @@ const writeFileTool: AgentTool = {
 
     const resolved = await resolveWorkspacePath(paths.root, relativePath);
     if (!resolved.ok) {
-      return { success: false, error: resolved.error, retryable: false };
+      return { success: false, error: resolved.error, retryable: false, fault: false };
     }
 
     try {
@@ -50,7 +50,7 @@ const writeFileTool: AgentTool = {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'write_file error');
-      return { success: false, error: `write_file failed: ${msg}`, retryable: false };
+      return { success: false, error: `write_file failed: ${msg}`, retryable: false, fault: false };
     }
   },
 };
@@ -75,16 +75,16 @@ const readFileTool: AgentTool = {
 
     const resolved = await resolveWorkspacePath(paths.root, relativePath);
     if (!resolved.ok) {
-      return { success: false, error: resolved.error, retryable: false };
+      return { success: false, error: resolved.error, retryable: false, fault: false };
     }
 
     try {
       const fileStat = await stat(resolved.absolutePath);
       if (fileStat.isDirectory()) {
-        return { success: false, error: 'path is a directory; use list_files to inspect directories', retryable: false };
+        return { success: false, error: 'path is a directory; use list_files to inspect directories', retryable: false, fault: false };
       }
       if (fileStat.size > MAX_READ_BYTES) {
-        return { success: false, error: `file too large (${fileStat.size} bytes); max is ${MAX_READ_BYTES} bytes`, retryable: false };
+        return { success: false, error: `file too large (${fileStat.size} bytes); max is ${MAX_READ_BYTES} bytes`, retryable: false, fault: false };
       }
 
       const content = await fsReadFile(resolved.absolutePath, 'utf8');
@@ -93,11 +93,11 @@ const readFileTool: AgentTool = {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
-        return { success: false, error: `file not found: ${relativePath}`, retryable: false };
+        return { success: false, error: `file not found: ${relativePath}`, retryable: false, fault: false };
       }
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'read_file error');
-      return { success: false, error: `read_file failed: ${msg}`, retryable: false };
+      return { success: false, error: `read_file failed: ${msg}`, retryable: false, fault: false };
     }
   },
 };
@@ -129,7 +129,7 @@ const listFilesTool: AgentTool = {
     } else {
       const resolved = await resolveWorkspacePath(paths.root, targetRelative);
       if (!resolved.ok) {
-        return { success: false, error: resolved.error, retryable: false };
+        return { success: false, error: resolved.error, retryable: false, fault: false };
       }
       absolutePath = resolved.absolutePath;
     }
@@ -142,14 +142,14 @@ const listFilesTool: AgentTool = {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
-        return { success: false, error: `directory not found: ${relativePath}`, retryable: false };
+        return { success: false, error: `directory not found: ${relativePath}`, retryable: false, fault: false };
       }
       if (code === 'ENOTDIR') {
-        return { success: false, error: `path is a file, not a directory: ${relativePath}`, retryable: false };
+        return { success: false, error: `path is a file, not a directory: ${relativePath}`, retryable: false, fault: false };
       }
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'list_files error');
-      return { success: false, error: `list_files failed: ${msg}`, retryable: false };
+      return { success: false, error: `list_files failed: ${msg}`, retryable: false, fault: false };
     }
   },
 };
@@ -171,7 +171,7 @@ const deleteFileTool: AgentTool = {
 
     const reservedErr = checkReservedDir(relativePath);
     if (reservedErr) {
-      return { success: false, error: reservedErr, retryable: false };
+      return { success: false, error: reservedErr, retryable: false, fault: false };
     }
 
     const paths = getWorkspacePaths(ctx.agentId);
@@ -179,13 +179,13 @@ const deleteFileTool: AgentTool = {
 
     const resolved = await resolveWorkspacePath(paths.root, relativePath);
     if (!resolved.ok) {
-      return { success: false, error: resolved.error, retryable: false };
+      return { success: false, error: resolved.error, retryable: false, fault: false };
     }
 
     try {
       const fileStat = await stat(resolved.absolutePath);
       if (fileStat.isDirectory()) {
-        return { success: false, error: 'path is a directory; delete_file only removes files', retryable: false };
+        return { success: false, error: 'path is a directory; delete_file only removes files', retryable: false, fault: false };
       }
 
       await unlink(resolved.absolutePath);
@@ -194,11 +194,11 @@ const deleteFileTool: AgentTool = {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
-        return { success: false, error: `file not found: ${relativePath}`, retryable: false };
+        return { success: false, error: `file not found: ${relativePath}`, retryable: false, fault: false };
       }
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'delete_file error');
-      return { success: false, error: `delete_file failed: ${msg}`, retryable: false };
+      return { success: false, error: `delete_file failed: ${msg}`, retryable: false, fault: false };
     }
   },
 };
