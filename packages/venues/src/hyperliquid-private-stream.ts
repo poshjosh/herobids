@@ -144,7 +144,7 @@ export class HyperliquidPrivateStream implements Subscription {
         if (this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: 'pong' }));
         } else {
-          this.logger.warn('Cannot respond to ping — WebSocket not OPEN');
+          console.warn('Cannot respond to ping — WebSocket not OPEN');
         }
         return;
       }
