@@ -24,6 +24,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `deriveStrategyPreset` JSDoc documents intentional pass-through for unmapped types
 - `agent-message-broker` resolves venue account and venue type from trading binding before creating bots
 - **Momentum → Mechanical migration**: `MomentumStrategy`, `MomentumParamsSchema`, and `requireMomentumForMechanical` removed. Momentum bots now route through `MechanicalStrategy` via param translation. Mechanical strategy passes through signal intent (`go_long`/`go_short`) instead of always `go_long`.
+- **Venue account resolution**: `venueAccountId` removed from bot start/restart config payloads in `agent-message-broker` — resolved exclusively via `startupContext.sourceVenueAccountId` at job processing time.
+- **Startup venue-account check**: conditional on `sourceVenueAccountRequired` (per provider type) instead of unconditional. Switched from generic `Error` to `BotStartupError` with error code `missing_source_venue_account`. Added type-safe narrowing for downstream consumers.
 
 ### Fixed
 

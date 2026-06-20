@@ -687,9 +687,10 @@ export class AgentMessageBroker {
       if (this.botStart) {
         await this.botRepo.markBotRunning(payload.botId);
         try {
+          // venueAccountId is resolved via startupContext.sourceVenueAccountId at job processing
+          // time — no longer passed in the config payload to avoid stale/dual sources of truth.
           await this.botStart(payload.botId, agent.userId, bot.tradingBindingId, {
             ...effectiveConfig,
-            venueAccountId: bot.venueAccountId,
           });
         } catch (err) {
           logger.error({ botId: payload.botId, err }, 'Failed to enqueue start job during start action');
@@ -774,9 +775,10 @@ export class AgentMessageBroker {
 
       if (bot.status === 'running' && this.botRestart) {
         try {
+          // venueAccountId is resolved via startupContext.sourceVenueAccountId at job processing
+          // time — no longer passed in the config payload to avoid stale/dual sources of truth.
           await this.botRestart(payload.botId, agent.userId, bot.tradingBindingId, {
             ...mergedConfig,
-            venueAccountId: bot.venueAccountId,
           });
         } catch (err) {
           logger.error(

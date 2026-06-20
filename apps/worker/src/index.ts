@@ -26,7 +26,7 @@ import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { resolveSwapAssetsFromBinding } from './resolve-swap-assets.js';
-import { resolveBotStartupContext } from './startup-context.js';
+import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
 import { TelegramClient, forceReply, PlatformAlertService, ResendEmailClient } from './alerting/index.js';
@@ -868,9 +868,12 @@ const runtime = new WorkerRuntime(
     const venueAccountId = startupContext.sourceVenueAccountId;
     // The resolver already validated the source-venue-account requirement per provider type.
     // Consume the resolver's decision here rather than re-encoding provider-specific logic.
-    if (!venueAccountId) {
-      throw new Error(`Bot ${botId} has no resolved source venue account — refusing to start`);
+    if (startupContext.sourceVenueAccountRequired && !venueAccountId) {
+      throw new BotStartupError('missing_source_venue_account', `Bot ${botId} has no resolved source venue account — refusing to start`);
     }
+    // Narrow for downstream: orderbook venues fail the throw above, supported swap
+    // venues (1inch, Jupiter) also fail it, unsupported swap venues throw separately.
+    const resolvedVenueAccountId: string = venueAccountId!;
     const instanceUserId = startupContext.userId ?? (rawConfig['userId'] as string | undefined);
     let testnet = false;
     let resolvedCredentialId: string | undefined;
@@ -883,7 +886,7 @@ const runtime = new WorkerRuntime(
     // Resolve adapters via shared factory
     if (config.venueType !== 'swap') {
       const result = await venueAdapterFactory.buildOrderbookAdapter({
-        venueAccountId,
+        venueAccountId: resolvedVenueAccountId,
         venue: config.venue,
         actorType: 'bot',
         actorId: botId,
@@ -895,7 +898,7 @@ const runtime = new WorkerRuntime(
       credentialsPresent = !!(result.credentials.apiKey.trim() && result.credentials.secret.trim());
     } else if (config.swapAssets) {
       const result = await venueAdapterFactory.buildSwapAdapter({
-        venueAccountId,
+        venueAccountId: resolvedVenueAccountId,
         venue: config.venue,
         swapAssets: config.swapAssets,
         actorType: 'bot',
@@ -915,7 +918,7 @@ const runtime = new WorkerRuntime(
       executionMode: config.execution.mode,
       venue: config.venue,
       venueType: config.venueType,
-      venueAccountId,
+      venueAccountId: resolvedVenueAccountId,
       credentialsFromDb: !!resolvedCredentialId,
       credentialsPresent,
       signerPresent,
@@ -1051,7 +1054,7 @@ const runtime = new WorkerRuntime(
       streamConfig,
       venue: config.venue,
       symbol: config.symbol,
-      venueAccountId,
+      venueAccountId: resolvedVenueAccountId,
       venueType: config.venueType,
       swapAssets: config.swapAssets,
       swapNetwork,

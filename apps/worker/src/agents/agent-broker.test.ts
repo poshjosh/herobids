@@ -1310,7 +1310,6 @@ describe('AgentMessageBroker', () => {
       });
       expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'binding-1', {
         risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
-        venueAccountId: 'va-001',
       });
     });
 
@@ -1406,7 +1405,6 @@ describe('AgentMessageBroker', () => {
         strategy: expect.objectContaining({ type: 'momentum', threshold: 5 }),
         risk: expect.objectContaining({ maxDrawdownPct: 10 }),
         executionMode: 'shadow',
-        venueAccountId: 'va-001',
       }));
     });
 
@@ -1471,7 +1469,6 @@ describe('AgentMessageBroker', () => {
       expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', expect.objectContaining({
         strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
         risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
-        venueAccountId: 'va-001',
       }));
     });
 
