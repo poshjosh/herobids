@@ -354,6 +354,21 @@ export const UsageBillingConfigSchema = z.object({
   warningThresholdsPct: z.array(z.number().int().min(1).max(100)).default([50, 80, 100]),
   /** Default rate card name to activate when opening new billing periods */
   defaultRateCardName: z.string().default('default'),
+  /** Seed items for the default rate card — priceMicrousd per perUnit quantity */
+  defaultRateCardItems: z.array(z.object({
+    meterKey: z.enum(['llm.input_tokens', 'llm.output_tokens', 'llm.reasoning_tokens', 'agent.runtime_ms']),
+    /** Scope to a specific provider — omit to apply to all providers */
+    provider: z.string().optional(),
+    /** Exact model ID or glob with trailing * — omit to apply to all models */
+    modelPattern: z.string().optional(),
+    priceMicrousd: z.number().int().min(0),
+    perUnit: z.number().int().min(1),
+  })).default([
+    { meterKey: 'llm.input_tokens', priceMicrousd: 2_500, perUnit: 1_000 },
+    { meterKey: 'llm.output_tokens', priceMicrousd: 10_000, perUnit: 1_000 },
+    { meterKey: 'llm.reasoning_tokens', priceMicrousd: 15_000, perUnit: 1_000 },
+    { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
+  ]),
   /** Whether credit top-up purchases are available globally */
   creditTopUpsEnabled: z.boolean().default(false),
   /** Provider top-up product mappings: provider → array of top-up packs */

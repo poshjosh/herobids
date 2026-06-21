@@ -13,8 +13,9 @@ function isLlmProviderDefinition(value: unknown): value is LlmProviderDefinition
   if (!value || typeof value !== 'object') return false;
   const def = value as Record<string, unknown>;
   return typeof def.id === 'string'
-    && Array.isArray(def.models)
-    && def.models.every((m: unknown) => typeof m === 'string')
+    && typeof def.models === 'object'
+    && !Array.isArray(def.models)
+    && def.models !== null
     && (def.catalogMode === 'static' || def.catalogMode === 'dynamic');
 }
 
@@ -25,7 +26,7 @@ describe('PROVIDER_DEFINITIONS', () => {
     for (const [key, def] of Object.entries(PROVIDER_DEFINITIONS)) {
       expect(isLlmProviderDefinition(def), `provider "${key}" must be a valid LlmProviderDefinition`).toBe(true);
       expect(def.id, `provider "${key}" definition.id must match its key`).toBe(key);
-      expect(def.models.length, `provider "${key}" must have at least one model`).toBeGreaterThan(0);
+      expect(Object.keys(def.models).length, `provider "${key}" must have at least one model`).toBeGreaterThan(0);
     }
   });
 
@@ -43,7 +44,7 @@ describe('PROVIDER_DEFINITIONS', () => {
   it('dynamic providers have at least one model for static fallback', () => {
     for (const def of Object.values(PROVIDER_DEFINITIONS)) {
       if (def.catalogMode === 'dynamic') {
-        expect(def.models.length, `dynamic provider "${def.id}" must have fallback models`).toBeGreaterThan(0);
+        expect(Object.keys(def.models).length, `dynamic provider "${def.id}" must have fallback models`).toBeGreaterThan(0);
       }
     }
   });
@@ -73,7 +74,7 @@ describe('KNOWN_LLM_PROVIDERS', () => {
 describe('getLlmProviderModels', () => {
   it('returns models for known providers', () => {
     const models = getLlmProviderModels('openai');
-    expect(models).toEqual(PROVIDER_DEFINITIONS.openai.models);
+    expect(models).toEqual(Object.keys(PROVIDER_DEFINITIONS.openai.models));
   });
 
   it('returns empty array for unknown providers', () => {

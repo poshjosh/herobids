@@ -30,7 +30,7 @@ export type { InsertAlertDelivery, DeliveryStatus } from './alert-delivery-repos
 export { BillingRepository } from './billing-repository.js';
 export type { UpsertSubscription, BillingCustomerRow, BillingSubscriptionRow } from './billing-repository.js';
 export { UsageBillingRepository } from './usage-billing-repository.js';
-export type { InsertUsageEvent, InsertLedgerEntry, RecordUsageBatchInput, UsageSummaryFilters, UsageEventFilters, SpendCaps, OpenTopUpCreditInput, AccountStatus, BillingAccountRow } from './usage-billing-repository.js';
+export type { InsertUsageEvent, InsertLedgerEntry, RecordUsageBatchInput, UsageSummaryFilters, UsageEventFilters, SpendCaps, OpenTopUpCreditInput, AccountStatus, BillingAccountRow, RateCardSeedItem } from './usage-billing-repository.js';
 export { AgentRepository } from './agent-repository.js';
 export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';
 export { resolveRuntimeCapabilityDescriptor, buildRuntimeDescriptor } from './agent-runtime-descriptor.js';

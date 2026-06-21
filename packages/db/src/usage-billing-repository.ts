@@ -1,4 +1,5 @@
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { getLlmModelRateCardItems } from '@herobids/domain';
 import type { Database } from './index.js';
 import {
   billingAccounts,
@@ -112,11 +113,21 @@ interface DefaultRateCardSeedItem {
   perUnit: number;
 }
 
+export interface RateCardSeedItem {
+  meterKey: string;
+  /** Scope to a specific provider — null / absent means all providers */
+  provider?: string | null;
+  /** Exact model ID or glob with trailing * — null / absent means all models */
+  modelPattern?: string | null;
+  priceMicrousd: number;
+  perUnit: number;
+}
+
 const DEFAULT_RATE_CARD_ITEMS: DefaultRateCardSeedItem[] = [
   { meterKey: 'llm.input_tokens', priceMicrousd: 2_500, perUnit: 1_000 },
   { meterKey: 'llm.output_tokens', priceMicrousd: 10_000, perUnit: 1_000 },
   { meterKey: 'llm.reasoning_tokens', priceMicrousd: 15_000, perUnit: 1_000 },
-  { meterKey: 'agent.runtime_ms', priceMicrousd: 1_000, perUnit: 60_000 },
+  { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -124,7 +135,10 @@ const DEFAULT_RATE_CARD_ITEMS: DefaultRateCardSeedItem[] = [
 // ---------------------------------------------------------------------------
 
 export class UsageBillingRepository {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly rateCardItems: RateCardSeedItem[] = DEFAULT_RATE_CARD_ITEMS,
+  ) {}
 
   async getUserPlanId(userId: string): Promise<string | null> {
     const [row] = await this.db
@@ -361,22 +375,38 @@ export class UsageBillingRepository {
   }
 
   private async seedDefaultRateCardItems(rateCardId: string): Promise<void> {
+    const catchAllItems = this.rateCardItems.map((item) => ({
+      id: `rci_${rateCardId}_${item.meterKey.replace(/[^a-z0-9_]/gi, '_')}`,
+      rateCardId,
+      meterKey: item.meterKey,
+      provider: item.provider ?? null,
+      modelPattern: item.modelPattern ?? null,
+      priceMicrousd: item.priceMicrousd,
+      perUnit: item.perUnit,
+      roundingMode: 'up',
+      minimumChargeMicrousd: null,
+      metadata: { seed: 'default_v1' },
+    }));
+
+    const modelItems = getLlmModelRateCardItems().map((item) => ({
+      id: `rci_${rateCardId}_${item.meterKey.replace(/[^a-z0-9_]/gi, '_')}_${item.provider}_${item.modelPattern.replace(/[^a-z0-9_]/gi, '_')}`,
+      rateCardId,
+      meterKey: item.meterKey,
+      provider: item.provider,
+      modelPattern: item.modelPattern,
+      priceMicrousd: item.priceMicrousd,
+      perUnit: item.perUnit,
+      roundingMode: 'up',
+      minimumChargeMicrousd: null,
+      metadata: { seed: 'model_pricing_v1' },
+    }));
+
+    const allItems = [...catchAllItems, ...modelItems];
+    if (allItems.length === 0) return;
+
     await this.db
       .insert(billingRateCardItems)
-      .values(
-        DEFAULT_RATE_CARD_ITEMS.map((item) => ({
-          id: `rci_${rateCardId}_${item.meterKey.replace(/[^a-z0-9_]/gi, '_')}`,
-          rateCardId,
-          meterKey: item.meterKey,
-          provider: null,
-          modelPattern: null,
-          priceMicrousd: item.priceMicrousd,
-          perUnit: item.perUnit,
-          roundingMode: 'up',
-          minimumChargeMicrousd: null,
-          metadata: { seed: 'default_v1' },
-        })),
-      )
+      .values(allItems)
       .onConflictDoNothing();
   }
 

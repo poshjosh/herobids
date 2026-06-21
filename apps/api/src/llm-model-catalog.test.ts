@@ -8,7 +8,7 @@ const ORIGINAL_LLM_API_KEY_OLLAMA = process.env['LLM_API_KEY_OLLAMA'];
 
 type MutableProviderDefinitions = Record<string, {
   id: string;
-  models: string[];
+  models: Record<string, object>;
   catalogMode: 'static' | 'dynamic';
   devOnly?: boolean;
   isMultiProvider?: boolean;
@@ -67,7 +67,7 @@ describe('getProviderCatalogEntry', () => {
     const mutableDefinitions = PROVIDER_DEFINITIONS as unknown as MutableProviderDefinitions;
     mutableDefinitions['deepseek'] = {
       id: 'deepseek',
-      models: ['deepseek-chat'],
+      models: { 'deepseek-chat': {} },
       catalogMode: 'static',
       isMultiProvider: true,
     };

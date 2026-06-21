@@ -29,6 +29,7 @@ export interface UsageBillingServiceConfig {
   hardCapMicrousd?: number | null;
   defaultRateCardName: string;
   runtimeChargeWindowMs: number;
+  rateCardItems?: Array<{ meterKey: string; priceMicrousd: number; perUnit: number }>;
   enabled: boolean;
 }
 
@@ -57,7 +58,7 @@ export class UsageBillingService {
     db: Database,
     private readonly config: UsageBillingServiceConfig,
   ) {
-    this.repo = new UsageBillingRepository(db);
+    this.repo = new UsageBillingRepository(db, config.rateCardItems);
   }
 
   /** Lazily resolve billing account and open period. Returns false if unavailable. */

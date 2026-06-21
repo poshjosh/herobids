@@ -620,7 +620,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     instanceExecutionModes.delete(agentId);
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
-  usageBillingRepo: new UsageBillingRepository(db),
+  usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems),
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
 }, agentReconnectHandler, platformAlerts);

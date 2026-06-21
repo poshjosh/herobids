@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.21-a
+
+### Changed
+
+- **Agent runtime rate**: default `agent.runtime_ms` rate set to $0.0001 per minute; all default rate card items are now configurable via `usageBilling.defaultRateCardItems` in operator config.
+- **LLM model pricing**: static provider definitions (OpenAI, Anthropic, DeepSeek) now include per-model `pricing` (`inputUsdPerM`, `outputUsdPerM`, `reasoningUsdPerM`). The rate card is seeded with per-model items automatically; `computeCharge` prefers the model-specific rate over the catch-all fallback. New domain helpers: `getLlmModelPricing()`, `getLlmModelRateCardItems()`.
+
 ## 0.0.1-2026.06.20-a
 
 ### Added

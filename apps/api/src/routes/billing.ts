@@ -32,7 +32,7 @@ export async function billingRoutes(
   usageBillingConfig?: UsageBillingConfig,
 ) {
   const billingRepo = new BillingRepository(db);
-  const usageBillingRepo = new UsageBillingRepository(db);
+  const usageBillingRepo = new UsageBillingRepository(db, usageBillingConfig?.defaultRateCardItems);
   const providerManager = createProviderManager(billingConfig, billingRepo);
   const entitlementSync = new EntitlementSync(
     billingRepo,

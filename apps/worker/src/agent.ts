@@ -143,6 +143,7 @@ interface AgentConfig {
   usageBillingIncludedCreditMicrousd?: number;
   usageBillingSoftCapMicrousd?: number | null;
   usageBillingHardCapMicrousd?: number | null;
+  usageBillingRateCardItems?: Array<{ meterKey: string; priceMicrousd: number; perUnit: number }>;
   agentRiskDefaults?: {
     maxOpenPositions: number;
     maxPositionSizePct: number;
@@ -608,6 +609,7 @@ const usageBillingService = createUsageBillingService(db, {
   hardCapMicrousd: agentConfig.usageBillingHardCapMicrousd,
   defaultRateCardName: DEFAULT_RATE_CARD_NAME,
   runtimeChargeWindowMs: RUNTIME_CHARGE_WINDOW_MS,
+  rateCardItems: agentConfig.usageBillingRateCardItems,
   enabled: !!agentConfig.userId,
 });
 

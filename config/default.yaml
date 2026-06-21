@@ -467,6 +467,19 @@ usageBilling:
   defaultRateCardName: default              # rate card to use when opening new billing periods
   creditTopUpsEnabled: false                # whether users can purchase credit top-ups
   topUpProductsByProvider: {}              # provider → [{packId, externalId, cents}]
+  defaultRateCardItems:                    # seed items for the default rate card
+    - meterKey: "llm.input_tokens"
+      priceMicrousd: 2500
+      perUnit: 1000
+    - meterKey: "llm.output_tokens"
+      priceMicrousd: 10000
+      perUnit: 1000
+    - meterKey: "llm.reasoning_tokens"
+      priceMicrousd: 15000
+      perUnit: 1000
+    - meterKey: "agent.runtime_ms"
+      priceMicrousd: 100
+      perUnit: 60000
 
 # ---------------------------------------------------------------------------
 # Env-only overrides — read directly from process.env, not part of AppConfigSchema

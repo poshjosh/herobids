@@ -326,6 +326,9 @@ export class AgentSessionManager {
           usageBillingIncludedCreditMicrousd: (planUsage?.includedCreditCents ?? 0) * 10_000,
           usageBillingSoftCapMicrousd: planUsage?.softCapCents != null ? planUsage.softCapCents * 10_000 : null,
           usageBillingHardCapMicrousd: planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null,
+          ...(this.config.usageBillingConfig?.defaultRateCardItems
+            ? { usageBillingRateCardItems: this.config.usageBillingConfig.defaultRateCardItems }
+            : {}),
           ...(provider ? { provider } : {}),
           ...(lightModel ? { lightModel } : {}),
           ...(heavyModel ? { heavyModel } : {}),
