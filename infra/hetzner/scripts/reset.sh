@@ -150,6 +150,9 @@ docker run --rm --network herobids_default redis:7-alpine redis-cli -h redis FLU
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pulling latest code..."
 git fetch --all && git reset --hard origin/main
 
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Building agent runtime image (herobids-agent:latest)..."
+docker build --pull -f docker/Dockerfile.agent -t herobids-agent:latest .
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting services (postgres, redis → migrate → api, worker, web)..."
 docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build --remove-orphans
 

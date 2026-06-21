@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent image not rebuilt on deploy**: `reset.sh` now builds `herobids-agent:latest` from `docker/Dockerfile.agent` after every `git pull`, before `docker compose up`. Previously the agent runtime image was stale across deployments, causing all agents to run old code regardless of the version deployed to the compose services.
+
 ## 0.0.1-2026.06.21-c
 
 ### Fixed
