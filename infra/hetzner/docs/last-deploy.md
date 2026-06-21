@@ -1,3 +1,6 @@
+# Last deployment
+
+```
   Server:       128.140.55.192
   Admin user:   herobids@gmail.com
   Setup user:   herobids@gmail.com
@@ -9,3 +12,4 @@
   API health:   http://128.140.55.192:3000/health
   SSH:          ssh root@128.140.55.192
   Logs:         /Users/chinomso.ikwuagwu/dev_ai/herobids/infra/hetzner/scripts/logs.sh 128.140.55.192
+```  
