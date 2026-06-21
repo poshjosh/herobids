@@ -22,6 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
+source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -93,18 +94,18 @@ fi
 # ─── Upload ──────────────────────────────────────────────────────────────────
 
 echo "==> Ensuring target directory exists on ${SERVER_IP}..."
-ssh "root@${SERVER_IP}" 'mkdir -p /opt/herobids' || {
+ssh ${SSH_OPTS} "root@${SERVER_IP}" 'mkdir -p /opt/herobids' || {
   echo "ERROR: Cannot create /opt/herobids on server." >&2
   exit 1
 }
 
 echo "==> Uploading ${ENV_FILE} to root@${SERVER_IP}:/opt/herobids/.env ..."
 
-scp "${ENV_FILE}" "root@${SERVER_IP}:/opt/herobids/.env"
+scp ${SSH_OPTS} "${ENV_FILE}" "root@${SERVER_IP}:/opt/herobids/.env"
 
 echo "==> Setting restrictive permissions (chmod 600)..."
 
-ssh "root@${SERVER_IP}" 'chmod 600 /opt/herobids/.env'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" 'chmod 600 /opt/herobids/.env'
 
 echo ""
 echo "==> Done. .env file uploaded and permissions set."

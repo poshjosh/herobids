@@ -24,6 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
+source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -92,4 +93,4 @@ if [[ ${#LOG_ARGS[@]} -gt 0 ]]; then
   echo "    Filtering by: ${LOG_ARGS[*]}"
   CMD="${CMD} ${LOG_ARGS[*]}"
 fi
-ssh -t "root@${SERVER_IP}" "${CMD}"
+ssh ${SSH_OPTS} -t "root@${SERVER_IP}" "${CMD}"

@@ -25,7 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 TF_DIR="${SCRIPT_DIR}"
-SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
+source "${SCRIPTS_DIR}/_ssh_opts.sh"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 

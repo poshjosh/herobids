@@ -17,6 +17,7 @@ packages:
   - curl
   - gnupg
   - git
+  - jq
   - ufw
   - fail2ban
   - unattended-upgrades

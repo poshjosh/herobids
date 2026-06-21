@@ -28,6 +28,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
+source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ echo ""
 echo "==> Resetting server ${SERVER_IP}..."
 echo ""
 
-ssh "root@${SERVER_IP}" bash -s << 'RESET'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s << 'RESET'
 set -euo pipefail
 
 cd /opt/herobids

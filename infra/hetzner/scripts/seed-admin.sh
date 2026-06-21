@@ -24,6 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
+source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -114,7 +115,7 @@ ADMIN_PASSWORD_B64="$(printf '%s' "${ADMIN_PASSWORD}" | base64 | tr -d '\n')"
 
 # Pipe the seed script into the running API service via docker compose exec.
 # The API service has Node.js, @herobids/db, and drizzle-orm already installed.
-ssh "root@${SERVER_IP}" bash -s -- "${ADMIN_EMAIL_B64}" "${ADMIN_PASSWORD_B64}" "${PASS_DB_URL}" "${DB_URL_B64:-}" << 'REMOTE'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s -- "${ADMIN_EMAIL_B64}" "${ADMIN_PASSWORD_B64}" "${PASS_DB_URL}" "${DB_URL_B64:-}" << 'REMOTE'
 set -euo pipefail
 
 ADMIN_EMAIL_B64="$1"

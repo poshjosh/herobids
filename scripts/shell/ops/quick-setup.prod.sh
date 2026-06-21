@@ -636,8 +636,14 @@ api_call() {
     curl_args+=(--data "$body")
   fi
 
-  HTTP_STATUS="$(curl "${curl_args[@]}")"
+  local curl_exit=0
+  HTTP_STATUS="$(curl "${curl_args[@]}")" || curl_exit=$?
   RESPONSE_BODY="$(cat "$tmp_file")"
+  if [[ $curl_exit -ne 0 ]]; then
+    log_error "curl failed (exit ${curl_exit}) connecting to ${API_BASE_URL}${path}"
+    HTTP_STATUS="000"
+    RESPONSE_BODY=""
+  fi
   rm -f "$tmp_file"
   trap - RETURN
 }

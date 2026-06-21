@@ -21,6 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(dirname "$SCRIPT_DIR")"
+source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
 # ─── Parse flags ─────────────────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ echo "==> Deploying to ${SERVER_IP}..."
 
 # ─── Deploy (single SSH session) ─────────────────────────────────────────────
 
-ssh "root@${SERVER_IP}" bash -s << 'DEPLOY'
+ssh ${SSH_OPTS} "root@${SERVER_IP}" bash -s << 'DEPLOY'
 set -euo pipefail
 cd /opt/herobids
 
