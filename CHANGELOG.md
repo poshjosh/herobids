@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tool schema Draft 7 compatibility**: `convertZodToJsonSchema` now normalises Draft 4 boolean `exclusiveMinimum`/`exclusiveMaximum` to Draft 7 numeric form. Fixes DeepSeek (and other strict providers) returning a 400 on any tool whose Zod schema uses `.positive()` / `.negative()` (affected `list_bots`, `get_analytics`, `check_regime`, `search_tokens`, and others).
+
 ## 0.0.1-2026.06.21-a
 
 ### Changed

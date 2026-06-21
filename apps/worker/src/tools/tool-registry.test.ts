@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, PROGRAMMING_SKILL, FILE_MANAGEMENT_SKILL } from '@herobids/domain';
 import type { AgentTool, ToolContext } from '@herobids/domain';
 import { botManagementTools } from './bots.js';
-import { ToolRegistry } from './registry.js';
+import { ToolRegistry, convertZodToJsonSchema } from './registry.js';
 import { createToolRegistry } from './index.js';
 import { messagingTools } from './messaging.js';
 import { marketDataTools } from './market-data.js';
@@ -158,5 +158,76 @@ describe('tool registry extracted tools', () => {
     for (const tool of filesystemTools) {
       expect(knownToolNames.has(tool.name)).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// convertZodToJsonSchema — JSON Schema draft compatibility
+// ---------------------------------------------------------------------------
+// These tests guard against Draft 4 boolean exclusiveMinimum/Maximum leaking
+// into tool schemas. Providers such as DeepSeek follow Draft 7, where those
+// keywords must be numbers, and return a 400 when they are booleans.
+
+describe('convertZodToJsonSchema draft normalisation', () => {
+  it('emits numeric exclusiveMinimum (Draft 7) for z.number().positive()', () => {
+    const schema = convertZodToJsonSchema(z.object({
+      days: z.number().int().positive().optional(),
+    }));
+
+    function findExclusiveMinimum(node: unknown): unknown {
+      if (node === null || typeof node !== 'object') return undefined;
+      if ('exclusiveMinimum' in (node as object)) return (node as Record<string, unknown>)['exclusiveMinimum'];
+      for (const v of Object.values(node as object)) {
+        const found = findExclusiveMinimum(v);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+
+    const value = findExclusiveMinimum(schema);
+    expect(value).not.toBeUndefined();
+    expect(typeof value).toBe('number');
+  });
+
+  it('emits numeric exclusiveMaximum (Draft 7) for z.number().negative()', () => {
+    const schema = convertZodToJsonSchema(z.object({
+      threshold: z.number().negative().optional(),
+    }));
+
+    function findExclusiveMaximum(node: unknown): unknown {
+      if (node === null || typeof node !== 'object') return undefined;
+      if ('exclusiveMaximum' in (node as object)) return (node as Record<string, unknown>)['exclusiveMaximum'];
+      for (const v of Object.values(node as object)) {
+        const found = findExclusiveMaximum(v);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+
+    const value = findExclusiveMaximum(schema);
+    expect(value).not.toBeUndefined();
+    expect(typeof value).toBe('number');
+  });
+
+  it('produces no boolean exclusiveMinimum or exclusiveMaximum across all registered tools', () => {
+    const registry = createToolRegistry();
+    const violations: string[] = [];
+
+    function scan(node: unknown, path: string): void {
+      if (node === null || typeof node !== 'object') return;
+      const obj = node as Record<string, unknown>;
+      if (obj['exclusiveMinimum'] === true || obj['exclusiveMaximum'] === true) {
+        violations.push(path);
+      }
+      for (const [k, v] of Object.entries(obj)) {
+        scan(v, `${path}.${k}`);
+      }
+    }
+
+    for (const tool of registry.list()) {
+      scan(tool.parameters, tool.name);
+    }
+
+    expect(violations).toEqual([]);
   });
 });
