@@ -147,6 +147,9 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Flushing Redis..."
 docker run --rm --network herobids_default redis:7-alpine redis-cli -h redis FLUSHALL 2>/dev/null \
   || echo "    Redis flush skipped (redis may not be reachable yet — will be clean on first start)."
 
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pulling latest code..."
+git fetch --all && git reset --hard origin/main
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting services (postgres, redis → migrate → api, worker, web)..."
 docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build --remove-orphans
 
