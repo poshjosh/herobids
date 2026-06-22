@@ -19,6 +19,9 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `submit_decision` | `limitPrice` | no | — | Optional; omit for market order |
 | `submit_decision` | `confidence` | no | — | Optional 0-1 hint |
 | `submit_decision` | `safetyOverrideId` | no | — | Only from prior rejection response |
+| `find_instrument` | `query` | yes | **yes** | Agent knows the symbol/name/pair to search for |
+| `find_instrument` | `venue` | no | — | Optional; agent may filter by "hyperliquid" or "jupiter" |
+| `find_instrument` | `limit` | no | — | Optional 1-20, default 5 |
 
 ### Messaging Tools
 
@@ -60,6 +63,7 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `adjust_bot_config` | `config.execution` | no | — | Optional partial merge |
 | `adjust_bot_config` | `config.risk` | no | — | Optional partial merge |
 | `adjust_bot_config` | `config.symbol` | no | — | Optional partial merge |
+| `resolve_bot` | `name` | yes | **yes** | Agent knows bot name/symbol from list_bots; case-insensitive substring match |
 
 ### Analytics Tools
 
@@ -67,6 +71,7 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 |------|-----|----------|-----------------|----------|
 | `get_analytics` | `days` | no | — | Default: 7, max 90 |
 | `list_positions` | — | no | — | No required args |
+| `get_account_summary` | — | no | — | No args; returns capital, equity, positions, P&L, risk limits |
 
 ### Code Execution Tools
 
@@ -87,6 +92,7 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `read_file` | `path` | yes | **no** | Must know the file path exists |
 | `list_files` | `path` | no | — | Default: "" (workspace root) |
 | `delete_file` | `path` | yes | **no** | Must know the file exists |
+| `stat_file` | `path` | yes | **yes** | Agent knows paths from list_files; returns exists, isDir, size, mtime |
 
 ### Market Data Tools
 
@@ -122,6 +128,8 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `list_watches` | — | no | — | No required args |
 | `remove_watch` | `watchId` | yes | **no** | Must get from list_watches first |
 | `check_watches` | `removeTriggered` | no | — | Default: false |
+| `resolve_watch` | `note` | yes* | **yes** | Agent knows watch notes from list_watches; case-insensitive substring match (*at least one of note or symbol required) |
+| `resolve_watch` | `symbol` | yes* | **yes** | Agent knows symbols from list_watches; case-insensitive substring match |
 
 ### Web Access Tools
 
@@ -141,7 +149,14 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `create_task` | `dueAt` | no | — | Optional ISO 8601 datetime |
 | `list_tasks` | `status` | no | — | Default: "pending" |
 | `complete_task` | `id` | yes | **no** | Must get from list_tasks first |
+| `resolve_task` | `title` | yes | **yes** | Agent knows task titles from list_tasks; case-insensitive substring match |
 | `schedule_reminder` | `message` | yes | **yes** | Agent composes reminder text |
+
+### Schema Tools
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `get_schema` | `name` | yes | **yes** | Use "all" first to list available schemas, then fetch specific schema by name |
 
 ### bots.ts
 
@@ -169,6 +184,35 @@ Using the tables below, identify all tool args that lack discoverable schemas/va
 | `adjust_bot_config` | `config.execution.slippageBps` | no | **no** | Agent must estimate or ask |
 | `adjust_bot_config` | `config.risk` | no | **no** | Optional record; agent must reason about risk params |
 | `adjust_bot_config` | `config.symbol` | no | **no** | Optional symbol override |
+
+### find-instrument.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `find_instrument` | `query` | yes | **yes** | Search by base token symbol (e.g. "SOL"), pair ("SOL/USDC"), or full symbol |
+| `find_instrument` | `venue` | no | — | Optional; filter by venue ("hyperliquid" for perpetuals, "jupiter" for Solana tokens) |
+| `find_instrument` | `limit` | no | — | Optional 1-20, default 5 |
+
+### account.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `get_account_summary` | — | no | — | No args; returns usable capital, equity, open positions, P&L, and risk limits |
+
+### schema.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `get_schema` | `name` | yes | **yes** | Call with "all" to list available schemas, then fetch the specific schema by dot-path (e.g. "update_own_config.technical") |
+
+### resolvers.ts
+
+| Tool | Arg | Required | Agent Has Info? | Comments |
+|------|-----|----------|-----------------|----------|
+| `resolve_bot` | `name` | yes | **yes** | Find bot ID by name or symbol before stop/start/adjust operations |
+| `resolve_watch` | `note` | yes* | **yes** | Find watch ID by note text; case-insensitive substring match (*at least one of note or symbol required) |
+| `resolve_watch` | `symbol` | yes* | **yes** | Find watch ID by symbol; case-insensitive substring match |
+| `resolve_task` | `title` | yes | **yes** | Find task ID by title before calling complete_task; case-insensitive substring match |
 
 ### index.ts
 
