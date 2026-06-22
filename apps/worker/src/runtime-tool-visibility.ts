@@ -11,6 +11,9 @@ export const DATABASE_DEPENDENT_TOOLS = new Set([
   'stop_bot',
   'start_bot',
   'adjust_bot_config',
+  'find_instrument',
+  'get_account_summary',
+  'resolve_bot',
 ]);
 
 export const MARKET_DATA_TOOLS = new Set([

@@ -12,7 +12,7 @@ import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract } from '@herobids/domain';
-import { createDatabase, BotRepository, AgentRepository, PgJournal } from '@herobids/db';
+import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
@@ -584,6 +584,7 @@ const DATABASE_URL = process.env['DATABASE_URL'];
 const db = DATABASE_URL ? createDatabase(DATABASE_URL) : null;
 const botRepo = db ? new BotRepository(db) : null;
 const agentRepo = db ? new AgentRepository(db) : null;
+const instrumentRepo = db ? new InstrumentRepository(db) : null;
 if (!DATABASE_URL) {
   logger.warn('DATABASE_URL not set — list_bots, get_bot_status, stop_bot, start_bot, adjust_bot_config, get_analytics, list_positions will be unavailable');
   for (const tool of DATABASE_DEPENDENT_TOOLS) {
@@ -1309,6 +1310,19 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     priceService: priceService ?? undefined,
     riskContractOps: buildRiskContractOps(),
     agentConfigOps: buildAgentConfigOps(),
+    instrumentRepo: instrumentRepo
+      ? {
+          search: (opts) => instrumentRepo.search(opts),
+        }
+      : undefined,
+    agentRepo: agentRepo
+      ? {
+          getAgent: async (agentId: string) => {
+            const row = await agentRepo.getAgent(agentId);
+            return row ? { capital: row.capital } : null;
+          },
+        }
+      : undefined,
   };
 
   try {
@@ -1323,7 +1337,17 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     });
 
     if (!validation.success) {
-      const errorMessage = `invalid parameters: ${validation.error.issues.map(({ path, message }) => `${path.length > 0 ? path.join('.') : 'root'}: ${message}`).join('; ')}`;
+      const issues = validation.error.issues;
+      const errorMessage = `invalid parameters: ${issues.map(({ path, message }) => `${path.length > 0 ? path.join('.') : 'root'}: ${message}`).join('; ')}`;
+
+      // Build structured error details for agent self-correction
+      const missingFields = issues
+        .filter((i) => i.code === 'invalid_type' && i.received === 'undefined')
+        .map((i) => i.path.join('.'));
+      const invalidFields = issues
+        .filter((i) => i.code !== 'invalid_type' || i.received !== 'undefined')
+        .map((i) => ({ path: i.path.join('.'), message: i.message, code: i.code }));
+
       logger.warn({ tool: call.tool, errors: validation.error.flatten() }, 'Tool parameter validation failed');
       emitToolResultEvent({
         phase,
@@ -1335,8 +1359,15 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       return JSON.stringify({
         ok: false,
         error: errorMessage,
+        errorCode: 'validation.invalid_parameters',
         retryable: false,
         fault: false,
+        missingFields: missingFields.length > 0 ? missingFields : undefined,
+        invalidFields: invalidFields.length > 0 ? invalidFields : undefined,
+        // Inline the full parameter schema so the agent can self-correct without
+        // an extra tool call. tool.parameters is already the JSON Schema derived
+        // from the Zod schema and used for LLM function calling.
+        parameterSchema: tool.parameters,
       });
     }
 

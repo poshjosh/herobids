@@ -11,6 +11,7 @@ export * from './platform.js';
 export * from './provider-catalog.js';
 export * from './runtime-composition.js';
 export * from './tools.js';
+export * from './tool-schemas.js';
 export * from './agent-risk-contract.js';
 export * from './trading/execution-capability.js';
 export * from './trading/venue-capability.js';

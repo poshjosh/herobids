@@ -24,6 +24,9 @@ import { exportRoutes } from './routes/exports.js';
 import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
+import { toolSchemaRoutes } from './routes/tool-schemas.js';
+import { venueDefaultsRoutes } from './routes/venue-defaults.js';
+import { strategySchemaRoutes } from './routes/strategy-schemas.js';
 import { makeCatalogContext } from './llm-model-catalog.js';
 import { connectionRoutes } from './routes/connections.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';
@@ -163,6 +166,11 @@ await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
 await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
+
+// ── Tool schema & discovery endpoints ─────────────────────────────────────
+await toolSchemaRoutes(app);
+await venueDefaultsRoutes(app, { defaultSlippageBps: appConfig.execution.defaultSlippageBps });
+await strategySchemaRoutes(app);
 
 // WebSocket event stream — uses a fresh Redis subscriber per connection.
 // ioredis enters subscriber mode on the first subscribe call so each connection

@@ -41,6 +41,7 @@ const CreateBotParamsSchema = z.object({
   bindingId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Trading binding ID to use. You can find this in the Capability Readiness section as "binding=<id>". Omit to use your default trading binding.'),
   config: BotConfigInputSchema.optional().describe('Bot configuration (strategy, symbol, risk params). venue is resolved from your trading binding automatically.'),
   rationale: z.string().max(500).optional().describe('Brief rationale for creating this bot. Used for audit.'),
+  dryRun: z.boolean().optional().describe('If true, validates the bot config without creating it. Returns a preview of what would be sent.'),
 });
 
 const createBotTool: AgentTool = {
@@ -49,8 +50,29 @@ const createBotTool: AgentTool = {
   parametersSchema: CreateBotParamsSchema,
   parameters: convertZodToJsonSchema(CreateBotParamsSchema),
   category: 'execute-trade',
+  promptGuidance: 'Use dryRun=true first to preview the bot config before committing. Resolve instruments via find_instrument, then build the config using schemas from get_schema("create_bot.config.strategy") and get_schema("create_bot.config.execution").',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { bindingId, config, rationale } = params as z.infer<typeof CreateBotParamsSchema>;
+    const { bindingId, config, rationale, dryRun } = params as z.infer<typeof CreateBotParamsSchema>;
+
+    // Dry-run: validate and preview without creating.
+    // Schema-level validation (shape, types, required fields) has already run
+    // via Zod in executeTool(). Full business-logic validation (strategy params
+    // validity, venue availability, risk limits) runs at engine publish time.
+    if (dryRun) {
+      return {
+        success: true,
+        data: {
+          ok: true,
+          dryRun: true,
+          preview: {
+            bindingId: bindingId ?? '(default trading binding)',
+            config: config ?? null,
+            rationale: rationale ?? null,
+          },
+          note: 'Dry run — schema-level validation passed. NOT created. Additional engine validation (strategy params, venue, risk) runs at creation time. Remove dryRun=true to execute.',
+        },
+      };
+    }
 
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
       action: 'create_and_start',

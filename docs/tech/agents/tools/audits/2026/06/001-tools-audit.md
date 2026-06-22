@@ -2,7 +2,9 @@
 
 Check the code and update the tables below. Add/remove new tools or update the rows corresponding to tools. The tools are defined in `apps/worker/src/tools/`.
 
-Using the tables below, list all tool args that lack discoverable schemas/values, excluding args available in the agent prompt or obtainable via other tool calls.
+we want to prevent a case where an agent is expected to call a tool with one or more arguments it neither knows nor has any way of knowing/getting. For example, if tool `dummy_start_task` reqires a `taskId`, the agent must already have access to a `taskId`. Identify such cases? Exclude those args available in the agent's prompt or via other tool calls.
+
+Using the tables below, identify all tool args that lack discoverable schemas/values, excluding args available in the agent prompt or obtainable via other tool calls.
 
 ## Agent Tool Arguments — Required Args & Info Availability
 

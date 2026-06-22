@@ -9,6 +9,7 @@ const writeTool = filesystemTools.find((t) => t.name === 'write_file')!;
 const readTool = filesystemTools.find((t) => t.name === 'read_file')!;
 const listTool = filesystemTools.find((t) => t.name === 'list_files')!;
 const deleteTool = filesystemTools.find((t) => t.name === 'delete_file')!;
+const statTool = filesystemTools.find((t) => t.name === 'stat_file')!;
 
 function makeCtx(agentId = 'fs-agent'): ToolContext {
   return {
@@ -135,5 +136,51 @@ describe('filesystem tools', () => {
     const result = await readTool.execute({ path: 'escape-link/passwd' }, ctx);
     // Should fail: symlink target resolves outside workspace root
     expect(result.success).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // stat_file
+  // -------------------------------------------------------------------------
+
+  it('stat_file returns metadata for an existing file', async () => {
+    await writeTool.execute({ path: 'stats.txt', content: 'hello world' }, ctx);
+
+    const result = await statTool.execute({ path: 'stats.txt' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.exists).toBe(true);
+    expect(data.isFile).toBe(true);
+    expect(data.isDir).toBe(false);
+    expect(data.size).toBe(11);
+    expect(data.path).toBe('stats.txt');
+    expect(data.modifiedAt).toEqual(expect.any(String));
+    expect(data.createdAt).toEqual(expect.any(String));
+  });
+
+  it('stat_file identifies directories', async () => {
+    // A directory is created by writeFile (mkdir recursion) then we stat the dir
+    await writeTool.execute({ path: 'mydir/nested.txt', content: 'nested' }, ctx);
+
+    const result = await statTool.execute({ path: 'mydir' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.exists).toBe(true);
+    expect(data.isDir).toBe(true);
+    expect(data.isFile).toBe(false);
+  });
+
+  it('stat_file returns exists=false with null fields for missing paths', async () => {
+    const result = await statTool.execute({ path: 'nonexistent.txt' }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.exists).toBe(false);
+    expect(data.isDir).toBeNull();
+    expect(data.isFile).toBeNull();
+    expect(data.size).toBeNull();
+    expect(data.modifiedAt).toBeNull();
+    expect(data.createdAt).toBeNull();
   });
 });

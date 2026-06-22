@@ -179,6 +179,23 @@ export interface ToolContext {
     getLlmTickCount(): number;
     getMinPaperCyclesBeforeLive(): number;
   };
+  /** Instrument repository for find_instrument lookups. */
+  instrumentRepo?: {
+    search(opts: { query: string; venue?: string; limit?: number }): Promise<Array<{
+      id: string;
+      symbol: string;
+      base: string;
+      quote: string;
+      type: string;
+      venue: string;
+      tickSize: string;
+      lotSize: string;
+    }>>;
+  };
+  /** Agent repository for get_account_summary (capital, etc.). */
+  agentRepo?: {
+    getAgent(agentId: string): Promise<{ capital: string | null } | null>;
+  };
 }
 
 export interface AgentTool {
@@ -220,6 +237,8 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'delete_memory',
   'discover_tokens',
   'execute_code',
+  'find_instrument',
+  'get_account_summary',
   'get_analytics',
   'get_bot_status',
   'get_funding_rates',
@@ -227,6 +246,7 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'get_memory',
   'get_price',
   'get_risk_limits',
+  'get_schema',
   'list_bots',
   'list_files',
   'list_memory_keys',
@@ -237,12 +257,16 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'read_document',
   'read_file',
   'remove_watch',
+  'resolve_bot',
+  'resolve_task',
+  'resolve_watch',
   'schedule_reminder',
   'search_tokens',
   'search_web',
   'send_message',
   'set_memory',
   'start_bot',
+  'stat_file',
   'stop_bot',
   'submit_decision',
   'update_own_config',

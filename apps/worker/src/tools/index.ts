@@ -14,6 +14,10 @@ import { webAccessTools } from './web-access.js';
 import { taskTools } from './tasks.js';
 import { riskLimitsTools } from './risk-limits.js';
 import { updateOwnConfigTools } from './update-own-config.js';
+import { schemaTools } from './schema.js';
+import { accountTools } from './account.js';
+import { instrumentTools } from './find-instrument.js';
+import { resolverTools } from './resolvers.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
   const registeredToolNames = registry.list().map((tool) => tool.name).sort();
@@ -59,6 +63,10 @@ export function createToolRegistry(): ToolRegistry {
     ...taskTools,
     ...riskLimitsTools,
     ...updateOwnConfigTools,
+    ...schemaTools,
+    ...accountTools,
+    ...instrumentTools,
+    ...resolverTools,
   ];
 
   for (const tool of allTools) {

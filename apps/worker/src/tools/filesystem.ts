@@ -203,9 +203,71 @@ const deleteFileTool: AgentTool = {
   },
 };
 
+// --- stat_file ---
+
+const StatFileParamsSchema = z.object({
+  path: z.string().min(1).describe('Relative path within the workspace to inspect'),
+});
+
+const statFileTool: AgentTool = {
+  name: 'stat_file',
+  description: 'Get metadata about a file or directory in the agent workspace. Returns exists, isDir, size (bytes), and modification time. Use this before read_file or delete_file to avoid errors on missing files, or to check if a path is a directory before calling list_files.',
+  parametersSchema: StatFileParamsSchema,
+  parameters: convertZodToJsonSchema(StatFileParamsSchema),
+  category: 'read-filesystem',
+  promptGuidance: 'Use stat_file before read_file to check if a file exists and to verify it is not a directory. Also useful before delete_file to confirm the path exists and is what you expect.',
+  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const { path: relativePath } = params as z.infer<typeof StatFileParamsSchema>;
+
+    const paths = getWorkspacePaths(ctx.agentId);
+    await ensureWorkspaceDirs(paths);
+
+    const resolved = await resolveWorkspacePath(paths.root, relativePath);
+    if (!resolved.ok) {
+      return { success: false, error: resolved.error, retryable: false, fault: false };
+    }
+
+    try {
+      const fileStat = await stat(resolved.absolutePath);
+      return {
+        success: true,
+        data: {
+          path: relativePath,
+          exists: true,
+          isDir: fileStat.isDirectory(),
+          isFile: fileStat.isFile(),
+          size: Number(fileStat.size),
+          modifiedAt: fileStat.mtime.toISOString(),
+          createdAt: fileStat.birthtime.toISOString(),
+        },
+      };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        return {
+          success: true,
+          data: {
+            path: relativePath,
+            exists: false,
+            isDir: null,
+            isFile: null,
+            size: null,
+            modifiedAt: null,
+            createdAt: null,
+          },
+        };
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ agentId: ctx.agentId, path: relativePath, err: msg }, 'stat_file error');
+      return { success: false, error: `stat_file failed: ${msg}`, retryable: false, fault: false };
+    }
+  },
+};
+
 export const filesystemTools: AgentTool[] = [
   writeFileTool,
   readFileTool,
   listFilesTool,
   deleteFileTool,
+  statFileTool,
 ];

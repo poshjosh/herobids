@@ -13,6 +13,7 @@ const SubmitDecisionParamsSchema = z.object({
   rationaleSummary: z.string().min(1).describe('Brief explanation of why this trade is being taken'),
   confidence: z.number().min(0).max(1).optional().describe('Confidence level 0-1. Used for position sizing hints.'),
   safetyOverrideId: z.string().optional().transform(v => v === '' ? undefined : v).describe('One-time code to override a previous safety rejection. Only provide the exact code from a prior rejection response.'),
+  dryRun: z.boolean().optional().describe('If true, validates the decision without submitting it. Returns a preview of what would be sent to the engine.'),
 });
 
 const submitDecisionTool: AgentTool = {
@@ -21,11 +22,34 @@ const submitDecisionTool: AgentTool = {
   parametersSchema: SubmitDecisionParamsSchema,
   parameters: convertZodToJsonSchema(SubmitDecisionParamsSchema),
   category: 'execute-trade',
+  promptGuidance: 'Use dryRun=true first to preview the decision before submitting. Always call find_instrument to get the correct instrumentId, and get_account_summary for capital-aware sizing. Use get_schema("venue-defaults") for recommended slippage values.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const p = params as z.infer<typeof SubmitDecisionParamsSchema>;
 
     if (ctx.sessionMetrics) {
       ctx.sessionMetrics.decisionsSubmitted++;
+    }
+
+    // Dry-run: validate and preview without submitting.
+    // Schema-level validation (shape, types, required fields) has already run
+    // via Zod in executeTool(). Risk-gate validation happens at publish time.
+    if (p.dryRun) {
+      return {
+        success: true,
+        data: {
+          ok: true,
+          dryRun: true,
+          preview: {
+            instrumentId: p.instrumentId,
+            intent: p.intent,
+            targetSize: p.targetSize,
+            limitPrice: p.limitPrice ?? 'market',
+            rationaleSummary: p.rationaleSummary,
+            confidence: p.confidence ?? null,
+          },
+          note: 'Dry run — schema-level validation passed. NOT submitted. Risk-gate validation (limits, position caps, circuit breaker) runs at submission time. Remove dryRun=true to execute.',
+        },
+      };
     }
 
     const crypto = await import('node:crypto');
