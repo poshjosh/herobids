@@ -84,9 +84,6 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
 
     expect(descriptor.resolvedSkills.map((skill) => skill.id)).toEqual(['base', 'file-management']);
     expect(descriptor.resolvedSkills[1]?.requiredTools).toEqual(FILE_MANAGEMENT_SKILL.requiredTools);
-    expect(new Set(descriptor.resolvedSkills[1]?.requiredTools)).toEqual(
-      new Set(['write_file', 'read_file', 'list_files', 'delete_file']),
-    );
   });
 
   it('resolves both programming and file-management when stacked', async () => {

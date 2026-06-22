@@ -12,7 +12,11 @@ import type { z } from 'zod';
  *
  * Format: `<operation>-<target>`
  * - Operation: read | write | execute
- * - Target: filesystem | database | trade | messaging | memory | market-data
+ * - Target: filesystem | database | trade | messaging | memory | market-data | config
+ *
+ * Categories double as capability-based security controls (rwx model).
+ * A tool's category determines which capability grant an agent needs to invoke it.
+ * Choose the target that matches the tool's primary domain, not its storage mechanism.
  *
  * Examples:
  * - "read-database" — list_positions, get_bot_status
@@ -22,6 +26,7 @@ import type { z } from 'zod';
  * - "read-filesystem" — read_file, list_files
  * - "write-filesystem" — write_file, delete_file
  * - "execute-filesystem" — execute_code (writes then executes)
+ * - "read-config" — get_schema (pure config introspection, no DB access)
  */
 export type ToolCategory =
   | 'read-database'
@@ -29,6 +34,7 @@ export type ToolCategory =
   | 'read-market-data'
   | 'read-trade'
   | 'read-web'
+  | 'read-config'
   | 'read-filesystem'
   | 'write-database'
   | 'write-memory'
