@@ -412,7 +412,12 @@ export function makeCatalogContext(llmConfig: {
 }
 
 export function getAvailableProviders(context: OperatorLlmCatalogContext): string[] {
-  const explicit = getConfiguredProviders();
+  // Production: only expose providers with dynamically fetched pricing.
+  // Static pricing goes stale and we cannot risk computing costs on inaccurate data.
+  const explicit = process.env['NODE_ENV'] === 'production'
+    ? getConfiguredProviders().filter((p) => PROVIDER_METADATA[p]?.catalogMode === 'dynamic')
+    : getConfiguredProviders();
+
   const meta = PROVIDER_METADATA[context.provider];
 
   // Dynamic providers (e.g. Ollama) are available whenever the operator explicitly
@@ -430,6 +435,7 @@ export function getAvailableProviders(context: OperatorLlmCatalogContext): strin
   if (resolveApiKey(context.provider) && !explicit.includes(context.provider)) {
     return [...explicit, context.provider];
   }
+
   return explicit;
 }
 
@@ -472,7 +478,7 @@ export async function getProviderCatalogEntry(
     const models = catalog.modelIds.length > 0 ? catalog.modelIds : getLlmProviderModels(provider);
     return {
       provider,
-      models: mapProviderModels(models, (modelId) => mapOpenRouterModelPricingMetadata(catalog.pricingByModel[modelId])),
+      models: mapProviderModels(models, (modelId) => mapOpenRouterModelPricingMetadata(catalog.pricingByModel[modelId])).filter((m) => m.pricing !== undefined),
       isMultiProvider,
     };
   }

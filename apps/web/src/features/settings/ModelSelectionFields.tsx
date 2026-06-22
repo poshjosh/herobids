@@ -138,22 +138,23 @@ export function ModelSelectionFields({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      <div>
-        <FieldLabel>{providerLabel}</FieldLabel>
-        <select
-          value={value.provider}
-          onChange={(event) => handleProviderChange(event.target.value)}
-          style={{ ...inputStyle, cursor: 'pointer' }}
-          disabled={providerOptions.length === 0}
-        >
-          <option value="">{providerPlaceholder}</option>
-          {providerOptions.map((provider) => (
-            <option key={provider.provider} value={provider.provider}>
-              {formatProviderOptionLabel(provider)}
-            </option>
-          ))}
-        </select>
-      </div>
+      {providerOptions.length > 1 ? (
+        <div>
+          <FieldLabel>{providerLabel}</FieldLabel>
+          <select
+            value={value.provider}
+            onChange={(event) => handleProviderChange(event.target.value)}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">{providerPlaceholder}</option>
+            {providerOptions.map((provider) => (
+              <option key={provider.provider} value={provider.provider}>
+                {formatProviderOptionLabel(provider)}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       {loading ? (
         <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>

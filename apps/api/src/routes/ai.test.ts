@@ -256,7 +256,7 @@ describe('GET /ai/available-models', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openrouter');
-    expect(body.providers[0]!.models[0]!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models).toHaveLength(0);
 
     vi.unstubAllGlobals();
     delete process.env['LLM_API_KEY_OPENROUTER'];
@@ -299,7 +299,7 @@ describe('GET /ai/available-models', () => {
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
     const body = res.json<AvailableModelsTestResponse>();
-    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4')!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4')).toBeUndefined();
     expect(body.providers[0]!.models.find((model) => model.id === 'anthropic/claude-sonnet-4-5')!.pricing).toEqual({
       label: '$1 / $3',
       source: 'openrouter',
@@ -341,7 +341,7 @@ describe('GET /ai/available-models', () => {
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
     const body = res.json<AvailableModelsTestResponse>();
-    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4-mini')!.pricing).toBeUndefined();
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4-mini')).toBeUndefined();
 
     vi.unstubAllGlobals();
     delete process.env['LLM_API_KEY_OPENROUTER'];

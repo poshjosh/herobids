@@ -147,37 +147,6 @@ export const PROVIDER_DEFINITIONS = {
       'gemini-1.5-flash':              { inputUsdPerM: 0.075, outputUsdPerM: 0.3 },
     },
   },
-  together: {
-    id: 'together',
-    catalogMode: 'static',
-    models: {
-      'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo': {},
-      'mistralai/Mixtral-8x7B-Instruct-v0.1':         {},
-    },
-  },
-  fireworks: {
-    id: 'fireworks',
-    catalogMode: 'static',
-    models: {
-      'accounts/fireworks/models/llama-v3p1-70b-instruct': {},
-    },
-  },
-  mistral: {
-    id: 'mistral',
-    catalogMode: 'static',
-    models: {
-      'mistral-large-latest': {},
-      'mistral-small-latest': {},
-    },
-  },
-  cohere: {
-    id: 'cohere',
-    catalogMode: 'static',
-    models: {
-      'command-r-plus': {},
-      'command-r':      {},
-    },
-  },
   ollama: {
     id: 'ollama',
     catalogMode: 'dynamic',
