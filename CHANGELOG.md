@@ -7,6 +7,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.22-a
+
+### Added
+
+- **Agent tool schema discovery** (`get_schema`): agents can now fetch JSON Schema Draft 7 definitions for config parameters and tool sub-schemas at runtime. A domain-level registry (`packages/domain/src/tool-schemas.ts`) provides versioned schemas with examples for `update_own_config.*`, `create_bot.config.*`, and `adjust_bot_config.config.*`. Call `get_schema("all")` to list available schemas, then `get_schema("<name>")` to fetch a specific one.
+- **Instrument lookup tool** (`find_instrument`): resolves trading symbols to instrument IDs across venues. Accepts an optional `venue` filter (e.g. `"jupiter"` for Solana tokens, `"hyperliquid"` for perpetuals). Backed by a new `InstrumentRepository` with LIKE-based search across symbol, base, and ID columns.
+- **Account summary tool** (`get_account_summary`): provides agents with usable capital, open positions (split by agent-direct vs bot-managed), risk limits (`maxOpenPositions`, `maxPositionSizePct`, `stopLossPct`), execution mode, position sizing config, and capital-aware guidance. Reports `warnings` when sub-dependencies (risk contract, agent config, capital lookup) are unavailable — agents can detect degraded data.
+- **Entity resolver tools** (`resolve_bot`, `resolve_watch`, `resolve_task`): resolve entities by name/symbol/title instead of requiring UUIDs. `resolve_bot` matches case-insensitively against bot config symbols and IDs — returns a single match directly or multiple candidates for disambiguation.
+- **File metadata tool** (`stat_file`): returns `exists`, `isDir`, `isFile`, `size`, `modifiedAt`, and `createdAt` for workspace paths. Use before `read_file` or `delete_file` to avoid errors on missing files. Non-existent paths return `null` for inapplicable properties (`isDir`, `isFile`, `size`).
+- **Dry-run modes**: `create_bot` and `submit_decision` now accept `dryRun: true` to validate payloads via Zod schema without executing. The response includes a preview of what would be sent and a note clarifying what validation level ran (schema only — engine validation happens at publish time).
+- **API discovery endpoints**: `GET /api/v1/tool-schemas` (schema registry), `GET /api/v1/strategy-schemas` (per-strategy param schemas with safe default presets), and `GET /api/v1/venue-defaults` (venue-specific slippage, fees, and order type recommendations) for external consumers.
+
+### Changed
+
+- **Validation error enrichment**: tool parameter validation failures now include `missingFields`, `invalidFields`, and the full `parameterSchema` in the error response, enabling agents to self-correct malformed payloads without an extra `get_schema` call.
+- **`promptGuidance` for new tools**: `create_bot`, `submit_decision`, `get_account_summary`, and `stat_file` now include LLM-facing prompt guidance describing when and how to use each tool.
+- **Dry-run note accuracy**: `create_bot` and `submit_decision` dry-run responses now accurately describe the validation level (Zod schema only, not full engine validation).
+- **Venue defaults caveat**: the `venue-defaults` endpoint now documents that `feeBps` values are indicative — actual fees vary by volume tier and market conditions.
+- **Instrument repository performance note**: documented that the current LIKE `%term%` pattern may cause full table scans on large instrument tables, with a suggestion for a `pg_trgm` GIN index if needed.
+
+### Fixed
+
+- **`get_account_summary` error visibility**: previously-silent sub-dependency failures (risk contract, agent config, capital lookup) now surface as `warnings` in the response — agents can detect when partial data is returned.
+
 ## 0.0.1-2026.06.21-d
 
 ### Fixed
