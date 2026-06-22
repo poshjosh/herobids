@@ -1,5 +1,9 @@
 # AGENT TOOLS
 
+Check the code and update the tables below. Add/remove new tools or update the rows corresponding to tools. The tools are defined in `apps/worker/src/tools/`.
+
+Using the tables below, list all tool args that lack discoverable schemas/values, excluding args available in the agent prompt or obtainable via other tool calls.
+
 ## Agent Tool Arguments — Required Args & Info Availability
 
 ### Trading Tools
