@@ -210,3 +210,11 @@ All items are straightforward. The most involved is **WI1** (persist style) beca
 | MEDIUM | `style` is create-only — not in `UpdateAgentSchema`, `buildUpdateAgentPayload`, or `agents.update()`. User cannot change style after creation. By design per plan (informational/UX only), but worth noting as a UX limitation. |
 | LOW | `Agent.style` type in `api-client.ts` is `string \| null` — could be narrowed to `'careful' \| 'balanced' \| 'bold' \| null` for better type safety. |
 | LOW | Migration `0020_steady_valeria_richards.sql` lacks trailing newline (cosmetic). |
+
+### WI2 — Fix Cost Estimation Thresholds
+
+| Severity | Issue |
+|----------|-------|
+| MEDIUM | `COST_PER_TICK` constants duplicated in `agent-cadence.ts` and `cost-profile.ts` — operator config changes to `agentCostEstimates` won't propagate to web UI or worker. Config-leak anti-pattern (see `/memories/repo/config-leak-baseurl-openrouter.md`). |
+| MEDIUM | Misleading `// from agentCostEstimates config` comment above hardcoded constants — values aren't read from config at runtime. |
+| LOW | API fallback `agentCostEstimates ?? { ... }` in `agents.ts` is dead code — Zod schema always provides defaults. |

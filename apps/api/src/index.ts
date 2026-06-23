@@ -138,7 +138,7 @@ await providerRoutes(app);
 await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm), appConfig.agentRiskDefaults, redisClient);
+await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm), appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate

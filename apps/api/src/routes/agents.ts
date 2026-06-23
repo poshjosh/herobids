@@ -25,7 +25,7 @@ import {
   venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { AgentRiskDefaultsSchema, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { AgentRiskDefaultsSchema, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
@@ -401,6 +401,7 @@ export async function agentRoutes(
   plansConfig?: PlansConfig,
   llmCatalogContext?: OperatorLlmCatalogContext,
   agentRiskDefaults: AgentRiskDefaultsConfig = DEFAULT_AGENT_RISK_DEFAULTS,
+  agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
 ): Promise<void> {
   function resolveSkillPlanPolicy(planId: string, isAdmin: boolean) {
@@ -417,6 +418,7 @@ export async function agentRoutes(
       maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
       stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
       stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
+      costPerTickEstimates: agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 },
     });
   });
 

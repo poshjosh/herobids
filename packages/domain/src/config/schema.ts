@@ -177,6 +177,12 @@ export const ApiConfigSchema = z.object({
   publicBaseUrl: z.string().url().default('http://api:3000'),
 });
 
+export const AgentCostEstimatesSchema = z.object({
+  minimal: z.number().min(0).default(0.12),
+  standard: z.number().min(0).default(0.21),
+  premium: z.number().min(0).default(0.31),
+}).default({});
+
 export const AgentRiskDefaultsSchema = z.object({
   dailyLossLimitDefaultRatio: z.number().min(0).max(1).default(0.05),
   maxOpenPositions: z.number().min(1).default(10),
@@ -809,6 +815,7 @@ export const AppConfigSchema = z.object({
     maxPositionSizePct: z.number().min(0).max(100).default(25),
   }),
   agentRiskDefaults: AgentRiskDefaultsSchema,
+  agentCostEstimates: AgentCostEstimatesSchema,
   reconciliation: ReconciliationConfigSchema.default({}),
   streams: StreamConfigSchema.default({}),
   marking: MarkingConfigSchema.default({}),
@@ -966,6 +973,7 @@ export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;
 export type LiveRolloutConfig = z.infer<typeof LiveRolloutConfigSchema>;
 export type SimulationConfig = AppConfig['simulation'];
 export type AgentRiskDefaultsConfig = AppConfig['agentRiskDefaults'];
+export type AgentCostEstimatesConfig = AppConfig['agentCostEstimates'];
 export type MarketDataConfig = z.infer<typeof MarketDataConfigSchema>;
 export type TokenSafetyConfig = z.infer<typeof TokenSafetyConfigSchema>;
 export type MarketIntelligenceConfig = z.infer<typeof MarketIntelligenceConfigSchema>;

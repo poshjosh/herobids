@@ -35,8 +35,11 @@ const PRESET_TICK_INTERVALS: Record<string, number> = {
   premium: 900_000,
 };
 
+// Cost-per-tick estimates by usage tier (from agentCostEstimates config).
+const COST_PER_TICK = { minimal: 0.12, standard: 0.21, premium: 0.31 };
+
 function deriveCustomTickIntervalMs(dailyBudgetUsd: number): number {
-  const estimatedCostPerTick = dailyBudgetUsd <= 3 ? 0.002 : dailyBudgetUsd <= 10 ? 0.01 : 0.05;
+  const estimatedCostPerTick = dailyBudgetUsd <= 3 ? COST_PER_TICK.minimal : dailyBudgetUsd <= 10 ? COST_PER_TICK.standard : COST_PER_TICK.premium;
   const ticksPerDay = Math.max(1, Math.floor(dailyBudgetUsd / estimatedCostPerTick));
   return Math.max(300_000, Math.round(86_400_000 / ticksPerDay));
 }

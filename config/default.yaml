@@ -72,6 +72,12 @@ agentRiskDefaults:
   stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
   maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
 
+# Per-tick LLM cost estimates by usage tier (USD). Reflects avg model costs.
+agentCostEstimates:
+  minimal: 0.12
+  standard: 0.21
+  premium: 0.31
+
 reconciliation:
   intervalMs: 30000          # reconciliation loop interval
   driftAlertOnly: false       # true = log+alert only (safe default); false = block trading on drift
