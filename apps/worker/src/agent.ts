@@ -8,6 +8,7 @@
  * Does NOT import trading-actor, BullMQ worker, or bot execution code.
  */
 
+import fs from 'node:fs';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
@@ -96,6 +97,98 @@ const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '900000', 1
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env['HEARTBEAT_INTERVAL_MS'] ?? '5000', 10);
 const SERVER_COST_USD_PER_HOUR = Number(process.env['LLM_SERVER_COST_USD_PER_HOUR'] ?? '0.02');
 const TRADING_HOURS_RAW = process.env['TRADING_HOURS_JSON'];
+
+// ── Crash telemetry ──────────────────────────────────────────────────────
+
+const CRASH_LOG_PATH = '/workspace/crash.log';
+const CRASH_REDIS_PUBLISH_DEADLINE_MS = 2000;
+const CRASH_REDIS_RETRY_INTERVAL_MS = 100;
+const CRASH_REDIS_PUBLISH_TIMEOUT_MS = 1000;
+const CRASH_HARD_EXIT_DEADLINE_MS = 3000;
+
+let crashHandlerArmed = false;
+
+function armCrashHandlers(agentId: string, sessionId: string): void {
+  if (crashHandlerArmed) return;
+  crashHandlerArmed = true;
+
+  const writeCrashTelemetry = (kind: string, error: Error): void => {
+    // Don't interfere with graceful shutdown — shutdown() already handles cleanup
+    // and sends session_ended. The crash event is already logged via logger.fatal.
+    if (shuttingDown) {
+      return;
+    }
+
+    // Call process.memoryUsage() once to avoid duplicate syscalls
+    const mem = process.memoryUsage();
+    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+
+    // 1. Write to local file FIRST — no network, always works even near-OOM
+    const crashRecord = JSON.stringify({
+      agentId,
+      sessionId,
+      kind,
+      message: error.message,
+      stack: error.stack?.slice(0, 2000),
+      heapUsedMB,
+      heapTotalMB,
+      timestamp: new Date().toISOString(),
+    });
+    try {
+      fs.appendFileSync(CRASH_LOG_PATH, crashRecord + '\n');
+    } catch { /* disk full — nothing we can do */ }
+
+    // 2. Best-effort Redis publish with deadline (process may be dying)
+    const deadline = Date.now() + CRASH_REDIS_PUBLISH_DEADLINE_MS;
+    let settled = false;
+    const attempt = (): void => {
+      if (settled) return;
+      if (Date.now() > deadline) {
+        settled = true;
+        process.exit(1);
+        return;
+      }
+      Promise.race([
+        publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_SESSION_ENDED, {
+          sessionId,
+          reasonCode: `crash.${kind}`,
+          detail: error.message.slice(0, 500),
+          heapUsedMB,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('crash publish timeout')), CRASH_REDIS_PUBLISH_TIMEOUT_MS),
+        ),
+      ]).then(() => {
+        settled = true;
+        process.exit(1);
+      }).catch(() => {
+        if (!settled) {
+          setTimeout(attempt, CRASH_REDIS_RETRY_INTERVAL_MS);
+        }
+      });
+    };
+    attempt();
+    // Hard deadline: exit after CRASH_HARD_EXIT_DEADLINE_MS no matter what
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        process.exit(1);
+      }
+    }, CRASH_HARD_EXIT_DEADLINE_MS);
+  };
+
+  process.on('uncaughtException', (error) => {
+    logger.fatal({ err: error }, 'Uncaught exception — writing crash telemetry');
+    writeCrashTelemetry('uncaught_exception', error);
+  });
+
+  process.on('unhandledRejection', (reason: unknown) => {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    logger.fatal({ err: error }, 'Unhandled rejection — writing crash telemetry');
+    writeCrashTelemetry('unhandled_rejection', error);
+  });
+}
 
 if (!AGENT_ID || !SESSION_ID) {
   logger.fatal({ AGENT_ID, SESSION_ID }, 'AGENT_ID and SESSION_ID env vars are required');
@@ -2369,6 +2462,12 @@ async function main(): Promise<void> {
   logger.info('Redis connected');
   await wakeRedis.ping();
   logger.info('Wake-signal Redis connected');
+
+  // Crash handlers need checked (non-null) copies of these identifiers.
+  // Passing them explicitly avoids ! non-null assertions in the crash path.
+  const checkedAgentId = AGENT_ID!;
+  const checkedSessionId = SESSION_ID!;
+  armCrashHandlers(checkedAgentId, checkedSessionId);
 
   await drainStalePendingEntries();
   await ensureWakeSignalConsumerGroup();
