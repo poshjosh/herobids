@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import type { AgentTool, ToolResult, ToolContext, ResolvedAgentRiskContract } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 
 // --- get_risk_limits ---
@@ -8,7 +8,7 @@ const GetRiskLimitsParamsSchema = z.object({});
 
 const getRiskLimitsTool: AgentTool = {
   name: 'get_risk_limits',
-  description: 'Get the effective risk limits for this agent, including which limits are mutable (adjustable) and which are locked by the creator. Shows effective values, sources, operator ceilings, and mutability for each risk field.',
+  description: 'Get the effective risk limits for this agent, including which limits are mutable (adjustable) and which are locked by the creator. Also shows current runtime state against those limits (open position count, daily P&L vs loss limit). Shows effective values, sources, operator ceilings, and mutability for each risk field.',
   parametersSchema: GetRiskLimitsParamsSchema,
   parameters: convertZodToJsonSchema(GetRiskLimitsParamsSchema),
   category: 'read-database',
@@ -18,6 +18,7 @@ const getRiskLimitsTool: AgentTool = {
     }
 
     const contract = await ctx.riskContractOps.getContract();
+    const runtime = await buildRuntime(ctx, contract);
 
     return {
       success: true,
@@ -29,6 +30,7 @@ const getRiskLimitsTool: AgentTool = {
           stopLossPct: formatField(contract.stopLossPct),
           stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
         },
+        runtime,
       },
     };
   },
@@ -88,6 +90,103 @@ const adjustRiskLimitsTool: AgentTool = {
     };
   },
 };
+
+/**
+ * Build the runtime risk snapshot for an agent.
+ *
+ * Conventions:
+ * - dailyMaxLossPct === 0 means "no daily loss limit configured" — treated as unlimited.
+ * - drawdown is engine-only state populated during decision execution; not available here.
+ */
+async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContract) {
+  // --- openPositions ---
+  let openPositionsCurrent = 0;
+  const openPositionsLimit = contract.maxOpenPositions.effectiveValue;
+
+  // --- dailyLoss ---
+  let dailyLossCurrent: string | null = null;
+  let dailyLossLimit: string | null = null;
+  let dailyLossLimitPct: number | null = null;
+  let dailyLossBlocked = false;
+
+  if (ctx.botRepo) {
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [positions, analytics] = await Promise.all([
+        ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId),
+        ctx.botRepo.getAnalyticsByCreator('agent', ctx.agentId, since),
+      ]);
+      openPositionsCurrent = positions.filter((p) => p.size !== '0').length;
+      dailyLossCurrent = analytics.realizedPnlUsd;
+    } catch {
+      // Non-critical: use defaults (openPositionsCurrent stays 0, dailyLossCurrent stays null)
+    }
+  } else {
+    dailyLossCurrent = '0';
+  }
+
+  const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
+
+  // Derive the daily loss limit: prefer explicit dollar limit from agent config,
+  // otherwise compute from capital × dailyMaxLossPct.
+  if (ctx.agentConfigOps) {
+    try {
+      const config = await ctx.agentConfigOps.getCurrentConfig();
+      if (config?.risk?.dailyMaxLossPct != null) {
+        dailyLossLimitPct = config.risk.dailyMaxLossPct;
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  if (dailyLossLimitPct != null && ctx.agentRepo) {
+    try {
+      const agent = await ctx.agentRepo.getAgent(ctx.agentId);
+      if (agent?.capital) {
+        const capital = Number(agent.capital);
+        if (!Number.isNaN(capital) && capital > 0) {
+          dailyLossLimit = String(capital * dailyLossLimitPct / 100);
+        }
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  // Blocked when today's realized loss (negative P&L) exceeds the limit.
+  // dailyMaxLossPct === 0 means "no daily loss limit configured" — treat as unlimited.
+  if (dailyLossCurrent != null && dailyLossLimit != null) {
+    const currentNum = Number(dailyLossCurrent);
+    const limitNum = Number(dailyLossLimit);
+    if (!Number.isNaN(currentNum) && !Number.isNaN(limitNum) && limitNum > 0) {
+      dailyLossBlocked = currentNum < 0 && Math.abs(currentNum) >= limitNum;
+    }
+  }
+
+  return {
+    dailyLoss: {
+      current: dailyLossCurrent,
+      limit: dailyLossLimit,
+      limitPct: dailyLossLimitPct,
+      blocked: dailyLossBlocked,
+      oldestFillAgesOutAt: null,
+      remainingMs: null,
+    },
+    drawdown: {
+      // Engine-only state — populated by the risk gate during decision execution.
+      // Not available from the agent container tool context.
+      current: null,
+      limit: null,
+      approaching: false,
+    },
+    openPositions: {
+      current: openPositionsCurrent,
+      limit: openPositionsLimit,
+      blocked: openPositionsBlocked,
+    },
+  };
+}
 
 function formatField(field: { effectiveValue: number; source: string; mutable: boolean; operatorCeiling: number; enforced?: boolean }) {
   return {
