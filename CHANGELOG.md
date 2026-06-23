@@ -9,6 +9,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Simplified agent creation flow**: 30+ field form reduced to essential fields (Goal, Skill Preset, Style, Capital, Telegram, Name) with collapsible Advanced Settings. Style selector (Careful/Balanced/Bold) maps to cost preset + risk tolerance + tick interval simultaneously. Agent name auto-generated from style. Inline validation on review with field-specific error messages and scroll-to-error. Capital auto-fills daily loss limit to 5%.
+- **Style selector component** (`StyleSelector.tsx`): radio group with Careful/Balanced/Bold options, each with descriptions. Maps to cost preset, tick interval, daily budget, and risk tolerance via `STYLE_CONFIG`.
+- **Advanced settings accordion** (`AdvancedSettingsSection.tsx`): slot-based accordion with 4 independently collapsible subsections (AI Configuration, Skills, Trading Setup, Strategy).
+- **Form validation** (`form-validation.ts`): validates all fields on Review click and on-blur for numeric constraint fields. Returns field-specific error messages.
+
+### Changed
+
+- **Agent creation form restructured**: Capability mode now auto-derived from skill selection + goal. Max bots derived from user plan (not user-editable). Shadow execution mode restricted to admin users. Tick intervals aligned across frontend/cost-profile to 60/30/15 min.
+- **Tick intervals updated**: preset cadences changed from 30/15/5 min to 60/30/15 min in both `agent-cadence.ts` and `cost-profile.ts` to match new Style mapping.
+- **Capital field moved**: capital is now a standalone field in the main form; removed from `TradingGuardrailsFields` and `AgentControlsSection`.
+
 - **Hybrid agent mode**: agents with both `technical` + `intelligence` config use a single-shot LLM evaluator — scanner gates LLM dispatch, no polling loop.
 - **Scanner wake emission**: `AgentTradingActor` emits `agent.wake` with `source: 'scanner'` after technical scan finds entry signals or exit advisories.
 - **Advisory mode**: when `hasIntelligenceConfig` is true, the scanner generates signals but does not submit decisions directly — exits respect `autonomousExit` config.
