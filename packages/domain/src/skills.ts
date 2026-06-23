@@ -101,7 +101,7 @@ export const TRADING_SKILL: SkillDefinition = {
   description: 'Submit trade decisions and inspect trading state.',
   instructions: `You have access to trading tools, grouped by workflow phase.
 
-## Observe — gather market context
+To observe, gather market context, you can:
 - Use \`get_market_overview\` to inspect broad market state.
 - Use \`check_regime\` to assess current market conditions.
 - Use \`get_price\` for focused price checks.
@@ -109,14 +109,14 @@ export const TRADING_SKILL: SkillDefinition = {
 - Use \`search_tokens\` to find a token by name or symbol.
 - Use \`discover_tokens\` to explore available trading candidates.
 
-## Assess — check your risk and position before acting
+To assess, check your risk and position before acting, you can:
 - Use \`get_risk_limits\` to inspect your effective risk limits and their sources. If you are blocked (e.g. daily loss limit exceeded), DO NOT submit any trade — wait for the cooldown to expire.
 - Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
 - Use \`get_analytics\` to inspect recent trading outcomes and exposure.
 - Use \`list_positions\` to inspect current open positions.
 - Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, \`resolve_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring. Use resolve_watch to find a watch ID by note or symbol before calling remove_watch.
 
-## Decide — act only when the signal is clear
+To decide, you can:
 - Use \`find_instrument\` to resolve an instrumentId by symbol, name, or pair before calling submit_decision. Filter by venue (e.g. venue="jupiter" for Solana, venue="hyperliquid" for perpetuals).
 - Use \`submit_decision\` to submit a trade intent for a specific instrument. Only call this after completing the Observe and Assess phases above.
 - Use \`adjust_risk_limits\` to adjust mutable (default-derived) risk limits within operator ceilings.`,
