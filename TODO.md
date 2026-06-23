@@ -48,6 +48,12 @@ Testing: unit test config parsing and notional estimation, plus integration test
 
 - [ ] Medium. (WI7) All 11 UATs (AG-S01 through AG-S11) for simplified agent creation require a running dev environment (frontend + API + DB). Pending manual verification.
 
+- [ ] Medium. (AI1) Duplicated fallback logic in `stop()` and `kill()` in `apps/worker/src/agents/agent-runtime-launcher.ts` — ~20 lines nearly identical. Extract private helper `stopMissingHandle()` for DRY. (Maintainability, not correctness.)
+
+- [ ] Medium. (AI2) `ReconcilerHealth.healthy` flag scope too narrow in `packages/engine/src/reconciliation/reconciler.ts` — doesn't account for error-induced blindness (`fetchVenueState` throws). Error passes ARE logged separately (at error level) so log-based alerting covers this, but heartbeat-based health monitoring would miss it. Consider broadening `healthy` to account for error passes, or rename to `venueReachable`.
+
+- [ ] Medium. (AI3) Missing test for `dailyMaxLossPct === 0` convention in `apps/worker/src/tools/risk-limits.test.ts` — code logic is correct (`limitNum > 0` guard), but no test verifies the documented "treated as unlimited" convention.
+
 - [ ] Low. Modify the duplicated payload mapping in analytics.ts:24 and agent-message-broker.ts:818 to use one shared serializer for get_analytics and list_positions. The two paths now intentionally emit the same contract, but they still hand-build the same object structure in two places, which is how the earlier drift happened. Dependencies: none. Risks/open questions: low risk; the main decision is where the shared helper should live so both the tool registry and broker can import it without creating a dependency cycle. Testing: unit-test the shared serializer directly; integration-test one tool and one broker query path to confirm both use the same output.
 
 - [ ] Low. Add repository-backed coverage for the new agent-direct query logic in repositories.ts:736. The current tests in analytics.test.ts:20 and analytics.test.ts:131 validate only mocked repository responses, so the new SQL ownership conditions and aggregate math for agentDirect are still untested against real rows. Dependencies: none. Risks/open questions: low risk in code, medium risk in future regressions because the logic now branches on actor type, bot filters, and lookback windows. Testing: integration-test repository queries against seeded bot and agent rows; no visual verification needed.
