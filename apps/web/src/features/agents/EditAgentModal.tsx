@@ -277,6 +277,21 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
             </div>
           )}
 
+          {hasTradingCapability && (
+            <div style={fieldGap}>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
+              <input
+                style={inputStyle}
+                value={form.capital}
+                onChange={set('capital')}
+                placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+              />
+              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                {intl.formatMessage({ id: 'agents.controls.capital.help' })}
+              </div>
+            </div>
+          )}
+
           {showIntelligence && (
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.selectedSkills' })}</FieldLabel>
@@ -373,7 +388,6 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
                 dailySpendBudgetUsd: form.dailySpendBudgetUsd,
                 tickIntervalMins: form.tickIntervalMins,
                 maxBots: form.maxBots,
-                capital: form.capital,
                 dailyLossLimit: form.dailyLossLimit,
                 maxSlippageBps: form.maxSlippageBps,
                 maxOpenPositions: form.maxOpenPositions,
@@ -401,7 +415,6 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               </div>
               <TradingGuardrailsFields
                 value={{
-                  capital: form.capital,
                   dailyLossLimit: form.dailyLossLimit,
                   maxSlippageBps: form.maxSlippageBps,
                   maxOpenPositions: form.maxOpenPositions,

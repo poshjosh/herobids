@@ -324,6 +324,7 @@ export const messages: Record<string, string> = {
   'agents.create.riskTolerance': 'जोखिम सहनशीलता',
   'agents.create.review': 'समीक्षा →',
   'agents.create.creating': 'बनाया जा रहा है…',
+  'agents.create.advancedSettings': 'उन्नत सेटिंग्स',
   'agents.create.tradingControls.title': 'ट्रेडिंग गार्डरेल्स',
   'agents.review.title': 'समीक्षा और AI एजेंट निर्माण',
   'agents.review.capabilityMode': 'क्षमता मोड',

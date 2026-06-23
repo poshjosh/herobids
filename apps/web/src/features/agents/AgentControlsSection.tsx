@@ -10,7 +10,6 @@ export interface AgentControlsFormValue {
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
   maxBots: string;
-  capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -29,7 +28,6 @@ interface AgentControlsSectionProps {
 }
 
 export interface TradingGuardrailsFormValue {
-  capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -188,19 +186,6 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null }: Tr
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-      <div>
-        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
-        <input
-          style={inputStyle}
-          value={value.capital}
-          onChange={(event) => onChange({ capital: event.target.value })}
-          placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-        />
-        <div style={helperTextStyle}>
-          {intl.formatMessage({ id: 'agents.controls.capital.help' })}
-        </div>
-      </div>
-
       <div>
         <FieldLabel>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit' })}</FieldLabel>
         <input

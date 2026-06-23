@@ -324,6 +324,7 @@ export const messages: Record<string, string> = {
   'agents.create.riskTolerance': 'Risk tolerance',
   'agents.create.review': 'Review →',
   'agents.create.creating': 'Creating…',
+  'agents.create.advancedSettings': 'Advanced Settings',
   'agents.create.tradingControls.title': 'Trading guardrails',
   'agents.review.title': 'Review and create AI agent',
   'agents.review.capabilityMode': 'Capability mode',

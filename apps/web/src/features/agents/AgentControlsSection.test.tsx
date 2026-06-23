@@ -5,7 +5,6 @@ import { messages } from '../../app/i18n/locales/en.js';
 import { AgentControlsSection, TradingGuardrailsFields, type AgentControlsFormValue, type TradingGuardrailsFormValue } from './AgentControlsSection.js';
 
 const EMPTY_GUARDRAILS: TradingGuardrailsFormValue = {
-  capital: '',
   dailyLossLimit: '',
   maxSlippageBps: '',
   maxOpenPositions: '',
@@ -20,7 +19,6 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
     dailySpendBudgetUsd: '',
     tickIntervalMins: '',
     maxBots: '',
-    capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
     maxOpenPositions: '',
@@ -55,7 +53,6 @@ describe('AgentControlsSection rendering', () => {
             dailySpendBudgetUsd: '',
             tickIntervalMins: '',
             maxBots: '',
-            capital: '',
             dailyLossLimit: '',
             maxSlippageBps: '',
             maxOpenPositions: '',

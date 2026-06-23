@@ -355,3 +355,9 @@ The `style` value is stored in `IntentState` and drives field defaults, but the 
 
 ### [Phase 1] M4-LOW: Arabic/Hindi i18n stubs
 The Arabic and Hindi locale files contain English stub values for `agents.style.*` keys marked `// translation pending`. Non-blocking — will need proper translations before i18n launch.
+
+### [Phase 2] M1 (updated): `style` field omitted from API payload
+Now that Phase 2 (form layout) is done, the style field still needs to be forwarded in the API payload and displayed in the review step. Deferred to future phase.
+
+### [Phase 2] Note: `deriveCapabilityMode` not unit tested yet
+The `deriveCapabilityMode` function in `AgentsPage.tsx` works correctly but lacks dedicated unit tests. Tests are planned in the testing strategy but not yet implemented.

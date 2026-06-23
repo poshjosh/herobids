@@ -322,6 +322,7 @@ export const messages: Record<string, string> = {
   'agents.create.riskTolerance': 'تحمل المخاطر',
   'agents.create.review': 'مراجعة →',
   'agents.create.creating': 'جارٍ الإنشاء…',
+  'agents.create.advancedSettings': 'الإعدادات المتقدمة',
   'agents.create.tradingControls.title': 'ضوابط التداول',
   'agents.review.title': 'مراجعة وإنشاء وكيل ذكاء اصطناعي',
   'agents.review.capabilityMode': 'وضع القدرة',

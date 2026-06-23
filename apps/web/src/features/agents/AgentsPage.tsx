@@ -14,7 +14,7 @@ import { resolveCreateAgentModelPayload } from './create-agent-models.js';
 import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
-import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
+import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
 import { type AgentStyleValue, resolveStyleDefaults } from './style-mapping.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
@@ -22,6 +22,14 @@ import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type Tech
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
+
+function deriveCapabilityMode(skillIds: string[], goal: string): CapabilityMode {
+  const hasTradingSkill = skillIds.includes('trading') || skillIds.includes('bot-management');
+  const hasIntelligence = goal.trim().length > 0;
+  if (hasTradingSkill && hasIntelligence) return 'both';
+  if (hasIntelligence) return 'intelligence';
+  return 'technical';
+}
 
 interface IntentState {
   name: string;
@@ -153,7 +161,7 @@ function CreateAgentFlow({
   const [intent, setIntent] = useState<IntentState>({
     name: '',
     goal: '',
-    capabilityMode: 'intelligence',
+    capabilityMode: 'technical',
     technicalConfig: defaultTechnicalConfigFormState(),
     skillPreset: 'trading',
     skillIds: resolveSkillPresetSkillIds('trading'),
@@ -236,6 +244,17 @@ function CreateAgentFlow({
     }
   }, [meQuery.data?.telegramChatId, telegramTouched]);
 
+  // Derive capabilityMode from skill selection + goal text
+  useEffect(() => {
+    setIntent((state) => {
+      const derived = deriveCapabilityMode(state.skillIds, state.goal);
+      if (derived !== state.capabilityMode) {
+        return { ...state, capabilityMode: derived };
+      }
+      return state;
+    });
+  }, [intent.skillIds, intent.goal]);
+
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
   const hasBotManagementSkill = intent.skillIds.includes('bot-management');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(intent.tickIntervalMins);
@@ -249,7 +268,7 @@ function CreateAgentFlow({
   );
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
   const showTechnical = intent.capabilityMode === 'technical' || intent.capabilityMode === 'both';
-  const requiresTradingSetup = showIntelligence && (intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading'));
+  const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   const tradingBindingsQuery = useQuery({
     queryKey: ['capabilities', 'trading', 'bindings'],
     queryFn: () => capabilitiesApi.tradingBindings(),
@@ -343,43 +362,25 @@ function CreateAgentFlow({
       },
     ] as const;
 
+    const detailsStyle: React.CSSProperties = {
+      border: '1px solid var(--color-border)',
+      borderRadius: '8px',
+      background: 'var(--color-surface-1)',
+    };
+    const summaryStyle: React.CSSProperties = {
+      padding: '12px 16px',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '600',
+      color: 'var(--color-text-secondary)',
+      userSelect: 'none',
+    };
+
     return (
       <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <CapabilitySelector
-            value={intent.capabilityMode}
-            onChange={(capabilityMode) => setIntent((state) => ({ ...state, capabilityMode }))}
-          />
 
-          <StyleSelector
-            value={intent.style}
-            onChange={(style) => {
-              const defaults = resolveStyleDefaults(style);
-              setIntent((state) => ({
-                ...state,
-                style,
-                costPreset: defaults.costPreset,
-                tickIntervalMins: defaults.tickIntervalMins,
-                dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                riskTolerance: defaults.riskTolerance,
-              }));
-            }}
-          />
-
-          <div>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.name' })}</FieldLabel>
-            <input
-              style={inputStyle}
-              type="text"
-              value={intent.name}
-              onChange={(e) => setIntent((state) => ({ ...state, name: e.target.value }))}
-              placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
-              maxLength={100}
-              required
-            />
-          </div>
-
-          {showIntelligence && (
+          {/* 1. Goal — always visible, first */}
           <div>
             <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'both' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
             <textarea
@@ -387,13 +388,11 @@ function CreateAgentFlow({
               value={intent.goal}
               onChange={(e) => setIntent((state) => ({ ...state, goal: e.target.value }))}
               placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
-              required={showIntelligence}
+              required
             />
           </div>
-          )}
 
-          {showIntelligence && (
-          <>
+          {/* 2. Skill Preset */}
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
             <select
@@ -417,132 +416,48 @@ function CreateAgentFlow({
             </div>
           </div>
 
+          {/* 3. Style Selector */}
+          <StyleSelector
+            value={intent.style}
+            onChange={(style) => {
+              const defaults = resolveStyleDefaults(style);
+              setIntent((state) => ({
+                ...state,
+                style,
+                costPreset: defaults.costPreset,
+                tickIntervalMins: defaults.tickIntervalMins,
+                dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                riskTolerance: defaults.riskTolerance,
+              }));
+            }}
+          />
+
+          {/* 4. Skills display (read-only) */}
           <div>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
-            {intent.skillPreset === 'custom' ? (
-              <SkillPicker
-                skills={skills}
-                selectedSkillIds={intent.skillIds}
-                onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
-                loading={skillsLoading}
-                errorMessage={skillsError}
-              />
-            ) : (
-              <div style={{ ...inputStyle, minHeight: '44px', display: 'flex', alignItems: 'center', color: 'var(--color-text-secondary)' }}>
-                {formatSkillSelection(selectedSkills, intl)}
-              </div>
-            )}
+            <div style={{ ...inputStyle, minHeight: '44px', display: 'flex', alignItems: 'center', color: 'var(--color-text-secondary)' }}>
+              {formatSkillSelection(selectedSkills, intl)}
+            </div>
             <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
               {intent.skillPreset === 'custom'
                 ? intl.formatMessage({ id: 'agents.create.skillsHelp' })
                 : intl.formatMessage({ id: 'agents.create.skillPreset.includes' }, { skills: formatSkillSelection(selectedSkills, intl) })}
             </div>
           </div>
-          </>
-          )}
 
-          {showIntelligence && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                {intl.formatMessage({ id: 'agents.create.models.title' })}
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                {intl.formatMessage({ id: 'agents.create.models.description' })}
-              </div>
-            </div>
-
-            <ModelSelectionFields
-              value={{ provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel }}
-              providers={availableModelsQuery.data?.providers ?? []}
-              loading={availableModelsQuery.isLoading}
-              loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
-              emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
-              providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
-              providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
-              economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
-              economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
-              premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
-              premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
-              onChange={(value) => {
-                setModelTouched(true);
-                setIntent((state) => ({ ...state, ...value }));
-              }}
-            />
-          </div>
-          )}
-
-          {showTechnical && (
-            <div style={{ padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
-              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
-                {intl.formatMessage({ id: 'agents.technical.title' })}
-              </div>
-              <TechnicalConfigSection
-                value={intent.technicalConfig}
-                onChange={(technicalConfig) => setIntent((state) => ({ ...state, technicalConfig }))}
-                showErrors={showIntentErrors}
-              />
-            </div>
-          )}
-
+          {/* 5. Capital + Exchange (only when trading skills are selected) */}
           {requiresTradingSetup && (
-            <div>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
-              <select
-                value={intent.executionMode}
-                onChange={(e) => setIntent((state) => ({ ...state, executionMode: e.target.value as IntentState['executionMode'] }))}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-                <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
-                <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
-              </select>
-            </div>
-          )}
-
-          <div>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.create.telegramChatId' })}</FieldLabel>
-            <input
-              style={inputStyle}
-              value={intent.telegramChatId}
-              onChange={(e) => {
-                setTelegramTouched(true);
-                setIntent((state) => ({ ...state, telegramChatId: e.target.value }));
-              }}
-              placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
-            />
-            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-              {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
-            </div>
-          </div>
-
-          <AgentControlsSection
-            value={{
-              costPreset: intent.costPreset,
-              dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
-              tickIntervalMins: intent.tickIntervalMins,
-              maxBots: intent.maxBots,
-              capital: intent.capital,
-              dailyLossLimit: intent.dailyLossLimit,
-              maxSlippageBps: intent.maxSlippageBps,
-              maxOpenPositions: intent.maxOpenPositions,
-              maxPositionSizePct: intent.maxPositionSizePct,
-              stopLossPct: intent.stopLossPct,
-              stopLossCooldownSecs: intent.stopLossCooldownSecs,
-            }}
-            showBotControls={hasBotManagementSkill}
-            tickIntervalError={tickIntervalError}
-            onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
-          />
-
-          {requiresTradingSetup && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+            <>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                  {intl.formatMessage({ id: 'agents.create.capabilitySetupTitle' }, { capability: formatCapabilityFamily('trading', intl) })}
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                  {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
+                <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
+                <input
+                  style={inputStyle}
+                  value={intent.capital}
+                  onChange={(e) => setIntent((state) => ({ ...state, capital: e.target.value }))}
+                  placeholder={intl.formatMessage({ id: 'common.unlimited' })}
+                />
+                <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                  {intl.formatMessage({ id: 'agents.controls.capital.help' })}
                 </div>
               </div>
 
@@ -576,29 +491,83 @@ function CreateAgentFlow({
                   </select>
                 )}
               </div>
+            </>
+          )}
 
-              <div>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.create.riskTolerance' })}</FieldLabel>
-                <select
-                  value={intent.riskTolerance}
-                  onChange={(e) => setIntent((state) => ({ ...state, riskTolerance: e.target.value as RiskToleranceValue }))}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  {riskOptions.map((risk) => (
-                    <option key={risk.value} value={risk.value}>
-                      {risk.label} — {risk.description}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {/* 6. Telegram chat ID */}
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.telegramChatId' })}</FieldLabel>
+            <input
+              style={inputStyle}
+              value={intent.telegramChatId}
+              onChange={(e) => {
+                setTelegramTouched(true);
+                setIntent((state) => ({ ...state, telegramChatId: e.target.value }));
+              }}
+              placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
+            />
+            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+              {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
+            </div>
+          </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>
-                  {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
+          {/* 7. Name — last main field before Advanced Settings */}
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.name' })}</FieldLabel>
+            <input
+              style={inputStyle}
+              type="text"
+              value={intent.name}
+              onChange={(e) => setIntent((state) => ({ ...state, name: e.target.value }))}
+              placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
+              maxLength={100}
+              required
+            />
+          </div>
+
+          {/* 8. Advanced Settings (collapsed) */}
+          <details style={detailsStyle}>
+            <summary style={summaryStyle}>
+              {intl.formatMessage({ id: 'agents.create.advancedSettings' })}
+            </summary>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 16px 16px 16px' }}>
+
+              {/* 1. AI Configuration: model selection + cost/budget/tick */}
+              {showIntelligence && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                    {intl.formatMessage({ id: 'agents.create.models.title' })}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                    {intl.formatMessage({ id: 'agents.create.models.description' })}
+                  </div>
                 </div>
-                <TradingGuardrailsFields
+
+                <ModelSelectionFields
+                  value={{ provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel }}
+                  providers={availableModelsQuery.data?.providers ?? []}
+                  loading={availableModelsQuery.isLoading}
+                  loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
+                  emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
+                  providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
+                  providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
+                  economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
+                  economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
+                  premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
+                  premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
+                  onChange={(value) => {
+                    setModelTouched(true);
+                    setIntent((state) => ({ ...state, ...value }));
+                  }}
+                />
+
+                <AgentControlsSection
                   value={{
-                    capital: intent.capital,
+                    costPreset: intent.costPreset,
+                    dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
+                    tickIntervalMins: intent.tickIntervalMins,
+                    maxBots: intent.maxBots,
                     dailyLossLimit: intent.dailyLossLimit,
                     maxSlippageBps: intent.maxSlippageBps,
                     maxOpenPositions: intent.maxOpenPositions,
@@ -606,13 +575,102 @@ function CreateAgentFlow({
                     stopLossPct: intent.stopLossPct,
                     stopLossCooldownSecs: intent.stopLossCooldownSecs,
                   }}
-                  defaults={riskDefaultsQuery.data ?? null}
+                  showBotControls={hasBotManagementSkill}
+                  tickIntervalError={tickIntervalError}
                   onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
                 />
               </div>
-            </div>
-          )}
+              )}
 
+              {/* 2. Skills — custom SkillPicker */}
+              {intent.skillPreset === 'custom' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                    {intl.formatMessage({ id: 'agents.create.skills' })}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                    {intl.formatMessage({ id: 'agents.create.skillsHelp' })}
+                  </div>
+                </div>
+                <SkillPicker
+                  skills={skills}
+                  selectedSkillIds={intent.skillIds}
+                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
+                  loading={skillsLoading}
+                  errorMessage={skillsError}
+                />
+              </div>
+              )}
+
+              {/* 3. Trading Setup: execution mode, risk tolerance, guardrails */}
+              {requiresTradingSetup && (
+                <>
+                  <div>
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
+                    <select
+                      value={intent.executionMode}
+                      onChange={(e) => setIntent((state) => ({ ...state, executionMode: e.target.value as IntentState['executionMode'] }))}
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                    >
+                      <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
+                      <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+                      <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.create.riskTolerance' })}</FieldLabel>
+                    <select
+                      value={intent.riskTolerance}
+                      onChange={(e) => setIntent((state) => ({ ...state, riskTolerance: e.target.value as RiskToleranceValue }))}
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                    >
+                      {riskOptions.map((risk) => (
+                        <option key={risk.value} value={risk.value}>
+                          {risk.label} — {risk.description}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                      {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
+                    </div>
+                    <TradingGuardrailsFields
+                      value={{
+                        dailyLossLimit: intent.dailyLossLimit,
+                        maxSlippageBps: intent.maxSlippageBps,
+                        maxOpenPositions: intent.maxOpenPositions,
+                        maxPositionSizePct: intent.maxPositionSizePct,
+                        stopLossPct: intent.stopLossPct,
+                        stopLossCooldownSecs: intent.stopLossCooldownSecs,
+                      }}
+                      defaults={riskDefaultsQuery.data ?? null}
+                      onChange={(patch) => setIntent((state) => ({ ...state, ...patch }))}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* 4. Strategy: technical config */}
+              {showTechnical && (
+                <div style={{ padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
+                    {intl.formatMessage({ id: 'agents.technical.title' })}
+                  </div>
+                  <TechnicalConfigSection
+                    value={intent.technicalConfig}
+                    onChange={(technicalConfig) => setIntent((state) => ({ ...state, technicalConfig }))}
+                    showErrors={showIntentErrors}
+                  />
+                </div>
+              )}
+            </div>
+          </details>
+
+          {/* Cancel + Review buttons */}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
             <Button
