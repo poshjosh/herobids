@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Hybrid agent mode**: agents with both `technical` + `intelligence` config use a single-shot LLM evaluator — scanner gates LLM dispatch, no polling loop.
+- **Scanner wake emission**: `AgentTradingActor` emits `agent.wake` with `source: 'scanner'` after technical scan finds entry signals or exit advisories.
+- **Advisory mode**: when `hasIntelligenceConfig` is true, the scanner generates signals but does not submit decisions directly — exits respect `autonomousExit` config.
+- **Hybrid agent prompt & evaluator**: `hybrid-agent-prompt.ts` builds a constrained prompt from scan signals + portfolio state; `hybrid-agent-evaluator.ts` calls LLM, parses JSON response, submits decisions.
+
+### Changed
+
+- **Wake infrastructure renamed**: `agent.market.wake` → `agent.wake`, `AgentMarketWakePayloadSchema` → `AgentWakePayloadSchema`, `emitAgentMarketWake()` → `emitAgentWake()`. Wake source enum extended with `'scanner'`.
+- **Scanner wake schema**: `ScannerWakeContextSchema` added with `signalCount` (min 0 for exit-only wakes), `topSymbol`, `topConfidence`, `regimePass`.
+- **Hybrid no-wake guard**: timer ticks on hybrid agents skip LLM dispatch when no wake signal is pending — housekeeping (heartbeats, message ingestion) still runs.
+
 ## 0.0.1-2026.06.22-a
 
 ### Added
