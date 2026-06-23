@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCadence, deriveExpectedCadence, estimateDailySpend, hasExplicitTickInterval } from './agent-cadence.js';
+import { formatCadence, deriveExpectedCadence, estimateDailySpend, hasExplicitTickInterval, PRESET_TICK_INTERVALS } from './agent-cadence.js';
 
 describe('formatCadence', () => {
   it('formats sub-minute intervals in seconds', () => {
@@ -85,5 +85,13 @@ describe('hasExplicitTickInterval', () => {
 
   it('returns false for zero', () => {
     expect(hasExplicitTickInterval(0)).toBe(false);
+  });
+});
+
+describe('PRESET_TICK_INTERVALS', () => {
+  it('has correct values for each preset', () => {
+    expect(PRESET_TICK_INTERVALS.minimal).toBe(3_600_000);
+    expect(PRESET_TICK_INTERVALS.standard).toBe(1_800_000);
+    expect(PRESET_TICK_INTERVALS.premium).toBe(900_000);
   });
 });

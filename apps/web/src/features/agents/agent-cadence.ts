@@ -6,7 +6,7 @@
  */
 
 /** Preset-derived base tick intervals in milliseconds (mirrors cost-profile.ts). */
-const PRESET_TICK_INTERVALS: Record<string, number> = {
+export const PRESET_TICK_INTERVALS: Record<string, number> = {
   minimal: 3_600_000,
   standard: 1_800_000,
   premium: 900_000,

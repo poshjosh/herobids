@@ -21,18 +21,11 @@ import { generateAgentName } from './agent-name.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
+import { deriveCapabilityMode } from './derive-capability-mode.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
-
-function deriveCapabilityMode(skillIds: string[], goal: string): CapabilityMode {
-  const hasTradingSkill = skillIds.includes('trading') || skillIds.includes('bot-management');
-  const hasIntelligence = goal.trim().length > 0;
-  if (hasTradingSkill && hasIntelligence) return 'both';
-  if (hasIntelligence) return 'intelligence';
-  return 'technical';
-}
 
 interface IntentState {
   name: string;

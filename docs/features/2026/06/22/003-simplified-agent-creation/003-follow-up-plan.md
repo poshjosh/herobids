@@ -218,3 +218,14 @@ All items are straightforward. The most involved is **WI1** (persist style) beca
 | MEDIUM | `COST_PER_TICK` constants duplicated in `agent-cadence.ts` and `cost-profile.ts` — operator config changes to `agentCostEstimates` won't propagate to web UI or worker. Config-leak anti-pattern (see `/memories/repo/config-leak-baseurl-openrouter.md`). |
 | MEDIUM | Misleading `// from agentCostEstimates config` comment above hardcoded constants — values aren't read from config at runtime. |
 | LOW | API fallback `agentCostEstimates ?? { ... }` in `agents.ts` is dead code — Zod schema always provides defaults. |
+
+### WI6 — Unit Tests
+
+| Severity | Issue |
+|----------|-------|
+| MEDIUM | `PRESET_TICK_INTERVALS` exported solely for testing — weakens encapsulation. Consider reverting to private and relying on behavioral tests. |
+| MEDIUM | `validRiskTolerances` array duplicated locally in test — won't catch new tolerance values added to production types. |
+| MEDIUM | Fragile assertion in `form-validation.test.ts` technical-mode test — only checks `errors.goal` is undefined, doesn't assert `result.valid`. |
+| MEDIUM | 2 pre-existing test failures in `agent-cadence.test.ts` from WI2 cost value changes not updating test expectations (`deriveExpectedCadence` and `estimateDailySpend` tests). |
+| LOW | Speculative comment block in `style-mapping.test.ts` riskTolerance test adds noise. |
+| LOW | `derive-capability-mode.ts` missing JSDoc. |
