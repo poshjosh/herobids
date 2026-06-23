@@ -10,9 +10,10 @@ interface TechnicalConfigSectionProps {
   value: TechnicalConfigFormState;
   onChange: (state: TechnicalConfigFormState) => void;
   showErrors?: boolean;
+  onClearFieldError?: (field: string) => void;
 }
 
-export function TechnicalConfigSection({ value, onChange, showErrors }: TechnicalConfigSectionProps) {
+export function TechnicalConfigSection({ value, onChange, showErrors, onClearFieldError }: TechnicalConfigSectionProps) {
   const intl = useIntl();
   const [showScanSettings, setShowScanSettings] = useState(false);
   const [showIndicators, setShowIndicators] = useState(true);
@@ -96,10 +97,12 @@ export function TechnicalConfigSection({ value, onChange, showErrors }: Technica
           <div style={{ flex: 1 }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
             <select
+              data-field="venue"
               value={value.filters.venue}
               onChange={(e) => {
                 const venue = e.target.value;
                 const venueType = venue === 'hyperliquid' ? 'orderbook' : venue === 'jupiter' ? 'swap' : '';
+                onClearFieldError?.('venue');
                 setFilters({ venue, venueType: venueType as TechnicalConfigFormState['filters']['venueType'] });
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}

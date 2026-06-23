@@ -24,6 +24,9 @@ interface AgentControlsSectionProps {
   tickIntervalError?: string | null;
   tickIntervalNotice?: string | null;
   effectiveTickIntervalMs?: number | null;
+  fieldErrors?: Record<string, string>;
+  onClearFieldError?: (field: string) => void;
+  onBlurField?: (field: string) => void;
 }
 
 export interface TradingGuardrailsFormValue {
@@ -46,6 +49,9 @@ interface TradingGuardrailsFieldsProps {
   value: TradingGuardrailsFormValue;
   onChange: (patch: Partial<TradingGuardrailsFormValue>) => void;
   defaults?: AgentRiskDefaultsView | null;
+  fieldErrors?: Record<string, string>;
+  onClearFieldError?: (field: string) => void;
+  onBlurField?: (field: string) => void;
 }
 
 export function AgentControlsSection({
@@ -55,6 +61,9 @@ export function AgentControlsSection({
   tickIntervalError = null,
   tickIntervalNotice = null,
   effectiveTickIntervalMs = null,
+  fieldErrors,
+  onClearFieldError,
+  onBlurField,
 }: AgentControlsSectionProps) {
   const intl = useIntl();
   const parsedTickInterval = parseTickIntervalMinutesInput(value.tickIntervalMins);
@@ -134,7 +143,7 @@ export function AgentControlsSection({
         </div>
       </div>
 
-      <div>
+      <div data-field="tickIntervalMins">
         <FieldLabel>{intl.formatMessage({ id: 'agents.controls.tickInterval' })}</FieldLabel>
         <input
           style={inputStyle}
@@ -143,11 +152,16 @@ export function AgentControlsSection({
           step={1}
           aria-invalid={tickIntervalError != null}
           value={value.tickIntervalMins}
-          onChange={(event) => onChange({ tickIntervalMins: event.target.value })}
+          onBlur={() => onBlurField?.('tickIntervalMins')}
+          onChange={(event) => {
+            onClearFieldError?.('tickIntervalMins');
+            onChange({ tickIntervalMins: event.target.value });
+          }}
           placeholder={intl.formatMessage({ id: 'agents.controls.tickInterval.placeholder' })}
         />
         {tickIntervalError && <div style={errorTextStyle}>{tickIntervalError}</div>}
-        {!tickIntervalError && tickIntervalNotice && <div style={helperTextStyle}>{tickIntervalNotice}</div>}
+        {!tickIntervalError && fieldErrors?.tickIntervalMins && <div style={errorTextStyle}>{fieldErrors.tickIntervalMins}</div>}
+        {!tickIntervalError && !fieldErrors?.tickIntervalMins && tickIntervalNotice && <div style={helperTextStyle}>{tickIntervalNotice}</div>}
         {!tickIntervalError && cadence && (
           <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
             {explicitCadence
@@ -171,9 +185,10 @@ export function AgentControlsSection({
   );
 }
 
-export function TradingGuardrailsFields({ value, onChange, defaults = null }: TradingGuardrailsFieldsProps) {
+export function TradingGuardrailsFields({ value, onChange, defaults = null, fieldErrors, onClearFieldError, onBlurField }: TradingGuardrailsFieldsProps) {
   const intl = useIntl();
   const helperTextStyle: React.CSSProperties = { marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' };
+  const errorTextStyle: React.CSSProperties = { ...helperTextStyle, color: 'var(--color-danger)' };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -200,20 +215,25 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null }: Tr
         />
       </div>
 
-      <div>
+      <div data-field="maxOpenPositions">
         <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxOpenPositions' })}</FieldLabel>
         <input
           style={inputStyle}
           type="number"
           min={1}
           value={value.maxOpenPositions}
-          onChange={(event) => onChange({ maxOpenPositions: event.target.value })}
+          onBlur={() => onBlurField?.('maxOpenPositions')}
+          onChange={(event) => {
+            onClearFieldError?.('maxOpenPositions');
+            onChange({ maxOpenPositions: event.target.value });
+          }}
           placeholder={defaults ? String(defaults.maxOpenPositions) : intl.formatMessage({ id: 'common.default' })}
         />
+        {fieldErrors?.maxOpenPositions && <div style={errorTextStyle}>{fieldErrors.maxOpenPositions}</div>}
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxOpenPositions.help' })}</div>
       </div>
 
-      <div>
+      <div data-field="maxPositionSizePct">
         <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxPositionSizePct' })}</FieldLabel>
         <input
           style={inputStyle}
@@ -222,13 +242,18 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null }: Tr
           max={100}
           step="0.01"
           value={value.maxPositionSizePct}
-          onChange={(event) => onChange({ maxPositionSizePct: event.target.value })}
+          onBlur={() => onBlurField?.('maxPositionSizePct')}
+          onChange={(event) => {
+            onClearFieldError?.('maxPositionSizePct');
+            onChange({ maxPositionSizePct: event.target.value });
+          }}
           placeholder={defaults ? String(defaults.maxPositionSizePct) : intl.formatMessage({ id: 'common.default' })}
         />
+        {fieldErrors?.maxPositionSizePct && <div style={errorTextStyle}>{fieldErrors.maxPositionSizePct}</div>}
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxPositionSizePct.help' })}</div>
       </div>
 
-      <div>
+      <div data-field="stopLossPct">
         <FieldLabel>{intl.formatMessage({ id: 'agents.controls.stopLossPct' })}</FieldLabel>
         <input
           style={inputStyle}
@@ -237,9 +262,14 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null }: Tr
           max={100}
           step="0.01"
           value={value.stopLossPct}
-          onChange={(event) => onChange({ stopLossPct: event.target.value })}
+          onBlur={() => onBlurField?.('stopLossPct')}
+          onChange={(event) => {
+            onClearFieldError?.('stopLossPct');
+            onChange({ stopLossPct: event.target.value });
+          }}
           placeholder={defaults ? String(defaults.stopLossPct) : intl.formatMessage({ id: 'common.default' })}
         />
+        {fieldErrors?.stopLossPct && <div style={errorTextStyle}>{fieldErrors.stopLossPct}</div>}
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.stopLossPct.help' })}</div>
       </div>
 
