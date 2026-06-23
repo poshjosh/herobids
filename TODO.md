@@ -30,6 +30,24 @@ Testing: unit test config parsing and notional estimation, plus integration test
 
 - [ ] Medium. session_started usage events are being overcounted on recovery, and they are not idempotent. In agent-session-manager.ts:346-362, startedFromNonRunning includes unhealthy, so a heartbeat that merely recovers an already-running session logs a fresh session_started event. The insert path in agent-repository.ts:315-344 also has no dedupe guard, so concurrent first heartbeats can double-insert for the same session. What to change: only emit this event on a true session start transition, or rename/use a different recovery event if unhealthy recovery is intentionally tracked; make the persistence idempotent by session/skill/event type. Dependencies: depends on the intended meaning of session_started. Risks/open questions: if recoveries should count separately, the current event name and metrics queries are misleading. Testing: integration-test starting -> running, unhealthy -> running, and duplicate first-heartbeat races; no visual verification needed.
 
+- [ ] Medium. (WI4) API field `stopLossPct` mapped to constraint field `stopLossMaxUnrealizedLossPct` in AgentsPage.tsx — naming mismatch creates ambiguity. Pre-existing, not introduced by the simplified-agent-creation changes.
+
+- [ ] Medium. (WI1) `style` field is create-only — not in `UpdateAgentSchema`, `buildUpdateAgentPayload`, or `agents.update()`. User cannot change agent style after creation. By design per plan (informational/UX only), but worth noting as a UX limitation.
+
+- [ ] Medium. (WI2) `COST_PER_TICK` constants duplicated in `agent-cadence.ts` and `cost-profile.ts` — operator config changes to `agentCostEstimates` won't propagate to web UI or worker. Config-leak anti-pattern (see `/memories/repo/config-leak-baseurl-openrouter.md`).
+
+- [ ] Medium. (WI2) Misleading `// from agentCostEstimates config` comment above hardcoded constants in `agent-cadence.ts` and `cost-profile.ts` — values aren't read from config at runtime.
+
+- [ ] Medium. (WI6) `PRESET_TICK_INTERVALS` exported solely for testing in `agent-cadence.ts` — weakens encapsulation. Consider reverting to private and relying on behavioral tests.
+
+- [ ] Medium. (WI6) `validRiskTolerances` array duplicated locally in `style-mapping.test.ts` — won't catch new tolerance values added to production types.
+
+- [ ] Medium. (WI6) Fragile assertion in `form-validation.test.ts` technical-mode test — only checks `errors.goal` is undefined, doesn't assert `result.valid`.
+
+- [ ] Medium. (WI6) 2 pre-existing test failures in `agent-cadence.test.ts` from WI2 cost value changes not updating test expectations (`deriveExpectedCadence` and `estimateDailySpend` tests).
+
+- [ ] Medium. (WI7) All 11 UATs (AG-S01 through AG-S11) for simplified agent creation require a running dev environment (frontend + API + DB). Pending manual verification.
+
 - [ ] Low. Modify the duplicated payload mapping in analytics.ts:24 and agent-message-broker.ts:818 to use one shared serializer for get_analytics and list_positions. The two paths now intentionally emit the same contract, but they still hand-build the same object structure in two places, which is how the earlier drift happened. Dependencies: none. Risks/open questions: low risk; the main decision is where the shared helper should live so both the tool registry and broker can import it without creating a dependency cycle. Testing: unit-test the shared serializer directly; integration-test one tool and one broker query path to confirm both use the same output.
 
 - [ ] Low. Add repository-backed coverage for the new agent-direct query logic in repositories.ts:736. The current tests in analytics.test.ts:20 and analytics.test.ts:131 validate only mocked repository responses, so the new SQL ownership conditions and aggregate math for agentDirect are still untested against real rows. Dependencies: none. Risks/open questions: low risk in code, medium risk in future regressions because the logic now branches on actor type, bot filters, and lookback windows. Testing: integration-test repository queries against seeded bot and agent rows; no visual verification needed.
