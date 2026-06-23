@@ -223,4 +223,127 @@ describe('Reconciler with VenueStateLoader', () => {
 
     reconciler.stop();
   });
+
+  it('logs warning and increments counter when venue state is null', async () => {
+    const fetchVenueState = vi.fn().mockResolvedValue(null);
+    const deps = makeDeps({ fetchVenueState });
+    const reconciler = new Reconciler(makeConfig(), deps);
+
+    reconciler.start();
+
+    // First null pass
+    await reconciler.runPass();
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveNullPasses: 1 }),
+      'Reconciliation skipped — venue state unavailable',
+    );
+
+    // Second null pass
+    await reconciler.runPass();
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveNullPasses: 2 }),
+      'Reconciliation skipped — venue state unavailable',
+    );
+
+    // Counter is 2
+    expect(reconciler.getHealth().consecutiveNullPasses).toBe(2);
+
+    reconciler.stop();
+  });
+
+  it('fires error alert after 10 consecutive null passes', async () => {
+    const fetchVenueState = vi.fn().mockResolvedValue(null);
+    const deps = makeDeps({ fetchVenueState });
+    const reconciler = new Reconciler(makeConfig(), deps);
+
+    reconciler.start();
+
+    // Run 9 passes — no alert yet
+    for (let i = 0; i < 9; i++) {
+      await reconciler.runPass();
+    }
+    expect(deps.logger.error).not.toHaveBeenCalled();
+
+    // 10th pass — alert fires
+    await reconciler.runPass();
+    expect(deps.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveNullPasses: 10, alertDurationMin: expect.any(Number) as number }),
+      expect.stringContaining('ALERT: Reconciliation has been unable to reach venue for'),
+    );
+
+    // 11th — alert fires again
+    await reconciler.runPass();
+    expect(deps.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveNullPasses: 11, alertDurationMin: expect.any(Number) as number }),
+      expect.stringContaining('ALERT: Reconciliation has been unable to reach venue for'),
+    );
+
+    reconciler.stop();
+  });
+
+  it('resets counter on successful venue state fetch', async () => {
+    let callCount = 0;
+    const fetchVenueState = vi.fn().mockImplementation(() => {
+      callCount++;
+      // Return null for first 3 calls, then a valid state
+      if (callCount <= 3) return Promise.resolve(null);
+      return Promise.resolve(emptyVenueState());
+    });
+    const deps = makeDeps({ fetchVenueState });
+    const reconciler = new Reconciler(makeConfig(), deps);
+
+    reconciler.start();
+
+    // 3 null passes
+    for (let i = 0; i < 3; i++) {
+      await reconciler.runPass();
+    }
+    expect(reconciler.getHealth().consecutiveNullPasses).toBe(3);
+
+    // Successful pass resets counter
+    await reconciler.runPass();
+    expect(reconciler.getHealth().consecutiveNullPasses).toBe(0);
+
+    reconciler.stop();
+  });
+
+  it('getHealth reports healthy=false when counter ≥ 10', async () => {
+    const fetchVenueState = vi.fn().mockResolvedValue(null);
+    const deps = makeDeps({ fetchVenueState });
+    const reconciler = new Reconciler(makeConfig(), deps);
+
+    reconciler.start();
+
+    // Before 10 null passes, healthy is true
+    for (let i = 0; i < 9; i++) {
+      await reconciler.runPass();
+    }
+    expect(reconciler.getHealth().healthy).toBe(true);
+
+    // At 10 null passes, healthy becomes false
+    await reconciler.runPass();
+    expect(reconciler.getHealth().healthy).toBe(false);
+    expect(reconciler.getHealth().consecutiveNullPasses).toBe(10);
+
+    reconciler.stop();
+  });
+
+  it('getHealth reports lastPassAt after successful pass', async () => {
+    const deps = makeDeps();
+    const reconciler = new Reconciler(makeConfig(), deps);
+
+    reconciler.start();
+
+    // Before any pass, lastPassAt is null
+    expect(reconciler.getHealth().lastPassAt).toBeNull();
+
+    await reconciler.runPass();
+
+    // After successful pass, lastPassAt is set
+    const health = reconciler.getHealth();
+    expect(health.lastPassAt).toBeInstanceOf(Date);
+    expect(health.lastPassAt!.getTime()).toBeGreaterThan(0);
+
+    reconciler.stop();
+  });
 });

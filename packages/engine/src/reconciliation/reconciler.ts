@@ -3,6 +3,12 @@ import type { Journal } from '../journal.js';
 import { reconcileWithThresholds } from './reconcile.js';
 import type { LocalState, VenueState, ReconciliationResult } from './reconcile.js';
 
+export interface ReconcilerHealth {
+  lastPassAt: Date | null;
+  consecutiveNullPasses: number;
+  healthy: boolean;
+}
+
 export interface ReconcilerConfig {
   /** Interval between reconciliation passes in milliseconds */
   intervalMs: number;
@@ -63,9 +69,13 @@ export interface ReconcilerDeps {
  * 4. Persists result + journals
  */
 export class Reconciler {
+  private static readonly NULL_PASS_ALERT_THRESHOLD = 10;
+
   private timer?: ReturnType<typeof setInterval>;
   private running = false;
   private passing = false;
+  private consecutiveNullPasses = 0;
+  private lastPassAt: Date | null = null;
 
   constructor(
     private readonly config: ReconcilerConfig,
@@ -76,6 +86,8 @@ export class Reconciler {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.consecutiveNullPasses = 0;
+    this.lastPassAt = null;
     this.timer = setInterval(() => void this.runPass(), this.config.intervalMs);
   }
 
@@ -98,7 +110,24 @@ export class Reconciler {
     try {
       // 1. Fetch venue state
       const venueState = await this.fetchVenueState();
-      if (!venueState) return null;
+      if (!venueState) {
+        this.consecutiveNullPasses++;
+        this.deps.logger.warn(
+          { venueAccountId: this.deps.venueAccountId, consecutiveNullPasses: this.consecutiveNullPasses },
+          'Reconciliation skipped — venue state unavailable',
+        );
+        if (this.consecutiveNullPasses >= Reconciler.NULL_PASS_ALERT_THRESHOLD) {
+          const alertDurationMs = this.config.intervalMs * Reconciler.NULL_PASS_ALERT_THRESHOLD;
+          const alertDurationMin = Math.round(alertDurationMs / 60000);
+          this.deps.logger.error(
+            { venueAccountId: this.deps.venueAccountId, consecutiveNullPasses: this.consecutiveNullPasses, alertDurationMin },
+            `ALERT: Reconciliation has been unable to reach venue for ${alertDurationMin}+ minutes — possible network/API outage`,
+          );
+        }
+        return null;
+      }
+      // Reset staleness counter on successful venue state fetch
+      this.consecutiveNullPasses = 0;
 
       // 2. Load local state
       const localState = await this.deps.loadLocalState();
@@ -117,6 +146,7 @@ export class Reconciler {
 
       // 4. Persist + journal
       await this.deps.persistResult(result, localState, venueState);
+      this.lastPassAt = new Date();
       const journalType = result.status === 'match'
         ? 'reconciliation.match'
         : result.status === 'observed_variance'
@@ -240,5 +270,14 @@ export class Reconciler {
 
   get isRunning(): boolean {
     return this.running;
+  }
+
+  /** Returns reconciliation health for heartbeat inclusion */
+  getHealth(): ReconcilerHealth {
+    return {
+      lastPassAt: this.lastPassAt,
+      consecutiveNullPasses: this.consecutiveNullPasses,
+      healthy: this.consecutiveNullPasses < Reconciler.NULL_PASS_ALERT_THRESHOLD,
+    };
   }
 }

@@ -102,5 +102,6 @@ export type {
   DriftThresholds,
   ReconcilerConfig,
   ReconcilerDeps,
+  ReconcilerHealth,
   VenueStateLoader,
 } from './reconciliation/index.js';
