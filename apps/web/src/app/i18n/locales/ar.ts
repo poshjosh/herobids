@@ -638,12 +638,12 @@ export const messages: Record<string, string> = {
   'agents.technical.params.minConfidence': 'الحد الأدنى للثقة (0–1)',
   'agents.technical.params.minReasons': 'الحد الأدنى للأسباب',
 
-  // Agent style (stubs — translation pending)
-  'agents.style.title': 'Trading Style',
-  'agents.style.careful.label': 'Careful',
-  'agents.style.careful.description': 'Minimal cost, conservative risk. Light models only.',
-  'agents.style.balanced.label': 'Balanced',
-  'agents.style.balanced.description': 'Standard cost, moderate risk. Mix of light and heavy models.',
-  'agents.style.bold.label': 'Bold',
-  'agents.style.bold.description': 'Premium cost, aggressive risk. Heavy models for all decisions.',
+  // Agent style
+  'agents.style.title': 'أسلوب التداول',
+  'agents.style.careful.label': 'حذر',
+  'agents.style.careful.description': 'تكلفة منخفضة، مخاطرة محافظة. نماذج خفيفة فقط.',
+  'agents.style.balanced.label': 'متوازن',
+  'agents.style.balanced.description': 'تكلفة معتدلة، مخاطرة متوسطة. مزيج من النماذج الخفيفة والثقيلة.',
+  'agents.style.bold.label': 'جريء',
+  'agents.style.bold.description': 'تكلفة عالية، مخاطرة عدوانية. نماذج ثقيلة لجميع القرارات.',
 };

@@ -640,12 +640,12 @@ export const messages: Record<string, string> = {
   'agents.technical.params.minConfidence': 'न्यूनतम कॉन्फिडेंस (0–1)',
   'agents.technical.params.minReasons': 'न्यूनतम कारण',
 
-  // Agent style (stubs — translation pending)
-  'agents.style.title': 'Trading Style',
-  'agents.style.careful.label': 'Careful',
-  'agents.style.careful.description': 'Minimal cost, conservative risk. Light models only.',
-  'agents.style.balanced.label': 'Balanced',
-  'agents.style.balanced.description': 'Standard cost, moderate risk. Mix of light and heavy models.',
-  'agents.style.bold.label': 'Bold',
-  'agents.style.bold.description': 'Premium cost, aggressive risk. Heavy models for all decisions.',
+  // Agent style
+  'agents.style.title': 'ट्रेडिंग शैली',
+  'agents.style.careful.label': 'सतर्क',
+  'agents.style.careful.description': 'न्यूनतम लागत, रूढ़िवादी जोखिम। केवल हल्के मॉडल।',
+  'agents.style.balanced.label': 'संतुलित',
+  'agents.style.balanced.description': 'मानक लागत, मध्यम जोखिम। हल्के और भारी मॉडलों का मिश्रण।',
+  'agents.style.bold.label': 'साहसी',
+  'agents.style.bold.description': 'प्रीमियम लागत, आक्रामक जोखिम। सभी निर्णयों के लिए भारी मॉडल।',
 };
