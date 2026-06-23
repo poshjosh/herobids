@@ -18,7 +18,7 @@ function makeAgentRepo(agentIds: string[] = ['agent-1']) {
 
 function makeEventPublisher() {
   return {
-    emitAgentMarketWake: vi.fn().mockResolvedValue(undefined),
+    emitAgentWake: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -52,8 +52,8 @@ describe('ReminderCoordinator', () => {
     // Access private tick() via type casting
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    expect(eventPublisher.emitAgentMarketWake).toHaveBeenCalledOnce();
-    expect(eventPublisher.emitAgentMarketWake).toHaveBeenCalledWith(
+    expect(eventPublisher.emitAgentWake).toHaveBeenCalledOnce();
+    expect(eventPublisher.emitAgentWake).toHaveBeenCalledWith(
       'agent-1',
       expect.objectContaining({
         wakeId: 'rem-001',
@@ -74,7 +74,7 @@ describe('ReminderCoordinator', () => {
     const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    const call = (eventPublisher.emitAgentMarketWake.mock.calls[0] as [string, Record<string, unknown>])[1];
+    const call = (eventPublisher.emitAgentWake.mock.calls[0] as [string, Record<string, unknown>])[1];
     expect(call['source']).toBe('reminder');
     expect((call['context'] as Record<string, unknown>)['reminderId']).toBe('rem-typed');
     expect((call['context'] as Record<string, unknown>)['message']).toBe('Monitor SOL dip');
@@ -89,7 +89,7 @@ describe('ReminderCoordinator', () => {
     const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    const call = (eventPublisher.emitAgentMarketWake.mock.calls[0] as [string, Record<string, unknown>])[1];
+    const call = (eventPublisher.emitAgentWake.mock.calls[0] as [string, Record<string, unknown>])[1];
     expect((call['context'] as Record<string, unknown>)['scheduledBy']).toBe('judge');
   });
 
@@ -103,7 +103,7 @@ describe('ReminderCoordinator', () => {
     const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    const call = (eventPublisher.emitAgentMarketWake.mock.calls[0] as [string, Record<string, unknown>])[1];
+    const call = (eventPublisher.emitAgentWake.mock.calls[0] as [string, Record<string, unknown>])[1];
     expect((call['context'] as Record<string, unknown>)['scheduledBy']).toBe('judge');
   });
 
@@ -134,7 +134,7 @@ describe('ReminderCoordinator', () => {
     const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    expect(eventPublisher.emitAgentMarketWake).not.toHaveBeenCalled();
+    expect(eventPublisher.emitAgentWake).not.toHaveBeenCalled();
     expect(redis.hset).not.toHaveBeenCalled();
   });
 
@@ -147,7 +147,7 @@ describe('ReminderCoordinator', () => {
     const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    expect(eventPublisher.emitAgentMarketWake).not.toHaveBeenCalled();
+    expect(eventPublisher.emitAgentWake).not.toHaveBeenCalled();
   });
 
   it('skips a malformed reminder record without throwing', async () => {
@@ -159,7 +159,7 @@ describe('ReminderCoordinator', () => {
     await expect(
       (coordinator as unknown as { tick(): Promise<void> }).tick(),
     ).resolves.not.toThrow();
-    expect(eventPublisher.emitAgentMarketWake).not.toHaveBeenCalled();
+    expect(eventPublisher.emitAgentWake).not.toHaveBeenCalled();
   });
 
   it('processes multiple due reminders across multiple agents', async () => {
@@ -176,8 +176,8 @@ describe('ReminderCoordinator', () => {
     const coordinator = new ReminderCoordinator(redis as never, agentRepo as never, eventPublisher as never);
     await (coordinator as unknown as { tick(): Promise<void> }).tick();
 
-    expect(eventPublisher.emitAgentMarketWake).toHaveBeenCalledTimes(2);
-    const calls = eventPublisher.emitAgentMarketWake.mock.calls as Array<[string, { reason: string }]>;
+    expect(eventPublisher.emitAgentWake).toHaveBeenCalledTimes(2);
+    const calls = eventPublisher.emitAgentWake.mock.calls as Array<[string, { reason: string }]>;
     const agentIds = calls.map(([id]) => id).sort();
     expect(agentIds).toEqual(['agent-1', 'agent-2']);
   });

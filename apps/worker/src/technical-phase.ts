@@ -20,11 +20,15 @@ export type FilterConfig = TechnicalConfig['filters'];
 export interface PositionIndicatorUpdate {
   symbol: string;
   side: 'long' | 'flat';
+  /** Venue-specific instrument identifier for this position. Falls back to symbol when unavailable. */
+  instrumentId?: string;
   entryPrice?: number;
   currentPrice?: number;
   unrealizedPnlPct?: number;
   rsi?: number;
   signalNote?: string;
+  /** Set to true when the scanner found this position should exit but advisory mode held back the direct submission. */
+  exitAdvisory?: boolean;
 }
 
 export interface TechnicalPhaseDeps {
@@ -32,6 +36,9 @@ export interface TechnicalPhaseDeps {
   riskConfig: RiskConfig & { maxOpenPositions: number };
   agentId: string;
   venueAccountId: string;
+  /** When true, the scanner only generates signals — it does NOT submit decisions directly.
+   *  Entries are always held back in advisory mode. Exits are held back unless autonomousExit is true. */
+  advisoryMode?: boolean;
   discoverCandidates: (filters: FilterConfig) => Promise<DiscoveredInstrument[]>;
   fetchCandles: (symbol: string, interval: string, limit: number) => Promise<PriceCandle[]>;
   evaluateRegime: (params: RegimeParams) => Promise<RegimeResult>;
@@ -174,9 +181,14 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
   const entrySignals = signals.filter((s) => !openInstrumentIds.has(s.instrumentId));
   const topEntries = entrySignals.slice(0, entryBudget);
 
-  // 9. Submit entry decisions (if regime permits)
+  // 9. Submit entry decisions (if regime permits and not in advisory mode)
   if (!result.regimeBlocked) {
-    for (const signal of topEntries) {
+    if (deps.advisoryMode) {
+      // Advisory mode: signals are stored in result.signals for the LLM to ratify.
+      // Do NOT submit entry decisions directly.
+      logger.info({ signalCount: topEntries.length }, 'Technical phase: advisory mode — skipping entry submissions');
+    } else {
+      for (const signal of topEntries) {
       const targetSize = riskConfig.maxPositionSize
         ? quantity(riskConfig.maxPositionSize)
         : quantity('1');
@@ -205,6 +217,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
         result.errors.push(`entry_submit_failed(${signal.instrumentId}): ${msg}`);
         logger.error({ err, instrumentId: signal.instrumentId }, 'Technical phase: entry submission failed');
       }
+    }
     }
   }
 
@@ -241,15 +254,26 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
         signalNote = 'Oversold';
       }
     }
-    result.positionIndicators.push({
+    const posIndicator: PositionIndicatorUpdate = {
       symbol: openPos.symbol,
       side: openPos.side as 'long' | 'flat',
+      instrumentId: openPos.symbol,
       entryPrice: Number.isFinite(entryPriceNum) ? entryPriceNum : undefined,
       rsi: rsiVal,
       signalNote,
-    });
+    };
 
     if (shouldExit) {
+      if (deps.advisoryMode && !config.autonomousExit) {
+        // Advisory mode with autonomousExit disabled:
+        // flag this position for LLM exit review, do NOT submit directly.
+        posIndicator.exitAdvisory = true;
+        result.positionIndicators.push(posIndicator);
+        logger.info({ symbol: openPos.symbol, reason: scored === null ? 'hard_reject' : 'confidence_below_threshold' },
+          'Technical phase: advisory mode — skipping exit submission for LLM review');
+        continue;
+      }
+
       const exitDecision: Decision = {
         id: deps.generateDecisionId() as DecisionId,
         venueAccountId: venueAccountId as VenueAccountId,
@@ -275,6 +299,7 @@ export async function runTechnicalPhase(deps: TechnicalPhaseDeps): Promise<Techn
         logger.error({ err, symbol: openPos.symbol }, 'Technical phase: exit submission failed');
       }
     }
+    result.positionIndicators.push(posIndicator);
   }
 
   logger.info({

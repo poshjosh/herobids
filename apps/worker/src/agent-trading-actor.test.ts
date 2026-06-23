@@ -2333,6 +2333,143 @@ describe('AgentTradingActor', () => {
   });
 
   describe('technical scan enrichment', () => {
+    it('forwards technical scan results before emitting a scanner wake', async () => {
+      const callOrder: string[] = [];
+      const onTechnicalScanComplete = vi.fn().mockImplementation(async () => {
+        callOrder.push('scan');
+      });
+      const emitAgentWake = vi.fn().mockImplementation(async () => {
+        callOrder.push('wake');
+      });
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'paper',
+        technicalConfig: {
+          filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+          indicators: {
+            rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70, overbought: 80, weakBelow: 30 },
+            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+            volume: { enabled: true, strongRatio: 1.5, weakRatio: 0.5, recentBars: 4, avgBars: 20 },
+            choch: { enabled: false, swingLookback: 5, minSwingPct: 0.01, minSwings: 4, confirmBars: 2, rejectOnBearish: false },
+            supportResistance: { enabled: false, lookback: 50, breakoutThreshold: 0.005 },
+            confidence: {
+              rsiWeight: 0.15,
+              macdCrossoverWeight: 0.20,
+              macdIncreasingWeight: 0.10,
+              volumeWeight: 0.15,
+              breakoutWeight: 0.15,
+              chochBullishWeight: 0.15,
+              chochBearishPenalty: 0.10,
+              priceActionWeight: 0.10,
+              minConfidence: 0.45,
+              minReasons: 2,
+            },
+          },
+          candles: { interval: '15m', limit: 100 },
+          signalBias: 'trend-following',
+          scanIntervalMs: 60_000,
+          scanBatchSize: 5,
+        },
+        discoverCandidates: vi.fn().mockResolvedValue([]),
+        fetchCandles: vi.fn().mockResolvedValue(
+          Array.from({ length: 100 }, (_, index) => ({
+            timestamp: new Date(Date.now() - (100 - index) * 60_000).toISOString(),
+            open: 100 + index * 5,
+            high: 105 + index * 5,
+            low: 99 + index * 5,
+            close: 104 + index * 5,
+            volume: 2000 + index * 50,
+          })),
+        ),
+        onTechnicalScanComplete,
+        emitAgentWake,
+        hasIntelligenceConfig: true,
+      }));
+
+      await actor.start();
+      (actor as any).positions.set('BTC', {
+        venue: 'hyperliquid',
+        symbol: 'BTC',
+        side: 'long',
+        size: { toString: () => '1' },
+        entryPrice: { toString: () => '100' },
+        realizedPnl: { toString: () => '0' },
+      });
+      await (actor as any).runTechnicalScan();
+
+      expect(onTechnicalScanComplete).toHaveBeenCalledOnce();
+      expect(emitAgentWake).toHaveBeenCalledOnce();
+      expect(callOrder).toEqual(['scan', 'wake']);
+
+      await actor.stop();
+    });
+
+    it('does not emit a scanner wake when forwarding technical scan results fails', async () => {
+      const onTechnicalScanComplete = vi.fn().mockRejectedValue(new Error('forward failed'));
+      const emitAgentWake = vi.fn().mockResolvedValue(undefined);
+
+      const actor = new AgentTradingActor(makeBaseDeps({
+        executionMode: 'paper',
+        technicalConfig: {
+          filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+          indicators: {
+            rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70, overbought: 80, weakBelow: 30 },
+            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+            volume: { enabled: true, strongRatio: 1.5, weakRatio: 0.5, recentBars: 4, avgBars: 20 },
+            choch: { enabled: false, swingLookback: 5, minSwingPct: 0.01, minSwings: 4, confirmBars: 2, rejectOnBearish: false },
+            supportResistance: { enabled: false, lookback: 50, breakoutThreshold: 0.005 },
+            confidence: {
+              rsiWeight: 0.15,
+              macdCrossoverWeight: 0.20,
+              macdIncreasingWeight: 0.10,
+              volumeWeight: 0.15,
+              breakoutWeight: 0.15,
+              chochBullishWeight: 0.15,
+              chochBearishPenalty: 0.10,
+              priceActionWeight: 0.10,
+              minConfidence: 0.45,
+              minReasons: 2,
+            },
+          },
+          candles: { interval: '15m', limit: 100 },
+          signalBias: 'trend-following',
+          scanIntervalMs: 60_000,
+          scanBatchSize: 5,
+        },
+        discoverCandidates: vi.fn().mockResolvedValue([]),
+        fetchCandles: vi.fn().mockResolvedValue(
+          Array.from({ length: 100 }, (_, index) => ({
+            timestamp: new Date(Date.now() - (100 - index) * 60_000).toISOString(),
+            open: 100 + index * 5,
+            high: 105 + index * 5,
+            low: 99 + index * 5,
+            close: 104 + index * 5,
+            volume: 2000 + index * 50,
+          })),
+        ),
+        onTechnicalScanComplete,
+        emitAgentWake,
+        hasIntelligenceConfig: true,
+      }));
+
+      await actor.start();
+      (actor as any).positions.set('BTC', {
+        venue: 'hyperliquid',
+        symbol: 'BTC',
+        side: 'long',
+        size: { toString: () => '1' },
+        entryPrice: { toString: () => '100' },
+        realizedPnl: { toString: () => '0' },
+      });
+
+      await (actor as any).runTechnicalScan();
+
+      expect(onTechnicalScanComplete).toHaveBeenCalledOnce();
+      expect(emitAgentWake).not.toHaveBeenCalled();
+
+      await actor.stop();
+    });
+
     it('calls onTechnicalScanComplete with scan results after a successful scan', async () => {
       const onTechnicalScanComplete = vi.fn().mockResolvedValue(undefined);
 

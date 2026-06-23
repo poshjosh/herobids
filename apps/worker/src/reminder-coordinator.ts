@@ -73,7 +73,7 @@ export class ReminderCoordinator {
 
       // Trigger is due — fire a wake and mark fired
       try {
-        await this.eventPublisher.emitAgentMarketWake(agentId, {
+        await this.eventPublisher.emitAgentWake(agentId, {
           wakeId: reminderId,
           reason: reminder.message,
           eventIds: [reminderId],

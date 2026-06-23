@@ -1265,6 +1265,7 @@ export const TechnicalConfigSchema = z.object({
   signalBias: z.enum(['trend-following', 'mean-reverting']).default('trend-following'),
   scanIntervalMs: z.number().int().min(10_000).default(60_000),
   scanBatchSize: z.number().int().min(1).max(50).default(5),
+  autonomousExit: z.boolean().default(false),
 });
 
 export const IntelligenceConfigSchema = z.object({

@@ -122,7 +122,7 @@ function extractTickSignals(
 
 export function buildTickGateState(params: BuildTickGateStateParams): TickGateState {
   const tickSignals = extractTickSignals(params.incomingMessages, params.lastKnownPositionSide);
-  const hasWakeSignal = params.incomingMessages.some((message) => message['type'] === 'agent.market.wake');
+  const hasWakeSignal = params.incomingMessages.some((message) => message['type'] === 'agent.wake');
 
   return {
     tickNumber: params.tickNumber,

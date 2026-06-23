@@ -6,8 +6,8 @@ import type {
   MarketWatchTriggeredPayload,
   MarketDiscoveryDetectedPayload,
   MarketRegimeChangedPayload,
-  AgentMarketWakePayload,
-  AgentMarketWakeSource,
+  AgentWakePayload,
+  AgentWakeSource,
   WatchThresholdWakeContext,
   DiscoveryDeltaWakeContext,
   RegimeChangeWakeContext,
@@ -67,7 +67,7 @@ interface PendingWake {
   /** Human-readable reason derived from the triggering event (first enqueue wins on coalesce). */
   primaryReason?: string;
   /** Typed wake source for the primary triggering event (first enqueue wins on coalesce). */
-  primarySource?: AgentMarketWakeSource;
+  primarySource?: AgentWakeSource;
   /** Structured context specific to primarySource (first enqueue wins on coalesce). */
   primaryContext?: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext;
 }
@@ -613,7 +613,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
     agentId: string,
     eventId: string,
     reason?: string,
-    source?: AgentMarketWakeSource,
+    source?: AgentWakeSource,
     context?: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext,
   ): Promise<void> {
     return withWakeMutationLock(async () => {
@@ -712,9 +712,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           requestedAt: new Date().toISOString(),
           source: wake.primarySource ?? 'watch_threshold',
           ...(wake.primaryContext !== undefined && { context: wake.primaryContext }),
-        } as AgentMarketWakePayload;
+        } as AgentWakePayload;
 
-        await publisher.emitAgentMarketWake(wake.agentId, payload);
+        await publisher.emitAgentWake(wake.agentId, payload);
         await redis.set(lastWakeKey, String(now), 'PX', WAKE_COOLDOWN_MS);
 
         // Phase 3: Delete the claimed bucket only if its generation hasn't

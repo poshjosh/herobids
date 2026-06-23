@@ -327,8 +327,8 @@ export type MarketRegimeChangedPayload = z.infer<typeof MarketRegimeChangedPaylo
 export const WakePrioritySchema = z.enum(['low', 'normal', 'high']);
 export type WakePriority = z.infer<typeof WakePrioritySchema>;
 
-export const AgentMarketWakeSourceSchema = z.enum(['reminder', 'watch_threshold', 'discovery_delta', 'regime_change']);
-export type AgentMarketWakeSource = z.infer<typeof AgentMarketWakeSourceSchema>;
+export const AgentWakeSourceSchema = z.enum(['reminder', 'watch_threshold', 'discovery_delta', 'regime_change', 'scanner']);
+export type AgentWakeSource = z.infer<typeof AgentWakeSourceSchema>;
 
 // --- Source-specific wake context schemas ---
 
@@ -373,7 +373,15 @@ export const RegimeChangeWakeContextSchema = z.object({
 });
 export type RegimeChangeWakeContext = z.infer<typeof RegimeChangeWakeContextSchema>;
 
-const AgentMarketWakePayloadBaseSchema = z.object({
+export const ScannerWakeContextSchema = z.object({
+  signalCount: z.number().int().min(0),
+  topSymbol: z.string().optional(),
+  topConfidence: z.number().min(0).max(1).optional(),
+  regimePass: z.boolean().nullable().optional(),
+});
+export type ScannerWakeContext = z.infer<typeof ScannerWakeContextSchema>;
+
+const AgentWakePayloadBaseSchema = z.object({
   wakeId: z.string().min(1),
   reason: z.string().min(1),
   eventIds: z.array(z.string().min(1)),
@@ -382,14 +390,27 @@ const AgentMarketWakePayloadBaseSchema = z.object({
   notBefore: z.string().datetime().optional(),
 });
 
-export const AgentMarketWakePayloadSchema = z.discriminatedUnion('source', [
-  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('reminder'), context: ReminderWakeContextSchema }),
-  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('watch_threshold'), context: WatchThresholdWakeContextSchema }),
-  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('discovery_delta'), context: DiscoveryDeltaWakeContextSchema }),
-  AgentMarketWakePayloadBaseSchema.extend({ source: z.literal('regime_change'), context: RegimeChangeWakeContextSchema }),
+export const AgentWakePayloadSchema = z.discriminatedUnion('source', [
+  AgentWakePayloadBaseSchema.extend({ source: z.literal('reminder'), context: ReminderWakeContextSchema }),
+  AgentWakePayloadBaseSchema.extend({ source: z.literal('watch_threshold'), context: WatchThresholdWakeContextSchema }),
+  AgentWakePayloadBaseSchema.extend({ source: z.literal('discovery_delta'), context: DiscoveryDeltaWakeContextSchema }),
+  AgentWakePayloadBaseSchema.extend({ source: z.literal('regime_change'), context: RegimeChangeWakeContextSchema }),
+  AgentWakePayloadBaseSchema.extend({ source: z.literal('scanner'), context: ScannerWakeContextSchema }),
 ]);
 
-export type AgentMarketWakePayload = z.infer<typeof AgentMarketWakePayloadSchema>;
+export type AgentWakePayload = z.infer<typeof AgentWakePayloadSchema>;
+
+// --- Hybrid Agent Decision Schema (single-shot LLM response) ---
+
+export const HybridAgentDecisionSchema = z.object({
+  instrumentId: z.string().min(1).optional(),
+  symbol: z.string().min(1).optional(),
+  intent: z.enum(['go_long', 'go_flat', 'skip', 'hold']),
+  sizeUsd: z.number().optional(),
+}).refine((value) => value.instrumentId !== undefined || value.symbol !== undefined, {
+  message: 'instrumentId or symbol is required',
+});
+export type HybridAgentDecision = z.infer<typeof HybridAgentDecisionSchema>;
 
 // --- Message Type Constants ---
 
@@ -422,7 +443,7 @@ export const MARKET_MONITOR_MESSAGE_TYPES = {
   WATCH_TRIGGERED: 'market.watch.triggered',
   DISCOVERY_DETECTED: 'market.discovery.detected',
   REGIME_CHANGED: 'market.regime.changed',
-  AGENT_WAKE: 'agent.market.wake',
+  AGENT_WAKE: 'agent.wake',
 } as const;
 
 // --- Runtime Activity Audit Event Types ---
@@ -542,7 +563,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED]: MarketWatchTriggeredPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED]: MarketDiscoveryDetectedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED]: MarketRegimeChangedPayloadSchema,
-  [MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE]: AgentMarketWakePayloadSchema,
+  [MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE]: AgentWakePayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED]: TickStartedPayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED]: TickSkippedPayloadSchema,
   [AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD]: ScoutHeldPayloadSchema,

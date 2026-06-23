@@ -573,6 +573,8 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
               logger.warn({ err, agentId: scanAgentId }, 'Failed to emit technical scan completed');
             });
           },
+          emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
+          hasIntelligenceConfig: !!agent?.unifiedConfig?.intelligence,
         });
 
         await actor.start();

@@ -15,7 +15,7 @@ describe('buildTickGateState', () => {
             position: null,
           },
         },
-        { type: 'agent.market.wake' },
+        { type: 'agent.wake' },
       ],
       hasOpenPositions: false,
       lastKnownPositionSide: 'long',

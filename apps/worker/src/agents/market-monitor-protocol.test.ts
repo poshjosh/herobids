@@ -3,7 +3,7 @@ import {
   MarketWatchTriggeredPayloadSchema,
   MarketDiscoveryDetectedPayloadSchema,
   MarketRegimeChangedPayloadSchema,
-  AgentMarketWakePayloadSchema,
+  AgentWakePayloadSchema,
   MARKET_MONITOR_MESSAGE_TYPES,
   MESSAGE_PAYLOAD_SCHEMAS,
   validateMessage,
@@ -146,10 +146,10 @@ describe('MarketRegimeChangedPayloadSchema', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AgentMarketWakePayloadSchema
+// AgentWakePayloadSchema
 // ---------------------------------------------------------------------------
 
-describe('AgentMarketWakePayloadSchema', () => {
+describe('AgentWakePayloadSchema', () => {
   const valid = {
     wakeId: 'wake-001',
     reason: 'SOL crossed above 200',
@@ -170,29 +170,29 @@ describe('AgentMarketWakePayloadSchema', () => {
   };
 
   it('accepts a valid payload', () => {
-    expect(AgentMarketWakePayloadSchema.safeParse(valid).success).toBe(true);
+    expect(AgentWakePayloadSchema.safeParse(valid).success).toBe(true);
   });
 
   it('accepts all priority values', () => {
     for (const priority of ['low', 'normal', 'high']) {
-      expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, priority }).success, `priority=${priority}`).toBe(true);
+      expect(AgentWakePayloadSchema.safeParse({ ...valid, priority }).success, `priority=${priority}`).toBe(true);
     }
   });
 
   it('rejects invalid priority', () => {
-    expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, priority: 'critical' }).success).toBe(false);
+    expect(AgentWakePayloadSchema.safeParse({ ...valid, priority: 'critical' }).success).toBe(false);
   });
 
   it('accepts optional notBefore', () => {
-    expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, notBefore: '2026-06-10T12:36:05.000Z' }).success).toBe(true);
+    expect(AgentWakePayloadSchema.safeParse({ ...valid, notBefore: '2026-06-10T12:36:05.000Z' }).success).toBe(true);
   });
 
   it('rejects non-ISO notBefore', () => {
-    expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, notBefore: 'in 5 seconds' }).success).toBe(false);
+    expect(AgentWakePayloadSchema.safeParse({ ...valid, notBefore: 'in 5 seconds' }).success).toBe(false);
   });
 
   it('accepts empty eventIds array', () => {
-    expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, eventIds: [] }).success).toBe(true);
+    expect(AgentWakePayloadSchema.safeParse({ ...valid, eventIds: [] }).success).toBe(true);
   });
 
   it('rejects watch_threshold payload with partial context (missing required fields)', () => {
@@ -201,7 +201,7 @@ describe('AgentMarketWakePayloadSchema', () => {
       source: 'watch_threshold' as const,
       context: { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, currentPrice: 204 },
     };
-    expect(AgentMarketWakePayloadSchema.safeParse(typed).success).toBe(false);
+    expect(AgentWakePayloadSchema.safeParse(typed).success).toBe(false);
   });
 
   it('accepts each source with valid context', () => {
@@ -213,12 +213,12 @@ describe('AgentMarketWakePayloadSchema', () => {
     ];
     for (const { source, context } of sources) {
       const payload = { ...valid, source, context };
-      expect(AgentMarketWakePayloadSchema.safeParse(payload).success, `source=${source}`).toBe(true);
+      expect(AgentWakePayloadSchema.safeParse(payload).success, `source=${source}`).toBe(true);
     }
   });
 
   it('rejects invalid source value', () => {
-    expect(AgentMarketWakePayloadSchema.safeParse({ ...valid, source: 'unknown_source' }).success).toBe(false);
+    expect(AgentWakePayloadSchema.safeParse({ ...valid, source: 'unknown_source' }).success).toBe(false);
   });
 
   it('rejects payload without a wake source', () => {
@@ -229,7 +229,7 @@ describe('AgentMarketWakePayloadSchema', () => {
       priority: 'normal' as const,
       requestedAt: '2026-06-10T12:36:02.000Z',
     };
-    expect(AgentMarketWakePayloadSchema.safeParse(missingSource).success).toBe(false);
+    expect(AgentWakePayloadSchema.safeParse(missingSource).success).toBe(false);
   });
 });
 
@@ -242,7 +242,7 @@ describe('MARKET_MONITOR_MESSAGE_TYPES', () => {
     expect(MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED).toBe('market.watch.triggered');
     expect(MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED).toBe('market.discovery.detected');
     expect(MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED).toBe('market.regime.changed');
-    expect(MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE).toBe('agent.market.wake');
+    expect(MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE).toBe('agent.wake');
   });
 
   it('all four types are registered in MESSAGE_PAYLOAD_SCHEMAS', () => {
@@ -321,10 +321,10 @@ describe('validateMessage — market monitor envelope round-trips', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts a valid agent.market.wake envelope', () => {
+  it('accepts a valid agent.wake envelope', () => {
     const result = validateMessage({
       ...baseEnvelope,
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-1',
         reason: 'SOL crossed above 200',
@@ -347,10 +347,10 @@ describe('validateMessage — market monitor envelope round-trips', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects an agent.market.wake envelope without source/context', () => {
+  it('rejects an agent.wake envelope without source/context', () => {
     const result = validateMessage({
       ...baseEnvelope,
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-1',
         reason: 'market_monitor_triggered',

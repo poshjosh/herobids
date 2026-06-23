@@ -7,6 +7,7 @@ import {
   AgentRuntimePolicySchema,
   StrategySchema,
   LlmParamsSchema,
+  TechnicalConfigSchema,
 } from './schema.js';
 
 describe('UsageBillingConfigSchema', () => {
@@ -543,5 +544,28 @@ describe('LlmParamsSchema', () => {
   it('rejects maxTokens as float', () => {
     const result = LlmParamsSchema.safeParse({ provider: 'x', model: 'y', maxTokens: 10.5 });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('TechnicalConfigSchema', () => {
+  it('defaults autonomousExit to false', () => {
+    const result = TechnicalConfigSchema.safeParse({
+      filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.autonomousExit).toBe(false);
+    }
+  });
+
+  it('accepts explicit autonomousExit true', () => {
+    const result = TechnicalConfigSchema.safeParse({
+      filters: { venue: 'hyperliquid', venueType: 'orderbook' },
+      autonomousExit: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.autonomousExit).toBe(true);
+    }
   });
 });

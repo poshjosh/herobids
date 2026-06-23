@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  AgentMarketWakePayloadSchema,
+  AgentWakePayloadSchema,
   ReminderWakeContextSchema,
   WatchThresholdWakeContextSchema,
   DiscoveryDeltaWakeContextSchema,
   RegimeChangeWakeContextSchema,
+  ScannerWakeContextSchema,
 } from './agent-protocol.js';
 
 // Shared base fields for all wake payloads
@@ -16,10 +17,10 @@ const BASE = {
   requestedAt: '2024-01-01T00:00:00.000Z',
 };
 
-describe('AgentMarketWakePayloadSchema', () => {
+describe('AgentWakePayloadSchema', () => {
   describe('reminder wake', () => {
     it('accepts a valid reminder wake payload', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'reminder',
         context: { reminderId: 'r-1', message: 'Check price', scheduledBy: 'scout' },
@@ -35,7 +36,7 @@ describe('AgentMarketWakePayloadSchema', () => {
     });
 
     it('rejects reminder payload with invalid context fields', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'reminder',
         context: { symbol: 'BTC', network: 'eth' }, // missing required reminder fields
@@ -44,14 +45,14 @@ describe('AgentMarketWakePayloadSchema', () => {
     });
 
     it('rejects reminder payload without context (context is required)', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({ ...BASE, source: 'reminder' });
+      const result = AgentWakePayloadSchema.safeParse({ ...BASE, source: 'reminder' });
       expect(result.success).toBe(false);
     });
   });
 
   describe('watch_threshold wake', () => {
     it('accepts a valid watch_threshold wake payload', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'watch_threshold',
         context: {
@@ -74,7 +75,7 @@ describe('AgentMarketWakePayloadSchema', () => {
     });
 
     it('accepts optional note field in watch_threshold context', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'watch_threshold',
         context: {
@@ -93,7 +94,7 @@ describe('AgentMarketWakePayloadSchema', () => {
     });
 
     it('rejects watch_threshold payload with partial context (missing required fields)', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'watch_threshold',
         context: { symbol: 'BTC' }, // missing required watch_threshold fields
@@ -104,7 +105,7 @@ describe('AgentMarketWakePayloadSchema', () => {
 
   describe('discovery_delta wake', () => {
     it('accepts a valid discovery_delta wake payload', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'discovery_delta',
         context: {
@@ -124,7 +125,7 @@ describe('AgentMarketWakePayloadSchema', () => {
     });
 
     it('accepts optional rank and liquidity fields', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'discovery_delta',
         context: {
@@ -144,7 +145,7 @@ describe('AgentMarketWakePayloadSchema', () => {
 
   describe('regime_change wake', () => {
     it('accepts a valid regime_change wake payload', () => {
-      const result = AgentMarketWakePayloadSchema.safeParse({
+      const result = AgentWakePayloadSchema.safeParse({
         ...BASE,
         source: 'regime_change',
         context: {
@@ -163,8 +164,47 @@ describe('AgentMarketWakePayloadSchema', () => {
     });
   });
 
+  describe('scanner wake', () => {
+    it('accepts a valid scanner wake payload', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'scanner',
+        context: {
+          signalCount: 3,
+          topSymbol: 'SOL',
+          topConfidence: 0.85,
+          regimePass: true,
+        },
+      });
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      if (result.data.source === 'scanner') {
+        expect(result.data.context.signalCount).toBe(3);
+        expect(result.data.context.topSymbol).toBe('SOL');
+      }
+    });
+
+    it('accepts scanner context with minimal fields (signalCount: 0 for exit-only wakes)', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'scanner',
+        context: { signalCount: 0 },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects scanner context with missing signalCount', () => {
+      const result = AgentWakePayloadSchema.safeParse({
+        ...BASE,
+        source: 'scanner',
+        context: {},
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
   it('rejects payload with unknown source', () => {
-    const result = AgentMarketWakePayloadSchema.safeParse({
+    const result = AgentWakePayloadSchema.safeParse({
       ...BASE,
       source: 'unknown_source',
       context: {},
@@ -173,7 +213,7 @@ describe('AgentMarketWakePayloadSchema', () => {
   });
 
   it('rejects payload missing source', () => {
-    const result = AgentMarketWakePayloadSchema.safeParse({ ...BASE });
+    const result = AgentWakePayloadSchema.safeParse({ ...BASE });
     expect(result.success).toBe(false);
   });
 });
@@ -219,6 +259,21 @@ describe('Source-specific context schemas', () => {
       benchmarkSymbol: 'BTC',
       // missing previousState, currentState, changedAt
     });
+    expect(result.success).toBe(false);
+  });
+
+  it('ScannerWakeContextSchema accepts valid scanner context', () => {
+    const result = ScannerWakeContextSchema.safeParse({
+      signalCount: 3,
+      topSymbol: 'SOL',
+      topConfidence: 0.85,
+      regimePass: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('ScannerWakeContextSchema rejects without signalCount', () => {
+    const result = ScannerWakeContextSchema.safeParse({});
     expect(result.success).toBe(false);
   });
 });

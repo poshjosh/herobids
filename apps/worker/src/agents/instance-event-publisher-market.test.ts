@@ -5,7 +5,7 @@ import type {
   MarketWatchTriggeredPayload,
   MarketDiscoveryDetectedPayload,
   MarketRegimeChangedPayload,
-  AgentMarketWakePayload,
+  AgentWakePayload,
 } from '@herobids/domain';
 
 function makeRedisMock() {
@@ -160,11 +160,11 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
   });
 
   // -------------------------------------------------------------------------
-  // emitAgentMarketWake
+  // emitAgentWake
   // -------------------------------------------------------------------------
 
-  describe('emitAgentMarketWake', () => {
-    const payload: AgentMarketWakePayload = {
+  describe('emitAgentWake', () => {
+    const payload: AgentWakePayload = {
       wakeId: 'wake-1',
       reason: 'SOL crossed above 200',
       eventIds: ['evt-1', 'evt-2'],
@@ -175,19 +175,19 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
     };
 
     it('publishes to the correct stream key', async () => {
-      await publisher.emitAgentMarketWake('agent-1', payload);
+      await publisher.emitAgentWake('agent-1', payload);
       const { streamKey } = parsePublished(redis.xadd.mock.calls[0]);
       expect(streamKey).toBe('agent:outbound:agent-1');
     });
 
-    it('sets message type to agent.market.wake', async () => {
-      await publisher.emitAgentMarketWake('agent-1', payload);
+    it('sets message type to agent.wake', async () => {
+      await publisher.emitAgentWake('agent-1', payload);
       const { type } = parsePublished(redis.xadd.mock.calls[0]);
       expect(type).toBe(MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE);
     });
 
     it('includes eventIds, priority, source, and context in payload', async () => {
-      await publisher.emitAgentMarketWake('agent-1', payload);
+      await publisher.emitAgentWake('agent-1', payload);
       const { payload: published } = parsePublished(redis.xadd.mock.calls[0]);
       expect(published['eventIds']).toEqual(['evt-1', 'evt-2']);
       expect(published['priority']).toBe('normal');
@@ -197,8 +197,8 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
     });
 
     it('each call generates a unique messageId', async () => {
-      await publisher.emitAgentMarketWake('agent-1', payload);
-      await publisher.emitAgentMarketWake('agent-1', payload);
+      await publisher.emitAgentWake('agent-1', payload);
+      await publisher.emitAgentWake('agent-1', payload);
 
       const envelope1 = JSON.parse((redis.xadd.mock.calls[0] as [string, string, string, string])[3]) as { messageId: string };
       const envelope2 = JSON.parse((redis.xadd.mock.calls[1] as [string, string, string, string])[3]) as { messageId: string };
@@ -207,7 +207,7 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
 
     it('does not throw when Redis xadd fails', async () => {
       redis.xadd.mockRejectedValueOnce(new Error('stream overflow'));
-      await expect(publisher.emitAgentMarketWake('agent-1', payload)).resolves.not.toThrow();
+      await expect(publisher.emitAgentWake('agent-1', payload)).resolves.not.toThrow();
     });
   });
 
@@ -227,7 +227,7 @@ describe('InstanceEventPublisher — market monitor helpers', () => {
     await publisher.emitMarketRegimeChanged(agentId, {
       eventId: 'e3', monitorType: 'regime_change', benchmarkSymbol: 'BTC', previousState: 'favorable', currentState: 'unfavorable', changedAt: new Date().toISOString(),
     });
-    await publisher.emitAgentMarketWake(agentId, {
+    await publisher.emitAgentWake(agentId, {
       wakeId: 'w1', reason: 'test', eventIds: [], priority: 'low', requestedAt: new Date().toISOString(), source: 'reminder', context: { reminderId: 'w1', message: 'test', scheduledBy: 'judge' },
     });
 

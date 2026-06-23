@@ -1,5 +1,5 @@
 import pino from 'pino';
-import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId, TechnicalConfig, RiskConfig } from '@herobids/domain';
+import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSource, LiveRolloutConfig, Subscription, SubscriptionState, SwapTokenSafetyPort, Price, Decision, DecisionId, VenueAccountId, InstrumentId, TechnicalConfig, RiskConfig, AgentWakePayload } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
@@ -140,6 +140,10 @@ export interface AgentTradingActorDeps {
   fetchCandles?: (symbol: string, interval: string, limit: number) => Promise<PriceCandle[]>;
   /** Callback invoked after each technical scan completes — used to forward results to the agent container */
   onTechnicalScanComplete?: (agentId: string, scan: TechnicalScanState) => void | Promise<void>;
+  /** Emit an agent wake signal (e.g. scanner results) to trigger an early LLM tick */
+  emitAgentWake?: (agentId: string, payload: AgentWakePayload) => Promise<void>;
+  /** Whether the agent has an intelligence (LLM) config — implies hybrid mode when technical is also present */
+  hasIntelligenceConfig?: boolean;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -1248,6 +1252,7 @@ export class AgentTradingActor implements ExecutionActor {
         riskConfig: { ...(this.deps.technicalRiskConfig ?? {}), maxOpenPositions: this.deps.riskLimits.maxOpenPositions },
         agentId,
         venueAccountId,
+        advisoryMode: !!this.deps.hasIntelligenceConfig,
         discoverCandidates,
         fetchCandles,
         evaluateRegime: (params) => {
@@ -1271,8 +1276,42 @@ export class AgentTradingActor implements ExecutionActor {
       };
       this.lastTechnicalScan = scan;
 
+      // Forward the completed scan before emitting a wake so the agent runtime
+      // can ingest fresh scan state before it routes into the hybrid evaluator.
       if (this.deps.onTechnicalScanComplete) {
         await this.deps.onTechnicalScanComplete(agentId, scan);
+      }
+
+      // If agent has intelligence config and scanner found signals or exit advisories, emit a wake
+      const hasExitAdvisories = phaseResult.positionIndicators.some((ind) => ind.exitAdvisory === true);
+      const emitAgentWake = this.deps.emitAgentWake;
+      const shouldWake = (phaseResult.signals.length > 0 || hasExitAdvisories)
+        && this.deps.hasIntelligenceConfig
+        && emitAgentWake;
+
+      if (shouldWake && emitAgentWake) {
+        const topSignal = phaseResult.signals[0];
+        const exitAdvisorySymbols = phaseResult.positionIndicators
+          .filter((ind) => ind.exitAdvisory === true)
+          .map((ind) => ind.symbol);
+
+        await emitAgentWake(agentId, {
+          wakeId: crypto.randomUUID(),
+          source: 'scanner',
+          reason: [
+            phaseResult.signals.length > 0 ? `${phaseResult.signals.length} signal(s)` : '',
+            exitAdvisorySymbols.length > 0 ? `${exitAdvisorySymbols.length} exit advisory/ies (${exitAdvisorySymbols.join(', ')})` : '',
+          ].filter(Boolean).join(', ') || 'Scanner completed',
+          priority: hasExitAdvisories ? 'high' : 'normal',
+          eventIds: [],
+          requestedAt: new Date().toISOString(),
+          context: {
+            signalCount: phaseResult.signals.length,
+            topSymbol: topSignal?.symbol,
+            topConfidence: topSignal?.confidence,
+            regimePass: phaseResult.regimeResult?.pass ?? null,
+          },
+        });
       }
     } catch (err) {
       this.logger.error({ err }, 'Technical scan loop error — will retry on next tick');

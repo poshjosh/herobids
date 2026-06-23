@@ -12,7 +12,7 @@ import type {
   MarketWatchTriggeredPayload,
   MarketDiscoveryDetectedPayload,
   MarketRegimeChangedPayload,
-  AgentMarketWakePayload,
+  AgentWakePayload,
 } from '@herobids/domain';
 import { INSTANCE_MESSAGE_TYPES, MARKET_MONITOR_MESSAGE_TYPES } from '@herobids/domain';
 import type { TechnicalScanState } from '../runtime-composition.js';
@@ -78,7 +78,7 @@ export class InstanceEventPublisher {
     await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED, payload);
   }
 
-  async emitAgentMarketWake(agentId: string, payload: AgentMarketWakePayload): Promise<void> {
+  async emitAgentWake(agentId: string, payload: AgentWakePayload): Promise<void> {
     await this.publish(agentId, MARKET_MONITOR_MESSAGE_TYPES.AGENT_WAKE, payload);
   }
 

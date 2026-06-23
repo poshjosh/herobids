@@ -360,6 +360,8 @@ export class AgentSessionManager {
           stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
           agentRiskDefaults: this.config.agentRiskDefaults,
           runtimeDescriptor,
+          // Hybrid mode: agent has both technical scanner + LLM intelligence
+          hybridMode: !!(agent.unifiedConfig?.technical && agent.unifiedConfig?.intelligence),
         };
         await this.runtimeLauncher.launch({
           agentId: session.agentId,

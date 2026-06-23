@@ -45,6 +45,7 @@ import {
   recordSessionCost,
   setCapabilityDegradation,
   setToolCapabilityDegradation,
+  updatePortfolioSummary,
   recordVenueSignals,
   recordActiveWatchSummary,
   summarizeActiveWatches,
@@ -69,6 +70,7 @@ import { getWorkspacePaths } from './tools/workspace.js';
 import { runStructuredToolLoop } from './structured-tool-loop.js';
 import { resolveEffectiveLlmSelection, type UserModelDefaults } from './llm-selection.js';
 import { getWakeRescheduleDelay, resolveNextTickDelay } from './agent-wake-scheduler.js';
+import { isTechnicalScanFresh, runHybridEvaluator } from './hybrid-agent-evaluator.js';
 
 const logger = pino({ name: 'agent-runtime', level: process.env['LOG_LEVEL'] ?? 'info' });
 
@@ -154,6 +156,8 @@ interface AgentConfig {
     dailyMaxLossPct: number;
     minPaperCyclesBeforeLive?: number;
   };
+  /** True when agent has both technical scanner + LLM intelligence config — ticks are event-driven */
+  hybridMode?: boolean;
 }
 
 let agentConfig: AgentConfig;
@@ -321,6 +325,13 @@ const workspacePaths = getWorkspacePaths(AGENT_ID!);
 const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor, {
   workspaceRoot: workspacePaths.root,
 });
+const configuredCapitalUsd = agentConfig.capital != null ? Number(agentConfig.capital) : null;
+if (configuredCapitalUsd !== null && Number.isFinite(configuredCapitalUsd)) {
+  updatePortfolioSummary(runtimeState, {
+    availableCapitalUsd: configuredCapitalUsd,
+    freshness: { state: 'fresh', provider: 'agent-config' },
+  });
+}
 runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour = Number.isFinite(SERVER_COST_USD_PER_HOUR)
   ? SERVER_COST_USD_PER_HOUR
   : runtimeState.metrics.sessionCosts.estimatedServerCostUsdPerHour;
@@ -1047,7 +1058,7 @@ async function pollWakeSignals(): Promise<void> {
 
           try {
             const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
-            if (envelope['type'] === 'agent.market.wake') {
+            if (envelope['type'] === 'agent.wake') {
               requestWakeDrivenTick('Received market wake signal between ticks');
             }
           } catch {
@@ -1511,6 +1522,10 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
     return;
   }
 
+  // Hybrid agents still schedule regular timer ticks for housekeeping:
+  // message ingestion, heartbeats, and state reconciliation. The hybrid
+  // no-wake guard in runTick() prevents LLM dispatch on these ticks —
+  // only wake-triggered ticks reach the LLM (D3: event-driven).
   const holdLimitedDelayMs = scoutHoldDeadlineAtMs > 0
     ? Math.max(0, Math.min(delayMs, scoutHoldDeadlineAtMs - Date.now()))
     : delayMs;
@@ -1764,6 +1779,140 @@ async function runTick(): Promise<void> {
       });
     } else {
       recordVenueSignals(runtimeState, []);
+    }
+
+    // ── Hybrid agent routing ────────────────────────────────────────────────
+    // If this tick was triggered by a scanner wake, use the single-shot hybrid
+    // evaluator instead of the full scout/judge loop. This avoids unnecessary
+    // token spend when the scanner already scored the signals.
+    const isScannerWake = runtimeState.metrics.currentMarketWake?.source === 'scanner';
+    const latestTechnicalScan = runtimeState.metrics.lastTechnicalScan;
+    const canUseHybridEvaluator = isScannerWake
+      && tradingTickWorkPlan.hasTradingCapability
+      && latestTechnicalScan !== undefined
+      && isTechnicalScanFresh(latestTechnicalScan);
+
+    if (isScannerWake && tradingTickWorkPlan.hasTradingCapability && !canUseHybridEvaluator) {
+      logger.warn({
+        hasTechnicalScan: latestTechnicalScan !== undefined,
+        scanTimestamp: latestTechnicalScan?.timestamp,
+      }, 'Hybrid agent: scanner wake received without a fresh technical scan — falling back to normal tick');
+    }
+
+    if (canUseHybridEvaluator) {
+      logger.info({ tickCount }, 'Hybrid agent: routing to single-shot evaluator (scanner wake)');
+
+      // Consume the wake immediately so subsequent timer ticks do not re-trigger
+      // the same single-shot evaluation. The buildTickUserContext cleanup path
+      // is only reached on the normal scout/judge loop, not the hybrid path.
+      runtimeState.metrics.currentMarketWake = null;
+
+      // Enforce the same commercial spend gates as the normal scout/judge path
+      // so hard-limited accounts cannot leak LLM usage through the hybrid evaluator.
+      if (usageBillingService && await usageBillingService.isHardLimited()) {
+        logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping hybrid tick');
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+          tickId,
+          reason: 'billing.limit_exceeded',
+          gate: 'billing',
+          trigger: 'wake',
+          positionSide: sessionMetrics.lastPositionSide ?? undefined,
+        });
+        handleTickSuccess();
+        await sendHeartbeat('ready');
+        return;
+      }
+
+      const isHybridSoftLimited = usageBillingService ? await usageBillingService.isSoftLimited() : false;
+      if (isHybridSoftLimited) {
+        logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — hybrid evaluator will proceed as single-shot (no escalation)');
+      }
+
+      const maxPositions = agentConfig.maxOpenPositions
+        ?? agentConfig.agentRiskDefaults?.maxOpenPositions
+        ?? 5;
+
+      let hybridFailed = false;
+      try {
+        const evalResult = await runHybridEvaluator({
+          state: runtimeState,
+          llmConfig: {
+            provider: resolvedProvider,
+            model: costProfile.heavyModel,
+            maxTokens: LLM_MAX_TOKENS,
+            timeoutMs: LLM_TIMEOUT_MS,
+            baseUrl: resolvedBaseUrl,
+          },
+          maxPositions,
+          submitDecision: async (symbol, intent, sizeUsd) => {
+            await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
+              decisionId: crypto.randomUUID(),
+              instrumentId: symbol,
+              intent,
+              targetSize: sizeUsd !== undefined ? String(sizeUsd) : '0',
+              rationaleSummary: `Hybrid evaluator: ${intent} ${symbol}`,
+              metadata: { trigger: 'hybrid_evaluator', source: 'scanner' },
+            });
+          },
+          logger,
+        });
+
+        // Record LLM cost for the hybrid evaluation so billing and cost
+        // summaries stay accurate (unlike the scout/judge loop, this path
+        // calls the LLM directly without going through runStructuredToolLoop).
+        if (evalResult.llmUsage) {
+          recordSessionCost(runtimeState, {
+            tokensUsed: evalResult.llmUsage.tokensUsed,
+            thinkingTokens: evalResult.llmUsage.thinkingTokens,
+            costUsd: estimateLlmCostUsd(costProfile.heavyModel, evalResult.llmUsage.tokensUsed),
+          });
+          usageBillingService?.recordLlmUsage({
+            provider: evalResult.llmUsage.provider,
+            model: evalResult.llmUsage.model,
+            responseId: evalResult.llmUsage.responseId,
+            inputTokens: evalResult.llmUsage.inputTokens,
+            outputTokens: evalResult.llmUsage.outputTokens,
+            thinkingTokens: evalResult.llmUsage.thinkingTokens,
+            tokensUsed: evalResult.llmUsage.tokensUsed,
+            phase: 'hybrid',
+            turnIndex: 0,
+          });
+        }
+
+        if (evalResult.errors.length > 0) {
+          logger.warn({ errors: evalResult.errors, decisionsSubmitted: evalResult.decisionsSubmitted },
+            'Hybrid evaluator completed with errors');
+        }
+      } catch (err) {
+        logger.error({ err }, 'Hybrid evaluator threw unexpected error — falling through to normal tick');
+        hybridFailed = true;
+      }
+
+      if (!hybridFailed) {
+        handleTickSuccess();
+        await sendHeartbeat('ready');
+        return;
+      }
+      // Fall through to normal scout/judge loop on hybrid failure
+    }
+
+    // ── Hybrid no-wake guard ──────────────────────────────────────────────
+    // Hybrid agents only invoke the LLM on wake-triggered ticks. Timer ticks
+    // still fire for housekeeping (message ingestion, heartbeats) but must
+    // not reach the scout/judge loop — that would leak tokens on every 10th
+    // tick or whenever context changes, contradicting the event-driven design.
+    if (agentConfig.hybridMode && !tickGateState.hasWakeSignal) {
+      logger.info({ tickCount }, 'Hybrid agent: timer tick without wake signal — skipping LLM dispatch');
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+        tickId,
+        reason: 'hybrid_no_wake',
+        gate: 'hybrid',
+        trigger: 'scheduled',
+        positionSide: sessionMetrics.lastPositionSide ?? undefined,
+      });
+      handleTickSuccess();
+      await sendHeartbeat('ready');
+      return;
     }
 
     if (tradingTickWorkPlan.shouldRecordPerformanceInputs) {

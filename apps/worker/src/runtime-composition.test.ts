@@ -549,6 +549,24 @@ describe('runtime composition helpers', () => {
     expect(userContext).toContain('Win rate: 67%');
   });
 
+  it('updates available capital from get_account_summary tool results', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const summary = applyRuntimeMessage(state, {
+      type: 'instance.tool.result',
+      payload: {
+        tool: 'get_account_summary',
+        data: {
+          capital: '15000',
+          capitalAvailable: true,
+        },
+      },
+    });
+
+    expect(summary).toBe('Account summary: available capital $15000.00');
+    expect(state.metrics.portfolio.availableCapitalUsd).toBe(15000);
+  });
+
   it('renders freshness markers for mixed venue intelligence and keeps performance summary last', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     recordRegimeEvaluation(
@@ -866,7 +884,7 @@ describe('runtime composition helpers', () => {
   it('applyRuntimeMessage returns a Reminder summary for reminder wakes', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'rem-001',
         reason: 'Check BTC price',
@@ -884,7 +902,7 @@ describe('runtime composition helpers', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
     applyRuntimeMessage(state, {
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-reminder-typed-001',
         reason: 'follow up with the user',
@@ -913,7 +931,7 @@ describe('runtime composition helpers', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
     const userContext = buildTickUserContext(state, [{
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'rem-001',
         reason: 'Check BTC price',
@@ -935,7 +953,7 @@ describe('runtime composition helpers', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
 
     const firstTick = buildTickUserContext(state, [{
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'rem-001',
         reason: 'Check BTC price',
@@ -955,7 +973,7 @@ describe('runtime composition helpers', () => {
   it('applyRuntimeMessage returns the wake reason when a typed market wake has no extra context', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-market-001',
         reason: 'momentum signal detected',
@@ -971,7 +989,7 @@ describe('runtime composition helpers', () => {
   it('applyRuntimeMessage renders Watch Trigger Context for watch_threshold wakes', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const summary = applyRuntimeMessage(state, {
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-w-001',
         reason: 'SOL crossed above 200',
@@ -996,10 +1014,36 @@ describe('runtime composition helpers', () => {
     expect(state.metrics.currentReminder).toBeNull();
   });
 
+  it('stores scanner wake context on currentMarketWake', () => {
+    const state = createRuntimeCompositionState(baseDescriptor);
+
+    const summary = applyRuntimeMessage(state, {
+      type: 'agent.wake',
+      payload: {
+        wakeId: 'wake-s-001',
+        reason: '2 ranked scanner signals ready',
+        eventIds: [],
+        priority: 'normal',
+        requestedAt: '2026-06-11T00:00:00.000Z',
+        source: 'scanner',
+        context: {
+          signalCount: 2,
+          topSymbol: 'BTC',
+          topConfidence: 0.91,
+          regimePass: true,
+        },
+      },
+    });
+
+    expect(summary).toBe('2 ranked scanner signals ready');
+    expect(state.metrics.currentMarketWake?.source).toBe('scanner');
+    expect(state.metrics.currentMarketWake?.context).toMatchObject({ signalCount: 2, topSymbol: 'BTC' });
+  });
+
   it('renders ## Watch Trigger Context block for watch_threshold source wake', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const userContext = buildTickUserContext(state, [{
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-w-001',
         reason: 'SOL crossed above 200',
@@ -1029,7 +1073,7 @@ describe('runtime composition helpers', () => {
   it('clears watch trigger context after the immediate tick', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const firstTick = buildTickUserContext(state, [{
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-w-001',
         reason: 'SOL crossed above 200',
@@ -1048,7 +1092,7 @@ describe('runtime composition helpers', () => {
   it('renders ## Discovery Trigger Context block for discovery_delta source wake', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const userContext = buildTickUserContext(state, [{
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-d-001',
         reason: 'WIF entered top discovery set',
@@ -1078,7 +1122,7 @@ describe('runtime composition helpers', () => {
   it('renders ## Regime Change Context block for regime_change source wake', () => {
     const state = createRuntimeCompositionState(baseDescriptor);
     const userContext = buildTickUserContext(state, [{
-      type: 'agent.market.wake',
+      type: 'agent.wake',
       payload: {
         wakeId: 'wake-r-001',
         reason: 'BTC regime changed to unfavorable',

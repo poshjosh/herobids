@@ -1,5 +1,5 @@
-import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext } from '@herobids/domain';
-import { formatAgentGoalLiteralBlock, AgentMarketWakePayloadSchema } from '@herobids/domain';
+import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
@@ -53,10 +53,10 @@ export interface RuntimeReminderContext {
 
 export interface RuntimeMarketWakeContext {
   wakeId: string;
-  source: 'watch_threshold' | 'discovery_delta' | 'regime_change';
+  source: 'watch_threshold' | 'discovery_delta' | 'regime_change' | 'scanner';
   reason: string;
   requestedAt: string | null;
-  context: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext;
+  context: WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext | ScannerWakeContext;
 }
 
 export interface RuntimeVenueSignal {
@@ -1388,15 +1388,15 @@ export function applyRuntimeMessage(
     return summary;
   }
 
-  if (type === 'agent.market.wake') {
-    const parsed = AgentMarketWakePayloadSchema.safeParse(payload);
+  if (type === 'agent.wake') {
+    const parsed = AgentWakePayloadSchema.safeParse(payload);
     if (!parsed.success) {
       // Backward compatibility: older wake envelopes may omit typed context.
       // Preserve actionable reason text when source/reason are present.
       const source = payload['source'];
       const reason = payload['reason'];
       if (
-        (source === 'watch_threshold' || source === 'discovery_delta' || source === 'regime_change')
+        (source === 'watch_threshold' || source === 'discovery_delta' || source === 'regime_change' || source === 'scanner')
         && typeof reason === 'string'
         && reason.trim().length > 0
       ) {
@@ -1424,9 +1424,9 @@ export function applyRuntimeMessage(
 
     state.metrics.currentReminder = null;
 
-    if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change') {
+    if (wake.source === 'watch_threshold' || wake.source === 'discovery_delta' || wake.source === 'regime_change' || wake.source === 'scanner') {
       state.metrics.currentMarketWake = { wakeId, source: wake.source, reason, requestedAt, context: wake.context as WatchThresholdWakeContext | DiscoveryDeltaWakeContext | RegimeChangeWakeContext };
-      const summary = reason || `Market wake: ${wake.source}`;
+      const summary = reason || `Wake: ${wake.source}`;
       pushRecentEvent(state, type, summary);
       return summary;
     }
@@ -1468,6 +1468,21 @@ export function applyRuntimeMessage(
         winRate: parseNumber(data['winRate']),
       });
       const summary = `Portfolio analytics: P&L ${state.metrics.lastPnlSummary ?? 'unavailable'}, open positions ${parseNumber(data['openPositions']) ?? 0}`;
+      pushRecentEvent(state, type, summary);
+      return summary;
+    }
+
+    if (tool === 'get_account_summary' && data && !Array.isArray(data)) {
+      const capitalUsd = parseNumber(data['capital']);
+      if (capitalUsd !== null) {
+        updatePortfolioSummary(state, {
+          availableCapitalUsd: capitalUsd,
+          freshness: freshFreshness('account-summary-tool'),
+        });
+      }
+      const summary = capitalUsd !== null
+        ? `Account summary: available capital ${formatCurrency(capitalUsd)}`
+        : 'Account summary: capital unavailable';
       pushRecentEvent(state, type, summary);
       return summary;
     }

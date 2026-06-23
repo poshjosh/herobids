@@ -92,7 +92,7 @@ function makePublisherMock() {
     emitMarketWatchTriggered: vi.fn().mockResolvedValue(undefined),
     emitMarketDiscoveryDetected: vi.fn().mockResolvedValue(undefined),
     emitMarketRegimeChanged: vi.fn().mockResolvedValue(undefined),
-    emitAgentMarketWake: vi.fn().mockResolvedValue(undefined),
+    emitAgentWake: vi.fn().mockResolvedValue(undefined),
   } as any;
 }
 
@@ -796,6 +796,6 @@ describe('createMarketMonitor — wake coalescing', () => {
     monitor.stop();
 
     redis._store.set('market-monitor:wake:last:agent-1', '0');
-    expect(publisher.emitAgentMarketWake).not.toHaveBeenCalled();
+    expect(publisher.emitAgentWake).not.toHaveBeenCalled();
   });
 });

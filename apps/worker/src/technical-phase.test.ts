@@ -248,6 +248,54 @@ describe('runTechnicalPhase', () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it('advisory mode stores entry signals without submitting decisions directly', async () => {
+    const deps = makeBaseDeps({
+      advisoryMode: true,
+      fetchCandles: vi.fn().mockResolvedValue(makeCandles(100, 'up')),
+      getOpenPositions: vi.fn().mockReturnValue([]),
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    expect(result.entriesSubmitted).toBe(0);
+    expect(Array.isArray(result.signals)).toBe(true);
+    expect(result.errors).toHaveLength(0);
+    expect(deps.submitDecision).not.toHaveBeenCalled();
+  });
+
+  it('advisory mode flags exits for LLM review when autonomousExit is disabled', async () => {
+    const openPos = makeOpenPosition('BTC');
+    const deps = makeBaseDeps({
+      advisoryMode: true,
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([openPos]),
+      fetchCandles: vi.fn().mockResolvedValue(makeOverboughtCandles()),
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    expect(result.exitsSubmitted).toBe(0);
+    expect(result.positionIndicators.some((indicator) => indicator.exitAdvisory === true)).toBe(true);
+    expect(deps.submitDecision).not.toHaveBeenCalled();
+  });
+
+  it('advisory mode still submits exits when autonomousExit is enabled', async () => {
+    const openPos = makeOpenPosition('BTC');
+    const baseline = makeBaseDeps();
+    const deps = makeBaseDeps({
+      advisoryMode: true,
+      config: { ...baseline.config, autonomousExit: true },
+      discoverCandidates: vi.fn().mockResolvedValue([]),
+      getOpenPositions: vi.fn().mockReturnValue([openPos]),
+      fetchCandles: vi.fn().mockResolvedValue(makeOverboughtCandles()),
+    });
+
+    const result = await runTechnicalPhase(deps);
+
+    expect(result.exitsSubmitted).toBe(1);
+    expect(result.positionIndicators.some((indicator) => indicator.exitAdvisory === true)).toBe(false);
+  });
+
   it('candle fetch failure for one instrument does not crash the phase', async () => {
     let callCount = 0;
     const deps = makeBaseDeps({

@@ -98,7 +98,7 @@ function makePublisherMock() {
     emitMarketWatchTriggered: vi.fn(),
     emitMarketDiscoveryDetected: vi.fn(),
     emitMarketRegimeChanged: vi.fn(),
-    emitAgentMarketWake: vi.fn(),
+    emitAgentWake: vi.fn(),
   } as any;
 }
 

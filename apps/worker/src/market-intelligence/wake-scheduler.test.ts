@@ -63,7 +63,7 @@ function makePublisherMock() {
     emitMarketWatchTriggered: vi.fn().mockResolvedValue(undefined),
     emitMarketDiscoveryDetected: vi.fn().mockResolvedValue(undefined),
     emitMarketRegimeChanged: vi.fn().mockResolvedValue(undefined),
-    emitAgentMarketWake: vi.fn().mockResolvedValue(undefined),
+    emitAgentWake: vi.fn().mockResolvedValue(undefined),
   } as any;
 }
 
@@ -134,8 +134,8 @@ describe('wake scheduler — coalescing and cooldown', () => {
     await monitor.flushWakes();
 
     // The single coalesced wake should emit one wake signal
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1);
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledWith(
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledWith(
       agentId,
       expect.objectContaining({
         eventIds: ['ev-1', 'ev-2', 'ev-3'],
@@ -170,7 +170,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
     await monitor.flushWakes();
 
     // Wake should be suppressed due to cooldown
-    expect(publisher.emitAgentMarketWake).not.toHaveBeenCalled();
+    expect(publisher.emitAgentWake).not.toHaveBeenCalled();
     const metrics = monitor.getMetrics();
     expect(metrics.wakeRequestsSuppressed).toBe(1);
   });
@@ -220,7 +220,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
     await monitor.flushWakes();
 
     // Should not emit yet — scheduledAt is in the future
-    expect(publisher.emitAgentMarketWake).not.toHaveBeenCalled();
+    expect(publisher.emitAgentWake).not.toHaveBeenCalled();
   });
 
   it('emits wake after cooldown has elapsed', async () => {
@@ -245,7 +245,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
     await monitor.flushWakes();
 
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
     const metrics = monitor.getMetrics();
     expect(metrics.wakeRequestsEmitted).toBe(1);
   });
@@ -268,7 +268,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
     // First flush emits
     await monitor.flushWakes();
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
 
     // Now the cooldown key is set — a new wake enqueued should be suppressed
     redis._store.set(wakeKey, JSON.stringify({
@@ -280,7 +280,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
     await monitor.flushWakes();
     // Second wake should be suppressed by cooldown
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
     const metrics = monitor.getMetrics();
     expect(metrics.wakeRequestsSuppressed).toBe(1);
   });
@@ -304,7 +304,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
     await monitor.flushWakes();
 
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledWith(
+    expect(publisher.emitAgentWake).toHaveBeenCalledWith(
       agentId,
       expect.objectContaining({
         eventIds: ['ev-1', 'ev-2', 'ev-3', 'ev-4', 'ev-5'],
@@ -334,8 +334,8 @@ describe('wake scheduler — coalescing and cooldown', () => {
     await monitor.flushWakes();
 
     // The new monitor instance should flush the pending wake from Redis
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1);
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledWith(
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledWith(
       agentId,
       expect.objectContaining({ eventIds: ['ev-triggered'] }),
     );
@@ -351,7 +351,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
       scheduledAt: Date.now() - 100,
     }));
     redis._scanKeys.push(wakeKey);
-    publisher.emitAgentMarketWake.mockRejectedValueOnce(new Error('publish failed'));
+    publisher.emitAgentWake.mockRejectedValueOnce(new Error('publish failed'));
 
     const monitor = createMarketMonitor(
       { enabled: true, wakeCoalescingWindowMs: 3000, wakeCooldownMs: 30000 },
@@ -374,7 +374,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
       scheduledAt: Date.now() - 100,
     }));
     redis._scanKeys.push(wakeKey);
-    publisher.emitAgentMarketWake.mockReturnValueOnce(deferred.promise);
+    publisher.emitAgentWake.mockReturnValueOnce(deferred.promise);
 
     const monitor = createMarketMonitor(
       { enabled: true, wakeCoalescingWindowMs: 3000, wakeCooldownMs: 30000 },
@@ -382,10 +382,10 @@ describe('wake scheduler — coalescing and cooldown', () => {
     );
 
     const firstFlush = monitor.flushWakes();
-    await vi.waitFor(() => expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1));
     const secondFlush = monitor.flushWakes();
 
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1);
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1);
 
     deferred.resolve();
     await firstFlush;
@@ -405,7 +405,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
       generation: 5,
     }));
     redis._scanKeys.push(wakeKey);
-    publisher.emitAgentMarketWake.mockReturnValueOnce(deferred.promise);
+    publisher.emitAgentWake.mockReturnValueOnce(deferred.promise);
 
     const monitor = createMarketMonitor(
       { enabled: true, wakeCoalescingWindowMs: 3000, wakeCooldownMs: 30000 },
@@ -414,7 +414,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
 
     // Start flush — publish blocks on deferred
     const firstFlush = monitor.flushWakes();
-    await vi.waitFor(() => expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1));
 
     // Simulate a new enqueue while publish is in flight: generation advances
     // but eventIds stays at cap length (same last element).
@@ -437,7 +437,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
     // Advance past scheduledAt so the next flush can emit it
     await vi.advanceTimersByTimeAsync(30_000);
     await monitor.flushWakes();
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(2);
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(2);
   });
 
   it('preserves a new wake enqueued while a flush is in flight', async () => {
@@ -477,7 +477,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
       scheduledAt: Date.now() - 100,
     }));
     redis._scanKeys.push(wakeKey);
-    publisher.emitAgentMarketWake.mockReturnValueOnce(deferred.promise);
+    publisher.emitAgentWake.mockReturnValueOnce(deferred.promise);
 
     const monitor = createMarketMonitor(
       { enabled: true, wakeCoalescingWindowMs: 3000, wakeCooldownMs: 30000 },
@@ -485,7 +485,7 @@ describe('wake scheduler — coalescing and cooldown', () => {
     );
 
     const firstFlush = monitor.flushWakes();
-    await vi.waitFor(() => expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(publisher.emitAgentWake).toHaveBeenCalledTimes(1));
 
     const evaluatePromise = monitor.evaluate();
     deferred.resolve();
@@ -499,6 +499,6 @@ describe('wake scheduler — coalescing and cooldown', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await monitor.flushWakes();
 
-    expect(publisher.emitAgentMarketWake).toHaveBeenCalledTimes(2);
+    expect(publisher.emitAgentWake).toHaveBeenCalledTimes(2);
   });
 });
