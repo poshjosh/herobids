@@ -72,11 +72,13 @@ export function validateCreateAgentForm(
     }
   }
 
-  // maxPositionSizePct: if provided, 0-100
+  // maxPositionSizePct: if provided, 0-100 AND ≤ constraints.maxPositionSizePct
   if (intent.maxPositionSizePct.trim()) {
     const pct = Number(intent.maxPositionSizePct);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
       errors.maxPositionSizePct = 'Max position size must be between 0 and 100.';
+    } else if (pct > constraints.maxPositionSizePct) {
+      errors.maxPositionSizePct = `Max position size cannot exceed ${constraints.maxPositionSizePct}%.`;
     }
   }
 

@@ -773,11 +773,7 @@ function CreateAgentFlow({
                   stopLossPct: intent.stopLossPct,
                   venue: intent.technicalConfig.filters.venue,
                   requiresTradingSetup,
-                }, {
-                  maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
-                  maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
-                  stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
-                } satisfies ValidationConstraints);
+                }, validationConstraints);
 
                 if (!result.valid) {
                   setFormErrors(result.errors);
