@@ -27,12 +27,12 @@ describe('classifyRuntimeError', () => {
     })).toMatchObject({ mode: 'fatal', reasonCode: 'llm.credentials' });
   });
 
-  it('classifies invalid tool arguments as fatal', () => {
+  it('classifies invalid tool arguments as degraded (not fatal)', () => {
     expect(classifyRuntimeError('llm', {
       code: 'provider.invalid_tool_args',
       message: 'tool args malformed',
       retryable: false,
-    })).toMatchObject({ mode: 'fatal', reasonCode: 'llm.invalid_tool_args' });
+    })).toMatchObject({ mode: 'degraded', reasonCode: 'llm.invalid_tool_args', retryAfterMs: 2_000 });
   });
 
   it('classifies database outages as degraded', () => {
@@ -107,6 +107,42 @@ describe('callLlmWithRetry', () => {
     expect(result.attempts).toBe(1);
     expect(sleep).not.toHaveBeenCalled();
     expect(result.classification).toMatchObject({ mode: 'fatal', reasonCode: 'llm.credentials' });
+  });
+
+  it('retries invalid_tool_args and eventually succeeds', async () => {
+    const call = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'provider.invalid_tool_args', message: 'malformed JSON', retryable: false } })
+      .mockResolvedValueOnce({ ok: true, data: { content: 'ok', model: 'test', provider: 'openai', tokensUsed: 10, latencyMs: 10, cached: false } });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const result = await callLlmWithRetry(
+      { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+      { call, sleep },
+    );
+
+    expect(result.result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(sleep).toHaveBeenCalledWith(2_000);
+  });
+
+  it('stops retrying invalid_tool_args after maxRetries', async () => {
+    const invalidArgsError = { ok: false, error: { code: 'provider.invalid_tool_args', message: 'malformed JSON', retryable: false } };
+    const call = vi.fn()
+      .mockResolvedValueOnce(invalidArgsError)
+      .mockResolvedValueOnce(invalidArgsError)
+      .mockResolvedValueOnce(invalidArgsError);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    const result = await callLlmWithRetry(
+      { provider: 'openai', model: 'test', maxTokens: 100, timeoutMs: 1000 },
+      { messages: [{ role: 'user', content: 'hello' }], maxTokens: 100 },
+      { call, sleep, maxRetries: 2 },
+    );
+
+    expect(result.result.ok).toBe(false);
+    expect(result.attempts).toBe(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
   });
 
   it('retries 5xx responses with fixed backoff', async () => {

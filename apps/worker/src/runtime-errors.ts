@@ -86,7 +86,10 @@ export function classifyRuntimeError(
       return { source, mode: 'fatal', reasonCode: 'llm.credentials', message: llmError.message };
     }
     if (llmError.code === 'provider.invalid_tool_args') {
-      return { source, mode: 'fatal', reasonCode: 'llm.invalid_tool_args', message: llmError.message };
+      // Malformed tool-call JSON from the LLM is a transient content issue, not a
+      // systemic failure. Classify as degraded so the agent survives the tick
+      // and retries (the model often self-corrects on a fresh sample).
+      return { source, mode: 'degraded', reasonCode: 'llm.invalid_tool_args', message: llmError.message, retryAfterMs: 2_000 };
     }
     return {
       source,
@@ -183,6 +186,11 @@ export async function callLlmWithRetry(
         return { result, attempts: attempt + 1, delaysMs, classification };
       }
       delayMs = timeoutDelays[Math.min(attempt, timeoutDelays.length - 1)] ?? timeoutDelays[timeoutDelays.length - 1] ?? 15_000;
+    } else if (result.error.code === 'provider.invalid_tool_args') {
+      if (attempt >= maxRetries) {
+        return { result, attempts: attempt + 1, delaysMs, classification };
+      }
+      delayMs = 2_000; // short backoff — the LLM may self-correct malformed JSON on a fresh sample
     } else if (/^provider\.http_5\d\d$/.test(result.error.code)) {
       if (attempt >= maxRetries) {
         return { result, attempts: attempt + 1, delaysMs, classification };
