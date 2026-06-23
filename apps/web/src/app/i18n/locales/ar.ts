@@ -382,7 +382,6 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.legacyNotice': 'يستخدم هذا الوكيل إيقاعًا قديمًا غير منسجم مع الدقائق الكاملة. احفظ بدون تغيير هذا الحقل للحفاظ على القيمة الدقيقة.',
   'agents.controls.tickInterval.expectedCadence': 'الإيقاع المتوقع: {cadence}. قد يتباطأ وقت الخمول أو بعد الأعطال.',
   'agents.controls.tickInterval.slowdownCaveat': 'الإيقاع الأساسي: {cadence}. قد يتباطأ وقت الخمول أو بعد الأعطال.',
-  'agents.controls.maxBots': 'الحد الأقصى للبوتات المتزامنة',
   'agents.controls.maxBots.planDerived': 'يتم تحديد الحد الأقصى للبوتات المتزامنة حسب خطتك.',
   'agents.controls.capital': 'رأس المال (USD)',
   'agents.controls.capital.help': 'المبلغ الذي يُسمح للوكيل بتداوله — وليس الرصيد الكامل للمحفظة.',

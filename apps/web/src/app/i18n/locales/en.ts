@@ -384,7 +384,6 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.legacyNotice': 'This agent uses a legacy cadence that is not an exact whole minute. Save without changing this field to preserve the exact value.',
   'agents.controls.tickInterval.expectedCadence': 'Expected cadence: {cadence}. Runtime may slow down when idle or after failures.',
   'agents.controls.tickInterval.slowdownCaveat': 'Base cadence: {cadence}. Runtime may still slow down when idle or after failures.',
-  'agents.controls.maxBots': 'Max concurrent bots',
   'agents.controls.maxBots.planDerived': 'Maximum concurrent bots is determined by your plan.',
   'agents.controls.capital': 'Capital (USD)',
   'agents.controls.capital.help': 'Amount this agent may trade with — not the full wallet balance.',
