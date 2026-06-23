@@ -229,3 +229,9 @@ All items are straightforward. The most involved is **WI1** (persist style) beca
 | MEDIUM | 2 pre-existing test failures in `agent-cadence.test.ts` from WI2 cost value changes not updating test expectations (`deriveExpectedCadence` and `estimateDailySpend` tests). |
 | LOW | Speculative comment block in `style-mapping.test.ts` riskTolerance test adds noise. |
 | LOW | `derive-capability-mode.ts` missing JSDoc. |
+
+### WI7 — Execute UATs (Manual)
+
+| Severity | Issue |
+|----------|-------|
+| MEDIUM | All 11 UATs (AG-S01 through AG-S11) require a running dev environment (frontend + API + DB). Not executed in this pass — pending manual verification. AG-S11 depends on WI1 (style in review step), which is now implemented. |
