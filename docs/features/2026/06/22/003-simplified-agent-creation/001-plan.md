@@ -392,5 +392,8 @@ The `ValidationConstraints` interface includes `maxPositionSizePct` but `validat
 ### [Phase 8] AiConfigFields not extracted from AgentControlsSection
 The plan calls for extracting AI-config fields into a standalone component. Currently `AgentControlsSection` is passed as a whole to the `aiConfig` slot. Functionally identical, but the component remains coupled to trading guardrail fields in its interface. Deferred — low priority.
 
+### [Phase 9] UATs added, not yet executed
+All 11 UATs (AG-S01–AG-S11) have been added with status `—`. They need manual execution to validate the simplified creation flow end-to-end.
+
 ### [Phase 3] `generateAgentName` simplified — no collision avoidance
 The function was simplified to `${style}-agent-${counter}` since `existingNames` is always `[]` at the call site. If collision avoidance with existing agent names is needed later, the function will need to be extended and existing names passed from the parent.

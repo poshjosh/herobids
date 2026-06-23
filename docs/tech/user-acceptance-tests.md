@@ -149,6 +149,26 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 
 ---
 
+## 6b. Agents — Simplified Creation Flow
+
+Route: `/agents?create=1` — simplified create-agent form with Style selector, auto-derived defaults, and inline validation.
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| AG-S01 | Create agent — simplified flow | Click "New agent"; fill Goal, select Skill Preset "trading", select Style "Balanced", enter 1000 in Capital; click Review → Create | Agent created with correct cost preset (standard), tick interval (30 min), and risk tolerance (moderate) derived from Style. Capital=1000, dailyLossLimit=50.00 | — | |
+| AG-S02 | Create non-trading agent | Click "New agent"; select Skill Preset = "personal-assistant" | Capital and Exchange fields are hidden. Style selector is still visible and functional. | — | |
+| AG-S03 | Style selector applies defaults | In create form, select each Style (Careful/Balanced/Bold) | Verify cost preset, tick interval, daily budget, and risk tolerance match the Style→Values mapping table. Open Advanced Settings after each change to verify. | — | |
+| AG-S04 | Auto-generated name | In create form, change Style selection | Name field updates to `<style>-agent-<N>` (e.g., balanced-agent-0). Manually edit name → further style changes do not overwrite it. Close and reopen form → name is freshly auto-generated. | — | |
+| AG-S05 | Capital → daily loss limit auto-fill | Enter capital = 1000 in create form | Open Advanced Settings → Trading Setup → daily loss limit is 50.00. Manually edit loss limit to 100. Change capital to 2000 → loss limit stays at 100 (not overwritten). Clear loss limit → change capital → auto-fills to 100.00. | — | |
+| AG-S06 | Shadow mode admin-only | As non-admin user: open create form with trading preset, expand Advanced Settings → Trading Setup | Execution mode dropdown shows only "Paper" and "Live" options. No "Shadow" option. As admin user: "Shadow" option is available. | — | |
+| AG-S07 | Advanced settings accordion | In create form, click to expand "Advanced Settings" (or it may already be in accordion view) | Four sections visible: AI Configuration, Skills, Trading Setup, Strategy. Each independently expandable. Collapsing hides its fields. | — | |
+| AG-S08 | Inline validation on Review | Leave goal empty; click "Review →" | Error message shown below goal field: "Goal is required." Page scrolls to goal field. Fill in goal; error clears. Enter maxOpenPositions = 999 (exceeds platform limit) → click Review → error shown below that field. | — | |
+| AG-S09 | Max bots plan-derived | In create form with bot-management skill, expand Advanced Settings → check for max bots | No max bots input field. Informational text reads "Maximum concurrent bots is determined by your plan." | — | |
+| AG-S10 | Override Style in Advanced | Select Style = Careful; open Advanced Settings → AI Configuration; change cost preset to premium | Tick interval and daily budget update accordingly. The visual Style indicator may change (or show "Custom"). | — | |
+| AG-S11 | Review step reflects simplified fields | Create agent with trading preset, Balanced style, capital=1000; click Review | Review summary shows: name, goal, capability mode ("Trading + Intelligence"), style label ("Balanced"), capital ("1000"), execution mode ("Paper"). No raw config IDs or internal field names. | — | |
+
+---
+
 ## 7. Skills
 
 Route: `/skills` — capability bundles that tell agents what they can do.
