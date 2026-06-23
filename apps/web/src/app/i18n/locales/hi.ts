@@ -632,4 +632,13 @@ export const messages: Record<string, string> = {
   'agents.technical.params.chochPenalty': 'CHOCH पेनल्टी',
   'agents.technical.params.minConfidence': 'न्यूनतम कॉन्फिडेंस (0–1)',
   'agents.technical.params.minReasons': 'न्यूनतम कारण',
+
+  // Agent style (stubs — translation pending)
+  'agents.style.title': 'Trading Style',
+  'agents.style.careful.label': 'Careful',
+  'agents.style.careful.description': 'Minimal cost, conservative risk. Light models only.',
+  'agents.style.balanced.label': 'Balanced',
+  'agents.style.balanced.description': 'Standard cost, moderate risk. Mix of light and heavy models.',
+  'agents.style.bold.label': 'Bold',
+  'agents.style.bold.description': 'Premium cost, aggressive risk. Heavy models for all decisions.',
 };

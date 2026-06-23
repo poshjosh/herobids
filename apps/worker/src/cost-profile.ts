@@ -28,6 +28,13 @@ export interface AgentCostProfile {
   defaultThinking: TickThinkingLevel;
 }
 
+/** Preset-derived base tick intervals in milliseconds (mirrors agent-cadence.ts). */
+const PRESET_TICK_INTERVALS: Record<string, number> = {
+  minimal: 3_600_000,
+  standard: 1_800_000,
+  premium: 900_000,
+};
+
 function deriveCustomTickIntervalMs(dailyBudgetUsd: number): number {
   const estimatedCostPerTick = dailyBudgetUsd <= 3 ? 0.002 : dailyBudgetUsd <= 10 ? 0.01 : 0.05;
   const ticksPerDay = Math.max(1, Math.floor(dailyBudgetUsd / estimatedCostPerTick));
@@ -47,7 +54,7 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         dailyBudgetUsd: input.dailyBudgetUsd ?? 3,
         heavyModel: lightModel,
         lightModel,
-        tickIntervalMs: 1_800_000,
+        tickIntervalMs: PRESET_TICK_INTERVALS.minimal,
         enabledGates: { session: true, regime: true, contextHash: true, adaptiveInterval: true },
         defaultThinking: 'none',
       };
@@ -58,7 +65,7 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         dailyBudgetUsd: input.dailyBudgetUsd ?? 10,
         heavyModel,
         lightModel,
-        tickIntervalMs: 900_000,
+        tickIntervalMs: PRESET_TICK_INTERVALS.standard,
         enabledGates: { session: false, regime: true, contextHash: true, adaptiveInterval: false },
         defaultThinking: 'light',
       };
@@ -69,7 +76,7 @@ export function resolveAgentCostProfile(input: AgentCostProfileInput): AgentCost
         dailyBudgetUsd: input.dailyBudgetUsd ?? 30,
         heavyModel,
         lightModel,
-        tickIntervalMs: 300_000,
+        tickIntervalMs: PRESET_TICK_INTERVALS.premium,
         enabledGates: { session: false, regime: false, contextHash: true, adaptiveInterval: false },
         defaultThinking: 'deep',
       };

@@ -15,6 +15,8 @@ import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-pa
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
 import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
+import { StyleSelector } from './StyleSelector.js';
+import { type AgentStyleValue, resolveStyleDefaults } from './style-mapping.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 
@@ -35,6 +37,7 @@ interface IntentState {
   telegramChatId: string;
   tradingBindingId: string;
   riskTolerance: RiskToleranceValue;
+  style: AgentStyleValue;
   // Configurable controls
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
@@ -161,6 +164,7 @@ function CreateAgentFlow({
     telegramChatId: '',
     tradingBindingId: '',
     riskTolerance: 'moderate',
+    style: 'balanced',
     costPreset: '',
     dailySpendBudgetUsd: '',
     tickIntervalMins: '',
@@ -345,6 +349,21 @@ function CreateAgentFlow({
           <CapabilitySelector
             value={intent.capabilityMode}
             onChange={(capabilityMode) => setIntent((state) => ({ ...state, capabilityMode }))}
+          />
+
+          <StyleSelector
+            value={intent.style}
+            onChange={(style) => {
+              const defaults = resolveStyleDefaults(style);
+              setIntent((state) => ({
+                ...state,
+                style,
+                costPreset: defaults.costPreset,
+                tickIntervalMins: defaults.tickIntervalMins,
+                dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                riskTolerance: defaults.riskTolerance,
+              }));
+            }}
           />
 
           <div>

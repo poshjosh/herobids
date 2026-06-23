@@ -342,3 +342,16 @@ Phases 3–6 can be parallelized after Phase 2.
 - Changes to the API payload schema (form handles all mapping)
 - Changes to the Review step layout (minimal — just reflects new field order)
 - Mobile/responsive layout (separate ticket)
+
+---
+
+## Outstanding Issues
+
+### [Phase 1] M1: `style` field omitted from API payload
+The `style` value is stored in `IntentState` and drives field defaults, but the `buildCreateAgentPayload` function does not include it in the API request. The API and database have no record of which style the user chose. Deferred to Phase 2 (review step needs it).
+
+### [Phase 1] M2: Tick interval cost-per-tick thresholds not updated
+`estimateDailySpend` in `agent-cadence.ts` and `deriveCustomTickIntervalMs` in `cost-profile.ts` use hardcoded interval thresholds (1,800,000ms and 900,000ms) that may produce inaccurate estimates with the new longer intervals. Re-evaluate thresholds later.
+
+### [Phase 1] M4-LOW: Arabic/Hindi i18n stubs
+The Arabic and Hindi locale files contain English stub values for `agents.style.*` keys marked `// translation pending`. Non-blocking — will need proper translations before i18n launch.
