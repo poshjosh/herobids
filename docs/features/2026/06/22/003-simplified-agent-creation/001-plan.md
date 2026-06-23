@@ -361,3 +361,6 @@ Now that Phase 2 (form layout) is done, the style field still needs to be forwar
 
 ### [Phase 2] Note: `deriveCapabilityMode` not unit tested yet
 The `deriveCapabilityMode` function in `AgentsPage.tsx` works correctly but lacks dedicated unit tests. Tests are planned in the testing strategy but not yet implemented.
+
+### [Phase 3] `generateAgentName` simplified — no collision avoidance
+The function was simplified to `${style}-agent-${counter}` since `existingNames` is always `[]` at the call site. If collision avoidance with existing agent names is needed later, the function will need to be extended and existing names passed from the parent.
