@@ -70,12 +70,15 @@ export class AgentRuntimeLauncher {
   private readonly heartbeatIntervalMs: number;
   private readonly mode: 'docker' | 'stub';
   private readonly dockerManager?: DockerAgentManager;
+  private readonly agentRepo?: AgentRepository;
 
   constructor(config?: AgentRuntimeLauncherConfig) {
     this.mode = config?.mode ?? (process.env['AGENT_RUNTIME_MODE'] as 'docker' | 'stub' | undefined) ?? 'stub';
     this.redis = config?.redis;
     this.streamKeyPrefix = config?.streamKeyPrefix ?? 'agent:inbound:';
     this.heartbeatIntervalMs = config?.heartbeatIntervalMs ?? 5_000;
+
+    this.agentRepo = config?.agentRepo;
 
     if (this.mode === 'docker') {
       if (!config?.dockerConfig) {
@@ -192,30 +195,33 @@ export class AgentRuntimeLauncher {
   }
 
   /**
-   * Remove the in-memory runtime handle and stop the heartbeat timer without
-   * issuing a Docker stop or touching the agent status in the DB.
-   *
-   * Use this when the container has already exited (crash / voluntary stop)
-   * and you only need to clean up the launcher's in-memory state.
-   */
-  removeHandle(sessionId: string): void {
-    const handle = this.runtimes.get(sessionId);
-    if (!handle) return;
-    const timer = this.heartbeatTimers.get(sessionId);
-    if (timer) {
-      clearInterval(timer);
-      this.heartbeatTimers.delete(sessionId);
-    }
-    this.runtimes.delete(sessionId);
-    logger.info({ sessionId }, 'Agent runtime handle removed (container already stopped)');
-  }
-
-  /**
    * Stop a runtime gracefully (SIGTERM, wait for exit).
    */
   async stop(sessionId: string): Promise<void> {
     const handle = this.runtimes.get(sessionId);
-    if (!handle) return;
+    if (!handle) {
+      // Handle missing from in-memory map (e.g. worker restarted). Fall back to
+      // looking up the session by ID from the DB so we can still stop the
+      // Docker container by agentId.
+      if (this.agentRepo && this.mode === 'docker' && this.dockerManager) {
+        let session: { agentId: string } | null;
+        try {
+          session = await this.agentRepo.getSession(sessionId);
+        } catch (err) {
+          logger.error({ err, sessionId }, 'Failed to look up session for missing handle (DB unreachable)');
+          return;
+        }
+        if (session) {
+          try {
+            await this.dockerManager.stopById(session.agentId);
+            logger.info({ sessionId, agentId: session.agentId }, 'Agent runtime stopped (handle was missing, stopped by agentId)');
+          } catch (err) {
+            logger.warn({ err, sessionId }, 'Failed to stop agent runtime with missing handle');
+          }
+        }
+      }
+      return;
+    }
 
     const timer = this.heartbeatTimers.get(sessionId);
     if (timer) {
@@ -270,7 +276,29 @@ export class AgentRuntimeLauncher {
    */
   async kill(sessionId: string): Promise<void> {
     const handle = this.runtimes.get(sessionId);
-    if (!handle) return;
+    if (!handle) {
+      // Handle missing from in-memory map (e.g. worker restarted). Fall back to
+      // looking up the session by ID from the DB so we can still stop the
+      // Docker container by agentId.
+      if (this.agentRepo && this.mode === 'docker' && this.dockerManager) {
+        let session: { agentId: string } | null;
+        try {
+          session = await this.agentRepo.getSession(sessionId);
+        } catch (err) {
+          logger.error({ err, sessionId }, 'Failed to look up session for kill with missing handle (DB unreachable)');
+          return;
+        }
+        if (session) {
+          try {
+            await this.dockerManager.stopById(session.agentId);
+            logger.warn({ sessionId, agentId: session.agentId }, 'Agent runtime killed (handle was missing, killed by agentId)');
+          } catch (err) {
+            logger.warn({ err, sessionId }, 'Failed to kill agent runtime with missing handle');
+          }
+        }
+      }
+      return;
+    }
 
     const timer = this.heartbeatTimers.get(sessionId);
     if (timer) {

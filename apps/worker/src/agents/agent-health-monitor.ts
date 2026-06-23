@@ -94,11 +94,12 @@ export class AgentHealthMonitor {
             ));
           for (const session of stoppedSessions) {
             logger.info({ sessionId: session.id }, 'Cleaning up runtime handle for stopped session');
-            // Use removeHandle (not stop) — the container already exited so we only
-            // need to drop the in-memory handle. Calling stop() would invoke
-            // dockerManager.stop() which writes status='stopped' to the DB,
-            // overwriting a 'crashed' status set by onContainerDie.
-            this.runtimeLauncher.removeHandle(session.id);
+            // Call stop() so that if the container is still running (e.g. Docker
+            // daemon hasn't reported the die event yet, or the in-memory handle
+            // was already dropped), it gets killed now. stop() handles the case
+            // where the in-memory handle is already missing by looking up the
+            // container by agent ID via the DB.
+            await this.runtimeLauncher.stop(session.id);
           }
         }
       }
