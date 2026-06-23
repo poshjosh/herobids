@@ -411,6 +411,7 @@ export async function agentRoutes(
 
   app.get('/agents/risk-defaults', async (_request, reply) => {
     return reply.send({
+      dailyLossLimitDefaultRatio: agentRiskDefaults.dailyLossLimitDefaultRatio,
       maxOpenPositions: agentRiskDefaults.maxOpenPositions,
       maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
       stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,

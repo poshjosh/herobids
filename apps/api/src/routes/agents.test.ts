@@ -1345,6 +1345,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
+      dailyLossLimitDefaultRatio: 0.05,
       maxOpenPositions: 10,
       maxPositionSizePct: 100,
       stopLossPct: 10,

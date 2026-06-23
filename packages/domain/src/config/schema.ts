@@ -178,6 +178,7 @@ export const ApiConfigSchema = z.object({
 });
 
 export const AgentRiskDefaultsSchema = z.object({
+  dailyLossLimitDefaultRatio: z.number().min(0).max(1).default(0.05),
   maxOpenPositions: z.number().min(1).default(10),
   maxPositionSizePct: z.number().min(0).max(100).default(100),
   maxPositionSize: z.number().min(0).default(1_000_000),

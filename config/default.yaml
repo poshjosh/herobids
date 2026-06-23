@@ -63,6 +63,7 @@ risk:
 # Default risk limits for agents when the user has NOT explicitly configured them.
 # These are the initial values AND the operator ceiling — agents can adjust downward at runtime.
 agentRiskDefaults:
+  dailyLossLimitDefaultRatio: 0.05       # default daily loss limit as fraction of capital (5%)
   maxOpenPositions: 10                   # max concurrent non-flat positions
   maxPositionSizePct: 100                # max position notional as % of capital (100 = full capital)
   maxPositionSize: 1000000               # max absolute position size in base units (operator ceiling)

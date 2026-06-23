@@ -273,14 +273,15 @@ function CreateAgentFlow({
     if (dailyLossLimitAutoRef.current || !intent.dailyLossLimit.trim()) {
       const capitalNum = parseFloat(intent.capital);
       if (!isNaN(capitalNum) && capitalNum > 0) {
-        const lossLimit = (capitalNum * 0.05).toFixed(2);
+        const ratio = riskDefaultsQuery.data?.dailyLossLimitDefaultRatio ?? 0.05;
+        const lossLimit = (capitalNum * ratio).toFixed(2);
         if (lossLimit !== intent.dailyLossLimit) {
           setIntent((state) => ({ ...state, dailyLossLimit: lossLimit }));
           dailyLossLimitAutoRef.current = true;
         }
       }
     }
-  }, [intent.capital]);
+  }, [intent.capital, riskDefaultsQuery.data?.dailyLossLimitDefaultRatio]);
 
   const selectedSkills = skills.filter((skill) => intent.skillIds.includes(skill.id));
   const hasBotManagementSkill = intent.skillIds.includes('bot-management');

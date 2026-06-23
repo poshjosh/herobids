@@ -194,3 +194,11 @@ All items are straightforward. The most involved is **WI1** (persist style) beca
 | MEDIUM | API field `stopLossPct` mapped to constraint field `stopLossMaxUnrealizedLossPct` — naming mismatch creates ambiguity. Pre-existing, not introduced by this change. |
 | LOW | Hardcoded magic-number fallbacks (`?? 10`, `?? 100`, `?? 100`) in `AgentsPage.tsx` validationConstraints — violate AGENTS.md policy but are loading-state placeholders. Pre-existing. |
 | LOW | Unused imports `TradingBindingSummary` and `formatCapabilityFamily` in `AgentsPage.tsx`. Pre-existing, not introduced by this change. |
+
+### WI3 — Extract Hardcoded 5% Loss-Limit Ratio to config
+
+| Severity | Issue |
+|----------|-------|
+| LOW | `AgentRiskDefaultsView.dailyLossLimitDefaultRatio` field added to interface but unused by `TradingGuardrailsFields` rendering — only consumed directly from query in `AgentsPage.tsx`. |
+| LOW | Triple-default layering: `0.05` appears in config YAML, Zod schema `.default()`, and frontend `?? 0.05` fallback — requires coordination across 3 places. |
+| LOW | Hardcoded `0.05` fallback in `AgentsPage.tsx` duplicates schema default — extractable to shared constant but impact is minimal (only during brief query-loading window). |

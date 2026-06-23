@@ -39,6 +39,7 @@ export interface TradingGuardrailsFormValue {
 }
 
 export interface AgentRiskDefaultsView {
+  dailyLossLimitDefaultRatio: number;
   maxOpenPositions: number;
   maxPositionSizePct: number;
   stopLossPct: number;

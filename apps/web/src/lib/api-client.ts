@@ -871,7 +871,7 @@ export interface AgentPosition {
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
-  riskDefaults: () => request<{ maxOpenPositions: number; maxPositionSizePct: number; stopLossPct: number; stopLossCooldownMs: number }>('/agents/risk-defaults'),
+  riskDefaults: () => request<{ dailyLossLimitDefaultRatio: number; maxOpenPositions: number; maxPositionSizePct: number; stopLossPct: number; stopLossCooldownMs: number }>('/agents/risk-defaults'),
   create: (data: {
     name: string;
     prompt: string;
