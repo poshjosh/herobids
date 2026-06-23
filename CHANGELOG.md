@@ -13,12 +13,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Style selector component** (`StyleSelector.tsx`): radio group with Careful/Balanced/Bold options, each with descriptions. Maps to cost preset, tick interval, daily budget, and risk tolerance via `STYLE_CONFIG`.
 - **Advanced settings accordion** (`AdvancedSettingsSection.tsx`): slot-based accordion with 4 independently collapsible subsections (AI Configuration, Skills, Trading Setup, Strategy).
 - **Form validation** (`form-validation.ts`): validates all fields on Review click and on-blur for numeric constraint fields. Returns field-specific error messages.
+- **Style persistence**: agent `style` field (`careful`/`balanced`/`bold`) now persisted through DB schema + API + frontend. Displayed in review step with i18n labels.
+- **Config-driven loss-limit ratio**: `dailyLossLimitDefaultRatio` (0.05) now sourced from `config/default.yaml → agentRiskDefaults` instead of hardcoded. Exposed via `/agents/risk-defaults` API.
+- **Config-driven cost estimates**: `agentCostEstimates` section in `config/default.yaml` with realistic per-tick LLM cost values (minimal: $0.12, standard: $0.21, premium: $0.31). Exposed via API.
+- **Unit tests for agent creation**: 62 new tests across 5 test files covering style mapping, agent naming, form validation, capability mode derivation, and cadence constants.
 
 ### Changed
 
 - **Agent creation form restructured**: Capability mode now auto-derived from skill selection + goal. Max bots derived from user plan (not user-editable). Shadow execution mode restricted to admin users. Tick intervals aligned across frontend/cost-profile to 60/30/15 min.
 - **Tick intervals updated**: preset cadences changed from 30/15/5 min to 60/30/15 min in both `agent-cadence.ts` and `cost-profile.ts` to match new Style mapping.
 - **Capital field moved**: capital is now a standalone field in the main form; removed from `TradingGuardrailsFields` and `AgentControlsSection`.
+- **Cost-per-tick estimates updated**: frontend `agent-cadence.ts` and worker `cost-profile.ts` now use realistic LLM pricing ($0.12/$0.21/$0.31) instead of unrealistically low heuristics ($0.002–$0.05). Threshold boundaries adjusted to ≥60min/≥30min/<30min tiers.
+- **Validation constraints deduplicated**: inline `ValidationConstraints` object in Review button replaced with shared `validationConstraints` variable. `maxPositionSizePct` now enforces platform ceiling.
+- **Dead i18n key removed**: `agents.controls.maxBots` (without `.planDerived`) removed from all 3 locale files.
+- **`deriveCapabilityMode` extracted** to standalone pure function from `AgentsPage.tsx` for testability.
 
 - **Hybrid agent mode**: agents with both `technical` + `intelligence` config use a single-shot LLM evaluator — scanner gates LLM dispatch, no polling loop.
 - **Scanner wake emission**: `AgentTradingActor` emits `agent.wake` with `source: 'scanner'` after technical scan finds entry signals or exit advisories.
