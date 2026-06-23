@@ -1,5 +1,5 @@
-import { useMemo, Fragment } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
 
@@ -15,8 +15,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
     { path: '/mission-control', label: intl.formatMessage({ id: 'nav.missionControl' }), icon: '◈' },
     { path: '/agents', label: intl.formatMessage({ id: 'nav.agents' }), icon: '⊡' },
     { path: '/skills', label: intl.formatMessage({ id: 'nav.skills' }), icon: '✦' },
-    { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◎' },
-    { path: '/outcomes', label: intl.formatMessage({ id: 'nav.outcomes' }), icon: '▦' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
@@ -32,10 +30,22 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
     { path: '/bots', label: intl.formatMessage({ id: 'nav.bots' }), icon: '⊞' },
     { path: '/venue-accounts', label: intl.formatMessage({ id: 'nav.tradingSetup' }), icon: '⬡' },
     { path: '/exposure', label: intl.formatMessage({ id: 'nav.exposure' }), icon: '◑' },
+    { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◎' },
+    { path: '/outcomes', label: intl.formatMessage({ id: 'nav.outcomes' }), icon: '▦' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
+
+  const isAdvancedActive = useMemo(
+    () => ADVANCED_ITEMS.some((item) => isActive(item.path)),
+    // ADVANCED_ITEMS is locale-stable; the real dependency is location.pathname
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [location.pathname, ADVANCED_ITEMS],
+  );
+
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const effectiveAdvancedOpen = advancedOpen || isAdvancedActive;
 
   return (
     <nav
@@ -80,16 +90,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
       <div style={{ padding: '12px 8px 8px', flex: 1 }}>
         <NavGroup>
           {NAV_ITEMS.map((item) => (
-            <Fragment key={item.path}>
-              <NavItem {...item} active={isActive(item.path)} onNavigate={onClose} />
-              {item.path === '/agents' && (
-                <SidebarAction
-                  label={intl.formatMessage({ id: 'nav.createAgent' })}
-                  path="/agents?create=1"
-                  onNavigate={onClose}
-                />
-              )}
-            </Fragment>
+            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
           ))}
         </NavGroup>
 
@@ -100,12 +101,21 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           ))}
         </NavGroup>
 
-        <SectionLabel>{intl.formatMessage({ id: 'nav.advanced' })}</SectionLabel>
-        <NavGroup>
-          {ADVANCED_ITEMS.map((item) => (
-            <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
-          ))}
-        </NavGroup>
+        <SectionLabel
+          collapsible
+          open={effectiveAdvancedOpen}
+          onToggle={() => setAdvancedOpen((prev) => !prev)}
+          controlsId="sidebar-advanced-group"
+        >
+          {intl.formatMessage({ id: 'nav.advanced' })}
+        </SectionLabel>
+        {effectiveAdvancedOpen && (
+          <NavGroup id="sidebar-advanced-group">
+            {ADVANCED_ITEMS.map((item) => (
+              <NavItem key={item.path} {...item} active={isActive(item.path)} onNavigate={onClose} />
+            ))}
+          </NavGroup>
+        )}
 
         {user?.isAdmin && (
           <>
@@ -197,11 +207,52 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
   );
 }
 
-function NavGroup({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '4px' }}>{children}</div>;
+function NavGroup({ children, id }: { children: React.ReactNode; id?: string }) {
+  return <div id={id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '4px' }}>{children}</div>;
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({
+  children,
+  collapsible,
+  open,
+  onToggle,
+  controlsId,
+}: {
+  children: React.ReactNode;
+  collapsible?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
+  controlsId?: string;
+}) {
+  if (collapsible) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open ?? false}
+        aria-controls={controlsId}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '10px',
+          fontWeight: '600',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: 'var(--color-text-muted)',
+          padding: '12px 8px 4px',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: '10px', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
+        {children}
+      </button>
+    );
+  }
   return (
     <div
       style={{
@@ -243,30 +294,4 @@ function NavItem({ path, label, icon, active, onNavigate }: { path: string; labe
   );
 }
 
-function SidebarAction({ label, path, onNavigate }: { label: string; path: string; onNavigate?: () => void }) {
-  const navigate = useNavigate();
-  return (
-    <button
-      type="button"
-      onClick={() => { void navigate(path); onNavigate?.(); }}
-      aria-label={label}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '4px 10px 4px 18px',
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        fontSize: '12px',
-        color: 'var(--color-text-muted)',
-        borderRadius: '6px',
-        textAlign: 'left',
-        width: '100%',
-      }}
-    >
-      <span style={{ fontSize: '11px' }}>+</span>
-      {label}
-    </button>
-  );
-}
+

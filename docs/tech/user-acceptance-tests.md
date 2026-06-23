@@ -49,7 +49,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, Skills, Activity, Outcomes. Under "Manage": Agents, Connections, Credentials, Billing, Settings. Under "Advanced": Bots, Trading setup, Exposure | ✅ | Nav shows "AI Agents" in Primary (intentional rename). Actual primary: Mission Control, AI Agents, Skills, Activity, Outcomes. Under Manage: Connections, Credentials, Billing, Settings. Advanced correct. UAT description updated to match current nav. |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Credentials, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots, Trading setup, Exposure, Activity, Outcomes. Click "▸ Advanced" to expand. | — | Updated 2026-06-23: Activity & Outcomes moved to Advanced; Advanced now collapsible (collapsed by default); "New AI Agent" inline action removed. |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | Active link shows green background + text (verified on Skills page screenshot) |
 | N-03 | Root redirect | Navigate to `/` | Redirected to `/mission-control` | ✅ | Confirmed |
 | N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | Shows branded "Page not found" with "← Back to Mission Control" CTA |
