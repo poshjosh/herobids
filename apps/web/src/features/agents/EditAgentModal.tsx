@@ -18,6 +18,7 @@ interface EditAgentModalProps {
   agentId: string;
   onClose: () => void;
   initialData: Agent;
+  isAdmin?: boolean;
 }
 
 interface FormState {
@@ -41,7 +42,7 @@ interface FormState {
   capital: string;
 }
 
-export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModalProps) {
+export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditAgentModalProps) {
   const intl = useIntl();
   const qc = useQueryClient();
   const hasExplicitModelOverride = Boolean(initialData.provider || initialData.lightModel || initialData.heavyModel);
@@ -268,7 +269,7 @@ export function EditAgentModal({ agentId, onClose, initialData }: EditAgentModal
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={set('executionMode')}>
                 <option value="">{intl.formatMessage({ id: 'agents.edit.executionModeUnset' })}</option>
                 <option value="paper">{intl.formatMessage({ id: 'agents.create.executionMode.paper' })}</option>
-                <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>
+                {isAdmin && <option value="shadow">{intl.formatMessage({ id: 'agents.create.executionMode.shadow' })}</option>}
                 <option value="live">{intl.formatMessage({ id: 'agents.create.executionMode.live' })}</option>
               </select>
               <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>

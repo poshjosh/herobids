@@ -368,5 +368,8 @@ The `0.05` ratio is hardcoded in the `useEffect`. Per AGENTS.md, operator defaul
 ### [Phase 4] Unit tests not yet written
 Plan specifies unit tests for capital→lossLimit auto-fill behavior. Not yet implemented.
 
+### [Phase 5] Stale admin state in open form
+If admin is demoted while create/edit form is open, the frontend still shows shadow option but the API rejects with 403. Acceptable — server is authoritative. No fix needed.
+
 ### [Phase 3] `generateAgentName` simplified — no collision avoidance
 The function was simplified to `${style}-agent-${counter}` since `existingNames` is always `[]` at the call site. If collision avoidance with existing agent names is needed later, the function will need to be extended and existing names passed from the parent.

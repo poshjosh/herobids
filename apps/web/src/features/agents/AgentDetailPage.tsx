@@ -280,6 +280,7 @@ export function AgentDetailPage() {
           agentId={id!}
           onClose={() => setIsEditing(false)}
           initialData={agent}
+          isAdmin={user?.isAdmin}
         />
       )}
 
