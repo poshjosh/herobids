@@ -362,5 +362,11 @@ Now that Phase 2 (form layout) is done, the style field still needs to be forwar
 ### [Phase 2] Note: `deriveCapabilityMode` not unit tested yet
 The `deriveCapabilityMode` function in `AgentsPage.tsx` works correctly but lacks dedicated unit tests. Tests are planned in the testing strategy but not yet implemented.
 
+### [Phase 4] Hardcoded 5% ratio for loss limit auto-fill
+The `0.05` ratio is hardcoded in the `useEffect`. Per AGENTS.md, operator defaults should come from config. Future: add `dailyLossLimitDefaultRatio` to `agentRiskDefaults` config and expose via API.
+
+### [Phase 4] Unit tests not yet written
+Plan specifies unit tests for capital→lossLimit auto-fill behavior. Not yet implemented.
+
 ### [Phase 3] `generateAgentName` simplified — no collision avoidance
 The function was simplified to `${style}-agent-${counter}` since `existingNames` is always `[]` at the call site. If collision avoidance with existing agent names is needed later, the function will need to be extended and existing names passed from the parent.
