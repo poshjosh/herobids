@@ -99,22 +99,28 @@ export const TRADING_SKILL: SkillDefinition = {
   id: 'trading',
   name: 'Trading',
   description: 'Submit trade decisions and inspect trading state.',
-  instructions: `You have access to trading tools.
+  instructions: `You have access to trading tools, grouped by workflow phase.
 
-- Use \`find_instrument\` to resolve an instrumentId by symbol, name, or pair before calling submit_decision, get_price, or watch_token. Filter by venue (e.g. venue="jupiter" for Solana, venue="hyperliquid" for perpetuals).
-- Use \`submit_decision\` to submit a trade intent for a specific instrument.
-- Use \`list_positions\` to inspect current open positions.
-- Use \`get_analytics\` to inspect recent trading outcomes and exposure.
+## Observe — gather market context
+- Use \`get_market_overview\` to inspect broad market state.
 - Use \`check_regime\` to assess current market conditions.
+- Use \`get_price\` for focused price checks.
+- Use \`get_funding_rates\` to inspect perpetual funding conditions.
 - Use \`search_tokens\` to find a token by name or symbol.
 - Use \`discover_tokens\` to explore available trading candidates.
-- Use \`get_funding_rates\` to inspect perpetual funding conditions.
-- Use \`get_market_overview\` to inspect broad market state.
-- Use \`get_price\` for focused price checks.
+
+## Assess — check your risk and position before acting
+- Use \`get_risk_limits\` to inspect your effective risk limits and their sources. If you are blocked (e.g. daily loss limit exceeded), DO NOT submit any trade — wait for the cooldown to expire.
+- Use \`get_account_summary\` to fetch usable capital, equity, open positions, and P&L before sizing decisions.
+- Use \`get_analytics\` to inspect recent trading outcomes and exposure.
+- Use \`list_positions\` to inspect current open positions.
 - Use \`watch_token\`, \`list_watches\`, \`remove_watch\`, \`resolve_watch\`, and \`check_watches\` to maintain and inspect watch-based monitoring. Use resolve_watch to find a watch ID by note or symbol before calling remove_watch.
-- Use \`get_risk_limits\` to inspect your effective risk limits and their sources.
+
+## Decide — act only when the signal is clear
+- Use \`find_instrument\` to resolve an instrumentId by symbol, name, or pair before calling submit_decision. Filter by venue (e.g. venue="jupiter" for Solana, venue="hyperliquid" for perpetuals).
+- Use \`submit_decision\` to submit a trade intent for a specific instrument. Only call this after completing the Observe and Assess phases above.
 - Use \`adjust_risk_limits\` to adjust mutable (default-derived) risk limits within operator ceilings.`,
-  requiredTools: ['find_instrument', 'submit_decision', 'list_positions', 'get_analytics', 'check_regime', 'search_tokens', 'discover_tokens', 'get_funding_rates', 'get_market_overview', 'get_price', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'get_risk_limits', 'adjust_risk_limits'],
+  requiredTools: ['get_market_overview', 'check_regime', 'get_price', 'get_funding_rates', 'search_tokens', 'discover_tokens', 'get_risk_limits', 'get_account_summary', 'get_analytics', 'list_positions', 'watch_token', 'list_watches', 'remove_watch', 'resolve_watch', 'check_watches', 'find_instrument', 'submit_decision', 'adjust_risk_limits'],
   capabilityFamilies: ['trading'],
   bindingRequirements: {
     trading: {
