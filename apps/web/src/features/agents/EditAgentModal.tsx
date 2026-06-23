@@ -32,7 +32,6 @@ interface FormState {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   dailyLossLimit: string;
-  maxBots: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -80,7 +79,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     costPreset: (initialData.costPreset as FormState['costPreset']) ?? '',
     dailySpendBudgetUsd: initialData.dailySpendBudgetUsd != null ? String(initialData.dailySpendBudgetUsd) : '',
     dailyLossLimit: initialData.dailyLossLimit ?? '',
-    maxBots: initialData.maxBots != null ? String(initialData.maxBots) : '',
     maxSlippageBps: initialData.maxSlippageBps != null ? String(initialData.maxSlippageBps) : '',
     maxOpenPositions: initialData.maxOpenPositions != null ? String(initialData.maxOpenPositions) : '',
     maxPositionSizePct: initialData.maxPositionSizePct ?? '',
@@ -160,7 +158,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         costPreset: form.costPreset,
         dailySpendBudgetUsd: form.dailySpendBudgetUsd,
         dailyLossLimit: form.dailyLossLimit,
-        maxBots: form.maxBots,
         maxSlippageBps: form.maxSlippageBps,
         maxOpenPositions: form.maxOpenPositions,
         maxPositionSizePct: form.maxPositionSizePct,
@@ -388,7 +385,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 costPreset: form.costPreset,
                 dailySpendBudgetUsd: form.dailySpendBudgetUsd,
                 tickIntervalMins: form.tickIntervalMins,
-                maxBots: form.maxBots,
                 dailyLossLimit: form.dailyLossLimit,
                 maxSlippageBps: form.maxSlippageBps,
                 maxOpenPositions: form.maxOpenPositions,

@@ -89,7 +89,6 @@ function renderModal(options: {
             executionMode: 'paper',
             dailyTokenBudget: 45000,
             dailyLossLimit: options.dailyLossLimit ?? '250',
-            maxBots: 2,
             maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
             maxOpenPositions: options.maxOpenPositions === '' ? null : (options.maxOpenPositions ?? 5),
             maxPositionSizePct: options.maxPositionSizePct ?? '100',

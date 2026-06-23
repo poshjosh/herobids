@@ -26,7 +26,7 @@ import {
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { AgentRiskDefaultsSchema, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig } from '@herobids/domain';
-import { checkAgentLimit, resolvePlanSkillEntitlements } from '../plan-guards.js';
+import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
@@ -452,6 +452,26 @@ export async function agentRoutes(
       }
     }
 
+    // Resolve maxBots from plan — if not provided, default to plan limit; if provided, validate ≤ plan limit
+    let resolvedMaxBots: number | null = null;
+    if (plansConfig) {
+      const planLimits = resolvePlanLimitEntitlements(plansConfig, request.userPlanId || 'free', request.isAdmin);
+      if (parsed.data.maxBots != null) {
+        if (parsed.data.maxBots > planLimits.maxBots) {
+          return reply.status(400).send(errorPayload(
+            'plan.max_bots_exceeded',
+            `maxBots (${parsed.data.maxBots}) exceeds your plan limit of ${planLimits.maxBots}.`,
+            { limit: planLimits.maxBots, requested: parsed.data.maxBots },
+          ));
+        }
+        resolvedMaxBots = parsed.data.maxBots;
+      } else {
+        resolvedMaxBots = planLimits.maxBots;
+      }
+    } else {
+      resolvedMaxBots = parsed.data.maxBots ?? null;
+    }
+
     const agentId = crypto.randomUUID();
     const now = new Date();
 
@@ -516,7 +536,7 @@ export async function agentRoutes(
       ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
       dailyTokenBudget: dailyLlmTokenBudget.value ?? null,
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
-      maxBots: parsed.data.maxBots ?? null,
+      maxBots: resolvedMaxBots,
       maxSlippageBps: parsed.data.maxSlippageBps ?? null,
       maxOpenPositions: parsed.data.maxOpenPositions ?? null,
       maxPositionSizePct: parsed.data.maxPositionSizePct != null ? String(parsed.data.maxPositionSizePct) : null,
@@ -733,10 +753,29 @@ export async function agentRoutes(
       notificationPolicy: notificationPolicyInput,
       maxPositionSizePct: rawMaxPositionSizePct,
       stopLossPct: rawStopLossPct,
+      maxBots: rawMaxBots,
       technical: technicalUpdate,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
+
+    // Resolve maxBots from plan — if not provided, default to plan limit; if provided, validate ≤ plan limit
+    let resolvedMaxBotsPatch: { maxBots: number | null } | Record<string, never> = {};
+    if (rawMaxBots !== undefined) {
+      // Caller explicitly provided a value (including null to clear)
+      if (rawMaxBots !== null && plansConfig) {
+        const planLimits = resolvePlanLimitEntitlements(plansConfig, request.userPlanId || 'free', request.isAdmin);
+        if (rawMaxBots > planLimits.maxBots) {
+          return reply.status(400).send(errorPayload(
+            'plan.max_bots_exceeded',
+            `maxBots (${rawMaxBots}) exceeds your plan limit of ${planLimits.maxBots}.`,
+            { limit: planLimits.maxBots, requested: rawMaxBots },
+          ));
+        }
+      }
+      resolvedMaxBotsPatch = { maxBots: rawMaxBots };
+    }
+    // If not provided, leave existing value unchanged (no-op for PATCH)
 
     // Merge technical into unifiedConfig — only touch the 'technical' key, preserve other keys
     let unifiedConfigPatch: Record<string, unknown> | null | undefined = undefined;
@@ -759,6 +798,7 @@ export async function agentRoutes(
       ...agentUpdates,
       ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
       ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
+      ...resolvedMaxBotsPatch,
       ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),

@@ -381,6 +381,7 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.expectedCadence': 'अपेक्षित गति: {cadence}। निष्क्रिय रहने या विफलताओं के बाद धीमी हो सकती है।',
   'agents.controls.tickInterval.slowdownCaveat': 'बेस गति: {cadence}। निष्क्रिय रहने या विफलताओं के बाद धीमी हो सकती है।',
   'agents.controls.maxBots': 'अधिकतम समवर्ती बॉट्स',
+  'agents.controls.maxBots.planDerived': 'अधिकतम समवर्ती बॉट्स आपकी योजना द्वारा निर्धारित होते हैं।',
   'agents.controls.capital': 'पूंजी (USD)',
   'agents.controls.capital.help': 'वह राशि जिससे एजेंट ट्रेड कर सकता है — पूरा वॉलेट बैलेंस नहीं।',
   'agents.controls.dailyLossLimit': 'दैनिक हानि सीमा (USD)',

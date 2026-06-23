@@ -9,7 +9,6 @@ export interface AgentControlsFormValue {
   costPreset: AgentCostPresetValue;
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
-  maxBots: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -159,16 +158,8 @@ export function AgentControlsSection({
       </div>
 
       {showBotControls && (
-        <div>
-          <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxBots' })}</FieldLabel>
-          <input
-            style={inputStyle}
-            type="number"
-            min={1}
-            value={value.maxBots}
-            onChange={(event) => onChange({ maxBots: event.target.value })}
-            placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-          />
+        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+          {intl.formatMessage({ id: 'agents.controls.maxBots.planDerived' })}
         </div>
       )}
       {estimatedDailySpend != null && (

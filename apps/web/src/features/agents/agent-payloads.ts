@@ -43,7 +43,6 @@ export interface CreateAgentIntentPayloadInput {
   dailySpendBudgetUsd: string;
   telegramChatId: string;
   tickIntervalMins: string;
-  maxBots: string;
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
@@ -66,7 +65,6 @@ export interface UpdateAgentPayloadInput {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   dailyLossLimit: string;
-  maxBots: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -96,7 +94,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   executionMode?: string;
   telegramChatId?: string;
   dailyLossLimit?: string;
-  maxBots?: number;
   maxSlippageBps?: number;
   maxOpenPositions?: number;
   maxPositionSizePct?: number;
@@ -124,7 +121,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.dailySpendBudgetUsd ? { dailySpendBudgetUsd: parseFloat(input.dailySpendBudgetUsd) } : {}),
     ...(input.telegramChatId.trim() ? { telegramChatId: input.telegramChatId.trim() } : {}),
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
-    ...(input.hasBotManagementSkill && input.maxBots ? { maxBots: parseInt(input.maxBots, 10) } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
     ...(input.dailyLossLimit.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
     ...(input.maxSlippageBps ? { maxSlippageBps: parseInt(input.maxSlippageBps, 10) } : {}),
@@ -149,7 +145,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom' | null;
   dailySpendBudgetUsd: number | null;
   dailyLossLimit: string | null;
-  maxBots: number | null;
   maxSlippageBps: number | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: number | null;
@@ -181,7 +176,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
     dailyLossLimit: input.dailyLossLimit.trim() || null,
-    maxBots: input.hasBotManagementSkill && input.maxBots ? parseInt(input.maxBots, 10) : null,
     maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
     maxOpenPositions: input.maxOpenPositions ? parseInt(input.maxOpenPositions, 10) : null,
     maxPositionSizePct: input.maxPositionSizePct ? parseFloat(input.maxPositionSizePct) : null,

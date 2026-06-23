@@ -51,7 +51,6 @@ interface IntentState {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
-  maxBots: string;
   capital: string;
   dailyLossLimit: string;
   maxSlippageBps: string;
@@ -177,7 +176,6 @@ function CreateAgentFlow({
     costPreset: '',
     dailySpendBudgetUsd: '',
     tickIntervalMins: '',
-    maxBots: '5',
     capital: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
@@ -328,7 +326,6 @@ function CreateAgentFlow({
         dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
         telegramChatId: intent.telegramChatId,
         tickIntervalMins: intent.tickIntervalMins,
-        maxBots: intent.maxBots,
         capital: intent.capital,
         dailyLossLimit: intent.dailyLossLimit,
         maxSlippageBps: intent.maxSlippageBps,
@@ -602,7 +599,6 @@ function CreateAgentFlow({
                     costPreset: intent.costPreset,
                     dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
                     tickIntervalMins: intent.tickIntervalMins,
-                    maxBots: intent.maxBots,
                     dailyLossLimit: intent.dailyLossLimit,
                     maxSlippageBps: intent.maxSlippageBps,
                     maxOpenPositions: intent.maxOpenPositions,

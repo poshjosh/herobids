@@ -379,6 +379,7 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.expectedCadence': 'الإيقاع المتوقع: {cadence}. قد يتباطأ وقت الخمول أو بعد الأعطال.',
   'agents.controls.tickInterval.slowdownCaveat': 'الإيقاع الأساسي: {cadence}. قد يتباطأ وقت الخمول أو بعد الأعطال.',
   'agents.controls.maxBots': 'الحد الأقصى للبوتات المتزامنة',
+  'agents.controls.maxBots.planDerived': 'يتم تحديد الحد الأقصى للبوتات المتزامنة حسب خطتك.',
   'agents.controls.capital': 'رأس المال (USD)',
   'agents.controls.capital.help': 'المبلغ الذي يُسمح للوكيل بتداوله — وليس الرصيد الكامل للمحفظة.',
   'agents.controls.dailyLossLimit': 'حد الخسارة اليومية (USD)',

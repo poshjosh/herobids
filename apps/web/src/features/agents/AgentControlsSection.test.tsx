@@ -18,7 +18,6 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
     costPreset: 'standard',
     dailySpendBudgetUsd: '',
     tickIntervalMins: '',
-    maxBots: '',
     dailyLossLimit: '',
     maxSlippageBps: '',
     maxOpenPositions: '',
@@ -36,15 +35,15 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
 }
 
 describe('AgentControlsSection rendering', () => {
-  it('renders preset, spend budget, and max bots labels', () => {
+  it('renders preset, spend budget, and plan-derived max bots text', () => {
     const html = renderControls();
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
-    expect(html).toContain(messages['agents.controls.maxBots']);
+    expect(html).toContain(messages['agents.controls.maxBots.planDerived']);
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
-  it('hides max bots when bot controls are disabled', () => {
+  it('hides plan-derived max bots text when bot controls are disabled', () => {
     const html = renderToStaticMarkup(
       <IntlProvider locale="en" messages={messages}>
         <AgentControlsSection
@@ -52,7 +51,6 @@ describe('AgentControlsSection rendering', () => {
             costPreset: 'standard',
             dailySpendBudgetUsd: '',
             tickIntervalMins: '',
-            maxBots: '',
             dailyLossLimit: '',
             maxSlippageBps: '',
             maxOpenPositions: '',
@@ -66,12 +64,12 @@ describe('AgentControlsSection rendering', () => {
       </IntlProvider>,
     );
 
-    expect(html).not.toContain(messages['agents.controls.maxBots']);
+    expect(html).not.toContain(messages['agents.controls.maxBots.planDerived']);
   });
 
   it('shows preset-derived cadence and daily spend when no explicit tick interval exists', () => {
     const html = renderControls({ costPreset: 'minimal' });
-    expect(html).toContain('Expected cadence: every 30 min');
+    expect(html).toContain('Expected cadence: every 1h');
     expect(html).toContain('Estimated daily LLM spend: ~$3.00');
   });
 

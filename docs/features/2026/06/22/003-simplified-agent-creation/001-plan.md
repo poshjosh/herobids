@@ -371,5 +371,11 @@ Plan specifies unit tests for capital→lossLimit auto-fill behavior. Not yet im
 ### [Phase 5] Stale admin state in open form
 If admin is demoted while create/edit form is open, the frontend still shows shadow option but the API rejects with 403. Acceptable — server is authoritative. No fix needed.
 
+### [Phase 6] Dead i18n key `agents.controls.maxBots` (no `.planDerived`)
+The old key without `.planDerived` suffix is no longer referenced by any component. Can be removed from all three locale files. Cosmetic cleanup.
+
+### [Phase 6] Plan uses `limits.maxBots` not `maxBotsPerAgent`
+The plan schema has `limits.maxBots` (total bots per user), not a per-agent limit. The backend uses `limits.maxBots` as the per-agent default — a reasonable proxy. A dedicated `maxBotsPerAgent` field can be added later.
+
 ### [Phase 3] `generateAgentName` simplified — no collision avoidance
 The function was simplified to `${style}-agent-${counter}` since `existingNames` is always `[]` at the call site. If collision avoidance with existing agent names is needed later, the function will need to be extended and existing names passed from the parent.
