@@ -21,6 +21,7 @@ import { generateAgentName } from './agent-name.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
+import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
@@ -430,20 +431,6 @@ function CreateAgentFlow({
       },
     ] as const;
 
-    const detailsStyle: React.CSSProperties = {
-      border: '1px solid var(--color-border)',
-      borderRadius: '8px',
-      background: 'var(--color-surface-1)',
-    };
-    const summaryStyle: React.CSSProperties = {
-      padding: '12px 16px',
-      cursor: 'pointer',
-      fontSize: '14px',
-      fontWeight: '600',
-      color: 'var(--color-text-secondary)',
-      userSelect: 'none',
-    };
-
     return (
       <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -612,93 +599,88 @@ function CreateAgentFlow({
             )}
           </div>
 
-          {/* 8. Advanced Settings (collapsed) */}
-          <details style={detailsStyle}>
-            <summary style={summaryStyle}>
-              {intl.formatMessage({ id: 'agents.create.advancedSettings' })}
-            </summary>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 16px 16px 16px' }}>
+          {/* 8. Advanced Settings (accordion) */}
+          <AdvancedSettingsSection
+            aiConfig={
+              showIntelligence ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                      {intl.formatMessage({ id: 'agents.create.models.title' })}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                      {intl.formatMessage({ id: 'agents.create.models.description' })}
+                    </div>
+                  </div>
 
-              {/* 1. AI Configuration: model selection + cost/budget/tick */}
-              {showIntelligence && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                    {intl.formatMessage({ id: 'agents.create.models.title' })}
-                  </div>
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                    {intl.formatMessage({ id: 'agents.create.models.description' })}
-                  </div>
+                  <ModelSelectionFields
+                    value={{ provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel }}
+                    providers={availableModelsQuery.data?.providers ?? []}
+                    loading={availableModelsQuery.isLoading}
+                    loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
+                    emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
+                    providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
+                    providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
+                    economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
+                    economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
+                    premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
+                    premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
+                    onChange={(value) => {
+                      setModelTouched(true);
+                      setIntent((state) => ({ ...state, ...value }));
+                    }}
+                  />
+
+                  <AgentControlsSection
+                    value={{
+                      costPreset: intent.costPreset,
+                      dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
+                      tickIntervalMins: intent.tickIntervalMins,
+                      dailyLossLimit: intent.dailyLossLimit,
+                      maxSlippageBps: intent.maxSlippageBps,
+                      maxOpenPositions: intent.maxOpenPositions,
+                      maxPositionSizePct: intent.maxPositionSizePct,
+                      stopLossPct: intent.stopLossPct,
+                      stopLossCooldownSecs: intent.stopLossCooldownSecs,
+                    }}
+                    showBotControls={hasBotManagementSkill}
+                    tickIntervalError={tickIntervalError}
+                    fieldErrors={formErrors}
+                    onClearFieldError={clearFieldError}
+                    onBlurField={validateFieldOnBlur}
+                    onChange={(patch) => {
+                      if ('dailyLossLimit' in patch) {
+                        dailyLossLimitAutoRef.current = false;
+                      }
+                      setIntent((state) => ({ ...state, ...patch }));
+                    }}
+                  />
                 </div>
-
-                <ModelSelectionFields
-                  value={{ provider: intent.provider, lightModel: intent.lightModel, heavyModel: intent.heavyModel }}
-                  providers={availableModelsQuery.data?.providers ?? []}
-                  loading={availableModelsQuery.isLoading}
-                  loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
-                  emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
-                  providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
-                  providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
-                  economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
-                  economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
-                  premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
-                  premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
-                  onChange={(value) => {
-                    setModelTouched(true);
-                    setIntent((state) => ({ ...state, ...value }));
-                  }}
-                />
-
-                <AgentControlsSection
-                  value={{
-                    costPreset: intent.costPreset,
-                    dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
-                    tickIntervalMins: intent.tickIntervalMins,
-                    dailyLossLimit: intent.dailyLossLimit,
-                    maxSlippageBps: intent.maxSlippageBps,
-                    maxOpenPositions: intent.maxOpenPositions,
-                    maxPositionSizePct: intent.maxPositionSizePct,
-                    stopLossPct: intent.stopLossPct,
-                    stopLossCooldownSecs: intent.stopLossCooldownSecs,
-                  }}
-                  showBotControls={hasBotManagementSkill}
-                  tickIntervalError={tickIntervalError}
-                  fieldErrors={formErrors}
-                  onClearFieldError={clearFieldError}
-                  onBlurField={validateFieldOnBlur}
-                  onChange={(patch) => {
-                    if ('dailyLossLimit' in patch) {
-                      dailyLossLimitAutoRef.current = false;
-                    }
-                    setIntent((state) => ({ ...state, ...patch }));
-                  }}
-                />
-              </div>
-              )}
-
-              {/* 2. Skills — custom SkillPicker */}
-              {intent.skillPreset === 'custom' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                    {intl.formatMessage({ id: 'agents.create.skills' })}
+              ) : null
+            }
+            skills={
+              intent.skillPreset === 'custom' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                      {intl.formatMessage({ id: 'agents.create.skills' })}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                      {intl.formatMessage({ id: 'agents.create.skillsHelp' })}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                    {intl.formatMessage({ id: 'agents.create.skillsHelp' })}
-                  </div>
+                  <SkillPicker
+                    skills={skills}
+                    selectedSkillIds={intent.skillIds}
+                    onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
+                    loading={skillsLoading}
+                    errorMessage={skillsError}
+                  />
                 </div>
-                <SkillPicker
-                  skills={skills}
-                  selectedSkillIds={intent.skillIds}
-                  onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
-                  loading={skillsLoading}
-                  errorMessage={skillsError}
-                />
-              </div>
-              )}
-
-              {/* 3. Trading Setup: execution mode, risk tolerance, guardrails */}
-              {requiresTradingSetup && (
+              ) : null
+            }
+            tradingSetup={
+              requiresTradingSetup ? (
                 <>
                   <div>
                     <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
@@ -754,10 +736,10 @@ function CreateAgentFlow({
                     />
                   </div>
                 </>
-              )}
-
-              {/* 4. Strategy: technical config */}
-              {showTechnical && (
+              ) : null
+            }
+            strategy={
+              showTechnical ? (
                 <div style={{ padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
                   <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
                     {intl.formatMessage({ id: 'agents.technical.title' })}
@@ -769,9 +751,9 @@ function CreateAgentFlow({
                     onClearFieldError={clearFieldError}
                   />
                 </div>
-              )}
-            </div>
-          </details>
+              ) : null
+            }
+          />
 
           {/* Cancel + Review buttons */}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

@@ -383,8 +383,14 @@ The plan schema has `limits.maxBots` (total bots per user), not a per-agent limi
 ### [Phase 7] Duplicated constraints object (LOW)
 `validationConstraints` variable and inline Review-button object are identical. Should reuse variable to prevent drift.
 
+### [Phase 7] Duplicated constraints object (LOW)
+`validationConstraints` variable and inline Review-button object are identical. Should reuse variable to prevent drift.
+
 ### [Phase 7] `constraints.maxPositionSizePct` unused (LOW)
 The `ValidationConstraints` interface includes `maxPositionSizePct` but `validateCreateAgentForm` doesn't enforce it as a ceiling — only checks 0-100 range. Either enforce or remove from interface.
+
+### [Phase 8] AiConfigFields not extracted from AgentControlsSection
+The plan calls for extracting AI-config fields into a standalone component. Currently `AgentControlsSection` is passed as a whole to the `aiConfig` slot. Functionally identical, but the component remains coupled to trading guardrail fields in its interface. Deferred — low priority.
 
 ### [Phase 3] `generateAgentName` simplified — no collision avoidance
 The function was simplified to `${style}-agent-${counter}` since `existingNames` is always `[]` at the call site. If collision avoidance with existing agent names is needed later, the function will need to be extended and existing names passed from the parent.
