@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Crash telemetry**: agent runtime now writes crash records to `/workspace/crash.log` on `uncaughtException`/`unhandledRejection` with best-effort Redis publish. Includes heap usage, error stack, and agent/session IDs for post-mortem analysis.
+- **Runtime block visibility in `get_risk_limits`**: the tool now returns a `runtime` object showing current state against limits — open position count/blocked, daily P&L vs loss limit, and drawdown placeholder. Eliminates the broken "call get_risk_limits → submit → rejected → call get_analytics" pattern.
 - **Simplified agent creation flow**: 30+ field form reduced to essential fields (Goal, Skill Preset, Style, Capital, Telegram, Name) with collapsible Advanced Settings. Style selector (Careful/Balanced/Bold) maps to cost preset + risk tolerance + tick interval simultaneously. Agent name auto-generated from style. Inline validation on review with field-specific error messages and scroll-to-error. Capital auto-fills daily loss limit to 5%.
 - **Style selector component** (`StyleSelector.tsx`): radio group with Careful/Balanced/Bold options, each with descriptions. Maps to cost preset, tick interval, daily budget, and risk tolerance via `STYLE_CONFIG`.
 - **Advanced settings accordion** (`AdvancedSettingsSection.tsx`): slot-based accordion with 4 independently collapsible subsections (AI Configuration, Skills, Trading Setup, Strategy).
@@ -17,6 +19,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Config-driven loss-limit ratio**: `dailyLossLimitDefaultRatio` (0.05) now sourced from `config/default.yaml → agentRiskDefaults` instead of hardcoded. Exposed via `/agents/risk-defaults` API.
 - **Config-driven cost estimates**: `agentCostEstimates` section in `config/default.yaml` with realistic per-tick LLM cost values (minimal: $0.12, standard: $0.21, premium: $0.31). Exposed via API.
 - **Unit tests for agent creation**: 62 new tests across 5 test files covering style mapping, agent naming, form validation, capability mode derivation, and cadence constants.
+
+### Fixed
+
+- **Orphaned container lifecycle**: `AgentRuntimeLauncher.stop()` and `kill()` now fall back to DB lookup → Docker stop when the in-memory handle is missing (e.g. worker restart). Health monitor calls `stop()` instead of removed `removeHandle()`. Prevents stale tick storms from containers surviving session teardown.
+- **Reconciliation loop silence**: `Reconciler.runPass()` now logs warnings on null venue state, tracks consecutive null passes with a staleness counter, fires an error alert after 10 consecutive null passes (~5 min), and exposes `ReconcilerHealth` via `getHealth()` for heartbeat integration.
 
 ### Changed
 
