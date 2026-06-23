@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
 import type { AgentRiskOverrides, UnifiedAgentConfig } from '@herobids/domain';
 import { users } from './users.js';
 
@@ -11,6 +11,8 @@ export const agents = pgTable('agents', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   name: text('name').notNull(),
+  /** UX style hint used to derive defaults (careful, balanced, bold). Informational only. */
+  style: varchar('style', { length: 16 }),
   /** High-level goal injected into every agent prompt tick */
   prompt: text('prompt').notNull(),                          // was: goal
   /** Current status: stopped | starting | active | paused | crashed */

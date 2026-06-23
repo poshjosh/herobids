@@ -96,6 +96,7 @@ const CreateAgentSchema = z.object({
   stopLossCooldownMs: optionalPositiveIntegerSchema(0),
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
+  style: z.enum(['careful', 'balanced', 'bold']).optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -545,6 +546,7 @@ export async function agentRoutes(
       stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
       tickIntervalMs: parsed.data.tickIntervalMs ?? null,
       capital: parsed.data.capital ?? null,
+      style: parsed.data.style ?? null,
       ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
       createdAt: now,
       updatedAt: now,

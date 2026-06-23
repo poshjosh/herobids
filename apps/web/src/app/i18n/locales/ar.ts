@@ -331,6 +331,7 @@ export const messages: Record<string, string> = {
   'agents.advanced.strategy': 'الاستراتيجية',
   'agents.review.title': 'مراجعة وإنشاء وكيل ذكاء اصطناعي',
   'agents.review.capabilityMode': 'وضع القدرة',
+  'agents.review.style': 'النمط',
   'agents.review.models': 'نماذج الذكاء الاصطناعي',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'يرث إعدادات النموذج المحفوظة لديك',

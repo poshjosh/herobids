@@ -333,6 +333,7 @@ export const messages: Record<string, string> = {
   'agents.advanced.strategy': 'Strategy',
   'agents.review.title': 'Review and create AI agent',
   'agents.review.capabilityMode': 'Capability mode',
+  'agents.review.style': 'Style',
   'agents.review.models': 'AI models',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'Inherits your saved model settings',

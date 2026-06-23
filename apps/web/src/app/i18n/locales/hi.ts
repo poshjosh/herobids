@@ -333,6 +333,7 @@ export const messages: Record<string, string> = {
   'agents.advanced.strategy': 'रणनीति',
   'agents.review.title': 'समीक्षा और AI एजेंट निर्माण',
   'agents.review.capabilityMode': 'क्षमता मोड',
+  'agents.review.style': 'शैली',
   'agents.review.models': 'AI मॉडल',
   'agents.review.models.value': '{provider}: {lightModel} / {heavyModel}',
   'agents.review.models.inherit': 'आपकी सहेजी हुई मॉडल सेटिंग्स विरासत में लेता है',

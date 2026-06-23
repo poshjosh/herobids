@@ -336,6 +336,7 @@ function CreateAgentFlow({
         maxPositionSizePct: intent.maxPositionSizePct,
         stopLossPct: intent.stopLossPct,
         stopLossCooldownSecs: intent.stopLossCooldownSecs,
+        style: intent.style,
       }));
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -804,6 +805,10 @@ function CreateAgentFlow({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <tbody>
             <ReviewRow label={intl.formatMessage({ id: 'agents.create.name' })} value={intent.name.trim()} />
+            <ReviewRow
+              label={intl.formatMessage({ id: 'agents.review.style' })}
+              value={intl.formatMessage({ id: `agents.style.${intent.style}.label` })}
+            />
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilityMode' })}
               value={intl.formatMessage({ id: `agents.capability.${intent.capabilityMode}.label` })}

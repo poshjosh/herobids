@@ -202,3 +202,11 @@ All items are straightforward. The most involved is **WI1** (persist style) beca
 | LOW | `AgentRiskDefaultsView.dailyLossLimitDefaultRatio` field added to interface but unused by `TradingGuardrailsFields` rendering — only consumed directly from query in `AgentsPage.tsx`. |
 | LOW | Triple-default layering: `0.05` appears in config YAML, Zod schema `.default()`, and frontend `?? 0.05` fallback — requires coordination across 3 places. |
 | LOW | Hardcoded `0.05` fallback in `AgentsPage.tsx` duplicates schema default — extractable to shared constant but impact is minimal (only during brief query-loading window). |
+
+### WI1 — Persist `style` Field
+
+| Severity | Issue |
+|----------|-------|
+| MEDIUM | `style` is create-only — not in `UpdateAgentSchema`, `buildUpdateAgentPayload`, or `agents.update()`. User cannot change style after creation. By design per plan (informational/UX only), but worth noting as a UX limitation. |
+| LOW | `Agent.style` type in `api-client.ts` is `string \| null` — could be narrowed to `'careful' \| 'balanced' \| 'bold' \| null` for better type safety. |
+| LOW | Migration `0020_steady_valeria_richards.sql` lacks trailing newline (cosmetic). |

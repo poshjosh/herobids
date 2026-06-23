@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "style" varchar(16);

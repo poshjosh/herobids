@@ -50,6 +50,7 @@ export interface CreateAgentIntentPayloadInput {
   maxPositionSizePct: string;
   stopLossPct: string;
   stopLossCooldownSecs: string;
+  style?: string;
 }
 
 export interface UpdateAgentPayloadInput {
@@ -102,6 +103,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   tickIntervalMs?: number;
   capital?: string;
   technical?: TechnicalConfig;
+  style?: string;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
@@ -128,6 +130,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.maxPositionSizePct ? { maxPositionSizePct: parseFloat(input.maxPositionSizePct) } : {}),
     ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
     ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
+    ...(input.style ? { style: input.style } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
   };
 }
