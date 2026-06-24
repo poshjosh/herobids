@@ -29,6 +29,7 @@ import { syncSystemSkills } from '../../sync-system-skills.js';
 
 const TEST_BUDGETS: RuntimeBudgetPolicy = {
   maxHistoryMessages: 20,
+  maxHistoryTokens: 40_000,
   maxRecentToolMessages: 6,
   maxToolResultChars: 4_000,
   maxVisibleToolSchemas: 64,

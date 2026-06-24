@@ -16,10 +16,13 @@ export interface RuntimeFamilyBindingDescriptor {
 
 export interface RuntimeBudgetPolicy {
   maxHistoryMessages: number;
+  maxHistoryTokens: number;
   maxRecentToolMessages: number;
   maxToolResultChars: number;
   maxVisibleToolSchemas: number;
   maxContextBlockChars: number;
+  toolResultFullRetentionTurns?: number;
+  toolResultMaxStaleChars?: number;
 }
 
 export interface RuntimeGuardrailDescriptor {

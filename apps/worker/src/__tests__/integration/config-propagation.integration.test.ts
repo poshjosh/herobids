@@ -38,7 +38,7 @@ const scrypt = promisify<crypto.BinaryLike, crypto.BinaryLike, number, Buffer>(c
 // Must differ from all production defaults so a hardcoded default is detectable.
 const SENTINEL = 37;
 
-// ─── Minimal YAML with all five budget fields set to the sentinel ─────────────
+// ─── Minimal YAML with all six budget fields set to the sentinel ─────────────
 // app/redis/execution/risk are top-level z.object() fields without .default({})
 // so they must be present in the YAML even as empty objects.
 const SENTINEL_YAML = `
@@ -70,10 +70,13 @@ agentRuntime:
     maxRefreshedDexTargetsPerTick: 13
   defaultBudgets:
     maxHistoryMessages: ${SENTINEL}
+    maxHistoryTokens: ${SENTINEL}
     maxRecentToolMessages: ${SENTINEL}
     maxToolResultChars: ${SENTINEL}
     maxVisibleToolSchemas: ${SENTINEL}
     maxContextBlockChars: ${SENTINEL}
+    toolResultFullRetentionTurns: 4
+    toolResultMaxStaleChars: 600
 `;
 
 // ─── DB/Redis skip guard ──────────────────────────────────────────────────────
@@ -156,22 +159,25 @@ describe('Config propagation: budget values reach consumers', () => {
 
   // ── 1. loadConfig parses all five budget fields ───────────────────────────
 
-  it('loadConfig exposes all five sentinel budget values on appConfig', () => {
+  it('loadConfig exposes all six sentinel budget values on appConfig', () => {
     const appConfig = loadConfig(tmpDir);
 
     const b = appConfig.agentRuntime.defaultBudgets;
     expect(b.maxHistoryMessages).toBe(SENTINEL);
+    expect(b.maxHistoryTokens).toBe(SENTINEL);
     expect(b.maxRecentToolMessages).toBe(SENTINEL);
     expect(b.maxToolResultChars).toBe(SENTINEL);
     expect(b.maxVisibleToolSchemas).toBe(SENTINEL);
     expect(b.maxContextBlockChars).toBe(SENTINEL);
+    expect(b.toolResultFullRetentionTurns).toBe(4);
+    expect(b.toolResultMaxStaleChars).toBe(600);
   });
 
   // ── 2. agentRuntimeConfigJson preserves the budget values ────────────────
   // This mirrors the exact JSON.stringify call in apps/worker/src/index.ts that
   // is injected into the AGENT_RUNTIME_CONFIG_JSON env var of each container.
 
-  it('agentRuntimeConfigJson serialisation preserves all five sentinel budget values', () => {
+  it('agentRuntimeConfigJson serialisation preserves all six sentinel budget values', () => {
     const appConfig = loadConfig(tmpDir);
 
     // Replicate the serialisation performed in index.ts verbatim.
@@ -199,10 +205,13 @@ describe('Config propagation: budget values reach consumers', () => {
     };
 
     expect(parsed.defaultBudgets['maxHistoryMessages']).toBe(SENTINEL);
+    expect(parsed.defaultBudgets['maxHistoryTokens']).toBe(SENTINEL);
     expect(parsed.defaultBudgets['maxRecentToolMessages']).toBe(SENTINEL);
     expect(parsed.defaultBudgets['maxToolResultChars']).toBe(SENTINEL);
     expect(parsed.defaultBudgets['maxVisibleToolSchemas']).toBe(SENTINEL);
     expect(parsed.defaultBudgets['maxContextBlockChars']).toBe(SENTINEL);
+    expect(parsed.defaultBudgets['toolResultFullRetentionTurns']).toBe(4);
+    expect(parsed.defaultBudgets['toolResultMaxStaleChars']).toBe(600);
     expect(parsed.llm.scout['maxTurns']).toBe(SENTINEL);
     expect(parsed.llm.scout['maxTokens']).toBe(1370);
     expect(parsed.llm.scout['temperature']).toBe(0.37);
@@ -254,7 +263,7 @@ describe('Config propagation: budget values reach consumers', () => {
       await launcher.stopAll();
     });
 
-    it('runtimeDescriptor.budgets carries all five sentinel values', async () => {
+    it('runtimeDescriptor.budgets carries all six sentinel values', async () => {
       const appConfig = loadConfig(tmpDir);
       const budgets = appConfig.agentRuntime.defaultBudgets;
 
@@ -289,6 +298,8 @@ describe('Config propagation: budget values reach consumers', () => {
       expect(rd!.budgets.maxToolResultChars).toBe(SENTINEL);
       expect(rd!.budgets.maxVisibleToolSchemas).toBe(SENTINEL);
       expect(rd!.budgets.maxContextBlockChars).toBe(SENTINEL);
+      expect(rd!.budgets.toolResultFullRetentionTurns).toBe(4);
+      expect(rd!.budgets.toolResultMaxStaleChars).toBe(600);
     });
   });
 });

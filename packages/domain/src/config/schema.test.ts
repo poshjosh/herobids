@@ -205,6 +205,7 @@ describe('MarkingConfigSchema', () => {
 describe('AgentRuntimePolicySchema', () => {
   const REQUIRED_RUNTIME_BUDGETS = {
     maxHistoryMessages: 20,
+    maxHistoryTokens: 40_000,
     maxRecentToolMessages: 6,
     maxToolResultChars: 4_000,
     maxVisibleToolSchemas: 64,
@@ -321,6 +322,35 @@ describe('AgentRuntimePolicySchema', () => {
         maxTrackedDexTargets: 0,
         maxRefreshedDexTargetsPerTick: 0,
       },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts optional toolResultFullRetentionTurns and toolResultMaxStaleChars', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: {
+        ...REQUIRED_RUNTIME_BUDGETS,
+        toolResultFullRetentionTurns: 4,
+        toolResultMaxStaleChars: 600,
+      },
+      llm: {},
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultBudgets.toolResultFullRetentionTurns).toBe(4);
+      expect(result.data.defaultBudgets.toolResultMaxStaleChars).toBe(600);
+    }
+  });
+
+  it('rejects toolResultMaxStaleChars of 0 (min 1)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: {
+        ...REQUIRED_RUNTIME_BUDGETS,
+        toolResultMaxStaleChars: 0,
+      },
+      llm: {},
     });
 
     expect(result.success).toBe(false);

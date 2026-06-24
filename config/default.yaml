@@ -317,10 +317,13 @@ agentRuntime:
     maxChangedLines: 12        # truncate diff at this many changed lines
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64
     maxContextBlockChars: 4000
+    toolResultFullRetentionTurns: 3    # keep full tool results for the most recent N turns; older results are truncated
+    toolResultMaxStaleChars: 500       # max chars to retain for tool results older than fullRetentionTurns
   sandboxDefaults:
     cpuShares: 256             # Docker CpuShares (relative weight vs other containers)
     memoryMb: 512              # Docker Memory limit in MB (cgroup hard limit)

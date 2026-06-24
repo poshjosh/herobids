@@ -19,6 +19,7 @@ risk:
 agentRuntime:
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64
@@ -632,6 +633,7 @@ risk:
 agentRuntime:
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64
@@ -774,6 +776,7 @@ risk:
 agentRuntime:
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64
@@ -808,6 +811,7 @@ risk:
 agentRuntime:
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64
@@ -834,6 +838,7 @@ risk:
 agentRuntime:
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64
@@ -860,6 +865,7 @@ risk:
 agentRuntime:
   defaultBudgets:
     maxHistoryMessages: 20
+    maxHistoryTokens: 40000
     maxRecentToolMessages: 6
     maxToolResultChars: 4000
     maxVisibleToolSchemas: 64

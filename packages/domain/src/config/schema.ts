@@ -692,10 +692,13 @@ export const AgentRuntimeConfigSchema = z.object({
   }).default({}),
   defaultBudgets: z.object({
     maxHistoryMessages: z.number().int().min(1),
+    maxHistoryTokens: z.number().int().min(1),
     maxRecentToolMessages: z.number().int().min(1),
     maxToolResultChars: z.number().int().min(1),
     maxVisibleToolSchemas: z.number().int().min(1),
     maxContextBlockChars: z.number().int().min(1),
+    toolResultFullRetentionTurns: z.number().int().min(1).optional(),
+    toolResultMaxStaleChars: z.number().int().min(1).optional(),
   }),
   sandboxDefaults: z.object({
     cpuShares: z.number().int().min(1).default(256),

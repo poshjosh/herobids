@@ -31,6 +31,7 @@ const DB_URL = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@loca
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const TEST_RUNTIME_BUDGETS = {
   maxHistoryMessages: 20,
+  maxHistoryTokens: 40000,
   maxRecentToolMessages: 6,
   maxToolResultChars: 4000,
   maxVisibleToolSchemas: 37,

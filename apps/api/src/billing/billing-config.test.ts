@@ -86,6 +86,7 @@ describe('AppConfigSchema billing cross-validation', () => {
     agentRuntime: {
       defaultBudgets: {
         maxHistoryMessages: 20,
+        maxHistoryTokens: 40_000,
         maxRecentToolMessages: 6,
         maxToolResultChars: 4_000,
         maxVisibleToolSchemas: 64,

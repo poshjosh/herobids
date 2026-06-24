@@ -27,6 +27,7 @@ const baseDescriptor = {
   defaultBindingByFamily: {},
   budgets: {
     maxHistoryMessages: 20,
+    maxHistoryTokens: 40000,
     maxRecentToolMessages: 5,
     maxToolResultChars: 4096,
     maxVisibleToolSchemas: 10,
