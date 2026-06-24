@@ -402,6 +402,19 @@ const workerTelegram = appConfig.alerts.telegram.botToken
   ? new TelegramClient(appConfig.alerts.telegram.botToken)
   : undefined;
 
+if (!workerTelegram && appConfig.alerts.telegram.webhookUrl) {
+  logger.warn(
+    'TELEGRAM_WEBHOOK_URL is set but TELEGRAM_BOT_TOKEN is not — the webhook endpoint will receive updates but the app cannot send messages or register the webhook.',
+  );
+}
+
+if (workerTelegram && !appConfig.alerts.telegram.webhookUrl) {
+  logger.warn(
+    'TELEGRAM_BOT_TOKEN is set but TELEGRAM_WEBHOOK_URL is not — inbound Telegram messages (user replies) will NOT reach the app. ' +
+    'Set TELEGRAM_WEBHOOK_URL and TELEGRAM_WEBHOOK_SECRET to enable two-way messaging.',
+  );
+}
+
 if (workerTelegram && appConfig.alerts.telegram.webhookUrl) {
   if (!appConfig.alerts.telegram.webhookSecret) {
     logger.warn('alerts.telegram.webhookUrl is configured without alerts.telegram.webhookSecret; skipping Telegram webhook registration');
