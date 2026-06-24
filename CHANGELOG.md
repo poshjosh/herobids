@@ -7,6 +7,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.24-a
+
 ### Added
 
 - **Crash telemetry**: agent runtime now writes crash records to `/workspace/crash.log` on `uncaughtException`/`unhandledRejection` with best-effort Redis publish. Includes heap usage, error stack, and agent/session IDs for post-mortem analysis.
