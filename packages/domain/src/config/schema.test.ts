@@ -356,6 +356,33 @@ describe('AgentRuntimePolicySchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts toolResultFullRetentionTurns of 0 (min 0)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: {
+        ...REQUIRED_RUNTIME_BUDGETS,
+        toolResultFullRetentionTurns: 0,
+      },
+      llm: {},
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultBudgets.toolResultFullRetentionTurns).toBe(0);
+    }
+  });
+
+  it('rejects negative toolResultFullRetentionTurns', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: {
+        ...REQUIRED_RUNTIME_BUDGETS,
+        toolResultFullRetentionTurns: -1,
+      },
+      llm: {},
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects missing defaultBudgets', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       llm: {},

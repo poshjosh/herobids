@@ -697,7 +697,7 @@ export const AgentRuntimeConfigSchema = z.object({
     maxToolResultChars: z.number().int().min(1),
     maxVisibleToolSchemas: z.number().int().min(1),
     maxContextBlockChars: z.number().int().min(1),
-    toolResultFullRetentionTurns: z.number().int().min(1).optional(),
+    toolResultFullRetentionTurns: z.number().int().min(0).optional(),
     toolResultMaxStaleChars: z.number().int().min(1).optional(),
   }),
   sandboxDefaults: z.object({

@@ -70,12 +70,14 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
   let turnsUsed = 0;
 
   for (let turnIndex = 0; turnIndex < options.maxTurns; turnIndex++) {
-    // Truncate tool results from turns older than retentionTurns
+    // Truncate tool results from turns older than retentionTurns.
+    // A result at exactly the retention boundary (age === retentionTurns) is
+    // still within the full-retention window and should NOT be truncated yet.
     if (options.toolResultFullRetentionTurns !== undefined && options.toolResultMaxStaleChars !== undefined) {
       for (const msg of messages) {
         if (msg.role === 'tool' && msg.addedAtTurn !== undefined) {
           const age = turnIndex - msg.addedAtTurn;
-          if (age >= options.toolResultFullRetentionTurns && msg.content.length > options.toolResultMaxStaleChars) {
+          if (age > options.toolResultFullRetentionTurns && msg.content.length > options.toolResultMaxStaleChars) {
             msg.content = msg.content.slice(0, options.toolResultMaxStaleChars) + '...[truncated]';
           }
         }

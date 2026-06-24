@@ -623,6 +623,153 @@ describe('callLlmProvider thinking budget config', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Prompt caching — cache_control and cached detection
+// ---------------------------------------------------------------------------
+
+describe('callLlmProvider prompt caching', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('sends top-level cache_control for OpenRouter and reports cached=true on hit', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'cached response' } }],
+      usage: {
+        total_tokens: 100,
+        prompt_tokens: 80,
+        completion_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 50 },
+      },
+      model: 'anthropic/claude-sonnet-4-5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callLlmProvider(
+      {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4-5',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.cached).toBe(true);
+    }
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+  });
+
+  it('reports cached=false for OpenRouter when cached_tokens is 0', async () => {
+    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'fresh response' } }],
+      usage: {
+        total_tokens: 60,
+        prompt_tokens: 50,
+        completion_tokens: 10,
+        prompt_tokens_details: { cached_tokens: 0 },
+      },
+      model: 'anthropic/claude-sonnet-4-5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callLlmProvider(
+      {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4-5',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.cached).toBe(false);
+    }
+  });
+
+  it('includes top-level cache_control for Anthropic native and detects cache hit', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'cached response' }],
+      usage: { input_tokens: 80, output_tokens: 20, cache_read_input_tokens: 40 },
+      model: 'claude-sonnet-4-5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.cached).toBe(true);
+    }
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body['cache_control']).toEqual({ type: 'ephemeral' });
+  });
+
+  it('reports cached=false for Anthropic when cache_read_input_tokens is 0', async () => {
+    process.env['LLM_API_KEY_ANTHROPIC'] = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'fresh response' }],
+      usage: { input_tokens: 80, output_tokens: 20, cache_read_input_tokens: 0 },
+      model: 'claude-sonnet-4-5',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callLlmProvider(
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        maxTokens: 512,
+        timeoutMs: 1_000,
+      },
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        maxTokens: 512,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.cached).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // toOpenAiMessages — message formatting
 // ---------------------------------------------------------------------------
 

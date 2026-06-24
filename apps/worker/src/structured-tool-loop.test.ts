@@ -489,4 +489,98 @@ describe('runStructuredToolLoop', () => {
       expect(result.ok).toBe(true);
     });
   });
+
+  describe('stale tool result truncation', () => {
+    it('truncates tool results only after the full retention window (age > retentionTurns)', async () => {
+      // retentionTurns=3: ages 0-3 keep full results; age 4+ truncates.
+      vi.mocked(callLlmWithRetry)
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 1',
+              toolCalls: [{ id: 'call_1', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 2',
+              toolCalls: [{ id: 'call_2', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 3',
+              toolCalls: [{ id: 'call_3', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'check 4',
+              toolCalls: [{ id: 'call_4', name: 'list_positions', args: {} }],
+              model: 'test-model', provider: 'openai', tokensUsed: 10, latencyMs: 5, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        })
+        .mockResolvedValueOnce({
+          result: {
+            ok: true,
+            data: {
+              content: 'done',
+              toolCalls: [],
+              model: 'test-model', provider: 'openai', tokensUsed: 5, latencyMs: 3, cached: false,
+            },
+          },
+          attempts: 1, delaysMs: [],
+        });
+
+      const result = await runStructuredToolLoop({
+        providerConfig: { provider: 'openai', model: 'test-model', maxTokens: 128, timeoutMs: 1_000 },
+        requestBase: { maxTokens: 128, temperature: 0 },
+        initialMessages: [{ role: 'user', content: 'hello' }],
+        tools: [{ name: 'list_positions', description: 'List positions', inputSchema: { type: 'object' } }],
+        maxTurns: 5,
+        toolResultFullRetentionTurns: 3,
+        toolResultMaxStaleChars: 20,
+        executeTool: async () => 'x'.repeat(100),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.turnsUsed).toBe(5);
+
+      // The messages array is mutated in-place across turns. All mock.calls
+      // entries share the same reference, so inspecting any one of them
+      // reveals the final state after the loop completed.
+      const callArgs = vi.mocked(callLlmWithRetry).mock.calls;
+      const messages = (callArgs[0]![1] as { messages: Array<{ role: string; content: string }> }).messages;
+
+      // 4 tool results were pushed: one per turn before the final turn
+      const toolMsgs = messages.filter(m => m.role === 'tool');
+      expect(toolMsgs).toHaveLength(4);
+
+      // Oldest tool result (age 4 at loop end): truncated
+      expect(toolMsgs[0]!.content).toBe('x'.repeat(20) + '...[truncated]');
+
+      // Next 3 tool results (ages 3, 2, 1 at loop end): full retention
+      for (let i = 1; i < 4; i++) {
+        expect(toolMsgs[i]!.content).toBe('x'.repeat(100));
+      }
+    });
+  });
 });
