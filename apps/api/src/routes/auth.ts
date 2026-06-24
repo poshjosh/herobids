@@ -419,7 +419,9 @@ export async function authRoutes(
           errorPayload('auth.profile.invalid_telegram_chat_id', 'telegramChatId must be a string or null'),
         );
       }
-      updates.telegramChatId = (val as string | null) ?? null;
+      // Normalise whitespace and blank strings to null so a stray space
+      // cannot produce a broken Telegram delivery destination.
+      updates.telegramChatId = typeof val === 'string' ? (val.trim() || null) : null;
     }
 
     await db.update(users).set(updates).where(eq(users.id, userId));

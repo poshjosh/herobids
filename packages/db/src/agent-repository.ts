@@ -573,17 +573,28 @@ export class AgentRepository {
     return this.db.select().from(agents).where(eq(agents.status, 'active'));
   }
 
-  // --- User Telegram ---
+  // --- Agent Telegram ---
 
-  /** Look up the Telegram chat ID for the user that owns the given agent. */
-  async getUserTelegramChatId(agentId: string): Promise<string | null> {
+  /**
+   * Resolve the effective Telegram chat ID for an agent's outbound messages.
+   * Priority: agent-level teleChatId (if configured) > user-level telegramChatId.
+   * Returns null when neither the agent nor its owner has a chat ID set.
+   */
+  async getEffectiveTelegramChatId(agentId: string): Promise<string | null> {
     const rows = await this.db
-      .select({ telegramChatId: users.telegramChatId })
+      .select({
+        agentTelegramChatId: agents.telegramChatId,
+        userTelegramChatId: users.telegramChatId,
+      })
       .from(agents)
       .innerJoin(users, eq(agents.userId, users.id))
       .where(eq(agents.id, agentId))
       .limit(1);
-    return rows[0]?.telegramChatId ?? null;
+    // Treat empty/whitespace chat IDs as "not set" so a blank stored value
+    // does not produce a broken delivery destination.
+    const agentChatId = rows[0]?.agentTelegramChatId?.trim();
+    const userChatId = rows[0]?.userTelegramChatId?.trim();
+    return (agentChatId || null) ?? (userChatId || null);
   }
 
   /** Look up the verified account email for the user that owns the given agent. */
@@ -599,24 +610,36 @@ export class AgentRepository {
 
   /**
    * Resolve the agent that owns a given Telegram reply.
-   * Looks up `agentOutboundMessages` by `telegramMessageId` and joins to `agents`
-   * to verify the message belongs to the requesting user (`userId`).
-   * Returns `{ agentId, agentName, status }` or `null` when no matching message is found.
+   *
+   * Telegram message IDs are scoped per chat, not globally.  When a user has
+   * multiple Telegram destinations (user-level default + agent-level overrides)
+   * we must filter by `chatId` so a reply in chat A does not accidentally
+   * resolve to an outbound message sent to chat B that happens to have the
+   * same Telegram message ID.
+   *
+   * The reply is resolved directly from the outbound message record — no
+   * pre-resolution of the user via mutable chat bindings is needed.  The
+   * returned `userId` (from the agent's owner) is used by the caller for
+   * subsequent authorization and delivery routing.
+   *
+   * Returns `{ agentId, agentName, status, userId }` or `null` when no
+   * matching message is found.
    */
   async resolveAgentForTelegramReply(
     telegramMessageId: string,
-    userId: string,
-  ): Promise<{ agentId: string; agentName: string; status: string } | null> {
+    chatId: string,
+  ): Promise<{ agentId: string; agentName: string; status: string; userId: string } | null> {
     const rows = await this.db.select({
       agentId: agents.id,
       agentName: agents.name,
       status: agents.status,
+      userId: agents.userId,
     })
       .from(agentOutboundMessages)
       .innerJoin(agents, eq(agentOutboundMessages.agentId, agents.id))
       .where(and(
         eq(agentOutboundMessages.telegramMessageId, telegramMessageId),
-        eq(agents.userId, userId),
+        eq(agentOutboundMessages.telegramChatId, chatId),
       ))
       .limit(1);
     return rows[0] ?? null;

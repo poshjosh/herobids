@@ -621,23 +621,29 @@ export async function telegramWebhookHandler(
       .from(users)
       .where(eq(users.telegramChatId, chatId))
       .limit(1);
-    const userId = userRows[0]?.userId;
 
-    if (!userId) {
-      return;
-    }
+    let userId = userRows[0]?.userId;
 
     const trimmedText = message.text!.trim();
 
     if (message.reply_to_message) {
+      // Resolve the reply target directly from the outbound message record.
+      // The chatId + Telegram message ID pair uniquely identifies the
+      // message being replied to; we do not need to pre-resolve the user
+      // via mutable chat bindings before consulting the authoritative
+      // outbound message table.
       const agent = await agentRepo.resolveAgentForTelegramReply(
         String(message.reply_to_message.message_id),
-        userId,
+        chatId,
       );
       if (!agent) {
         await sendTelegramText(chatId, "I couldn't find which agent that reply belongs to. The message may be too old.");
         return;
       }
+
+      // Use the userId from the agent owner record — authoritative and
+      // immune to stale chat-binding state.
+      userId = agent.userId;
 
       if (!agentCanReceiveTelegram(agent.status)) {
         await sendTelegramText(chatId, `Agent ${agent.agentName} is stopped and cannot receive messages right now.`);
@@ -646,6 +652,13 @@ export async function telegramWebhookHandler(
 
       await deliverTelegramMessage(agent.agentId, userId, trimmedText);
       await sendTelegramText(chatId, `Delivered to ${agent.agentName}.`);
+      return;
+    }
+
+    // Non-reply messages: require a user-level chat binding.
+    // Agent-level overrides do not grant a general command surface —
+    // the user must be explicitly bound to this chat.
+    if (!userId) {
       return;
     }
 

@@ -843,7 +843,7 @@ describe('POST /api/telegram/webhook', () => {
         selectCount += 1;
         return makeChain(selectCount === 1
           ? [{ userId: TEST_USER_ID }]
-          : [{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active' }]);
+          : [{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID }]);
       }),
     } as unknown as Database;
     const app = Fastify();
@@ -886,12 +886,58 @@ describe('POST /api/telegram/webhook', () => {
     fetchSpy.mockRestore();
   });
 
+  it('routes replies from an agent-level chat override to the owning agent stream', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    let selectCount = 0;
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          // User-level chat binding lookup — no match (the chat is only bound at agent level).
+          return makeChain([]);
+        }
+        // resolveAgentForTelegramReply — resolves directly from the outbound
+        // message record, returning the userId from the agent's owner row.
+        return makeChain([{ agentId: AGENT_ID, agentName: 'My Agent', status: 'active', userId: TEST_USER_ID }]);
+      }),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: 'agent-chat-1' },
+          text: 'Use the override route',
+          reply_to_message: { message_id: 777 },
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string)).toEqual(expect.objectContaining({
+      initiatorId: TEST_USER_ID,
+      agentId: AGENT_ID,
+      payload: { message: 'Use the override route' },
+    }));
+    expect(String((fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? '')).toContain('Delivered to My Agent.');
+    fetchSpy.mockRestore();
+  });
+
   it('sends a fallback when the reply target cannot be resolved or the agent is stopped', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
 
     for (const rows of [
+      // First iteration: user found but reply can't be resolved → fallback message.
       [{ userId: TEST_USER_ID }, null],
-      [{ userId: TEST_USER_ID }, { agentId: AGENT_ID, agentName: 'My Agent', status: 'stopped' }],
+      // Second iteration: reply resolved but agent is stopped → fallback message.
+      [{ userId: TEST_USER_ID }, { agentId: AGENT_ID, agentName: 'My Agent', status: 'stopped', userId: TEST_USER_ID }],
     ] as const) {
       const redis = buildMockRedis();
       let selectCount = 0;
@@ -928,6 +974,34 @@ describe('POST /api/telegram/webhook', () => {
     const bodies = fetchSpy.mock.calls.map((call) => String((call[1] as RequestInit | undefined)?.body ?? ''));
     expect(bodies.some((body) => body.includes("I couldn't find which agent that reply belongs to."))).toBe(true);
     expect(bodies.some((body) => body.includes('Agent My Agent is stopped and cannot receive messages right now.'))).toBe(true);
+    fetchSpy.mockRestore();
+  });
+
+  it('ignores non-reply messages from an agent-level chat override', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+    const redis = buildMockRedis();
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([])),
+    } as unknown as Database;
+    const app = Fastify();
+    await telegramWebhookHandler(app, db, redis, buildAlertsConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/telegram/webhook',
+      headers: { 'x-telegram-bot-api-secret-token': 'telegram-secret' },
+      payload: {
+        message: {
+          chat: { id: 'agent-chat-1' },
+          text: '/to Momentum buy BTC now',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(res.statusCode).toBe(200);
+    expect(redis.xadd).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 

@@ -444,10 +444,10 @@ export class AgentMessageBroker {
       messageClass,
     });
 
-    // Resolve user's Telegram destination
-    const telegramChatId = await this.agentRepo.getUserTelegramChatId(agent.id);
+    // Resolve effective Telegram destination (agent-level override > user-level default)
+    const telegramChatId = await this.agentRepo.getEffectiveTelegramChatId(agent.id);
     if (!telegramChatId) {
-      logger.info({ agentId: agent.id }, 'send_message persisted but user has no Telegram chat ID — skipping delivery');
+      logger.info({ agentId: agent.id }, 'send_message persisted but no Telegram chat ID available — skipping delivery');
       await this.agentRepo.markOutboundMessageFailed(msgId, 'no_telegram_chat_id');
     } else if (!this.telegram) {
       logger.debug({ agentId: agent.id }, 'send_message persisted but Telegram not configured — skipping delivery');

@@ -186,6 +186,84 @@ describe('auth routes', () => {
       expect(res.json<{ preferredLocale: string | null }>().preferredLocale).toBe('hi');
     });
 
+    it('normalizes whitespace-padded telegramChatId on PATCH', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        preferredLocale: null,
+        telegramChatId: '123456',
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-02'),
+      };
+      const updateWhere = vi.fn().mockResolvedValue(undefined);
+      const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: updateSet }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([updatedUser]),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { telegramChatId: ' 123456 ' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ telegramChatId: string | null }>().telegramChatId).toBe('123456');
+    });
+
+    it('normalizes blank telegramChatId to null on PATCH', async () => {
+      const { authRoutes } = await import('./auth.js');
+      const updatedUser = {
+        id: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        avatarUrl: null,
+        planId: 'free',
+        preferredLocale: null,
+        telegramChatId: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-02'),
+      };
+      const updateWhere = vi.fn().mockResolvedValue(undefined);
+      const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+      const db = {
+        update: vi.fn().mockReturnValue({ set: updateSet }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([updatedUser]),
+            }),
+          }),
+        }),
+      };
+      const app = Fastify();
+      decorateWithAuth(app, 'user-1', 'free');
+      await authRoutes(app, makeAuthConfig(), db as unknown as import('@herobids/db').Database, {} as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/auth/me',
+        payload: { telegramChatId: '   ' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ telegramChatId: string | null }>().telegramChatId).toBeNull();
+    });
+
     it('returns a stable code when preferredLocale is invalid', async () => {
       const { authRoutes } = await import('./auth.js');
       const db = {

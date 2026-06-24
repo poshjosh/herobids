@@ -51,7 +51,7 @@ export class PlatformAlertService {
 
   /**
    * Fire a mandatory safety alert to the user who owns the given agent.
-   * Resolves the user's Telegram chat ID and sends a platform-authored message.
+   * Resolves the effective Telegram chat ID (agent-level override > user-level default) and sends a platform-authored message.
    * Persists to agent_outbound_messages with authored_by='platform'.
    */
   async fireAlert(event: PlatformAlertEvent, ctx: PlatformAlertContext): Promise<void> {
@@ -77,13 +77,13 @@ export class PlatformAlertService {
       return;
     }
 
-    const telegramChatId = await this.agentRepo.getUserTelegramChatId(ctx.agentId).catch((err: unknown) => {
-      logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up user Telegram chat ID');
+    const telegramChatId = await this.agentRepo.getEffectiveTelegramChatId(ctx.agentId).catch((err: unknown) => {
+      logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up effective Telegram chat ID');
       return null;
     });
 
     if (!telegramChatId) {
-      logger.info({ event, agentId: ctx.agentId }, 'Platform alert persisted — user has no Telegram chat ID bound, skipping delivery');
+      logger.info({ event, agentId: ctx.agentId }, 'Platform alert persisted — no Telegram chat ID available, skipping delivery');
       if (msgId) {
         await this.agentRepo.markOutboundMessageFailed(msgId, 'no_telegram_chat_id').catch(() => undefined);
       }

@@ -441,7 +441,7 @@ async function sendSessionStartedTelegramAnchor(agentId: string, sessionId: stri
     return;
   }
 
-  const telegramChatId = await agentRepo.getUserTelegramChatId(agentId);
+  const telegramChatId = await agentRepo.getEffectiveTelegramChatId(agentId);
   if (!telegramChatId) {
     return;
   }

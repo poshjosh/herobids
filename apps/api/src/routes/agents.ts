@@ -533,7 +533,7 @@ export async function agentRoutes(
       status: 'stopped',
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
-      telegramChatId: parsed.data.telegramChatId ?? null,
+      telegramChatId: parsed.data.telegramChatId?.trim() || null,
       notificationPolicy: parsed.data.notificationPolicy !== undefined
         ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
         : null,
@@ -756,6 +756,7 @@ export async function agentRoutes(
       modelPolicy: _modelPolicy,
       skillIds: _skillIds,
       notificationPolicy: notificationPolicyInput,
+      telegramChatId: rawTelegramChatId,
       maxPositionSizePct: rawMaxPositionSizePct,
       stopLossPct: rawStopLossPct,
       maxBots: rawMaxBots,
@@ -801,6 +802,7 @@ export async function agentRoutes(
 
     await db.update(agents).set({
       ...agentUpdates,
+      ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
       ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
       ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
       ...resolvedMaxBotsPatch,

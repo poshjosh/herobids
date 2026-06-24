@@ -162,3 +162,139 @@ describe('AgentRepository runtime session retirement', () => {
     expect(returningFn).toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// getEffectiveTelegramChatId
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.getEffectiveTelegramChatId', () => {
+  function buildJoinDb(row: Record<string, unknown> | null) {
+    return {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue(row ? [row] : []),
+            }),
+          }),
+        }),
+      }),
+    };
+  }
+
+  it('returns agent-level chat ID when configured', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: '111111',
+      userTelegramChatId: '222222',
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBe('111111');
+  });
+
+  it('falls back to user-level chat ID when agent has none', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: null,
+      userTelegramChatId: '222222',
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBe('222222');
+  });
+
+  it('returns null when neither agent nor user has a chat ID', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: null,
+      userTelegramChatId: null,
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBeNull();
+  });
+
+  it('returns null when no matching agent row exists', async () => {
+    const db = buildJoinDb(null);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-missing')).resolves.toBeNull();
+  });
+
+  it('falls through to user default when agent chat ID is empty string', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: '',
+      userTelegramChatId: '222222',
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBe('222222');
+  });
+
+  it('falls through to user default when agent chat ID is whitespace-only', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: '   ',
+      userTelegramChatId: '222222',
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBe('222222');
+  });
+
+  it('returns null when user chat ID is whitespace-only and agent has none', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: null,
+      userTelegramChatId: '   ',
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBeNull();
+  });
+
+  it('returns null when both chat IDs are whitespace-only', async () => {
+    const db = buildJoinDb({
+      agentTelegramChatId: '  ',
+      userTelegramChatId: '   ',
+    });
+    const repo = new AgentRepository(db as never);
+    await expect(repo.getEffectiveTelegramChatId('agent-1')).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAgentForTelegramReply
+// ---------------------------------------------------------------------------
+
+describe('AgentRepository.resolveAgentForTelegramReply', () => {
+  function buildReplyDb(rows: Array<Record<string, unknown>>) {
+    return {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue(rows),
+            }),
+          }),
+        }),
+      }),
+    };
+  }
+
+  it('resolves agent and returns userId when message ID and chat ID match', async () => {
+    const db = buildReplyDb([{ agentId: 'agent-1', agentName: 'Momo', status: 'active', userId: 'user-1' }]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForTelegramReply('999', 'chat-a')).resolves.toEqual({
+      agentId: 'agent-1',
+      agentName: 'Momo',
+      status: 'active',
+      userId: 'user-1',
+    });
+  });
+
+  it('returns null when no matching outbound message exists', async () => {
+    const db = buildReplyDb([]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForTelegramReply('999', 'chat-a')).resolves.toBeNull();
+  });
+
+  it('returns null when the message ID belongs to a different chat', async () => {
+    // Telegram message IDs are scoped per chat.  The repository must filter
+    // by chatId so a reply in chat A cannot accidentally resolve to an
+    // outbound message sent to chat B that happens to share the same
+    // Telegram message ID.
+    const db = buildReplyDb([]);
+    const repo = new AgentRepository(db as never);
+    await expect(repo.resolveAgentForTelegramReply('888', 'chat-b')).resolves.toBeNull();
+  });
+});

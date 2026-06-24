@@ -1478,6 +1478,110 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: 12_000 }));
   });
 
+  it('normalizes telegramChatId on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+      telegramChatId: '123456',
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { telegramChatId: ' 123456 ' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ telegramChatId: '123456' }));
+    expect(res.json()).toEqual(expect.objectContaining({ telegramChatId: '123456' }));
+  });
+
+  it('normalizes blank telegramChatId to null on PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const updatedAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+      telegramChatId: null,
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
+      activeLinkRows: [updatedAgent],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { telegramChatId: '   ' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(updateSets).toContainEqual(expect.objectContaining({ telegramChatId: null }));
+    expect(res.json()).toEqual(expect.objectContaining({ telegramChatId: null }));
+  });
+
+  it('normalizes telegramChatId on POST create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+      telegramChatId: '123456',
+    };
+    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        telegramChatId: ' 123456 ',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({ telegramChatId: '123456' }));
+  });
+
+  it('normalizes blank telegramChatId to null on POST create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
+      telegramChatId: null,
+    };
+    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        telegramChatId: '   ',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({ telegramChatId: null }));
+  });
+
   it('persists explicit risk limit overrides on PATCH', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
