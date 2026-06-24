@@ -140,6 +140,14 @@ async function callOpenAiCompatibleProvider(
     }
   }
 
+  // Enable provider-side prompt caching for OpenRouter → Anthropic models.
+  // Top-level cache_control triggers automatic caching: system prompt + conversation
+  // history up to the last cacheable block are cached at ~10% of normal input cost
+  // on cache hits (5-minute TTL, refreshed on use).
+  if (config.provider === 'openrouter') {
+    requestBody['cache_control'] = { type: 'ephemeral' };
+  }
+
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -178,7 +186,7 @@ async function callOpenAiCompatibleProvider(
           }>;
         };
       }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number } };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; output_tokens_details?: { reasoning_tokens?: number }; prompt_tokens_details?: { cached_tokens?: number } };
       model?: string;
     };
 
@@ -200,7 +208,7 @@ async function callOpenAiCompatibleProvider(
         provider: config.provider,
         tokensUsed: data.usage?.total_tokens ?? 0,
         latencyMs: Date.now() - startMs,
-        cached: false,
+        cached: (data.usage?.prompt_tokens_details?.cached_tokens ?? 0) > 0,
         thinkingTokens: data.usage?.output_tokens_details?.reasoning_tokens ?? 0,
         inputTokens: data.usage?.prompt_tokens,
         outputTokens: data.usage?.completion_tokens,
@@ -256,6 +264,7 @@ async function callAnthropicProvider(
     temperature,
     ...(systemMessage ? { system: systemMessage.content } : {}),
     messages: toAnthropicMessages(chatMessages),
+    cache_control: { type: 'ephemeral' },
   };
 
   if (request.tools && request.tools.length > 0 && request.toolChoice !== 'none') {
@@ -304,7 +313,7 @@ async function callAnthropicProvider(
     const data = await response.json() as {
       id?: string;
       content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>;
-      usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number };
+      usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
       model?: string;
     };
 
@@ -334,7 +343,7 @@ async function callAnthropicProvider(
         provider: 'anthropic',
         tokensUsed: inputTokens + outputTokens,
         latencyMs: Date.now() - startMs,
-        cached: false,
+        cached: (data.usage?.cache_read_input_tokens ?? 0) > 0,
         thinkingTokens: data.usage?.thinking_tokens ?? 0,
         inputTokens,
         outputTokens,
