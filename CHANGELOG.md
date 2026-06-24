@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Added
+
+- **LLM token optimization**: three-part optimization to reduce LLM costs and prevent context overflow:
+  - **`maxHistoryTokens`**: dual-limit history trimming — token-budget (primary, ~4 chars/token heuristic) replaces message-count-only approach, with message-count as secondary hard ceiling
+  - **Stale tool result truncation**: retroactively truncates older tool results in structured tool loops after a configurable retention window (`toolResultFullRetentionTurns`), capped at `toolResultMaxStaleChars` with `...[truncated]` marker
+  - **Prompt caching**: top-level `cache_control: { type: 'ephemeral' }` on both OpenRouter and Anthropic native requests; cache-hit detection from `prompt_tokens_details.cached_tokens` (OpenRouter) and `cache_read_input_tokens` (Anthropic)
+
 ## 0.0.1-2026.06.24-a
 
 ### Added
