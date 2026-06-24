@@ -247,7 +247,7 @@ marketData:
 
 llm:
   provider: ollama              # LLM provider: openrouter | openai | anthropic | ollama
-  model: qwen3.6:35b-a3b-q4_K_M # Model name passed to the provider e.g. anthropic/claude-sonnet-4-5
+  model: qwen3.6:35b-a3b-q4_K_M # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
   baseUrl: http://host.docker.internal:11434/v1  # Ollama: use host.docker.internal, NOT localhost inside Docker
   maxTokens: 4096               # Max tokens per LLM call
   timeoutMs: 60000              # LLM call timeout in ms
@@ -268,10 +268,7 @@ llm:
     serverErrorBackoffMs: 10000         # fixed delay for 5xx errors
     defaultRateLimitBackoffMs: 60000    # fallback when no Retry-After header
   scout:
-    defaultModels:
-      anthropic: claude-3-5-haiku-latest
-      openai: gpt-4.1-mini
-      openrouter: openai/gpt-4.1-mini
+    maxHoldDurationMs:             # optional: max ms without escalating before a forced escalation. Unset = no limit.
   thinking:
     lightBudgetTokens: 2048    # token budget for light thinking mode
     deepBudgetTokens: 10240    # token budget for deep thinking mode

@@ -11,6 +11,7 @@ import {
   skillRevisions,
   skills,
   tradingBindings,
+  users,
   venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
@@ -39,6 +40,7 @@ function buildDb(options: {
   tradingBindingRows?: Array<Record<string, unknown>>;
   capabilityGrantRows?: Array<Record<string, unknown>>;
   venueAccountRows?: Array<Record<string, unknown>>;
+  userRows?: Array<Record<string, unknown>>;
 } = {}) {
   const insertedValues: Array<Record<string, unknown>> = [];
   const updateSets: Array<Record<string, unknown>> = [];
@@ -90,6 +92,7 @@ function buildDb(options: {
   const tradingBindingRows = options.tradingBindingRows ?? [];
   const capabilityGrantRows = options.capabilityGrantRows ?? [];
   const venueAccountRows = options.venueAccountRows ?? [];
+  const userRows = options.userRows ?? [];
 
   let agentsSelectCount = 0;
 
@@ -127,6 +130,9 @@ function buildDb(options: {
     }
     if (table === venueAccounts) {
       return venueAccountRows;
+    }
+    if (table === users) {
+      return userRows;
     }
     return [];
   };
@@ -280,6 +286,7 @@ describe('agent route plan enforcement', () => {
         publicationStatus: 'published',
         priceCents: 0,
       }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
     });
 
     const app = Fastify();
@@ -403,7 +410,7 @@ describe('agent routes lifecycle', () => {
   it('returns starting and persists a starting session when /start is called', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, insertedValues, updateSets } = buildDb({
-      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, modelPolicy: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
       txAgentRows: [{ id: 'agent-1' }],
     });
 
@@ -848,7 +855,9 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
   it('rejects explicit execution mode for non-trading agents on create', async () => {
     const { agentRoutes } = await import('./agents.js');
-    const { db } = buildDb();
+    const { db } = buildDb({
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);
@@ -1006,6 +1015,69 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
     expect(res.json().error).toBe('validation_error');
   });
 
+  it('rejects create with 400 when no model policy is set and user has no AI settings configured', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [],
+      // No userRows — user has no saved AI model settings
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'new agent',
+        prompt: 'trade carefully',
+        // No provider / lightModel / heavyModel
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: 'validation_error',
+      details: [expect.objectContaining({
+        path: ['provider'],
+        message: 'Provider is required — set it here or configure your AI settings in Settings',
+      })],
+    });
+  });
+
+  it('accepts create when the user has valid AI settings and no explicit model policy is set', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = {
+      id: 'agent-1',
+      userId: TEST_USER_ID,
+      status: 'stopped',
+      skillIds: [],
+      modelPolicy: null,
+    };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'new agent',
+        prompt: 'trade carefully',
+        // No explicit provider — user AI settings will satisfy the check
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(insertedValues).toContainEqual(expect.objectContaining({ name: 'new agent' }));
+  });
+
   it('allows PATCH and persists the new model fields when agent status is stopped', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
@@ -1138,6 +1210,49 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
       error: 'validation_error',
       details: [expect.objectContaining({ path: ['provider'] })],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /agents/:id/start — model selection validation
+// ---------------------------------------------------------------------------
+describe('POST /agents/:id/start — model selection validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects start with 422 when neither agent model policy nor user AI settings are configured', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      // No modelPolicy, no userRows → effective selection is incomplete
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/start' });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toBe('config.model_selection_incomplete');
+  });
+
+  it('accepts start when user AI settings supply the missing model selection', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'POST', url: '/agents/agent-1/start' });
+
+    expect(res.statusCode).toBe(202);
+    expect(insertedValues).toContainEqual(expect.objectContaining({ agentId: 'agent-1', status: 'starting' }));
   });
 });
 
@@ -1290,7 +1405,10 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       stopLossPct: '2.5',
       stopLossCooldownMs: 120000,
     };
-    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);
@@ -1536,7 +1654,10 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
       telegramChatId: '123456',
     };
-    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);
@@ -1562,7 +1683,10 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
       telegramChatId: null,
     };
-    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);
@@ -1684,7 +1808,10 @@ describe('agent routes — technical config persistence', () => {
       modelPolicy: null,
       unifiedConfig: { technical: TECHNICAL_STUB },
     };
-    const { db, insertedValues } = buildDb({ agentRows: [createdAgent] });
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
 
     const app = Fastify();
     decorateWithAuth(app);

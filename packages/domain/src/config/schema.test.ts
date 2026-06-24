@@ -223,7 +223,7 @@ describe('AgentRuntimePolicySchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.llm.retry.maxRetries).toBe(4);
-      expect(result.data.llm.scout.defaultModels.anthropic).toBe('claude-3-5-haiku-latest');
+      expect(result.data.llm.scout.maxHoldDurationMs).toBeUndefined();
       expect(result.data.llm.scout.maxTurns).toBe(10);
       expect(result.data.llm.scout.maxTokens).toBe(1_024);
       expect(result.data.llm.scout.temperature).toBe(0);

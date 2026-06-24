@@ -88,7 +88,6 @@ const AGENT_CONFIG_RAW = process.env['AGENT_CONFIG'] ?? '{}';
 const TOOL_POLICY_RAW = process.env['TOOL_POLICY'] ?? '{}';
 const MARKET_DATA_CONFIG_RAW = process.env['MARKET_DATA_CONFIG_JSON'];
 const AGENT_RUNTIME_CONFIG_RAW = process.env['AGENT_RUNTIME_CONFIG_JSON'];
-const LLM_MODEL = process.env['LLM_MODEL'] ?? 'claude-sonnet-4-5';
 const LLM_PROVIDER = process.env['LLM_PROVIDER'];
 const LLM_BASE_URL = process.env['LLM_BASE_URL'];
 const LLM_MAX_TOKENS = parseInt(process.env['LLM_MAX_TOKENS'] ?? '4096', 10);
@@ -327,10 +326,14 @@ const initialToolPolicy = agentConfig.runtimeDescriptor?.toolPolicy ?? parseTool
 const tradingHours = parseTradingHours(TRADING_HOURS_RAW);
 const { provider: resolvedProvider, heavyModel: resolvedHeavyModel, lightModel: resolvedLightModel } = resolveEffectiveLlmSelection({
   agentConfig,
-  operatorProvider: LLM_PROVIDER!,
-  operatorHeavyModel: LLM_MODEL,
-  defaultScoutModels: agentRuntimePolicy.llm.scout.defaultModels,
 });
+if (!resolvedProvider || !resolvedHeavyModel || !resolvedLightModel) {
+  logger.fatal(
+    { provider: resolvedProvider, heavyModel: resolvedHeavyModel, lightModel: resolvedLightModel },
+    'Incomplete LLM model selection — set provider, lightModel, and heavyModel in agent config or user AI settings',
+  );
+  process.exit(1);
+}
 const costProfile = resolveAgentCostProfile({
   provider: resolvedProvider,
   heavyModel: resolvedHeavyModel,

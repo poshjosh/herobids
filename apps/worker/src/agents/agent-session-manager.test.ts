@@ -36,7 +36,7 @@ describe('AgentSessionManager', () => {
       prompt: 'Test agent',
       skillIds: [],
       toolPolicy: null,
-      modelPolicy: null,
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
       executionMode: null,
       dailyTokenBudget: null,
       dailyLossLimit: null,
@@ -140,9 +140,11 @@ describe('AgentSessionManager', () => {
     ]);
     (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'agent-1',
+      userId: 'user-1',
       prompt: 'Trade BTC conservatively',
       skillIds: ['bot-management'],
       toolPolicy: { manage_bot: { capability: 'manage_bot', tier: 'brokered', enabled: true } },
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' },
       executionMode: 'paper',
       dailyTokenBudget: 1000,
       dailyLossLimit: '50',
@@ -216,10 +218,11 @@ describe('AgentSessionManager', () => {
     ]);
     (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'agent-1',
+      userId: 'user-1',
       prompt: 'Watch DEX momentum names',
       skillIds: ['trading'],
       toolPolicy: null,
-      modelPolicy: { dexWatchlistSymbols: ['BONK', 'WIF'] },
+      modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5', dexWatchlistSymbols: ['BONK', 'WIF'] },
       executionMode: 'paper',
       dailyTokenBudget: null,
       dailyLossLimit: null,
@@ -272,6 +275,56 @@ describe('AgentSessionManager', () => {
         },
       }),
     }));
+  });
+
+  it('skips launch, stops the session, and emits guardrail when model selection is incomplete', async () => {
+    const { agentRepo, runtimeLauncher, reconnectHandler } = buildManager();
+    const eventPublisher = {
+      emitGuardrailTriggered: vi.fn().mockResolvedValue(undefined),
+      emitInstanceStatus: vi.fn().mockResolvedValue(undefined),
+    };
+    const manager = new AgentSessionManager(
+      agentRepo as any,
+      eventPublisher as any,
+      runtimeLauncher as any,
+      { budgets: TEST_RUNTIME_BUDGETS },
+      reconnectHandler as any,
+    );
+
+    (agentRepo.getLaunchableStartingSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'sess-1', agentId: 'agent-1' },
+    ]);
+    (agentRepo.getAgent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'agent-1',
+      userId: 'user-1',
+      prompt: 'Trade carefully',
+      skillIds: [],
+      toolPolicy: null,
+      modelPolicy: null, // No model policy set
+      executionMode: null,
+      dailyTokenBudget: null,
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+    });
+    (agentRepo.getUserAiModelConfig as ReturnType<typeof vi.fn>).mockResolvedValue(null); // No user AI settings
+
+    await manager.reconcileStartingSessions();
+
+    expect(runtimeLauncher.launch).not.toHaveBeenCalled();
+    expect(agentRepo.updateAgent).toHaveBeenCalledWith('agent-1', { status: 'stopped' });
+    expect(agentRepo.markSessionStopped).toHaveBeenCalledWith('sess-1', expect.any(Date));
+    expect(eventPublisher.emitGuardrailTriggered).toHaveBeenCalledWith(
+      'agent-1',
+      expect.objectContaining({
+        scope: 'agent_guardrail',
+        code: 'config.model_selection_incomplete',
+      }),
+    );
+    expect(eventPublisher.emitInstanceStatus).toHaveBeenCalledWith(
+      'agent-1',
+      expect.objectContaining({ status: 'stopped', reason: 'config.model_selection_incomplete' }),
+    );
   });
 
   it('skips a session whose claim fails (another worker already claimed it)', async () => {
@@ -456,8 +509,8 @@ describe('AgentSessionManager', () => {
       { id: 'sess-b', agentId: 'agent-b', botId: 'inst-b' },
     ]);
     (agentRepo.getAgent as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ id: 'agent-a', prompt: 'goal-a', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null })
-      .mockResolvedValueOnce({ id: 'agent-b', prompt: 'goal-b', skillIds: [], toolPolicy: null, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null });
+      .mockResolvedValueOnce({ id: 'agent-a', userId: 'user-1', prompt: 'goal-a', skillIds: [], toolPolicy: null, modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null })
+      .mockResolvedValueOnce({ id: 'agent-b', userId: 'user-1', prompt: 'goal-b', skillIds: [], toolPolicy: null, modelPolicy: { provider: 'anthropic', lightModel: 'claude-haiku-3-5', heavyModel: 'claude-sonnet-4-5' }, executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null });
 
     await manager.reconcileStartingSessions();
 

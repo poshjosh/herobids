@@ -3,6 +3,6 @@
 
 llm:
   provider: deepseek                 # LLM provider: openrouter | openai | anthropic | ollama | deepseek
-  model: deepseek-v4-flash           # Model name passed to the provider e.g. deepseek-v4-flash
+  model: deepseek-v4-flash           # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
   baseUrl: https://api.deepseek.com  # DeepSeek API base URL (OpenAI-compatible)
   tickIntervalMs: 900000             # Agent reasoning loop interval in ms (how often the agent calls the LLM)

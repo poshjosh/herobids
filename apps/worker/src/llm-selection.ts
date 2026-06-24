@@ -1,5 +1,3 @@
-import { resolveDefaultScoutModel } from './scout-dispatch.js';
-
 export interface UserModelDefaults {
   provider: string | null;
   lightModel: string | null;
@@ -14,31 +12,25 @@ export interface AgentLlmSelectionInput {
 }
 
 export interface ResolvedLlmSelection {
-  provider: string;
-  lightModel: string;
-  heavyModel: string;
+  provider: string | null;
+  lightModel: string | null;
+  heavyModel: string | null;
 }
 
-function getNonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
+function getNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 export function resolveEffectiveLlmSelection(input: {
   agentConfig: AgentLlmSelectionInput;
-  operatorProvider: string;
-  operatorHeavyModel: string;
-  defaultScoutModels: { anthropic: string; openai: string; openrouter: string };
 }): ResolvedLlmSelection {
   const userModelDefaults = input.agentConfig.userModelDefaults ?? null;
   const resolvedProvider = getNonEmptyString(input.agentConfig.provider)
-    ?? getNonEmptyString(userModelDefaults?.provider)
-    ?? input.operatorProvider;
+    ?? getNonEmptyString(userModelDefaults?.provider);
   const resolvedHeavyModel = getNonEmptyString(input.agentConfig.heavyModel)
-    ?? getNonEmptyString(userModelDefaults?.heavyModel)
-    ?? input.operatorHeavyModel;
+    ?? getNonEmptyString(userModelDefaults?.heavyModel);
   const resolvedLightModel = getNonEmptyString(input.agentConfig.lightModel)
-    ?? getNonEmptyString(userModelDefaults?.lightModel)
-    ?? resolveDefaultScoutModel(resolvedProvider, resolvedHeavyModel, input.defaultScoutModels);
+    ?? getNonEmptyString(userModelDefaults?.lightModel);
 
   return {
     provider: resolvedProvider,

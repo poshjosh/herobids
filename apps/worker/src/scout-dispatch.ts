@@ -7,12 +7,6 @@ export interface ScoutDecision {
   reason?: string;
 }
 
-export const DEFAULT_SCOUT_MODELS = {
-  anthropic: 'claude-3-5-haiku-latest',
-  openai: 'gpt-4.1-mini',
-  openrouter: 'openai/gpt-4.1-mini',
-} as const;
-
 const SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
   'execute_code',
   'read_file',
@@ -20,23 +14,6 @@ const SCOUT_WORKSPACE_CONTEXT_TOOL_NAMES = new Set([
   'write_file',
   'delete_file',
 ]);
-
-export function resolveDefaultScoutModel(
-  provider: string,
-  judgeModel: string,
-  defaultModels: { anthropic: string; openai: string; openrouter: string } = DEFAULT_SCOUT_MODELS,
-): string {
-  switch (provider) {
-    case 'anthropic':
-      return defaultModels.anthropic;
-    case 'openai':
-      return defaultModels.openai;
-    case 'openrouter':
-      return defaultModels.openrouter;
-    default:
-      return judgeModel;
-  }
-}
 
 export function buildScoutSystemPrompt(params: {
   agentId: string;

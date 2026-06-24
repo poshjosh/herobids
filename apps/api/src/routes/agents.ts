@@ -22,16 +22,18 @@ import {
   skillUsageEvents,
   skills,
   tradingBindings,
+  users,
   venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { AgentRiskDefaultsSchema, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
+import { AgentRiskDefaultsSchema, normalizePersistedAiModelConfig, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
+  extractModelSelection,
   hasModelFieldsWithoutProvider,
   mergeModelPolicy,
   nullablePositiveDecimalStringSchema,
@@ -496,6 +498,23 @@ export async function agentRoutes(
     const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
+    }
+
+    // Reject creation when neither the agent policy nor the user's saved AI defaults have models.
+    // Without any model configured, the agent would fail to start immediately.
+    const agentModelSelection = extractModelSelection(effectiveModelPolicy);
+    if (!agentModelSelection.provider) {
+      const [userRow] = await db.select({ aiModelConfig: users.aiModelConfig })
+        .from(users)
+        .where(eq(users.id, request.userId))
+        .limit(1);
+      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+      if (!userAiConfig) {
+        return reply.status(400).send({
+          error: 'validation_error',
+          details: [{ code: 'custom', path: ['provider'], message: 'Provider is required — set it here or configure your AI settings in Settings' }],
+        });
+      }
     }
 
     // Shadow mode is admin-only
@@ -984,7 +1003,7 @@ export async function agentRoutes(
     const sessionId = crypto.randomUUID();
     const now = new Date();
     const result = await db.transaction(async (tx) => {
-      const [agent] = await tx.select({ status: agents.status }).from(agents)
+      const [agent] = await tx.select({ status: agents.status, modelPolicy: agents.modelPolicy }).from(agents)
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) {
         return { kind: 'not_found' as const };
@@ -992,6 +1011,24 @@ export async function agentRoutes(
 
       if (agent.status !== 'stopped') {
         return { kind: 'not_stopped' as const, status: agent.status };
+      }
+
+      // Validate effective model selection before accepting the start request.
+      // Fail fast here rather than letting the container launch and immediately crash.
+      const agentModelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
+      const agentProvider = typeof agentModelPolicy?.['provider'] === 'string' ? agentModelPolicy['provider'] : undefined;
+      const agentLightModel = typeof agentModelPolicy?.['lightModel'] === 'string' ? agentModelPolicy['lightModel'] : undefined;
+      const agentHeavyModel = typeof agentModelPolicy?.['heavyModel'] === 'string' ? agentModelPolicy['heavyModel'] : undefined;
+      const [userRow] = await tx.select({ aiModelConfig: users.aiModelConfig })
+        .from(users)
+        .where(eq(users.id, request.userId))
+        .limit(1);
+      const userAiConfig = normalizePersistedAiModelConfig(userRow?.aiModelConfig);
+      const effectiveProvider = agentProvider ?? userAiConfig?.provider ?? null;
+      const effectiveLightModel = agentLightModel ?? userAiConfig?.lightModel ?? null;
+      const effectiveHeavyModel = agentHeavyModel ?? userAiConfig?.heavyModel ?? null;
+      if (!effectiveProvider || !effectiveLightModel || !effectiveHeavyModel) {
+        return { kind: 'model_selection_incomplete' as const };
       }
 
       const [claimedAgent] = await tx.update(agents).set({
@@ -1029,6 +1066,13 @@ export async function agentRoutes(
 
     if (result.kind === 'not_stopped') {
       return reply.status(409).send(errorPayload('not_stopped', 'Agent is not stopped', { status: result.status }));
+    }
+
+    if (result.kind === 'model_selection_incomplete') {
+      return reply.status(422).send(errorPayload(
+        'config.model_selection_incomplete',
+        'Agent cannot start — set provider, lightModel, and heavyModel in agent config or user AI settings',
+      ));
     }
 
     return reply.status(202).send({ status: 'starting', sessionId });

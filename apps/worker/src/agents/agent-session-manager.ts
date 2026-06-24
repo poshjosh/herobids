@@ -14,6 +14,7 @@ import type { AgentReconnectHandler } from './agent-reconnect-handler.js';
 import type { AgentRuntimeLauncher } from './agent-runtime-launcher.js';
 import type { PlatformAlertService } from '../alerting/platform-alert-service.js';
 import { PLATFORM_ALERT_EVENTS } from '../alerting/platform-alert-service.js';
+import { resolveEffectiveLlmSelection } from '../llm-selection.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-session-manager' });
@@ -319,6 +320,34 @@ export class AgentSessionManager {
         const provider = typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : undefined;
         const lightModel = typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : undefined;
         const heavyModel = typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : undefined;
+
+        // Validate model selection before launch — fail loudly rather than letting the container crash silently.
+        const effectiveSelection = resolveEffectiveLlmSelection({
+          agentConfig: { provider, lightModel, heavyModel, userModelDefaults: userModelDefaults ?? null },
+        });
+        if (!effectiveSelection.provider || !effectiveSelection.lightModel || !effectiveSelection.heavyModel) {
+          const code = 'config.model_selection_incomplete';
+          const message = 'Agent cannot start — provider, lightModel, and heavyModel must be set in agent config or user AI settings';
+          logger.warn(
+            { agentId: agent.id, userId: agent.userId, ...effectiveSelection },
+            message,
+          );
+          await this.agentRepo.updateAgent(agent.id, { status: 'stopped' });
+          await this.agentRepo.markSessionStopped(session.id, new Date());
+          await this.eventPublisher.emitGuardrailTriggered(agent.id, {
+            scope: 'agent_guardrail',
+            code,
+            message,
+            details: { sessionId: session.id },
+          });
+          await this.eventPublisher.emitInstanceStatus(agent.id, {
+            status: 'stopped',
+            reason: code,
+            updatedAt: new Date().toISOString(),
+          });
+          continue;
+        }
+
         const agentConfig: Record<string, unknown> = {
           name: agent.name,
           userId: agent.userId,

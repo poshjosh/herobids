@@ -113,11 +113,6 @@ export const LlmRetryConfigSchema = z.object({
 });
 
 export const LlmScoutConfigSchema = z.object({
-  defaultModels: z.object({
-    anthropic: z.string().default('claude-3-5-haiku-latest'),
-    openai: z.string().default('gpt-4.1-mini'),
-    openrouter: z.string().default('openai/gpt-4.1-mini'),
-  }).default({}),
   /** Max ms the scout can hold without escalating before a forced escalation. Unset = no limit. */
   maxHoldDurationMs: z.number().int().min(0).optional(),
 });

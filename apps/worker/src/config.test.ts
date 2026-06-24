@@ -682,16 +682,6 @@ marking:
       expect(config.llm.retry.defaultRateLimitBackoffMs).toBe(60000);
     });
 
-    it('applies Zod defaults for llm.scout.defaultModels when omitted', () => {
-      writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
-
-      const config = loadConfig(tmpDir);
-
-      expect(config.llm.scout.defaultModels.anthropic).toBe('claude-3-5-haiku-latest');
-      expect(config.llm.scout.defaultModels.openai).toBe('gpt-4.1-mini');
-      expect(config.llm.scout.defaultModels.openrouter).toBe('openai/gpt-4.1-mini');
-    });
-
     it('applies Zod defaults for llm.thinking budgets when omitted', () => {
       writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML);
 
