@@ -30,7 +30,7 @@ import {
 import { buildCapabilityGrants, buildCapabilityPolicyEngine } from './agents/capability-policy.js';
 import { SandboxEnforcer } from './agents/sandbox-enforcer.js';
 import { OUTBOUND_READ_BLOCK_MS, OUTBOUND_READ_TIMEOUT_MS, readOutboundMessages as readAgentOutboundMessages } from './agents/outbound-message-reader.js';
-import { buildIncrementalContext } from './context-diff.js';
+import { buildIncrementalContext, estimateTokens } from './context-diff.js';
 import { resolveAgentCostProfile, type CostPreset } from './cost-profile.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
 import { buildToolResultMetadata } from './tool-result-metadata.js';
@@ -1547,7 +1547,16 @@ function addToHistory(role: 'user' | 'assistant', content: string, options?: { t
   if (normalizedContent.length === 0) return;
 
   conversationHistory.push({ role, content: normalizedContent });
-  // Keep only the most recent messages
+
+  // Token-budget trim (primary): keep estimated total tokens within configured limit.
+  const maxTokens = runtimeState.runtimeDescriptor.budgets.maxHistoryTokens;
+  let totalTokens = conversationHistory.reduce((sum, e) => sum + estimateTokens(e.content), 0);
+  while (conversationHistory.length > 1 && totalTokens > maxTokens) {
+    const removed = conversationHistory.shift()!;
+    totalTokens -= estimateTokens(removed.content);
+  }
+
+  // Message-count trim (secondary hard ceiling).
   while (conversationHistory.length > runtimeState.runtimeDescriptor.budgets.maxHistoryMessages) {
     conversationHistory.shift();
   }
