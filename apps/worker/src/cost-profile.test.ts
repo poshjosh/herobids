@@ -13,7 +13,7 @@ describe('resolveAgentCostProfile', () => {
 
     expect(profile.lightModel).toBe('gpt-4.1-mini');
     expect(profile.heavyModel).toBe('gpt-4.1-mini');
-    expect(profile.tickIntervalMs).toBe(1_800_000);
+    expect(profile.tickIntervalMs).toBe(3_600_000);
     expect(profile.enabledGates.adaptiveInterval).toBe(true);
   });
 
@@ -109,7 +109,7 @@ describe('resolveAgentCostProfile', () => {
       baseTickIntervalMs: 900_000,
     });
 
-    expect(profile.tickIntervalMs).toBe(900_000);
+    expect(profile.tickIntervalMs).toBe(1_800_000);
   });
 
   it('falls back to baseTickIntervalMs when neither preset nor explicit interval is set', () => {

@@ -89,7 +89,9 @@ export async function createAgent(
   // (unique to the skill preset select — other selects use different option values).
   const presetSelect = page.locator('select:has(option[value="personal-assistant"])');
 
-  if ((options.skillIds ?? []).length > 0) {
+  const needsCustomPreset = (options.skillIds ?? []).length > 0 || options.preset === 'general';
+
+  if (needsCustomPreset) {
     // Switch to Custom so individual skill checkboxes are rendered
     await presetSelect.selectOption('custom');
   } else if (options.preset) {
@@ -102,23 +104,40 @@ export async function createAgent(
     const presetValue = presetValueMap[options.preset];
     if (presetValue) {
       await presetSelect.selectOption(presetValue);
+    }
+  }
 
-      // When mapping to custom with no specific skillIds target, uncheck any
-      // skills that were pre-selected by the previous preset (e.g. trading).
-      if (presetValue === 'custom') {
-        const allCheckboxes = page.getByRole('checkbox');
-        const count = await allCheckboxes.count();
-        for (let i = 0; i < count; i++) {
-          const cb = allCheckboxes.nth(i);
-          if (await cb.isChecked()) {
-            await cb.uncheck();
-          }
-        }
+  // Expand the Skills accordion section so checkboxes become visible.
+  // The AdvancedSettingsSection wraps each section in a <details> element;
+  // only the first non-empty section is open by default, and Skills is
+  // typically the second section (after AI Configuration).
+  if (needsCustomPreset) {
+    await expandSkillsAccordion(page);
+  }
+
+  if (needsCustomPreset && (options.skillIds ?? []).length === 0) {
+    // Uncheck any skills that were pre-selected by the previous preset (e.g. trading).
+    const allCheckboxes = page.getByRole('checkbox');
+    const count = await allCheckboxes.count();
+    for (let i = 0; i < count; i++) {
+      const cb = allCheckboxes.nth(i);
+      if (await cb.isChecked()) {
+        await cb.uncheck();
       }
     }
   }
 
   if ((options.skillIds ?? []).length > 0) {
+    // Uncheck any pre-selected skills first so only the requested ones remain.
+    const allCheckboxes = page.getByRole('checkbox');
+    const count = await allCheckboxes.count();
+    for (let i = 0; i < count; i++) {
+      const cb = allCheckboxes.nth(i);
+      if (await cb.isChecked()) {
+        await cb.uncheck();
+      }
+    }
+
     const token = await getAuthToken(page);
     const response = await page.request.get('/api/skills', {
       headers: { Authorization: `Bearer ${token}` },
@@ -141,7 +160,10 @@ export async function createAgent(
 
   await page.getByRole('button', { name: /review/i }).click();
 
-  await page.getByRole('button', { name: /^Create AI agent$/i }).last().click();
+  // The review-step "Create AI agent" button may be overlapped by residual
+  // layout from the tall intent form. Use force:true to bypass pointer-event
+  // interception checks from the modal overlay.
+  await page.getByRole('button', { name: /^Create AI agent$/i }).last().click({ force: true });
 
   await page.waitForURL(/\/(agents)\/[^/?#]+$/, { timeout: 15_000 });
 
@@ -151,6 +173,26 @@ export async function createAgent(
   }
 
   return match[1];
+}
+
+/**
+ * Expand the "Skills" accordion section inside the Advanced Settings area.
+ * The accordion uses <details> elements; only the first non-empty section is
+ * open by default. Skills is typically the second section and starts collapsed.
+ */
+async function expandSkillsAccordion(page: Page): Promise<void> {
+  const skillsSummary = page.locator('details summary').filter({ hasText: 'Skills' });
+  const detailsCount = await skillsSummary.count();
+  if (detailsCount === 0) return; // Skills section not rendered
+
+  // Check if already open (it would be if it's the first non-empty section)
+  const detailsEl = page.locator('details').filter({ hasText: 'Skills' }).first();
+  const isOpen = await detailsEl.evaluate((el) => el.hasAttribute('open'));
+  if (!isOpen) {
+    await skillsSummary.first().click();
+    // Wait for the accordion animation/content to render
+    await page.waitForTimeout(300);
+  }
 }
 
 /** Open the agent detail page directly. */

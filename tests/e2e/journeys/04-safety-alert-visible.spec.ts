@@ -18,7 +18,7 @@ test.describe('Journey 4: Runtime health card visible after start', () => {
     const agentId = await createAgent(
       page,
       'Monitor things and show runtime health.',
-      { skillIds: [] },
+      { preset: 'general' },
     );
 
     // Start agent via API — creates a session record, transitions status to 'starting'.

@@ -1,6 +1,6 @@
-import type { TechnicalConfigFormState } from './technical-config-helpers.js';
+import type { TechnicalConfigFormState, TechnicalPresetId } from './technical-types.js';
 
-export type TechnicalPresetId = 'momentum-breakout' | 'mean-reversion' | 'conservative' | 'custom';
+export type { TechnicalPresetId } from './technical-types.js';
 
 export interface TechnicalPreset {
   id: TechnicalPresetId;

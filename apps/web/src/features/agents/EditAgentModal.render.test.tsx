@@ -122,7 +122,7 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
     expect(html).toContain(messages['agents.controls.capital.help']);
-    expect(html).toContain('Expected cadence: every 6 min');
+    expect(html).toContain('Expected cadence: every 6h');
     expect(html).toContain('Estimated daily LLM spend: ~$0.50');
     expect(html).toContain('value="1500"');
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);

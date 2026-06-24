@@ -55,6 +55,8 @@ import { execSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createDatabase, closeDatabase, users } from '@herobids/db';
+import { eq } from 'drizzle-orm';
 import {
   getToolResultPayload,
   selectListPositionsResult,
@@ -72,6 +74,9 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const API_BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
 const TEST_EMAIL = process.env['TEST_EMAIL'] ?? 'trade-test@local.test';
 const TEST_PASSWORD = process.env['TEST_PASSWORD'] ?? 'TradeTest123!';
+const ADMIN_EMAIL = process.env['ADMIN_EMAIL'] ?? 'admin@herobids.local';
+const ADMIN_PASSWORD = process.env['ADMIN_PASSWORD'] ?? 'AdminTest123!';
+const DATABASE_URL = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
 const VENUE = process.env['VENUE'] ?? 'hyperliquid';
 const EXECUTION_MODE = process.env['EXECUTION_MODE'] ?? 'paper';
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '60000', 10);
@@ -242,24 +247,66 @@ async function ensureStack(): Promise<void> {
 // Phase 2: Setup
 // ---------------------------------------------------------------------------
 
+/**
+ * Promote a user to admin via direct DB connection.
+ * Used when EXECUTION_MODE=shadow and the admin user was just registered
+ * (registration always creates non-admin users).
+ */
+async function promoteToAdmin(email: string): Promise<void> {
+  const db = createDatabase(DATABASE_URL);
+  try {
+    const result = await db
+      .update(users)
+      .set({ isAdmin: true, updatedAt: new Date() })
+      .where(eq(users.email, email.toLowerCase().trim()))
+      .returning({ id: users.id });
+    if (result.length > 0) {
+      ok(`User ${email} promoted to admin (id=${result[0]!.id})`);
+    } else {
+      warn(`Could not promote ${email} to admin — user not found in DB`);
+    }
+  } finally {
+    await closeDatabase(db);
+  }
+}
+
 async function authenticate(): Promise<string> {
+  // When running in shadow mode, use admin credentials.
+  // Shadow mode is restricted to admin users by the API.
+  const email = EXECUTION_MODE === 'shadow' ? ADMIN_EMAIL : TEST_EMAIL;
+  const password = EXECUTION_MODE === 'shadow' ? ADMIN_PASSWORD : TEST_PASSWORD;
+
   // Try login first (idempotent across multiple test runs)
   const loginRes = await apiRequest<{ token?: string; error?: string }>(
     'POST', '/auth/login',
-    { body: { email: TEST_EMAIL, password: TEST_PASSWORD } },
+    { body: { email, password } },
   );
   if (loginRes.status === 200 && loginRes.body.token) {
-    ok(`Logged in as ${TEST_EMAIL}`);
+    ok(`Logged in as ${email}`);
+
+    // Shadow mode: ensure the user is still admin (may have been demoted or
+    // never promoted if seed-admin was skipped).
+    if (EXECUTION_MODE === 'shadow') {
+      await promoteToAdmin(email);
+    }
+
     return loginRes.body.token;
   }
 
   // Register a new account
   const registerRes = await apiRequest<{ token?: string; error?: string }>(
     'POST', '/auth/register',
-    { body: { email: TEST_EMAIL, password: TEST_PASSWORD, displayName: 'Trade Test' } },
+    { body: { email, password, displayName: EXECUTION_MODE === 'shadow' ? 'Admin' : 'Trade Test' } },
   );
   if (registerRes.status === 201 && registerRes.body.token) {
-    ok(`Registered and logged in as ${TEST_EMAIL}`);
+    ok(`Registered and logged in as ${email}`);
+
+    // Shadow mode: newly registered users are NOT admin by default.
+    // Promote via direct DB so the next API call sees isAdmin=true.
+    if (EXECUTION_MODE === 'shadow') {
+      await promoteToAdmin(email);
+    }
+
     return registerRes.body.token;
   }
 

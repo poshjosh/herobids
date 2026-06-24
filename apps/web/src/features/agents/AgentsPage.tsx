@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, type Skill, type TradingBindingSummary } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, formatCapabilityFamily, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -198,6 +198,14 @@ function CreateAgentFlow({
     queryKey: ['ai', 'available-models'],
     queryFn: () => aiApi.availableModels(),
   });
+  const tradingBindingsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'bindings'],
+    queryFn: () => capabilitiesApi.tradingBindings(),
+  });
+  const riskDefaultsQuery = useQuery({
+    queryKey: ['agents', 'risk-defaults'],
+    queryFn: () => agentsApi.riskDefaults(),
+  });
 
   useEffect(() => {
     if (modelTouched) {
@@ -290,17 +298,9 @@ function CreateAgentFlow({
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
   const showTechnical = intent.capabilityMode === 'technical' || intent.capabilityMode === 'both';
   const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
-  const tradingBindingsQuery = useQuery({
-    queryKey: ['capabilities', 'trading', 'bindings'],
-    queryFn: () => capabilitiesApi.tradingBindings(),
-  });
   const availableTradingBindings = (tradingBindingsQuery.data?.bindings ?? []).filter(
     (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
   );
-  const riskDefaultsQuery = useQuery({
-    queryKey: ['agents', 'risk-defaults'],
-    queryFn: () => agentsApi.riskDefaults(),
-  });
   const selectedTradingBinding = availableTradingBindings.find((binding) => binding.bindingId === intent.tradingBindingId) ?? null;
 
   const mutation = useMutation({

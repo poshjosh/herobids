@@ -118,11 +118,32 @@ export class AgentStreamConsumer {
           }
         }
       } catch (err) {
-        if (this.running) {
-          logger.error({ err }, 'Error in agent stream consumer read loop');
-          // Back off briefly before retrying
+        if (!this.running) continue;
+
+        // If a stream's consumer group was deleted (e.g. stream key was removed
+        // externally), XREADGROUP fails with NOGROUP for *all* streams in the
+        // batch.  Recreate missing groups so that healthy streams are not
+        // starved by one broken stream.
+        if (err instanceof Error && err.message.includes('NOGROUP')) {
+          for (const streamKey of this.subscribedStreams) {
+            try {
+              await this.redis.xgroup('CREATE', streamKey, this.config.group, '0', 'MKSTREAM');
+              logger.info({ streamKey, group: this.config.group }, 'Recreated missing consumer group');
+            } catch (groupErr: unknown) {
+              // BUSYGROUP is expected if the group already exists — not an error.
+              if (groupErr instanceof Error && !groupErr.message.includes('BUSYGROUP')) {
+                logger.warn({ streamKey, err: groupErr }, 'Failed to recreate consumer group — unsubscribing');
+                this.subscribedStreams.delete(streamKey);
+              }
+            }
+          }
           await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
         }
+
+        logger.error({ err }, 'Error in agent stream consumer read loop');
+        // Back off briefly before retrying
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
   }

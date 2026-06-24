@@ -29,11 +29,11 @@ export interface AgentCostProfile {
 }
 
 /** Preset-derived base tick intervals in milliseconds (mirrors agent-cadence.ts). */
-const PRESET_TICK_INTERVALS: Record<string, number> = {
+const PRESET_TICK_INTERVALS = {
   minimal: 3_600_000,
   standard: 1_800_000,
   premium: 900_000,
-};
+} as const;
 
 // Cost-per-tick estimates by usage tier (from agentCostEstimates config).
 const COST_PER_TICK = { minimal: 0.12, standard: 0.21, premium: 0.31 };

@@ -38,6 +38,26 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
 
     // Select the trading-capable skill — must switch to Custom preset first
     await page.locator('select:has(option[value="personal-assistant"])').selectOption('custom');
+
+    // Expand the Skills accordion section so checkboxes become visible.
+    // The AdvancedSettingsSection only opens the first non-empty section by default.
+    const skillsSummary = page.locator('details summary').filter({ hasText: 'Skills' });
+    const skillsDetails = page.locator('details').filter({ hasText: 'Skills' }).first();
+    if (await skillsDetails.evaluate((el) => !el.hasAttribute('open'))) {
+      await skillsSummary.first().click();
+      await page.waitForTimeout(300);
+    }
+
+    // Uncheck pre-selected skills so only the requested one remains.
+    const allCheckboxes = page.getByRole('checkbox');
+    const cbCount = await allCheckboxes.count();
+    for (let i = 0; i < cbCount; i++) {
+      const cb = allCheckboxes.nth(i);
+      if (await cb.isChecked()) {
+        await cb.uncheck();
+      }
+    }
+
     await page.getByRole('checkbox', { name: botSkill.name }).check();
 
     // The trading section appears and shows the no-bindings state

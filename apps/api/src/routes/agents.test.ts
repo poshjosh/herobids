@@ -1345,6 +1345,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
+      costPerTickEstimates: { minimal: 0.12, standard: 0.21, premium: 0.31 },
       dailyLossLimitDefaultRatio: 0.05,
       maxOpenPositions: 10,
       maxPositionSizePct: 100,

@@ -29,6 +29,13 @@
 #   TEST_PASSWORD         Password (≥ 8 characters)
 #                         Default: TradeTest123!
 #
+#   ADMIN_EMAIL           Admin user email (required when EXECUTION_MODE=shadow)
+#                         Default: admin@herobids.local
+#                         The TS script auto-promotes this user to admin via DB
+#                         on first run if they don't already have is_admin=true.
+#   ADMIN_PASSWORD        Admin password (≥ 8 characters)
+#                         Default: AdminTest123!
+#
 #   VENUE                 hyperliquid (default) | bybit | 1inch
 #
 #   Hyperliquid secrets   (required when VENUE=hyperliquid)
@@ -115,6 +122,10 @@ _PRE_EXECUTION_MODE_SET="${EXECUTION_MODE+1}"
 _PRE_EXECUTION_MODE_VAL="${EXECUTION_MODE:-}"
 _PRE_VENUE_SET="${VENUE+1}"
 _PRE_VENUE_VAL="${VENUE:-}"
+_PRE_ADMIN_EMAIL_SET="${ADMIN_EMAIL+1}"
+_PRE_ADMIN_EMAIL_VAL="${ADMIN_EMAIL:-}"
+_PRE_ADMIN_PASSWORD_SET="${ADMIN_PASSWORD+1}"
+_PRE_ADMIN_PASSWORD_VAL="${ADMIN_PASSWORD:-}"
 
 if [[ -f "$ENV_FILE" ]]; then
   log "Loading env from $ENV_FILE"
@@ -134,11 +145,15 @@ fi
 [[ "$_PRE_SKIP_TEARDOWN_SET"       == "1" ]] && export SKIP_TEARDOWN="$_PRE_SKIP_TEARDOWN_VAL"
 [[ "$_PRE_EXECUTION_MODE_SET"      == "1" ]] && export EXECUTION_MODE="$_PRE_EXECUTION_MODE_VAL"
 [[ "$_PRE_VENUE_SET"               == "1" ]] && export VENUE="$_PRE_VENUE_VAL"
+[[ "$_PRE_ADMIN_EMAIL_SET"         == "1" ]] && export ADMIN_EMAIL="$_PRE_ADMIN_EMAIL_VAL"
+[[ "$_PRE_ADMIN_PASSWORD_SET"      == "1" ]] && export ADMIN_PASSWORD="$_PRE_ADMIN_PASSWORD_VAL"
 unset _PRE_DOCKER_COMPOSE_UP_SET _PRE_DOCKER_COMPOSE_UP_VAL \
       _PRE_DOCKER_COMPOSE_DOWN_SET _PRE_DOCKER_COMPOSE_DOWN_VAL \
       _PRE_SKIP_TEARDOWN_SET _PRE_SKIP_TEARDOWN_VAL \
       _PRE_EXECUTION_MODE_SET _PRE_EXECUTION_MODE_VAL \
-      _PRE_VENUE_SET _PRE_VENUE_VAL
+      _PRE_VENUE_SET _PRE_VENUE_VAL \
+      _PRE_ADMIN_EMAIL_SET _PRE_ADMIN_EMAIL_VAL \
+      _PRE_ADMIN_PASSWORD_SET _PRE_ADMIN_PASSWORD_VAL
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -147,6 +162,8 @@ unset _PRE_DOCKER_COMPOSE_UP_SET _PRE_DOCKER_COMPOSE_UP_VAL \
 : "${API_BASE_URL:=http://localhost:3000}"
 : "${TEST_EMAIL:=trade-test@local.test}"
 : "${TEST_PASSWORD:=TradeTest123!}"
+: "${ADMIN_EMAIL:=admin@herobids.local}"
+: "${ADMIN_PASSWORD:=AdminTest123!}"
 : "${VENUE:=hyperliquid}"
 : "${EXECUTION_MODE:=paper}"
 : "${TICK_INTERVAL_MS:=60000}"
@@ -154,6 +171,24 @@ unset _PRE_DOCKER_COMPOSE_UP_SET _PRE_DOCKER_COMPOSE_UP_VAL \
 : "${DOCKER_COMPOSE_UP:=0}"
 : "${DOCKER_COMPOSE_DOWN:=0}"
 : "${SKIP_TEARDOWN:=0}"
+
+# ---------------------------------------------------------------------------
+# Validate admin credentials when using shadow mode
+# ---------------------------------------------------------------------------
+
+if [[ "${EXECUTION_MODE}" == "shadow" ]]; then
+  if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
+    die "EXECUTION_MODE=shadow requires ADMIN_EMAIL and ADMIN_PASSWORD to be set. Add them to ${ENV_FILE} or export them in the shell."
+  fi
+  ok "Admin credentials present for shadow mode"
+fi
+
+# ---------------------------------------------------------------------------
+# Export DATABASE_URL for the TS script (used to promote admin user if needed)
+# ---------------------------------------------------------------------------
+
+: "${DATABASE_URL:=postgres://herobids:herobids@localhost:5432/herobids}"
+export DATABASE_URL
 
 # ---------------------------------------------------------------------------
 # Validate required secrets per venue
