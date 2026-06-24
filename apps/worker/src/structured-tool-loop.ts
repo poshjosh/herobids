@@ -41,6 +41,10 @@ export interface StructuredToolLoopOptions {
         toolChoice?: LlmRequest['toolChoice'];
       }
     | undefined;
+  /** After this many retention turns, truncate older tool results to maxStaleChars. Omit to disable. */
+  toolResultFullRetentionTurns?: number;
+  /** Max chars to keep in a stale tool result (appends '...[truncated]'). */
+  toolResultMaxStaleChars?: number;
 }
 
 export interface StructuredToolLoopSuccess {
@@ -66,6 +70,18 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
   let turnsUsed = 0;
 
   for (let turnIndex = 0; turnIndex < options.maxTurns; turnIndex++) {
+    // Truncate tool results from turns older than retentionTurns
+    if (options.toolResultFullRetentionTurns !== undefined && options.toolResultMaxStaleChars !== undefined) {
+      for (const msg of messages) {
+        if (msg.role === 'tool' && msg.addedAtTurn !== undefined) {
+          const age = turnIndex - msg.addedAtTurn;
+          if (age >= options.toolResultFullRetentionTurns && msg.content.length > options.toolResultMaxStaleChars) {
+            msg.content = msg.content.slice(0, options.toolResultMaxStaleChars) + '...[truncated]';
+          }
+        }
+      }
+    }
+
     let turnToolChoice = defaultToolChoice;
     if (options.onBeforeTurn) {
       const hint = options.onBeforeTurn({ turnIndex, turnsRemaining: options.maxTurns - turnIndex });
@@ -146,6 +162,7 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         isError: toolResult === null,
+        addedAtTurn: turnIndex,
       });
     }
   }

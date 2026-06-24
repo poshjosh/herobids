@@ -2165,6 +2165,8 @@ async function runTick(): Promise<void> {
           thinking: 'none',
         },
         maxTurns: scoutLoopConfig.maxTurns,
+        toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
+        toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
         initialMessages: [
           { role: 'system', content: scoutSystemPrompt },
           { role: 'user', content: userContext },
@@ -2361,6 +2363,8 @@ async function runTick(): Promise<void> {
         thinking: judgeThinking.thinking,
       },
       maxTurns: judgeLoopConfig.maxTurns,
+      toolResultFullRetentionTurns: runtimeState.runtimeDescriptor.budgets.toolResultFullRetentionTurns,
+      toolResultMaxStaleChars: runtimeState.runtimeDescriptor.budgets.toolResultMaxStaleChars,
       initialMessages: messages,
       tools: judgeToolDefinitions,
       retryPolicy: agentRuntimePolicy.llm.retry,

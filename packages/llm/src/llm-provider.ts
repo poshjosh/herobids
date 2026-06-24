@@ -34,7 +34,7 @@ export interface LlmToolCall {
 export type LlmMessage =
   | { role: 'system' | 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: LlmToolCall[] }
-  | { role: 'tool'; content: string; toolCallId: string; toolName?: string; isError?: boolean };
+  | { role: 'tool'; content: string; toolCallId: string; toolName?: string; isError?: boolean; addedAtTurn?: number };
 
 export type LlmToolChoice = 'auto' | 'none' | 'required';
 
