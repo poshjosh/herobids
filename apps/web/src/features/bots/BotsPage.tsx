@@ -168,7 +168,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         }
       }
       if (!form.tradingBindingId) {
-        throw new Error('Select a trading binding before creating a bot');
+        throw new Error('Select a platform link before creating a bot');
       }
       return botsApi.create({
         tradingBindingId: form.tradingBindingId,
@@ -185,15 +185,15 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   return (
     <Modal title="Create Bot" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {/* Trading binding */}
+        {/* Platform link */}
         <div>
-          <FieldLabel>Trading binding</FieldLabel>
+          <FieldLabel>Platform link</FieldLabel>
           <select
             value={form.tradingBindingId}
             onChange={(e) => setForm((s) => ({ ...s, tradingBindingId: e.target.value }))}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            <option value="">— Select trading binding —</option>
+            <option value="">— Select platform link —</option>
             {tradingBindings.map((b) => (
               <option key={b.bindingId} value={b.bindingId}>{b.label} ({b.provider})</option>
             ))}

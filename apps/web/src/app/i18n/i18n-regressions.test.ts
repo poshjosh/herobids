@@ -117,7 +117,6 @@ describe('setup flow copy changes', () => {
       'aiModels.economy.label',
       'aiModels.premium.label',
       'agents.create.models.title',
-      'agents.create.models.description',
       'agents.create.tradingControls.title',
       'agents.create.telegramChatId',
       'agents.review.models',

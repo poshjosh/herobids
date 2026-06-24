@@ -334,10 +334,14 @@ if (!resolvedProvider || !resolvedHeavyModel || !resolvedLightModel) {
   );
   process.exit(1);
 }
+// TypeScript cannot narrow through process.exit — assert non-null after the guard above.
+const provider: string = resolvedProvider;
+const heavyModel: string = resolvedHeavyModel;
+const lightModel: string = resolvedLightModel;
 const costProfile = resolveAgentCostProfile({
-  provider: resolvedProvider,
-  heavyModel: resolvedHeavyModel,
-  lightModel: resolvedLightModel,
+  provider,
+  heavyModel,
+  lightModel,
   costPreset: agentConfig.costPreset,
   dailyBudgetUsd: agentConfig.dailySpendBudgetUsd,
   baseTickIntervalMs: TICK_INTERVAL_MS,
@@ -346,7 +350,7 @@ const costProfile = resolveAgentCostProfile({
 // When the agent's resolved provider differs from the operator's default provider,
 // don't inherit the operator-configured baseUrl (e.g. Ollama's localhost URL) —
 // let callLlmProvider resolve it from the provider name instead.
-const resolvedBaseUrl = resolvedProvider !== LLM_PROVIDER ? undefined : LLM_BASE_URL;
+const resolvedBaseUrl = provider !== LLM_PROVIDER ? undefined : LLM_BASE_URL;
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -1942,7 +1946,7 @@ async function runTick(): Promise<void> {
         const evalResult = await runHybridEvaluator({
           state: runtimeState,
           llmConfig: {
-            provider: resolvedProvider,
+            provider: provider,
             model: costProfile.heavyModel,
             maxTokens: LLM_MAX_TOKENS,
             timeoutMs: LLM_TIMEOUT_MS,
@@ -2117,7 +2121,7 @@ async function runTick(): Promise<void> {
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
         tickId,
         phase: 'scout',
-        model: resolvedLightModel,
+        model: lightModel,
         maxTurns: scoutLoopConfig.maxTurns,
       });
 
@@ -2128,7 +2132,7 @@ async function runTick(): Promise<void> {
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
           tickId,
           phase: 'scout',
-          model: resolvedLightModel,
+          model: lightModel,
           maxTurns: 0,
         });
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
@@ -2156,8 +2160,8 @@ async function runTick(): Promise<void> {
 
       const scoutLoopResult = await runStructuredToolLoop({
         providerConfig: {
-          provider: resolvedProvider,
-          model: resolvedLightModel,
+          provider: provider,
+          model: lightModel,
           maxTokens: scoutLoopConfig.maxTokens,
           timeoutMs: LLM_TIMEOUT_MS,
           baseUrl: resolvedBaseUrl,
@@ -2209,7 +2213,7 @@ async function runTick(): Promise<void> {
           recordSessionCost(runtimeState, {
             tokensUsed: result.data.tokensUsed,
             thinkingTokens: result.data.thinkingTokens,
-            costUsd: estimateLlmCostUsd(resolvedLightModel, result.data.tokensUsed),
+            costUsd: estimateLlmCostUsd(lightModel, result.data.tokensUsed),
           });
           usageBillingService?.recordLlmUsage({
             provider: result.data.provider,
@@ -2243,7 +2247,7 @@ async function runTick(): Promise<void> {
       emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_COMPLETED, {
         tickId,
         phase: 'scout',
-        model: resolvedLightModel,
+        model: lightModel,
         turnsUsed: scoutLoopResult.ok ? scoutLoopResult.turnsUsed : 0,
         finishReason: !scoutLoopResult.ok ? 'error' : scoutLoopResult.terminatedByLimit ? 'turn_limit' : 'stop',
         errorMessage: !scoutLoopResult.ok ? scoutLoopResult.error.message : undefined,
@@ -2353,7 +2357,7 @@ async function runTick(): Promise<void> {
 
     const judgeLoopResult = await runStructuredToolLoop({
       providerConfig: {
-        provider: resolvedProvider,
+        provider: provider,
         model: costProfile.heavyModel,
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,
@@ -2465,9 +2469,9 @@ async function main(): Promise<void> {
     {
       agentId: AGENT_ID,
       sessionId: SESSION_ID,
-      provider: resolvedProvider,
-      lightModel: resolvedLightModel,
-      heavyModel: resolvedHeavyModel,
+      provider: provider,
+      lightModel: lightModel,
+      heavyModel: heavyModel,
       skillIds: runtimeDescriptor.resolvedSkills.map((skill) => skill.id).filter((id) => id !== 'base'),
     },
     'Agent runtime starting',

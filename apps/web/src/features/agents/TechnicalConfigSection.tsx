@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { TECHNICAL_PRESETS } from './technical-presets.js';
@@ -15,9 +14,6 @@ interface TechnicalConfigSectionProps {
 
 export function TechnicalConfigSection({ value, onChange, showErrors, onClearFieldError }: TechnicalConfigSectionProps) {
   const intl = useIntl();
-  const [showScanSettings, setShowScanSettings] = useState(false);
-  const [showIndicators, setShowIndicators] = useState(true);
-  const [showConfidence, setShowConfidence] = useState(false);
 
   const set = (patch: Partial<TechnicalConfigFormState>) => onChange({ ...value, ...patch });
   const setFilters = (patch: Partial<TechnicalConfigFormState['filters']>) =>
@@ -39,28 +35,12 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
     textAlign: 'left' as const,
   });
 
-  const sectionHeader = (label: string, open: boolean, toggle: () => void): React.ReactElement => (
-    <button
-      type="button"
-      onClick={toggle}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        width: '100%',
-        background: 'none',
-        border: 'none',
-        padding: '8px 0',
-        cursor: 'pointer',
-        fontSize: '13px',
-        fontWeight: '600',
-        color: 'var(--color-text-primary)',
-      }}
-    >
-      <span>{label}</span>
-      <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{open ? '▲' : '▼'}</span>
-    </button>
-  );
+  const sectionTitleStyle: React.CSSProperties = {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: 'var(--color-text-primary)',
+    padding: '8px 0',
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -188,95 +168,93 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
         )}
       </div>
 
-      {/* Scan settings — collapsible */}
-      <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '0 12px' }}>
-        {sectionHeader(intl.formatMessage({ id: 'agents.technical.scan.title' }), showScanSettings, () => setShowScanSettings((v) => !v))}
-        {showScanSettings && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '12px' }}>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1 }}>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.interval' })}</FieldLabel>
-                <input
-                  style={inputStyle}
-                  type="number"
-                  min="1"
-                  value={value.scanIntervalMins}
-                  onChange={(e) => set({ scanIntervalMins: e.target.value })}
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.batchSize' })}</FieldLabel>
-                <input
-                  style={inputStyle}
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={value.scanBatchSize}
-                  onChange={(e) => set({ scanBatchSize: e.target.value })}
-                />
-              </div>
+      {/* Scan settings */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={sectionTitleStyle}>
+          {intl.formatMessage({ id: 'agents.technical.scan.title' })}
+        </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1 }}>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.interval' })}</FieldLabel>
+              <input
+                style={inputStyle}
+                type="number"
+                min="1"
+                value={value.scanIntervalMins}
+                onChange={(e) => set({ scanIntervalMins: e.target.value })}
+              />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1 }}>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })}</FieldLabel>
-                <select
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                  value={value.candles.interval}
-                  onChange={(e) => set({ candles: { ...value.candles, interval: e.target.value as TechnicalConfigFormState['candles']['interval'] } })}
-                >
-                  <option value="5m">5m</option>
-                  <option value="15m">15m</option>
-                  <option value="1H">1H</option>
-                  <option value="4H">4H</option>
-                  <option value="1D">1D</option>
-                </select>
-              </div>
-              <div style={{ flex: 1 }}>
-                <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.candleLimit' })}</FieldLabel>
-                <input
-                  style={inputStyle}
-                  type="number"
-                  min="20"
-                  max="500"
-                  value={value.candles.limit}
-                  onChange={(e) => set({ candles: { ...value.candles, limit: e.target.value } })}
-                />
-              </div>
-            </div>
-            <div>
-              <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}</FieldLabel>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {(['trend-following', 'mean-reverting'] as const).map((bias) => (
-                  <button
-                    key={bias}
-                    type="button"
-                    onClick={() => set({ signalBias: bias })}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '6px',
-                      border: `1px solid ${value.signalBias === bias ? 'var(--color-brand)' : 'var(--color-border)'}`,
-                      background: value.signalBias === bias ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      color: 'var(--color-text-primary)',
-                    }}
-                    aria-pressed={value.signalBias === bias}
-                  >
-                    {intl.formatMessage({ id: `agents.technical.scan.signalBias.${bias === 'trend-following' ? 'trendFollowing' : 'meanReverting'}` })}
-                  </button>
-                ))}
-              </div>
+            <div style={{ flex: 1 }}>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.batchSize' })}</FieldLabel>
+              <input
+                style={inputStyle}
+                type="number"
+                min="1"
+                max="50"
+                value={value.scanBatchSize}
+                onChange={(e) => set({ scanBatchSize: e.target.value })}
+              />
             </div>
           </div>
-        )}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ flex: 1 }}>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })}</FieldLabel>
+              <select
+                style={{ ...inputStyle, cursor: 'pointer' }}
+                value={value.candles.interval}
+                onChange={(e) => set({ candles: { ...value.candles, interval: e.target.value as TechnicalConfigFormState['candles']['interval'] } })}
+              >
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+                <option value="1H">1H</option>
+                <option value="4H">4H</option>
+                <option value="1D">1D</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.candleLimit' })}</FieldLabel>
+              <input
+                style={inputStyle}
+                type="number"
+                min="20"
+                max="500"
+                value={value.candles.limit}
+                onChange={(e) => set({ candles: { ...value.candles, limit: e.target.value } })}
+              />
+            </div>
+          </div>
+          <div>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}</FieldLabel>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {(['trend-following', 'mean-reverting'] as const).map((bias) => (
+                <button
+                  key={bias}
+                  type="button"
+                  onClick={() => set({ signalBias: bias })}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    borderRadius: '6px',
+                    border: `1px solid ${value.signalBias === bias ? 'var(--color-brand)' : 'var(--color-border)'}`,
+                    background: value.signalBias === bias ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    color: 'var(--color-text-primary)',
+                  }}
+                  aria-pressed={value.signalBias === bias}
+                >
+                  {intl.formatMessage({ id: `agents.technical.scan.signalBias.${bias === 'trend-following' ? 'trendFollowing' : 'meanReverting'}` })}
+                </button>
+              ))}
+            </div>
+          </div>
       </div>
 
-      {/* Indicator toggles — collapsible */}
-      <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '0 12px' }}>
-        {sectionHeader(intl.formatMessage({ id: 'agents.technical.indicators.title' }), showIndicators, () => setShowIndicators((v) => !v))}
-        {showIndicators && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '12px' }}>
+      {/* Indicator toggles */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={sectionTitleStyle}>
+          {intl.formatMessage({ id: 'agents.technical.indicators.title' })}
+        </div>
             <IndicatorRow
               slug="rsi"
               label={intl.formatMessage({ id: 'agents.technical.indicators.rsi' })}
@@ -353,15 +331,13 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
                 </label>
               </div>
             </IndicatorRow>
-          </div>
-        )}
       </div>
 
-      {/* Confidence weights — collapsible, pre-collapsed */}
-      <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '0 12px' }}>
-        {sectionHeader(intl.formatMessage({ id: 'agents.technical.confidence.title' }), showConfidence, () => setShowConfidence((v) => !v))}
-        {showConfidence && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '12px' }}>
+      {/* Confidence weights */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={sectionTitleStyle}>
+          {intl.formatMessage({ id: 'agents.technical.confidence.title' })}
+        </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <ParamInput label={intl.formatMessage({ id: 'agents.technical.params.rsiWeight' })} value={value.confidence.rsiWeight} onChange={(v) => setConfidence({ rsiWeight: v })} />
               <ParamInput label={intl.formatMessage({ id: 'agents.technical.params.macdCrossoverWeight' })} value={value.confidence.macdCrossoverWeight} onChange={(v) => setConfidence({ macdCrossoverWeight: v })} />
@@ -376,8 +352,6 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
               <ParamInput label={intl.formatMessage({ id: 'agents.technical.params.minConfidence' })} value={value.confidence.minConfidence} onChange={(v) => setConfidence({ minConfidence: v })} />
               <ParamInput label={intl.formatMessage({ id: 'agents.technical.params.minReasons' })} value={value.confidence.minReasons} type="int" onChange={(v) => setConfidence({ minReasons: v })} />
             </div>
-          </div>
-        )}
       </div>
     </div>
   );

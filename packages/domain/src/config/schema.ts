@@ -113,8 +113,9 @@ export const LlmRetryConfigSchema = z.object({
 });
 
 export const LlmScoutConfigSchema = z.object({
-  /** Max ms the scout can hold without escalating before a forced escalation. Unset = no limit. */
-  maxHoldDurationMs: z.number().int().min(0).optional(),
+  /** Max ms the scout can hold without escalating before a forced escalation. Unset = no limit.
+   *  YAML blank values parse as null — nullish() accepts both null and undefined and normalises to undefined. */
+  maxHoldDurationMs: z.number().int().min(0).nullish().transform((v) => v ?? undefined),
 });
 const AgentRuntimeLlmScoutControlsSchema = z.object({
   maxTurns: z.number().int().min(1).default(10),

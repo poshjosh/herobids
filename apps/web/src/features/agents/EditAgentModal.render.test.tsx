@@ -128,7 +128,7 @@ describe('EditAgentModal rendering', () => {
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
-  it('keeps the trading guardrails visible when capability readiness is already cached', () => {
+  it('exposes the trading setup tab when capability readiness is already cached', () => {
     const html = renderModal({
       capabilityReadiness: {
         family: 'trading',
@@ -141,14 +141,13 @@ describe('EditAgentModal rendering', () => {
       },
     });
 
-    expect(html).toContain(messages['agents.create.tradingControls.title']);
+    // Trading guardrails now live in the (non-default) "Trading Setup" advanced tab.
+    // The static render only emits the active tab's panel, so we assert the tab is present.
+    expect(html).toContain(messages['agents.advanced.tradingSetup']);
     expect(html).toContain(messages['agents.controls.capital']);
-    expect(html).toContain(messages['agents.controls.maxSlippage']);
-    expect(html).toContain(messages['agents.controls.maxOpenPositions']);
-    expect(html).toContain(messages['agents.controls.stopLossPct']);
   });
 
-  it('hides the trading guardrails until capability readiness is loaded when no trading values are set', () => {
+  it('omits the trading setup tab until capability readiness is loaded when no trading values are set', () => {
     const html = renderModal({
       capital: '',
       dailyLossLimit: '',
@@ -159,9 +158,8 @@ describe('EditAgentModal rendering', () => {
       stopLossCooldownMs: null,
     });
 
-    expect(html).not.toContain(messages['agents.create.tradingControls.title']);
+    expect(html).not.toContain(messages['agents.advanced.tradingSetup']);
     expect(html).not.toContain(messages['agents.controls.capital']);
-    expect(html).not.toContain(messages['agents.controls.maxSlippage']);
   });
 
   it('renders only the canonical objective when the stored prompt contains legacy operator context', () => {
@@ -188,8 +186,9 @@ describe('EditAgentModal rendering', () => {
       technical: TECHNICAL_CONFIG,
     });
 
-    expect(html).toContain(messages['agents.technical.title']);
-    expect(html).toContain('value="hyperliquid"');
+    // Technical config now lives in the (non-default) "Strategy" advanced tab,
+    // so the static render exposes the tab label rather than the panel content.
+    expect(html).toContain(messages['agents.advanced.strategy']);
     expect(html).not.toContain(messages['agents.edit.objective']);
     expect(html).not.toContain(messages['agents.create.skills']);
   });

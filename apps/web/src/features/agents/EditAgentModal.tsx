@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { extractAgentObjective, formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
+import { extractAgentObjective, formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -12,6 +12,7 @@ import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSe
 import { formatTickIntervalMinutesForInput, getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
+import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { defaultTechnicalConfigFormState, technicalConfigToFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 
 interface EditAgentModalProps {
@@ -229,18 +230,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           </div>
           )}
 
-          {showTechnical && (
-            <div style={{ marginBottom: '14px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
-              <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
-                {intl.formatMessage({ id: 'agents.technical.title' })}
-              </div>
-              <TechnicalConfigSection
-                value={form.technicalConfig}
-                onChange={(technicalConfig) => setForm((prev) => ({ ...prev, technicalConfig }))}
-              />
-            </div>
-          )}
-
           {showIntelligence && (
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.create.skills' })}</FieldLabel>
@@ -290,140 +279,150 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             </div>
           )}
 
-          {showIntelligence && (
-          <div style={fieldGap}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.selectedSkills' })}</FieldLabel>
-            <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: '1.5' }}>
-              {formatSkillSelection(selectableSkills.filter((skill) => form.skillIds.includes(skill.id)), intl)}
-            </div>
-          </div>
-          )}
-
-          {showIntelligence && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                {intl.formatMessage({ id: 'agents.edit.models.title' })}
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                {modelOverrideEnabled
-                  ? intl.formatMessage({ id: 'agents.edit.models.description' })
-                  : intl.formatMessage({ id: 'agents.edit.models.inherited' }, {
-                    provider: inheritedModelSettings?.provider ?? intl.formatMessage({ id: 'common.default' }),
-                    lightModel: inheritedModelSettings?.lightModel ?? intl.formatMessage({ id: 'common.default' }),
-                    heavyModel: inheritedModelSettings?.heavyModel ?? intl.formatMessage({ id: 'common.default' }),
-                  })}
-              </div>
-            </div>
-
-            {!modelOverrideEnabled ? (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                  {intl.formatMessage({ id: 'agents.edit.models.inheritHelp' })}
-                </div>
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => {
-                    setModelOverrideEnabled(true);
-                    if (inheritedModelSettings) {
-                      setModelForm({
-                        provider: inheritedModelSettings.provider ?? '',
-                        lightModel: inheritedModelSettings.lightModel ?? '',
-                        heavyModel: inheritedModelSettings.heavyModel ?? '',
-                      });
-                    }
-                  }}
-                >
-                  {intl.formatMessage({ id: 'agents.edit.models.override' })}
-                </Button>
-              </div>
-            ) : (
-              <>
-                <ModelSelectionFields
-                  value={modelForm}
-                  providers={availableModelsQuery.data?.providers ?? []}
-                  loading={availableModelsQuery.isLoading}
-                  loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
-                  emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
-                  providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
-                  providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
-                  economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
-                  economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
-                  premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
-                  premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
-                  onChange={setModelForm}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                    {intl.formatMessage({ id: 'agents.edit.models.overrideHelp' })}
-                  </div>
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    onClick={() => {
-                      setModelOverrideEnabled(false);
-                      setModelForm({ provider: '', lightModel: '', heavyModel: '' });
-                    }}
-                  >
-                    {intl.formatMessage({ id: 'agents.edit.models.clearOverride' })}
-                  </Button>
-                </div>
-              </>
-            )}         
-          </div>
-          )}
-
           <div style={fieldGap}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.edit.telegramChatId' })}</FieldLabel>
             <input style={inputStyle} value={form.telegramChatId} onChange={set('telegramChatId')} placeholder={intl.formatMessage({ id: 'common.optional' })} />
           </div>
 
-          <div style={{ marginBottom: '14px' }}>
-            <AgentControlsSection
-              value={{
-                costPreset: form.costPreset,
-                dailySpendBudgetUsd: form.dailySpendBudgetUsd,
-                tickIntervalMins: form.tickIntervalMins,
-                dailyLossLimit: form.dailyLossLimit,
-                maxSlippageBps: form.maxSlippageBps,
-                maxOpenPositions: form.maxOpenPositions,
-                maxPositionSizePct: form.maxPositionSizePct,
-                stopLossPct: form.stopLossPct,
-                stopLossCooldownSecs: form.stopLossCooldownSecs,
-              }}
-              showBotControls={hasBotManagementSkill}
-              tickIntervalError={tickIntervalError}
-              tickIntervalNotice={tickIntervalNotice}
-              effectiveTickIntervalMs={effectiveTickIntervalMs}
-              onChange={(patch) => {
-                if (patch.tickIntervalMins !== undefined) {
-                  setTickIntervalTouched(true);
-                }
-                setForm((prev) => ({ ...prev, ...patch }));
-              }}
-            />
-          </div>
+          <AdvancedSettingsSection
+            aiConfig={
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {showIntelligence && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                        {intl.formatMessage({ id: 'agents.edit.models.title' })}
+                      </div>
+                      <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                        {modelOverrideEnabled
+                          ? intl.formatMessage({ id: 'agents.edit.models.description' })
+                          : intl.formatMessage({ id: 'agents.edit.models.inherited' }, {
+                            provider: inheritedModelSettings?.provider ?? intl.formatMessage({ id: 'common.default' }),
+                            lightModel: inheritedModelSettings?.lightModel ?? intl.formatMessage({ id: 'common.default' }),
+                            heavyModel: inheritedModelSettings?.heavyModel ?? intl.formatMessage({ id: 'common.default' }),
+                          })}
+                      </div>
+                    </div>
 
-          {showTradingControls && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>
-                {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
+                    {!modelOverrideEnabled ? (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                          {intl.formatMessage({ id: 'agents.edit.models.inheritHelp' })}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          onClick={() => {
+                            setModelOverrideEnabled(true);
+                            if (inheritedModelSettings) {
+                              setModelForm({
+                                provider: inheritedModelSettings.provider ?? '',
+                                lightModel: inheritedModelSettings.lightModel ?? '',
+                                heavyModel: inheritedModelSettings.heavyModel ?? '',
+                              });
+                            }
+                          }}
+                        >
+                          {intl.formatMessage({ id: 'agents.edit.models.override' })}
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <ModelSelectionFields
+                          value={modelForm}
+                          providers={availableModelsQuery.data?.providers ?? []}
+                          loading={availableModelsQuery.isLoading}
+                          loadingLabel={intl.formatMessage({ id: 'aiModels.loading' })}
+                          emptyLabel={intl.formatMessage({ id: 'aiModels.empty' })}
+                          providerLabel={intl.formatMessage({ id: 'aiModels.provider.label' })}
+                          providerPlaceholder={intl.formatMessage({ id: 'aiModels.provider.placeholder' })}
+                          economyLabel={intl.formatMessage({ id: 'aiModels.economy.label' })}
+                          economyHelp={intl.formatMessage({ id: 'aiModels.economy.help' })}
+                          premiumLabel={intl.formatMessage({ id: 'aiModels.premium.label' })}
+                          premiumHelp={intl.formatMessage({ id: 'aiModels.premium.help' })}
+                          onChange={setModelForm}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                            {intl.formatMessage({ id: 'agents.edit.models.overrideHelp' })}
+                          </div>
+                          <Button
+                            variant="secondary"
+                            type="button"
+                            onClick={() => {
+                              setModelOverrideEnabled(false);
+                              setModelForm({ provider: '', lightModel: '', heavyModel: '' });
+                            }}
+                          >
+                            {intl.formatMessage({ id: 'agents.edit.models.clearOverride' })}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <AgentControlsSection
+                  value={{
+                    costPreset: form.costPreset,
+                    dailySpendBudgetUsd: form.dailySpendBudgetUsd,
+                    tickIntervalMins: form.tickIntervalMins,
+                    dailyLossLimit: form.dailyLossLimit,
+                    maxSlippageBps: form.maxSlippageBps,
+                    maxOpenPositions: form.maxOpenPositions,
+                    maxPositionSizePct: form.maxPositionSizePct,
+                    stopLossPct: form.stopLossPct,
+                    stopLossCooldownSecs: form.stopLossCooldownSecs,
+                  }}
+                  showBotControls={hasBotManagementSkill}
+                  tickIntervalError={tickIntervalError}
+                  tickIntervalNotice={tickIntervalNotice}
+                  effectiveTickIntervalMs={effectiveTickIntervalMs}
+                  onChange={(patch) => {
+                    if (patch.tickIntervalMins !== undefined) {
+                      setTickIntervalTouched(true);
+                    }
+                    setForm((prev) => ({ ...prev, ...patch }));
+                  }}
+                />
               </div>
-              <TradingGuardrailsFields
-                value={{
-                  dailyLossLimit: form.dailyLossLimit,
-                  maxSlippageBps: form.maxSlippageBps,
-                  maxOpenPositions: form.maxOpenPositions,
-                  maxPositionSizePct: form.maxPositionSizePct,
-                  stopLossPct: form.stopLossPct,
-                  stopLossCooldownSecs: form.stopLossCooldownSecs,
-                }}
-                defaults={riskDefaultsQuery.data ?? null}
-                onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
-              />
-            </div>
-          )}
+            }
+            skills={null}
+            tradingSetup={
+              showTradingControls ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                    {intl.formatMessage({ id: 'agents.create.tradingControls.title' })}
+                  </div>
+                  <TradingGuardrailsFields
+                    value={{
+                      dailyLossLimit: form.dailyLossLimit,
+                      maxSlippageBps: form.maxSlippageBps,
+                      maxOpenPositions: form.maxOpenPositions,
+                      maxPositionSizePct: form.maxPositionSizePct,
+                      stopLossPct: form.stopLossPct,
+                      stopLossCooldownSecs: form.stopLossCooldownSecs,
+                    }}
+                    defaults={riskDefaultsQuery.data ?? null}
+                    onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+                  />
+                </div>
+              ) : null
+            }
+            strategy={
+              showTechnical ? (
+                <div style={{ padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
+                    {intl.formatMessage({ id: 'agents.technical.title' })}
+                  </div>
+                  <TechnicalConfigSection
+                    value={form.technicalConfig}
+                    onChange={(technicalConfig) => setForm((prev) => ({ ...prev, technicalConfig }))}
+                  />
+                </div>
+              ) : null
+            }
+          />
         </form>
       </div>
 

@@ -35,36 +35,11 @@ function renderControls(value: Partial<AgentControlsFormValue> = {}): string {
 }
 
 describe('AgentControlsSection rendering', () => {
-  it('renders preset, spend budget, and plan-derived max bots text', () => {
+  it('renders preset and spend budget', () => {
     const html = renderControls();
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
-    expect(html).toContain(messages['agents.controls.maxBots.planDerived']);
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
-  });
-
-  it('hides plan-derived max bots text when bot controls are disabled', () => {
-    const html = renderToStaticMarkup(
-      <IntlProvider locale="en" messages={messages}>
-        <AgentControlsSection
-          value={{
-            costPreset: 'standard',
-            dailySpendBudgetUsd: '',
-            tickIntervalMins: '',
-            dailyLossLimit: '',
-            maxSlippageBps: '',
-            maxOpenPositions: '',
-            maxPositionSizePct: '',
-            stopLossPct: '',
-            stopLossCooldownSecs: '',
-          }}
-          onChange={() => undefined}
-          showBotControls={false}
-        />
-      </IntlProvider>,
-    );
-
-    expect(html).not.toContain(messages['agents.controls.maxBots.planDerived']);
   });
 
   it('shows preset-derived cadence and daily spend when no explicit tick interval exists', () => {

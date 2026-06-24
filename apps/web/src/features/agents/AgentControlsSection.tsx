@@ -172,11 +172,6 @@ export function AgentControlsSection({
         )}
       </div>
 
-      {showBotControls && (
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-          {intl.formatMessage({ id: 'agents.controls.maxBots.planDerived' })}
-        </div>
-      )}
       {estimatedDailySpend != null && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
           {intl.formatMessage({ id: 'agents.controls.estimatedDailySpend' }, { amount: estimatedDailySpend.toFixed(2) })}
