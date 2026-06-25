@@ -2,7 +2,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
-import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
 import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
@@ -11,6 +11,7 @@ import type { Journal } from '@herobids/engine';
 import type { TradingCyclePersistence } from '@herobids/engine';
 import pino from 'pino';
 import { buildAgentRiskLimits } from '../agent-risk-limits.js';
+import { resolveSwapNetwork } from '../resolve-swap-assets.js';
 
 const logger = pino({ name: 'agent-intake-resolver' });
 
@@ -28,6 +29,8 @@ export interface AgentIntakeResolverDeps {
   markSource: MarkSource;
   idGen: IdGenerator & { planId(): string };
   agentRiskDefaults: AgentRiskDefaultsConfig;
+  swapTokenSafety?: SwapTokenSafetyPort;
+  oneInchConfig?: { tokenSafetyNetwork?: string; chainId?: number };
 }
 
 /**
@@ -65,12 +68,28 @@ export class AgentIntakeResolver {
     // Load persisted runtime risk overrides
     const overrides: AgentRiskOverrides = (agent.riskOverrides as AgentRiskOverrides) ?? {};
 
+    // Resolve swap-specific fields when the binding targets a swap venue.
+    // Paper-mode agents without a running actor still need token safety
+    // wired so the decision intake pipeline applies the swap safety gate.
+    const venueType: 'orderbook' | 'swap' | undefined =
+      binding.venue === 'jupiter' || binding.venue === '1inch' ? 'swap' : 'orderbook';
+    const swapNetwork = venueType === 'swap'
+      ? resolveSwapNetwork(binding.venue, binding, this.deps.oneInchConfig)
+      : undefined;
+    const swapBaseTokenAddress = instrumentId.includes('/')
+      ? instrumentId.split('/')[0]?.split(':').at(-1)
+      : instrumentId;
+
     return {
       actorType: 'agent',
       actorId: agentId,
       venue: binding.venue,
       symbol: instrumentId,
       venueAccountId: binding.venueAccountId,
+      venueType,
+      swapNetwork,
+      swapBaseTokenAddress,
+      swapTokenSafety: venueType === 'swap' ? this.deps.swapTokenSafety : undefined,
       executor,
       journal: this.deps.journal,
       riskLimits: buildAgentRiskLimits({

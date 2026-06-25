@@ -79,6 +79,7 @@ export async function resolveSwapTokenData(
       return {
         ...exactMatch,
         ageResolution: exactMatch.poolCreatedAt ? 'available' : 'indeterminate',
+        isCanonical: true,
         hasRealMarketData: true,
       };
     }

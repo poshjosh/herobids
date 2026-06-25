@@ -19,9 +19,17 @@ function makeToken(overrides: Partial<TokenInfo> & { address: string; network: s
 
 function makeCanonicalResolver(canonicalMap: Record<string, { address: string; symbol: string; name: string }>): CanonicalResolver {
   return {
-    resolve(symbol: string, _network: string): { address: string; symbol: string; name: string } | undefined {
-      const entry = canonicalMap[symbol.toUpperCase()];
-      return entry ? { ...entry, aliases: [], network: 'ethereum' } : undefined;
+    resolve(input: string, _network: string): { address: string; symbol: string; name: string; aliases: string[] } | undefined {
+      // Symbol match
+      const entry = canonicalMap[input.toUpperCase()];
+      if (entry) return { ...entry, aliases: [], network: 'ethereum' };
+      // Address match
+      for (const [, def] of Object.entries(canonicalMap)) {
+        if (def.address.toLowerCase() === input.toLowerCase()) {
+          return { ...def, aliases: [], network: 'ethereum' };
+        }
+      }
+      return undefined;
     },
   };
 }
@@ -33,6 +41,7 @@ function makeDexScreener(results: TokenInfo[]): DexScreenerProvider {
 }
 
 const BASE_NETWORK = 'ethereum';
+const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
 
 describe('resolveSwapTokenData — canonical, symbol, and address resolution', () => {
   it('test-1: canonical lookup succeeds, DexScreener returns no match → synthetic canonical result', async () => {
@@ -90,6 +99,57 @@ describe('resolveSwapTokenData — canonical, symbol, and address resolution', (
     expect(result!.priceUsd).toBe(2500);
     expect(result!.liquidityUsd).toBe(1_000_000);
     expect(result!.ageResolution).toBe('available');
+    expect(result!.isCanonical).toBe(true);
+    expect(result!.hasRealMarketData).toBe(true);
+  });
+
+  it('test-3b: canonical lookup succeeds (symbol), DexScreener match lacks poolCreatedAt → isCanonical set so age gate can skip', async () => {
+    const canonical = makeCanonicalResolver({
+      ETH: { address: '0xeth-weth', symbol: 'WETH', name: 'Wrapped Ether' },
+    });
+    const dexscreener = makeDexScreener([
+      makeToken({
+        address: '0xeth-weth',
+        network: BASE_NETWORK,
+        symbol: 'WETH',
+        name: 'Wrapped Ether',
+        priceUsd: 2500,
+        liquidityUsd: 1_000_000,
+        // poolCreatedAt intentionally omitted — common for large established pools
+      }),
+    ]);
+
+    const result = await resolveSwapTokenData(dexscreener, BASE_NETWORK, 'ETH', canonical);
+
+    expect(result).not.toBeNull();
+    expect(result!.isCanonical).toBe(true);
+    expect(result!.hasRealMarketData).toBe(true);
+    expect(result!.poolCreatedAt).toBeUndefined();
+    expect(result!.ageResolution).toBe('indeterminate');
+  });
+
+  it('test-3c: canonical lookup succeeds (address match), DexScreener returns a match → isCanonical set via address resolution', async () => {
+    const canonical = makeCanonicalResolver({
+      [WETH_ADDRESS]: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether' },
+    });
+    const dexscreener = makeDexScreener([
+      makeToken({
+        address: '0x4200000000000000000000000000000000000006',
+        network: BASE_NETWORK,
+        symbol: 'WETH',
+        name: 'Wrapped Ether',
+        priceUsd: 2500,
+        liquidityUsd: 1_000_000,
+        poolCreatedAt: '2024-01-15T00:00:00.000Z',
+      }),
+    ]);
+
+    const result = await resolveSwapTokenData(dexscreener, BASE_NETWORK, '0x4200000000000000000000000000000000000006', canonical);
+
+    expect(result).not.toBeNull();
+    expect(result!.isCanonical).toBe(true);
+    expect(result!.hasRealMarketData).toBe(true);
+    expect(result!.address).toBe('0x4200000000000000000000000000000000000006');
   });
 
   it('test-4: canonical lookup fails, DexScreener returns a match → DexScreener data', async () => {

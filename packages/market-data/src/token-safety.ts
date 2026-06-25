@@ -50,24 +50,38 @@ export function resolveTokenSafetyPolicyConfig(config: MarketDataConfig): TokenS
 }
 
 export function lookupCanonical(
-  symbol: string,
+  input: string,
   network: string,
   canonicalTokens: Record<string, Record<string, { address: string; name: string; aliases: string[] }>>,
 ): CanonicalTokenDefinition | undefined {
   const networkMap = canonicalTokens[network.toLowerCase()];
   if (!networkMap) return undefined;
 
-  const upperSymbol = symbol.toUpperCase();
+  const upperInput = input.toUpperCase();
 
   // Direct match
-  const entry = networkMap[upperSymbol];
+  const entry = networkMap[upperInput];
   if (entry) {
-    return { symbol: upperSymbol, network: network.toLowerCase(), address: entry.address, name: entry.name, aliases: entry.aliases };
+    return { symbol: upperInput, network: network.toLowerCase(), address: entry.address, name: entry.name, aliases: entry.aliases };
   }
 
   // Alias match
   for (const [sym, def] of Object.entries(networkMap)) {
-    if (def.aliases.some((a) => a.toUpperCase() === upperSymbol)) {
+    if (def.aliases.some((a) => a.toUpperCase() === upperInput)) {
+      return { symbol: sym, network: network.toLowerCase(), address: def.address, name: def.name, aliases: def.aliases };
+    }
+  }
+
+  // Address match — supports callers that pass an on-chain address (e.g.
+  // swapBaseTokenAddress from a trading binding).  EVM addresses (0x…)
+  // are case-insensitive; Solana base58 addresses are case-sensitive.
+  for (const [sym, def] of Object.entries(networkMap)) {
+    const inputIsEvm = input.toLowerCase().startsWith('0x');
+    const defIsEvm = def.address.toLowerCase().startsWith('0x');
+    const addrMatch = (inputIsEvm && defIsEvm)
+      ? def.address.toLowerCase() === input.toLowerCase()
+      : def.address === input;
+    if (addrMatch) {
       return { symbol: sym, network: network.toLowerCase(), address: def.address, name: def.name, aliases: def.aliases };
     }
   }

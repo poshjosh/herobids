@@ -4,6 +4,9 @@
  * the specific asset pair the agent will trade.
  */
 
+import { inferOneInchTokenSafetyNetwork, SUPPORTED_TOKEN_SAFETY_NETWORKS } from '@herobids/domain';
+import type { SupportedTokenSafetyNetwork } from '@herobids/domain';
+
 export interface SwapAssets {
   baseAsset: string;
   quoteAsset: string;
@@ -11,9 +14,63 @@ export interface SwapAssets {
   quoteDecimals: number;
 }
 
-interface BindingLike {
+export interface BindingLike {
   id: string;
   bindingProfile?: Record<string, unknown> | null;
+}
+
+/**
+ * Resolve the token-safety network for a swap venue binding.
+ *
+ * For Jupiter this is always `'solana'`.  For 1inch the network is read from
+ * the binding profile (field `network` or `chainId`) when present, then falls
+ * back to the operator-level 1inch config.  Returns `undefined` for non-swap
+ * venues or when no chain mapping can be determined.
+ */
+export function resolveSwapNetwork(
+  venue: string,
+  binding?: BindingLike,
+  oneInchConfig?: { tokenSafetyNetwork?: string; chainId?: number },
+): SupportedTokenSafetyNetwork | undefined {
+  if (venue === 'jupiter') return 'solana';
+
+  if (venue === '1inch') {
+    // 1. Binding profile — explicit network field
+    const profileNetwork = binding?.bindingProfile?.network;
+    if (typeof profileNetwork === 'string') {
+      const validNetworks: readonly string[] = SUPPORTED_TOKEN_SAFETY_NETWORKS;
+      if (validNetworks.includes(profileNetwork)) {
+        return profileNetwork as SupportedTokenSafetyNetwork;
+      }
+      // Explicit but unrecognised network — fall through to chainId / operator
+      // config rather than trusting an unvalidated database value.
+    }
+
+    // 2. Binding profile — chainId → network mapping
+    const profileChainId = binding?.bindingProfile?.chainId;
+    if (typeof profileChainId === 'number') {
+      const inferred = inferOneInchTokenSafetyNetwork(profileChainId);
+      if (inferred) return inferred;
+      // Explicit chainId that we cannot map — fail closed.
+      // Do NOT fall back to operator config; an unsupported binding
+      // chain must surface as an error, not silently route to Base.
+      return undefined;
+    }
+
+    // 3. Operator config — explicit tokenSafetyNetwork
+    if (oneInchConfig?.tokenSafetyNetwork) {
+      return oneInchConfig.tokenSafetyNetwork as SupportedTokenSafetyNetwork;
+    }
+
+    // 4. Operator config — chainId → network mapping
+    if (oneInchConfig?.chainId != null) {
+      return inferOneInchTokenSafetyNetwork(oneInchConfig.chainId);
+    }
+
+    return undefined;
+  }
+
+  return undefined;
 }
 
 /**

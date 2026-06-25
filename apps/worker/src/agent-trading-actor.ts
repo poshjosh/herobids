@@ -1140,8 +1140,12 @@ export class AgentTradingActor implements ExecutionActor {
 
     const [rawBaseAsset, rawQuoteAsset] = instrumentId.split('/');
     if (!rawBaseAsset || !rawQuoteAsset) {
+      // When only a base token is given (e.g. "ETH" without "/USDC"),
+      // treat it as the swap base token address so token safety always runs.
+      // An undefined rawBaseAsset (empty instrumentId) still passes undefined
+      // to preserve the existing no-op guard downstream.
       return {
-        swapBaseTokenAddress: this.deps.swapBaseTokenAddress,
+        swapBaseTokenAddress: this.deps.swapBaseTokenAddress ?? rawBaseAsset,
       };
     }
 

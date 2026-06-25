@@ -340,6 +340,27 @@ describe('createSwapTokenSafetyAdapter', () => {
         expect(result.error.details?.reasonCodes).toEqual(['token.age_unknown']);
       }
     });
+
+    it('approves canonical token even when poolCreatedAt is unavailable — age gate skipped for operator-vetted tokens', async () => {
+      const adapter = createSwapTokenSafetyAdapter({
+        marketDataConfig: makeMarketDataConfig({ allowOverrides: false, minTokenAgeHours: 24 }),
+        overrideRepo: makeOverrideRepo(),
+        resolveTokenData: vi.fn().mockResolvedValue({
+          ...makeGoodToken(),
+          poolCreatedAt: undefined,
+          ageResolution: 'indeterminate',
+          isCanonical: true,
+          hasRealMarketData: true,
+        }),
+      });
+
+      const result = await adapter.checkSwapTarget(baseRequest);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.overridden).toBe(false);
+      }
+    });
   });
 
   describe('safety evaluation', () => {

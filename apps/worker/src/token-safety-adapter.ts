@@ -18,8 +18,10 @@ import type { TokenSafetyOverrideRepository } from '@herobids/db';
 export interface ResolvedSwapTokenData extends TokenInfo {
   poolCreatedAt?: string;
   ageResolution: 'available' | 'missing' | 'indeterminate';
-  /** True when this data was synthesised from a canonical (operator-whitelisted) token entry,
-   *  not from live DexScreener data. Consumers should treat liquidity/volume as symbolic. */
+  /** True when this token was resolved to an operator-whitelisted canonical entry
+   *  (by symbol, alias, or on-chain address).  May be set on both synthetic fallback
+   *  data and live DexScreener matches.  Consumers should check hasRealMarketData
+   *  before relying on numeric thresholds like liquidityUsd or volume24hUsd. */
   isCanonical?: boolean;
   /** False when the data is synthetic (canonical fallback). Consumers must check this
    *  before relying on numeric thresholds like liquidityUsd or volume24hUsd. */
@@ -101,7 +103,9 @@ export function createSwapTokenSafetyAdapter(deps: TokenSafetyAdapterDeps): Swap
       const allowOverrides = tradeGuard.allowOverrides && request.instanceThresholds?.allowOverrides !== false;
 
       const requiresAgeData = effectivePolicy.minTokenAgeHours > 0 || effectivePolicy.deadPoolMinAgeHours > 0;
-      if (requiresAgeData && !tokenData.poolCreatedAt) {
+      // Skip age gate for canonical tokens — the operator already vetted the
+      // contract address.  The token may still fail on liquidity / volume.
+      if (requiresAgeData && !tokenData.poolCreatedAt && !tokenData.isCanonical) {
         const reasonCodes = ['token.age_unknown'];
         let overrideTicket: SwapTokenSafetyRejection['overrideTicket'] | undefined;
         if (allowOverrides) {

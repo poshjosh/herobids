@@ -205,6 +205,39 @@ describe('lookupCanonical', () => {
     const result = lookupCanonical('SOL', 'ethereum', defaultPolicy.canonicalTokens);
     expect(result).toBeUndefined();
   });
+
+  it('matches by on-chain address — EVM case-insensitive', () => {
+    const tokens = {
+      base: {
+        WETH: { address: '0x4200000000000000000000000000000000000006', name: 'Wrapped Ether', aliases: ['ETH'] },
+      },
+    };
+    const lower = lookupCanonical('0x4200000000000000000000000000000000000006', 'base', tokens);
+    expect(lower).toBeDefined();
+    expect(lower!.symbol).toBe('WETH');
+
+    const upper = lookupCanonical('0x4200000000000000000000000000000000000006'.toUpperCase(), 'base', tokens);
+    expect(upper).toBeDefined();
+    expect(upper!.symbol).toBe('WETH');
+  });
+
+  it('matches by on-chain address — Solana case-sensitive', () => {
+    const result = lookupCanonical(
+      'So11111111111111111111111111111111111111112',
+      'solana',
+      defaultPolicy.canonicalTokens,
+    );
+    expect(result).toBeDefined();
+    expect(result!.symbol).toBe('SOL');
+
+    // A case-different variant must NOT match
+    const wrongCase = lookupCanonical(
+      'so11111111111111111111111111111111111111112',
+      'solana',
+      defaultPolicy.canonicalTokens,
+    );
+    expect(wrongCase).toBeUndefined();
+  });
 });
 
 describe('isKnownCanonicalSymbol', () => {

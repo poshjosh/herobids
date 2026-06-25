@@ -20,12 +20,12 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher } from '@herobid
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, inferOneInchTokenSafetyNetwork, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
-import { resolveSwapAssetsFromBinding } from './resolve-swap-assets.js';
+import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap-assets.js';
 import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 import { buildPublicStreamConnectors, createScopedStreamPoolHandle } from './public-stream-routing.js';
 import { AlertDispatcher } from './alerting/index.js';
@@ -283,6 +283,8 @@ const agentIntakeResolver = new AgentIntakeResolver({
   markSource: oracleMarkSource,
   idGen,
   agentRiskDefaults: appConfig.agentRiskDefaults,
+  swapTokenSafety,
+  oneInchConfig: appConfig.venues['1inch'],
 });
 
 const intakeResolver: DecisionIntakeResolver = {
@@ -528,6 +530,15 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
         }
 
         let actor: AgentTradingActor | undefined;
+
+        // Guard: reject unsupported 1inch chain before actor starts (mirrors bot path)
+        const resolvedSwapNetwork = resolveSwapNetwork(binding.venue, binding, appConfig.venues['1inch']);
+        if (venueType === 'swap' && binding.venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !resolvedSwapNetwork) {
+          throw new CredentialResolutionError(
+            `Unsupported 1inch chain for agent ${agentId} — no token-safety network resolved from binding or config`,
+          );
+        }
+
         actor = new AgentTradingActor({
           agentId,
           executionMode: mode,
@@ -561,9 +572,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           streamConfig: appConfig.streams.private,
           liveRollout: appConfig.liveRollout,
           driftAlertOnly: appConfig.reconciliation.driftAlertOnly,
-          swapNetwork: venueType === 'swap'
-            ? binding.venue === 'jupiter' ? 'solana' : appConfig.venues['1inch']?.tokenSafetyNetwork ?? inferOneInchTokenSafetyNetwork(appConfig.venues['1inch']?.chainId)
-            : undefined,
+          swapNetwork: resolvedSwapNetwork,
           swapBaseTokenAddress: resolvedSwapAssets?.baseAsset,
           swapAssets: resolvedSwapAssets,
           swapTokenSafety: venueType === 'swap' ? swapTokenSafety : undefined,
@@ -1037,12 +1046,7 @@ const runtime = new WorkerRuntime(
       };
     }
 
-    const swapNetwork = venueType !== 'swap'
-      ? undefined
-      : venue === 'jupiter'
-        ? 'solana'
-        : appConfig.venues['1inch']?.tokenSafetyNetwork
-          ?? inferOneInchTokenSafetyNetwork(appConfig.venues['1inch']?.chainId);
+    const swapNetwork = resolveSwapNetwork(venue, undefined, appConfig.venues['1inch']);
 
     if (venueType === 'swap' && venue === '1inch' && appConfig.marketData?.tokenSafety?.enabled && !swapNetwork) {
       throw new CredentialResolutionError(

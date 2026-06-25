@@ -233,6 +233,33 @@ describe('AgentIntakeResolver', () => {
 
       expect(result).toBeUndefined();
     });
+
+    it('wires swap fields for paper-mode 1inch binding', async () => {
+      const { deps, mocks } = makeDeps({
+        swapTokenSafety: { checkSwapTarget: vi.fn() },
+        oneInchConfig: { tokenSafetyNetwork: 'base', chainId: 8453 },
+      });
+      mocks.db.limit.mockResolvedValue([
+        {
+          sourceVenueAccountId: 'va-1inch',
+          provider: '1inch',
+          venueAccountVenue: '1inch',
+          venueAccountId: 'va-1inch',
+          connectionStatus: 'active',
+          bindingProfile: null,
+        },
+      ]);
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'ETH/USDC');
+
+      expect(result).toBeDefined();
+      expect(result!.venueType).toBe('swap');
+      expect(result!.swapNetwork).toBe('base');
+      expect(result!.swapBaseTokenAddress).toBe('ETH');
+      expect(result!.swapTokenSafety).toBe(deps.swapTokenSafety);
+      expect(result!.venue).toBe('1inch');
+    });
   });
 
   describe('getDecisionContext', () => {
