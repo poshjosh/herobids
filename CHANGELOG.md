@@ -7,10 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-## [Unreleased]
+## 0.0.1-2026.06.25-a
 
 ### Added
 
+- Improve agent creation UX
+- Improve bot management UX
 - **LLM token optimization**: three-part optimization to reduce LLM costs and prevent context overflow:
   - **`maxHistoryTokens`**: dual-limit history trimming — token-budget (primary, ~4 chars/token heuristic) replaces message-count-only approach, with message-count as secondary hard ceiling
   - **Stale tool result truncation**: retroactively truncates older tool results in structured tool loops after a configurable retention window (`toolResultFullRetentionTurns`), capped at `toolResultMaxStaleChars` with `...[truncated]` marker
