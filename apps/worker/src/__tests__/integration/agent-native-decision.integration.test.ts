@@ -11,7 +11,7 @@
  * Requires DATABASE_URL and REDIS_URL. Skipped otherwise.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
@@ -475,5 +475,234 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
     // No fills are created — the executor never ran.
     const allFills = await db.select().from(fills).where(eq(fills.venueAccountId, venueAccountId));
     expect(allFills.length).toBe(0);
+  });
+
+  describe('1inch swap path', () => {
+    let swapVenueAccountId: string;
+    let swapConnectionId: string;
+    let swapBindingId: string;
+    let swapGrantId: string;
+    let swapTokenSafety: { checkSwapTarget: ReturnType<typeof vi.fn> };
+    let swapHandler: AgentDecisionHandler;
+
+    beforeEach(async () => {
+      const now = new Date(Date.now() + 1000); // later than parent grant to win recency tie
+
+      // Seed 1inch venue account
+      swapVenueAccountId = crypto.randomUUID();
+      await db.insert(venueAccounts).values({
+        id: swapVenueAccountId,
+        userId,
+        venue: '1inch',
+        label: 'Test 1inch',
+        venueAccountRef: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Seed 1inch connection
+      swapConnectionId = crypto.randomUUID();
+      await db.insert(connections).values({
+        id: swapConnectionId,
+        userId,
+        provider: '1inch',
+        label: 'Test 1inch Connection',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Seed 1inch trading binding with base chain
+      swapBindingId = crypto.randomUUID();
+      await db.insert(tradingBindings).values({
+        id: swapBindingId,
+        userId,
+        connectionId: swapConnectionId,
+        provider: '1inch',
+        label: 'Test 1inch Binding',
+        status: 'active',
+        sourceVenueAccountId: swapVenueAccountId,
+        bindingProfile: { chainId: 8453 },
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Grant 1inch trading capability (more recent than Hyperliquid grant)
+      swapGrantId = crypto.randomUUID();
+      await db.insert(capabilityGrants).values({
+        id: swapGrantId,
+        agentId,
+        bindingId: swapBindingId,
+        capabilityFamily: 'trading',
+        status: 'active',
+        grantedBy: userId,
+        grantedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Mock swap token safety — approves all buys
+      swapTokenSafety = {
+        checkSwapTarget: vi.fn().mockResolvedValue({
+          ok: true,
+          data: {
+            tokenAddress: 'ETH',
+            tokenSymbol: 'ETH',
+            overridden: false,
+          },
+        }),
+      };
+
+      const stubMarkSource = {
+        fetchMark: async (instrument: string) => ({
+          ok: true as const,
+          data: {
+            price: { toString: () => '1600' } as any,
+            source: 'oracle' as const,
+            instrument,
+            timestamp: now.toISOString(),
+          },
+        }),
+      };
+
+      const swapIntakeResolver = new AgentIntakeResolver({
+        db,
+        agentRepo,
+        positionRepo,
+        decisionRepo,
+        planRepo,
+        fillRepo,
+        orderRepo,
+        balanceSnapshotRepo,
+        backtestingRepo,
+        journal,
+        markSource: stubMarkSource as any,
+        idGen,
+        agentRiskDefaults: {
+          maxOpenPositions: 10,
+          maxPositionSizePct: 100,
+          maxPositionSize: 1_000_000,
+          stopLossMaxUnrealizedLossPct: 10,
+          dailyMaxLossPct: 20,
+          stopLossCooldownMs: 300_000,
+          maxOrderNotionalMultiplier: 1,
+        } satisfies AgentRiskDefaultsConfig,
+        swapTokenSafety: swapTokenSafety as any,
+        oneInchConfig: { tokenSafetyNetwork: 'base', chainId: 8453 },
+      });
+
+      const swapIntakeResolverFn: DecisionIntakeResolver = {
+        getIntakeDeps: (instanceId: string, instrumentId?: string) => {
+          if (instrumentId) return swapIntakeResolver.getIntakeDeps(instanceId, instrumentId);
+          return undefined;
+        },
+        getDecisionContext: (instanceId: string, instrumentId?: string) => {
+          if (instrumentId) return swapIntakeResolver.getDecisionContext(instanceId, instrumentId);
+          return undefined;
+        },
+        getPosition: (instanceId: string, instrumentId?: string) => {
+          if (instrumentId) return swapIntakeResolver.getPosition(instanceId, instrumentId);
+          return undefined;
+        },
+      };
+
+      swapHandler = new AgentDecisionHandler(agentRepo as any, swapIntakeResolverFn, eventPublisher as any);
+    });
+
+    it('agent submits a swap buy and token safety gate is consulted', async () => {
+      const decisionId = crypto.randomUUID();
+      const envelope = makeEnvelope();
+      const payload = makePayload({
+        decisionId,
+        instrumentId: 'ETH/USDC',
+        intent: 'go_long',
+        targetSize: '10',
+      });
+
+      await swapHandler.handleDecisionSubmit(envelope, payload);
+
+      // Token safety was called with the correct network and token address
+      expect(swapTokenSafety.checkSwapTarget).toHaveBeenCalledTimes(1);
+      const safetyCall = swapTokenSafety.checkSwapTarget.mock.calls[0][0];
+      expect(safetyCall.venue).toBe('1inch');
+      expect(safetyCall.network).toBe('base');
+      expect(safetyCall.tokenAddress).toBe('ETH');
+      expect(safetyCall.swapSide).toBe('buy');
+
+      // Decision was persisted
+      const [decision] = await db.select().from(decisions).where(eq(decisions.id, decisionId));
+      expect(decision).toBeDefined();
+      expect(decision!.instrumentId).toBe('ETH/USDC');
+      expect(decision!.intent).toBe('go_long');
+      expect(decision!.venueAccountId).toBe(swapVenueAccountId);
+
+      // Execution plan was created
+      const plans = await db.select().from(executionPlans).where(eq(executionPlans.decisionId, decisionId));
+      expect(plans.length).toBe(1);
+      expect(plans[0]!.venue).toBe('1inch');
+      expect(plans[0]!.symbol).toBe('ETH/USDC');
+
+      // Fills were created (paper executor)
+      const allFills = await db.select().from(fills).where(eq(fills.venueAccountId, swapVenueAccountId));
+      expect(allFills.length).toBeGreaterThan(0);
+    });
+
+    it('swap buy is rejected when token safety check fails', async () => {
+      swapTokenSafety.checkSwapTarget.mockResolvedValue({
+        ok: false,
+        error: {
+          code: 'token.safety_rejected',
+          message: 'Token age could not be resolved for ETH on base',
+          retryable: true,
+        },
+      });
+
+      const decisionId = crypto.randomUUID();
+      const envelope = makeEnvelope();
+      const payload = makePayload({
+        decisionId,
+        instrumentId: 'ETH/USDC',
+        intent: 'go_long',
+        targetSize: '10',
+      });
+
+      await swapHandler.handleDecisionSubmit(envelope, payload);
+
+      // Token safety was consulted
+      expect(swapTokenSafety.checkSwapTarget).toHaveBeenCalledTimes(1);
+
+      // Decision IS persisted — it's written in step 1 before the safety gate at step 5b.
+      // The execution plan is created (write-ahead at step 5) then marked failed by the gate.
+      const [decision] = await db.select().from(decisions).where(eq(decisions.id, decisionId));
+      expect(decision).toBeDefined();
+
+      const plans = await db.select().from(executionPlans).where(eq(executionPlans.decisionId, decisionId));
+      expect(plans.length).toBe(1);
+      expect(plans[0]!.status).toBe('failed');
+
+      // No fills — executor never ran
+      const allFills = await db.select().from(fills).where(eq(fills.venueAccountId, swapVenueAccountId));
+      expect(allFills.length).toBe(0);
+    });
+
+    it('sell-only swap bypasses token safety check entirely', async () => {
+      const decisionId = crypto.randomUUID();
+      const envelope = makeEnvelope();
+      const payload = makePayload({
+        decisionId,
+        instrumentId: 'ETH/USDC',
+        intent: 'go_short', // sell path
+        targetSize: '0.001',
+      });
+
+      await swapHandler.handleDecisionSubmit(envelope, payload);
+
+      // Token safety should NOT be called for sells — the adapter bypasses immediately
+      expect(swapTokenSafety.checkSwapTarget).not.toHaveBeenCalled();
+
+      // Decision still executed
+      const [decision] = await db.select().from(decisions).where(eq(decisions.id, decisionId));
+      expect(decision).toBeDefined();
+    });
   });
 });
