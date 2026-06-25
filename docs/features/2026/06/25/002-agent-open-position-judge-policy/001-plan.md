@@ -324,3 +324,10 @@ Frontend:
 - LOW: `as any` cast in invalid policy test — acceptable in test code.
 - LOW: `docker-agent-manager.ts` `.call()` pattern for dynamic log level — stylistic, no behavior issue.
 - LOW: `JSON.parse(...) as AgentConfig` is unchecked cast — pre-existing pattern, incremental improvement via runtime validation.
+
+### Phase 4
+- MEDIUM: PATCH test doesn't verify the response body includes the updated policy field — only checks internal mock state (updateSets).
+- MEDIUM: Missing test for PATCH with invalid policy value (only POST path tested).
+- MEDIUM: Missing test for default value behavior when field is omitted on create.
+- LOW: Misleading payload name 'test-default' in create test — should be 'test-uncovered-or-triggered'.
+- LOW: opaque `agentRows` entry named 'agent-refetch' could use a comment.

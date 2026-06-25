@@ -2052,3 +2052,162 @@ describe('POST /agents/:id/stop', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// openPositionEscalationToJudgePolicy — create, update, and response tests
+// ---------------------------------------------------------------------------
+describe('openPositionEscalationToJudgePolicy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('creates agent with each allowed policy value', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-refetch', status: 'stopped', userId: TEST_USER_ID, modelPolicy: null, executionMode: null }],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    // Test 'never'
+    const resNever = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'test-never', prompt: 'test', openPositionEscalationToJudgePolicy: 'never' },
+    });
+    expect(resNever.statusCode).toBe(201);
+
+    // Test 'uncovered_or_triggered'
+    const resDefault = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'test-default', prompt: 'test', openPositionEscalationToJudgePolicy: 'uncovered_or_triggered' },
+    });
+    expect(resDefault.statusCode).toBe(201);
+
+    // Test 'always'
+    const resAlways = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'test-always', prompt: 'test', openPositionEscalationToJudgePolicy: 'always' },
+    });
+    expect(resAlways.statusCode).toBe(201);
+
+    // Verify the values were persisted in the INSERT
+    const neverInsert = insertedValues.find((v: any) => v.name === 'test-never');
+    expect(neverInsert?.openPositionEscalationToJudgePolicy).toBe('never');
+
+    const defaultInsert = insertedValues.find((v: any) => v.name === 'test-default');
+    expect(defaultInsert?.openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+
+    const alwaysInsert = insertedValues.find((v: any) => v.name === 'test-always');
+    expect(alwaysInsert?.openPositionEscalationToJudgePolicy).toBe('always');
+  });
+
+  it('rejects invalid policy values', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: { name: 'test-invalid-policy', prompt: 'test', openPositionEscalationToJudgePolicy: 'invalid_value' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+
+  it('updates agent policy via PATCH', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        toolPolicy: null,
+        modelPolicy: null,
+        executionMode: null,
+        openPositionEscalationToJudgePolicy: 'always',
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { openPositionEscalationToJudgePolicy: 'never' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Check the updated value was in the SET clause
+    const agentUpdate = updateSets.find((s: any) => s.openPositionEscalationToJudgePolicy !== undefined);
+    expect(agentUpdate?.openPositionEscalationToJudgePolicy).toBe('never');
+  });
+
+  it('includes the policy field in agent detail response', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        name: 'test-agent',
+        prompt: 'test prompt',
+        modelPolicy: null,
+        executionMode: 'paper',
+        pauseState: null,
+        openPositionEscalationToJudgePolicy: 'always',
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().openPositionEscalationToJudgePolicy).toBe('always');
+  });
+
+  it('includes the policy field in agent list response', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        status: 'stopped',
+        userId: TEST_USER_ID,
+        name: 'test-agent',
+        prompt: 'test prompt',
+        modelPolicy: null,
+        executionMode: 'paper',
+        pauseState: null,
+        openPositionEscalationToJudgePolicy: 'never',
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({ method: 'GET', url: '/agents' });
+
+    expect(res.statusCode).toBe(200);
+    const list = res.json();
+    expect(list).toHaveLength(1);
+    expect(list[0].openPositionEscalationToJudgePolicy).toBe('never');
+  });
+});
+
