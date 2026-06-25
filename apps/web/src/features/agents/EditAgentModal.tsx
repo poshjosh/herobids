@@ -8,12 +8,31 @@ import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { buildUpdateAgentPayload } from './agent-payloads.js';
+import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { formatTickIntervalMinutesForInput, getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { defaultTechnicalConfigFormState, technicalConfigToFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
+
+/**
+ * Maps field names to the Advanced Settings tab index they live on.
+ *   0 = AI Configuration
+ *   2 = Trading Setup
+ */
+const ADVANCED_FIELD_TAB: Record<string, number> = {
+  // AI Configuration
+  tickIntervalMins: 0,
+  dailySpendBudgetUsd: 0,
+  // Trading Setup
+  dailyLossLimit: 2,
+  maxSlippageBps: 2,
+  maxOpenPositions: 2,
+  maxPositionSizePct: 2,
+  stopLossPct: 2,
+  stopLossCooldownSecs: 2,
+};
 
 interface EditAgentModalProps {
   agentId: string;
@@ -89,6 +108,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     capital: initialData.capital ?? '',
   });
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [advancedExpandSeq, setAdvancedExpandSeq] = useState(0);
+  const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(2);
   const [modelOverrideEnabled, setModelOverrideEnabled] = useState(hasExplicitModelOverride);
   const [modelForm, setModelForm] = useState({
     provider: initialData.provider ?? '',
@@ -124,9 +146,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     : currentHasTradingCapability);
   const showTradingControls = hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
-  // Technical config requires at minimum a venueType to produce a valid payload;
-  // venue itself is derived from the trading connection and may be blank in the form.
-  const technicalConfigInvalid = false;
+  const validationConstraints: ValidationConstraints = {
+    maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
+    maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
+    stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
+  };
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
@@ -141,6 +165,58 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
   const set = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  function clearFieldError(field: string) {
+    setFormErrors((prev) => {
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }
+
+  function bumpAdvancedExpand(errorKeys: string[]) {
+    const advancedKey = errorKeys.find(k => k in ADVANCED_FIELD_TAB);
+    if (advancedKey !== undefined) {
+      setAdvancedErrorTabIdx(ADVANCED_FIELD_TAB[advancedKey]!);
+      setAdvancedExpandSeq(s => s + 1);
+    }
+  }
+
+  function validateFieldOnBlur(fieldName: string) {
+    const result = validateCreateAgentForm({
+      name: form.name,
+      goal: form.prompt,
+      capabilityMode: form.capabilityMode,
+      capital: form.capital,
+      tickIntervalMins: form.tickIntervalMins,
+      maxOpenPositions: form.maxOpenPositions,
+      maxPositionSizePct: form.maxPositionSizePct,
+      stopLossPct: form.stopLossPct,
+      // In edit mode, venue is managed via trading connection — always pass as truthy
+      venue: 'connected',
+      executionMode: form.executionMode,
+      // Capital is optional in edit mode (blank = unlimited)
+      requiresTradingSetup: false,
+    }, validationConstraints);
+
+    setFormErrors((prev) => {
+      const fieldError = result.errors[fieldName];
+      const hasExisting = fieldName in prev;
+      if (!fieldError && !hasExisting) return prev;
+      const next = { ...prev };
+      if (fieldError) {
+        next[fieldName] = fieldError;
+      } else {
+        delete next[fieldName];
+      }
+      return next;
+    });
+
+    if (result.errors[fieldName] && fieldName in ADVANCED_FIELD_TAB) {
+      bumpAdvancedExpand([fieldName]);
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -183,7 +259,22 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (tickIntervalError != null || technicalConfigInvalid || !form.name.trim() || (showIntelligence && !form.prompt.trim())) {
+    const result = validateCreateAgentForm({
+      name: form.name,
+      goal: form.prompt,
+      capabilityMode: form.capabilityMode,
+      capital: form.capital,
+      tickIntervalMins: form.tickIntervalMins,
+      maxOpenPositions: form.maxOpenPositions,
+      maxPositionSizePct: form.maxPositionSizePct,
+      stopLossPct: form.stopLossPct,
+      venue: 'connected',
+      executionMode: form.executionMode,
+      requiresTradingSetup: false,
+    }, validationConstraints);
+    if (!result.valid || tickIntervalError != null) {
+      setFormErrors(result.errors);
+      bumpAdvancedExpand(Object.keys(result.errors));
       return;
     }
     mutation.mutate();
@@ -287,6 +378,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           </div>
 
           <AdvancedSettingsSection
+            expandSeq={advancedExpandSeq}
+            errorTabIdx={advancedErrorTabIdx}
             aiConfig={
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {showIntelligence && (
@@ -380,6 +473,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   tickIntervalError={tickIntervalError}
                   tickIntervalNotice={tickIntervalNotice}
                   effectiveTickIntervalMs={effectiveTickIntervalMs}
+                  fieldErrors={formErrors}
+                  onClearFieldError={clearFieldError}
+                  onBlurField={validateFieldOnBlur}
                   onChange={(patch) => {
                     if (patch.tickIntervalMins !== undefined) {
                       setTickIntervalTouched(true);
@@ -406,6 +502,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       stopLossCooldownSecs: form.stopLossCooldownSecs,
                     }}
                     defaults={riskDefaultsQuery.data ?? null}
+                    fieldErrors={formErrors}
+                    onClearFieldError={clearFieldError}
+                    onBlurField={validateFieldOnBlur}
                     onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
                   />
                 </div>
@@ -420,6 +519,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   <TechnicalConfigSection
                     value={form.technicalConfig}
                     onChange={(technicalConfig) => setForm((prev) => ({ ...prev, technicalConfig }))}
+                    showErrors={Object.keys(formErrors).length > 0}
+                    onClearFieldError={clearFieldError}
                   />
                 </div>
               ) : null
@@ -439,7 +540,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           disabled={mutation.isPending
             || !form.name.trim()
             || (showIntelligence && !form.prompt.trim())
-            || technicalConfigInvalid
             || tickIntervalError != null
             || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
         >
