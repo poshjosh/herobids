@@ -33,6 +33,7 @@ export interface InsertAgent {
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
+  openPositionEscalationToJudgePolicy?: string;
 }
 
 export interface UpdateAgent {
@@ -53,6 +54,7 @@ export interface UpdateAgent {
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
+  openPositionEscalationToJudgePolicy?: string;
 }
 
 // agent_instance_links REMOVED — replaced by bots.creatorType/creatorId
@@ -153,6 +155,7 @@ export class AgentRepository {
       dailyLossLimit: input.dailyLossLimit ?? null,
       maxBots: input.maxBots ?? null,
       maxSlippageBps: input.maxSlippageBps ?? null,
+      openPositionEscalationToJudgePolicy: input.openPositionEscalationToJudgePolicy ?? undefined,
     });
     return id;
   }

@@ -99,6 +99,7 @@ const CreateAgentSchema = z.object({
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
+  openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -144,6 +145,7 @@ const UpdateAgentSchema = z.object({
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
   technical: TechnicalConfigSchema.nullable().optional(),
+  openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
 });
 
 const PauseAgentSchema = z.object({
@@ -568,6 +570,7 @@ export async function agentRoutes(
       tickIntervalMs: parsed.data.tickIntervalMs ?? null,
       capital: parsed.data.capital ?? null,
       style: parsed.data.style ?? null,
+      openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
       ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
       createdAt: now,
       updatedAt: now,

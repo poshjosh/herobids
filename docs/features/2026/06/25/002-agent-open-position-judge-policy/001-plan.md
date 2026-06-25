@@ -309,3 +309,16 @@ Frontend:
 5. Users can override the derived value explicitly in the frontend.
 6. Edit flow preserves and updates the explicit stored value.
 7. User-facing copy and translations are updated anywhere the old `Standard` wording would conflict with the `Balanced` persona language.
+
+---
+
+## Outstanding Issues
+
+### Phase 1
+- ~~MEDIUM~~ RESOLVED in Phase 2: `InsertAgent` and `UpdateAgent` repository interfaces in `packages/db/src/agent-repository.ts` updated with the new field.
+
+### Phase 2
+- ~~HIGH~~ FIXED: UpdateAgentSchema had `.nullable()` on a NOT NULL DB column. Changed to `.optional()` only.
+- MEDIUM: No tests for the new field yet — expected to be covered in Phase 4.
+- LOW (benign): `AgentRepository.createAgent` is updated but the API create path uses direct DB insert — both paths are correct.
+- LOW (deferred): Plan notes `style` should also be accepted in update schema — product decision pending.
