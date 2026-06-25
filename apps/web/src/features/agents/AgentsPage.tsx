@@ -44,7 +44,14 @@ const ADVANCED_FIELD_TAB: Record<string, number> = {
   stopLossPct: 2,
   stopLossCooldownSecs: 2,
   // Strategy
-  venue: 3,
+};
+
+/** Maps provider IDs to their venue type for the technical scanner. */
+const VENUE_TYPE_MAP: Record<string, '' | 'orderbook' | 'swap'> = {
+  hyperliquid: 'orderbook',
+  jupiter: 'swap',
+  bybit: 'orderbook',
+  '1inch': 'swap',
 };
 
 type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
@@ -63,6 +70,10 @@ interface IntentState {
   heavyModel: string;
   telegramChatId: string;
   tradingBindingId: string;
+  /** Derived from selected trading binding's provider, or user-picked for paper mode. */
+  venue: string;
+  /** Derived from venue: hyperliquid→orderbook, jupiter→swap, etc. */
+  venueType: '' | 'orderbook' | 'swap';
   riskTolerance: RiskToleranceValue;
   style: AgentStyleValue;
   // Configurable controls
@@ -191,6 +202,8 @@ function CreateAgentFlow({
     heavyModel: '',
     telegramChatId: '',
     tradingBindingId: '',
+    venue: '',
+    venueType: '',
     riskTolerance: styleDefaults.riskTolerance,
     style: 'balanced',
     costPreset: styleDefaults.costPreset,
@@ -331,10 +344,23 @@ function CreateAgentFlow({
   );
   const selectedTradingBinding = availableTradingBindings.find((binding) => binding.bindingId === intent.tradingBindingId) ?? null;
 
+  // Derive venue + venueType from selected trading binding's provider
+  useEffect(() => {
+    if (selectedTradingBinding?.provider) {
+      const derivedVenueType = VENUE_TYPE_MAP[selectedTradingBinding.provider] ?? '';
+      setIntent((state) => {
+        if (state.venue !== selectedTradingBinding.provider || state.venueType !== derivedVenueType) {
+          return { ...state, venue: selectedTradingBinding.provider, venueType: derivedVenueType };
+        }
+        return state;
+      });
+    }
+  }, [selectedTradingBinding?.provider]);
+
   const mutation = useMutation({
     mutationFn: async () => {
       const technicalPayload = (intent.capabilityMode === 'technical' || intent.capabilityMode === 'both')
-        ? technicalFormStateToPayload(intent.technicalConfig)
+        ? technicalFormStateToPayload(intent.technicalConfig, intent.venue, intent.venueType as 'orderbook' | 'swap')
         : null;
       const agent = await agentsApi.create(buildCreateAgentPayload({
         name: intent.name,
@@ -402,7 +428,8 @@ function CreateAgentFlow({
       maxOpenPositions: intent.maxOpenPositions,
       maxPositionSizePct: intent.maxPositionSizePct,
       stopLossPct: intent.stopLossPct,
-      venue: intent.technicalConfig.filters.venue,
+      venue: intent.venue,
+      executionMode: intent.executionMode,
       requiresTradingSetup,
     }, validationConstraints);
 
@@ -427,7 +454,7 @@ function CreateAgentFlow({
   const createDisabled = mutation.isPending
     || !intent.name.trim()
     || (showIntelligence && !intent.goal.trim())
-    || (showTechnical && !intent.technicalConfig.filters.venue.trim())
+    || ((intent.executionMode === 'live' || intent.executionMode === 'shadow') && (!intent.venue || !intent.venueType))
     || tickIntervalError != null;
 
   if (showSetup) {
@@ -489,9 +516,11 @@ function CreateAgentFlow({
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
-            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-              {intl.formatMessage({ id: 'agents.create.skillPreset.help' })}
-            </div>
+            {intl.formatMessage({ id: 'agents.create.skillPreset.help' }) ? (
+              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                {intl.formatMessage({ id: 'agents.create.skillPreset.help' })}
+              </div>
+            ) : null}
           </div>
 
           {/* 2. Goal */}
@@ -622,36 +651,66 @@ function CreateAgentFlow({
                   )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
-                    <FieldLabel>{intl.formatMessage({ id: 'agents.create.tradingBinding' })}</FieldLabel>
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
                     <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                       {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
                     </div>
                     {tradingBindingsQuery.isLoading ? (
-                      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingBindings' })}</div>
+                      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
                     ) : availableTradingBindings.length === 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                          {intl.formatMessage({ id: 'agents.create.noBindings' })}
+                          {intl.formatMessage({ id: 'agents.create.noConnections' })}
                         </div>
                         <div>
                           <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
                             {intl.formatMessage({ id: 'agents.create.setupTradingNow' })}
                           </Button>
                         </div>
+                        {/* Venue picker for paper mode when no connections exist */}
+                        {intent.executionMode === 'paper' && (
+                          <div data-field="venue">
+                            <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
+                            <select
+                              value={intent.venue}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                const vt = VENUE_TYPE_MAP[v] ?? '';
+                                clearFieldError('venue');
+                                setIntent((state) => ({ ...state, venue: v, venueType: vt }));
+                              }}
+                              style={{ ...inputStyle, cursor: 'pointer' }}
+                            >
+                              <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
+                              <option value="hyperliquid">{intl.formatMessage({ id: 'agents.technical.filters.venue.hyperliquid' })}</option>
+                              <option value="jupiter">{intl.formatMessage({ id: 'agents.technical.filters.venue.jupiter' })}</option>
+                            </select>
+                            {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <select
-                        value={intent.tradingBindingId}
-                        onChange={(e) => setIntent((state) => ({ ...state, tradingBindingId: e.target.value }))}
-                        style={{ ...inputStyle, cursor: 'pointer' }}
-                      >
-                        <option value="">{intl.formatMessage({ id: 'agents.create.chooseBinding' })}</option>
-                        {availableTradingBindings.map((binding) => (
-                          <option key={binding.bindingId} value={binding.bindingId}>
-                            {binding.label} ({binding.provider})
-                          </option>
-                        ))}
-                      </select>
+                      <>
+                        <select
+                          value={intent.tradingBindingId}
+                          onChange={(e) => setIntent((state) => ({ ...state, tradingBindingId: e.target.value }))}
+                          style={{ ...inputStyle, cursor: 'pointer' }}
+                        >
+                          <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
+                          {availableTradingBindings.map((binding) => (
+                            <option key={binding.bindingId} value={binding.bindingId}>
+                              {binding.label} ({binding.provider})
+                            </option>
+                          ))}
+                        </select>
+                        {/* Venue derived from connection — read-only display */}
+                        {intent.venue && intent.venueType && (
+                          <div style={{ display: 'flex', gap: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                            <span>Venue: <strong>{intent.venue}</strong></span>
+                            <span>Type: <strong>{intent.venueType}</strong></span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -794,7 +853,8 @@ function CreateAgentFlow({
                   maxOpenPositions: intent.maxOpenPositions,
                   maxPositionSizePct: intent.maxPositionSizePct,
                   stopLossPct: intent.stopLossPct,
-                  venue: intent.technicalConfig.filters.venue,
+                  venue: intent.venue,
+                  executionMode: intent.executionMode,
                   requiresTradingSetup,
                 }, validationConstraints);
 
@@ -861,7 +921,7 @@ function CreateAgentFlow({
               />
             )}
             {showIntelligence && <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />}
-            {showTechnical && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.technicalConfig.filters.venue} />}
+            {requiresTradingSetup && intent.venue && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.venue} />}
             {showTechnical && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}

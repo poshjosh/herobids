@@ -69,7 +69,7 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     await page.getByRole('button', { name: 'Set up trading now' }).click();
 
     // ProviderSetupForm replaces the create agent modal content
-    await expect(page.locator('div').filter({ hasText: /^Add trading connection$/ }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('div').filter({ hasText: /^Link agent to platform$/ }).first()).toBeVisible({ timeout: 5_000 });
 
     // Fill in the setup form — provider is auto-selected (Hyperliquid) from catalog
     await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });
@@ -83,10 +83,10 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     await page.getByPlaceholder('0x...').last().fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit
-    await page.getByRole('button', { name: 'Add trading connection' }).click();
+    await page.getByRole('button', { name: 'Link AI agent' }).click();
 
     // Setup form closes; back in the create agent modal with binding auto-selected
-    await expect(page.locator('div').filter({ hasText: /^Add trading connection$/ }).first()).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('div').filter({ hasText: /^Link agent to platform$/ }).first()).not.toBeVisible({ timeout: 15_000 });
 
     // The no-bindings state is gone — the new binding is now selected
     await expect(

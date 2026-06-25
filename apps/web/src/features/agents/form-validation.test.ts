@@ -18,6 +18,7 @@ function validIntent(overrides: Partial<Parameters<typeof validateCreateAgentFor
     maxPositionSizePct: '',
     stopLossPct: '',
     venue: 'hyperliquid',
+    executionMode: 'paper',
     requiresTradingSetup: true,
     ...overrides,
   };
@@ -144,13 +145,31 @@ describe('validateCreateAgentForm', () => {
     expect(result.errors.stopLossPct).toBeDefined();
   });
 
-  it('returns error for missing venue in technical mode', () => {
+  it('returns error for missing venue in live mode', () => {
     const result = validateCreateAgentForm(
-      validIntent({ capabilityMode: 'technical', venue: '', requiresTradingSetup: true }),
+      validIntent({ venue: '', executionMode: 'live' }),
       DEFAULT_CONSTRAINTS,
     );
     expect(result.valid).toBe(false);
     expect(result.errors.venue).toBeDefined();
+  });
+
+  it('returns error for missing venue in shadow mode', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ venue: '', executionMode: 'shadow' }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.venue).toBeDefined();
+  });
+
+  it('does not require venue in paper mode', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ venue: '', executionMode: 'paper' }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.valid).toBe(true);
+    expect(result.errors.venue).toBeUndefined();
   });
 
   it('returns multiple errors when multiple fields are invalid', () => {

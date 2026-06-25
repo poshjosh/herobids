@@ -120,10 +120,16 @@ export function applyPreset(presetId: TechnicalPresetId, current: TechnicalConfi
 
 /**
  * Convert form state to API payload. Returns null if venue is not set (incomplete).
+ * When externalVenue/externalVenueType are provided, they override the form state values.
+ * This allows the trading setup section to inject venue derived from the connection.
  */
-export function technicalFormStateToPayload(state: TechnicalConfigFormState): TechnicalConfig | null {
-  const venue = state.filters.venue.trim();
-  const venueType = state.filters.venueType;
+export function technicalFormStateToPayload(
+  state: TechnicalConfigFormState,
+  externalVenue?: string,
+  externalVenueType?: 'orderbook' | 'swap',
+): TechnicalConfig | null {
+  const venue = (externalVenue ?? state.filters.venue).trim();
+  const venueType = (externalVenueType ?? state.filters.venueType) as 'orderbook' | 'swap' | '';
   if (!venue || !venueType) return null;
 
   const scanIntervalMs = Math.max(10_000, parseFloatOrFallback(state.scanIntervalMins, 1) * 60_000);

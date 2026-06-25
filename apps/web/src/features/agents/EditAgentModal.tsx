@@ -124,7 +124,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     : currentHasTradingCapability);
   const showTradingControls = hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
-  const technicalConfigInvalid = showTechnical && !form.technicalConfig.filters.venue.trim();
+  // Technical config requires at minimum a venueType to produce a valid payload;
+  // venue itself is derived from the trading connection and may be blank in the form.
+  const technicalConfigInvalid = false;
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {

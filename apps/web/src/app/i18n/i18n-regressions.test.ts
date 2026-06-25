@@ -81,10 +81,10 @@ describe('i18n regressions', () => {
 // ---------------------------------------------------------------------------
 
 describe('setup flow copy changes', () => {
-  it('agents.create.noBindings no longer tells users to "Create a trading connection first"', () => {
+  it('agents.create.noConnections no longer tells users to "Create a trading connection first"', () => {
     // The old copy equated connection creation with full trading readiness.
     // The new copy is provider-link aware and surfaces the inline setup button.
-    expect(enMessages['agents.create.noBindings']).not.toContain('Create a trading connection first');
+    expect(enMessages['agents.create.noConnections']).not.toContain('Create a trading connection first');
   });
 
   it('agents.capabilityPage.noBindings no longer tells users to "Create a trading connection first"', () => {
@@ -95,8 +95,8 @@ describe('setup flow copy changes', () => {
 
   it('setup.form.title is defined and names the guided setup flow', () => {
     expect(enMessages['setup.form.title']).toBeTruthy();
-    expect(enMessages['setup.form.title']).toBe('Add provider connection');
-    expect(enMessages['setup.form.tradingTitle']).toBe('Add trading connection');
+    expect(enMessages['setup.form.title']).toBe('Link agent to platform');
+    expect(enMessages['setup.form.tradingTitle']).toBe('Link agent to platform');
   });
 
   it('agents.create.setupTradingNow key exists for the inline escape-hatch button', () => {

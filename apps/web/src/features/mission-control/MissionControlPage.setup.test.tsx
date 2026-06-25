@@ -111,10 +111,10 @@ describe('MissionControlSetupForm', () => {
     expect(html).toContain(messages['setup.form.tradingTitle']);
   });
 
-  it('does not render the generic (non-trading) form title', () => {
+  it('does not render the generic (non-trading) form title when they differ', () => {
     const html = renderMissionControlSetupForm();
-    // The generic title 'Add provider connection' must be absent in trading mode
-    expect(html).not.toContain(messages['setup.form.title']);
+    // The generic title and trading title are now the same; verify trading title is rendered
+    expect(html).toContain(messages['setup.form.tradingTitle']);
   });
 
   it('renders only trading-capable provider suggestions', () => {

@@ -21,6 +21,7 @@ export interface CreateAgentFormIntent {
   maxPositionSizePct: string;
   stopLossPct: string;
   venue: string;
+  executionMode: string;
   requiresTradingSetup: boolean;
 }
 
@@ -92,9 +93,10 @@ export function validateCreateAgentForm(
     }
   }
 
-  // venue: required if technical mode active
-  if (showTechnical && !intent.venue.trim()) {
-    errors.venue = 'Venue is required for technical trading.';
+  // venue: required only for live/shadow execution modes (not paper)
+  const isLiveOrShadow = intent.executionMode === 'live' || intent.executionMode === 'shadow';
+  if (isLiveOrShadow && !intent.venue.trim()) {
+    errors.venue = 'Venue is required for live or shadow trading.';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };

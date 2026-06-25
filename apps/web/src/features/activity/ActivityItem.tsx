@@ -65,7 +65,7 @@ export function ActivityItem({ event, isLast = false }: ActivityItemProps) {
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
+        <div style={{ fontSize: '13px', color: 'var(--color-text-primary)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word' }}>
           {messageText}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>

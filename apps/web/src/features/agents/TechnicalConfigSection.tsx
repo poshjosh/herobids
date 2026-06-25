@@ -75,41 +75,6 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
 
         <div style={{ display: 'flex', gap: '10px' }}>
           <div style={{ flex: 1 }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
-            <select
-              data-field="venue"
-              value={value.filters.venue}
-              onChange={(e) => {
-                const venue = e.target.value;
-                const venueType = venue === 'hyperliquid' ? 'orderbook' : venue === 'jupiter' ? 'swap' : '';
-                onClearFieldError?.('venue');
-                setFilters({ venue, venueType: venueType as TechnicalConfigFormState['filters']['venueType'] });
-              }}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
-              <option value="hyperliquid">{intl.formatMessage({ id: 'agents.technical.filters.venue.hyperliquid' })}</option>
-              <option value="jupiter">{intl.formatMessage({ id: 'agents.technical.filters.venue.jupiter' })}</option>
-            </select>
-            {showErrors && !value.filters.venue && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-error, #ef4444)' }}>
-                {intl.formatMessage({ id: 'agents.technical.filters.venue.required' })}
-              </p>
-            )}
-          </div>
-          <div style={{ flex: 1 }}>
-            <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venueType' })}</FieldLabel>
-            <input
-              style={{ ...inputStyle, background: 'var(--color-surface-2, var(--color-surface-1))' }}
-              value={value.filters.venueType}
-              readOnly
-              placeholder={intl.formatMessage({ id: 'agents.technical.filters.venueTypeAuto' })}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <div style={{ flex: 1 }}>
             <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.minVolume' })}</FieldLabel>
             <input
               style={inputStyle}
