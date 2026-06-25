@@ -350,8 +350,8 @@ function CreateAgentFlow({
     savedModelSettings,
   );
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
-  const showTechnical = intent.capabilityMode === 'technical' || intent.capabilityMode === 'both';
   const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
+  const showTechnical = (intent.capabilityMode === 'technical' || intent.capabilityMode === 'both') && requiresTradingSetup;
   const availableTradingBindings = (tradingBindingsQuery.data?.bindings ?? []).filter(
     (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
   );
