@@ -98,6 +98,9 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Pruning old build cache..."
+docker builder prune -af
 DEPLOY
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
