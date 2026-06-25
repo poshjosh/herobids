@@ -131,6 +131,19 @@ describe('watch_token', () => {
     expect(ctx.redis.hset).not.toHaveBeenCalled();
   });
 
+  it('rejects chain "any" and tells the caller to discover the chain first', async () => {
+    const ctx = makeCtx();
+    const result = await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'any', thresholdPrice: 1, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('watch_token requires an explicit chain');
+    expect(result.error).toContain('Call get_price first');
+    expect(ctx.redis.hset).not.toHaveBeenCalled();
+  });
+
   it('passes address-shaped symbol as address argument for identity-aware initial price', async () => {
     const evmAddress = '0x6982508145454Ce325dDbE47a25d4ec3d2311933';
     const getPrice = vi.fn().mockResolvedValue(okPrice(0.00001));

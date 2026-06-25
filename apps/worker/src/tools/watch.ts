@@ -113,7 +113,10 @@ function parseWatchLookupKey(key: string): { chain: string; symbol: string } | n
 
 const WatchTokenParamsSchema = z.object({
   symbol: z.string().min(1).describe('Token symbol or ticker (e.g. BTC, SOL, WIF)'),
-  chain: z.enum(EXPLICIT_SUPPORTED_CHAINS).describe('Explicit chain context, e.g. "hyperliquid", "solana", "ethereum"'),
+  chain: z.enum(EXPLICIT_SUPPORTED_CHAINS).describe(
+    'Explicit chain context required for watches, e.g. "hyperliquid", "solana", "ethereum". ' +
+    'Watches do not support "any" because they must point at one stable asset. If the chain is unknown, call get_price first to discover it, then create the watch with that explicit chain.',
+  ),
   thresholdPrice: z.number().positive().describe('Price level in USD that triggers the watch'),
   condition: z.enum(['above', 'below']).describe(
     '"above" triggers when price rises above threshold; "below" triggers when price falls below threshold',
@@ -135,10 +138,20 @@ const watchTokenTool: AgentTool = {
     const trimmedSymbol = symbol.trim();
     const normalizedChain = chain.trim().toLowerCase();
 
+    if (normalizedChain === 'any') {
+      return {
+        success: false,
+        error:
+          'watch_token requires an explicit chain. "any" is only supported by get_price for one-shot discovery. Call get_price first, then create the watch with the resolved chain.',
+        retryable: false,
+        fault: false,
+      };
+    }
+
     if (!EXPLICIT_SUPPORTED_CHAIN_SET.has(normalizedChain)) {
       return {
         success: false,
-        error: `unsupported chain: ${chain}`,
+        error: `unsupported chain: ${chain}. Valid watch chains are: ${EXPLICIT_SUPPORTED_CHAINS.join(', ')}. If the chain is unknown, call get_price first and then create the watch with the resolved explicit chain.`,
         retryable: false,
         fault: false,
       };
