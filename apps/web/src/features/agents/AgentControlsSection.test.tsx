@@ -66,4 +66,35 @@ describe('AgentControlsSection rendering', () => {
     expect(html).toContain(messages['agents.controls.maxPositionSizePct.help']);
     expect(html).toContain('Applies independently of whether capital is set');
   });
+
+  // --- openPositionEscalationToJudgePolicy ---
+
+  it('renders the open position escalation policy dropdown with all three options', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <TradingGuardrailsFields value={EMPTY_GUARDRAILS} onChange={() => undefined} />
+      </IntlProvider>,
+    );
+    expect(html).toContain(messages['agents.controls.openPositionEscalationPolicy.never']);
+    expect(html).toContain(messages['agents.controls.openPositionEscalationPolicy.uncovered_or_triggered']);
+    expect(html).toContain(messages['agents.controls.openPositionEscalationPolicy.always']);
+  });
+
+  it('renders the dropdown with the correct data-field attribute', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <TradingGuardrailsFields value={EMPTY_GUARDRAILS} onChange={() => undefined} />
+      </IntlProvider>,
+    );
+    expect(html).toContain('data-field="openPositionEscalationToJudgePolicy"');
+  });
+
+  it('renders the dropdown with the escalation policy label', () => {
+    const html = renderToStaticMarkup(
+      <IntlProvider locale="en" messages={messages}>
+        <TradingGuardrailsFields value={EMPTY_GUARDRAILS} onChange={() => undefined} />
+      </IntlProvider>,
+    );
+    expect(html).toContain(messages['agents.controls.openPositionEscalationPolicy']);
+  });
 });

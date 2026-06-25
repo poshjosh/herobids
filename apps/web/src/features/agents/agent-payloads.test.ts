@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateAgentPayload, buildUpdateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
+import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCreateAgentBindingId } from './agent-payloads.js';
 
 const TECHNICAL_CONFIG = {
   filters: {
@@ -342,5 +342,141 @@ describe('agent payload builders', () => {
       modelOverrideEnabled: false,
       modelForm: { provider: '', lightModel: '', heavyModel: '' },
     })).toThrow('Invalid tick interval minutes input');
+  });
+
+  // --- openPositionEscalationToJudgePolicy ---
+
+  it('buildCreateAgentPayload includes the policy field when provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'paper',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      openPositionEscalationToJudgePolicy: 'always',
+    });
+    expect(payload.openPositionEscalationToJudgePolicy).toBe('always');
+  });
+
+  it('buildCreateAgentPayload omits the policy field when not provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'paper',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('openPositionEscalationToJudgePolicy');
+  });
+
+  it('buildUpdateAgentPayload includes the policy field when defined', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      openPositionEscalationToJudgePolicy: 'never',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    });
+    expect(payload.openPositionEscalationToJudgePolicy).toBe('never');
+  });
+
+  it('buildUpdateAgentPayload omits the policy field when undefined', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    });
+    expect(payload).not.toHaveProperty('openPositionEscalationToJudgePolicy');
+  });
+});
+
+describe('normalizeEscalationPolicy', () => {
+  it('returns null for null', () => {
+    expect(normalizeEscalationPolicy(null)).toBeNull();
+  });
+
+  it('returns null for undefined', () => {
+    expect(normalizeEscalationPolicy(undefined)).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(normalizeEscalationPolicy('')).toBeNull();
+  });
+
+  it('returns the value for a valid policy string', () => {
+    expect(normalizeEscalationPolicy('never')).toBe('never');
+    expect(normalizeEscalationPolicy('uncovered_or_triggered')).toBe('uncovered_or_triggered');
+    expect(normalizeEscalationPolicy('always')).toBe('always');
+  });
+
+  it('returns null for an invalid string', () => {
+    expect(normalizeEscalationPolicy('sometimes')).toBeNull();
+    expect(normalizeEscalationPolicy('NEVER')).toBeNull();
+    expect(normalizeEscalationPolicy('unknown')).toBeNull();
   });
 });

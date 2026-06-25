@@ -361,3 +361,9 @@ Frontend:
 - MEDIUM: Key name `agents.controls.costPreset.standard` now displays "Balanced" — key-value mismatch. Intentional per plan (avoid backend churn).
 - MEDIUM: `.never` policy key name vs behavior-descriptive label — key misleading for maintainers.
 - LOW: Comment style inconsistency in en.ts.
+
+### Phase 9
+- HIGH: Component-level behavior untested — style→policy orchestration with policyManuallySetRef, edit modal load/submit. Only pure function tests exist.
+- MEDIUM: Missing null-policy test in buildUpdateAgentPayload (explicit clear vs undefined/omit).
+- MEDIUM: Misleading test name "riskTolerance between 0 and 1" (it's a string enum).
+- MEDIUM: resolveStyleDefaults per-style tests don't assert new policy field — false-pass risk.

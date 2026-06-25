@@ -60,6 +60,35 @@ describe('resolveStyleDefaults', () => {
         // The validation here is that the value is one of the known valid strings.
         expect(validRiskTolerances).toContain(config.riskTolerance);
       });
+
+      it(`${style} has valid openPositionEscalationToJudgePolicy`, () => {
+        const config = STYLE_CONFIG[style];
+        expect(['never', 'uncovered_or_triggered', 'always']).toContain(config.openPositionEscalationToJudgePolicy);
+      });
     }
+  });
+
+  describe('openPositionEscalationToJudgePolicy mapping', () => {
+    it('maps careful to never', () => {
+      expect(STYLE_CONFIG.careful.openPositionEscalationToJudgePolicy).toBe('never');
+    });
+
+    it('maps balanced to uncovered_or_triggered', () => {
+      expect(STYLE_CONFIG.balanced.openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+    });
+
+    it('maps bold to always', () => {
+      expect(STYLE_CONFIG.bold.openPositionEscalationToJudgePolicy).toBe('always');
+    });
+
+    it('resolveStyleDefaults includes the policy field for each style', () => {
+      expect(resolveStyleDefaults('careful').openPositionEscalationToJudgePolicy).toBe('never');
+      expect(resolveStyleDefaults('balanced').openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+      expect(resolveStyleDefaults('bold').openPositionEscalationToJudgePolicy).toBe('always');
+    });
+
+    it('resolveStyleDefaults returns balanced policy for unknown style', () => {
+      expect(resolveStyleDefaults('unknown' as AgentStyleValue).openPositionEscalationToJudgePolicy).toBe('uncovered_or_triggered');
+    });
   });
 });
