@@ -148,6 +148,13 @@
       "when": 1782207096827,
       "tag": "0020_steady_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782414755341,
+      "tag": "0021_gigantic_mac_gargan",
+      "breakpoints": true
     }
   ]
 }

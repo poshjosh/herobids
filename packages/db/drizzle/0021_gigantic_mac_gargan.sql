@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "open_position_escalation_to_judge_policy" text DEFAULT 'uncovered_or_triggered' NOT NULL;

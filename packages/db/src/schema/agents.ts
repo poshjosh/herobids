@@ -54,6 +54,8 @@ export const agents = pgTable('agents', {
   riskOverrides: jsonb('risk_overrides').$type<AgentRiskOverrides | null>(),
   /** Unified agent config — technical + intelligence + execution + risk overrides set by the agent at runtime. */
   unifiedConfig: jsonb('unified_config').$type<UnifiedAgentConfig | null>(),
+  /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
+  openPositionEscalationToJudgePolicy: text('open_position_escalation_to_judge_policy').notNull().default('uncovered_or_triggered'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
