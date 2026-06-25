@@ -317,8 +317,10 @@ Frontend:
 ### Phase 1
 - ~~MEDIUM~~ RESOLVED in Phase 2: `InsertAgent` and `UpdateAgent` repository interfaces in `packages/db/src/agent-repository.ts` updated with the new field.
 
-### Phase 2
-- ~~HIGH~~ FIXED: UpdateAgentSchema had `.nullable()` on a NOT NULL DB column. Changed to `.optional()` only.
-- MEDIUM: No tests for the new field yet — expected to be covered in Phase 4.
-- LOW (benign): `AgentRepository.createAgent` is updated but the API create path uses direct DB insert — both paths are correct.
-- LOW (deferred): Plan notes `style` should also be accepted in update schema — product decision pending.
+### Phase 3
+- MEDIUM: Missing test for default policy (no `openPositionEscalationToJudgePolicy` param) with open positions. Default changed from "always escalate" to "allow scout" — a regression test gap.
+- MEDIUM: `uncovered_or_triggered` is behaviorally identical to `never` until watch coverage exists. Deferred TODO should reference tracking issue.
+- LOW: `source: 'scout'` is ambiguous when positions exist but policy blocks escalation — consider distinct source like `'scout_policy_deferred'`.
+- LOW: `as any` cast in invalid policy test — acceptable in test code.
+- LOW: `docker-agent-manager.ts` `.call()` pattern for dynamic log level — stylistic, no behavior issue.
+- LOW: `JSON.parse(...) as AgentConfig` is unchecked cast — pre-existing pattern, incremental improvement via runtime validation.

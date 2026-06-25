@@ -441,7 +441,13 @@ export class DockerAgentManager {
           await this.readEventStream(signal);
         } catch (err) {
           if (signal.aborted) break;
-          logger.error({ err }, 'Docker event stream error — reconnecting in 5s');
+          const isIdleTimeout =
+            err instanceof Error && /body timeout/i.test(err.message);
+          (isIdleTimeout ? logger.debug : logger.error).call(
+            logger,
+            { err },
+            `Docker event stream ${isIdleTimeout ? 'idle timeout' : 'error'} — reconnecting in 5s`,
+          );
           await new Promise<void>((resolve) => {
             const t = setTimeout(resolve, 5000);
             signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });

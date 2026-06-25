@@ -250,6 +250,8 @@ interface AgentConfig {
   };
   /** True when agent has both technical scanner + LLM intelligence config — ticks are event-driven */
   hybridMode?: boolean;
+  /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
 }
 
 let agentConfig: AgentConfig;
@@ -315,6 +317,12 @@ try {
 } catch {
   logger.fatal({ AGENT_CONFIG_RAW }, 'Failed to parse AGENT_CONFIG');
   process.exit(1);
+}
+
+const policy = agentConfig.openPositionEscalationToJudgePolicy;
+if (policy !== undefined && !['never', 'uncovered_or_triggered', 'always'].includes(policy)) {
+  logger.warn({ policy }, 'Invalid openPositionEscalationToJudgePolicy — falling back to default');
+  agentConfig.openPositionEscalationToJudgePolicy = undefined; // let ?? default take effect in resolvePreScoutDecision
 }
 
 const agentGoal = agentConfig.prompt ?? agentConfig.goal ?? 'No goal provided';
@@ -2083,7 +2091,7 @@ async function runTick(): Promise<void> {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
-    const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy, hasOpenPositions });
+    const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy, hasOpenPositions, openPositionEscalationToJudgePolicy: agentConfig.openPositionEscalationToJudgePolicy });
     let resolvedScoutDecision: ScoutDecision;
     let isSoftLimited = false;
     if (preScoutResolution.decision) {
