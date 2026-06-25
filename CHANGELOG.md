@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Unified agent form (004-unified-agent-form)**: extracted shared `AgentFormBody` component and `AgentFormState` type consumed by both create and edit flows. Field changes happen once; both screens get them. Differences injected as `ReactNode` slots (modelSlot, skillsSlot, tradingBindingSlot, tradingSetupSlot, capabilityWarning, nameAutoHint) — no mode flags in the body. Includes `agentToFormState()` converter with runtime-validated union literal fields and `intentToFormState()` for the create shell. Added UAT cases AG-E01 through AG-E10 for the unified edit form.
+
 - **Per-agent open position escalation to judge policy**: new `openPositionEscalationToJudgePolicy` field configurable per agent (never/uncovered_or_triggered/always). Persona mapping: careful→never, balanced→uncovered_or_triggered, bold→always. Replaces hard-coded blanket escalation in scout-gating with policy-based behavior. Frontend dropdown in create/edit advanced controls with i18n support (en/ar/hi).
 
 ## 0.0.1-2026.06.25-a
