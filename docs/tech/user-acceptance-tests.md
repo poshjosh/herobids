@@ -147,6 +147,21 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-23 | Prompt surfaces render when allowed | Open an agent detail page on a plan that allows prompt visibility and has a recent runtime snapshot | "Prompt surfaces" section shows tabs for Judge System, Scout System, User Context, and Judge User Context; switching tabs changes the prompt pane | ✅ | All four tabs visible when agent active; switching tabs changes prompt text |
 | AG-24 | Prompt visibility is plan-gated | Open an agent detail page on a plan that disallows viewing own prompts | "Prompt visibility is not available on your current plan." is shown and the prompt query is not loaded | — | |
 
+### 6.1 Edit Agent Form
+
+| ID | Test Case | Steps | Expected | Status | Notes |
+|----|-----------|-------|----------|--------|-------|
+| AG-E01 | Edit form opens | On agent detail, click "Edit config" | Edit modal opens; all fields pre-filled from agent data (name, goal, style, capital, etc.) | — | |
+| AG-E02 | Style selector pre-filled | Open edit form for an agent with a known style | Style selector reflects the agent's current style (or "Balanced" if unknown) | — | |
+| AG-E03 | Style change drives defaults | In edit form, change Style from Careful to Bold | Cost preset, tick interval, and daily budget update to Bold defaults | — | |
+| AG-E04 | Save changes — happy path | Edit name and goal; click "Save changes" | Modal closes; agent detail reflects updated name and goal | — | |
+| AG-E05 | Save changes — validation | Clear name field; click "Save changes" | Error shown; form not dismissed | — | |
+| AG-E06 | Shadow mode admin-only in edit | As non-admin: open edit form for a trading agent | Execution mode dropdown shows only "Paper" and "Live". As admin: "Shadow" also available. | — | |
+| AG-E07 | Advanced settings tabs present | Open edit form; expand Advanced Settings | Four tabs visible: AI Configuration, Skills, Trading Setup, Strategy — same as create form | — | |
+| AG-E08 | Skills editable in Advanced | Open edit form; expand Advanced Settings → Skills tab | SkillPicker shown; skill changes reflected on save | — | |
+| AG-E09 | Model selection visible | Open edit form for agent with intelligence capability | AI Configuration tab shows model provider/economy/premium fields directly (no inherit/override toggle) | — | |
+| AG-E10 | Guardrails editable | Open edit form; expand Advanced Settings → Trading Setup | Daily loss limit, max slippage, max open positions, stop-loss fields present and editable | — | |
+
 ---
 
 ## 6b. Agents — Simplified Creation Flow
