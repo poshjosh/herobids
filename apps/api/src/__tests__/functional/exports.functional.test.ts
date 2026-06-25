@@ -43,7 +43,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
 
   describe('GET /export/trades — agent-first aggregate export', () => {
     it('returns empty CSV with headers when user has no agents', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -57,7 +57,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
     });
 
     it('returns JSON empty array when user has no agents', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -78,7 +78,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
 
   describe('GET /export/bundle — agent-first bundle export', () => {
     it('returns a valid ZIP file with agent exports', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -102,7 +102,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
 
   describe('Agent-scoped export routes', () => {
     it('GET /agents/:id/export/config returns config for existing agent', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
       const agentId = await createAgent(token);
 
       const res = await ctx.app.inject({
@@ -117,7 +117,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
     });
 
     it('GET /agents/:id/export/config returns 404 for non-existent agent', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -129,7 +129,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
     });
 
     it('GET /agents/:id/export/trades returns CSV for existing agent', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
       const agentId = await createAgent(token);
 
       const res = await ctx.app.inject({
@@ -144,7 +144,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
     });
 
     it('GET /agents/:id/export/journal returns CSV for existing agent', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
       const agentId = await createAgent(token);
 
       const res = await ctx.app.inject({
@@ -159,7 +159,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
     });
 
     it('GET /agents/:id/export/costs returns CSV for existing agent', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
       const agentId = await createAgent(token);
 
       const res = await ctx.app.inject({
@@ -176,7 +176,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
 
   describe('Bot-scoped export routes (advanced trading surface)', () => {
     it('GET /bots/:id/export/trades returns 404 for non-existent bot', async () => {
-      const token = await registerUser(ctx.app);
+      const token = await registerUser(ctx.app, ctx.db);
 
       const res = await ctx.app.inject({
         method: 'GET',
@@ -190,7 +190,7 @@ describe.skipIf(SKIP)('Export routes — functional', () => {
 
   describe('Export rate limiting', () => {
     it('returns 429 on the 6th export request within 1 minute', async () => {
-      const token = await registerUser(ctx.app, 'ratelimit@test.com');
+      const token = await registerUser(ctx.app, ctx.db, 'ratelimit@test.com');
 
       // Make 5 successful requests
       for (let i = 0; i < 5; i++) {

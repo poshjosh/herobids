@@ -61,6 +61,7 @@ async function seedUser(db: ReturnType<typeof createDatabase>, id = crypto.rando
     displayName: 'Test User',
     email: `${id}@worker-test.local`,
     planId: 'free',
+    aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
     createdAt: now,
     updatedAt: now,
   });

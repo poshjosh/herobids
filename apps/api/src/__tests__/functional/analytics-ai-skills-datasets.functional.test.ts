@@ -23,7 +23,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
 
   beforeEach(async () => {
     await truncateAll(ctx.db);
-    token = await registerUser(ctx.app);
+    token = await registerUser(ctx.app, ctx.db);
   });
 
   function authHeader() {
@@ -48,7 +48,7 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
 
     it('analytics is scoped to the authenticated user — different user sees no data', async () => {
       // Register a second user to confirm data isolation
-      const otherToken = await registerUser(ctx.app, 'other@analytics.test');
+      const otherToken = await registerUser(ctx.app, ctx.db, 'other@analytics.test');
 
       // First user requests their own analytics
       const resFirst = await ctx.app.inject({

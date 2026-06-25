@@ -51,7 +51,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
   beforeEach(async () => {
     await truncateAll(ctx.db);
-    token = await registerUser(ctx.app, 'capability-functional@test.local');
+    token = await registerUser(ctx.app, ctx.db, 'capability-functional@test.local');
     userId = await getAuthedUserId(ctx.app, token);
     agentId = await createAgent(
       ctx.app,

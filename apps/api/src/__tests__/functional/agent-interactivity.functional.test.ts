@@ -26,7 +26,7 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
 
   beforeEach(async () => {
     await truncateAll(ctx.db);
-    token = await registerUser(ctx.app);
+    token = await registerUser(ctx.app, ctx.db);
   });
 
   function authHeader() {

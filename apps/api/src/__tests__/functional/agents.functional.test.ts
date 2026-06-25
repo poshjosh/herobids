@@ -25,7 +25,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
 
   beforeEach(async () => {
     await truncateAll(ctx.db);
-    token = await registerUser(ctx.app);
+    token = await registerUser(ctx.app, ctx.db);
   });
 
   function authHeader() {
@@ -111,7 +111,7 @@ describe.skipIf(SKIP)('Agents functional', () => {
       });
 
       // Create a second user with their own agent
-      const otherToken = await registerUser(ctx.app, 'other@test.com');
+      const otherToken = await registerUser(ctx.app, ctx.db, 'other@test.com');
       await ctx.app.inject({
         method: 'POST',
         url: '/agents',

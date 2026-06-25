@@ -106,8 +106,8 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
   }
 
   it('returns 404 for an agent belonging to another user', async () => {
-    const ownerToken = await registerUser(ctx.app, 'owner@positions.test');
-    const otherToken = await registerUser(ctx.app, 'other@positions.test');
+    const ownerToken = await registerUser(ctx.app, ctx.db, 'owner@positions.test');
+    const otherToken = await registerUser(ctx.app, ctx.db, 'other@positions.test');
 
     const agentId = await createAgent(ownerToken);
 
@@ -122,7 +122,7 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
   });
 
   it('returns empty items when agent has no binding or bots', async () => {
-    const token = await registerUser(ctx.app, 'empty@positions.test');
+    const token = await registerUser(ctx.app, ctx.db, 'empty@positions.test');
     const agentId = await createAgent(token);
 
     const res = await ctx.app.inject({
@@ -141,7 +141,7 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
   });
 
   it('returns positions with derived exitPrice for closed positions', async () => {
-    const token = await registerUser(ctx.app, 'closed@positions.test');
+    const token = await registerUser(ctx.app, ctx.db, 'closed@positions.test');
     const userId = await getUserId(token);
     const agentId = await createAgent(token);
     const { bindingId } = await setupTradingLink(token);
@@ -207,7 +207,7 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
   });
 
   it('returns open positions without exitPrice or hold duration', async () => {
-    const token = await registerUser(ctx.app, 'open@positions.test');
+    const token = await registerUser(ctx.app, ctx.db, 'open@positions.test');
     const userId = await getUserId(token);
     const agentId = await createAgent(token);
     const { bindingId } = await setupTradingLink(token);
@@ -252,7 +252,7 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
   });
 
   it('paginates correctly with limit and offset', async () => {
-    const token = await registerUser(ctx.app, 'paginate@positions.test');
+    const token = await registerUser(ctx.app, ctx.db, 'paginate@positions.test');
     const userId = await getUserId(token);
     const agentId = await createAgent(token);
     const { bindingId } = await setupTradingLink(token);

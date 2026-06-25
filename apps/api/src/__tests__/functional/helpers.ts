@@ -244,6 +244,7 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
 /** Register a test user and return the auth token. */
 export async function registerUser(
   app: ReturnType<typeof Fastify>,
+  db: ReturnType<typeof createDatabase>,
   email = 'test@functional.test',
   password = 'testpassword123',
   displayName = 'Test User',
@@ -259,5 +260,34 @@ export async function registerUser(
   }
 
   const body = res.json() as { token: string };
-  return body.token;
+  const token = body.token;
+
+  // Set up AI model config directly in the DB so agent creation
+  // doesn't require a provider in every payload.
+  // We cannot use PATCH /settings/ai-model because it validates
+  // against the live provider catalog (needs API keys in env).
+  const { users } = await import('@herobids/db');
+  const { eq } = await import('drizzle-orm');
+  const userId = await getUserIdFromToken(app, token);
+  await db.update(users)
+    .set({
+      aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' },
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+
+  return token;
+}
+
+/** Extract the user ID from a JWT token using the /auth/me endpoint. */
+async function getUserIdFromToken(app: ReturnType<typeof Fastify>, token: string): Promise<string> {
+  const res = await app.inject({
+    method: 'GET',
+    url: '/auth/me',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.statusCode !== 200) {
+    throw new Error(`/auth/me failed: ${res.statusCode} ${res.body}`);
+  }
+  return (res.json() as { id: string }).id;
 }
