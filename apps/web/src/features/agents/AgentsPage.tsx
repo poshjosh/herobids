@@ -87,6 +87,7 @@ interface IntentState {
   maxPositionSizePct: string;
   stopLossPct: string;
   stopLossCooldownSecs: string;
+  openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
 }
 
 export function AgentsPage() {
@@ -216,6 +217,7 @@ function CreateAgentFlow({
     maxPositionSizePct: '',
     stopLossPct: '',
     stopLossCooldownSecs: '',
+    openPositionEscalationToJudgePolicy: styleDefaults.openPositionEscalationToJudgePolicy,
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -226,6 +228,8 @@ function CreateAgentFlow({
   const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(2);
   const nameCounterRef = useRef(0);
   const dailyLossLimitAutoRef = useRef(false);
+  // Phase 7 policy dropdown onChange will set this to true.
+  const policyManuallySetRef = useRef(false);
 
   const meQuery = useQuery({
     queryKey: ['me'],
@@ -384,6 +388,7 @@ function CreateAgentFlow({
         stopLossPct: intent.stopLossPct,
         stopLossCooldownSecs: intent.stopLossCooldownSecs,
         style: intent.style,
+        openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
       }));
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -551,6 +556,7 @@ function CreateAgentFlow({
                 tickIntervalMins: defaults.tickIntervalMins,
                 dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
                 riskTolerance: defaults.riskTolerance,
+                ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
               }));
             }}
           />
@@ -940,6 +946,12 @@ function CreateAgentFlow({
             />
             {requiresTradingSetup && selectedTradingBinding && (
               <ReviewRow label={intl.formatMessage({ id: 'agents.create.tradingBinding' })} value={`${selectedTradingBinding.label} (${selectedTradingBinding.provider})`} />
+            )}
+            {requiresTradingSetup && (
+              <ReviewRow
+                label="Open Position Escalation"
+                value={intent.openPositionEscalationToJudgePolicy}
+              />
             )}
           </tbody>
         </table>

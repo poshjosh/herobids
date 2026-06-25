@@ -5,12 +5,13 @@ export interface StyleDefaults {
   tickIntervalMins: string;
   dailySpendBudgetUsd: string;
   riskTolerance: 'conservative' | 'moderate' | 'aggressive';
+  openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
 }
 
 export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
-  careful:  { costPreset: 'minimal',  tickIntervalMins: '60', dailySpendBudgetUsd: '3',  riskTolerance: 'conservative' },
-  balanced: { costPreset: 'standard', tickIntervalMins: '30', dailySpendBudgetUsd: '10', riskTolerance: 'moderate' },
-  bold:     { costPreset: 'premium',  tickIntervalMins: '15', dailySpendBudgetUsd: '30', riskTolerance: 'aggressive' },
+  careful:  { costPreset: 'minimal',  tickIntervalMins: '60', dailySpendBudgetUsd: '3',  riskTolerance: 'conservative', openPositionEscalationToJudgePolicy: 'never' },
+  balanced: { costPreset: 'standard', tickIntervalMins: '30', dailySpendBudgetUsd: '10', riskTolerance: 'moderate',    openPositionEscalationToJudgePolicy: 'uncovered_or_triggered' },
+  bold:     { costPreset: 'premium',  tickIntervalMins: '15', dailySpendBudgetUsd: '30', riskTolerance: 'aggressive',  openPositionEscalationToJudgePolicy: 'always' },
 };
 
 export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {

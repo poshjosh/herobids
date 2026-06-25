@@ -337,3 +337,12 @@ Frontend:
 - MEDIUM: Missing `openPositionEscalationToJudgePolicy` in create flow wiring (AgentsPage.tsx) — Phase 6 will address.
 - MEDIUM: Inconsistent conditional-spread pattern in update builder vs sibling fields (uses `!== undefined` while others use `|| null`). Intentional for PATCH semantics.
 - LOW: No tests for new field in payload builders — Phase 9.
+
+### Phase 6
+- ~~HIGH~~ FIXED: Missing `policyManuallySetRef` to prevent style changes from overwriting explicit policy selection. Added ref with conditional spread.
+- ~~MEDIUM~~ FIXED: Inconsistent initial-state access — now uses `styleDefaults` variable.
+- ~~MEDIUM~~ FIXED: Missing policy in review step — added ReviewRow with conditional gating.
+- LOW: Hardcoded label in review row — translations come in Phase 8.
+- LOW: Raw enum value displayed without human-readable formatting.
+- LOW: Policy field has no validateFieldOnBlur wiring — Phase 7 dropdown should add this.
+- LOW: `normalizeEscalationPolicy()` called twice in conditional — micro-optimization.
