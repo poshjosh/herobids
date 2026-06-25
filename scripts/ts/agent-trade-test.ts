@@ -41,6 +41,9 @@
  *  EXECUTION_MODE        paper (default) | shadow | live
  *  TICK_INTERVAL_MS      60000 (default, 1 minute)
  *  TIMEOUT_MS            600000 (default, 10 minutes)
+ *  LLM_PROVIDER          ollama (default) — LLM provider for agent reasoning
+ *  LLM_LIGHT_MODEL       qwen3:8b (default) — fast/cheap model
+ *  LLM_HEAVY_MODEL       qwen3.6:35b-a3b-q4_K_M (default) — powerful model for strategy
  *  DOCKER_COMPOSE_UP     1 to auto-start Docker stack when unhealthy
  *  DOCKER_COMPOSE_DOWN   1 to stop Docker stack on exit (only if started here)
  *  SKIP_TEARDOWN         1 to leave agent running for manual inspection
@@ -81,6 +84,9 @@ const VENUE = process.env['VENUE'] ?? 'hyperliquid';
 const EXECUTION_MODE = process.env['EXECUTION_MODE'] ?? 'paper';
 const TICK_INTERVAL_MS = parseInt(process.env['TICK_INTERVAL_MS'] ?? '60000', 10);
 const TIMEOUT_MS = parseInt(process.env['TIMEOUT_MS'] ?? '600000', 10);
+const LLM_PROVIDER = process.env['LLM_PROVIDER'] ?? 'ollama';
+const LLM_LIGHT_MODEL = process.env['LLM_LIGHT_MODEL'] ?? 'qwen3:8b';
+const LLM_HEAVY_MODEL = process.env['LLM_HEAVY_MODEL'] ?? 'qwen3.6:35b-a3b-q4_K_M';
 const DOCKER_COMPOSE_UP = process.env['DOCKER_COMPOSE_UP'] === '1';
 const DOCKER_COMPOSE_DOWN = process.env['DOCKER_COMPOSE_DOWN'] === '1';
 const SKIP_TEARDOWN = process.env['SKIP_TEARDOWN'] === '1';
@@ -416,6 +422,9 @@ async function createAgent(token: string): Promise<string> {
         tickIntervalMs: TICK_INTERVAL_MS,
         // Required: sets maxOrderNotional; must cover BTC order notional (~$640 at current prices)
         capital: '100000',
+        provider: LLM_PROVIDER,
+        lightModel: LLM_LIGHT_MODEL,
+        heavyModel: LLM_HEAVY_MODEL,
       },
     },
   );
