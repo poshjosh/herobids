@@ -683,6 +683,23 @@ const botLimitCheckCallback = async (userId: string): Promise<void> => {
   }
 };
 
+// Enforce plan-level live execution eligibility when an agent creates a live-mode bot.
+// Mirrors the API-level checkLiveEnabled gate that the agent broker path previously bypassed.
+const botLiveCheckCallback = async (userId: string): Promise<void> => {
+  if (!appConfig.plans) return;
+  const userRows = await db.select({ planId: users.planId, isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).limit(1);
+  if (userRows[0]?.isAdmin) {
+    return;
+  }
+  const planId = userRows[0]?.planId ?? appConfig.plans.defaultPlanId;
+  const plan = appConfig.plans.plans[planId] ?? appConfig.plans.plans[appConfig.plans.defaultPlanId];
+  if (!plan?.entitlements?.limits?.liveEnabled) {
+    throw new Error(
+      'Live execution mode is not available on your plan. Upgrade to a plan that supports live trading.',
+    );
+  }
+};
+
 const agentBroker = new AgentMessageBroker(
   redisClient,
   agentRepo,
@@ -693,6 +710,7 @@ const agentBroker = new AgentMessageBroker(
   botRepo,
   botStartCallback,
   botLimitCheckCallback,
+  botLiveCheckCallback,
   botStopCallback,
   botRestartCallback,
   workerEmail,

@@ -255,6 +255,8 @@ describe('AgentMessageBroker', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
         statusChange,
       );
       const envelope = makeEnvelope({
@@ -1344,6 +1346,7 @@ describe('AgentMessageBroker', () => {
         botRepo as any,
         vi.fn().mockResolvedValue(undefined),
         undefined,
+        undefined,
         botStop,
       );
 
@@ -1526,6 +1529,7 @@ describe('AgentMessageBroker', () => {
         vi.fn().mockResolvedValue(undefined),
         undefined,
         undefined,
+        undefined,
         botRestart,
       );
 
@@ -1592,6 +1596,7 @@ describe('AgentMessageBroker', () => {
         vi.fn().mockResolvedValue(undefined),
         undefined,
         undefined,
+        undefined,
         botRestart,
       );
 
@@ -1648,6 +1653,7 @@ describe('AgentMessageBroker', () => {
           vi.fn().mockResolvedValue(undefined),
           undefined,
           undefined,
+          undefined,
           botRestart,
         );
 
@@ -1701,6 +1707,7 @@ describe('AgentMessageBroker', () => {
           vi.fn().mockResolvedValue(undefined),
           undefined,
           undefined,
+          undefined,
           botRestart,
         );
 
@@ -1747,6 +1754,7 @@ describe('AgentMessageBroker', () => {
           undefined,
           botRepo as any,
           vi.fn().mockResolvedValue(undefined),
+          undefined,
           undefined,
           undefined,
           botRestart,
@@ -1797,6 +1805,7 @@ describe('AgentMessageBroker', () => {
           vi.fn().mockResolvedValue(undefined),
           undefined,
           undefined,
+          undefined,
           botRestart,
         );
 
@@ -1811,6 +1820,176 @@ describe('AgentMessageBroker', () => {
         expect(result.accepted).toBe(true);
         expect(botRestart).not.toHaveBeenCalled();
         expect(botRepo.updateBotConfig).toHaveBeenCalled();
+      });
+    });
+
+    describe('execution mode constraint', () => {
+      const makeBotRepo = () => ({
+        isTradingBindingOwnedBy: vi.fn().mockResolvedValue(true),
+        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+        createBot: vi.fn().mockResolvedValue('bot-exec-mode'),
+        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        getBotsByCreator: vi.fn().mockResolvedValue([]),
+        getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+      });
+
+      const makeLiveBotEnvelope = () => makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-001',
+          config: {
+            venue: 'hyperliquid',
+            symbol: 'BTC-USD',
+            strategy: { type: 'momentum', decisionMode: 'mechanical' },
+            venueType: 'orderbook',
+            execution: { mode: 'live' },
+          },
+        },
+      });
+
+      const makePaperBotEnvelope = () => makeManageBotEnvelope({
+        payload: {
+          action: 'create_and_start',
+          venueAccountId: 'va-001',
+          config: {
+            venue: 'hyperliquid',
+            symbol: 'BTC-USD',
+            strategy: { type: 'momentum', decisionMode: 'mechanical' },
+            venueType: 'orderbook',
+            execution: { mode: 'paper' },
+          },
+        },
+      });
+
+      beforeEach(() => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123',
+          userId: 'user-1',
+          status: 'active',
+          maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'paper',
+        });
+        agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+        agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor());
+      });
+
+      it('rejects paper agent creating a live-mode bot', async () => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'paper',
+        });
+
+        const botRepo = makeBotRepo();
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
+          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+        );
+
+        const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
+        expect(result.accepted).toBe(false);
+        expect(result.error).toMatch(/cannot create a bot with execution mode "live"/);
+        expect(botRepo.createBot).not.toHaveBeenCalled();
+      });
+
+      it('rejects shadow agent creating a live-mode bot', async () => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'shadow',
+        });
+
+        const botRepo = makeBotRepo();
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
+          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+        );
+
+        const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
+        expect(result.accepted).toBe(false);
+        expect(result.error).toMatch(/cannot create a bot with execution mode "live"/);
+        expect(botRepo.createBot).not.toHaveBeenCalled();
+      });
+
+      it('allows paper agent to create a paper-mode bot', async () => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'paper',
+        });
+
+        const botRepo = makeBotRepo();
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
+          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+        );
+
+        const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
+        expect(result.accepted).toBe(true);
+        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+      });
+
+      it('allows live agent to create a live-mode bot', async () => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'live',
+        });
+
+        const botRepo = makeBotRepo();
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
+          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+        );
+
+        const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
+        expect(result.accepted).toBe(true);
+        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+      });
+
+      it('rejects live bot creation when botLiveCheck callback throws (plan gate)', async () => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'live',
+        });
+
+        const botLiveCheck = vi.fn().mockRejectedValue(
+          new Error('Live execution mode is not available on your plan.'),
+        );
+
+        const botRepo = makeBotRepo();
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
+          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined), // botStart
+          undefined, // botLimitCheck
+          botLiveCheck, // botLiveCheck
+        );
+
+        const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
+        expect(result.accepted).toBe(false);
+        expect(result.error).toMatch(/not available on your plan/);
+        expect(botLiveCheck).toHaveBeenCalledWith('user-1');
+        expect(botRepo.createBot).not.toHaveBeenCalled();
+      });
+
+      it('allows shadow agent to create a paper-mode bot', async () => {
+        agentRepo.getAgent.mockResolvedValue({
+          id: 'agent-123', userId: 'user-1', status: 'active', maxBots: 5,
+          toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
+          executionMode: 'shadow',
+        });
+
+        const botRepo = makeBotRepo();
+        const brokerWithBot = new AgentMessageBroker(
+          {} as any, agentRepo as any, decisionHandler, sessionManager, eventPublisher,
+          undefined, botRepo as any, vi.fn().mockResolvedValue(undefined),
+        );
+
+        const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
+        expect(result.accepted).toBe(true);
+        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
       });
     });
   });

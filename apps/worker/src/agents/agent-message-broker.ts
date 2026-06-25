@@ -61,6 +61,13 @@ export type BotRestartCallback = (botId: string, userId: string, tradingBindingI
 export type BotLimitCheckCallback = (userId: string) => Promise<void>;
 
 /**
+ * Optional callback for enforcing plan-level live execution eligibility.
+ * Should throw with a user-facing message if live mode is not allowed for the user's plan.
+ * Called before creating a bot with execution.mode = 'live'.
+ */
+export type BotLiveCheckCallback = (userId: string) => Promise<void>;
+
+/**
  * AgentMessageBroker — validates envelopes, enforces capability grants,
  * handles dedupe and correlation, and routes messages to the appropriate handler.
  *
@@ -89,6 +96,7 @@ export class AgentMessageBroker {
     private readonly botRepo?: BotRepository,
     private readonly botStart?: BotStartCallback,
     private readonly botLimitCheck?: BotLimitCheckCallback,
+    private readonly botLiveCheck?: BotLiveCheckCallback,
     private readonly botStop?: BotStopCallback,
     private readonly botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
@@ -646,6 +654,26 @@ export class AgentMessageBroker {
       }
 
       const validatedConfig = validation.data as Record<string, unknown>;
+
+      // Safety gate: agent execution mode must not be exceeded by bot execution mode.
+      // Paper agents can only create paper bots; shadow agents can create paper or shadow;
+      // live agents can create any mode.
+      const agentMode = agent.executionMode;
+      const botMode = (validatedConfig as Record<string, unknown>)?.execution?.mode ?? 'paper';
+      const MODE_RANK: Record<string, number> = { paper: 0, shadow: 1, live: 2 };
+      if ((MODE_RANK[botMode] ?? 0) > (MODE_RANK[agentMode] ?? 0)) {
+        throw new Error(
+          `Agent execution mode "${agentMode}" cannot create a bot with execution mode "${botMode}". ` +
+          `Paper agents can only create paper bots. Shadow agents can create paper or shadow bots. ` +
+          `Upgrade the agent to shadow or live mode before creating ${botMode}-mode bots.`,
+        );
+      }
+
+      // Safety gate: plan-level live execution eligibility.
+      // Mirrors the API-level check that the agent broker path previously bypassed.
+      if (botMode === 'live' && this.botLiveCheck) {
+        await this.botLiveCheck(agent.userId);
+      }
 
       const botId = await this.botRepo.createBot({
         userId: agent.userId,
