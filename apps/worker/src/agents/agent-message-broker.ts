@@ -653,13 +653,13 @@ export class AgentMessageBroker {
         throw new Error(`Bot config is invalid: ${issues}`);
       }
 
-      const validatedConfig = validation.data as Record<string, unknown>;
+      const validatedConfig = validation.data;
 
       // Safety gate: agent execution mode must not be exceeded by bot execution mode.
       // Paper agents can only create paper bots; shadow agents can create paper or shadow;
       // live agents can create any mode.
       const agentMode = agent.executionMode;
-      const botMode = (validatedConfig as Record<string, unknown>)?.execution?.mode ?? 'paper';
+      const botMode = validatedConfig.execution.mode ?? 'paper';
       const MODE_RANK: Record<string, number> = { paper: 0, shadow: 1, live: 2 };
       if ((MODE_RANK[botMode] ?? 0) > (MODE_RANK[agentMode] ?? 0)) {
         throw new Error(

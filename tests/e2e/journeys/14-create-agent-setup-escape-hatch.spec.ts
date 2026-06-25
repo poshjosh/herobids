@@ -39,13 +39,25 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
     // Select the trading-capable skill — must switch to Custom preset first
     await page.locator('select:has(option[value="personal-assistant"])').selectOption('custom');
 
-    // Expand the Skills accordion section so checkboxes become visible.
-    // The AdvancedSettingsSection only opens the first non-empty section by default.
-    const skillsSummary = page.locator('details summary').filter({ hasText: 'Skills' });
-    const skillsDetails = page.locator('details').filter({ hasText: 'Skills' }).first();
-    if (await skillsDetails.evaluate((el) => !el.hasAttribute('open'))) {
-      await skillsSummary.first().click();
-      await page.waitForTimeout(300);
+    // Expand the Advanced Settings section and switch to the Skills tab
+    // so the skill checkboxes become visible.  The AdvancedSettingsSection
+    // wraps everything in a single <details> with summary "Advanced Settings";
+    // sections are tabs (AI Configuration / Skills / Trading Setup / Strategy).
+    const advancedDetails = page.locator('details').filter({ hasText: 'Advanced Settings' }).first();
+    const detailsCount = await advancedDetails.count();
+    if (detailsCount > 0) {
+      const isOpen = await advancedDetails.evaluate((el) => el.hasAttribute('open'));
+      if (!isOpen) {
+        await advancedDetails.locator('summary').first().click();
+        await page.waitForTimeout(300);
+      }
+
+      const skillsTab = page.getByRole('tab', { name: 'Skills' });
+      const tabCount = await skillsTab.count();
+      if (tabCount > 0) {
+        await skillsTab.first().click();
+        await page.waitForTimeout(300);
+      }
     }
 
     // Uncheck pre-selected skills so only the requested one remains.
@@ -60,9 +72,18 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
 
     await page.getByRole('checkbox', { name: botSkill.name }).check();
 
+    // Switch to the AI Configuration tab — the trading-setup section
+    // (no-connections message + "Set up trading now" button) lives there,
+    // not in the Skills tab.
+    const aiConfigTab = page.getByRole('tab', { name: 'AI Configuration' });
+    if (await aiConfigTab.count() > 0) {
+      await aiConfigTab.first().click();
+      await page.waitForTimeout(300);
+    }
+
     // The trading section appears and shows the no-bindings state
     await expect(
-      page.getByText(/No active trading bindings yet/i),
+      page.getByText(/No active platform links yet/i),
     ).toBeVisible({ timeout: 8_000 });
 
     // Click the escape hatch
@@ -90,7 +111,7 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
 
     // The no-bindings state is gone — the new binding is now selected
     await expect(
-      page.getByText(/No active trading bindings yet/i),
+      page.getByText(/No active platform links yet/i),
     ).not.toBeVisible({ timeout: 8_000 });
   });
 });

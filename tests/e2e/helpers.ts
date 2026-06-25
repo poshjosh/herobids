@@ -177,20 +177,29 @@ export async function createAgent(
 
 /**
  * Expand the "Skills" accordion section inside the Advanced Settings area.
- * The accordion uses <details> elements; only the first non-empty section is
- * open by default. Skills is typically the second section and starts collapsed.
+ *
+ * The Advanced Settings section is a single <details> element with summary
+ * "Advanced Settings".  Inside, sections are arranged as tabs: AI Configuration,
+ * Skills, Trading Setup, Strategy.  We must open the <details> (if closed) and
+ * then click the "Skills" tab so that skill checkboxes become visible.
  */
 async function expandSkillsAccordion(page: Page): Promise<void> {
-  const skillsSummary = page.locator('details summary').filter({ hasText: 'Skills' });
-  const detailsCount = await skillsSummary.count();
-  if (detailsCount === 0) return; // Skills section not rendered
+  // 1. Open the Advanced Settings <details> if it's closed
+  const advancedDetails = page.locator('details').filter({ hasText: 'Advanced Settings' }).first();
+  const detailsCount = await advancedDetails.count();
+  if (detailsCount === 0) return; // Advanced Settings not rendered
 
-  // Check if already open (it would be if it's the first non-empty section)
-  const detailsEl = page.locator('details').filter({ hasText: 'Skills' }).first();
-  const isOpen = await detailsEl.evaluate((el) => el.hasAttribute('open'));
+  const isOpen = await advancedDetails.evaluate((el) => el.hasAttribute('open'));
   if (!isOpen) {
-    await skillsSummary.first().click();
-    // Wait for the accordion animation/content to render
+    await advancedDetails.locator('summary').first().click();
+    await page.waitForTimeout(300);
+  }
+
+  // 2. Click the "Skills" tab so the SkillPicker checkboxes are in the DOM
+  const skillsTab = page.getByRole('tab', { name: 'Skills' });
+  const tabCount = await skillsTab.count();
+  if (tabCount > 0) {
+    await skillsTab.first().click();
     await page.waitForTimeout(300);
   }
 }
