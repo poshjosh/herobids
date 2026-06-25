@@ -11,6 +11,7 @@ const EMPTY_GUARDRAILS: TradingGuardrailsFormValue = {
   maxPositionSizePct: '',
   stopLossPct: '',
   stopLossCooldownSecs: '',
+  openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
 };
 
 function renderControls(value: Partial<AgentControlsFormValue> = {}): string {

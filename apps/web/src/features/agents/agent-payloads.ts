@@ -116,7 +116,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   capital?: string;
   technical?: TechnicalConfig;
   style?: string;
-  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';

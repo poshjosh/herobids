@@ -43,6 +43,7 @@ const ADVANCED_FIELD_TAB: Record<string, number> = {
   maxPositionSizePct: 2,
   stopLossPct: 2,
   stopLossCooldownSecs: 2,
+  openPositionEscalationToJudgePolicy: 2,
   // Strategy
 };
 
@@ -810,6 +811,7 @@ function CreateAgentFlow({
                         maxPositionSizePct: intent.maxPositionSizePct,
                         stopLossPct: intent.stopLossPct,
                         stopLossCooldownSecs: intent.stopLossCooldownSecs,
+                        openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
                       }}
                       defaults={riskDefaultsQuery.data ?? null}
                       fieldErrors={formErrors}
@@ -818,6 +820,9 @@ function CreateAgentFlow({
                       onChange={(patch) => {
                         if ('dailyLossLimit' in patch) {
                           dailyLossLimitAutoRef.current = false;
+                        }
+                        if ('openPositionEscalationToJudgePolicy' in patch) {
+                          policyManuallySetRef.current = true;
                         }
                         setIntent((state) => ({ ...state, ...patch }));
                       }}

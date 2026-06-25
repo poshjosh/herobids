@@ -36,6 +36,7 @@ export interface TradingGuardrailsFormValue {
   maxPositionSizePct: string;
   stopLossPct: string;
   stopLossCooldownSecs: string;
+  openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
 }
 
 export interface AgentRiskDefaultsView {
@@ -281,6 +282,23 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
           placeholder={defaults ? String(Math.round(defaults.stopLossCooldownMs / 1000)) : intl.formatMessage({ id: 'common.default' })}
         />
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.stopLossCooldown.help' })}</div>
+      </div>
+
+      <div data-field="openPositionEscalationToJudgePolicy">
+        <FieldLabel>Open Position Escalation</FieldLabel>
+        <select
+          value={value.openPositionEscalationToJudgePolicy}
+          onBlur={() => onBlurField?.('openPositionEscalationToJudgePolicy')}
+          onChange={(e) => {
+            onClearFieldError?.('openPositionEscalationToJudgePolicy');
+            onChange({ openPositionEscalationToJudgePolicy: e.target.value as 'never' | 'uncovered_or_triggered' | 'always' });
+          }}
+          style={inputStyle}
+        >
+          <option value="never">Let scout inspect open positions first</option>
+          <option value="uncovered_or_triggered">Escalate only when coverage is missing or a watch fires</option>
+          <option value="always">Always escalate open positions to judge</option>
+        </select>
       </div>
     </div>
   );

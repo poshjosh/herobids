@@ -32,6 +32,7 @@ const ADVANCED_FIELD_TAB: Record<string, number> = {
   maxPositionSizePct: 2,
   stopLossPct: 2,
   stopLossCooldownSecs: 2,
+  openPositionEscalationToJudgePolicy: 2,
 };
 
 interface EditAgentModalProps {
@@ -59,7 +60,7 @@ interface FormState {
   stopLossCooldownSecs: string;
   tickIntervalMins: string;
   capital: string;
-  openPositionEscalationToJudgePolicy: string;
+  openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
 }
 
 export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditAgentModalProps) {
@@ -503,6 +504,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       maxPositionSizePct: form.maxPositionSizePct,
                       stopLossPct: form.stopLossPct,
                       stopLossCooldownSecs: form.stopLossCooldownSecs,
+                      openPositionEscalationToJudgePolicy: form.openPositionEscalationToJudgePolicy,
                     }}
                     defaults={riskDefaultsQuery.data ?? null}
                     fieldErrors={formErrors}

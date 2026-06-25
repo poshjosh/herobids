@@ -346,3 +346,11 @@ Frontend:
 - LOW: Raw enum value displayed without human-readable formatting.
 - LOW: Policy field has no validateFieldOnBlur wiring — Phase 7 dropdown should add this.
 - LOW: `normalizeEscalationPolicy()` called twice in conditional — micro-optimization.
+
+### Phase 7
+- MEDIUM: Hardcoded English labels in dropdown — translations come in Phase 8.
+- MEDIUM: Hardcoded English label in review step — translations come in Phase 8.
+- LOW: Raw enum value displayed in review step (uncovered_or_triggered) — should map to human-readable.
+- LOW: `normalizeEscalationPolicy()` called twice in conditional spread — micro-optimization.
+- LOW: `as` cast from `string` to union in AgentControlsSection.tsx — practically safe, options are hardcoded.
+- LOW: No render test for new dropdown in AgentControlsSection.test.tsx — gap.
