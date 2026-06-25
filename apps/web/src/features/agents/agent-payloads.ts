@@ -3,6 +3,16 @@ import type { CapabilityMode } from './CapabilitySelector.js';
 import type { TechnicalConfig } from './technical-config-helpers.js';
 import { parseTickIntervalMinutesInput } from './tick-interval.js';
 
+const VALID_ESCALATION_POLICIES = ['never', 'uncovered_or_triggered', 'always'] as const;
+
+export function normalizeEscalationPolicy(value: string | null | undefined): 'never' | 'uncovered_or_triggered' | 'always' | null {
+  if (value === null || value === undefined || value === '') return null;
+  if ((VALID_ESCALATION_POLICIES as readonly string[]).includes(value)) {
+    return value as 'never' | 'uncovered_or_triggered' | 'always';
+  }
+  return null; // invalid values fall back to omission (let DB default handle it)
+}
+
 function getTickIntervalMsOrThrow(value: string): number | undefined {
   const parsedTickInterval = parseTickIntervalMinutesInput(value);
   if (parsedTickInterval.kind === 'empty') {
@@ -51,6 +61,7 @@ export interface CreateAgentIntentPayloadInput {
   stopLossPct: string;
   stopLossCooldownSecs: string;
   style?: string;
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
 }
 
 export interface UpdateAgentPayloadInput {
@@ -73,6 +84,7 @@ export interface UpdateAgentPayloadInput {
   stopLossCooldownSecs: string;
   tickIntervalMins: string;
   capital: string;
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   modelOverrideEnabled: boolean;
   modelForm: {
     provider: string;
@@ -104,6 +116,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   capital?: string;
   technical?: TechnicalConfig;
   style?: string;
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
@@ -131,6 +144,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
     ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
     ...(input.style ? { style: input.style } : {}),
+    ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
   };
 }
@@ -159,6 +173,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   lightModel: string | null;
   heavyModel: string | null;
   technical?: TechnicalConfig | null;
+  openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -186,6 +201,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs),
     tickIntervalMs,
     capital: input.capital.trim() || null,
+    ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     provider: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.provider || null : null,
     lightModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.lightModel || null : null,
     heavyModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.heavyModel || null : null,

@@ -805,6 +805,7 @@ export interface Agent {
   tickIntervalMs: number | null;
   capital: string | null;
   style: string | null;
+  openPositionEscalationToJudgePolicy: string | null;
   technical: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
@@ -898,6 +899,7 @@ export const agents = {
     tickIntervalMs?: number | null;
     capital?: string | null;
     style?: string | null;
+    openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: {
@@ -924,6 +926,7 @@ export const agents = {
     stopLossCooldownMs?: number | null;
     tickIntervalMs?: number | null;
     capital?: string | null;
+    openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),

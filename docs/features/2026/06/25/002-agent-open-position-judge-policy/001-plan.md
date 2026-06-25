@@ -331,3 +331,9 @@ Frontend:
 - MEDIUM: Missing test for default value behavior when field is omitted on create.
 - LOW: Misleading payload name 'test-default' in create test — should be 'test-uncovered-or-triggered'.
 - LOW: opaque `agentRows` entry named 'agent-refetch' could use a comment.
+
+### Phase 5
+- ~~HIGH~~ FIXED: Unsafe `as` cast from `string` to union type in EditAgentModal. Replaced with `normalizeEscalationPolicy()` helper.
+- MEDIUM: Missing `openPositionEscalationToJudgePolicy` in create flow wiring (AgentsPage.tsx) — Phase 6 will address.
+- MEDIUM: Inconsistent conditional-spread pattern in update builder vs sibling fields (uses `!== undefined` while others use `|| null`). Intentional for PATCH semantics.
+- LOW: No tests for new field in payload builders — Phase 9.

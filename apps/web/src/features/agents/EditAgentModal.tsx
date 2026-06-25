@@ -7,7 +7,7 @@ import { extractAgentObjective, formatExecutionMode, hasCapabilityFamily, listSe
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
-import { buildUpdateAgentPayload } from './agent-payloads.js';
+import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payloads.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { AgentControlsSection, TradingGuardrailsFields } from './AgentControlsSection.js';
 import { formatTickIntervalMinutesForInput, getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
@@ -59,6 +59,7 @@ interface FormState {
   stopLossCooldownSecs: string;
   tickIntervalMins: string;
   capital: string;
+  openPositionEscalationToJudgePolicy: string;
 }
 
 export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditAgentModalProps) {
@@ -106,6 +107,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     stopLossCooldownSecs: initialData.stopLossCooldownMs != null ? String(initialData.stopLossCooldownMs / 1000) : '',
     tickIntervalMins: formatTickIntervalMinutesForInput(initialData.tickIntervalMs),
     capital: initialData.capital ?? '',
+    openPositionEscalationToJudgePolicy: initialData.openPositionEscalationToJudgePolicy ?? 'uncovered_or_triggered',
   });
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -246,6 +248,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         preserveOriginalTickIntervalMs: !tickIntervalTouched,
         originalTickIntervalMs: initialData.tickIntervalMs ?? null,
         capital: form.capital,
+        openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(form.openPositionEscalationToJudgePolicy),
         modelOverrideEnabled,
         modelForm,
       }));
