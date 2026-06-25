@@ -954,8 +954,8 @@ function CreateAgentFlow({
             )}
             {requiresTradingSetup && (
               <ReviewRow
-                label="Open Position Escalation"
-                value={intent.openPositionEscalationToJudgePolicy}
+                label={intl.formatMessage({ id: 'agents.review.openPositionEscalationPolicy' })}
+                value={intl.formatMessage({ id: `agents.controls.openPositionEscalationPolicy.${intent.openPositionEscalationToJudgePolicy}` })}
               />
             )}
           </tbody>

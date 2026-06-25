@@ -354,3 +354,10 @@ Frontend:
 - LOW: `normalizeEscalationPolicy()` called twice in conditional spread — micro-optimization.
 - LOW: `as` cast from `string` to union in AgentControlsSection.tsx — practically safe, options are hardcoded.
 - LOW: No render test for new dropdown in AgentControlsSection.test.tsx — gap.
+
+### Phase 8
+- PRE-EXISTING CRITICAL: Missing locale key `agents.create.tradingBinding` in all three locales — will display raw key ID. Not introduced by this feature.
+- PRE-EXISTING HIGH: Unit mismatch in tick interval labels for ar.ts/hi.ts (ms vs min). Not introduced by this feature.
+- MEDIUM: Key name `agents.controls.costPreset.standard` now displays "Balanced" — key-value mismatch. Intentional per plan (avoid backend churn).
+- MEDIUM: `.never` policy key name vs behavior-descriptive label — key misleading for maintainers.
+- LOW: Comment style inconsistency in en.ts.

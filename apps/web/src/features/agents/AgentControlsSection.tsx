@@ -285,7 +285,7 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
       </div>
 
       <div data-field="openPositionEscalationToJudgePolicy">
-        <FieldLabel>Open Position Escalation</FieldLabel>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy' })}</FieldLabel>
         <select
           value={value.openPositionEscalationToJudgePolicy}
           onBlur={() => onBlurField?.('openPositionEscalationToJudgePolicy')}
@@ -295,9 +295,9 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
           }}
           style={inputStyle}
         >
-          <option value="never">Let scout inspect open positions first</option>
-          <option value="uncovered_or_triggered">Escalate only when coverage is missing or a watch fires</option>
-          <option value="always">Always escalate open positions to judge</option>
+          <option value="never">{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy.never' })}</option>
+          <option value="uncovered_or_triggered">{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy.uncovered_or_triggered' })}</option>
+          <option value="always">{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy.always' })}</option>
         </select>
       </div>
     </div>
