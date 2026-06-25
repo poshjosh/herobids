@@ -391,6 +391,7 @@ export class AgentSessionManager {
           runtimeDescriptor,
           // Hybrid mode: agent has both technical scanner + LLM intelligence
           hybridMode: !!(agent.unifiedConfig?.technical && agent.unifiedConfig?.intelligence),
+          openPositionEscalationToJudgePolicy: agent.openPositionEscalationToJudgePolicy,
         };
         await this.runtimeLauncher.launch({
           agentId: session.agentId,
