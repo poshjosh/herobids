@@ -124,10 +124,10 @@ describe('EditAgentModal rendering', () => {
     });
     expect(html).toContain(messages['agents.controls.costPreset']);
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
-    expect(html).toContain(messages['agents.controls.capital.help']);
+    // Capital controls are now inside the (collapsed) Trading Setup advanced tab.
+    expect(html).toContain(messages['agents.advanced.tradingSetup']);
     expect(html).toContain('Expected cadence: every 6h');
     expect(html).toContain('Estimated daily LLM spend: ~$0.50');
-    expect(html).toContain('value="1500"');
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });
 
@@ -147,7 +147,6 @@ describe('EditAgentModal rendering', () => {
     // Trading guardrails now live in the (non-default) "Trading Setup" advanced tab.
     // The static render only emits the active tab's panel, so we assert the tab is present.
     expect(html).toContain(messages['agents.advanced.tradingSetup']);
-    expect(html).toContain(messages['agents.controls.capital']);
   });
 
   it('omits the trading setup tab until capability readiness is loaded when no trading values are set', () => {
