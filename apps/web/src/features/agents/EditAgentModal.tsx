@@ -99,10 +99,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     : null;
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
   const showTechnical = form.capabilityMode === 'technical' || form.capabilityMode === 'both';
+  const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   const hasTradingCapability = showIntelligence && (skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability);
-  const showTradingControls = hasTradingCapability
+  const showTradingControls = requiresTradingSetup || hasTradingCapability
     || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
@@ -421,7 +422,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             tradingSetupSlot={
               showTradingControls ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {hasTradingCapability && (
+                  {(requiresTradingSetup || hasTradingCapability) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <FieldLabel>{intl.formatMessage({ id: 'agents.executionMode.label' })}</FieldLabel>
                       <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.executionMode} onChange={(e) => setForm((prev) => ({ ...prev, executionMode: e.target.value }))}>
@@ -436,7 +437,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     </div>
                   )}
 
-                  {hasTradingCapability && (
+                  {(requiresTradingSetup || hasTradingCapability) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
                       <input
