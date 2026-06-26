@@ -931,7 +931,7 @@ describe('AgentDecisionHandler', () => {
 
       expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
         'dec-sync',
-        { status: 'rejected', code: 'instrument_mismatch', message: 'Decision instrument does not match the bot symbol' },
+        { status: 'rejected', code: 'instrument_mismatch', message: 'Decision instrument does not match the actor symbol' },
       );
     });
 

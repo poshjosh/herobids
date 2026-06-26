@@ -132,7 +132,7 @@ export class AgentDecisionHandler {
     // 3. Resolve execution deps — try bot registry first, then agent grants
     const intakeResult = await this.intakeResolver.getIntakeDeps(resolveId, payload.instrumentId);
     if (!intakeResult) {
-      const msg = 'No execution context — ensure the bot is active or the agent has an active trading grant';
+      const msg = 'No execution context — ensure the actor is active and has an active trading grant';
       setSyncReply('rejected', { code: 'instance_not_running', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
@@ -158,11 +158,11 @@ export class AgentDecisionHandler {
 
     // Instrument mismatch check — skip for agents (multi-symbol)
     if (intakeDeps.actorType !== 'agent' && payload.instrumentId !== intakeDeps.symbol) {
-      setSyncReply('rejected', { code: 'instrument_mismatch', message: 'Decision instrument does not match the bot symbol' });
+      setSyncReply('rejected', { code: 'instrument_mismatch', message: 'Decision instrument does not match the actor symbol' });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'instrument_mismatch',
-        message: 'Decision instrument does not match the bot symbol',
+        message: 'Decision instrument does not match the actor symbol',
         retryable: false,
         details: {
           expectedInstrumentId: intakeDeps.symbol,
@@ -174,7 +174,7 @@ export class AgentDecisionHandler {
 
     const context = await this.intakeResolver.getDecisionContext(resolveId, payload.instrumentId);
     if (!context) {
-      const msg = 'No decision context available — bot may still be initializing or mark price unavailable';
+      const msg = 'No decision context available — actor may still be initializing or mark price unavailable';
       setSyncReply('rejected', { code: 'no_context', message: msg });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
