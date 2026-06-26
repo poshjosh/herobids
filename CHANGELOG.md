@@ -7,6 +7,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.26-a
+
 ### Added
 
 - **Unified agent form (004-unified-agent-form)**: extracted shared `AgentFormBody` component and `AgentFormState` type consumed by both create and edit flows. Field changes happen once; both screens get them. Differences injected as `ReactNode` slots (modelSlot, skillsSlot, tradingBindingSlot, tradingSetupSlot, capabilityWarning, nameAutoHint) — no mode flags in the body. Includes `agentToFormState()` converter with runtime-validated union literal fields and `intentToFormState()` for the create shell. Added UAT cases AG-E01 through AG-E10 for the unified edit form.
