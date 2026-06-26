@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## 0.0.1-2026.06.26-b
+
+### Added
+
+- UX improvement - agent capability filter (intelligence/hybrid) for trading agents
+
 ## 0.0.1-2026.06.26-a
 
 ### Added
