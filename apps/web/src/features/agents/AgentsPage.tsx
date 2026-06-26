@@ -495,11 +495,6 @@ function CreateAgentFlow({
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
-            {intl.formatMessage({ id: 'agents.create.skillPreset.help' }) ? (
-              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                {intl.formatMessage({ id: 'agents.create.skillPreset.help' })}
-              </div>
-            ) : null}
           </div>
 
           {/* 2. Goal */}
