@@ -190,8 +190,10 @@ describe('EditAgentModal rendering', () => {
 
     // Technical config now lives in the (non-default) "Strategy" advanced tab,
     // so the static render exposes the tab label rather than the panel content.
+    // The objective field is always visible (pulled out of AgentFormBody) —
+    // it drives capability mode derivation, even when empty.
     expect(html).toContain(messages['agents.advanced.strategy']);
-    expect(html).not.toContain(messages['agents.edit.objective']);
+    expect(html).toContain(messages['agents.edit.objective']);
     expect(html).not.toContain(messages['agents.create.skills']);
   });
 

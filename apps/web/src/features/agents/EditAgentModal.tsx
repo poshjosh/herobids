@@ -272,6 +272,23 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             </select>
           </div>
 
+          {/* Goal */}
+          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '14px' }}>
+            <FieldLabel>{intl.formatMessage({ id: 'agents.edit.objective' })}</FieldLabel>
+            <textarea
+              style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
+              value={form.goal}
+              onChange={(e) => {
+                clearFieldError('goal');
+                setForm((prev) => ({ ...prev, goal: e.target.value }));
+              }}
+              onBlur={() => validateFieldOnBlur('goal')}
+              placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
+              required
+            />
+            {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
+          </div>
+
           {/* Agent Style */}
           <StyleSelector
             value={style}

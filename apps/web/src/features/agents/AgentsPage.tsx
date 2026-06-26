@@ -502,7 +502,24 @@ function CreateAgentFlow({
             ) : null}
           </div>
 
-          {/* 2. Style Selector */}
+          {/* 2. Goal */}
+          <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <FieldLabel>{intl.formatMessage({ id: intent.capabilityMode === 'both' ? 'agents.create.goalBoth' : 'agents.create.goal' })}</FieldLabel>
+            <textarea
+              style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
+              value={intent.goal}
+              onChange={(e) => {
+                clearFieldError('goal');
+                setIntent((state) => ({ ...state, goal: e.target.value }));
+              }}
+              onBlur={() => validateFieldOnBlur('goal')}
+              placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
+              required
+            />
+            {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
+          </div>
+
+          {/* 3. Style Selector */}
           <StyleSelector
             value={intent.style}
             onChange={(style) => {

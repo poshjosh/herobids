@@ -156,29 +156,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
 
   return (
     <>
-      {/* Goal — only when intelligence is active */}
-      {props.showIntelligence && (
-        <div data-field="goal" style={fieldGap}>
-          <FieldLabel>
-            {intl.formatMessage({ id: 'agents.create.goal' })}
-          </FieldLabel>
-          <textarea
-            style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
-            value={props.value.goal}
-            onChange={(e) => {
-              props.onClearFieldError('goal');
-              props.onChange({ goal: e.target.value });
-            }}
-            onBlur={() => handleFieldBlur('goal')}
-            placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
-            required
-          />
-          {props.formErrors.goal && (
-            <div style={errorStyle}>{props.formErrors.goal}</div>
-          )}
-        </div>
-      )}
-
       {/* Capital — only when trading setup is required */}
       {props.showTradingControls && props.requiresTradingSetup && (
         <div data-field="capital" style={fieldGap}>
