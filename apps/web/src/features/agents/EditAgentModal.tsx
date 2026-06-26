@@ -103,8 +103,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const hasTradingCapability = showIntelligence && (skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability);
+  // Field-value fallback shows trading controls if values were previously set,
+  // but is suppressed when the user explicitly chooses Custom (clean slate).
   const showTradingControls = requiresTradingSetup || hasTradingCapability
-    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
+    || (skillPreset !== 'custom' && Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim()));
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
@@ -256,6 +258,18 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setForm((prev) => ({
                   ...prev,
                   skillIds: resolveSkillPresetSkillIds(preset, prev.skillIds),
+                  // Clear trading values when switching to Custom so stale values
+                  // don't keep trading UI visible via the field-value fallback.
+                  ...(preset === 'custom' ? {
+                    executionMode: '' as const,
+                    capital: '',
+                    dailyLossLimit: '',
+                    maxSlippageBps: '',
+                    maxOpenPositions: '',
+                    maxPositionSizePct: '',
+                    stopLossPct: '',
+                    stopLossCooldownSecs: '',
+                  } : {}),
                 }));
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}
