@@ -93,6 +93,7 @@ export interface UpdateAgentPayloadInput {
   };
   preserveOriginalTickIntervalMs?: boolean;
   originalTickIntervalMs?: number | null;
+  style?: string;
 }
 
 export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
@@ -174,6 +175,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   heavyModel: string | null;
   technical?: TechnicalConfig | null;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
+  style?: string | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -207,5 +209,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     heavyModel: includeIntelligence && input.modelOverrideEnabled ? input.modelForm.heavyModel || null : null,
     // Send technical: null to explicitly remove it when switching away from technical mode
     ...(includeTechnical ? { technical: input.technical } : { technical: null }),
+    ...(input.style ? { style: input.style } : {}),
   };
 }

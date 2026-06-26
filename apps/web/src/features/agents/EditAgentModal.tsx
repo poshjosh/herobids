@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
@@ -13,6 +13,8 @@ import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
 import { deriveCapabilityMode } from './derive-capability-mode.js';
+import { StyleSelector } from './StyleSelector.js';
+import { type AgentStyleValue, resolveStyleDefaults } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
@@ -57,7 +59,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const preservedSkillIds = (initialData.skillIds ?? []).filter((skillId) => !selectableSkillIds.has(skillId));
   const initialTickIntervalIsLegacy = initialData.tickIntervalMs != null && !isWholeMinuteTickInterval(initialData.tickIntervalMs);
 
+  const policyManuallySetRef = useRef(false);
   const [form, setForm] = useState<AgentFormState>(() => agentToFormState(initialData));
+  const [style, setStyle] = useState<AgentStyleValue>(
+    (initialData.style as AgentStyleValue) ?? 'balanced',
+  );
   const [skillPreset, setSkillPreset] = useState<SkillPresetId>(() =>
     resolvePresetFromSkillIds(initialData.skillIds ?? []),
   );
@@ -202,6 +208,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(form.openPositionEscalationToJudgePolicy),
         modelOverrideEnabled,
         modelForm,
+        style,
       }));
     },
     onSuccess: () => {
@@ -264,6 +271,24 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
           </div>
+
+          {/* Agent Style */}
+          <StyleSelector
+            value={style}
+            onChange={(nextStyle) => {
+              const defaults = resolveStyleDefaults(nextStyle);
+              setStyle(nextStyle);
+              setForm((prev) => ({
+                ...prev,
+                costPreset: defaults.costPreset,
+                tickIntervalMins: defaults.tickIntervalMins,
+                dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                ...(policyManuallySetRef.current
+                  ? {}
+                  : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
+              }));
+            }}
+          />
 
           <AgentFormBody
             value={form}
