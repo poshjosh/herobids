@@ -384,6 +384,8 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.slowdownCaveat': 'الإيقاع الأساسي: {cadence}. قد يتباطأ وقت الخمول أو بعد الأعطال.',
   'agents.controls.capital': 'رأس المال (USD)',
   'agents.controls.capital.help': 'المبلغ الذي يُسمح للوكيل بتداوله — وليس الرصيد الكامل للمحفظة.',
+  'agents.create.technicalPreFilter.label': 'فلتر تقني مسبق',
+  'agents.create.technicalPreFilter.help': 'تصفية المرشحين للتداول قبل أن يتخذ النموذج القرار النهائي. (يقلل تكلفة النموذج)',
   'agents.controls.dailyLossLimit': 'حد الخسارة اليومية (USD)',
   'agents.controls.dailyLossLimit.help': 'اضبط هذا لفرض حد صارم. اتركه فارغًا لاستخدام السلوك الافتراضي للمنصة.',
   'agents.controls.maxOpenPositions': 'الحد الأقصى للمراكز المفتوحة',

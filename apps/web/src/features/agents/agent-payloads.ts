@@ -38,6 +38,7 @@ export interface CreateAgentIntentPayloadInput {
   name: string;
   goal: string;
   capabilityMode: CapabilityMode;
+  technicalPreFilterEnabled: boolean;
   technical: TechnicalConfig | null;
   skillIds: string[];
   hasBotManagementSkill: boolean;
@@ -68,6 +69,7 @@ export interface UpdateAgentPayloadInput {
   name: string;
   prompt: string;
   capabilityMode: CapabilityMode;
+  technicalPreFilterEnabled: boolean;
   technical: TechnicalConfig | null;
   skillIds: string[];
   hasBotManagementSkill: boolean;
@@ -121,7 +123,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
-  const includeTechnical = input.capabilityMode === 'technical' || input.capabilityMode === 'both';
+  const includeTechnical = input.technicalPreFilterEnabled;
 
   return {
     name: input.name.trim(),
@@ -185,7 +187,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     : parsedTickInterval ?? null;
 
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
-  const includeTechnical = input.capabilityMode === 'technical' || input.capabilityMode === 'both';
+  const includeTechnical = input.technicalPreFilterEnabled;
 
   return {
     name: input.name.trim(),

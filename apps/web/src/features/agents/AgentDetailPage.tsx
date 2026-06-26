@@ -298,8 +298,33 @@ export function AgentDetailPage() {
           </div>
         </Card>
 
+        {agent.activeSession && (
+          <Card>
+            <SectionLabel>{intl.formatMessage({ id: 'agents.detail.runtimeHealth' })}</SectionLabel>
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              <KV label={intl.formatMessage({ id: 'agents.detail.session' })} value={agent.activeSession.id.slice(0, 8)} />
+              <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.activeSession.status} />} />
+              <KV label={intl.formatMessage({ id: 'agents.detail.lastHeartbeat' })} value={<RelativeTime timestamp={agent.activeSession.lastHeartbeatAt} />} />
+            </div>
+          </Card>
+        )}
+
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.objective' })}</SectionLabel>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.objective' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
           <p style={{ margin: '0 0 12px', fontSize: '13px', lineHeight: '1.5' }}>{objective}</p>
           {operatorContextItems.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
@@ -327,10 +352,27 @@ export function AgentDetailPage() {
               <KV label={intl.formatMessage({ id: 'agents.detail.sessionsRun' })} value={String((sessionsQuery.data as unknown[]).length)} />
             )}
           </div>
+            </div>
+          </details>
         </Card>
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.promptSurfaces' })}</SectionLabel>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                marginBottom: '0',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.promptSurfaces' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
           {!canViewPrompts && (
             <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
               Prompt visibility is not available on your current plan.
@@ -412,7 +454,7 @@ export function AgentDetailPage() {
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
                         overflow: 'auto',
-                        maxHeight: '360px',
+                        maxHeight: '200px',
                       }}
                     >
                       {activeContent}
@@ -422,11 +464,27 @@ export function AgentDetailPage() {
               </div>
             );
           })()}
+            </div>
+          </details>
         </Card>
 
         <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
           <Card>
-            <SectionLabel>{intl.formatMessage({ id: 'agents.detail.capabilities' })}</SectionLabel>
+            <details>
+              <summary
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.capabilities' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
             {skillsQuery.isLoading && <LoadingRows count={2} />}
             {skillsQuery.isError && <ErrorState message={localizeApiError(intl, skillsQuery.error, 'common.errorTitle')} />}
             {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
@@ -465,29 +523,50 @@ export function AgentDetailPage() {
                 </div>
               </section>
             )}
+              </div>
+            </details>
           </Card>
         </section>
 
         {hasTradingCapability && (
           <Card>
-            <SectionLabel>{intl.formatMessage({ id: 'agents.detail.tradesHistory' })}</SectionLabel>
-            <AgentTradesTable agentId={id!} executionMode={agent.executionMode ?? null} isActive={shouldPollRuntimePanels} />
-          </Card>
-        )}
-
-        {agent.activeSession && (
-          <Card>
-            <SectionLabel>{intl.formatMessage({ id: 'agents.detail.runtimeHealth' })}</SectionLabel>
-            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-              <KV label={intl.formatMessage({ id: 'agents.detail.session' })} value={agent.activeSession.id.slice(0, 8)} />
-              <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.activeSession.status} />} />
-              <KV label={intl.formatMessage({ id: 'agents.detail.lastHeartbeat' })} value={<RelativeTime timestamp={agent.activeSession.lastHeartbeatAt} />} />
-            </div>
+            <details>
+              <summary
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.tradesHistory' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
+                <AgentTradesTable agentId={id!} executionMode={agent.executionMode ?? null} isActive={shouldPollRuntimePanels} />
+              </div>
+            </details>
           </Card>
         )}
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.messagesToUser' })}</SectionLabel>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.messagesToUser' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
           {messagesQuery.isLoading && <LoadingRows count={3} />}
           {messagesQuery.isSuccess && messagesQuery.data.length === 0 && (
             <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noMessages' })}</p>
@@ -515,10 +594,26 @@ export function AgentDetailPage() {
               })}
             </div>
           )}
+            </div>
+          </details>
         </Card>
 
         <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.recentDecisions' })}</SectionLabel>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.recentDecisions' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
           {decisionsQuery.isLoading && <LoadingRows count={3} />}
           {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length === 0 && (
             <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noDecisions' })}</p>
@@ -533,6 +628,8 @@ export function AgentDetailPage() {
               ))}
             </div>
           )}
+            </div>
+          </details>
         </Card>
 
         <Card>

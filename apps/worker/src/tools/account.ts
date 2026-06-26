@@ -125,8 +125,8 @@ const getAccountSummaryTool: AgentTool = {
           riskLimits: riskContract ?? 'unavailable',
           warnings: warnings.length > 0 ? warnings : undefined,
           guidance: capital !== null
-            ? `Available capital: ${capital}. targetSize for submit_decision is in base units — the amount of the asset being bought or sold, not a dollar value. 1–5% of capital is a typical position size range.`
-            : 'Capital information unavailable. targetSize for submit_decision is in base units — the amount of the asset being bought or sold. Omit targetSize to let the engine compute a safe default (1% equity).',
+            ? `Available capital: ${capital}. targetSize for submit_decision is in base units — the amount of the asset being bought or sold, not a dollar value. A typical position size is 5–10% of capital; adjust up or down based on conviction and risk limits.`
+            : 'Capital information unavailable. targetSize for submit_decision is in base units — the amount of the asset being bought or sold. You must provide a value; a conservative starting point is 5% of your expected capital.',
         },
       };
     } catch (err) {

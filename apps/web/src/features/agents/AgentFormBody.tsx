@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import type { Skill } from '../../lib/api-client.js';
@@ -26,6 +26,7 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
   // Trading Setup
+  executionMode: 2,
   dailyLossLimit: 2,
   maxSlippageBps: 2,
   maxOpenPositions: 2,
@@ -96,6 +97,17 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       setAdvancedExpandSeq((s) => s + 1);
     }
   }
+
+  // Auto-expand Advanced Settings whenever the parent pushes errors for fields
+  // that live inside it (e.g. executionMode, maxOpenPositions). This covers
+  // the "Review →" button path where the parent sets formErrors directly.
+  useEffect(() => {
+    const advancedErrorKeys = Object.keys(props.formErrors).filter((k) => k in ADVANCED_FIELD_TAB);
+    if (advancedErrorKeys.length > 0) {
+      bumpAdvancedExpand(advancedErrorKeys);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.formErrors]);
 
   function handleFieldBlur(fieldName: string) {
     // Derive venue for validation: live/shadow need a non-empty venue
@@ -177,6 +189,54 @@ export function AgentFormBody(props: AgentFormBodyProps) {
           )}
           <div style={helperStyle}>
             {intl.formatMessage({ id: 'agents.controls.capital.help' })}
+          </div>
+        </div>
+      )}
+
+      {/* Technical Pre-Filter Toggle — only for trading agents */}
+      {props.requiresTradingSetup && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+          <div
+            role="switch"
+            aria-checked={props.value.technicalPreFilterEnabled}
+            tabIndex={0}
+            onClick={() => props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled })}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled });
+              }
+            }}
+            style={{
+              position: 'relative',
+              width: '40px',
+              height: '22px',
+              flexShrink: 0,
+              borderRadius: '11px',
+              background: props.value.technicalPreFilterEnabled ? 'var(--color-brand)' : 'var(--color-border)',
+              cursor: 'pointer',
+              transition: 'background 0.15s',
+            }}
+          >
+            <div style={{
+              position: 'absolute',
+              top: '2px',
+              left: props.value.technicalPreFilterEnabled ? '20px' : '2px',
+              width: '18px',
+              height: '18px',
+              borderRadius: '50%',
+              background: '#fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              transition: 'left 0.15s',
+            }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
+              {intl.formatMessage({ id: 'agents.create.technicalPreFilter.label' })}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+              {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
+            </span>
           </div>
         </div>
       )}

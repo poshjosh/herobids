@@ -12,7 +12,6 @@ import { validateCreateAgentForm, type ValidationConstraints } from './form-vali
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
-import { deriveCapabilityMode } from './derive-capability-mode.js';
 import { StyleSelector } from './StyleSelector.js';
 import { type AgentStyleValue, resolveStyleDefaults } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
@@ -98,7 +97,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     ? (initialData.tickIntervalMs ?? null)
     : null;
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
-  const showTechnical = form.capabilityMode === 'technical' || form.capabilityMode === 'both';
+  const showTechnical = form.technicalPreFilterEnabled;
   const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   // Short-circuit to false when a non-trading preset (Custom or
   // Personal Assistant) is selected — no trading skills are inferred
@@ -121,7 +120,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
   };
 
-  // Derive capabilityMode from skill selection + goal text (same logic as create form)
+  // Sync capabilityMode from technicalPreFilterEnabled toggle + trading skill presence
   useEffect(() => {
     setForm((state) => {
       const resolvedSkills = selectableSkills.filter((s) => state.skillIds.includes(s.id));
@@ -129,13 +128,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         skillPreset === 'trading' ? [{ capabilityFamilies: ['trading'] }] : [];
       const effectiveSkills =
         resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
-      const derived = deriveCapabilityMode(effectiveSkills, state.goal);
+      const hasTradingSkill = hasCapabilityFamily(effectiveSkills, 'trading');
+      const derived: CapabilityMode = state.technicalPreFilterEnabled && hasTradingSkill ? 'both' : 'intelligence';
       if (derived !== state.capabilityMode) {
         return { ...state, capabilityMode: derived };
       }
       return state;
     });
-  }, [form.skillIds, form.goal, selectableSkills, skillPreset]);
+  }, [form.skillIds, form.technicalPreFilterEnabled, selectableSkills, skillPreset]);
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
@@ -191,13 +191,14 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const mutation = useMutation({
     mutationFn: () => {
       const skillIds = Array.from(new Set([...preservedSkillIds, ...form.skillIds.filter((skillId) => selectableSkillIds.has(skillId))]));
-      const technicalPayload = (form.capabilityMode === 'technical' || form.capabilityMode === 'both')
+      const technicalPayload = form.technicalPreFilterEnabled
         ? technicalFormStateToPayload(form.technicalConfig)
         : null;
       return agentsApi.update(agentId, buildUpdateAgentPayload({
         name: form.name,
         prompt: form.goal,
         capabilityMode: form.capabilityMode,
+        technicalPreFilterEnabled: form.technicalPreFilterEnabled,
         technical: technicalPayload,
         skillIds,
         hasBotManagementSkill,

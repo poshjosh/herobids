@@ -18,6 +18,7 @@ function validIntent(overrides: Partial<Parameters<typeof validateCreateAgentFor
     maxPositionSizePct: '',
     stopLossPct: '',
     venue: 'hyperliquid',
+    venueType: 'orderbook',
     executionMode: 'paper',
     requiresTradingSetup: true,
     ...overrides,
@@ -165,11 +166,36 @@ describe('validateCreateAgentForm', () => {
 
   it('does not require venue in paper mode', () => {
     const result = validateCreateAgentForm(
-      validIntent({ venue: '', executionMode: 'paper' }),
+      validIntent({ venue: '', venueType: '', executionMode: 'paper' }),
       DEFAULT_CONSTRAINTS,
     );
     expect(result.valid).toBe(true);
     expect(result.errors.venue).toBeUndefined();
+  });
+
+  it('returns error for paper mode with swap venue', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ executionMode: 'paper', venueType: 'swap' }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.executionMode).toBeDefined();
+  });
+
+  it('allows shadow mode with swap venue', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ executionMode: 'shadow', venue: 'jupiter', venueType: 'swap' }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.errors.executionMode).toBeUndefined();
+  });
+
+  it('allows live mode with swap venue', () => {
+    const result = validateCreateAgentForm(
+      validIntent({ executionMode: 'live', venue: 'jupiter', venueType: 'swap' }),
+      DEFAULT_CONSTRAINTS,
+    );
+    expect(result.errors.executionMode).toBeUndefined();
   });
 
   it('returns multiple errors when multiple fields are invalid', () => {

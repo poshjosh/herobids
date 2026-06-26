@@ -16,6 +16,8 @@ export interface AgentFormState {
 
   // Capability
   capabilityMode: CapabilityMode;
+  /** true = scanner pre-filters trade candidates before LLM decides (hybrid mode). Only applies to trading agents. */
+  technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
 
   // Skills
@@ -87,6 +89,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
     name: agent.name,
     goal,
     capabilityMode,
+    technicalPreFilterEnabled: agent.technical != null,
     technicalConfig: agent.technical
       ? technicalConfigToFormState(agent.technical)
       : defaultTechnicalConfigFormState(),
@@ -126,6 +129,7 @@ export function intentToFormState(intent: {
   name: string;
   goal: string;
   capabilityMode: CapabilityMode;
+  technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
   skillIds: string[];
   executionMode: 'paper' | 'shadow' | 'live' | '';
@@ -146,6 +150,7 @@ export function intentToFormState(intent: {
     name,
     goal,
     capabilityMode,
+    technicalPreFilterEnabled,
     technicalConfig,
     skillIds,
     executionMode,
@@ -166,6 +171,7 @@ export function intentToFormState(intent: {
     name,
     goal,
     capabilityMode,
+    technicalPreFilterEnabled,
     technicalConfig,
     skillIds,
     executionMode,

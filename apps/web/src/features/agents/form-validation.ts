@@ -21,6 +21,7 @@ export interface CreateAgentFormIntent {
   maxPositionSizePct: string;
   stopLossPct: string;
   venue: string;
+  venueType: string;
   executionMode: string;
   requiresTradingSetup: boolean;
 }
@@ -97,6 +98,11 @@ export function validateCreateAgentForm(
   const isLiveOrShadow = intent.executionMode === 'live' || intent.executionMode === 'shadow';
   if (isLiveOrShadow && !intent.venue.trim()) {
     errors.venue = 'Venue is required for live or shadow trading.';
+  }
+
+  // paper mode is not supported for swap venues (e.g. Jupiter)
+  if (intent.executionMode === 'paper' && intent.venueType === 'swap') {
+    errors.executionMode = 'Paper mode is not supported for swap venues — use shadow or live.';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };
