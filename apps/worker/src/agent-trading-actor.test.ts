@@ -900,7 +900,7 @@ describe('AgentTradingActor', () => {
       await actor.stop();
     });
 
-    it('starts without swapAssets for swap venues (agents resolve tokens dynamically)', async () => {
+    it('starts with swap adapter even without pre-configured swapAssets (agents resolve tokens dynamically)', async () => {
       const factory = makeVenueAdapterFactory();
       const actor = new AgentTradingActor(makeBaseDeps({
         executionMode: 'shadow',
@@ -910,10 +910,14 @@ describe('AgentTradingActor', () => {
         venueAdapterFactory: factory as any,
       }));
 
-      // Agents can start without pre-configured swapAssets — they decide tokens
-      // dynamically via submit_decision. The swap venue adapter is simply skipped.
+      // Agents can start without pre-configured swapAssets — the swap adapter is
+      // still built so that token pairs can be resolved dynamically at decision time
+      // from the instrument ID. Decimals are fetched on-demand by the adapter.
       await expect(actor.start()).resolves.toBeUndefined();
-      expect(factory.buildSwapAdapter).not.toHaveBeenCalled();
+      expect(factory.buildSwapAdapter).toHaveBeenCalledWith(expect.objectContaining({
+        swapAssets: undefined,
+        venue: 'jupiter',
+      }));
     });
   });
 
@@ -972,6 +976,40 @@ describe('AgentTradingActor', () => {
       const deps = actor.getIntakeDeps('SOL/USDC');
       expect(deps!.venueType).toBe('swap');
       expect(deps!.swapAssets).toEqual(swapAssets);
+
+      await actor.stop();
+    });
+
+    it('rejects bare token instrument on swap venue when no pre-configured swapAssets', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        venueType: 'swap',
+        venue: '1inch',
+        swapAssets: undefined,
+      }));
+      await actor.start();
+
+      const result = actor.getIntakeDeps('WETH');
+      expect(result).not.toBeUndefined();
+      expect(result).toHaveProperty('rejected', true);
+      expect((result as { code: string; message: string }).code).toBe('swap.instrument_format');
+      expect((result as { message: string }).message).toContain('BASE/QUOTE');
+      expect((result as { message: string }).message).toContain('WETH');
+
+      await actor.stop();
+    });
+
+    it('accepts BASE/QUOTE instrument on swap venue without pre-configured swapAssets', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        venueType: 'swap',
+        venue: '1inch',
+        swapAssets: undefined,
+      }));
+      await actor.start();
+
+      const deps = actor.getIntakeDeps('WETH/USDC');
+      expect(deps).not.toBeUndefined();
+      expect(deps).not.toHaveProperty('rejected');
+      expect(deps!.swapAssets).toEqual({ baseAsset: 'WETH', quoteAsset: 'USDC' });
 
       await actor.stop();
     });

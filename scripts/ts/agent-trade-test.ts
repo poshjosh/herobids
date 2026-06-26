@@ -339,7 +339,8 @@ function buildTradeTestDecision(): { instrumentId: string; targetSize: string } 
   if (VENUE === '1inch') {
     // 1inch swap: go_long = buy WETH with USDC on Base.
     // targetSize is the WETH amount (~$0.02 at current prices — minimal risk).
-    return { instrumentId: 'WETH', targetSize: '0.00001' };
+    // Instrument MUST be BASE/QUOTE format for swap venues.
+    return { instrumentId: 'WETH/USDC', targetSize: '0.00001' };
   }
 
   fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit, 1inch`);

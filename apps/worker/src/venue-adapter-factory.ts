@@ -182,17 +182,18 @@ export class VenueAdapterFactory {
   async buildSwapAdapter(opts: {
     venueAccountId: string;
     venue: string;
-    swapAssets: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number };
+    swapAssets?: { baseAsset: string; quoteAsset: string; baseDecimals: number; quoteDecimals: number };
     actorType: string;
     actorId: string;
   }): Promise<SwapAdapterResult> {
     const { venueAccountId, venue, swapAssets, actorType, actorId } = opts;
     const { db, journal, venues } = this.deps;
 
-    const tokenDecimals: Record<string, number> = {
-      [swapAssets.baseAsset]: swapAssets.baseDecimals,
-      [swapAssets.quoteAsset]: swapAssets.quoteDecimals,
-    };
+    const tokenDecimals: Record<string, number> = {};
+    if (swapAssets) {
+      tokenDecimals[swapAssets.baseAsset] = swapAssets.baseDecimals;
+      tokenDecimals[swapAssets.quoteAsset] = swapAssets.quoteDecimals;
+    }
 
     if (venue === '1inch') {
       let privateKey: string | undefined;

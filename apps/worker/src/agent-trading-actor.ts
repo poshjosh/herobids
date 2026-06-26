@@ -272,22 +272,22 @@ export class AgentTradingActor implements ExecutionActor {
       } else if (deps.venueType === 'swap') {
         // Agents can start without pre-configured swapAssets — they decide
         // tokens dynamically via submit_decision. Decimals are resolved on-demand
-        // at decision time. Bots must have swapAssets at creation (validated by
-        // BotConfigSchema). When swapAssets are absent the swap venue adapter is
-        // skipped; the actor starts in a swap-capable-but-unconfigured state.
-        if (deps.swapAssets) {
-          const result = await deps.venueAdapterFactory.buildSwapAdapter({
-            venueAccountId: deps.venueAccountId,
-            venue: deps.venue,
-            swapAssets: deps.swapAssets,
-            actorType: 'agent',
-            actorId: deps.agentId,
-          });
-          this.swapVenue = result.swapVenue;
-          this.signerPresent = result.signerPresent;
-          this.swapConfirmationPoller = result.confirmationPoller ?? deps.swapConfirmationPoller;
-        } else {
-          this.logger.warn({ venue: deps.venue, agentId: deps.agentId }, 'Agent started without swapAssets — swap execution unavailable until swapAssets are configured');
+        // at decision time by the swap adapter (fetches from on-chain / token
+        // registry when a token is first encountered). Bots must have swapAssets
+        // at creation (validated by BotConfigSchema).
+        const result = await deps.venueAdapterFactory.buildSwapAdapter({
+          venueAccountId: deps.venueAccountId,
+          venue: deps.venue,
+          swapAssets: deps.swapAssets,
+          actorType: 'agent',
+          actorId: deps.agentId,
+        });
+        this.swapVenue = result.swapVenue;
+        this.signerPresent = result.signerPresent;
+        this.swapConfirmationPoller = result.confirmationPoller ?? deps.swapConfirmationPoller;
+        if (!deps.swapAssets) {
+          this.logger.info({ venue: deps.venue, agentId: deps.agentId },
+            'Agent started without pre-configured swapAssets — token pairs will be resolved from instrument at decision time');
         }
       }
 
@@ -759,6 +759,18 @@ export class AgentTradingActor implements ExecutionActor {
     }
 
     const swapDecisionMetadata = this.buildSwapDecisionMetadata(instrumentId);
+
+    // Require BASE/QUOTE instrument format for swap venues when no pre-configured
+    // swapAssets exist. Agents must specify the pair explicitly so the system
+    // never guesses which token is the quote side of a trade.
+    if (this.deps.venueType === 'swap' && !this.deps.swapAssets && !swapDecisionMetadata?.swapAssets) {
+      return {
+        rejected: true,
+        code: 'swap.instrument_format',
+        message: `Swap venue requires instrument in BASE/QUOTE format (e.g. 'WETH/USDC' for 1inch on Base, 'SOL/USDC' for Jupiter on Solana). Got: '${instrumentId}'`,
+        retryable: true,
+      };
+    }
 
     // Compute per-instrument unrealized P&L; when unavailable (missing marks),
     // omit openPositions too to prevent single-mark cross-instrument mispricing.
