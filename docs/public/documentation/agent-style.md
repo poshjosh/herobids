@@ -13,6 +13,7 @@ Agent style controls how aggressively the AI agent spends its daily LLM budget. 
 | **Regime gate** | ✅ On | ✅ On | ❌ Off | ✅ On |
 | **Context-hash gate** | ✅ On | ✅ On | ✅ On | ✅ On |
 | **Adaptive interval** | ✅ On | ❌ Off | ❌ Off | ✅ On |
+| **Open position escalation** | Never | On missing coverage | Always | ≤$3: never; >$3: on missing coverage |
 | **Default thinking depth** | None | Light | Deep | ≤$3: none; >$3: light |
 
 ## What each field means
@@ -28,6 +29,14 @@ Agent style controls how aggressively the AI agent spends its daily LLM budget. 
 **Context-hash gate** — Skips a tick if the full reasoning context is identical to the previous tick (e.g. no new fills, unchanged positions, same prices).
 
 **Adaptive interval** — Automatically widens the tick interval during quiet periods to conserve budget, then tightens it when significant events occur.
+
+**Open position escalation** — When you have open positions, should the scout automatically escalate to the judge (the more capable model) every tick, or let the cheaper scout model handle routine checks? 
+
+- **Never** lets the scout inspect first; 
+- **On missing coverage** escalates only when a position lacks active monitoring (e.g. no stop-loss or take-profit order covering it). 
+- **Always** forces the judge to review every tick; 
+
+See [FAQs](/help/faqs#scout-judge-escalation) for more on the scout-judge model.
 
 **Thinking depth** — Controls how much internal chain-of-thought reasoning the model performs before producing a response. `none` = direct answer; `light` = brief reasoning; `deep` = extended reasoning.
 

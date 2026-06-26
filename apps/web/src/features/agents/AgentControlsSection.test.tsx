@@ -45,7 +45,7 @@ describe('AgentControlsSection rendering', () => {
 
   it('shows preset-derived cadence and daily spend when no explicit tick interval exists', () => {
     const html = renderControls({ costPreset: 'minimal' });
-    expect(html).toContain('Expected cadence: every 1h');
+    expect(html).toContain('Expected cadence: every 90 min');
     expect(html).toContain('Estimated daily LLM spend: ~$3.00');
   });
 
