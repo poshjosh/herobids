@@ -8,7 +8,7 @@ import { convertZodToJsonSchema } from './registry.js';
 const SubmitDecisionParamsSchema = z.object({
   instrumentId: z.string().min(1).describe('Venue-specific instrument identifier. Use base tickers for perpetuals venues (e.g. "BTC", "SOL") and pair symbols for swap venues (e.g. "SOL/USDC").'),
   intent: z.enum(['go_long', 'go_short', 'go_flat', 'increase', 'decrease']).describe('Trading intent: go_long, go_short, go_flat (close), increase, or decrease position'),
-  targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string').describe('Target position size as a decimal string (e.g. "0.5", "100")'),
+  targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string').describe('Target position size in BASE units as a decimal string — the amount of the traded asset, not a dollar value. For ETH/USDC this means ETH (e.g. "0.0064"), not USDC.'),
   limitPrice: z.string().regex(/^\d+(\.\d+)?$/).optional().transform(v => v === '' ? undefined : v).describe('Optional limit price as a decimal string. Omit to execute at market.'),
   rationaleSummary: z.string().min(1).describe('Brief explanation of why this trade is being taken'),
   confidence: z.number().min(0).max(1).optional().describe('Confidence level 0-1. Used for position sizing hints.'),
@@ -22,7 +22,7 @@ const submitDecisionTool: AgentTool = {
   parametersSchema: SubmitDecisionParamsSchema,
   parameters: convertZodToJsonSchema(SubmitDecisionParamsSchema),
   category: 'execute-trade',
-  promptGuidance: 'Use dryRun=true first to preview the decision before submitting. Always call find_instrument to get the correct instrumentId, and get_account_summary for capital-aware sizing. Use get_schema("venue-defaults") for recommended slippage values.',
+  promptGuidance: 'Use dryRun=true first to preview the decision before submitting. Call find_instrument to get the correct instrumentId, and get_account_summary to see available capital and open positions. targetSize is denominated in the base asset (e.g. ETH in ETH/USDC), so a $50 position at $2500/ETH is "0.02". Use get_schema("venue-defaults") for recommended slippage values.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const p = params as z.infer<typeof SubmitDecisionParamsSchema>;
 

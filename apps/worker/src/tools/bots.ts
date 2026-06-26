@@ -50,7 +50,7 @@ const createBotTool: AgentTool = {
   parametersSchema: CreateBotParamsSchema,
   parameters: convertZodToJsonSchema(CreateBotParamsSchema),
   category: 'execute-trade',
-  promptGuidance: 'Use dryRun=true first to preview the bot config before committing. Resolve instruments via find_instrument, then build the config using schemas from get_schema("create_bot.config.strategy") and get_schema("create_bot.config.execution").',
+  promptGuidance: 'dryRun=true previews the bot config without creating it. find_instrument resolves instrument IDs. get_schema("create_bot.config.strategy") and get_schema("create_bot.config.execution") show available strategy and execution options.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { bindingId, config, rationale, dryRun } = params as z.infer<typeof CreateBotParamsSchema>;
 

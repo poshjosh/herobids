@@ -15,7 +15,7 @@ const getSchemaTool: AgentTool = {
   parametersSchema: GetSchemaParamsSchema,
   parameters: convertZodToJsonSchema(GetSchemaParamsSchema),
   category: 'read-config',
-  promptGuidance: 'Call get_schema("all") first to see what schemas are available, then fetch the specific schema you need before constructing any payload with ambiguous/optional fields.',
+  promptGuidance: 'get_schema("all") lists available schema names. Fetch a specific schema by name before constructing payloads with optional or ambiguous fields.',
   async execute(params: unknown, _ctx: ToolContext): Promise<ToolResult> {
     const { name } = params as z.infer<typeof GetSchemaParamsSchema>;
 

@@ -94,7 +94,7 @@ const getPriceTool: AgentTool = {
   name: 'get_price',
   description:
     'Look up the current price of a token. For Hyperliquid perps, returns the venue mark price. For DEX tokens, returns the best available oracle price from aggregators. ' +
-    'Always specify the chain — use "hyperliquid" for perps, the token\'s native chain for spot tokens, or "any" when unsure. ' +
+    'Chain is required — "hyperliquid" for perps mark price, the token\'s native chain for DEX spot tokens, or "any" when the chain is unknown. ' +
     'Returns price in USD with source and freshness metadata.',
   parametersSchema: GetPriceParamsSchema,
   parameters: convertZodToJsonSchema(GetPriceParamsSchema),

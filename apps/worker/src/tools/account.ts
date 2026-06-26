@@ -15,7 +15,7 @@ const getAccountSummaryTool: AgentTool = {
   parametersSchema: GetAccountSummaryParamsSchema,
   parameters: convertZodToJsonSchema(GetAccountSummaryParamsSchema),
   category: 'read-database',
-  promptGuidance: 'Call get_account_summary before submit_decision to compute the right targetSize. Use 1-5% of capital per position unless you have high conviction. If capital is unavailable, omit targetSize to let the engine use a safe default (1% equity).',
+  promptGuidance: 'Call get_account_summary before submit_decision to see available capital and open positions. targetSize is in base units — the amount of the asset being bought or sold. If capital is unavailable, omit targetSize to let the engine use a safe default.',
   async execute(_params: unknown, ctx: ToolContext): Promise<ToolResult> {
     if (!ctx.botRepo) {
       return {
@@ -125,8 +125,8 @@ const getAccountSummaryTool: AgentTool = {
           riskLimits: riskContract ?? 'unavailable',
           warnings: warnings.length > 0 ? warnings : undefined,
           guidance: capital !== null
-            ? `Available capital: ${capital}. Use 1-5% of capital for a single position unless you have high conviction. The default position size is 1% of equity if targetSize is omitted from submit_decision.`
-            : 'Capital information unavailable. Omit targetSize from submit_decision to let the engine compute a safe default (1% equity, capped by maxPositionSizePct).',
+            ? `Available capital: ${capital}. targetSize for submit_decision is in base units — the amount of the asset being bought or sold, not a dollar value. 1–5% of capital is a typical position size range.`
+            : 'Capital information unavailable. targetSize for submit_decision is in base units — the amount of the asset being bought or sold. Omit targetSize to let the engine compute a safe default (1% equity).',
         },
       };
     } catch (err) {

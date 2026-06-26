@@ -215,7 +215,7 @@ const statFileTool: AgentTool = {
   parametersSchema: StatFileParamsSchema,
   parameters: convertZodToJsonSchema(StatFileParamsSchema),
   category: 'read-filesystem',
-  promptGuidance: 'Use stat_file before read_file to check if a file exists and to verify it is not a directory. Also useful before delete_file to confirm the path exists and is what you expect.',
+  promptGuidance: 'stat_file checks whether a path exists, its type (file or directory), and size — useful before read_file or delete_file to avoid errors on missing or unexpected paths.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { path: relativePath } = params as z.infer<typeof StatFileParamsSchema>;
 

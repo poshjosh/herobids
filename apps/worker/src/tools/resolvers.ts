@@ -14,7 +14,7 @@ const resolveBotTool: AgentTool = {
   parametersSchema: ResolveBotParamsSchema,
   parameters: convertZodToJsonSchema(ResolveBotParamsSchema),
   category: 'read-database',
-  promptGuidance: 'Use resolve_bot to find a bot ID before stop/start/adjust operations. Matches case-insensitively against bot config symbols.',
+  promptGuidance: 'resolve_bot looks up a bot ID by name or symbol — stop_bot, start_bot, and adjust_bot_config require a bot ID. Matches case-insensitively against bot config symbols.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { name } = params as z.infer<typeof ResolveBotParamsSchema>;
 
@@ -103,7 +103,7 @@ const resolveWatchTool: AgentTool = {
   parametersSchema: ResolveWatchParamsSchema,
   parameters: convertZodToJsonSchema(ResolveWatchParamsSchema),
   category: 'read-memory',
-  promptGuidance: 'Use resolve_watch to find a watch ID before calling remove_watch. Search by note keyword or symbol.',
+  promptGuidance: 'resolve_watch looks up a watch ID by note keyword or symbol — remove_watch requires a watch ID.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { note, symbol } = params as z.infer<typeof ResolveWatchParamsSchema>;
 
@@ -185,7 +185,7 @@ const resolveTaskTool: AgentTool = {
   parametersSchema: ResolveTaskParamsSchema,
   parameters: convertZodToJsonSchema(ResolveTaskParamsSchema),
   category: 'read-memory',
-  promptGuidance: 'Use resolve_task to find a task ID before calling complete_task. Matches case-insensitively against task titles.',
+  promptGuidance: 'resolve_task looks up a task ID by title — complete_task requires a task ID. Matches case-insensitively.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { title } = params as z.infer<typeof ResolveTaskParamsSchema>;
 

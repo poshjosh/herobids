@@ -16,7 +16,7 @@ const findInstrumentTool: AgentTool = {
   parametersSchema: FindInstrumentParamsSchema,
   parameters: convertZodToJsonSchema(FindInstrumentParamsSchema),
   category: 'read-database',
-  promptGuidance: 'Always call find_instrument before submit_decision to get the correct instrumentId. Search by base token symbol (e.g. "SOL"), pair (e.g. "SOL/USDC"), or full symbol. Use venue="jupiter" for Solana tokens or venue="hyperliquid" for perpetuals.',  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
+  promptGuidance: 'Call find_instrument before submit_decision to resolve the correct instrumentId. For swap venues, instrument IDs use pair format (e.g. "WETH/USDC"), not bare symbols. Tokens must be native to the venue\'s chain. Search by base token symbol, pair, or full symbol. Use venue="jupiter" for Solana tokens or venue="hyperliquid" for perpetuals.',  async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
     const { query, venue, limit = 5 } = params as z.infer<typeof FindInstrumentParamsSchema>;
 
     if (!ctx.instrumentRepo) {
