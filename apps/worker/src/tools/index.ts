@@ -13,7 +13,6 @@ import { watchTools } from './watch.js';
 import { webAccessTools } from './web-access.js';
 import { taskTools } from './tasks.js';
 import { riskLimitsTools } from './risk-limits.js';
-import { updateOwnConfigTools } from './update-own-config.js';
 import { schemaTools } from './schema.js';
 import { accountTools } from './account.js';
 import { instrumentTools } from './find-instrument.js';
@@ -62,7 +61,6 @@ export function createToolRegistry(): ToolRegistry {
     ...webAccessTools,
     ...taskTools,
     ...riskLimitsTools,
-    ...updateOwnConfigTools,
     ...schemaTools,
     ...accountTools,
     ...instrumentTools,

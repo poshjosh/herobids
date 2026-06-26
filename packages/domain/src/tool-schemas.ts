@@ -1,7 +1,5 @@
 import { z } from 'zod';
 import {
-  TechnicalConfigSchema,
-  IntelligenceConfigSchema,
   StrategySchema,
 } from './config/schema.js';
 
@@ -144,111 +142,6 @@ function zodToJsonSchemaSimple(zodSchema: z.ZodType): Record<string, unknown> {
 
 // Registry of named schemas
 const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
-  'update_own_config.technical': {
-    schema: zodToJsonSchemaSimple(TechnicalConfigSchema),
-    example: {
-      filters: {
-        venue: 'hyperliquid',
-        venueType: 'orderbook',
-        minVolume24hUsd: 1000000,
-        networks: ['solana'],
-      },
-      regime: {
-        enabled: true,
-        minTrendStrength: 0.3,
-      },
-      indicators: {},
-      candles: {
-        interval: '15m',
-        limit: 100,
-      },
-      signalBias: 'trend-following',
-      scanIntervalMs: 60000,
-      scanBatchSize: 5,
-    },
-    version: '1.0.0',
-    description: 'Technical scanning configuration for agents. Defines filters, indicators, candle settings, and scan behaviour.',
-  },
-
-  'update_own_config.intelligence': {
-    schema: zodToJsonSchemaSimple(IntelligenceConfigSchema),
-    example: {
-      provider: 'openrouter',
-      lightModel: 'google/gemini-2.0-flash-001',
-      heavyModel: 'anthropic/claude-sonnet-4.5',
-      maxTokens: 4096,
-      wakeIntervalMs: 900000,
-    },
-    version: '1.0.0',
-    description: 'LLM intelligence configuration for agents. Defines the models and wake interval used for decision-making.',
-  },
-
-  'update_own_config.execution': {
-    schema: zodToJsonSchemaSimple(
-      z.object({
-        mode: z.enum(['paper', 'shadow', 'live']).optional(),
-        positionSizeMode: z.enum(['fixed', 'percent_equity']).optional(),
-        fixedPositionSize: z.string().optional(),
-      })
-    ),
-    example: {
-      mode: 'paper',
-      positionSizeMode: 'percent_equity',
-      fixedPositionSize: '100',
-    },
-    version: '1.0.0',
-    description: 'Execution configuration for agents. Controls execution mode, position sizing mode, and fixed position size (decimal string).',
-  },
-
-  'update_own_config.execution.fixedPositionSize': {
-    schema: {
-      type: 'object',
-      description: 'Fixed position size specification. Accept either a currency amount or a percentage of equity.',
-      oneOf: [
-        {
-          type: 'object',
-          properties: {
-            type: { type: 'string', const: 'currency' },
-            amount: { type: 'string', description: 'Currency amount as a decimal string, e.g. "1000USD" or "0.5SOL"' },
-          },
-          required: ['type', 'amount'],
-        },
-        {
-          type: 'object',
-          properties: {
-            type: { type: 'string', const: 'percent' },
-            pct: { type: 'number', minimum: 0, maximum: 100, description: 'Percentage of equity, e.g. 1.5 for 1.5%' },
-          },
-          required: ['type', 'pct'],
-        },
-      ],
-    },
-    example: { type: 'currency', amount: '1000USD' },
-    version: '1.0.0',
-    description: 'Fixed position size spec. Use {type:"currency", amount:"1000USD"} for a fixed dollar amount or {type:"percent", pct:1.5} for percentage of equity.',
-  },
-
-  'update_own_config.risk': {
-    schema: zodToJsonSchemaSimple(
-      z.object({
-        maxPositions: z.number().int().min(1).optional(),
-        maxPositionSizePct: z.number().min(0).max(100).optional(),
-        dailyMaxLossPct: z.number().min(0).max(100).optional(),
-        stopLossPct: z.number().min(0).optional(),
-        takeProfitPct: z.number().min(0).optional(),
-      })
-    ),
-    example: {
-      maxPositions: 5,
-      maxPositionSizePct: 25,
-      dailyMaxLossPct: 10,
-      stopLossPct: 5,
-      takeProfitPct: 15,
-    },
-    version: '1.0.0',
-    description: 'Risk configuration for agents. Controls position limits, loss limits, and stop-loss/take-profit percentages.',
-  },
-
   'create_bot.config.strategy': {
     schema: zodToJsonSchemaSimple(StrategySchema),
     example: {

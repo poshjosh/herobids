@@ -6,12 +6,12 @@ import { convertZodToJsonSchema } from './registry.js';
 // --- get_schema ---
 
 const GetSchemaParamsSchema = z.object({
-  name: z.string().min(1).describe('Schema name to fetch (dot-path, e.g. "update_own_config.technical"). Use "all" to list all available schema names.'),
+  name: z.string().min(1).describe('Schema name to fetch (dot-path, e.g. "create_bot.config.strategy"). Use "all" to list all available schema names.'),
 });
 
 const getSchemaTool: AgentTool = {
   name: 'get_schema',
-  description: 'Fetch the JSON Schema for a named config parameter or tool sub-schema. Use this before constructing payloads for update_own_config, create_bot, publish_artifact, execute_code, or submit_decision. Call with name="all" to list all available schemas.',
+  description: 'Fetch the JSON Schema for a named config parameter or tool sub-schema. Use this before constructing payloads for create_bot, publish_artifact, execute_code, or submit_decision. Call with name="all" to list all available schemas.',
   parametersSchema: GetSchemaParamsSchema,
   parameters: convertZodToJsonSchema(GetSchemaParamsSchema),
   category: 'read-config',

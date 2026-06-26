@@ -11,7 +11,7 @@ const GetAccountSummaryParamsSchema = z.object({});
 
 const getAccountSummaryTool: AgentTool = {
   name: 'get_account_summary',
-  description: 'Get a summary of the agent\'s trading account including usable capital, equity, open positions, P&L, and risk limits. Use this to compute appropriate position sizes (targetSize) before calling submit_decision, or to determine sizing for update_own_config.execution.fixedPositionSize.',
+  description: 'Get a summary of the agent\'s trading account including usable capital, equity, open positions, P&L, and risk limits. Use this to compute appropriate position sizes (targetSize) before calling submit_decision, or to determine sizing for position sizing configuration.',
   parametersSchema: GetAccountSummaryParamsSchema,
   parameters: convertZodToJsonSchema(GetAccountSummaryParamsSchema),
   category: 'read-database',

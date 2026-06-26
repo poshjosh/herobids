@@ -1279,7 +1279,7 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Config Operations — provides update_own_config tool access to unified config
+// Agent Config Operations — provides tools with access to unified config
 // ---------------------------------------------------------------------------
 
 function buildAgentConfigOps(): ToolContext['agentConfigOps'] {

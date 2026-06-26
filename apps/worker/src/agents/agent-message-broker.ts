@@ -658,14 +658,14 @@ export class AgentMessageBroker {
       // Safety gate: agent execution mode must not be exceeded by bot execution mode.
       // Paper agents can only create paper bots; shadow agents can create paper or shadow;
       // live agents can create any mode.
-      const agentMode = agent.executionMode;
+      const agentMode = agent.executionMode ?? 'paper';
       const botMode = validatedConfig.execution.mode ?? 'paper';
       const MODE_RANK: Record<string, number> = { paper: 0, shadow: 1, live: 2 };
       if ((MODE_RANK[botMode] ?? 0) > (MODE_RANK[agentMode] ?? 0)) {
+        const permitted = Object.keys(MODE_RANK).filter((m) => (MODE_RANK[m] ?? 0) <= (MODE_RANK[agentMode] ?? 0));
         throw new Error(
-          `Agent execution mode "${agentMode}" cannot create a bot with execution mode "${botMode}". ` +
-          `Paper agents can only create paper bots. Shadow agents can create paper or shadow bots. ` +
-          `Upgrade the agent to shadow or live mode before creating ${botMode}-mode bots.`,
+          `Cannot create a bot with execution mode "${botMode}". ` +
+          `Permitted execution modes: ${permitted.join(', ')}.`,
         );
       }
 
@@ -812,6 +812,19 @@ export class AgentMessageBroker {
           `${i.path.join('.') || 'root'}: ${i.message}`
         ).join('; ');
         throw new Error(`Bot config is invalid after merge: ${issues}`);
+      }
+
+      // Safety gate: agent execution mode must not be exceeded by bot execution mode after merge.
+      // Mirrors the create_and_start guard — prevents escalation via adjust_config.
+      const adjustedBotMode = validation.data.execution.mode ?? 'paper';
+      const agentModeForAdjust = agent.executionMode ?? 'paper';
+      const MODE_RANK_ADJUST: Record<string, number> = { paper: 0, shadow: 1, live: 2 };
+      if ((MODE_RANK_ADJUST[adjustedBotMode] ?? 0) > (MODE_RANK_ADJUST[agentModeForAdjust] ?? 0)) {
+        const permitted = Object.keys(MODE_RANK_ADJUST).filter((m) => (MODE_RANK_ADJUST[m] ?? 0) <= (MODE_RANK_ADJUST[agentModeForAdjust] ?? 0));
+        throw new Error(
+          `Cannot adjust a bot to execution mode "${adjustedBotMode}". ` +
+          `Permitted execution modes: ${permitted.join(', ')}.`,
+        );
       }
 
       // Consistency model: we persist the merged config then enqueue a restart.

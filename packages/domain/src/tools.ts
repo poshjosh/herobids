@@ -275,7 +275,6 @@ export const KNOWN_AGENT_TOOL_NAMES = [
   'stat_file',
   'stop_bot',
   'submit_decision',
-  'update_own_config',
   'watch_token',
   'write_file',
 ] as const;

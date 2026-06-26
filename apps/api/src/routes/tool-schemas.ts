@@ -8,7 +8,7 @@ const ToolSchemasQuerySchema = z.object({
 
 /**
  * GET /api/v1/tool-schemas
- * GET /api/v1/tool-schemas?name=update_own_config.technical
+ * GET /api/v1/tool-schemas?name=create_bot.config.strategy
  *
  * Returns JSON Schema (Draft 7) for tool sub-schemas that agents
  * cannot otherwise discover. Includes examples and version info.

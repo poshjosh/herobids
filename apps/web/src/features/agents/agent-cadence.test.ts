@@ -24,8 +24,8 @@ describe('deriveExpectedCadence', () => {
 
   it('falls back to preset-derived cadence when tick interval is not set', () => {
     expect(deriveExpectedCadence(null, 'standard')).toBe('every 30 min');
-    expect(deriveExpectedCadence(null, 'minimal')).toBe('every 1h');
-    expect(deriveExpectedCadence(null, 'premium')).toBe('every 15 min');
+    expect(deriveExpectedCadence(null, 'minimal')).toBe('every 90 min');
+    expect(deriveExpectedCadence(null, 'premium')).toBe('every 10 min');
   });
 
   it('derives custom cadence from the configured daily budget', () => {
@@ -90,8 +90,8 @@ describe('hasExplicitTickInterval', () => {
 
 describe('PRESET_TICK_INTERVALS', () => {
   it('has correct values for each preset', () => {
-    expect(PRESET_TICK_INTERVALS.minimal).toBe(3_600_000);
+    expect(PRESET_TICK_INTERVALS.minimal).toBe(5_400_000);
     expect(PRESET_TICK_INTERVALS.standard).toBe(1_800_000);
-    expect(PRESET_TICK_INTERVALS.premium).toBe(900_000);
+    expect(PRESET_TICK_INTERVALS.premium).toBe(600_000);
   });
 });

@@ -38,11 +38,10 @@ describe('get_schema', () => {
     expect(schemas.length).toBeGreaterThan(0);
     // Verify known schemas are present
     const names = schemas.map((s) => s.name);
-    expect(names).toContain('update_own_config.technical');
-    expect(names).toContain('update_own_config.intelligence');
-    expect(names).toContain('update_own_config.execution');
-    expect(names).toContain('update_own_config.risk');
     expect(names).toContain('create_bot.config.strategy');
+    expect(names).toContain('create_bot.config.execution');
+    expect(names).toContain('create_bot.config.risk');
+    expect(names).toContain('adjust_bot_config.config.strategy.params');
     // Each entry has description and version
     for (const s of schemas) {
       expect(s).toHaveProperty('name');
@@ -58,12 +57,12 @@ describe('get_schema', () => {
   it('returns a specific schema with example and version', async () => {
     const ctx = makeCtx();
 
-    const result = await getSchema.execute({ name: 'update_own_config.technical' }, ctx);
+    const result = await getSchema.execute({ name: 'create_bot.config.strategy' }, ctx);
 
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
     expect(data.ok).toBe(true);
-    expect(data.name).toBe('update_own_config.technical');
+    expect(data.name).toBe('create_bot.config.strategy');
     expect(data.schema).toBeDefined();
     expect(data.schema).toHaveProperty('type', 'object');
     expect(data.example).toBeDefined();
@@ -74,7 +73,7 @@ describe('get_schema', () => {
   it('returns the execution schema with correct shape', async () => {
     const ctx = makeCtx();
 
-    const result = await getSchema.execute({ name: 'update_own_config.execution' }, ctx);
+    const result = await getSchema.execute({ name: 'create_bot.config.execution' }, ctx);
 
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;
@@ -82,8 +81,7 @@ describe('get_schema', () => {
     expect(schema.type).toBe('object');
     const props = schema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('mode');
-    expect(props).toHaveProperty('positionSizeMode');
-    expect(props).toHaveProperty('fixedPositionSize');
+    expect(props).toHaveProperty('slippageBps');
   });
 
   // -------------------------------------------------------------------------
@@ -109,10 +107,10 @@ describe('get_schema', () => {
   // Fixed position size sub-schema
   // -------------------------------------------------------------------------
 
-  it('returns the fixedPositionSize sub-schema with oneOf', async () => {
+  it('returns the publish_artifact.location sub-schema with oneOf', async () => {
     const ctx = makeCtx();
 
-    const result = await getSchema.execute({ name: 'update_own_config.execution.fixedPositionSize' }, ctx);
+    const result = await getSchema.execute({ name: 'publish_artifact.location' }, ctx);
 
     expect(result.success).toBe(true);
     const data = result.data as Record<string, unknown>;

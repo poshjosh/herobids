@@ -7,9 +7,9 @@
 
 /** Preset-derived base tick intervals in milliseconds (mirrors cost-profile.ts). */
 export const PRESET_TICK_INTERVALS: Record<string, number> = {
-  minimal: 3_600_000,
+  minimal: 5_400_000,
   standard: 1_800_000,
-  premium: 900_000,
+  premium: 600_000,
 };
 
 const PRESET_DAILY_BUDGETS: Record<string, number> = {
@@ -57,7 +57,9 @@ export function formatCadence(tickIntervalMs: number): string {
     const secs = Math.round(tickIntervalMs / 1000);
     return `every ${secs}s`;
   }
-  if (tickIntervalMs < 3_600_000) {
+  // Use minutes for sub-hour intervals and for intervals that aren't a clean
+  // multiple of an hour (e.g. 90 min displays as "every 90 min", not "every 2h").
+  if (tickIntervalMs < 3_600_000 || tickIntervalMs % 3_600_000 !== 0) {
     const mins = Math.round(tickIntervalMs / 60_000);
     return `every ${mins} min`;
   }
