@@ -11,8 +11,8 @@ describe('skill preset resolution', () => {
     expect(resolveSkillPresetSkillIds('trading')).toEqual(['bot-management', 'trading']);
   });
 
-  it('custom preset preserves the supplied skillIds unchanged', () => {
-    expect(resolveSkillPresetSkillIds('custom', ['programming', 'web-access'])).toEqual(['programming', 'web-access']);
+  it('custom preset clears all skillIds', () => {
+    expect(resolveSkillPresetSkillIds('custom', ['programming', 'web-access'])).toEqual([]);
   });
 
   it('custom preset with no skills returns empty array', () => {

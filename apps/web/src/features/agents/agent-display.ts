@@ -71,9 +71,9 @@ export function listSelectableSkills(skills: Skill[]): Skill[] {
     });
 }
 
-export function resolveSkillPresetSkillIds(preset: SkillPresetId, currentSkillIds: string[] = []): string[] {
+export function resolveSkillPresetSkillIds(preset: SkillPresetId, _currentSkillIds: string[] = []): string[] {
   if (preset === 'custom') {
-    return [...currentSkillIds];
+    return [];
   }
 
   return [...SKILL_PRESET_SKILL_IDS[preset]];
