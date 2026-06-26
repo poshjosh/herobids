@@ -100,13 +100,21 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
   const showTechnical = form.capabilityMode === 'technical' || form.capabilityMode === 'both';
   const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
-  const hasTradingCapability = showIntelligence && (skillsQuery.isSuccess
+  // Short-circuit to false when a non-trading preset (Custom or
+  // Personal Assistant) is selected — no trading skills are inferred
+  // and we don't want the fallback to currentHasTradingCapability keeping
+  // the trading tab visible while the skills query is still loading.
+  const hasTradingCapability = (skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading')) && showIntelligence && (skillsQuery.isSuccess
     ? hasCapabilityFamily(selectedSkills, 'trading')
     : currentHasTradingCapability);
-  // Field-value fallback shows trading controls if values were previously set,
-  // but is suppressed when the user explicitly chooses Custom (clean slate).
+  // Field-value fallback: show trading controls whenever stored values are present,
+  // including agents that have trading values but no explicit trading skills (custom
+  // preset derived from empty skillIds). When the user explicitly picks a non-trading
+  // preset (Custom or Personal Assistant), the preset change handler clears all
+  // values synchronously, so this naturally becomes false without needing a
+  // skillPreset gate.
   const showTradingControls = requiresTradingSetup || hasTradingCapability
-    || (skillPreset !== 'custom' && Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim()));
+    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
@@ -258,9 +266,10 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setForm((prev) => ({
                   ...prev,
                   skillIds: resolveSkillPresetSkillIds(preset, prev.skillIds),
-                  // Clear trading values when switching to Custom so stale values
-                  // don't keep trading UI visible via the field-value fallback.
-                  ...(preset === 'custom' ? {
+                  // Clear trading values when switching to a non-trading preset
+                  // so stale values don't keep trading UI visible via the
+                  // field-value fallback in showTradingControls.
+                  ...(preset !== 'trading' ? {
                     executionMode: '' as const,
                     capital: '',
                     dailyLossLimit: '',
@@ -326,7 +335,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             showIntelligence={showIntelligence}
             showTechnical={showTechnical}
             showTradingControls={showTradingControls}
-            requiresTradingSetup={false}
+            requiresTradingSetup={requiresTradingSetup}
             isAdmin={isAdmin ?? false}
             selectableSkills={selectableSkills}
             skillsLoading={skillsQuery.isLoading}
@@ -447,21 +456,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       </select>
                       <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {intl.formatMessage({ id: 'agents.edit.executionModeHelp' }, { mode: formatExecutionMode(form.executionMode, intl) })}
-                      </div>
-                    </div>
-                  )}
-
-                  {(requiresTradingSetup || hasTradingCapability) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <FieldLabel>{intl.formatMessage({ id: 'agents.controls.capital' })}</FieldLabel>
-                      <input
-                        style={inputStyle}
-                        value={form.capital}
-                        onChange={(e) => setForm((prev) => ({ ...prev, capital: e.target.value }))}
-                        placeholder={intl.formatMessage({ id: 'common.unlimited' })}
-                      />
-                      <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                        {intl.formatMessage({ id: 'agents.controls.capital.help' })}
                       </div>
                     </div>
                   )}

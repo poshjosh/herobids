@@ -16,23 +16,20 @@ STEPS
   - Avoid jargon and technical terms. Use simple language that a 10-year-old can understand. 
   - Prefer simple examples to illustrate the problem.
 
-- List assumptions.
+- List assumptions, if any.
 
 - Note alternative solutions to the problem, if any and explain the pros and cons of each solution in simple terms.  
 
 - Suggest a solution to the problem. 
-  - Avoid solutions that are not maintainable, scalable, testable, or verifiable e.g .github/skills/prosol/shallow-solution.md
-    - Avoid hacks or workarounds that may break in the future.
-    - Avoid solutions that are not maintainable or scalable.
-    - Avoid solutions that are not testable or verifiable.
+  - De-prioritize hacks or solutions that are not maintainable, scalable, testable, or verifiable e.g .github/skills/prosol/shallow-solution.md
   - Prefer proper/architecturally sound solutions e.g .github/skills/prosol/correct-solution.md
   - Explain why this solution is better than the alternatives. 
-  - Provide a step-by-step plan to implement the solution. 
-  - Include any potential challenges and how to overcome them.
 
-- List open questions.
+- List open questions, if any.
 
-- List caveats or blockers.
+- List caveats or blockers, if any.
+
+- DO NOT START IMPLEMENTING THE SOLUTION.
 
 
 

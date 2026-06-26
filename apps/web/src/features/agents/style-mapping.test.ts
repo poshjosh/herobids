@@ -8,7 +8,7 @@ describe('resolveStyleDefaults', () => {
   it('returns correct config for careful style', () => {
     const config = resolveStyleDefaults('careful');
     expect(config.costPreset).toBe('minimal');
-    expect(config.tickIntervalMins).toBe('60');
+    expect(config.tickIntervalMins).toBe('90');
     expect(config.dailySpendBudgetUsd).toBe('3');
     expect(config.riskTolerance).toBe('conservative');
   });
@@ -24,7 +24,7 @@ describe('resolveStyleDefaults', () => {
   it('returns correct config for bold style', () => {
     const config = resolveStyleDefaults('bold');
     expect(config.costPreset).toBe('premium');
-    expect(config.tickIntervalMins).toBe('15');
+    expect(config.tickIntervalMins).toBe('10');
     expect(config.dailySpendBudgetUsd).toBe('30');
     expect(config.riskTolerance).toBe('aggressive');
   });
