@@ -73,7 +73,6 @@ export interface AgentFormBodyProps {
   skillsSlot?: React.ReactNode;
   tradingBindingSlot?: React.ReactNode;
   tradingSetupSlot?: React.ReactNode;
-  capabilityWarning?: React.ReactNode;
   nameAutoHint?: React.ReactNode;
 }
 
@@ -157,9 +156,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
 
   return (
     <>
-      {/* capabilityWarning slot */}
-      {props.capabilityWarning}
-
       {/* Goal — only when intelligence is active */}
       {props.showIntelligence && (
         <div data-field="goal" style={fieldGap}>

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { extractAgentObjective, formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills } from './agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -11,7 +11,8 @@ import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payl
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
-import { CapabilitySelector, type CapabilityMode } from './CapabilitySelector.js';
+import { type CapabilityMode } from './CapabilitySelector.js';
+import { deriveCapabilityMode } from './derive-capability-mode.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
@@ -23,13 +24,21 @@ interface EditAgentModalProps {
   isAdmin?: boolean;
 }
 
+/** Fixed skill sets matching SKILL_PRESET_SKILL_IDS in agent-display.ts. */
+const TRADING_SKILL_IDS = ['bot-management', 'trading'];
+const ASSISTANT_SKILL_IDS = ['task-management', 'web-access'];
+
+function resolvePresetFromSkillIds(skillIds: string[]): SkillPresetId {
+  const set = new Set(skillIds);
+  if (TRADING_SKILL_IDS.every((id) => set.has(id))) return 'trading';
+  if (ASSISTANT_SKILL_IDS.every((id) => set.has(id))) return 'personal-assistant';
+  return 'custom';
+}
+
 export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditAgentModalProps) {
   const intl = useIntl();
   const qc = useQueryClient();
   const hasExplicitModelOverride = Boolean(initialData.provider || initialData.lightModel || initialData.heavyModel);
-  const initialCapabilityMode: CapabilityMode = initialData.technical
-    ? (extractAgentObjective(initialData.prompt).trim() ? 'both' : 'technical')
-    : 'intelligence';
   const skillsQuery = useQuery({
     queryKey: ['skills'],
     queryFn: () => skillsApi.list({ scope: 'selectable' }),
@@ -48,6 +57,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const initialTickIntervalIsLegacy = initialData.tickIntervalMs != null && !isWholeMinuteTickInterval(initialData.tickIntervalMs);
 
   const [form, setForm] = useState<AgentFormState>(() => agentToFormState(initialData));
+  const [skillPreset, setSkillPreset] = useState<SkillPresetId>(() =>
+    resolvePresetFromSkillIds(initialData.skillIds ?? []),
+  );
   const [tickIntervalTouched, setTickIntervalTouched] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [modelOverrideEnabled, setModelOverrideEnabled] = useState(hasExplicitModelOverride);
@@ -90,6 +102,22 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
     stopLossMaxUnrealizedLossPct: riskDefaultsQuery.data?.stopLossPct ?? 100,
   };
+
+  // Derive capabilityMode from skill selection + goal text (same logic as create form)
+  useEffect(() => {
+    setForm((state) => {
+      const resolvedSkills = selectableSkills.filter((s) => state.skillIds.includes(s.id));
+      const syntheticTradingSkill =
+        skillPreset === 'trading' ? [{ capabilityFamilies: ['trading'] }] : [];
+      const effectiveSkills =
+        resolvedSkills.length > 0 ? resolvedSkills : syntheticTradingSkill;
+      const derived = deriveCapabilityMode(effectiveSkills, state.goal);
+      if (derived !== state.capabilityMode) {
+        return { ...state, capabilityMode: derived };
+      }
+      return state;
+    });
+  }, [form.skillIds, form.goal, selectableSkills, skillPreset]);
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
@@ -215,11 +243,25 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         }}
       >
         <form id="edit-agent-form" onSubmit={handleSubmit}>
+          {/* Skill Preset — same label as create agent form */}
           <div style={{ marginBottom: '14px' }}>
-            <CapabilitySelector
-              value={form.capabilityMode}
-              onChange={(capabilityMode) => setForm((prev) => ({ ...prev, capabilityMode }))}
-            />
+            <FieldLabel>{intl.formatMessage({ id: 'agents.create.skillPreset' })}</FieldLabel>
+            <select
+              value={skillPreset}
+              onChange={(e) => {
+                const preset = e.target.value as SkillPresetId;
+                setSkillPreset(preset);
+                setForm((prev) => ({
+                  ...prev,
+                  skillIds: resolveSkillPresetSkillIds(preset, prev.skillIds),
+                }));
+              }}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              <option value="trading">{intl.formatMessage({ id: 'agents.create.skillPreset.trading' })}</option>
+              <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
+              <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
+            </select>
           </div>
 
           <AgentFormBody
@@ -392,14 +434,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   />
                 </div>
               ) : null
-            }
-            capabilityWarning={
-              form.capabilityMode === 'technical' && initialCapabilityMode !== 'technical'
-                ? (
-                  <p style={{ fontSize: '12px', color: 'var(--color-warning)', background: 'var(--color-warning-subtle)', padding: '8px 10px', borderRadius: '6px', margin: '0 0 14px', lineHeight: '1.5' }}>
-                    {intl.formatMessage({ id: 'agents.edit.intelligenceIgnoredWarning' })}
-                  </p>
-                ) : null
             }
           />
         </form>
