@@ -242,14 +242,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
 
   return (
     <Modal title={intl.formatMessage({ id: 'agents.edit.title' })} onClose={onClose}>
-      <div
-        style={{
-          maxHeight: 'min(560px, 70vh)',
-          overflowY: 'auto',
-          paddingRight: '4px',
-          marginRight: '-4px',
-        }}
-      >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <form id="edit-agent-form" onSubmit={handleSubmit}>
           {/* Skill Preset — same label as create agent form */}
           <div style={{ marginBottom: '14px' }}>
@@ -482,24 +475,24 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
           />
         </form>
-      </div>
 
-      {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
+        {mutation.isError && <ErrorBanner message={localizeApiError(intl, mutation.error, 'common.errorTitle')} />}
 
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}>
-        <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
-        <Button
-          variant="primary"
-          type="submit"
-          form="edit-agent-form"
-          disabled={mutation.isPending
-            || !form.name.trim()
-            || (showIntelligence && !form.goal.trim())
-            || tickIntervalError != null
-            || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
-        >
-          {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
-        </Button>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <Button variant="ghost" onClick={onClose} type="button">{intl.formatMessage({ id: 'common.cancel' })}</Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form="edit-agent-form"
+            disabled={mutation.isPending
+              || !form.name.trim()
+              || (showIntelligence && !form.goal.trim())
+              || tickIntervalError != null
+              || (modelOverrideEnabled && (!modelForm.provider || !modelForm.lightModel || !modelForm.heavyModel))}
+          >
+            {mutation.isPending ? intl.formatMessage({ id: 'agents.edit.saving' }) : intl.formatMessage({ id: 'common.saveChanges' })}
+          </Button>
+        </div>
       </div>
     </Modal>
   );
