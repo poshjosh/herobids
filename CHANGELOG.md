@@ -7,8 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- Bug which allowed agents excalate/increase bot execution mode e.g paper agent cannot create bot with exection mode shadow.
+
 ### Removed
 
+- update_own_config tool
 - Cost preset from frontend
 
 ## 0.0.1-2026.06.26-b
