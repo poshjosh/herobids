@@ -32,7 +32,6 @@ const VENUE_TYPE_MAP: Record<string, '' | 'orderbook' | 'swap'> = {
   '1inch': 'swap',
 };
 
-type RiskToleranceValue = 'conservative' | 'moderate' | 'aggressive';
 type CreateStep = 'intent' | 'review';
 
 interface IntentState {
@@ -54,7 +53,6 @@ interface IntentState {
   venue: string;
   /** Derived from venue: hyperliquid→orderbook, jupiter→swap, etc. */
   venueType: '' | 'orderbook' | 'swap';
-  riskTolerance: RiskToleranceValue;
   style: AgentStyleValue;
   // Configurable controls
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
@@ -186,7 +184,6 @@ function CreateAgentFlow({
     tradingBindingId: '',
     venue: '',
     venueType: '',
-    riskTolerance: styleDefaults.riskTolerance,
     style: 'balanced',
     costPreset: styleDefaults.costPreset,
     dailySpendBudgetUsd: styleDefaults.dailySpendBudgetUsd,
@@ -456,24 +453,6 @@ function CreateAgentFlow({
   }
 
   if (step === 'intent') {
-    const riskOptions = [
-      {
-        value: 'conservative',
-        label: intl.formatMessage({ id: 'agents.risk.conservative.label' }),
-        description: intl.formatMessage({ id: 'agents.risk.conservative.description' }),
-      },
-      {
-        value: 'moderate',
-        label: intl.formatMessage({ id: 'agents.risk.moderate.label' }),
-        description: intl.formatMessage({ id: 'agents.risk.moderate.description' }),
-      },
-      {
-        value: 'aggressive',
-        label: intl.formatMessage({ id: 'agents.risk.aggressive.label' }),
-        description: intl.formatMessage({ id: 'agents.risk.aggressive.description' }),
-      },
-    ] as const;
-
     return (
       <Modal title={intl.formatMessage({ id: 'agents.create.title' })} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -527,7 +506,6 @@ function CreateAgentFlow({
                 costPreset: defaults.costPreset,
                 tickIntervalMins: defaults.tickIntervalMins,
                 dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                riskTolerance: defaults.riskTolerance,
                 ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
               }));
             }}
@@ -695,21 +673,6 @@ function CreateAgentFlow({
                         {formErrors.executionMode}
                       </div>
                     )}
-                  </div>
-
-                  <div>
-                    <FieldLabel>{intl.formatMessage({ id: 'agents.create.riskTolerance' })}</FieldLabel>
-                    <select
-                      value={intent.riskTolerance}
-                      onChange={(e) => setIntent((state) => ({ ...state, riskTolerance: e.target.value as RiskToleranceValue }))}
-                      style={{ ...inputStyle, cursor: 'pointer' }}
-                    >
-                      {riskOptions.map((risk) => (
-                        <option key={risk.value} value={risk.value}>
-                          {risk.label} — {risk.description}
-                        </option>
-                      ))}
-                    </select>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

@@ -3,14 +3,12 @@ import { resolveStyleDefaults, STYLE_CONFIG, type AgentStyleValue } from './styl
 
 describe('resolveStyleDefaults', () => {
   const validCostPresets = ['minimal', 'standard', 'premium'] as const;
-  const validRiskTolerances = ['conservative', 'moderate', 'aggressive'] as const;
 
   it('returns correct config for careful style', () => {
     const config = resolveStyleDefaults('careful');
     expect(config.costPreset).toBe('minimal');
     expect(config.tickIntervalMins).toBe('90');
     expect(config.dailySpendBudgetUsd).toBe('3');
-    expect(config.riskTolerance).toBe('conservative');
   });
 
   it('returns correct config for balanced style', () => {
@@ -18,7 +16,6 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('standard');
     expect(config.tickIntervalMins).toBe('30');
     expect(config.dailySpendBudgetUsd).toBe('10');
-    expect(config.riskTolerance).toBe('moderate');
   });
 
   it('returns correct config for bold style', () => {
@@ -26,7 +23,6 @@ describe('resolveStyleDefaults', () => {
     expect(config.costPreset).toBe('premium');
     expect(config.tickIntervalMins).toBe('10');
     expect(config.dailySpendBudgetUsd).toBe('30');
-    expect(config.riskTolerance).toBe('aggressive');
   });
 
   it('returns balanced defaults for unknown style', () => {
@@ -51,14 +47,6 @@ describe('resolveStyleDefaults', () => {
       it(`${style} has positive dailySpendBudgetUsd`, () => {
         const config = STYLE_CONFIG[style];
         expect(Number(config.dailySpendBudgetUsd)).toBeGreaterThan(0);
-      });
-
-      it(`${style} has valid riskTolerance between 0 and 1`, () => {
-        const config = STYLE_CONFIG[style];
-        // riskTolerance is a string enum ('conservative', 'moderate', 'aggressive'),
-        // which map to numeric risk tolerance values conceptually.
-        // The validation here is that the value is one of the known valid strings.
-        expect(validRiskTolerances).toContain(config.riskTolerance);
       });
 
       it(`${style} has valid openPositionEscalationToJudgePolicy`, () => {
