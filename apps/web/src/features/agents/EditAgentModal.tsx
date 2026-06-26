@@ -290,22 +290,24 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           </div>
 
           {/* Agent Style */}
-          <StyleSelector
-            value={style}
-            onChange={(nextStyle) => {
-              const defaults = resolveStyleDefaults(nextStyle);
-              setStyle(nextStyle);
-              setForm((prev) => ({
-                ...prev,
-                costPreset: defaults.costPreset,
-                tickIntervalMins: defaults.tickIntervalMins,
-                dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                ...(policyManuallySetRef.current
-                  ? {}
-                  : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
-              }));
-            }}
-          />
+          <div style={{ marginBottom: '14px' }}>
+            <StyleSelector
+              value={style}
+              onChange={(nextStyle) => {
+                const defaults = resolveStyleDefaults(nextStyle);
+                setStyle(nextStyle);
+                setForm((prev) => ({
+                  ...prev,
+                  costPreset: defaults.costPreset,
+                  tickIntervalMins: defaults.tickIntervalMins,
+                  dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                  ...(policyManuallySetRef.current
+                    ? {}
+                    : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
+                }));
+              }}
+            />
+          </div>
 
           <AgentFormBody
             value={form}
