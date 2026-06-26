@@ -6,6 +6,7 @@ export type IntakeRejectionCode =
   | 'stop_loss_active'
   | 'instance_not_running'
   | 'no_executor'
+  | 'swap.instrument_format'
   | 'swap_recovery_ambiguous';
 
 export interface IntakeRejection {
