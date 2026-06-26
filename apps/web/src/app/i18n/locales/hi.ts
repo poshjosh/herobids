@@ -321,6 +321,7 @@ export const messages: Record<string, string> = {
   'agents.create.noConnections': 'अभी तक कोई सक्रिय प्लेटफ़ॉर्म लिंक नहीं। अभी सेटअप करें या AI एजेंट बनाकर बाद में लिंक करें।',
   'agents.create.setupTradingNow': 'अभी ट्रेडिंग सेटअप करें',
   'agents.create.chooseConnection': 'कनेक्शन चुनें',
+  'agents.create.tradingBinding': 'प्लेटफ़ॉर्म लिंक',
   'agents.create.riskTolerance': 'जोखिम सहनशीलता',
   'agents.create.review': 'समीक्षा →',
   'agents.create.creating': 'बनाया जा रहा है…',

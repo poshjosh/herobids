@@ -319,6 +319,7 @@ export const messages: Record<string, string> = {
   'agents.create.noConnections': 'لا توجد روابط منصة نشطة بعد. أعدّ التداول الآن أو أنشئ وكيل الذكاء الاصطناعي واربطه لاحقاً.',
   'agents.create.setupTradingNow': 'إعداد التداول الآن',
   'agents.create.chooseConnection': 'اختر اتصالاً',
+  'agents.create.tradingBinding': 'رابط المنصة',
   'agents.create.riskTolerance': 'تحمل المخاطر',
   'agents.create.review': 'مراجعة →',
   'agents.create.creating': 'جارٍ الإنشاء…',

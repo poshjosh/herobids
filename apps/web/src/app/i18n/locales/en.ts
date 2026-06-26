@@ -321,6 +321,7 @@ export const messages: Record<string, string> = {
   'agents.create.noConnections': 'No active platform links yet. Set up now or create the AI agent and link it later.',
   'agents.create.setupTradingNow': 'Set up trading now',
   'agents.create.chooseConnection': 'Choose a connection',
+  'agents.create.tradingBinding': 'Platform link',
   'agents.create.riskTolerance': 'Risk tolerance',
   'agents.create.review': 'Review →',
   'agents.create.creating': 'Creating…',
