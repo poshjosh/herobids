@@ -29,6 +29,7 @@ const TRADING_SKILL_IDS = ['bot-management', 'trading'];
 const ASSISTANT_SKILL_IDS = ['task-management', 'web-access'];
 
 function resolvePresetFromSkillIds(skillIds: string[]): SkillPresetId {
+  if (skillIds.length === 0) return 'custom';
   const set = new Set(skillIds);
   if (TRADING_SKILL_IDS.every((id) => set.has(id))) return 'trading';
   if (ASSISTANT_SKILL_IDS.every((id) => set.has(id))) return 'personal-assistant';
