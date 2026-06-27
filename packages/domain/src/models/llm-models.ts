@@ -131,6 +131,12 @@ export const PROVIDER_DEFINITIONS = {
       'minimax/minimax-01':                   { inputUsdPerM: 0.2,   outputUsdPerM: 1.1 },
       'tencent/hy3-preview':                  { inputUsdPerM: 0.066, outputUsdPerM: 0.26 },
       'meta-llama/llama-3.3-70b-instruct':    { inputUsdPerM: 0.06,  outputUsdPerM: 0.06 },
+      // :latest aliases (pricing mirrors the highest versioned member in this list)
+      'openai/gpt-5:latest':                  { inputUsdPerM: 5,     outputUsdPerM: 30 },
+      'openai/gpt-4:latest':                  { inputUsdPerM: 2,     outputUsdPerM: 8 },
+      'anthropic/claude-opus-4:latest':       { inputUsdPerM: 5,     outputUsdPerM: 25 },
+      'anthropic/claude-sonnet-4:latest':     { inputUsdPerM: 3,     outputUsdPerM: 15 },
+      'anthropic/claude-haiku-4:latest':      { inputUsdPerM: 1,     outputUsdPerM: 5 },
     },
   },
   google: {

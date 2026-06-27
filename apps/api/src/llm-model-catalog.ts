@@ -130,6 +130,117 @@ function hasOpenRouterCatalogEntries(catalog: OpenRouterCatalog): boolean {
   return catalog.modelIds.length > 0 || Object.keys(catalog.pricingByModel).length > 0;
 }
 
+// --- :latest tag derivation ---
+
+/**
+ * Compare two dot-separated version strings in descending order.
+ * "5.5" > "5.4" > "4.1" > "4"
+ */
+function compareVersionsDesc(a: string, b: string): number {
+  const aParts = a.split('.').map(Number);
+  const bParts = b.split('.').map(Number);
+  const len = Math.max(aParts.length, bParts.length);
+  for (let i = 0; i < len; i++) {
+    const av = aParts[i] ?? 0;
+    const bv = bParts[i] ?? 0;
+    if (av !== bv) return bv - av; // descending
+  }
+  return 0;
+}
+
+/** Family extraction pattern: strip trailing -<version> where version is DIGITS[.DIGITS]* */
+const FAMILY_VERSION_RE = /^(.+)-(\d+(?:\.\d+)*)$/;
+
+/**
+ * Derive :latest tag variants from a raw OpenRouter model catalog.
+ *
+ * OpenRouter's /v1/models endpoint returns individually-versioned model IDs
+ * (e.g. openai/gpt-5.5, anthropic/claude-sonnet-4.6) but does NOT include
+ * :latest aliases.  This function generates :latest entries so they appear in
+ * the UI model picker and pass validation.
+ *
+ * Only major-level :latest aliases are produced (e.g. openai/gpt-5:latest).
+ * Broader family-level aliases (e.g. openai/gpt:latest) are intentionally
+ * excluded because they have no corresponding entries in the static pricing
+ * fallback, which would cause validation failures when the dynamic catalog
+ * is unavailable.
+ *
+ * Pricing is copied from the highest-versioned member of each group.
+ */
+export function deriveLatestVariants(catalog: OpenRouterCatalog): OpenRouterCatalog {
+  const { modelIds, pricingByModel } = catalog;
+  const newModelIds = [...modelIds];
+  const newPricingByModel = { ...pricingByModel };
+
+  // --- Pass 1: family-level (strip trailing -<version>) ---
+  // family → { version, modelId }[]
+  const families = new Map<string, { version: string; modelId: string }[]>();
+
+  for (const modelId of modelIds) {
+    if (modelId.endsWith(':latest')) continue;
+    const m = modelId.match(FAMILY_VERSION_RE);
+    if (!m) continue;
+    const family = m[1]!;
+    const version = m[2]!;
+
+    let entry = families.get(family);
+    if (!entry) {
+      entry = [];
+      families.set(family, entry);
+    }
+    entry.push({ version, modelId });
+  }
+
+  // --- Pass 2: sub-family / major-level (strip .minor from version) ---
+  // subFamily (family-major) → { version, modelId }[]
+  const subFamilies = new Map<string, { version: string; modelId: string }[]>();
+
+  for (const [, members] of families) {
+    for (const member of members) {
+      const dotIdx = member.version.indexOf('.');
+      if (dotIdx === -1) continue; // no minor version to strip
+      const major = member.version.slice(0, dotIdx);
+      // Find the family this member belongs to — scan families for a hit.
+      // We need the family prefix. Re-extract from the modelId.
+      const m = member.modelId.match(FAMILY_VERSION_RE);
+      if (!m) continue;
+      const family = m[1]!;
+      const subFamily = `${family}-${major}`;
+
+      let sub = subFamilies.get(subFamily);
+      if (!sub) {
+        sub = [];
+        subFamilies.set(subFamily, sub);
+      }
+      sub.push(member);
+    }
+  }
+
+  // --- Emit :latest variants ---
+
+  const emit = (latestId: string, members: { version: string; modelId: string }[]) => {
+    if (members.length < 2) return; // pointless with a single version
+    // Already have the highest first? Sort just to be safe.
+    const sorted = [...members].sort((a, b) => compareVersionsDesc(a.version, b.version));
+    const latestModelId = sorted[0]!.modelId;
+    const latestPricing = pricingByModel[latestModelId];
+
+    newModelIds.push(latestId);
+    if (latestPricing) {
+      newPricingByModel[latestId] = latestPricing;
+    }
+  };
+
+  for (const [subFamily, members] of subFamilies) {
+    emit(`${subFamily}:latest`, members);
+  }
+
+  return {
+    modelIds: [...new Set(newModelIds)].sort(),
+    pricingByModel: newPricingByModel,
+  };
+}
+
 function isFreeOpenRouterPricing(pricing: OpenRouterModelPricing): boolean {
   const parsed = parseOpenRouterPricing(pricing);
   if (!parsed) {
@@ -254,10 +365,12 @@ async function fetchOpenRouterCatalog(
     })().then((result) => {
       openRouterPricingInFlight.delete(modelsUrl);
       if (hasOpenRouterCatalogEntries(result)) {
+        const enriched = deriveLatestVariants(result);
         openRouterPricingCache.set(modelsUrl, {
-          catalog: result,
+          catalog: enriched,
           fetchedAt: Date.now(),
         });
+        return enriched;
       }
       return result;
     });
@@ -272,7 +385,7 @@ async function fetchOpenRouterCatalog(
 
   if (cached) {
     console.warn('[llm-catalog] OpenRouter pricing fetch failed. Serving stale pricing metadata.');
-    return cached.catalog;
+    return deriveLatestVariants(cached.catalog);
   }
 
   return { modelIds: [], pricingByModel: {} };
