@@ -5,7 +5,7 @@ import { deriveLatestVariants, getAvailableProviders, getProviderCatalogEntry, t
 const ORIGINAL_NODE_ENV = process.env['NODE_ENV'];
 const ORIGINAL_LLM_API_KEY_OPENAI = process.env['LLM_API_KEY_OPENAI'];
 const ORIGINAL_LLM_API_KEY_OLLAMA = process.env['LLM_API_KEY_OLLAMA'];
-const ORIGINAL_LLM_API_KEY_OPENROUTER = process.env['OPENROUTER_API_KEY'];
+const ORIGINAL_LLM_API_KEY_OPENROUTER = process.env['LLM_API_KEY_OPENROUTER'];
 
 type MutableProviderDefinitions = Record<string, {
   id: string;
@@ -35,14 +35,14 @@ afterEach(() => {
   setEnv('NODE_ENV', ORIGINAL_NODE_ENV);
   setEnv('LLM_API_KEY_OPENAI', ORIGINAL_LLM_API_KEY_OPENAI);
   setEnv('LLM_API_KEY_OLLAMA', ORIGINAL_LLM_API_KEY_OLLAMA);
-  setEnv('OPENROUTER_API_KEY', ORIGINAL_LLM_API_KEY_OPENROUTER);
+  setEnv('LLM_API_KEY_OPENROUTER', ORIGINAL_LLM_API_KEY_OPENROUTER);
 });
 
 describe('getAvailableProviders', () => {
   it('includes ollama outside development when operator explicitly configured it with a baseUrl', () => {
     setEnv('NODE_ENV', 'test');
     setEnv('LLM_API_KEY_OPENAI', 'openai-key');
-    setEnv('OPENROUTER_API_KEY', undefined);
+    setEnv('LLM_API_KEY_OPENROUTER', undefined);
 
     expect(getAvailableProviders({ ...BASE_CONTEXT, provider: 'ollama', baseUrl: 'http://localhost:11434/v1' })).toEqual(['openai', 'ollama']);
   });
@@ -51,7 +51,7 @@ describe('getAvailableProviders', () => {
     setEnv('NODE_ENV', 'production');
     setEnv('LLM_API_KEY_OPENAI', 'openai-key');
     setEnv('LLM_API_KEY_OLLAMA', 'ollama-key');
-    setEnv('OPENROUTER_API_KEY', undefined);
+    setEnv('LLM_API_KEY_OPENROUTER', undefined);
 
     // Operator did NOT set provider: 'ollama' — context has no baseUrl for ollama → hidden in production
     expect(getAvailableProviders({ ...BASE_CONTEXT })).toEqual(['openai']);
@@ -61,7 +61,7 @@ describe('getAvailableProviders', () => {
     setEnv('NODE_ENV', 'development');
     setEnv('LLM_API_KEY_OPENAI', 'openai-key');
     setEnv('LLM_API_KEY_OLLAMA', 'ollama-key');
-    setEnv('OPENROUTER_API_KEY', undefined);
+    setEnv('LLM_API_KEY_OPENROUTER', undefined);
 
     expect(getAvailableProviders({ ...BASE_CONTEXT, provider: 'ollama', baseUrl: 'http://localhost:11434/v1' })).toEqual(['openai', 'ollama']);
   });
