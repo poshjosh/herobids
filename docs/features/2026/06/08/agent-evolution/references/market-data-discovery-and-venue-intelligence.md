@@ -24,7 +24,7 @@ This document defines **how to build it** — endpoints, data models, agent tool
 - GeckoTerminal: trending pools, top pools, new pools
 - New agent tools: `discover_tokens`, `get_funding_rates`, `get_market_overview`
 - Integration into tick context assembly
-- Birdeye adapter (future, when paid tier added)
+- Birdeye adapter (implemented June 2026 — see `docs/features/2026/06/27/005-birdeye-provider/001-plan.md`)
 
 ### Out of scope
 
@@ -387,7 +387,7 @@ Update `TRADING_SKILL.requiredTools` to include the new tools.
 
 ---
 
-## Part E — Birdeye (Future — when paid tier added)
+## Part E — Birdeye (Implemented June 2026)
 
 **Implementation location:** `packages/market-data/src/birdeye.ts` (new file)
 
@@ -404,7 +404,7 @@ export async function fetchBirdeyeTokenOverview(address: string, config: Birdeye
 export async function fetchBirdeyeOhlcv(address: string, config: BirdeyeConfig, options?: { interval?: string; limit?: number }): Promise<PriceCandle[]>;
 ```
 
-**Deferred until:** Birdeye API key is provisioned and Solana DEX trading is active.
+**Status:** Implemented June 2026. See `docs/features/2026/06/27/005-birdeye-provider/001-plan.md` for the implementation plan.
 
 ---
 
@@ -465,7 +465,7 @@ marketData:
 9. **C3** — `get_market_overview` tool
 10. **D** — Skill registration updates
 11. **F** — Configuration schema
-12. **E** — Birdeye (when ready)
+12. **E** — Birdeye ✅ (implemented June 2026)
 
 ---
 

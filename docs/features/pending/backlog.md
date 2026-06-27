@@ -41,13 +41,13 @@ Dedicated admin panel for perp venue health. Deferred from MVP production cut (e
 
 Deferred scope: no orderbook depth, fills, or orders; no per-user exposure; no charting; no UI symbol selection; no acknowledgements; no auto-remediation. Open questions: whether stream health is required for v1, and who owns warning-threshold definitions.
 
-### 4. Birdeye Market-Data Integration
+### 4. Birdeye Market-Data Integration ✅
 
-[Plan](../2026/06/15/014-birdeye-provider/001-plan.md)
+[Plan](../2026/06/27/005-birdeye-provider/001-plan.md)
 
-Solana-only opt-in Birdeye provider. Config, schema, registry, and admin-surface wiring already exist with `enabled: false`. Not a live integration yet. Deferred from MVP production cut (effort M, not a launch blocker).
+Implemented June 2026. Solana-only opt-in Birdeye provider with discovery, token overview, and OHLCV support. Config, schema, registry, admin-surface wiring, and HTTP client are all live.
 
-Intentionally narrow scope: Solana-only, opt-in, no CoinMarketCap discovery or enrichment, no execution or strategy changes.
+Scope: Solana-only, opt-in, no CoinMarketCap discovery or enrichment, no execution or strategy changes.
 
 ### 5. Dedicated-Wallet Strict Reconciliation
 
