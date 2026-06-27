@@ -157,3 +157,72 @@ export async function fetchDexScreenerBoostsLatest(config: DexScreenerConfig): P
 export async function fetchDexScreenerProfilesLatest(config: DexScreenerConfig): Promise<DiscoveredToken[]> {
   return fetchDiscoveryVector('/token-profiles/latest/v1', 'profiles_latest', config);
 }
+
+const BATCH_SIZE = 30;
+
+function mapPairToDiscoveredToken(pair: DexScreenerPair): DiscoveredToken {
+  return {
+    address: pair.baseToken?.address ?? '',
+    symbol: pair.baseToken?.symbol ?? '',
+    name: pair.baseToken?.name ?? '',
+    network: pair.chainId ?? '',
+    priceUsd: parseFloat(pair.priceUsd ?? '0') || 0,
+    volume24hUsd: pair.volume?.h24 ?? 0,
+    liquidityUsd: pair.liquidity?.usd ?? 0,
+    priceChange24hPct: pair.priceChange?.h24,
+    source: 'dexscreener',
+    discoveryVectors: [],
+    poolCreatedAt: pair.pairCreatedAt != null
+      ? new Date(pair.pairCreatedAt).toISOString()
+      : undefined,
+  };
+}
+
+export async function fetchDexScreenerTokensByAddress(
+  chainId: string,
+  addresses: string[],
+  config: DexScreenerConfig,
+): Promise<DiscoveredToken[]> {
+  if (addresses.length === 0) {
+    return [];
+  }
+
+  const results: DiscoveredToken[] = [];
+
+  for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+    const chunk = addresses.slice(i, i + BATCH_SIZE);
+
+    await config.rateLimiter.acquire();
+
+    const url = `${config.baseUrl}/tokens/v1/${chainId}/${chunk.join(',')}`;
+
+    const data = await fetchJson<DexScreenerResponse>({
+      url,
+      timeoutMs: config.timeoutMs,
+      fetchFn: config.fetchFn,
+    });
+
+    const pairs = data.pairs ?? [];
+    if (pairs.length === 0) {
+      continue;
+    }
+
+    // Group pairs by baseToken address (lowercased), pick the one with highest liquidity.
+    const bestByAddress = new Map<string, DexScreenerPair>();
+    for (const pair of pairs) {
+      const addr = pair.baseToken?.address?.toLowerCase();
+      if (!addr) continue;
+
+      const existing = bestByAddress.get(addr);
+      if (!existing || (pair.liquidity?.usd ?? 0) > (existing.liquidity?.usd ?? 0)) {
+        bestByAddress.set(addr, pair);
+      }
+    }
+
+    for (const pair of bestByAddress.values()) {
+      results.push(mapPairToDiscoveredToken(pair));
+    }
+  }
+
+  return results;
+}
