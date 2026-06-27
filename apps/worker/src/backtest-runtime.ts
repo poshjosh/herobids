@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import pino from 'pino';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal, DecisionRepository } from '@herobids/db';
-import { LlmStrategy, MechanicalStrategy, translateMomentumToMechanicalParams } from '@herobids/strategy';
+import { LlmStrategy, MechanicalStrategy } from '@herobids/strategy';
 import { runBacktest, ArrayHistoricalDataFeed, runValidation } from '@herobids/backtesting';
 import type { HistoricalFrame, ValidationThresholds, BacktestConfig } from '@herobids/backtesting';
 import { quantity, price } from '@herobids/domain';
@@ -126,12 +126,6 @@ export class BacktestRuntime {
     // Key on decisionMode to select the engine
     switch (decisionMode ?? 'mechanical') {
       case 'mechanical': {
-        if (strategyType !== 'momentum') {
-          throw new Error(
-            `'mechanical' decisionMode is only supported for strategyType='momentum' in backtesting. `
-            + `Got type='${strategyType}'.`,
-          );
-        }
         // Backtesting feeds individual price ticks, not candles. MechanicalStrategy needs a
         // CandleFetcher to get candle data. The VenueCandleFetcher makes network calls and is
         // unsuitable for backtesting. A noop CandleFetcher causes MechanicalStrategy to return
@@ -141,29 +135,19 @@ export class BacktestRuntime {
         const noopCandleFetcher: import('@herobids/domain').CandleFetcher = {
           fetchCandles: async () => [],
         };
-        const mechanical = new MechanicalStrategy(
+        return new MechanicalStrategy(
           noopCandleFetcher,
           null,
           () => crypto.randomUUID(),
         );
-        // Wrap with param translation from momentum format to mechanical format.
-        // Backtesting calls evaluate(snapshot, config) directly with the bot's strategy params.
-        const mechanicalWrapper: Strategy = {
-          id: mechanical.id,
-          name: mechanical.name,
-          evaluate: async (snapshot: import('@herobids/domain').MarketSnapshot, rawConfig: Record<string, unknown>) => {
-            const translated = translateMomentumToMechanicalParams(rawConfig);
-            return mechanical.evaluate(snapshot, translated);
-          },
-        };
-        return mechanicalWrapper;
       }
       case 'llm':
         return new LlmStrategy(
           () => crypto.randomUUID(),
           async (artifact) => { await repo.insertLlmArtifact({ ...artifact, parsedDecision: artifact.parsedDecision as Record<string, unknown> | null }); },
         );
-      // hybrid not yet wired — backtesting does not run indicator pre-filtering
+      case 'hybrid':
+        throw new Error('hybrid decisionMode is not yet supported for backtesting');
       default:
         throw new Error(`Unsupported decisionMode for backtesting: ${decisionMode}. Only mechanical and llm are available.`);
     }

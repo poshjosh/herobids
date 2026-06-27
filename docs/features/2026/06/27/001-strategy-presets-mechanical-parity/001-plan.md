@@ -648,3 +648,6 @@ Phases 1, 2, 3, 4, and 6 can run in parallel after Phase 0. Phase 5 depends on P
 | L1 | LOW | Phase 0 | Local vs domain `IndicatorConfig` structural divergence — scan-engine.ts has its own interface separate from domain. Consider deriving from domain type in a future cleanup. |
 | L2 | LOW | Phase 0 | No schema-level unit tests for new required fields (`stopLossPct`, `takeProfitPct`). Dedicated `MechanicalParamsSchema` tests would be more robust. |
 | L3 | LOW | Phase 0 | `trailingStopPct` declared in schema but not consumed by `MechanicalStrategy` or any engine code. Wire in a later phase. |
+| L4 | LOW | Phase 1 | `noIndicators` fixture in scan-engine.test.ts omits explicit `vwap: { enabled: false }` and `priceAction: { enabled: false }`. Harmless today but may silently activate future indicators. |
+| L5 | LOW | Phase 1 | Redundant nullish coalescing in VWAP/price-action scoring (`?? 0`, `?? 0.10`) — confCfg already provides defaults. Inconsistent with other indicators. |
+| L6 | LOW | Phase 1 | Asymmetric defaults: vwap.enabled defaults false (opt-in), priceAction.enabled defaults true (opt-out). |
