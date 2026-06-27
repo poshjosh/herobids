@@ -11,6 +11,7 @@ Here are all the knobs that control discovery diversification, from the operator
 | See more tokens per run | Raise `marketData.discovery.maxResults` from 50 | Capped at 100 by tool schema |
 | See more *different* tokens over time | Keep `antistalenessCooldownHours` at 4+ | This is the real diversity driver |
 | Expand the raw candidate pool | Set `geckoTerminalExtraPages: 1` | Costs 4 GT API calls/run — verify rate-limit budget first |
+| Add Birdeye Solana trending tokens | Set `marketData.birdeye.enabled: true` | Requires a Birdeye API key; Solana-only |
 | Admit smaller/riskier tokens | Lower `tokenSafety.defaults.minLiquidityUsd` | Also affects `search_tokens` |
 | Discovery to update faster | Lower GT/DS discovery `cacheTtlMs` | Increases API call rate — stay within rate limits |
 | Broader chain coverage | Add chains to `marketIntelligence.networks` | Provider coverage varies by chain |
@@ -36,6 +37,21 @@ Here are all the knobs that control discovery diversification, from the operator
 | `geckoterminal.discovery.cacheTtlMs` | `300000` (5 min) | Same for GeckoTerminal. |
 | `geckoterminal.discovery.requestsPerMinute` | `10` | Rate ceiling on GT discovery calls. If `geckoTerminalExtraPages: 1` is set, you're at exactly this limit. Raising it requires a paid GT plan. |
 | `dexscreener.discovery.requestsPerMinute` | `30` | Rate ceiling on DS discovery calls. Plenty of headroom. |
+
+### `marketData.birdeye.*` (Solana-only, opt-in)
+
+Birdeye is an optional paid provider for Solana trending tokens, token overview, and OHLCV candles.
+
+| Knob | Default | Effect |
+|---|---|---|
+| `birdeye.enabled` | `false` | When `true`, Birdeye trending is included in the discovery fan-out (Solana only). Requires a valid `apiKey`. |
+| `birdeye.apiKey` | `""` | Birdeye API key. If `enabled` is `true` and this is empty, the worker fails to start with a clear error. |
+| `birdeye.requestsPerMinute` | operator-defined | Rate ceiling shared across all Birdeye endpoints (trending, overview, OHLCV). Birdeye has a single global API-wide limit. |
+| `birdeye.cacheTtlMs` | operator-defined | TTL for overview and OHLCV cache entries. Also floors the aggregate discovery cache TTL (preventing overly aggressive refresh). |
+
+### DexScreener boost enrichment (always-on)
+
+The DexScreener boost/profile endpoints (`boosts/top`, `boosts/latest`, `profiles/latest`) now feed into a boost-enrichment pipeline that fills real on-chain liquidity for tokens surfaced via paid promotion. This is always-on with no config flag — the three DS discovery calls already always fire; enrichment simply makes them useful. See `packages/market-data/src/dexscreener.ts` → `enrichDexScreenerBoostTokens`.
 
 ### `marketData.tokenSafety.*`
 
