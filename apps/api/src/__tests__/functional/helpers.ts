@@ -69,6 +69,16 @@ export function parseRedisUrl(url: string) {
 
 /** Build a fully wired Fastify app for functional testing. */
 export async function buildApp() {
+  // Clear LLM API key env vars to prevent them from leaking into the test
+  // environment. The analytics/AI functional tests expect 503 (no_ai_provider)
+  // when no provider keys are set. If the user's shell has these keys set,
+  // getAvailableProviders picks them up and returns 200/502 instead.
+  const savedLlmEnv: Record<string, string | undefined> = {};
+  for (const key of ['LLM_API_KEY', 'LLM_API_KEY_OPENAI', 'LLM_API_KEY_OPENROUTER', 'LLM_API_KEY_OLLAMA']) {
+    savedLlmEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+
   const db = createDatabase(DB_URL);
   const redisConn = parseRedisUrl(REDIS_URL);
   const lifecycleQueue = new Queue('trading-instance-lifecycle', { connection: redisConn });
@@ -200,6 +210,15 @@ export async function buildApp() {
   await setupRoutes(app, db, testPlansConfig as any);
 
   await app.ready();
+
+  // Restore LLM API key env vars so they don't leak between test files
+  for (const [key, value] of Object.entries(savedLlmEnv)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 
   return { app, db, redisClient, lifecycleQueue };
 }

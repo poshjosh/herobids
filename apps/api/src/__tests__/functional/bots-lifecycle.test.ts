@@ -46,7 +46,7 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
       credentialLabel: 'test-hl',
       apiKey: 'test-key',
       secret: 'test-secret',
-      walletAddress: '0xTest',
+      walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       ...overrides,
     },
   });
@@ -166,7 +166,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
         credentialLabel: 'test-1inch',
         apiKey: 'test-key',
         secret: 'test-secret',
-        walletAddress: '0xTest',
+        walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       },
     });
     expect(linkRes.statusCode).toBe(201);
