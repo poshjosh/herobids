@@ -2,7 +2,7 @@
     email admin@herobids.com
 }
 
-herobids.com, www.herobids.com {
+herobids.com, www.herobids.com, app.herobids.com {
     encode zstd gzip
 
     header {
