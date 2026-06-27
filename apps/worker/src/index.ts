@@ -24,7 +24,8 @@ import type { DecisionContext } from '@herobids/engine';
 import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, loadProvidersConfig, type ProvidersYaml } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
-import { loadConfig } from './config.js';
+import { resolve } from 'node:path';
+import { loadConfig, MONOREPO_CONFIG_DIR } from './config.js';
 import { assertLiveReadiness, LiveGateError } from './live-gate.js';
 import { resolveSwapAssetsFromBinding, resolveSwapNetwork } from './resolve-swap-assets.js';
 import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
@@ -138,7 +139,7 @@ const logger = pino(
 const appConfig = loadConfig();
 
 // Load provider registry — used by UsageBillingRepository for per-model rate card seeding
-const providersYaml = loadProvidersConfig('config/providers.yaml');
+const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
 
 // Parse Redis connection from operator config URL — preserving auth, TLS, and DB index
 const parsedRedisUrl = new URL(appConfig.redis.url);

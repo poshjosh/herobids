@@ -19,7 +19,6 @@ test.describe('Journey 15: Crashed-agent recovery', () => {
   test('stop → delete works after agent is started', async ({ page, request }) => {
     // Register
     await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
     await page.getByText(/sign up|don't have an account/i).click();
     await page.getByLabel(/name/i).fill('E2E User J15');
     await page.getByLabel(/email/i).fill(EMAIL);

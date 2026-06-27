@@ -17,12 +17,10 @@ test.describe('Journey 2: Recent Decisions section renders on agent detail page'
   test.beforeEach(async ({ page }) => {
     // Register and create an agent via the UI
     await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
+    // Login page defaults to login mode — click the toggle to switch to register
     const signUpLink = page.getByText(/sign up|don't have an account/i);
-    if (await signUpLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await signUpLink.click();
-      await page.getByLabel(/name/i).fill('E2E User J2');
-    }
+    await signUpLink.click();
+    await page.getByLabel(/name/i).fill('E2E User J2');
     await page.getByLabel(/email/i).fill(EMAIL);
     await page.getByLabel(/password/i).fill(PASSWORD);
     const submitBtn = page.getByRole('button', { name: /create account|sign in|log in/i }).first();

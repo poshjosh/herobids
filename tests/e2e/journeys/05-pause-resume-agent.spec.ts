@@ -17,7 +17,6 @@ test.describe('Journey 5: Agent start / stop lifecycle', () => {
   test('user can start an agent and then stop it', async ({ page, request }) => {
     // Register
     await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
     await page.getByText(/sign up|don't have an account/i).click();
     await page.getByLabel(/name/i).fill('E2E User J5');
     await page.getByLabel(/email/i).fill(EMAIL);

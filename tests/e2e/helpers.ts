@@ -22,8 +22,8 @@ export async function registerUser(
   displayName = TEST_DISPLAY_NAME,
 ) {
   await page.goto('/login');
-  await page.getByRole('tab', { name: /email/i }).click();
-  await page.getByText(/sign up|register|don't have an account/i).click();
+  // Login page defaults to login mode — click the toggle to switch to register
+  await page.getByText(/sign up|don't have an account/i).click();
   await page.getByLabel(/name/i).fill(displayName);
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
@@ -39,7 +39,7 @@ export async function loginUser(
   password = TEST_PASSWORD,
 ) {
   await page.goto('/login');
-  await page.getByRole('tab', { name: /email/i }).click();
+  // Login page defaults to login mode — fill and submit
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /sign in|log in|continue/i }).click();

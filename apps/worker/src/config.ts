@@ -7,7 +7,7 @@ import type { AppConfig } from '@herobids/domain';
 
 // Resolve monorepo root relative to this file (works for both src/ and dist/ execution)
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../config');
+export const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../config');
 
 type EnvType = 'string' | 'number' | 'boolean';
 

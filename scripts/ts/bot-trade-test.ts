@@ -70,7 +70,23 @@ function venueSecrets(): Record<string, string> {
     }
     return { apiKey, secret, walletAddress };
   }
-  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid`);
+  if (VENUE === 'bybit') {
+    const apiKey = process.env['BYBIT_API_KEY'];
+    const secret = process.env['BYBIT_SECRET'];
+    if (!apiKey || !secret) {
+      fatal('Bybit requires BYBIT_API_KEY and BYBIT_SECRET');
+    }
+    return { apiKey, secret };
+  }
+  if (VENUE === '1inch') {
+    const apiKey = process.env['ONEINCH_API_KEY'];
+    const privateKey = process.env['ONEINCH_PRIVATE_KEY'];
+    if (!apiKey || !privateKey) {
+      fatal('1inch requires ONEINCH_API_KEY and ONEINCH_PRIVATE_KEY');
+    }
+    return { apiKey, privateKey };
+  }
+  fatal(`Unsupported VENUE: ${VENUE}. Supported: hyperliquid, bybit, 1inch`);
 }
 
 // ── Logging ─────────────────────────────────────────────────────────────
@@ -252,31 +268,43 @@ async function main(): Promise<void> {
 
   // Create provider-link (credential + connection + trading binding)
   log('Creating provider-link...');
-  const linkRes = await post<{ tradingBindingId: string }>('/setup/provider-link', {
+  const linkRes = await post<{ tradingBinding?: { id: string }; error?: string }>('/setup/provider-link', {
     provider: VENUE,
-    credentialLabel: `bot-trade-test-${Date.now()}`,
-    ...secrets,
+    label: `bot-trade-test-${Date.now()}`,
+    secrets: secrets,
+    capability: 'trading',
   }, token);
-  if (linkRes.status !== 201) {
+  if (linkRes.status !== 201 || !linkRes.body.tradingBinding?.id) {
     fatal(`Provider-link failed: ${linkRes.status} ${JSON.stringify(linkRes.body)}`);
   }
-  const bindingId = linkRes.body.tradingBindingId;
+  const bindingId = linkRes.body.tradingBinding.id;
   ok(`Provider-link created (binding: ${bindingId})`);
 
-  // Create bot
+  // Create bot — venue-aware config (swap venues use BASE/QUOTE symbols)
   log('Creating bot...');
-  const createRes = await post<{ id: string; status: string }>('/bots', {
+  const botSymbol = VENUE === '1inch' ? 'WETH/USDC' : 'BTC-PERP';
+  const botPayload: Record<string, unknown> = {
     tradingBindingId: bindingId,
     venue: VENUE,
-    symbol: 'BTC-PERP',
+    symbol: botSymbol,
     config: {
-      strategy: { type: 'momentum', params: { symbol: 'BTC-PERP', intervalMs: TICK_INTERVAL_MS, lookbackPeriods: 14 } },
+      strategy: { type: 'momentum', params: { symbol: botSymbol, intervalMs: TICK_INTERVAL_MS, lookbackPeriods: 14 } },
       risk: {},
       execution: { mode: EXECUTION_MODE },
       venue: VENUE,
-      symbol: 'BTC-PERP',
+      symbol: botSymbol,
     },
-  }, token);
+  };
+  // Swap venues (1inch) require swapAssets inside config for token resolution
+  if (VENUE === '1inch') {
+    (botPayload['config'] as Record<string, unknown>)['swapAssets'] = {
+      baseAsset: 'WETH',
+      quoteAsset: 'USDC',
+      baseDecimals: 18,
+      quoteDecimals: 6,
+    };
+  }
+  const createRes = await post<{ id: string; status: string }>('/bots', botPayload, token);
   if (createRes.status !== 201) {
     fatal(`Bot creation failed: ${createRes.status} ${JSON.stringify(createRes.body)}`);
   }

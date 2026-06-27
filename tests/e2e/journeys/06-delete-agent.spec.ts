@@ -16,7 +16,6 @@ test.describe('Journey 6: Deleted agent is no longer visible in the agents list'
   test('after deletion the agent does not appear in the agents list', async ({ page, request }) => {
     // Register
     await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
     await page.getByText(/sign up|don't have an account/i).click();
     await page.getByLabel(/name/i).fill('E2E User J6');
     await page.getByLabel(/email/i).fill(EMAIL);

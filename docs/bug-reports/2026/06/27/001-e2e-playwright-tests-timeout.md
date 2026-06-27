@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-27
 **Severity**: MEDIUM
-**Status**: Open
+**Status**: FIXED (see 005-e2e-login-tab-locator-stale.md for the specific root cause and fix)
 
 ## Summary
 

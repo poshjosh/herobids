@@ -17,7 +17,6 @@ test.describe('Journey 3: Messages section renders on agent detail page', () => 
   test('agent detail page renders messages and activity cards with empty states', async ({ page, request }) => {
     // Register
     await page.goto('/login');
-    await page.getByRole('tab', { name: /email/i }).click();
     await page.getByText(/sign up|don't have an account/i).click();
     await page.getByLabel(/name/i).fill('E2E User J3');
     await page.getByLabel(/email/i).fill(EMAIL);

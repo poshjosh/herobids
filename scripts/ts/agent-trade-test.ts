@@ -1082,7 +1082,8 @@ async function main(): Promise<void> {
     // This exercises the exact broker path that was broken by the bindingId/venueAccountId confusion.
 
     // Build venue-aware bot config — swap venues (1inch) require swapAssets and cannot use paper mode.
-    const botSymbol = VENUE === '1inch' ? 'WETH' : 'BTC';
+    // Symbol must use BASE/QUOTE format for swap venues (validated by the broker's safety gate).
+    const botSymbol = VENUE === '1inch' ? 'WETH/USDC' : 'BTC';
     const botConfig: Record<string, unknown> = {
       strategy: {
         type: 'momentum',
