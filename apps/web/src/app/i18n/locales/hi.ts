@@ -8,6 +8,25 @@ export const messages: Record<string, string> = {
   'nav.connections': 'कनेक्शन',
   'nav.credentials': 'क्रेडेंशियल',
   'nav.billing': 'बिलिंग',
+
+  // Public pages — navigation
+  'public.nav.help': 'सहायता',
+  'public.nav.company': 'कंपनी',
+  'public.nav.docs': 'दस्तावेज़',
+  'public.nav.legal': 'कानूनी',
+
+  // Public pages — help
+  'public.help.getStarted': 'शुरू करें',
+  'public.help.faqs': 'सामान्य प्रश्न',
+  'public.help.pricing': 'मूल्य निर्धारण',
+
+  // Public pages — company
+  'public.company.aboutUs': 'हमारे बारे में',
+  'public.company.contactUs': 'संपर्क करें',
+
+  // Public pages — fallback
+  'public.notAvailableInLanguage': 'यह पृष्ठ आपकी भाषा में उपलब्ध नहीं है।',
+  'public.viewInEnglish': 'अंग्रेज़ी में देखें',
   'nav.settings': 'सेटिंग्स',
   'nav.bots': 'बॉट्स',
   'nav.tradingSetup': 'ट्रेडिंग सेटअप',

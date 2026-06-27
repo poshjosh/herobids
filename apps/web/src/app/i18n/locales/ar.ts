@@ -8,6 +8,25 @@ export const messages: Record<string, string> = {
   'nav.connections': 'الاتصالات',
   'nav.credentials': 'بيانات الاعتماد',
   'nav.billing': 'الفواتير',
+
+  // Public pages — navigation
+  'public.nav.help': 'مساعدة',
+  'public.nav.company': 'الشركة',
+  'public.nav.docs': 'المستندات',
+  'public.nav.legal': 'قانوني',
+
+  // Public pages — help
+  'public.help.getStarted': 'ابدأ',
+  'public.help.faqs': 'الأسئلة الشائعة',
+  'public.help.pricing': 'الأسعار',
+
+  // Public pages — company
+  'public.company.aboutUs': 'من نحن',
+  'public.company.contactUs': 'اتصل بنا',
+
+  // Public pages — fallback
+  'public.notAvailableInLanguage': 'هذه الصفحة غير متوفرة بلغتك.',
+  'public.viewInEnglish': 'عرض باللغة الإنجليزية',
   'nav.settings': 'الإعدادات',
   'nav.bots': 'البوتات',
   'nav.tradingSetup': 'إعداد التداول',

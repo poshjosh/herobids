@@ -30,13 +30,13 @@ Agent style controls how aggressively the AI agent spends its daily LLM budget. 
 
 **Adaptive interval** — Automatically widens the tick interval during quiet periods to conserve budget, then tightens it when significant events occur.
 
-**Open position escalation** — When you have open positions, should the scout automatically escalate to the judge (the more capable model) every tick, or let the cheaper scout model handle routine checks? 
+**Open position escalation** — When you have open positions, should the scout automatically escalate to the judge (the more capable model) every tick, or let the cheaper scout model handle routine checks?
 
-- **Never** lets the scout inspect first; 
-- **On missing coverage** escalates only when a position lacks active monitoring (e.g. no stop-loss or take-profit order covering it). 
-- **Always** forces the judge to review every tick; 
+- **Never** lets the scout inspect first;
+- **On missing coverage** escalates only when a position lacks active monitoring (e.g. no stop-loss or take-profit order covering it).
+- **Always** forces the judge to review every tick;
 
-See [FAQs](/help/faqs#scout-judge-escalation) for more on the scout-judge model.
+See [FAQs](/help/faqs#when-does-escalation-happen) for more on the scout-judge model.
 
 **Thinking depth** — Controls how much internal chain-of-thought reasoning the model performs before producing a response. `none` = direct answer; `light` = brief reasoning; `deep` = extended reasoning.
 
@@ -51,4 +51,4 @@ See [FAQs](/help/faqs#scout-judge-escalation) for more on the scout-judge model.
 
 Agent style controls how your agent spends within its daily budget. Separate from style, you can also set **spending caps** (soft and hard limits) from the Billing page. These caps protect you from surprise bills without changing how your agent trades.
 
-See [Agent Billing Limits](/documentation/agents/billing-limits) for details.
+See [Agent Billing Limits](/docs/agents/billing-limits) for details.

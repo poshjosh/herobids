@@ -30,9 +30,3 @@ HeroBids agent messages sent to Telegram now arrive with reply mode already arme
 
 - `Agent <name> is stopped and cannot receive messages right now.`
   The reply was valid, but the agent is not in a state that can consume new user input.
-
-## Operator Notes
-
-- Configure `alerts.telegram.botToken` and `alerts.telegram.webhookSecret`.
-- Optionally configure `alerts.telegram.webhookUrl` to let the worker register the webhook automatically with Telegram.
-- If `alerts.telegram.webhookUrl` is omitted, automatic webhook registration is skipped.

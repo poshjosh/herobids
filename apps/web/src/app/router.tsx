@@ -8,6 +8,7 @@ import { ActivityFeedPage } from '../features/activity/ActivityFeedPage.js';
 import { OutcomeBoardPage } from '../features/outcomes/OutcomeBoardPage.js';
 import { ExposurePage } from '../features/exposure/ExposurePage.js';
 import { BotsPage } from '../features/bots/BotsPage.js';
+import { createPublicRoutes } from '../features/public-pages/createPublicRoutes.js';
 import { InstanceDetailPage } from '../features/instances/detail/InstanceDetailPage.js';
 import { CredentialsPage } from '../features/credentials/CredentialsPage.js';
 import { VenueAccountsPage } from '../features/venue-accounts/VenueAccountsPage.js';
@@ -21,6 +22,9 @@ import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AdminPage } from '../features/admin/AdminPage.js';
 
 export const router = createBrowserRouter([
+  // ── Public pages (no auth) ────────────────────────────────────
+  ...createPublicRoutes(),
+
   {
     path: '/login',
     element: <LoginPage />,

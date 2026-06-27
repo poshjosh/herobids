@@ -30,7 +30,7 @@ Three triggers can force escalation, bypassing the scout:
    - **On missing coverage** — Escalates only when a position lacks active protection (no stop-loss, no take-profit, no active watch). This is the default for Balanced agents.
    - **Always** — Every tick with open positions goes straight to the judge. Highest cost, but ensures the most capable model reviews every position every time.
 
-Your [agent style](/documentation/agents/agent-style) sets the default policy (Careful → Never, Balanced → On missing coverage, Bold → Always), but you can override it manually at any time.
+Your [agent style](/docs/agents/agent-style) sets the default policy (Careful → Never, Balanced → On missing coverage, Bold → Always), but you can override it manually at any time.
 
 ## What are billing limits, and what happens when I hit them?
 
@@ -43,4 +43,4 @@ The hard cap never closes your positions automatically. It simply stops reasonin
 
 You can set your own caps from the **Billing** page at any time. If you do not set any caps, no spending limits are enforced.
 
-See [Agent Billing Limits](/documentation/agents/billing-limits) for the full explanation.
+See [Agent Billing Limits](/docs/agents/billing-limits) for the full explanation.
