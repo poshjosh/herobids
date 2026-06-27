@@ -565,7 +565,7 @@ export async function billingRoutes(
     const hardCap = period?.hardCapMicrousd;
     const planUsage = plansConfig.plans[account.activePlanId]?.usage;
     const allowedPackIds = new Set(planUsage?.topUpPackIds ?? []);
-    const topUpsEnabled = Boolean(planUsage?.topUpsEnabled) && Boolean(usageBillingConfig?.creditTopUpsEnabled);
+    const topUpsEnabled = (planUsage?.topUpPackIds?.length ?? 0) > 0 && Boolean(usageBillingConfig?.creditTopUpsEnabled);
     const topUpPacks = topUpsEnabled && usageBillingConfig
       ? Object.entries(usageBillingConfig.topUpProductsByProvider).flatMap(([provider, packs]) =>
           providerManager.getProvider(provider as BillingProvider)
@@ -605,7 +605,6 @@ export async function billingRoutes(
           }
         : null,
       warnings,
-      topUpsEnabled,
       topUpPacks,
       byMeter: Object.fromEntries(
         byMeterRows.map((r) => [r.meterKey, { quantity: r.totalQuantity, chargeMicrousd: r.chargeMicrousd }]),
@@ -887,7 +886,7 @@ export async function billingRoutes(
       const account = await usageBillingRepo.getAccountByUserId(userId);
       const planId = account?.activePlanId ?? (await usageBillingRepo.getUserPlanId(userId)) ?? plansConfig.defaultPlanId;
       const planUsage = plansConfig.plans[planId]?.usage;
-      if (!planUsage?.topUpsEnabled) {
+      if ((planUsage?.topUpPackIds?.length ?? 0) === 0) {
         return reply.status(400).send(errorPayload('billing.top_up_required', 'Top-ups are not enabled for the current plan', { planId }));
       }
 

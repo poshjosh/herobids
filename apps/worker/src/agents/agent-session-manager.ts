@@ -239,7 +239,7 @@ export class AgentSessionManager {
           try {
             const billingAccount = await this.config.usageBillingRepo.getAccountByUserId(agent.userId);
             if (billingAccount && (billingAccount.status === 'hard_limited' || billingAccount.status === 'suspended')) {
-              const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && Boolean(planUsageForEnforcement?.topUpsEnabled);
+              const topUpsEnabled = Boolean(this.config.usageBillingConfig?.creditTopUpsEnabled) && (planUsageForEnforcement?.topUpPackIds?.length ?? 0) > 0;
               const code = billingAccount.status === 'suspended'
                 ? 'billing.account_suspended'
                 : (topUpsEnabled ? 'billing.top_up_required' : 'billing.limit_exceeded');

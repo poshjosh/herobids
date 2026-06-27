@@ -743,7 +743,6 @@ export interface UsageSummaryResponse {
   account: UsageBillingAccount | null;
   currentPeriod: UsagePeriodSummary | null;
   warnings: UsageWarning[];
-  topUpsEnabled?: boolean;
   topUpPacks?: Array<{ provider: string; packId: string; cents: number }>;
   byMeter: Record<string, { quantity: number; chargeMicrousd: number }>;
 }

@@ -487,7 +487,7 @@ export function BillingPage() {
               <select
                 value={selectedTopUpPackId}
                 onChange={(e) => setSelectedTopUpPackId(e.target.value)}
-                disabled={!usageSummary?.topUpsEnabled || (usageSummary.topUpPacks?.length ?? 0) === 0}
+                disabled={(usageSummary?.topUpPacks?.length ?? 0) === 0}
                 style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
               >
                 {(usageSummary?.topUpPacks?.length ?? 0) === 0 && <option value="">No packs available</option>}
@@ -499,7 +499,7 @@ export function BillingPage() {
               </select>
               <Button
                 variant="primary"
-                disabled={topUpMutation.isPending || !usageSummary?.topUpsEnabled || selectedTopUpPackId.length === 0}
+                disabled={topUpMutation.isPending || (usageSummary?.topUpPacks?.length ?? 0) === 0 || selectedTopUpPackId.length === 0}
                 onClick={() => topUpMutation.mutate(selectedTopUpPackId)}
               >
                 {topUpMutation.isPending ? 'Opening...' : 'Buy Top-up'}
@@ -508,7 +508,7 @@ export function BillingPage() {
             {topUpError && (
               <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
             )}
-            {!usageSummary?.topUpsEnabled && (
+            {(usageSummary?.topUpPacks?.length ?? 0) === 0 && (
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                 {usageAccount
                   ? 'Top-ups are not enabled for this plan.'

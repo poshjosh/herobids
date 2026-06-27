@@ -466,7 +466,6 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 0
-        topUpsEnabled: true
         topUpPackIds: 
           - mock_topup_500
           - mock_topup_2000
@@ -493,7 +492,6 @@ plans:
           liveEnabled: true
       usage: # required
         includedCreditCents: 2000
-        topUpsEnabled: true
         topUpPackIds: 
           - mock_topup_500
           - mock_topup_2000
@@ -537,15 +535,6 @@ usageBilling:
         externalId: mock_topup_10000
         cents: 10000        
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs
-    - meterKey: "llm.input_tokens"
-      priceMicrousd: 2500
-      perUnit: 1000
-    - meterKey: "llm.output_tokens"
-      priceMicrousd: 10000
-      perUnit: 1000
-    - meterKey: "llm.reasoning_tokens"
-      priceMicrousd: 15000
-      perUnit: 1000
     - meterKey: "agent.runtime_ms"
       priceMicrousd: 100
       perUnit: 60000

@@ -86,7 +86,6 @@ function makePlansConfig(): PlansConfig {
         },
         usage: {
           includedCreditCents: 0,
-          topUpsEnabled: false,
           topUpPackIds: [],
         },
       },

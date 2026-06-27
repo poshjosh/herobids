@@ -109,7 +109,7 @@ export interface BillingAccountRow {
 }
 
 interface DefaultRateCardSeedItem {
-  meterKey: 'llm.input_tokens' | 'llm.output_tokens' | 'llm.reasoning_tokens' | 'agent.runtime_ms';
+  meterKey: 'agent.runtime_ms';
   priceMicrousd: number;
   perUnit: number;
 }
@@ -124,10 +124,16 @@ export interface RateCardSeedItem {
   perUnit: number;
 }
 
+/**
+ * Default rate card seed items used when no explicit items are passed to the constructor.
+ *
+ * LLM token rate cards (input/output/reasoning tokens) are NOT included here —
+ * they are sourced dynamically from `llm_pricing_snapshots` at seed time
+ * (see ADR 010: LLM Pricing Sourced from Database, Not Hardcoded).
+ *
+ * This default matches the Zod schema default in `UsageBillingConfigSchema.defaultRateCardItems`.
+ */
 const DEFAULT_RATE_CARD_ITEMS: DefaultRateCardSeedItem[] = [
-  { meterKey: 'llm.input_tokens', priceMicrousd: 2_500, perUnit: 1_000 },
-  { meterKey: 'llm.output_tokens', priceMicrousd: 10_000, perUnit: 1_000 },
-  { meterKey: 'llm.reasoning_tokens', priceMicrousd: 15_000, perUnit: 1_000 },
   { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
 ];
 

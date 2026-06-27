@@ -193,7 +193,6 @@ describe('billing routes', () => {
           label: 'Pro',
           usage: {
             includedCreditCents: 0,
-            topUpsEnabled: true,
             topUpPackIds: ['starter_500'],
           },
         },
@@ -226,7 +225,7 @@ describe('billing routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(res.statusCode).toBe(200);
-    expect(res.json().topUpsEnabled).toBe(true);
+    expect(res.json().topUpPacks).toHaveLength(1);
     expect(res.json().topUpPacks).toEqual([
       {
         provider: 'stripe',
@@ -257,7 +256,6 @@ describe('billing routes', () => {
         pro: {
           usage: {
             includedCreditCents: 0,
-            topUpsEnabled: true,
             topUpPackIds: ['starter_500'],
           },
         },
@@ -290,7 +288,6 @@ describe('billing routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(res.statusCode).toBe(200);
-    expect(res.json().topUpsEnabled).toBe(true);
     expect(res.json().topUpPacks).toEqual([]);
   });
 
@@ -394,7 +391,6 @@ describe('billing routes', () => {
       plans: {
         pro: {
           usage: {
-            topUpsEnabled: true,
             topUpPackIds: ['starter_500'],
           },
         },

@@ -457,9 +457,7 @@ export const PlanUsagePackagingSchema = z.object({
   softCapCents: z.number().int().min(0).optional(),
   /** Hard spend cap in cents — block further usage */
   hardCapCents: z.number().int().min(0).optional(),
-  /** Whether credit top-ups can be purchased on this plan */
-  topUpsEnabled: z.boolean().default(false),
-  /** Credit top-up pack IDs available on this plan */
+  /** Credit top-up pack IDs available on this plan. Non-empty → top-ups enabled. */
   topUpPackIds: z.array(z.string()).default([]),
 });
 
@@ -529,7 +527,6 @@ export const PlansConfigSchema = z.object({
       },
       usage: {
         includedCreditCents: 0,
-        topUpsEnabled: false,
         topUpPackIds: [],
       },
     },
@@ -555,9 +552,6 @@ export const UsageBillingConfigSchema = z.object({
     priceMicrousd: z.number().int().min(0),
     perUnit: z.number().int().min(1),
   })).default([
-    { meterKey: 'llm.input_tokens', priceMicrousd: 2_500, perUnit: 1_000 },
-    { meterKey: 'llm.output_tokens', priceMicrousd: 10_000, perUnit: 1_000 },
-    { meterKey: 'llm.reasoning_tokens', priceMicrousd: 15_000, perUnit: 1_000 },
     { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
   ]),
   /** Whether credit top-up purchases are available globally */

@@ -117,7 +117,6 @@ export async function buildApp() {
         },
         usage: {
           includedCreditCents: 0,
-          topUpsEnabled: false,
           topUpPackIds: [],
         },
       },
@@ -147,7 +146,6 @@ export async function buildApp() {
         },
         usage: {
           includedCreditCents: 0,
-          topUpsEnabled: false,
           topUpPackIds: [],
         },
       },

@@ -24,7 +24,6 @@ function renderPage(): string {
     account: null,
     currentPeriod: null,
     warnings: [],
-    topUpsEnabled: false,
     topUpPacks: [],
     byMeter: {},
   });
