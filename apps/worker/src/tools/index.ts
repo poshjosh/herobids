@@ -1,4 +1,4 @@
-import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, findUnknownSkillTools } from '@herobids/domain';
+import { BASE_SKILL, KNOWN_AGENT_TOOL_NAMES, SYSTEM_SKILLS, TOOL_CATALOG, findUnknownSkillTools } from '@herobids/domain';
 import { ToolRegistry } from './registry.js';
 import { messagingTools } from './messaging.js';
 import { memoryTools } from './memory.js';
@@ -19,18 +19,48 @@ import { instrumentTools } from './find-instrument.js';
 import { resolverTools } from './resolvers.js';
 
 function assertToolCatalogMatchesRegistry(registry: ToolRegistry): void {
-  const registeredToolNames = registry.list().map((tool) => tool.name).sort();
+  const registeredTools = registry.list();
+  const registeredToolNames = registeredTools.map((tool) => tool.name).sort();
   const knownToolNames = ([...KNOWN_AGENT_TOOL_NAMES] as string[]).sort();
-  const missingFromRegistry = knownToolNames.filter((toolName) => !registeredToolNames.includes(toolName));
-  const missingFromCatalog = registeredToolNames.filter((toolName) => !knownToolNames.includes(toolName));
 
-  if (missingFromRegistry.length === 0 && missingFromCatalog.length === 0) {
-    return;
+  // Name-level check: KNOWN_AGENT_TOOL_NAMES ↔ registry
+  const missingFromRegistry = knownToolNames.filter((toolName) => !registeredToolNames.includes(toolName));
+  const missingFromKnownNames = registeredToolNames.filter((toolName) => !knownToolNames.includes(toolName));
+
+  // Name-level check: TOOL_CATALOG ↔ registry
+  const catalogToolNames = Object.keys(TOOL_CATALOG).sort();
+  const missingFromCatalog = catalogToolNames.filter((toolName) => !registeredToolNames.includes(toolName));
+  const missingFromCatalogCoverage = registeredToolNames.filter((toolName) => !(toolName in TOOL_CATALOG));
+
+  // Category consistency: every registered tool must match its catalog entry's category
+  const categoryMismatches: string[] = [];
+  for (const tool of registeredTools) {
+    const catalogEntry = TOOL_CATALOG[tool.name];
+    if (catalogEntry && catalogEntry.category !== tool.category) {
+      categoryMismatches.push(`${tool.name} (catalog=${catalogEntry.category}, registry=${tool.category})`);
+    }
   }
 
-  throw new Error(
-    `Agent tool catalog mismatch: missingFromRegistry=[${missingFromRegistry.join(', ')}], missingFromCatalog=[${missingFromCatalog.join(', ')}]`,
-  );
+  const errors: string[] = [];
+  if (missingFromRegistry.length > 0) {
+    errors.push(`missingFromRegistry=[${missingFromRegistry.join(', ')}]`);
+  }
+  if (missingFromKnownNames.length > 0) {
+    errors.push(`missingFromKnownNames=[${missingFromKnownNames.join(', ')}]`);
+  }
+  if (missingFromCatalog.length > 0) {
+    errors.push(`missingFromCatalog=[${missingFromCatalog.join(', ')}]`);
+  }
+  if (missingFromCatalogCoverage.length > 0) {
+    errors.push(`missingFromCatalogCoverage=[${missingFromCatalogCoverage.join(', ')}]`);
+  }
+  if (categoryMismatches.length > 0) {
+    errors.push(`categoryMismatches=[${categoryMismatches.join(', ')}]`);
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Agent tool catalog mismatch: ${errors.join('; ')}`);
+  }
 }
 
 function assertBuiltInSkillToolsAreKnown(): void {

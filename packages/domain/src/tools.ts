@@ -294,6 +294,95 @@ export function findUnknownSkillTools(requiredTools: string[]): string[] {
   return [...new Set(requiredTools.filter((toolName) => !isKnownAgentToolName(toolName)))].sort();
 }
 
+/** Catalog entry: category + description for each known agent tool. */
+export interface ToolCatalogEntry {
+  category: ToolCategory;
+  description: string;
+}
+
+/**
+ * Static catalog of all agent tools with category and description.
+ * Used by the API discovery endpoint and worker drift checks.
+ * Must stay in sync with the worker tool registry — enforced at startup
+ * by assertToolCatalogMatchesRegistry().
+ */
+export const TOOL_CATALOG: Record<string, ToolCatalogEntry> = {
+  // execute-trade
+  submit_decision:     { category: 'execute-trade',       description: 'Submit a trade decision for a specific instrument. Evaluated by risk gate and executed if approved.' },
+  create_bot:          { category: 'execute-trade',       description: 'Create and start a new trading bot with its own strategy and risk parameters.' },
+
+  // read-database
+  get_analytics:       { category: 'read-database',       description: 'Get trading analytics: total trades, win rate, P&L, fees, per-bot/agent-direct breakdown.' },
+  list_positions:      { category: 'read-database',       description: 'List open positions owned by this agent (bot-created + direct).' },
+  list_bots:           { category: 'read-database',       description: 'List bots created by this agent, optionally filtered by creation date.' },
+  get_bot_status:      { category: 'read-database',       description: 'Get detailed status for a specific bot: config, runtime state, timestamps.' },
+  get_account_summary: { category: 'read-database',       description: "Agent's trading account summary: capital, equity, open positions, P&L, risk limits." },
+  get_risk_limits:     { category: 'read-database',       description: 'Get effective risk limits: which are mutable vs locked, plus runtime state.' },
+  find_instrument:     { category: 'read-database',       description: 'Find a tradable instrument by symbol/name. Returns instrumentId, symbol, decimals, venue.' },
+  resolve_bot:         { category: 'read-database',       description: 'Resolve a bot name/symbol to its bot ID for stop/start/config operations.' },
+
+  // write-database
+  stop_bot:            { category: 'write-database',      description: 'Stop a running bot. Positions remain open unless manually closed.' },
+  start_bot:           { category: 'write-database',      description: 'Start a stopped bot. Resumes trading per its configuration.' },
+  adjust_bot_config:   { category: 'write-database',      description: 'Update configuration for a specific bot. Changes merged and take effect next tick.' },
+  adjust_risk_limits:  { category: 'write-database',      description: 'Adjust mutable risk limits. Only operator-default-derived limits can be changed.' },
+
+  // read-market-data
+  search_tokens:       { category: 'read-market-data',    description: 'Search for tokens by name/symbol on DEX aggregators. Returns liquidity, price, safety metadata, network.' },
+  discover_tokens:     { category: 'read-market-data',    description: 'Discover trending/popular tokens from aggregated market data sources.' },
+  check_regime:        { category: 'read-market-data',    description: 'Evaluate market regime using EMA alignment, ADX, VWAP, and structure filters.' },
+  get_funding_rates:   { category: 'read-market-data',    description: 'Get current funding rates for perpetual contracts.' },
+  get_market_overview: { category: 'read-market-data',    description: 'Aggregated market overview: top movers, volume leaders, market breadth metrics.' },
+  get_price:           { category: 'read-market-data',    description: 'Look up current price of a token. Hyperliquid perps use mark price; DEX tokens use oracle price.' },
+
+  // read-web
+  search_web:          { category: 'read-web',            description: 'Search the internet using Tavily. Returns top results with titles, URLs, text extracts.' },
+  browse_url:          { category: 'read-web',            description: 'Fetch and read contents of a web page. HTTPS only; private IPs/loopback blocked.' },
+  read_document:       { category: 'read-web',            description: 'Fetch and extract text from a document URL (currently PDF). HTTPS only; SSRF protected.' },
+
+  // read-config
+  get_schema:          { category: 'read-config',         description: "Fetch JSON Schema for named config parameters or tool sub-schemas. Call with name='all' to list all." },
+
+  // read-memory
+  get_memory:          { category: 'read-memory',         description: 'Retrieve a stored memory value by key. Returns found/not-found.' },
+  list_memory_keys:    { category: 'read-memory',         description: 'List all keys stored in agent memory.' },
+  list_tasks:          { category: 'read-memory',         description: 'List tasks; filter by status (pending/completed/all).' },
+  list_watches:        { category: 'read-memory',         description: 'List all active price watches registered by this agent.' },
+  resolve_watch:       { category: 'read-memory',         description: 'Resolve a price watch to its ID by searching note text or symbol.' },
+  resolve_task:        { category: 'read-memory',         description: "Resolve a task title to its task ID. Use this before calling complete_task when you don't have the exact task UUID." },
+
+  // write-memory
+  set_memory:          { category: 'write-memory',        description: 'Store a value in agent memory by key. Persists across ticks and restarts.' },
+  delete_memory:       { category: 'write-memory',        description: 'Delete one or more memory keys.' },
+  create_task:         { category: 'write-memory',        description: 'Create a durable task with title, optional notes, and optional due datetime.' },
+  complete_task:       { category: 'write-memory',        description: 'Mark a task as completed by its ID.' },
+  schedule_reminder:   { category: 'write-memory',        description: 'Schedule a one-shot reminder at a specific absolute datetime (ISO 8601 UTC).' },
+  watch_token:         { category: 'write-memory',        description: 'Register a price watch. Fires when price crosses a threshold in specified direction.' },
+  remove_watch:        { category: 'write-memory',        description: 'Remove a price watch by its ID.' },
+  check_watches:       { category: 'write-memory',        description: 'Evaluate all active price watches against current prices. Optionally auto-remove triggered.' },
+
+  // write-messaging
+  send_message:        { category: 'write-messaging',     description: 'Send a message to the user via the platform messaging system.' },
+  publish_artifact:    { category: 'write-messaging',     description: 'Publish an artifact (analysis result, chart, report) for user review.' },
+
+  // read-filesystem
+  read_file:           { category: 'read-filesystem',     description: 'Read contents of a file in the agent workspace.' },
+  list_files:          { category: 'read-filesystem',     description: 'List files and directories in the agent workspace.' },
+  stat_file:           { category: 'read-filesystem',     description: 'Get metadata about a file/directory: exists, type, size, modification time.' },
+
+  // write-filesystem
+  write_file:          { category: 'write-filesystem',    description: 'Create or overwrite a file in the agent workspace.' },
+  delete_file:         { category: 'write-filesystem',    description: 'Delete a file from the agent workspace.' },
+
+  // execute-filesystem
+  execute_code:        { category: 'execute-filesystem',  description: 'Execute JavaScript (Node.js) or Python code in a workspace-backed environment. Supports optional package installation.' },
+};
+
+/** Look up a tool's catalog entry by name. Returns undefined for unknown tools. */
+export function getToolCatalogEntry(name: string): ToolCatalogEntry | undefined {
+  return TOOL_CATALOG[name];
+}
+
 /** Helper to check if a category implies read-only access */
 export function isReadOnlyCategory(category: ToolCategory): boolean {
   return category.startsWith('read-');
