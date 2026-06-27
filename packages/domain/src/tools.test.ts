@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TOOL_CATALOG, getToolCatalogEntry, KNOWN_AGENT_TOOL_NAMES } from './tools.js';
+import { TOOL_CATALOG, TOOL_CATEGORY_LABELS, getToolCatalogEntry, KNOWN_AGENT_TOOL_NAMES } from './tools.js';
 
 describe('TOOL_CATALOG', () => {
   it('has exactly 46 entries, matching KNOWN_AGENT_TOOL_NAMES length', () => {
@@ -20,6 +20,20 @@ describe('TOOL_CATALOG', () => {
     // Every known name is in the catalog
     for (const name of knownSet) {
       expect(catalogKeys.has(name)).toBe(true);
+    }
+  });
+});
+
+describe('TOOL_CATEGORY_LABELS', () => {
+  it('has exactly 12 entries (one per ToolCategory variant used by the catalog)', () => {
+    expect(Object.keys(TOOL_CATEGORY_LABELS)).toHaveLength(12);
+  });
+
+  it('has a label for every category used by a tool in TOOL_CATALOG', () => {
+    const usedCategories = new Set(Object.values(TOOL_CATALOG).map((e) => e.category));
+    const labeledCategories = new Set(Object.keys(TOOL_CATEGORY_LABELS));
+    for (const cat of usedCategories) {
+      expect(labeledCategories.has(cat)).toBe(true);
     }
   });
 });

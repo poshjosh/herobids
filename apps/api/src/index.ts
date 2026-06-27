@@ -25,6 +25,7 @@ import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
 import { toolSchemaRoutes } from './routes/tool-schemas.js';
+import { agentToolsRoutes } from './routes/agent-tools.js';
 import { venueDefaultsRoutes } from './routes/venue-defaults.js';
 import { strategySchemaRoutes } from './routes/strategy-schemas.js';
 import { loadProvidersConfig } from '@herobids/domain';
@@ -177,6 +178,7 @@ await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData
 
 // ── Tool schema & discovery endpoints ─────────────────────────────────────
 await toolSchemaRoutes(app);
+await agentToolsRoutes(app);
 await venueDefaultsRoutes(app, { defaultSlippageBps: appConfig.execution.defaultSlippageBps });
 await strategySchemaRoutes(app);
 

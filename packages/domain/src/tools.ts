@@ -383,6 +383,22 @@ export function getToolCatalogEntry(name: string): ToolCatalogEntry | undefined 
   return TOOL_CATALOG[name];
 }
 
+/** Human-readable labels for tool categories. Used by API and UI. */
+export const TOOL_CATEGORY_LABELS: Record<string, string> = {
+  'execute-trade':       'Trade Execution',
+  'read-database':       'Database (Read)',
+  'write-database':      'Database (Write)',
+  'read-market-data':    'Market Data (Read)',
+  'read-web':            'Web Access (Read)',
+  'read-config':         'Configuration (Read)',
+  'read-memory':         'Memory (Read)',
+  'write-memory':        'Memory (Write)',
+  'write-messaging':     'Messaging',
+  'read-filesystem':     'Filesystem (Read)',
+  'write-filesystem':    'Filesystem (Write)',
+  'execute-filesystem':  'Code Execution',
+};
+
 /** Helper to check if a category implies read-only access */
 export function isReadOnlyCategory(category: ToolCategory): boolean {
   return category.startsWith('read-');
