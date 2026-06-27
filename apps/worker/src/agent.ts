@@ -15,7 +15,7 @@ import pino from 'pino';
 import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
-import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition } from '@herobids/domain';
+import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
 import { type LlmToolDefinition } from '@herobids/llm';
 import {
   createProviderRegistry,
@@ -246,6 +246,8 @@ interface AgentConfig {
     maxOrderNotionalMultiplier: number;
     dailyMaxLossPct: number;
   };
+  /** Provider pricing registry forwarded by the worker (config/providers.yaml) */
+  providersYaml?: ProvidersYaml;
   /** True when agent has both technical scanner + LLM intelligence config — ticks are event-driven */
   hybridMode?: boolean;
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
@@ -780,7 +782,7 @@ const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WIN
 // Provider registry — forwarded by the worker so the agent container can seed
 // per-model LLM token rate card items via llm_pricing_snapshots without an
 // additional filesystem read inside the container.
-const providersYaml = agentConfig.providersYaml as import('@herobids/domain').ProvidersYaml | undefined;
+const providersYaml = agentConfig.providersYaml;
 
 const usageBillingService = createUsageBillingService(db, {
   userId: agentConfig.userId ?? '',

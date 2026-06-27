@@ -173,18 +173,18 @@ export function LoginPage() {
             justifyContent: 'center',
             gap: '10px',
             padding: '12px 20px',
-            background: '#4285F4',
-            color: 'white',
+            background: '#FFFFFF',
+            color: 'rgba(0,0,0,0.54)',
             borderRadius: '8px',
-            border: 'none',
+            border: '1px solid var(--color-border)',
             textDecoration: 'none',
             fontSize: '15px',
             fontWeight: '500',
             cursor: 'pointer',
-            transition: 'background 0.15s',
+            transition: 'background 0.15s, box-shadow 0.15s',
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#3367D6'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#4285F4'; }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#F5F5F5'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#FFFFFF'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = 'none'; }}
         >
           <GoogleIcon />
           {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
