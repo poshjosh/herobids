@@ -15,17 +15,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - DB timestamp invariant unit tests (6 tests)
 - API endpoint functional tests for bot lifecycle
 - UI interaction tests for bot detail page (11 tests)
+- DexScreener boost enrichment pipeline: `fetchDexScreenerTokensByAddress` and `enrichDexScreenerBoostTokens` now enrich zero-liquidity boost/profile tokens with real on-chain pair data before the discovery threshold filter, turning three wasted DexScreener API calls into a useful discovery vector.
 
-### Fixed
-
-- `markBotRunning` now clears `stoppedAt` to prevent inverted lifecycle timestamps on bot restart
-- Worker `onStopped` callback now persists `status='stopped'` and `stoppedAt` to the database
 - Security auditor agent
 
 - Documented the billing enforcement policy: soft cap warns without changing agent behavior, hard cap stops with explicit open-position notification, and added a public billing limits page, internal technical contract, and ADR-009 to freeze the decision.
 
 ### Fixed
 
+- `markBotRunning` now clears `stoppedAt` to prevent inverted lifecycle timestamps on bot restart
+- Worker `onStopped` callback now persists `status='stopped'` and `stoppedAt` to the database
 - Bug which allowed agents excalate/increase bot execution mode e.g paper agent cannot create bot with exection mode shadow.
 - `pnpm install` failure (`ERR_PNPM_NO_MATCHING_VERSION_INSIDE_WORKSPACE`) caused by prerelease version strings in workspace packages — changed all to plain `0.0.1`.
 

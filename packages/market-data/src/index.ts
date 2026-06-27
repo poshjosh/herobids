@@ -54,9 +54,11 @@ export {
 } from './indicators.js';
 export {
 	convertDexScreenerSearchToDiscovery,
+	enrichDexScreenerBoostTokens,
 	fetchDexScreenerBoostsLatest,
 	fetchDexScreenerProfilesLatest,
 	fetchDexScreenerSearch,
+	fetchDexScreenerTokensByAddress,
 	fetchDexScreenerTrending,
 	mergeDexScreenerSearchAndDiscovery,
 	type DexScreenerConfig,
