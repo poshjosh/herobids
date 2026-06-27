@@ -80,6 +80,44 @@ const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../config');
 const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
 
 const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';
+
+// Custom request serializer — redacts JWT tokens from the URL query string
+// while preserving all standard Fastify request log fields (id, method, url,
+// query, params, headers, remoteAddress, remotePort). The Authorization
+// header is redacted via Pino's built-in redact option below.
+//
+// The /events WebSocket endpoint passes the JWT as a ?token= query parameter
+// (browsers can't set Authorization on WS upgrade). Without redaction,
+// every WS connect logs the full token in plaintext.
+function redactReqSerializer(req: Record<string, unknown>) {
+  // Replicate the default Pino std serializer fields so we don't drop
+  // remoteAddress, remotePort, id, query, params, or headers.
+  const connection: Record<string, unknown> | undefined =
+    (req['socket'] as Record<string, unknown> | undefined) ??
+    (req['info'] as Record<string, unknown> | undefined);
+  return {
+    id: typeof req['id'] === 'function' ? (req['id'] as () => string)() : (req['id'] ?? req['raw']?.['id']),
+    method: req['method'],
+    url: typeof req['url'] === 'string'
+      ? (req['url'] as string).replace(/([?&])token=[^&]*/g, '$1token=[redacted]').replace(/[?&]$/, '')
+      : req['url'],
+    query: redactQueryToken(req['query']),
+    params: req['params'],
+    headers: req['headers'],
+    remoteAddress: req['ip'] ?? connection?.['remoteAddress'] ?? '',
+    remotePort: connection?.['remotePort'] ?? '',
+  };
+}
+
+function redactQueryToken(query: unknown): unknown {
+  if (query == null || typeof query !== 'object') return query;
+  const q = query as Record<string, unknown>;
+  if (!('token' in q)) return query;
+  const redacted = { ...q };
+  redacted['token'] = '[redacted]';
+  return redacted;
+}
+
 const app = Fastify({
   logger: isPrettyLog
     ? {
@@ -87,8 +125,13 @@ const app = Fastify({
           target: 'pino-pretty',
           options: { colorize: true, translateTime: 'HH:MM:ss', ignore: 'pid,hostname' },
         },
+        redact: ['req.headers.authorization'],
+        serializers: { req: redactReqSerializer },
       }
-    : true,
+    : {
+        redact: ['req.headers.authorization'],
+        serializers: { req: redactReqSerializer },
+      },
 });
 
 const parsedRedisUrl = new URL(appConfig.redis.url);
