@@ -9,18 +9,241 @@ import {
 } from '../../lib/ui.js';
 
 // ---------------------------------------------------------------------------
-// Strategy presets per plan 003
+// Strategy presets — mechanical-format params with required stopLossPct/takeProfitPct
 // ---------------------------------------------------------------------------
 const STRATEGY_PRESETS = [
   {
     value: 'momentum',
-    label: 'Momentum',
-    description: 'Trend-following strategy that buys strength and sells weakness',
-    // The factory translates momentum params to MechanicalParams:
-    // - lookbackPeriod -> candleLimit (clamped to schema minimum 20)
-    // - threshold -> indicators.confidence.minConfidence (×5 multiplier)
-    // - positionSize carried over directly
-    config: { strategy: { type: 'momentum', params: { lookbackPeriod: 14, threshold: 0.02, positionSize: '1' } } },
+    label: 'Momentum — Day',
+    description: 'Day-trend following on 15m candles. Tight stop, quick profit targets.',
+    config: {
+      strategy: {
+        type: 'momentum',
+        decisionMode: 'mechanical',
+        params: {
+          candleInterval: '15m',
+          candleLimit: 48,
+          minCandleCount: 20,
+          stopLossPct: 3,
+          takeProfitPct: 8,
+          signalBias: 'trend-following',
+          positionSize: '1',
+          positionSizeMode: 'fixed',
+          indicators: {
+            rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70 },
+            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+            volume: { enabled: true, strongRatio: 1.5 },
+            supportResistance: { enabled: false },
+            vwap: { enabled: false },
+            priceAction: { enabled: true, minChange24hPct: 3, maxChange24hPct: 50 },
+            choch: { enabled: false },
+            confidence: {
+              rsiWeight: 0.25, macdCrossoverWeight: 0.30, macdIncreasingWeight: 0.15,
+              volumeWeight: 0.20, breakoutWeight: 0.10,
+              vwapWeight: 0, priceActionWeight: 0.10,
+              chochBullishWeight: 0.15, chochBearishPenalty: 0.10,
+              minConfidence: 0.40, minReasons: 2,
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    value: 'momentum-position',
+    label: 'Momentum — Position',
+    description: 'Longer-term trend following on 4H candles. Wider stops, bigger targets.',
+    config: {
+      strategy: {
+        type: 'momentum',
+        decisionMode: 'mechanical',
+        params: {
+          candleInterval: '4H',
+          candleLimit: 72,
+          minCandleCount: 30,
+          stopLossPct: 8,
+          takeProfitPct: 25,
+          signalBias: 'trend-following',
+          positionSize: '1',
+          positionSizeMode: 'fixed',
+          indicators: {
+            rsi: { enabled: true, period: 14, healthyMin: 45, healthyMax: 75 },
+            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+            volume: { enabled: true, strongRatio: 1.8 },
+            supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.01 },
+            vwap: { enabled: false },
+            priceAction: { enabled: true, minChange24hPct: 8, maxChange24hPct: 60 },
+            choch: { enabled: false },
+            confidence: {
+              rsiWeight: 0.20, macdCrossoverWeight: 0.25, macdIncreasingWeight: 0.20,
+              volumeWeight: 0.20, breakoutWeight: 0.15,
+              vwapWeight: 0, priceActionWeight: 0.10,
+              chochBullishWeight: 0.15, chochBearishPenalty: 0.10,
+              minConfidence: 0.45, minReasons: 2,
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    value: 'swing',
+    label: 'Swing',
+    description: 'Medium-term swing trading. 4H candles, CHOCH confirmations, moderate risk.',
+    config: {
+      strategy: {
+        type: 'swing',
+        decisionMode: 'mechanical',
+        params: {
+          candleInterval: '4H',
+          candleLimit: 48,
+          minCandleCount: 20,
+          stopLossPct: 5,
+          takeProfitPct: 15,
+          signalBias: 'trend-following',
+          positionSize: '1',
+          positionSizeMode: 'fixed',
+          indicators: {
+            rsi: { enabled: true, period: 14, healthyMin: 48, healthyMax: 68 },
+            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+            volume: { enabled: true, strongRatio: 1.5, weakRatio: 0.8 },
+            supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.01 },
+            vwap: { enabled: false },
+            priceAction: { enabled: true, minChange24hPct: 5, maxChange24hPct: 50 },
+            choch: { enabled: true, swingLookback: 3, minSwingPct: 0.015, rejectOnBearish: true },
+            confidence: {
+              rsiWeight: 0.20, macdCrossoverWeight: 0.25, macdIncreasingWeight: 0.15,
+              breakoutWeight: 0.25, volumeWeight: 0.20,
+              vwapWeight: 0, priceActionWeight: 0.10,
+              chochBullishWeight: 0.20, chochBearishPenalty: 0.15,
+              minConfidence: 0.40, minReasons: 2,
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    value: 'range',
+    label: 'Range Trading',
+    description: 'Mean-reverting within ranges. Uses support/resistance bounces, RSI extremes.',
+    config: {
+      strategy: {
+        type: 'range',
+        decisionMode: 'mechanical',
+        params: {
+          candleInterval: '1H',
+          candleLimit: 48,
+          minCandleCount: 20,
+          stopLossPct: 4,
+          takeProfitPct: 8,
+          signalBias: 'mean-reverting',
+          positionSize: '1',
+          positionSizeMode: 'fixed',
+          indicators: {
+            rsi: { enabled: true, period: 14, overbought: 75, weakBelow: 25 },
+            macd: { enabled: false },
+            volume: { enabled: true, strongRatio: 1.3 },
+            supportResistance: { enabled: true, lookback: 30, breakoutThreshold: 0.005 },
+            vwap: { enabled: false },
+            priceAction: { enabled: false },
+            choch: { enabled: false },
+            confidence: {
+              rsiWeight: 0.40, macdCrossoverWeight: 0.00, macdIncreasingWeight: 0.00,
+              volumeWeight: 0.20, breakoutWeight: 0.40,
+              vwapWeight: 0, priceActionWeight: 0,
+              chochBullishWeight: 0, chochBearishPenalty: 0,
+              minConfidence: 0.35, minReasons: 2,
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    value: 'contrarian',
+    label: 'Contrarian',
+    description: 'Fades extreme momentum. Mean-reverting against overbought/oversold signals.',
+    config: {
+      strategy: {
+        type: 'contrarian',
+        decisionMode: 'mechanical',
+        params: {
+          candleInterval: '1H',
+          candleLimit: 48,
+          minCandleCount: 20,
+          stopLossPct: 5,
+          takeProfitPct: 12,
+          signalBias: 'mean-reverting',
+          positionSize: '1',
+          positionSizeMode: 'fixed',
+          indicators: {
+            rsi: { enabled: true, period: 14, overbought: 70, weakBelow: 30 },
+            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
+            volume: { enabled: true, strongRatio: 1.5 },
+            supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.008 },
+            vwap: { enabled: false },
+            priceAction: { enabled: true, minChange24hPct: 10, maxChange24hPct: 40 },
+            choch: { enabled: true, swingLookback: 3, minSwingPct: 0.01, rejectOnBearish: false },
+            confidence: {
+              rsiWeight: 0.35, macdCrossoverWeight: 0.15, macdIncreasingWeight: 0.10,
+              volumeWeight: 0.20, breakoutWeight: 0.20,
+              vwapWeight: 0, priceActionWeight: 0.10,
+              chochBullishWeight: 0.10, chochBearishPenalty: 0.05,
+              minConfidence: 0.40, minReasons: 2,
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    value: 'scalper',
+    label: 'Scalper',
+    description: 'Quick entries on 5m candles. Tight stops, fast exits, volume confirmation.',
+    config: {
+      strategy: {
+        type: 'scalper',
+        decisionMode: 'mechanical',
+        params: {
+          candleInterval: '5m',
+          candleLimit: 30,
+          minCandleCount: 15,
+          stopLossPct: 2,
+          takeProfitPct: 5,
+          signalBias: 'trend-following',
+          positionSize: '1',
+          positionSizeMode: 'fixed',
+          indicators: {
+            rsi: { enabled: true, period: 7, healthyMin: 45, healthyMax: 65 },
+            macd: { enabled: true, fast: 6, slow: 13, signal: 5 },
+            volume: { enabled: true, strongRatio: 1.8, recentBars: 3, avgBars: 10 },
+            supportResistance: { enabled: false },
+            vwap: { enabled: false },
+            priceAction: { enabled: false },
+            choch: { enabled: false },
+            confidence: {
+              rsiWeight: 0.30, macdCrossoverWeight: 0.35, macdIncreasingWeight: 0.15,
+              volumeWeight: 0.25, breakoutWeight: 0.05,
+              vwapWeight: 0, priceActionWeight: 0,
+              chochBullishWeight: 0.10, chochBearishPenalty: 0.05,
+              minConfidence: 0.35, minReasons: 2,
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    value: 'dca',
+    label: 'DCA',
+    description: 'Dollar-cost averaging — buys at fixed intervals. No signal analysis needed.',
+    config: {
+      strategy: {
+        type: 'dca',
+        params: { intervalMs: 86400000, amountPerBuy: '10' },
+      },
+    },
   },
 ] as const;
 
@@ -160,6 +383,11 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         venue,
         symbol: form.symbol,
       };
+      // If preset has no decisionMode (e.g. DCA), ensure it's not in the config
+      const strategyCfg = config['strategy'] as Record<string, unknown> | undefined;
+      if (strategyCfg && !strategyCfg['decisionMode']) {
+        delete strategyCfg['decisionMode'];
+      }
       if (showAdvanced && configJson.trim()) {
         try {
           config = JSON.parse(configJson) as Record<string, unknown>;
