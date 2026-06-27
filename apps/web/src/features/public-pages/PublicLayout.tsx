@@ -133,7 +133,7 @@ interface FooterColumn {
   links: { label: string; href: string }[];
 }
 
-function PublicFooter({ locale }: { locale: SupportedLocale }) {
+export function PublicFooter({ locale }: { locale: SupportedLocale }) {
   const intl = useIntl();
 
   const columns = useMemo<FooterColumn[]>(() => {
@@ -171,8 +171,6 @@ function PublicFooter({ locale }: { locale: SupportedLocale }) {
     >
       <div
         style={{
-          maxWidth: '960px',
-          margin: '0 auto',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
           gap: '24px',
@@ -212,8 +210,7 @@ function PublicFooter({ locale }: { locale: SupportedLocale }) {
 
       <div
         style={{
-          maxWidth: '960px',
-          margin: '24px auto 0',
+          marginTop: '24px',
           paddingTop: '16px',
           borderTop: '1px solid var(--color-border-subtle)',
           textAlign: 'center',

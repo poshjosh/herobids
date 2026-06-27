@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { Outlet, Navigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useSession } from '../providers/SessionProvider.js';
+import { useLocale } from '../i18n/I18nProvider.js';
 import { Sidebar } from './Sidebar.js';
+import { PublicFooter } from '../../features/public-pages/PublicLayout.js';
 
 export function RootLayout() {
   const { authenticated, loading } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const intl = useIntl();
+  const { locale } = useLocale();
 
   if (loading) {
     return (
@@ -57,6 +60,8 @@ export function RootLayout() {
         <div style={{ flex: 1 }}>
           <Outlet />
         </div>
+
+        <PublicFooter locale={locale} />
       </div>
     </div>
   );
