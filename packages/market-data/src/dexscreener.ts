@@ -226,3 +226,67 @@ export async function fetchDexScreenerTokensByAddress(
 
   return results;
 }
+
+export async function enrichDexScreenerBoostTokens(
+  tokens: DiscoveredToken[],
+  networks: string[],
+  config: DexScreenerConfig,
+): Promise<DiscoveredToken[]> {
+  try {
+    // Identify tokens to enrich: dexscreener source, zero liquidity, in configured networks.
+    const toEnrich = tokens.filter(
+      (t) => t.source === 'dexscreener' && t.liquidityUsd === 0 && networks.includes(t.network),
+    );
+
+    if (toEnrich.length === 0) {
+      return tokens;
+    }
+
+    // Group by network.
+    const byNetwork = new Map<string, DiscoveredToken[]>();
+    for (const token of toEnrich) {
+      const group = byNetwork.get(token.network) ?? [];
+      group.push(token);
+      byNetwork.set(token.network, group);
+    }
+
+    // Fetch enriched data per network and build a lookup map.
+    const enrichedByKey = new Map<string, DiscoveredToken>();
+    for (const [network, networkTokens] of byNetwork) {
+      const addresses = networkTokens.map((t) => t.address);
+      const enriched = await fetchDexScreenerTokensByAddress(network, addresses, config);
+      for (const token of enriched) {
+        enrichedByKey.set(`${token.network}:${token.address}`, token);
+      }
+    }
+
+    // Merge enriched data back into the original token list.
+    return tokens.map((token) => {
+      const key = `${token.network}:${token.address}`;
+      const enriched = enrichedByKey.get(key);
+      if (!enriched) {
+        return token;
+      }
+
+      return {
+        ...token,
+        // Overwrite financials with real on-chain data.
+        priceUsd: enriched.priceUsd,
+        volume24hUsd: enriched.volume24hUsd,
+        liquidityUsd: enriched.liquidityUsd,
+        // Conditionally overwrite: only when the enriched value is present.
+        priceChange24hPct:
+          enriched.priceChange24hPct !== undefined
+            ? enriched.priceChange24hPct
+            : token.priceChange24hPct,
+        symbol: enriched.symbol || token.symbol,
+        name: enriched.name || token.name,
+        poolCreatedAt: enriched.poolCreatedAt ?? token.poolCreatedAt,
+        // Preserve: source, discoveryVectors, address, network (unchanged via spread).
+      };
+    });
+  } catch (err) {
+    console.warn('DexScreener boost enrichment failed, returning unenriched tokens:', err);
+    return tokens;
+  }
+}
