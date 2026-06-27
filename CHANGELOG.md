@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **Dynamic LLM Pricing**: Provider pricing sourced from PostgreSQL (`llm_pricing_snapshots`) + `config/providers.yaml`. Hardcoded `PROVIDER_DEFINITIONS` removed. OpenRouter pricing fetched hourly by worker, static providers seeded on startup. API model catalog reads from DB. Rate card seeding uses DB snapshots instead of build-time constants.
+
 ### Added
 
 - Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.

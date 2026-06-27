@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, jsonb, boolean, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 /**
  * llm_pricing_snapshots — timestamped snapshots of LLM provider pricing.
@@ -18,9 +19,10 @@ export const llmPricingSnapshots = pgTable(
   },
   (t) => [
     index('idx_llm_pricing_snapshots_provider_active').on(t.provider, t.isActive),
-    index('uq_llm_pricing_snapshots_provider_active')
+    // Partial unique: only one active row per provider.
+    // Inactive rows kept for audit / history.
+    uniqueIndex('uq_llm_pricing_snapshots_provider_active')
       .on(t.provider)
-      .where(t.isActive.eq(true))
-      .unique(),
+      .where(sql`is_active = true`),
   ],
 );

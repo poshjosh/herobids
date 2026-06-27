@@ -21,9 +21,14 @@ Configuration is split by lifecycle — never mixed into one resolution chain.
 ```
 config/
   default.yaml       ← checked into repo, self-documenting with inline comments
+  providers.yaml     ← LLM provider registry (static model lists, pricing, catalog modes)
   production.yaml    ← optional per-env overrides (gitignored if contains secrets refs)
   test.yaml          ← test-specific overrides
 ```
+
+`config/providers.yaml` is part of the operator config layer — it defines which LLM providers
+are available and their static pricing. Dynamic providers (e.g. OpenRouter) have their pricing
+refreshed hourly into the `llm_pricing_snapshots` DB table by the worker.
 
 ### Resolution order (most specific wins)
 

@@ -4,7 +4,6 @@ import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
 import { aiRoutes } from './ai.js';
 import { clearOllamaModelCache } from '../ollama-model-discovery.js';
-import { clearOpenRouterPricingCache } from '../llm-model-catalog.js';
 
 // Mock @herobids/llm so the module can be imported in the test environment
 vi.mock('@herobids/llm', () => ({
@@ -83,7 +82,6 @@ const stubLlmConfig = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  clearOpenRouterPricingCache();
   // Ensure no real API keys are set
   delete process.env['LLM_API_KEY'];
   delete process.env['LLM_API_KEY_TEST-PROVIDER'];

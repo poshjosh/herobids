@@ -4,35 +4,40 @@ How to add, remove, or modify LLM providers.
 
 ## Single Source of Truth
 
-All LLM provider metadata lives in **one file**:
+LLM provider metadata lives in two places:
 
 ```
-packages/domain/src/models/llm-models.ts → PROVIDER_DEFINITIONS
+config/providers.yaml            ← operator-configurable registry (single source)
+PostgreSQL llm_pricing_snapshots ← active pricing snapshots (fetched hourly by worker)
 ```
 
-The API layer (`apps/api/src/llm-model-catalog.ts`) imports `PROVIDER_DEFINITIONS` directly — there is no
-duplicate metadata.
+The API layer (`apps/api/src/llm-model-catalog.ts`) reads `providers.yaml` at startup and queries
+`llm_pricing_snapshots` for runtime pricing. Static providers are seeded on first deploy;
+OpenRouter pricing is refreshed hourly by the worker.
 
 ## Adding a New Provider
 
-For a provider with a static model list and no custom catalog behavior, add one entry to `PROVIDER_DEFINITIONS` in `packages/domain/src/models/llm-models.ts`:
+Add an entry to `config/providers.yaml` under `providers:`:
 
-```typescript
-export const PROVIDER_DEFINITIONS = {
-  // ...existing providers...
-  deepseek: {
-    id: 'deepseek',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
-    catalogMode: 'static',       // 'static' | 'dynamic'
-    // isMultiProvider: true,    // optional: routes to multiple backend providers
-    // devOnly: true,            // optional: only available in non-production
-  },
-} as const satisfies Record<string, LlmProviderDefinition>;
+```yaml
+# config/providers.yaml
+providers:
+  # ...existing providers...
+  deepseek:
+    catalogMode: static         # 'static' | 'dynamic'
+    # isMultiProvider: true     # optional: routes to multiple backend providers
+    # devOnly: true             # optional: only available in non-production
+    models:
+      deepseek-chat:
+        inputUsdPerM: 0.32
+        outputUsdPerM: 0.89
+      deepseek-reasoner:
+        inputUsdPerM: 0.55
+        outputUsdPerM: 2.19
 ```
 
-For that static-provider case, that's it. `KNOWN_LLM_PROVIDERS` and `LLM_PROVIDER_MODELS` are automatically derived and stay in sync.
-
-Providers with runtime-discovered catalogs or provider-specific pricing/discovery behavior still need a matching API-layer implementation in `apps/api/src/llm-model-catalog.ts`. The registry remains the single source of truth for provider metadata, but it does not by itself implement a new dynamic catalog strategy.
+For static providers, that's it — deploy and the provider appears in the catalog. For dynamic
+providers (e.g. OpenRouter), the worker fetches pricing into `llm_pricing_snapshots` automatically.
 
 ### Catalog Modes
 
@@ -66,37 +71,32 @@ Providers with runtime-discovered catalogs or provider-specific pricing/discover
 
 ```
 ┌─────────────────────────────────────────────┐
-│ packages/domain/src/models/llm-models.ts     │
+│ config/providers.yaml                       │
 │                                             │
-│  PROVIDER_DEFINITIONS  ← single source      │
-│  ├─ KNOWN_LLM_PROVIDERS (derived)           │
-│  └─ LLM_PROVIDER_MODELS  (derived)          │
-│                                             │
-│  LlmProviderDefinition  ← interface         │
+│  providers:  ← operator-configurable        │
+│    openai:     catalogMode: static          │
+│    openrouter: catalogMode: dynamic         │
+│    ...                                      │
 └────────────────────┬────────────────────────┘
-                     │ import
+                     │ loaded at startup
 ┌────────────────────▼────────────────────────┐
 │ apps/api/src/llm-model-catalog.ts           │
 │                                             │
-│  PROVIDER_METADATA = PROVIDER_DEFINITIONS   │
-│  (runtime catalog: OpenRouter fetch,        │
-│   Ollama discovery, pricing metadata)       │
-│                                             │
-│  Domain owns WHAT providers exist.          │
-│  API owns HOW to fetch/catalog them.        │
+│  Reads providers.yaml + llm_pricing_        │
+│  snapshots (DB). Static providers seeded    │
+│  from YAML; OpenRouter pricing refreshed    │
+│  hourly by worker into DB.                  │
 └─────────────────────────────────────────────┘
 ```
 
 ## Removing a Provider
 
-Remove its entry from `PROVIDER_DEFINITIONS`. If any code still references the provider by string
+Remove its entry from `config/providers.yaml`. If any code still references the provider by string
 literal, TypeScript will flag it as an error because `LlmProviderId` narrows to the remaining keys.
 
 ## Testing
 
-Provider registry tests live in `packages/domain/src/models/llm-models.test.ts`. They verify:
+Provider catalog tests live in `apps/api/src/llm-model-catalog.test.ts`. They verify:
 
-- Every definition has required fields (`id`, `models`, `catalogMode`)
-- `KNOWN_LLM_PROVIDERS` matches `PROVIDER_DEFINITIONS` keys
-- `LLM_PROVIDER_MODELS` is consistent with `PROVIDER_DEFINITIONS.models`
-- Adding a static provider is a single-line operation
+- Static providers from `providers.yaml` produce correct catalog entries
+- `deriveLatestVariants` generates `:latest` aliases from versioned model IDs
