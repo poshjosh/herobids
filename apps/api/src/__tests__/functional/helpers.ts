@@ -73,10 +73,13 @@ export async function buildApp() {
   // environment. The analytics/AI functional tests expect 503 (no_ai_provider)
   // when no provider keys are set. If the user's shell has these keys set,
   // getAvailableProviders picks them up and returns 200/502 instead.
+  // Iterate all LLM_API_KEY* vars so new providers are covered automatically.
   const savedLlmEnv: Record<string, string | undefined> = {};
-  for (const key of ['LLM_API_KEY', 'LLM_API_KEY_OPENAI', 'LLM_API_KEY_OPENROUTER', 'LLM_API_KEY_OLLAMA']) {
-    savedLlmEnv[key] = process.env[key];
-    delete process.env[key];
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('LLM_API_KEY')) {
+      savedLlmEnv[key] = process.env[key];
+      delete process.env[key];
+    }
   }
 
   const db = createDatabase(DB_URL);

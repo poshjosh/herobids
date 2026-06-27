@@ -7,18 +7,3 @@ llm:
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   enabled: true                   # master switch — override: ALERTS_ENABLED
-
-plans:
-  pro:
-    usage:
-      topUpsEnabled: true
-      topUpPackIds:
-        - starter_500
-
-usageBilling:
-  creditTopUpsEnabled: true
-  topUpProductsByProvider:
-    mock:
-      - packId: starter_500
-        externalId: mock_pack_starter_500
-        cents: 500        

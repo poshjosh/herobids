@@ -33,25 +33,34 @@ beforeEach(async () => {
 });
 
 /**
- * Create a stopped bot via the API, returning its ID.
+ * Create a trading binding via provider-link, returning the binding ID.
  */
-async function createBot(token: string, overrides: Record<string, unknown> = {}): Promise<string> {
-  // First set up a trading binding via provider-link
+async function createTradingBinding(token: string, overrides: Record<string, unknown> = {}): Promise<string> {
   const linkRes = await ctx.app.inject({
     method: 'POST',
     url: '/setup/provider-link',
     headers: { Authorization: `Bearer ${token}` },
     payload: {
       provider: 'hyperliquid',
-      credentialLabel: 'test-hl',
-      apiKey: 'test-key',
-      secret: 'test-secret',
-      walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      label: 'test-hl',
+      secrets: {
+        apiKey: 'test-key',
+        secret: 'test-secret',
+        walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+      capability: 'trading',
       ...overrides,
     },
   });
   expect(linkRes.statusCode).toBe(201);
-  const bindingId = linkRes.json<{ tradingBindingId: string }>().tradingBindingId;
+  return linkRes.json<{ tradingBinding: { id: string } }>().tradingBinding.id;
+}
+
+/**
+ * Create a stopped bot via the API, returning its ID.
+ */
+async function createBot(token: string, overrides: Record<string, unknown> = {}): Promise<string> {
+  const bindingId = await createTradingBinding(token, overrides);
 
   const res = await ctx.app.inject({
     method: 'POST',
@@ -163,14 +172,16 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       headers: { Authorization: `Bearer ${token}` },
       payload: {
         provider: '1inch',
-        credentialLabel: 'test-1inch',
-        apiKey: 'test-key',
-        secret: 'test-secret',
-        walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        label: 'test-1inch',
+        secrets: {
+          apiKey: 'test-key',
+          privateKey: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        capability: 'trading',
       },
     });
     expect(linkRes.statusCode).toBe(201);
-    const bindingId = linkRes.json<{ tradingBindingId: string }>().tradingBindingId;
+    const bindingId = linkRes.json<{ tradingBinding: { id: string } }>().tradingBinding.id;
 
     const createRes = await ctx.app.inject({
       method: 'POST',
@@ -204,13 +215,14 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
   });
 
   it('POST /bots/:id/start — rejects live mode when plan lacks liveEnabled, returns 403', async () => {
-    // Create a bot with live execution mode
-    const liveRes = await ctx.app.inject({
+    // Create a bot with live execution mode (creation itself is not gated)
+    const bindingId = await createTradingBinding(token);
+    const createRes = await ctx.app.inject({
       method: 'POST',
       url: '/bots',
       headers: { Authorization: `Bearer ${token}` },
       payload: {
-        tradingBindingId: botId, // reuse binding — just testing the start gate
+        tradingBindingId: bindingId,
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: {
@@ -222,8 +234,16 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
         },
       },
     });
-    // Bot creation with live execution should be rejected because the 'free' plan lacks liveEnabled
-    expect(liveRes.statusCode).toBe(403);
-    expect(JSON.parse(liveRes.body).error).toContain('live');
+    expect(createRes.statusCode).toBe(201);
+    const liveBotId = createRes.json<{ id: string }>().id;
+
+    // Starting the bot should be rejected because the 'free' plan lacks liveEnabled
+    const startRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/bots/${liveBotId}/start`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(startRes.statusCode).toBe(403);
+    expect(JSON.parse(startRes.body).error).toContain('live');
   });
 });
