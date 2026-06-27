@@ -327,6 +327,201 @@ describe('scoreCandidate', () => {
   });
 });
 
+describe('VWAP scoring', () => {
+  /**
+   * Creates candles with a price spike at the end, so last close > VWAP of the last 24 bars.
+   * Base: 29 candles alternating +1/−1 around 100 (RSI ≈ 50).
+   * Spike: last candle at 130 ensures close > VWAP.
+   */
+  function makeVwapAboveCandles(): PriceCandle[] {
+    const closes = Array.from({ length: 29 }, (_, i) => 100 + (i % 2 === 0 ? 0 : 1));
+    closes.push(130);
+    return makeCandles(closes);
+  }
+
+  /**
+   * Creates candles with the last close below VWAP of the last 24 bars.
+   * Base: 29 candles alternating +1/−1 around 100 (RSI ≈ 50).
+   * Final bar at 99 — a 1‑point loss that keeps RSI healthy while falling below the VWAP
+   * average (~100.4), since the window is dominated by values at 100–101.
+   */
+  function makeVwapBelowCandles(): PriceCandle[] {
+    const closes = Array.from({ length: 29 }, (_, i) => 100 + (i % 2 === 0 ? 0 : 1));
+    closes.push(99);
+    return makeCandles(closes);
+  }
+
+  it('price above VWAP adds confidence to both sides and sets indicator', () => {
+    const vwapWeight = 0.15;
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: {
+        ...noIndicators,
+        rsi: { enabled: true },
+        vwap: { enabled: true, period: 24 },
+        confidence: {
+          rsiWeight: 0.15,
+          vwapWeight,
+          minConfidence: 0.10,
+          minReasons: 1,
+        },
+      },
+    };
+
+    const result = scoreCandidate(candidate(makeVwapAboveCandles()), config);
+    expect(result).not.toBeNull();
+
+    // VWAP above → priceAboveVwap = true in indicators
+    expect(result!.indicators.priceAboveVwap).toBe(true);
+
+    // VWAP reason present in the winning reasons
+    expect(result!.reasons).toContain('Price above VWAP');
+
+    // Winning confidence = RSI (0.15) + VWAP (0.15) = 0.30
+    expect(result!.confidence).toBeCloseTo(0.30);
+  });
+
+  it('price below VWAP provides no boost', () => {
+    const vwapWeight = 0.15;
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: {
+        ...noIndicators,
+        rsi: { enabled: true },
+        vwap: { enabled: true, period: 24 },
+        confidence: {
+          rsiWeight: 0.15,
+          vwapWeight,
+          minConfidence: 0.10,
+          minReasons: 1,
+        },
+      },
+    };
+
+    const result = scoreCandidate(candidate(makeVwapBelowCandles()), config);
+    expect(result).not.toBeNull();
+
+    // priceAboveVwap = false when below
+    expect(result!.indicators.priceAboveVwap).toBe(false);
+
+    // No VWAP reason
+    expect(result!.reasons).not.toContain('Price above VWAP');
+
+    // Confidence = RSI only (0.15), no VWAP boost
+    expect(result!.confidence).toBeCloseTo(0.15);
+  });
+
+  it('VWAP disabled → no effect even when weight > 0', () => {
+    const vwapWeight = 0.15;
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: {
+        ...noIndicators,
+        rsi: { enabled: true },
+        vwap: { enabled: false, period: 24 },
+        confidence: {
+          rsiWeight: 0.15,
+          vwapWeight,
+          minConfidence: 0.10,
+          minReasons: 1,
+        },
+      },
+    };
+
+    // Use above-VWAP candles — but VWAP is disabled
+    const result = scoreCandidate(candidate(makeVwapAboveCandles()), config);
+    expect(result).not.toBeNull();
+
+    // priceAboveVwap should be undefined (never set)
+    expect(result!.indicators.priceAboveVwap).toBeUndefined();
+
+    // No VWAP reason
+    expect(result!.reasons).not.toContain('Price above VWAP');
+
+    // Confidence = RSI only (0.15)
+    expect(result!.confidence).toBeCloseTo(0.15);
+  });
+});
+
+describe('Price action scoring', () => {
+  const rsiAndPriceActionIndicators: ScanConfig['indicators'] = {
+    ...noIndicators,
+    rsi: { enabled: true },
+    priceAction: { enabled: true, minChange24hPct: 3, maxChange24hPct: 50 },
+    confidence: {
+      rsiWeight: 0.15,
+      priceActionWeight: 0.10,
+      minConfidence: 0.10,
+      minReasons: 1,
+    },
+  };
+
+  it('price change in range (3–50%) adds bullish confidence', () => {
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: rsiAndPriceActionIndicators,
+    };
+
+    const ctx: CandidateContext = {
+      ...candidate(makeFlatRsiCandles(30)),
+      meta: { priceChange24hPct: 5 },
+    };
+
+    const result = scoreCandidate(ctx, config);
+    expect(result).not.toBeNull();
+
+    // Confidence = RSI (0.15) + price action (0.10) = 0.25
+    expect(result!.confidence).toBeCloseTo(0.25);
+
+    // Price action reason present
+    expect(result!.reasons).toContain('+5.0% in 24h');
+  });
+
+  it('price change below min range (1%) → no boost', () => {
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: rsiAndPriceActionIndicators,
+    };
+
+    const ctx: CandidateContext = {
+      ...candidate(makeFlatRsiCandles(30)),
+      meta: { priceChange24hPct: 1 },
+    };
+
+    const result = scoreCandidate(ctx, config);
+    expect(result).not.toBeNull();
+
+    // Confidence = RSI only (0.15), no price action boost
+    expect(result!.confidence).toBeCloseTo(0.15);
+
+    // No price action reason
+    const priceActionReasons = result!.reasons.filter((r) => r.includes('% in 24h'));
+    expect(priceActionReasons).toHaveLength(0);
+  });
+
+  it('price change above max range (60%) → no boost', () => {
+    const config: ScanConfig = {
+      signalBias: 'trend-following',
+      indicators: rsiAndPriceActionIndicators,
+    };
+
+    const ctx: CandidateContext = {
+      ...candidate(makeFlatRsiCandles(30)),
+      meta: { priceChange24hPct: 60 },
+    };
+
+    const result = scoreCandidate(ctx, config);
+    expect(result).not.toBeNull();
+
+    // Confidence = RSI only (0.15), no price action boost
+    expect(result!.confidence).toBeCloseTo(0.15);
+
+    // No price action reason
+    const priceActionReasons = result!.reasons.filter((r) => r.includes('% in 24h'));
+    expect(priceActionReasons).toHaveLength(0);
+  });
+});
+
 describe('scanCandidates', () => {
   it('returns an empty array for no candidates', () => {
     const config: ScanConfig = {

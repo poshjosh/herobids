@@ -64,6 +64,11 @@ export class MechanicalStrategy implements Strategy {
       symbol: snapshot.symbol,
       instrumentId: snapshot.symbol,
       candles,
+      meta: {
+        priceChange24hPct: typeof snapshot.data?.['priceChange24hPct'] === 'number'
+          ? snapshot.data['priceChange24hPct'] as number
+          : undefined,
+      },
     };
     const scanConfig: ScanConfig = {
       indicators: params.indicators,

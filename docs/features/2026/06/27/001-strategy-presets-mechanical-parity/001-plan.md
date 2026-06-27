@@ -638,3 +638,13 @@ Phase 0 (schema) ──┬── Phase 1 (scoreCandidate VWAP/PA)
 ```
 
 Phases 1, 2, 3, 4, and 6 can run in parallel after Phase 0. Phase 5 depends on Phase 2.
+
+---
+
+## Outstanding Issues (Phase 0)
+
+| # | Severity | Item | Issue |
+|---|----------|------|-------|
+| L1 | LOW | Phase 0 | Local vs domain `IndicatorConfig` structural divergence — scan-engine.ts has its own interface separate from domain. Consider deriving from domain type in a future cleanup. |
+| L2 | LOW | Phase 0 | No schema-level unit tests for new required fields (`stopLossPct`, `takeProfitPct`). Dedicated `MechanicalParamsSchema` tests would be more robust. |
+| L3 | LOW | Phase 0 | `trailingStopPct` declared in schema but not consumed by `MechanicalStrategy` or any engine code. Wire in a later phase. |

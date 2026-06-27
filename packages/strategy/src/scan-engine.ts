@@ -3,6 +3,7 @@ import {
   rsi,
   macd,
   volumeTrend,
+  vwap,
   findSupportResistance,
   isBreakingResistance,
   isBouncingSupport,
@@ -37,6 +38,7 @@ export interface ScoredSignal {
     breakingResistance?: boolean;
     breakingSupport?: boolean;
     choch?: 'bullish' | 'bearish' | null;
+    priceAboveVwap?: boolean;
   };
 }
 
@@ -259,6 +261,41 @@ export function scoreCandidate(
       bearishConfidence += confCfg.volumeWeight;
       bullishReasons.push('Strong volume');
       bearishReasons.push('Strong volume');
+    }
+  }
+
+  // ─── VWAP ─────────────────────────────────────────────────────────────────
+  const vwapCfg = {
+    enabled: indicators.vwap?.enabled ?? false,
+    period: indicators.vwap?.period ?? 24,
+  };
+
+  if (vwapCfg.enabled && candles.length >= vwapCfg.period) {
+    const vwapWindow = candles.slice(-vwapCfg.period);
+    const vwapValue = vwap(vwapWindow);
+    const lastClose = candles[candles.length - 1]!.close;
+    const aboveVwap = !isNaN(vwapValue) && vwapValue > 0 && lastClose > vwapValue;
+    indicatorValues.priceAboveVwap = aboveVwap;
+    if (aboveVwap) {
+      bullishConfidence += (confCfg.vwapWeight ?? 0);
+      bearishConfidence += (confCfg.vwapWeight ?? 0);
+      bullishReasons.push('Price above VWAP');
+      bearishReasons.push('Price above VWAP');
+    }
+  }
+
+  // ─── Price Action ─────────────────────────────────────────────────────────
+  const paCfg = {
+    enabled: indicators.priceAction?.enabled ?? true,
+    minChange24hPct: indicators.priceAction?.minChange24hPct ?? 3,
+    maxChange24hPct: indicators.priceAction?.maxChange24hPct ?? 50,
+  };
+
+  if (paCfg.enabled && candidate.meta?.priceChange24hPct != null) {
+    const change = candidate.meta.priceChange24hPct;
+    if (change >= paCfg.minChange24hPct && change <= paCfg.maxChange24hPct) {
+      bullishConfidence += (confCfg.priceActionWeight ?? 0.10);
+      bullishReasons.push(`+${change.toFixed(1)}% in 24h`);
     }
   }
 
