@@ -87,7 +87,7 @@ export class AgentMessageBroker {
   private readonly capabilityEngines = new Map<string, { engine: CapabilityPolicyEngine; policySig: string }>();
 
   constructor(
-    _redis: Redis,
+    private readonly redis: Redis,
     private readonly agentRepo: AgentRepository,
     private readonly decisionHandler: AgentDecisionHandler,
     private readonly sessionManager: AgentSessionManager,
@@ -309,8 +309,16 @@ export class AgentMessageBroker {
           break;
         }
 
-        case AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED:
         case AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED:
+          // Billing events trigger user notification
+          if (envelope.payload.reason === 'billing.soft_limit_reached'
+              || envelope.payload.reason === 'billing.limit_exceeded') {
+            await this.handleBillingNotification(effectiveAgentId, envelope.payload);
+          }
+          // Audit-only otherwise — persisted with payload, no other business side effects.
+          break;
+
+        case AGENT_RUNTIME_ACTIVITY_TYPES.TICK_STARTED:
         case AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_HELD:
         case AGENT_RUNTIME_ACTIVITY_TYPES.SCOUT_ESCALATED:
         case AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH:
@@ -1054,6 +1062,124 @@ export class AgentMessageBroker {
     }
 
     throw new Error(`Unknown bot query action: ${(payload as { action: string }).action}`);
+  }
+
+  /**
+   * Dispatch billing notifications (Telegram + email) for soft-cap and hard-cap events.
+   * Deduplicates via Redis so the user is only notified on status transition.
+   */
+  private async handleBillingNotification(
+    agentId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const reason = payload.reason as string;
+    const openPositions = payload.openPositions as string[] | undefined;
+
+    // 1. Look up the agent for notification routing
+    const agent = await this.agentRepo.getAgent(agentId);
+    if (!agent) return;
+
+    // 2. Deduplicate — only notify on status transition, not every tick
+    const DEDUP_STATUS: Record<string, string> = {
+      'billing.soft_limit_reached': 'soft_limited',
+      'billing.limit_exceeded': 'hard_limited',
+    };
+    const dedupStatus = DEDUP_STATUS[reason];
+    if (!dedupStatus) {
+      logger.warn({ agentId, reason }, 'Unknown billing reason — skipping notification');
+      return;
+    }
+    const dedupKey = `agent:billing:notified:${agentId}`;
+    const cachedStatus = await this.redis.get(dedupKey);
+    if (cachedStatus === dedupStatus) {
+      logger.debug({ agentId, reason }, 'Billing notification suppressed — status unchanged');
+      return;
+    }
+
+    // 3. Build the message text
+    const isHard = reason === 'billing.limit_exceeded';
+    const message = isHard
+      ? this.buildHardLimitMessage(agent.name, openPositions)
+      : this.buildSoftLimitMessage(agent.name);
+
+    let anyDelivered = false;
+
+    // 4. Send Telegram notification
+    const chatId = await this.agentRepo.getEffectiveTelegramChatId(agentId);
+    if (chatId && this.telegram) {
+      const result = await this.telegram.sendText(chatId, message);
+      if (result.ok) {
+        logger.info({ agentId, reason, chatId }, 'Billing notification sent via Telegram');
+        anyDelivered = true;
+      } else {
+        logger.warn({ agentId, reason, error: result.error }, 'Billing notification Telegram delivery failed');
+      }
+    }
+
+    // 5. Send email notification (if configured)
+    if (this.emailClient) {
+      const recipientEmail = await this.agentRepo.getUserEmailByAgentId(agentId);
+      if (recipientEmail) {
+        const subject = isHard
+          ? `⚠️ ${agent.name} stopped — spending cap reached`
+          : `ℹ️ ${agent.name} approaching spending cap`;
+        const result = await this.emailClient.send({ to: recipientEmail, subject, text: message });
+        if (result.ok) {
+          logger.info({ agentId, reason, email: recipientEmail }, 'Billing notification sent via email');
+          anyDelivered = true;
+        } else {
+          logger.warn({ agentId, reason, error: result.error }, 'Billing notification email delivery failed');
+        }
+      }
+    }
+
+    if (!anyDelivered) {
+      logger.error({ agentId, reason }, 'Billing notification failed on all channels — user not notified');
+    }
+
+    // 6. Update dedup cache after dispatch attempt (even if delivery partially failed,
+    //    we mark as notified to avoid spamming on every tick).
+    try {
+      await this.redis.set(dedupKey, dedupStatus, 'EX', 86400); // 24h TTL
+    } catch (err) {
+      logger.warn({ agentId, dedupKey, err }, 'Failed to write billing dedup cache — duplicate notification possible on next tick');
+    }
+  }
+
+  /** Build the soft-cap notification message (HTML for Telegram). */
+  private buildSoftLimitMessage(agentName: string): string {
+    return [
+      `ℹ️ Agent "<b>${escapeHtml(agentName)}</b>" has reached its soft spending cap.`,
+      '',
+      'Your agent is still running and trading normally. No behavior has changed.',
+      '',
+      'To raise or remove the cap, visit Billing → Spend Controls.',
+    ].join('\n');
+  }
+
+  /** Build the hard-cap notification message (HTML for Telegram). */
+  private buildHardLimitMessage(agentName: string, openPositions?: string[]): string {
+    const lines: string[] = [
+      `⚠️ Agent "<b>${escapeHtml(agentName)}</b>" has stopped — hard spending cap reached.`,
+      '',
+    ];
+
+    if (openPositions && openPositions.length > 0) {
+      lines.push(
+        `Open positions are no longer monitored: ${openPositions.map((p) => escapeHtml(p)).join(', ')}`,
+        '',
+        'These positions will remain unmanaged until you take action. The agent will not close them automatically.',
+        '',
+      );
+    } else {
+      lines.push(
+        'No further LLM calls will be made until you top up or raise the cap.',
+        '',
+      );
+    }
+
+    lines.push('Visit Billing → Spend Controls to top up or raise the cap.');
+    return lines.join('\n');
   }
 }
 
