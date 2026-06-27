@@ -1,5 +1,5 @@
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
-import { getLlmModelRateCardItems } from '@herobids/domain';
+import { getLlmModelRateCardItems, type ModelPricing, type ProvidersYaml } from '@herobids/domain';
 import type { Database } from './index.js';
 import {
   billingAccounts,
@@ -139,6 +139,7 @@ export class UsageBillingRepository {
   constructor(
     private readonly db: Database,
     private readonly rateCardItems: RateCardSeedItem[] = DEFAULT_RATE_CARD_ITEMS,
+    private readonly providers?: ProvidersYaml,
   ) {}
 
   async getUserPlanId(userId: string): Promise<string | null> {
@@ -389,18 +390,40 @@ export class UsageBillingRepository {
       metadata: { seed: 'default_v1' },
     }));
 
-    const modelItems = getLlmModelRateCardItems().map((item) => ({
-      id: `rci_${rateCardId}_${item.meterKey.replace(/[^a-z0-9_]/gi, '_')}_${item.provider}_${item.modelPattern.replace(/[^a-z0-9_]/gi, '_')}`,
-      rateCardId,
-      meterKey: item.meterKey,
-      provider: item.provider,
-      modelPattern: item.modelPattern,
-      priceMicrousd: item.priceMicrousd,
-      perUnit: item.perUnit,
-      roundingMode: 'up',
-      minimumChargeMicrousd: null,
-      metadata: { seed: 'model_pricing_v1' },
-    }));
+    const modelItems: Array<{
+      id: string;
+      rateCardId: string;
+      meterKey: string;
+      provider: string | null;
+      modelPattern: string | null;
+      priceMicrousd: number;
+      perUnit: number;
+      roundingMode: string;
+      minimumChargeMicrousd: null;
+      metadata: Record<string, string>;
+    }> = [];
+
+    if (this.providers) {
+      for (const [providerId] of Object.entries(this.providers.providers)) {
+        const snapshot = await this.getLatestPricingSnapshot(providerId);
+        if (!snapshot) continue;
+        const items = getLlmModelRateCardItems(providerId, snapshot.models as Record<string, Partial<ModelPricing>>);
+        for (const item of items) {
+          modelItems.push({
+            id: `rci_${rateCardId}_${item.meterKey.replace(/[^a-z0-9_]/gi, '_')}_${item.provider}_${item.modelPattern.replace(/[^a-z0-9_]/gi, '_')}`,
+            rateCardId,
+            meterKey: item.meterKey,
+            provider: item.provider,
+            modelPattern: item.modelPattern,
+            priceMicrousd: item.priceMicrousd,
+            perUnit: item.perUnit,
+            roundingMode: 'up',
+            minimumChargeMicrousd: null,
+            metadata: { seed: 'model_pricing_v1' },
+          });
+        }
+      }
+    }
 
     const allItems = [...catchAllItems, ...modelItems];
     if (allItems.length === 0) return;
