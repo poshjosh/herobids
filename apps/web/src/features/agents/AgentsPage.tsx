@@ -16,7 +16,7 @@ import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
-import { type AgentStyleValue, resolveStyleDefaults } from './style-mapping.js';
+import { type AgentStyleValue, resolveStyleDefaults, formatStyleSummary } from './style-mapping.js';
 import { generateAgentName } from './agent-name.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { intentToFormState } from './agent-form-state.js';
@@ -510,6 +510,10 @@ function CreateAgentFlow({
               }));
             }}
           />
+          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '8px', padding: '0 4px' }}>
+            {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
+            {formatStyleSummary(intent.style)}
+          </div>
 
           {/* 3. Agent Form Body */}
           <AgentFormBody

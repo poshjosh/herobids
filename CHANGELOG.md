@@ -9,7 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- **Per-agent runtime policy controls**: Agent style presets (Careful/Balanced/Bold) with configurable defaults for tool turns, LLM token limits, context budgets, trading hours, and scout hold duration. Overridable per-agent via `runtime_policy_overrides` JSONB column. Resolved policy flows from API → session manager → agent container. Operator ceilings enforced via Zod validation. E2E test script at `scripts/shell/tests/runtime-policy-e2e.sh`.
+- **Per-agent runtime policy controls**: Agent style presets (Careful/Balanced/Bold) with configurable defaults for tool turns, LLM token limits, context budgets, trading hours, and scout hold duration. Overridable per-agent via `runtime_policy_overrides` JSONB column. Resolved policy flows from API → session manager → agent container. Operator ceilings enforced via Zod validation. Frontend style picker shows derived summary (turns × tokens × daily budget). E2E test script at `scripts/shell/tests/runtime-policy-e2e.sh`. Integration tests in `packages/domain/src/config/runtime-policy-propagation.integration.test.ts`. Full i18n coverage (en/ar/hi). Config `default.yaml` updated with per-agent model documentation.
 
 - Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
 

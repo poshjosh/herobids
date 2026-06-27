@@ -1,6 +1,7 @@
 import type { ProviderSetupResult } from '../../lib/api-client.js';
 import type { CapabilityMode } from './CapabilitySelector.js';
 import type { TechnicalConfig } from './technical-config-helpers.js';
+import type { RuntimePolicyOverrides } from './style-mapping.js';
 import { parseTickIntervalMinutesInput } from './tick-interval.js';
 
 const VALID_ESCALATION_POLICIES = ['never', 'uncovered_or_triggered', 'always'] as const;
@@ -63,6 +64,7 @@ export interface CreateAgentIntentPayloadInput {
   stopLossCooldownSecs: string;
   style?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
+  runtimePolicyOverrides?: RuntimePolicyOverrides;
 }
 
 export interface UpdateAgentPayloadInput {
@@ -96,6 +98,7 @@ export interface UpdateAgentPayloadInput {
   preserveOriginalTickIntervalMs?: boolean;
   originalTickIntervalMs?: number | null;
   style?: string;
+  runtimePolicyOverrides?: RuntimePolicyOverrides;
 }
 
 export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
@@ -120,6 +123,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   technical?: TechnicalConfig;
   style?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
+  runtimePolicyOverrides?: RuntimePolicyOverrides | null;
 } {
   const tickIntervalMs = getTickIntervalMsOrThrow(input.tickIntervalMins);
   const includeIntelligence = input.capabilityMode === 'intelligence' || input.capabilityMode === 'both';
@@ -148,6 +152,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
     ...(input.style ? { style: input.style } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
+    ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
   };
 }
@@ -178,6 +183,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   technical?: TechnicalConfig | null;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   style?: string | null;
+  runtimePolicyOverrides?: RuntimePolicyOverrides | null;
 } {
   const parsedTickInterval = input.preserveOriginalTickIntervalMs
     ? undefined
@@ -212,5 +218,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     // Send technical: null to explicitly remove it when switching away from technical mode
     ...(includeTechnical ? { technical: input.technical } : { technical: null }),
     ...(input.style ? { style: input.style } : {}),
+    ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
   };
 }

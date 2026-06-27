@@ -456,6 +456,116 @@ describe('agent payload builders', () => {
     });
     expect(payload).not.toHaveProperty('openPositionEscalationToJudgePolicy');
   });
+
+  // --- runtimePolicyOverrides ---
+
+  it('buildCreateAgentPayload includes runtimePolicyOverrides when provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'paper',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      runtimePolicyOverrides: { scoutMaxTurns: 50 },
+    });
+    expect(payload.runtimePolicyOverrides).toEqual({ scoutMaxTurns: 50 });
+  });
+
+  it('buildCreateAgentPayload omits runtimePolicyOverrides when not provided', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: [],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: false,
+      executionMode: 'paper',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('runtimePolicyOverrides');
+  });
+
+  it('buildUpdateAgentPayload includes runtimePolicyOverrides when provided', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+      runtimePolicyOverrides: { maxHoldDurationMs: 900_000 },
+    });
+    expect(payload.runtimePolicyOverrides).toEqual({ maxHoldDurationMs: 900_000 });
+  });
+
+  it('buildUpdateAgentPayload omits runtimePolicyOverrides when undefined', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'goal',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    });
+    expect(payload).not.toHaveProperty('runtimePolicyOverrides');
+  });
 });
 
 describe('normalizeEscalationPolicy', () => {

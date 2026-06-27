@@ -293,6 +293,22 @@ worker:
     healthCheckIntervalMs: 2000  # AgentSessionManager health poll cadence in ms
 
 # Agent runtime — behavior policy for agent containers.
+#
+# These are OPERATOR-LEVEL FALLBACKS. Each agent can override every runtime
+# field via its `style` (Careful/Balanced/Bold) + `runtime_policy_overrides`
+# JSONB column. The effective policy is resolved at agent container startup:
+#
+#   effective = STYLE_CONFIG[style]  ∪  runtime_policy_overrides
+#
+# If neither is set, these operator defaults apply as the final fallback.
+# Operator ceilings (RUNTIME_POLICY_CEILINGS in packages/domain) cap the
+# maximum value for every field — neither user nor agent can exceed them.
+#
+# Fields controllable per-agent: scoutMaxTurns, judgeMaxTurns, scoutMaxTokens,
+# judgeMaxTokens, lightThinkingTokens, deepThinkingTokens, allowedHoursUtc,
+# weekendPause, all context budgets, and maxHoldDurationMs.
+#
+# See docs/features/2026/06/27/007-per-agent-runtime-controls/ for details.
 agentRuntime:
   failureBackoff:
     backoffThreshold: 3        # consecutive failures before doubling tick interval

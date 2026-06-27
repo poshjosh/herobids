@@ -372,3 +372,20 @@ Phases 1–5 are strictly sequential (each depends on the previous). Phases 6 an
 1. **Operator ceiling defaults** — What is the absolute platform max for `scoutMaxTurns`? Proposed: 500. For `judgeMaxTurns`? Proposed: 1000. These need operator sign-off. - **Agreed and proposal accepted**.
 2. **Context budget ceiling** — `maxHistoryTokens: 80000` for Bold. Is this safe for all supported models' context windows? Need to verify against model context limits (Claude 200K, GPT-4 128K, etc.).
 3. **Style picker UX** — The existing agent create form is already complex. Adding an "Advanced" section could overwhelm users. Consider progressive disclosure: style picker is prominent, advanced overrides behind a "Customize limits" link.
+
+## Outstanding Issues
+
+### [Phase 6] Duplicate style defaults (HIGH — architectural, not functional)
+`STYLE_CONFIG` in `apps/web/src/features/agents/style-mapping.ts` and `AGENT_STYLE_RUNTIME_DEFAULTS` in `packages/domain/src/config/schema.ts` define the same 17-field × 3-style matrix with identical values. No cross-validation keeps them in sync. If a developer updates one without the other, the UI summary (`formatStyleSummary`) diverges from runtime behavior (`resolveAgentRuntimePolicy`). **Recommendation**: extract style defaults into a shared constant in `@herobids/domain` that both consumers import.
+
+### [Phase 6] Incomplete frontend test coverage for runtime policy fields (MEDIUM)
+8 of 17 runtime policy fields lack explicit per-field positivity/range assertions in `style-mapping.test.ts`. The domain integration test covers them, but if `STYLE_CONFIG` diverges, there's no frontend-level safety net. **Recommendation**: add per-field assertions for the remaining 10 fields.
+
+### [Phase 6] Missing `resolvedRuntimePolicy` type in web frontend (MEDIUM)
+The API appends `resolvedRuntimePolicy` to every agent response via `decorateAgentResponse()`, but the web app's TypeScript types for agent responses don't declare this field. Currently harmless (the frontend computes summaries locally), but future components accessing the resolved policy will get type errors. **Recommendation**: add `resolvedRuntimePolicy?: ResolvedAgentRuntimePolicy | null` to the frontend agent response types.
+
+### [Phase 6] No frontend validation for `allowedHoursUtc` elements (MEDIUM)
+The frontend `RuntimePolicyOverrides` type declares `allowedHoursUtc: number[] | null` with no validation that elements are integers in [0, 23]. Backend Zod schema correctly enforces this, but the UX would improve with client-side validation. **Recommendation**: add lightweight frontend validation or document the deferred-validation UX pattern.
+
+### [Phase 6] `formatStyleSummary` token budget display uses judge tokens only (MEDIUM — UX)
+The summary shows judge tokens only (e.g., "2K tokens" for Careful), not the tighter scout constraint (512 tokens). A user seeing "2K tokens" might not realize the scout loop is much tighter. **Recommendation**: show both budgets or add a tooltip.
