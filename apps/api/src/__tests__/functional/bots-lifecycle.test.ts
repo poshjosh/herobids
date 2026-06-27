@@ -33,9 +33,9 @@ beforeEach(async () => {
 });
 
 /**
- * Create a stopped bot via the API, returning its ID.
+ * Create a stopped bot via the API, returning its ID and binding ID.
  */
-async function createBot(token: string, overrides: Record<string, unknown> = {}): Promise<string> {
+async function createBot(token: string, overrides: Record<string, unknown> = {}): Promise<{ botId: string; bindingId: string }> {
   // First set up a trading binding via provider-link
   const linkRes = await ctx.app.inject({
     method: 'POST',
@@ -43,15 +43,18 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
     headers: { Authorization: `Bearer ${token}` },
     payload: {
       provider: 'hyperliquid',
-      credentialLabel: 'test-hl',
-      apiKey: 'test-key',
-      secret: 'test-secret',
-      walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      label: 'test-hl',
+      secrets: {
+        apiKey: 'test-key',
+        secret: 'test-secret',
+        walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+      capability: 'trading',
       ...overrides,
     },
   });
   expect(linkRes.statusCode).toBe(201);
-  const bindingId = linkRes.json<{ tradingBindingId: string }>().tradingBindingId;
+  const bindingId = linkRes.json<{ tradingBinding: { id: string } }>().tradingBinding.id;
 
   const res = await ctx.app.inject({
     method: 'POST',
@@ -71,19 +74,23 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
     },
   });
   expect(res.statusCode).toBe(201);
-  return res.json<{ id: string }>().id;
+  const botId = res.json<{ id: string }>().id;
+  return { botId, bindingId };
 }
 
 describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
   let token: string;
   let otherUserToken: string;
   let botId: string;
+  let tradingBindingId: string;
 
   beforeEach(async () => {
     if (SKIP) return;
     token = await registerUser(ctx.app, ctx.db, 'lifecycle@test.test', 'testpassword123', 'Lifecycle User');
     otherUserToken = await registerUser(ctx.app, ctx.db, 'other@test.test', 'testpassword456', 'Other User');
-    botId = await createBot(token);
+    const created = await createBot(token);
+    botId = created.botId;
+    tradingBindingId = created.bindingId;
   });
 
   // ── DELETE /bots/:id ───────────────────────────────────────────────
@@ -163,14 +170,16 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       headers: { Authorization: `Bearer ${token}` },
       payload: {
         provider: '1inch',
-        credentialLabel: 'test-1inch',
-        apiKey: 'test-key',
-        secret: 'test-secret',
-        walletAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        label: 'test-1inch',
+        secrets: {
+          apiKey: 'test-key',
+          privateKey: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        capability: 'trading',
       },
     });
     expect(linkRes.statusCode).toBe(201);
-    const bindingId = linkRes.json<{ tradingBindingId: string }>().tradingBindingId;
+    const bindingId = linkRes.json<{ tradingBinding: { id: string } }>().tradingBinding.id;
 
     const createRes = await ctx.app.inject({
       method: 'POST',
@@ -210,7 +219,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       url: '/bots',
       headers: { Authorization: `Bearer ${token}` },
       payload: {
-        tradingBindingId: botId, // reuse binding — just testing the start gate
+        tradingBindingId,
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: {

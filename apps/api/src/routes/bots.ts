@@ -84,6 +84,14 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     // worker startup — it enforces stricter constraints (int / 0–18 range for
     // decimals) than an ad-hoc gate here could.
 
+    // Live-mode plan gate
+    if (plansConfig && botExecutionMode === 'live') {
+      const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);
+      if (!liveCheck.ok) {
+        return reply.status(403).send({ error: liveCheck.error.code, message: liveCheck.error.message });
+      }
+    }
+
     if (plansConfig) {
       const planId = request.userPlanId || 'free';
       const result = await db.transaction(async (tx) => {
