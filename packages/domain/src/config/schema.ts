@@ -295,7 +295,7 @@ export const PlanLimitsEntitlementsSchema = z.object({
   maxCredentials: z.number().min(1).default(5),
   maxBindings: z.number().min(1).default(5),
   maxVenueAccounts: z.number().min(1).default(5),
-  maxConcurrentBacktests: z.number().min(1).default(3),
+  maxConcurrentBacktests: z.number().min(0).default(3),
   liveEnabled: z.boolean().default(false),
 });
 
