@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- DexScreener boost enrichment pipeline: `fetchDexScreenerTokensByAddress` and `enrichDexScreenerBoostTokens` now enrich zero-liquidity boost/profile tokens with real on-chain pair data before the discovery threshold filter, turning three wasted DexScreener API calls into a useful discovery vector.
+
 - Security auditor agent
 
 - Documented the billing enforcement policy: soft cap warns without changing agent behavior, hard cap stops with explicit open-position notification, and added a public billing limits page, internal technical contract, and ADR-009 to freeze the decision.
