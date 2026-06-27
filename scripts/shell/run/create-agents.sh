@@ -40,6 +40,12 @@ AGENT_CAPITAL="1000"
 AGENT_DAILY_LOSS_LIMIT="100"
 AGENT_MAX_SLIPPAGE_BPS="25"
 
+# Security audit agent (non-trading)
+SECURITY_AUDIT_NAME="security-auditor"
+SECURITY_AUDIT_TICK_INTERVAL_MS="86400000"  # 24 hours
+SECURITY_AUDIT_SKILL_IDS='["web-access","programming","file-management","task-management"]'
+SECURITY_AUDIT_PROMPT_FILE="${REPO_ROOT}/docs/skills/security-audit-prompt.md"
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -325,17 +331,95 @@ create_and_bind_agent() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3 — Create agents
+# Non-trading agent helper (no binding, no execution mode)
+# ---------------------------------------------------------------------------
+
+build_non_trading_agent_payload() {
+  local name="$1"
+  local prompt="$2"
+  local skill_ids_json="$3"
+  local tick_interval_ms="$4"
+  jq -n \
+    --arg name "$name" \
+    --arg prompt "$prompt" \
+    --arg provider "$AGENT_PROVIDER" \
+    --arg lightModel "$AGENT_LIGHT_MODEL" \
+    --arg heavyModel "$AGENT_HEAVY_MODEL" \
+    --arg tickIntervalMs "$tick_interval_ms" \
+    --argjson skillIds "$skill_ids_json" \
+    '{
+      name: $name,
+      prompt: $prompt,
+      provider: $provider,
+      lightModel: $lightModel,
+      heavyModel: $heavyModel,
+      skillIds: $skillIds,
+      tickIntervalMs: ($tickIntervalMs | tonumber)
+    }'
+}
+
+create_non_trading_agent() {
+  local name="$1"
+  local prompt="$2"
+  local skill_ids_json="$3"
+  local tick_interval_ms="$4"
+
+  log_section "Creating agent: ${name}"
+
+  # Check if agent already exists (idempotent)
+  api_call GET /agents
+  if [[ "$HTTP_STATUS" -eq 200 ]]; then
+    local existing_id
+    existing_id="$(echo "$RESPONSE_BODY" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -1)"
+    if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
+      log_info "Agent '${name}' already exists (id=${existing_id}) — skipping creation"
+      echo "$existing_id"
+      return 0
+    fi
+  fi
+
+  local payload
+  payload="$(build_non_trading_agent_payload "$name" "$prompt" "$skill_ids_json" "$tick_interval_ms")"
+
+  api_call POST /agents "$payload"
+
+  if [[ "$HTTP_STATUS" -ne 201 ]]; then
+    log_error "Failed to create agent '${name}' (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+    die "Agent creation failed."
+  fi
+
+  local agent_id
+  agent_id="$(echo "$RESPONSE_BODY" | jq -r '.id')"
+  log_ok "Created agent '${name}' (id=${agent_id})"
+
+  echo "$agent_id"
+}
+
+# ---------------------------------------------------------------------------
+# Step 3 — Create trading agents
 # ---------------------------------------------------------------------------
 
 THYPER_ID="$(create_and_bind_agent "thyper" "$HYPERLIQUID_BINDING_ID")"
 T1INCH_ID="$(create_and_bind_agent "t1inch" "$ONEINCH_BINDING_ID")"
 
 # ---------------------------------------------------------------------------
-# Step 4 — Summary
+# Step 4 — Create security-auditor agent
+# ---------------------------------------------------------------------------
+
+if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
+  log_warn "Security audit prompt not found at ${SECURITY_AUDIT_PROMPT_FILE} — skipping security-auditor"
+  SECURITY_AUDITOR_ID="(skipped)"
+else
+  SECURITY_AUDIT_PROMPT="$(<"$SECURITY_AUDIT_PROMPT_FILE")"
+  SECURITY_AUDITOR_ID="$(create_non_trading_agent "$SECURITY_AUDIT_NAME" "$SECURITY_AUDIT_PROMPT" "$SECURITY_AUDIT_SKILL_IDS" "$SECURITY_AUDIT_TICK_INTERVAL_MS")"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 5 — Summary
 # ---------------------------------------------------------------------------
 
 log_section "Agent creation summary"
-log_ok "thyper  → id=${THYPER_ID}  binding=Hyperliquid (${HYPERLIQUID_BINDING_ID})"
-log_ok "t1inch  → id=${T1INCH_ID}  binding=1inch (${ONEINCH_BINDING_ID})"
-log_info "Both agents are in 'stopped' state. Start them via the API or UI when ready."
+log_ok "thyper           → id=${THYPER_ID}  binding=Hyperliquid (${HYPERLIQUID_BINDING_ID})"
+log_ok "t1inch           → id=${T1INCH_ID}  binding=1inch (${ONEINCH_BINDING_ID})"
+log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
+log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."

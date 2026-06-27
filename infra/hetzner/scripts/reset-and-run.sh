@@ -4,23 +4,22 @@
 # Chains the complete bootstrap sequence:
 #   1. reset.sh           — wipe DB, Redis, Caddy; restart services; seed admin
 #   2. quick-setup.prod.sh — provision user, credentials, venue connections, skills
-#   3. create-agents.sh   — create thyper + t1inch trading agents
+#   3. create-agents.sh   — create security-auditor agent
 #
 # This is the production equivalent of scripts/shell/run/reset-and-run.sh.
 #
 # Usage:
 #   infra/hetzner/scripts/reset-and-run.sh --env-file <path>
 #   infra/hetzner/scripts/reset-and-run.sh --env-file <path> [<server-ip>]
-#   infra/hetzner/scripts/reset-and-run.sh --env-file <path> --yes
 #   ADMIN_EMAIL=... ADMIN_PASSWORD=... ./reset-and-run.sh --env-file .env.setup.prod
 #
 # Environment variables:
 #   ADMIN_EMAIL          Admin user email for seeding (required).
 #   ADMIN_PASSWORD       Admin user password for seeding (required).
-#   AGENT_PROVIDER       LLM provider override (default: deepseek).
-#   AGENT_LIGHT_MODEL    Fast model override (default: deepseek-v4-flash).
-#   AGENT_HEAVY_MODEL    Capable model override (default: deepseek-v4-pro).
-#   AGENT_EXECUTION_MODE Override execution mode (default: shadow).
+#   AGENT_PROVIDER       LLM provider override (default: openrouter).
+#   AGENT_LIGHT_MODEL    Fast model override (default: deepseek/deepseek-v4-flash via OpenRouter).
+#   AGENT_HEAVY_MODEL    Capable model override (default: deepseek/deepseek-v4-pro via OpenRouter).
+#   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 86400000 = 24h).
 #
 # WARNING: This destroys ALL data on the server. Do not run against a live
 #          environment with real funds.
@@ -38,7 +37,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/_ssh_opts.sh"
 
 ENV_FILE="${REPO_ROOT}/scripts/shell/ops/.env.setup.prod"
 SERVER_IP=""
-SKIP_CONFIRM=false
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -61,10 +59,6 @@ while [[ $# -gt 0 ]]; do
       [[ -z "${2:-}" ]] && die "--env-file requires a path argument"
       ENV_FILE="$2"
       shift 2
-      ;;
-    --yes|-y)
-      SKIP_CONFIRM=true
-      shift
       ;;
     -h|--help)
       awk '/^[^#]/{exit} /^#/{sub(/^# ?/,""); print}' "$0"
@@ -147,28 +141,26 @@ fi
 
 # ─── Confirmation ────────────────────────────────────────────────────────────
 
-if [[ "${SKIP_CONFIRM}" != "true" ]]; then
-  echo "================================================"
-  echo " DESTRUCTIVE RESET + FULL PROVISION"
-  echo "================================================"
-  echo " Server:      ${SERVER_IP}"
-  echo " Env file:    ${ENV_FILE}"
-  echo " Admin user:  ${ADMIN_EMAIL}"
-  echo " Setup user:  ${SETUP_EMAIL}"
-  echo ""
-  echo "This will:"
-  echo "  1. WIPE Postgres, Redis, Caddy TLS certs"
-  echo "  2. Seed admin user (${ADMIN_EMAIL})"
-  echo "  3. Provision user account + venue credentials + connections"
-  echo "  4. Create trading agents (thyper + t1inch)"
-  echo ""
-  echo "ALL data on the server will be lost."
-  echo ""
-  read -rp "Are you sure? Type 'reset-and-run' to confirm: " CONFIRM
-  if [[ "${CONFIRM}" != "reset-and-run" ]]; then
-    echo "Aborted."
-    exit 0
-  fi
+echo "================================================"
+echo " DESTRUCTIVE RESET + FULL PROVISION"
+echo "================================================"
+echo " Server:      ${SERVER_IP}"
+echo " Env file:    ${ENV_FILE}"
+echo " Admin user:  ${ADMIN_EMAIL}"
+echo " Setup user:  ${SETUP_EMAIL}"
+echo ""
+echo "This will:"
+echo "  1. WIPE Postgres, Redis, Caddy TLS certs"
+echo "  2. Seed admin user (${ADMIN_EMAIL})"
+echo "  3. Provision user account + venue credentials + connections"
+echo "  4. Create security-auditor agent"
+echo ""
+echo "ALL data on the server will be lost."
+echo ""
+read -rp "Are you sure? Type 'reset-and-run' to confirm: " CONFIRM
+if [[ "${CONFIRM}" != "reset-and-run" ]]; then
+  echo "Aborted."
+  exit 0
 fi
 
 # ─── Pre-flight: verify SSH connectivity ─────────────────────────────────────
@@ -282,27 +274,28 @@ fi
 log_ok "User account, credentials, and venue connections provisioned."
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 3 — Create trading agents
+# Step 3 — Create agents
 # ═══════════════════════════════════════════════════════════════════════════════
 
-log_section "Step 3/3: Create trading agents"
+log_section "Step 3/3: Create agents"
 
 # Upload create-agents.sh to the server (it may not be in the deployed commit)
 log_info "Uploading create-agents.sh to server..."
 scp ${SSH_OPTS} "${SCRIPT_DIR}/create-agents.sh" "root@${SERVER_IP}:/tmp/create-agents.sh" || \
   die "Failed to upload create-agents.sh to server."
 
+# Upload the security audit prompt file (not in the deployed commit either)
+log_info "Uploading security-audit-prompt.md to server..."
+scp ${SSH_OPTS} "${REPO_ROOT}/docs/skills/security-audit-prompt.md" "root@${SERVER_IP}:/tmp/security-audit-prompt.md" || \
+  die "Failed to upload security-audit-prompt.md to server."
+
 # Build agent env overrides
 AGENT_ENV_VARS=(
-  "AGENT_PROVIDER=${AGENT_PROVIDER:-deepseek}"
-  "AGENT_LIGHT_MODEL=${AGENT_LIGHT_MODEL:-deepseek-v4-flash}"
-  "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-deepseek-v4-pro}"
-  "AGENT_EXECUTION_MODE=${AGENT_EXECUTION_MODE:-shadow}"
-  "AGENT_TICK_INTERVAL_MS=${AGENT_TICK_INTERVAL_MS:-900000}"
-  "AGENT_CAPITAL=${AGENT_CAPITAL:-1000}"
-  "AGENT_DAILY_LOSS_LIMIT=${AGENT_DAILY_LOSS_LIMIT:-100}"
-  "AGENT_MAX_SLIPPAGE_BPS=${AGENT_MAX_SLIPPAGE_BPS:-25}"
-  "AGENT_PROMPT=${AGENT_PROMPT:-Grow this portfolio aggressively}"
+  "AGENT_PROVIDER=${AGENT_PROVIDER:-openrouter}"
+  "AGENT_LIGHT_MODEL=${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4-flash}"
+  "AGENT_HEAVY_MODEL=${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro}"
+  "AGENT_TICK_INTERVAL_MS=${AGENT_TICK_INTERVAL_MS:-86400000}"
+  "SECURITY_AUDIT_PROMPT_FILE=/tmp/security-audit-prompt.md"
 )
 
 log_info "Running create-agents.sh on server..."
@@ -327,12 +320,12 @@ if [[ $exit_code -ne 0 ]]; then
   die "create-agents.sh failed on server (exit code: ${exit_code})."
 fi
 
-log_ok "Trading agents created."
+log_ok "Agent created."
 
 # ─── Cleanup server temp files ───────────────────────────────────────────────
 
 log_info "Cleaning up server temp files..."
-ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-agents.sh' || true
+ssh ${SSH_OPTS} "root@${SERVER_IP}" 'rm -f /tmp/herobids-setup.env /tmp/create-agents.sh /tmp/security-audit-prompt.md' || true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Summary
@@ -350,9 +343,9 @@ echo ""
 echo "  Server:       ${SERVER_IP}"
 echo "  Admin user:   ${ADMIN_EMAIL}"
 echo "  Setup user:   ${SETUP_EMAIL}"
-echo "  Agents:       thyper (Hyperliquid) + t1inch (1inch)"
-echo "  Agent LLM:    ${AGENT_PROVIDER:-deepseek} / ${AGENT_LIGHT_MODEL:-deepseek-v4-flash}"
-echo "  Exec mode:    ${AGENT_EXECUTION_MODE:-shadow}"
+echo "  Agents:       security-auditor"
+echo "  Agent LLM:    ${AGENT_PROVIDER:-openrouter} / ${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4-flash}"
+echo "  Exec mode:    N/A (non-trading agent)"
 echo ""
 echo "  Frontend:     ${FRONTEND_URL}"
 echo "  API health:   http://${SERVER_IP}:3000/health"

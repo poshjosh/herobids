@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# create-agents.sh — Create trading agents on a HeroBids instance.
+# create-agents.sh — Create agents on a HeroBids instance.
 #
-# Creates two agents:
-#   - thyper   (Hyperliquid perpetuals, shadow mode)
-#   - t1inch   (1inch DEX swaps, shadow mode)
+# Creates:
+#   - security-auditor   (system security audit, 24h tick)
 #
 # Prerequisites:
 #   - The API must be healthy.
-#   - quick-setup.prod.sh must have run first to provision trading bindings.
 #   - The env file must contain valid credentials and API_BASE_URL.
 #
 # Usage:
@@ -17,15 +15,10 @@
 #   infra/hetzner/scripts/create-agents.sh --help
 #
 # Environment overrides (all optional — sensible production defaults):
-#   AGENT_PROVIDER        LLM provider (default: deepseek)
-#   AGENT_LIGHT_MODEL     Fast/cheap model (default: deepseek-v4-flash)
-#   AGENT_HEAVY_MODEL     Capable model for conviction (default: deepseek-v4-pro)
-#   AGENT_EXECUTION_MODE  paper | shadow | live (default: shadow)
-#   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 900000)
-#   AGENT_CAPITAL         Starting capital (default: 1000)
-#   AGENT_DAILY_LOSS_LIMIT  Daily loss limit (default: 100)
-#   AGENT_MAX_SLIPPAGE_BPS  Max slippage in basis points (default: 25)
-#   AGENT_PROMPT          Agent goal text (default: "Grow this portfolio aggressively")
+#   AGENT_PROVIDER        LLM provider (default: openrouter)
+#   AGENT_LIGHT_MODEL     Fast/cheap model (default: deepseek/deepseek-v4-flash via OpenRouter)
+#   AGENT_HEAVY_MODEL     Capable model for conviction (default: deepseek/deepseek-v4-pro via OpenRouter)
+#   AGENT_TICK_INTERVAL_MS  Agent reasoning loop interval in ms (default: 86400000 = 24h)
 
 set -euo pipefail
 
@@ -36,15 +29,17 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # ─── Agent defaults (production) ─────────────────────────────────────────────
 
-AGENT_PROVIDER="${AGENT_PROVIDER:-deepseek}"
-AGENT_LIGHT_MODEL="${AGENT_LIGHT_MODEL:-deepseek-v4-flash}"
-AGENT_HEAVY_MODEL="${AGENT_HEAVY_MODEL:-deepseek-v4-pro}"
-AGENT_EXECUTION_MODE="${AGENT_EXECUTION_MODE:-shadow}"
-AGENT_TICK_INTERVAL_MS="${AGENT_TICK_INTERVAL_MS:-900000}"
-AGENT_CAPITAL="${AGENT_CAPITAL:-1000}"
-AGENT_DAILY_LOSS_LIMIT="${AGENT_DAILY_LOSS_LIMIT:-100}"
-AGENT_MAX_SLIPPAGE_BPS="${AGENT_MAX_SLIPPAGE_BPS:-25}"
-AGENT_PROMPT="${AGENT_PROMPT:-Grow this portfolio aggressively}"
+AGENT_PROVIDER="${AGENT_PROVIDER:-openrouter}"
+AGENT_LIGHT_MODEL="${AGENT_LIGHT_MODEL:-deepseek/deepseek-v4-flash}"
+AGENT_HEAVY_MODEL="${AGENT_HEAVY_MODEL:-deepseek/deepseek-v4-pro}"
+AGENT_TICK_INTERVAL_MS="${AGENT_TICK_INTERVAL_MS:-86400000}"
+
+# Security audit prompt loaded from docs (path overridable via env for remote execution)
+SECURITY_AUDIT_PROMPT_FILE="${SECURITY_AUDIT_PROMPT_FILE:-${REPO_ROOT}/docs/skills/security-audit-prompt.md}"
+if [[ ! -f "$SECURITY_AUDIT_PROMPT_FILE" ]]; then
+  die "Security audit prompt not found: ${SECURITY_AUDIT_PROMPT_FILE}"
+fi
+SECURITY_AUDIT_PROMPT="$(<"$SECURITY_AUDIT_PROMPT_FILE")"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -228,88 +223,38 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 2 — Look up trading bindings
-# ═══════════════════════════════════════════════════════════════════════════════
-
-log_section "Step 2: Look up trading bindings"
-
-api_call GET /capabilities/trading/bindings
-
-if [[ "$HTTP_STATUS" -ne 200 ]]; then
-  log_error "Failed to list trading bindings (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-  die "Binding lookup failed."
-fi
-
-HYPERLIQUID_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.bindings[] | select(.label == "Hyperliquid") | .bindingId' | head -1)"
-ONEINCH_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.bindings[] | select(.label == "1inch") | .bindingId' | head -1)"
-
-if [[ -z "$HYPERLIQUID_BINDING_ID" || "$HYPERLIQUID_BINDING_ID" == "null" ]]; then
-  die "No trading binding found with label 'Hyperliquid'.
-  Run quick-setup.prod.sh first to provision Hyperliquid credentials."
-fi
-
-if [[ -z "$ONEINCH_BINDING_ID" || "$ONEINCH_BINDING_ID" == "null" ]]; then
-  die "No trading binding found with label '1inch'.
-  Run quick-setup.prod.sh first to provision 1inch credentials."
-fi
-
-log_ok "Found Hyperliquid binding: ${HYPERLIQUID_BINDING_ID}"
-log_ok "Found 1inch binding: ${ONEINCH_BINDING_ID}"
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # Agent creation helper
 # ═══════════════════════════════════════════════════════════════════════════════
 
 build_agent_payload() {
   local name="$1"
+  local prompt="$2"
+  local skill_ids_json="$3"
+  local tick_interval_ms="$4"
   jq -n \
     --arg name "$name" \
-    --arg prompt "$AGENT_PROMPT" \
+    --arg prompt "$prompt" \
     --arg provider "$AGENT_PROVIDER" \
     --arg lightModel "$AGENT_LIGHT_MODEL" \
     --arg heavyModel "$AGENT_HEAVY_MODEL" \
-    --arg executionMode "$AGENT_EXECUTION_MODE" \
-    --arg tickIntervalMs "$AGENT_TICK_INTERVAL_MS" \
-    --arg capital "$AGENT_CAPITAL" \
-    --arg dailyLossLimit "$AGENT_DAILY_LOSS_LIMIT" \
-    --argjson maxSlippageBps "$AGENT_MAX_SLIPPAGE_BPS" \
+    --arg tickIntervalMs "$tick_interval_ms" \
+    --argjson skillIds "$skill_ids_json" \
     '{
       name: $name,
       prompt: $prompt,
       provider: $provider,
       lightModel: $lightModel,
       heavyModel: $heavyModel,
-      skillIds: ["trading"],
-      executionMode: $executionMode,
-      tickIntervalMs: ($tickIntervalMs | tonumber),
-      capital: $capital,
-      dailyLossLimit: $dailyLossLimit,
-      maxSlippageBps: $maxSlippageBps
+      skillIds: $skillIds,
+      tickIntervalMs: ($tickIntervalMs | tonumber)
     }'
 }
 
-bind_trading_capability() {
-  local agent_id="$1"
-  local binding_id="$2"
-  local agent_name="$3"
-
-  log_info "Binding trading capability for ${agent_name} (bindingId=${binding_id})..."
-
-  api_call POST "/agents/${agent_id}/capabilities/trading/actions/bind" \
-    "$(jq -n --arg bindingId "$binding_id" '{ bindingId: $bindingId }')"
-
-  if [[ "$HTTP_STATUS" -eq 201 || "$HTTP_STATUS" -eq 200 ]]; then
-    log_ok "Trading capability bound for ${agent_name}"
-    return 0
-  else
-    log_error "Failed to bind trading capability for ${agent_name} (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-    return 1
-  fi
-}
-
-create_and_bind_agent() {
+create_agent() {
   local name="$1"
-  local binding_id="$2"
+  local prompt="$2"
+  local skill_ids_json="$3"
+  local tick_interval_ms="$4"
 
   log_section "Creating agent: ${name}"
 
@@ -319,21 +264,7 @@ create_and_bind_agent() {
     local existing_id
     existing_id="$(echo "$RESPONSE_BODY" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -1)"
     if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
-      log_info "Agent '${name}' already exists (id=${existing_id}) — binding trading capability"
-
-      # Check if already bound
-      api_call GET "/agents/${existing_id}/capabilities/trading/bindings"
-      if [[ "$HTTP_STATUS" -eq 200 ]]; then
-        local already_bound
-        already_bound="$(echo "$RESPONSE_BODY" | jq -r --arg bid "$binding_id" '.bindings[] | select(.bindingId == $bid and .grantStatus == "active") | .bindingId' | head -1)"
-        if [[ -n "$already_bound" && "$already_bound" != "null" ]]; then
-          log_ok "Trading capability already bound for ${name}"
-          echo "$existing_id"
-          return 0
-        fi
-      fi
-
-      bind_trading_capability "$existing_id" "$binding_id" "$name" || die "Failed to bind trading capability"
+      log_info "Agent '${name}' already exists (id=${existing_id}) — skipping creation"
       echo "$existing_id"
       return 0
     fi
@@ -341,7 +272,7 @@ create_and_bind_agent() {
 
   # Create the agent
   local payload
-  payload="$(build_agent_payload "$name")"
+  payload="$(build_agent_payload "$name" "$prompt" "$skill_ids_json" "$tick_interval_ms")"
 
   api_call POST /agents "$payload"
 
@@ -354,24 +285,19 @@ create_and_bind_agent() {
   agent_id="$(echo "$RESPONSE_BODY" | jq -r '.id')"
   log_ok "Created agent '${name}' (id=${agent_id})"
 
-  # Bind trading capability
-  bind_trading_capability "$agent_id" "$binding_id" "$name" || die "Failed to bind trading capability"
-
   echo "$agent_id"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 3 — Create agents
+# Step 2 — Create security-auditor agent
 # ═══════════════════════════════════════════════════════════════════════════════
 
-THYPER_ID="$(create_and_bind_agent "thyper" "$HYPERLIQUID_BINDING_ID")"
-T1INCH_ID="$(create_and_bind_agent "t1inch" "$ONEINCH_BINDING_ID")"
+SECURITY_AUDITOR_ID="$(create_agent "security-auditor" "$SECURITY_AUDIT_PROMPT" '["web-access","programming","file-management","task-management"]' "$AGENT_TICK_INTERVAL_MS")"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 4 — Summary
+# Step 3 — Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 
 log_section "Agent creation summary"
-log_ok "thyper  → id=${THYPER_ID}  provider=${AGENT_PROVIDER}/${AGENT_LIGHT_MODEL}  binding=Hyperliquid (${HYPERLIQUID_BINDING_ID})"
-log_ok "t1inch  → id=${T1INCH_ID}  provider=${AGENT_PROVIDER}/${AGENT_LIGHT_MODEL}  binding=1inch (${ONEINCH_BINDING_ID})"
-log_info "Both agents are in 'stopped' state. Start them via the API or UI when ready."
+log_ok "security-auditor  → id=${SECURITY_AUDITOR_ID}  provider=${AGENT_PROVIDER}/${AGENT_LIGHT_MODEL}  tick=24h"
+log_info "Agent is in 'stopped' state. Start it via the API or UI when ready."
