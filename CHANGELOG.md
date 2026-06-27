@@ -9,15 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- **Per-agent runtime policy controls**: Agent style presets (Careful/Balanced/Bold) with configurable defaults for tool turns, LLM token limits, context budgets, trading hours, and scout hold duration. Overridable per-agent via `runtime_policy_overrides` JSONB column. Resolved policy flows from API → session manager → agent container. Operator ceilings enforced via Zod validation. E2E test script at `scripts/shell/tests/runtime-policy-e2e.sh`.
-
-- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
-
-- Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`
-
-- **Tool autocomplete in skill editor (008-tool-autocomplete-skill-ui)**: `TOOL_CATALOG` in domain with all 46 agent tools mapped to categories and descriptions. `GET /api/v1/agent-tools` discovery endpoint with optional `?category=` filter and category summary. `ToolTagPicker` combobox component in shared UI kit — category-grouped multi-select with search filtering, keyboard navigation (arrow keys + Enter), removable pills, sorted output, and i18n-ready label props. Integrated into skill create composer and SkillCard inline edit form. `requiredTools` now surfaced in the UI for the first time.
-
-- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
+- **Broker-side billing notifications**: Telegram and email notification dispatch when agents hit soft-cap (`billing.soft_limit_reached`) or hard-cap (`billing.limit_exceeded`) spending limits. Redis-based deduplication (24h TTL) prevents notification spam — users are notified once per status transition. HTML-escaped message templates include open position context for hard caps. Graceful degradation when Telegram/email/Redis are unavailable.
 
 ### Changed
 
