@@ -1,3 +1,5 @@
+export { loadProvidersConfig } from './load-providers.js';
+
 export {
   SWAP_VENUES,
   ORDERBOOK_VENUES,
@@ -108,3 +110,5 @@ export type {
   UnifiedAgentConfig,
   IntelligenceConfig,
 } from './schema.js';
+
+export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';
