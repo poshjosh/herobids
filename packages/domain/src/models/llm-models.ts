@@ -15,6 +15,44 @@ export interface ModelPricing {
   reasoningUsdPerM?: number;
 }
 
+export const ModelPricingSchema = z.object({
+  inputUsdPerM: z.number().positive(),
+  outputUsdPerM: z.number().positive(),
+  reasoningUsdPerM: z.number().positive().optional(),
+});
+
+const RawProviderConfigSchema = z.object({
+  catalogMode: z.enum(['static', 'dynamic']),
+  devOnly: z.boolean().optional(),
+  isMultiProvider: z.boolean().optional(),
+  fetchUrl: z.string().url().optional(),
+  models: z.record(z.string(), z.object({
+    inputUsdPerM: z.number().positive().optional(),
+    outputUsdPerM: z.number().positive().optional(),
+    reasoningUsdPerM: z.number().positive().optional(),
+  })),
+});
+
+// Refine: static providers must have pricing for all models
+export const ProviderConfigSchema = RawProviderConfigSchema.refine(
+  (config) => {
+    if (config.catalogMode === 'static') {
+      return Object.values(config.models).every(
+        (m) => m.inputUsdPerM != null && m.outputUsdPerM != null,
+      );
+    }
+    return true;
+  },
+  { message: 'Static providers must have inputUsdPerM and outputUsdPerM for every model' },
+);
+
+export const ProvidersYamlSchema = z.object({
+  providers: z.record(z.string(), ProviderConfigSchema),
+});
+
+export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
+export type ProvidersYaml = z.infer<typeof ProvidersYamlSchema>;
+
 export interface LlmProviderDefinition {
   id: string;
   /**
