@@ -13,6 +13,7 @@ import { AgentTradingActor } from './agent-trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, translateMomentumToMechanicalParams } from '@herobids/strategy';
+import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
@@ -20,7 +21,7 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher } from '@herobid
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, loadProvidersConfig, type ProvidersYaml } from '@herobids/domain';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { loadConfig } from './config.js';
@@ -1283,6 +1284,96 @@ const marketIntelCoordinator = appConfig.marketData
 
 marketIntelCoordinator?.start();
 
+// ── LLM Pricing Refresh ─────────────────────────────────────────────────────
+
+/** Resolve the API key for a given LLM provider from environment variables. */
+function resolveLlmApiKey(provider: string): string | undefined {
+  return process.env[`LLM_API_KEY_${provider.toUpperCase()}`] ?? process.env['LLM_API_KEY'];
+}
+
+/**
+ * Seed static provider pricing from config/providers.yaml into the DB.
+ * Only inserts if no active snapshot exists for the provider (idempotent).
+ */
+async function seedStaticPricing(
+  providers: ProvidersYaml,
+  repo: UsageBillingRepository,
+): Promise<void> {
+  for (const [providerId, config] of Object.entries(providers.providers)) {
+    if (config.catalogMode !== 'static') continue;
+
+    const existing = await repo.getLatestPricingSnapshot(providerId);
+    if (existing) continue; // already seeded from prior deploy
+
+    const models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number }> = {};
+    for (const [modelId, m] of Object.entries(config.models)) {
+      if (m.inputUsdPerM == null || m.outputUsdPerM == null) continue;
+      models[modelId] = {
+        inputUsdPerM: m.inputUsdPerM,
+        outputUsdPerM: m.outputUsdPerM,
+        ...(m.reasoningUsdPerM != null ? { reasoningUsdPerM: m.reasoningUsdPerM } : {}),
+      };
+    }
+
+    if (Object.keys(models).length === 0) continue;
+
+    await repo.upsertPricingSnapshot({
+      id: `seed_${providerId}_v1`,
+      provider: providerId,
+      fetchedAt: null, // static — no fetch timestamp
+      models,
+    });
+
+    logger.info({ provider: providerId, modelCount: Object.keys(models).length },
+      'Seeded static pricing snapshot from config');
+  }
+}
+
+/**
+ * Refresh dynamic provider pricing from their APIs and persist to DB.
+ * On failure, logs a warning and keeps the existing snapshot.
+ */
+async function refreshDynamicPricing(
+  providers: ProvidersYaml,
+  repo: UsageBillingRepository,
+): Promise<void> {
+  for (const [providerId, config] of Object.entries(providers.providers)) {
+    if (config.catalogMode !== 'dynamic' || !config.fetchUrl) continue;
+
+    try {
+      const apiKey = resolveLlmApiKey(providerId);
+      if (!apiKey) {
+        logger.warn({ provider: providerId }, 'No API key configured — skipping dynamic pricing refresh');
+        continue;
+      }
+
+      const result = await fetchOpenRouterPricing({
+        apiKey,
+        fetchUrl: config.fetchUrl,
+        timeoutMs: 15_000,
+      });
+
+      if (Object.keys(result.models).length === 0) {
+        logger.warn({ provider: providerId }, 'Dynamic pricing fetch returned empty — keeping existing snapshot');
+        continue;
+      }
+
+      const now = new Date();
+      await repo.upsertPricingSnapshot({
+        id: `${providerId}_${now.toISOString()}`,
+        provider: providerId,
+        fetchedAt: now,
+        models: result.models,
+      });
+
+      logger.info({ provider: providerId, modelCount: Object.keys(result.models).length },
+        'Dynamic pricing snapshot refreshed');
+    } catch (err) {
+      logger.warn({ err, provider: providerId }, 'Failed to refresh dynamic pricing — will retry next tick');
+    }
+  }
+}
+
 // Periodic health refresh: re-publish healthy snapshots for all registered actors
 // so Redis entries do not expire while actors are running. Refresh at half the TTL.
 const HEALTH_REFRESH_INTERVAL_MS = (ACTOR_HEALTH_TTL_SECONDS / 2) * 1000;
@@ -1301,6 +1392,28 @@ const healthRefreshInterval = setInterval(() => {
   }
 }, HEALTH_REFRESH_INTERVAL_MS);
 
+// ── LLM Pricing — seed static + refresh dynamic on startup ──────────────────
+const providersYaml = loadProvidersConfig('config/providers.yaml');
+const pricingRepo = new UsageBillingRepository(db);
+
+// Seed on startup (idempotent)
+seedStaticPricing(providersYaml, pricingRepo).catch((err) => {
+  logger.error({ err }, 'Failed to seed static LLM pricing on startup');
+});
+
+// Refresh dynamic pricing immediately on startup
+refreshDynamicPricing(providersYaml, pricingRepo).catch((err) => {
+  logger.error({ err }, 'Failed to refresh dynamic LLM pricing on startup');
+});
+
+// Periodic refresh: use catalogCacheTtlMs from operator config (default ~24h per default.yaml)
+const PRICING_REFRESH_INTERVAL_MS = appConfig.llm.catalog.cacheTtlMs;
+const pricingRefreshInterval = setInterval(() => {
+  refreshDynamicPricing(providersYaml, pricingRepo).catch((err) => {
+    logger.error({ err }, 'Failed to refresh dynamic LLM pricing on tick');
+  });
+}, PRICING_REFRESH_INTERVAL_MS);
+
 // Register graceful shutdown handlers after all services are fully initialized.
 // Placing them here guarantees no temporal-dead-zone reference errors if a
 // signal arrives during the async startup above.
@@ -1313,6 +1426,7 @@ const healthRefreshInterval = setInterval(() => {
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
   clearInterval(healthRefreshInterval);
+  clearInterval(pricingRefreshInterval);
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -1334,6 +1448,7 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
   clearInterval(healthRefreshInterval);
+  clearInterval(pricingRefreshInterval);
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
