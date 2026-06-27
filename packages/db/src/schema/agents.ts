@@ -1,5 +1,5 @@
 import { pgTable, text, varchar, timestamp, jsonb, integer, numeric, index } from 'drizzle-orm/pg-core';
-import type { AgentRiskOverrides, UnifiedAgentConfig } from '@herobids/domain';
+import type { AgentRiskOverrides, UnifiedAgentConfig, AgentRuntimePolicyOverrides } from '@herobids/domain';
 import { users } from './users.js';
 
 /**
@@ -13,6 +13,8 @@ export const agents = pgTable('agents', {
   name: text('name').notNull(),
   /** UX style hint used to derive defaults (careful, balanced, bold). Informational only. */
   style: varchar('style', { length: 16 }),
+  /** Per-agent runtime policy overrides — sparse JSONB of fields the user explicitly set beyond the style default. */
+  runtimePolicyOverrides: jsonb('runtime_policy_overrides').$type<AgentRuntimePolicyOverrides | null>(),
   /** High-level goal injected into every agent prompt tick */
   prompt: text('prompt').notNull(),                          // was: goal
   /** Current status: stopped | starting | active | paused | crashed */
@@ -38,7 +40,7 @@ export const agents = pgTable('agents', {
   /** Execution mode for bots this agent creates: paper | shadow | live */
   executionMode: text('execution_mode').notNull().default('paper'),
   /** Guard rails — broker-enforced, user-configured */
-  dailyTokenBudget: integer('daily_token_budget'),           // max LLM tokens/day
+  dailyTokenBudget: integer('daily_token_budget'),           // max LLM tokens/day (deprecated — prefer runtime_policy_overrides + usage billing)
   dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD)
   maxBots: integer('max_bots'),                              // max concurrent bots (agent-level override)
   maxSlippageBps: integer('max_slippage_bps'),               // max slippage in basis points

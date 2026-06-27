@@ -7,6 +7,7 @@ import type {
   PlansConfig,
   UsageBillingConfig,
 } from '@herobids/domain';
+import { resolveAgentRuntimePolicy } from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
 import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -392,6 +393,11 @@ export class AgentSessionManager {
           // Hybrid mode: agent has both technical scanner + LLM intelligence
           hybridMode: !!(agent.unifiedConfig?.technical && agent.unifiedConfig?.intelligence),
           openPositionEscalationToJudgePolicy: agent.openPositionEscalationToJudgePolicy,
+          // Per-agent runtime policy — resolved from style + overrides, sent as env var to container
+          resolvedRuntimePolicy: resolveAgentRuntimePolicy(
+            agent.style ?? null,
+            agent.runtimePolicyOverrides ?? null,
+          ),
         };
         await this.runtimeLauncher.launch({
           agentId: session.agentId,

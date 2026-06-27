@@ -5,7 +5,8 @@
 #   1. Unit tests          — pure logic, no external services required
 #   2. Integration tests   — DB + auth flows; requires postgres & redis
 #   3. Functional tests    — full API + worker in-process; requires postgres & redis
-#   4. E2E tests           — Playwright browser journeys; requires the full Docker stack
+#   4. API smoke tests     — shell-based API tests (runtime-policy); requires API server
+#   5. E2E tests           — Playwright browser journeys; requires the full Docker stack
 #                            (opt-in: pass --e2e to include)
 #
 # Venue integration tests (Hyperliquid, Bybit, 1inch) are excluded — they
@@ -204,6 +205,24 @@ run_tier "Integration tests" \
 run_tier "Functional tests" \
   bash -c "cd '${ROOT}' && pnpm test:functional"
 
+# ─── Step 5: API smoke tests (shell-based, against running API) ──────────────
+
+API_STARTED=false
+header "5 / API smoke tests"
+
+log "Starting API server…"
+docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api
+API_STARTED=true
+wait_healthy api
+
+run_tier "API smoke (runtime-policy)" \
+  bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/runtime-policy-e2e.sh"
+
+log "Stopping API server…"
+docker compose -f "${ROOT}/docker-compose.yaml" stop api 2>/dev/null || true
+docker compose -f "${ROOT}/docker-compose.yaml" rm -f api 2>/dev/null || true
+API_STARTED=false
+
 # Re-seed system skills after functional tests (they truncate the skills table)
 if [[ "${RUN_E2E}" == "true" ]]; then
   log "Re-seeding system skills for E2E…"
@@ -359,10 +378,10 @@ ON CONFLICT ("id") DO NOTHING;
 PSQL
 fi
 
-# ─── Step 5: E2E tests (opt-in) ──────────────────────────────────────────────
+# ─── Step 6: E2E tests (opt-in) ──────────────────────────────────────────────
 
 if [[ "${RUN_E2E}" == "true" ]]; then
-  header "5 / Full stack for E2E"
+  header "6 / Full stack for E2E"
 
   log "Building and starting full stack (api, worker, web)…"
   docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api worker web
@@ -390,7 +409,7 @@ if [[ "${RUN_E2E}" == "true" ]]; then
       bash -c "cd '${ROOT}/tests/e2e' && BASE_URL=http://localhost:5173 pnpm test"
   fi
 else
-  header "5 / E2E tests (skipped)"
+  header "6 / E2E tests (skipped)"
   warn "Pass --e2e to include Playwright end-to-end tests."
 fi
 

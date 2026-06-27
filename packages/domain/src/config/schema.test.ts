@@ -8,6 +8,12 @@ import {
   StrategySchema,
   LlmParamsSchema,
   TechnicalConfigSchema,
+  AgentRuntimePolicyOverridesSchema,
+  AgentStyleSchema,
+  RUNTIME_POLICY_CEILINGS,
+  AGENT_STYLE_RUNTIME_DEFAULTS,
+  resolveAgentRuntimePolicy,
+  type AgentStyleValue,
 } from './schema.js';
 
 describe('UsageBillingConfigSchema', () => {
@@ -624,5 +630,210 @@ describe('TechnicalConfigSchema', () => {
     if (result.success) {
       expect(result.data.autonomousExit).toBe(true);
     }
+  });
+});
+
+// ── Per-agent runtime policy ────────────────────────────────────────────────
+
+describe('AgentStyleSchema', () => {
+  it('accepts valid styles', () => {
+    expect(AgentStyleSchema.safeParse('careful').success).toBe(true);
+    expect(AgentStyleSchema.safeParse('balanced').success).toBe(true);
+    expect(AgentStyleSchema.safeParse('bold').success).toBe(true);
+  });
+
+  it('rejects invalid styles', () => {
+    expect(AgentStyleSchema.safeParse('aggressive').success).toBe(false);
+    expect(AgentStyleSchema.safeParse('').success).toBe(false);
+  });
+});
+
+describe('AgentRuntimePolicyOverridesSchema', () => {
+  it('accepts empty object (no overrides)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutMaxTurns).toBeUndefined();
+    }
+  });
+
+  it('accepts a single override field', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ scoutMaxTurns: 50 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutMaxTurns).toBe(50);
+      expect(result.data.judgeMaxTurns).toBeUndefined();
+    }
+  });
+
+  it('accepts multiple override fields', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      scoutMaxTurns: 50,
+      maxHistoryTokens: 60_000,
+      weekendPause: false,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutMaxTurns).toBe(50);
+      expect(result.data.maxHistoryTokens).toBe(60_000);
+      expect(result.data.weekendPause).toBe(false);
+    }
+  });
+
+  it('rejects scoutMaxTurns below minimum (1)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ scoutMaxTurns: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects scoutMaxTurns above operator ceiling (500)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ scoutMaxTurns: 501 });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts scoutMaxTurns at operator ceiling (500)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ scoutMaxTurns: 500 });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects judgeMaxTurns above operator ceiling (1000)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ judgeMaxTurns: 1_001 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects maxHistoryTokens above operator ceiling (160000)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ maxHistoryTokens: 160_001 });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts null to signal reset-to-default', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ scoutMaxTurns: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.scoutMaxTurns).toBeNull();
+    }
+  });
+
+  it('rejects negative maxHoldDurationMs', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ maxHoldDurationMs: -1 });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts maxHoldDurationMs of 0 (no forced escalation)', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ maxHoldDurationMs: 0 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.maxHoldDurationMs).toBe(0);
+    }
+  });
+
+  it('rejects invalid allowedHoursUtc values', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ allowedHoursUtc: [25] });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts valid allowedHoursUtc', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({ allowedHoursUtc: [0, 8, 16, 23] });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {
+  it('has entries for all three styles', () => {
+    const styles: AgentStyleValue[] = ['careful', 'balanced', 'bold'];
+    for (const style of styles) {
+      expect(AGENT_STYLE_RUNTIME_DEFAULTS[style]).toBeDefined();
+    }
+  });
+
+  it('careful has conservative defaults', () => {
+    const d = AGENT_STYLE_RUNTIME_DEFAULTS.careful;
+    expect(d.scoutMaxTurns).toBe(10);
+    expect(d.judgeMaxTurns).toBe(25);
+    expect(d.maxHistoryTokens).toBe(20_000);
+    expect(d.weekendPause).toBe(true);
+    expect(d.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
+  });
+
+  it('balanced has moderate defaults', () => {
+    const d = AGENT_STYLE_RUNTIME_DEFAULTS.balanced;
+    expect(d.scoutMaxTurns).toBe(30);
+    expect(d.judgeMaxTurns).toBe(75);
+    expect(d.maxHistoryTokens).toBe(40_000);
+  });
+
+  it('bold has aggressive defaults', () => {
+    const d = AGENT_STYLE_RUNTIME_DEFAULTS.bold;
+    expect(d.scoutMaxTurns).toBe(100);
+    expect(d.judgeMaxTurns).toBe(300);
+    expect(d.maxHistoryTokens).toBe(80_000);
+    expect(d.weekendPause).toBe(false);
+  });
+
+  it('all defaults are within operator ceilings', () => {
+    for (const style of ['careful', 'balanced', 'bold'] as const) {
+      const d = AGENT_STYLE_RUNTIME_DEFAULTS[style];
+      expect(d.scoutMaxTurns).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.scoutMaxTurns);
+      expect(d.judgeMaxTurns).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.judgeMaxTurns);
+      expect(d.maxHistoryTokens).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxHistoryTokens);
+      expect(d.maxHoldDurationMs).toBeLessThanOrEqual(RUNTIME_POLICY_CEILINGS.maxHoldDurationMs);
+    }
+  });
+});
+
+describe('resolveAgentRuntimePolicy', () => {
+  it('returns balanced defaults when style is undefined', () => {
+    const resolved = resolveAgentRuntimePolicy(undefined, null);
+    expect(resolved.scoutMaxTurns).toBe(30);
+    expect(resolved.judgeMaxTurns).toBe(75);
+  });
+
+  it('returns balanced defaults when style is null', () => {
+    const resolved = resolveAgentRuntimePolicy(null, null);
+    expect(resolved.scoutMaxTurns).toBe(30);
+  });
+
+  it('returns balanced defaults when style is invalid', () => {
+    const resolved = resolveAgentRuntimePolicy('aggressive', null);
+    expect(resolved.scoutMaxTurns).toBe(30);
+  });
+
+  it('returns bold defaults for bold style', () => {
+    const resolved = resolveAgentRuntimePolicy('bold', null);
+    expect(resolved.scoutMaxTurns).toBe(100);
+    expect(resolved.judgeMaxTurns).toBe(300);
+    expect(resolved.maxHistoryTokens).toBe(80_000);
+    expect(resolved.weekendPause).toBe(false);
+  });
+
+  it('returns careful defaults for careful style', () => {
+    const resolved = resolveAgentRuntimePolicy('careful', null);
+    expect(resolved.scoutMaxTurns).toBe(10);
+    expect(resolved.weekendPause).toBe(true);
+  });
+
+  it('overrides win over style defaults', () => {
+    const resolved = resolveAgentRuntimePolicy('bold', { scoutMaxTurns: 25 });
+    expect(resolved.scoutMaxTurns).toBe(25); // override wins
+    expect(resolved.judgeMaxTurns).toBe(300); // style default preserved
+  });
+
+  it('multiple overrides all win', () => {
+    const resolved = resolveAgentRuntimePolicy('balanced', {
+      scoutMaxTurns: 15,
+      maxHistoryTokens: 10_000,
+      weekendPause: false,
+    });
+    expect(resolved.scoutMaxTurns).toBe(15);
+    expect(resolved.maxHistoryTokens).toBe(10_000);
+    expect(resolved.weekendPause).toBe(false);
+    // style defaults for non-overridden fields
+    expect(resolved.judgeMaxTurns).toBe(75);
+    expect(resolved.maxHistoryMessages).toBe(20);
+  });
+
+  it('handles empty overrides object', () => {
+    const resolved = resolveAgentRuntimePolicy('careful', {});
+    expect(resolved.scoutMaxTurns).toBe(10);
+    expect(resolved.maxHoldDurationMs).toBe(10_800_000);
   });
 });

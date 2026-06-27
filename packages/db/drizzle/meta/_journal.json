@@ -162,6 +162,13 @@
       "when": 1782562908135,
       "tag": "0022_complex_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782568364880,
+      "tag": "0023_silky_gargoyle",
+      "breakpoints": true
     }
   ]
 }

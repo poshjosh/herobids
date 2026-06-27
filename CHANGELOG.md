@@ -7,13 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Per-agent runtime policy controls**: Agent style presets (Careful/Balanced/Bold) with configurable defaults for tool turns, LLM token limits, context budgets, trading hours, and scout hold duration. Overridable per-agent via `runtime_policy_overrides` JSONB column. Resolved policy flows from API → session manager → agent container. Operator ceilings enforced via Zod validation. E2E test script at `scripts/shell/tests/runtime-policy-e2e.sh`.
+
+- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
+- Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`
+
 ### Changed
 
 - **Dynamic LLM Pricing**: Provider pricing sourced from PostgreSQL (`llm_pricing_snapshots`) + `config/providers.yaml`. Hardcoded `PROVIDER_DEFINITIONS` removed. OpenRouter pricing fetched hourly by worker, static providers seeded on startup. API model catalog reads from DB. Rate card seeding uses DB snapshots instead of build-time constants.
-
-### Added
-
-- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
 - Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`
 - Bot lifecycle UI controls: Stop/Start/Delete action buttons on bot detail page with confirmation modals
 - E2E bot trade test script (`scripts/ts/bot-trade-test.ts`) and shell wrapper

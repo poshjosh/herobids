@@ -132,6 +132,196 @@ export const LlmThinkingConfigSchema = z.object({
   deepBudgetTokens: z.number().int().min(0).default(10_240),
 });
 
+// ── Per-agent runtime policy ────────────────────────────────────────────────
+
+/** Operator ceilings — the absolute max any agent can be configured with. */
+export const RUNTIME_POLICY_CEILINGS = {
+  scoutMaxTurns: 500,
+  judgeMaxTurns: 1_000,
+  scoutMaxTokens: 4_096,
+  judgeMaxTokens: 16_384,
+  lightThinkingTokens: 8_192,
+  deepThinkingTokens: 32_768,
+  maxHistoryMessages: 80,
+  maxHistoryTokens: 160_000,
+  maxRecentToolMessages: 24,
+  maxToolResultChars: 16_000,
+  maxVisibleToolSchemas: 256,
+  maxContextBlockChars: 16_000,
+  toolResultFullRetentionTurns: 10,
+  toolResultMaxStaleChars: 2_000,
+  maxHoldDurationMs: 86_400_000, // 24 hours
+} as const;
+
+/**
+ * Per-agent overrides for runtime policy fields.
+ * Every field is optional + nullable — undefined means "use style default",
+ * null means "explicitly clear/reset to style default".
+ */
+export const AgentRuntimePolicyOverridesSchema = z.object({
+  scoutMaxTurns: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.scoutMaxTurns).nullable().optional(),
+  judgeMaxTurns: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.judgeMaxTurns).nullable().optional(),
+  scoutMaxTokens: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.scoutMaxTokens).nullable().optional(),
+  judgeMaxTokens: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.judgeMaxTokens).nullable().optional(),
+  lightThinkingTokens: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.lightThinkingTokens).nullable().optional(),
+  deepThinkingTokens: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.deepThinkingTokens).nullable().optional(),
+  allowedHoursUtc: z.array(z.number().int().min(0).max(23)).nullable().optional(),
+  weekendPause: z.boolean().nullable().optional(),
+  maxHistoryMessages: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxHistoryMessages).nullable().optional(),
+  maxHistoryTokens: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxHistoryTokens).nullable().optional(),
+  maxRecentToolMessages: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxRecentToolMessages).nullable().optional(),
+  maxToolResultChars: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxToolResultChars).nullable().optional(),
+  maxVisibleToolSchemas: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxVisibleToolSchemas).nullable().optional(),
+  maxContextBlockChars: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.maxContextBlockChars).nullable().optional(),
+  toolResultFullRetentionTurns: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.toolResultFullRetentionTurns).nullable().optional(),
+  toolResultMaxStaleChars: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.toolResultMaxStaleChars).nullable().optional(),
+  maxHoldDurationMs: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.maxHoldDurationMs).nullable().optional(),
+}).default({});
+
+export type AgentRuntimePolicyOverrides = z.infer<typeof AgentRuntimePolicyOverridesSchema>;
+
+/** Agent style — the primary user-facing knob for runtime behaviour. */
+export const AgentStyleSchema = z.enum(['careful', 'balanced', 'bold']);
+export type AgentStyleValue = z.infer<typeof AgentStyleSchema>;
+
+/**
+ * Full resolved runtime policy for an agent.
+ * Every field is guaranteed present — resolved from style defaults + overrides.
+ */
+export interface ResolvedAgentRuntimePolicy {
+  scoutMaxTurns: number;
+  judgeMaxTurns: number;
+  scoutMaxTokens: number;
+  judgeMaxTokens: number;
+  lightThinkingTokens: number;
+  deepThinkingTokens: number;
+  allowedHoursUtc: number[];
+  weekendPause: boolean;
+  maxHistoryMessages: number;
+  maxHistoryTokens: number;
+  maxRecentToolMessages: number;
+  maxToolResultChars: number;
+  maxVisibleToolSchemas: number;
+  maxContextBlockChars: number;
+  toolResultFullRetentionTurns: number;
+  toolResultMaxStaleChars: number;
+  maxHoldDurationMs: number | undefined;
+}
+
+/**
+ * Style → defaults mapping. Mirrors the frontend STYLE_CONFIG.
+ * Includes costPreset and tick defaults for completeness, but these
+ * are stored separately (not part of runtime_policy_overrides).
+ */
+export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgentRuntimePolicy & { costPreset: string; tickIntervalMins: string; dailySpendBudgetUsd: string; openPositionEscalationToJudgePolicy: string }> = {
+  careful: {
+    costPreset: 'minimal',
+    tickIntervalMins: '90',
+    dailySpendBudgetUsd: '3',
+    openPositionEscalationToJudgePolicy: 'never',
+    scoutMaxTurns: 10,
+    judgeMaxTurns: 25,
+    scoutMaxTokens: 512,
+    judgeMaxTokens: 2_048,
+    lightThinkingTokens: 1_024,
+    deepThinkingTokens: 4_096,
+    allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20],
+    weekendPause: true,
+    maxHistoryMessages: 10,
+    maxHistoryTokens: 20_000,
+    maxRecentToolMessages: 3,
+    maxToolResultChars: 2_000,
+    maxVisibleToolSchemas: 32,
+    maxContextBlockChars: 2_000,
+    toolResultFullRetentionTurns: 2,
+    toolResultMaxStaleChars: 250,
+    maxHoldDurationMs: 10_800_000, // 180 min
+  },
+  balanced: {
+    costPreset: 'standard',
+    tickIntervalMins: '30',
+    dailySpendBudgetUsd: '10',
+    openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+    scoutMaxTurns: 30,
+    judgeMaxTurns: 75,
+    scoutMaxTokens: 1_024,
+    judgeMaxTokens: 4_096,
+    lightThinkingTokens: 2_048,
+    deepThinkingTokens: 10_240,
+    allowedHoursUtc: [],
+    weekendPause: true,
+    maxHistoryMessages: 20,
+    maxHistoryTokens: 40_000,
+    maxRecentToolMessages: 6,
+    maxToolResultChars: 4_000,
+    maxVisibleToolSchemas: 64,
+    maxContextBlockChars: 4_000,
+    toolResultFullRetentionTurns: 3,
+    toolResultMaxStaleChars: 500,
+    maxHoldDurationMs: 3_600_000, // 60 min
+  },
+  bold: {
+    costPreset: 'premium',
+    tickIntervalMins: '10',
+    dailySpendBudgetUsd: '30',
+    openPositionEscalationToJudgePolicy: 'always',
+    scoutMaxTurns: 100,
+    judgeMaxTurns: 300,
+    scoutMaxTokens: 2_048,
+    judgeMaxTokens: 8_192,
+    lightThinkingTokens: 4_096,
+    deepThinkingTokens: 20_480,
+    allowedHoursUtc: [],
+    weekendPause: false,
+    maxHistoryMessages: 40,
+    maxHistoryTokens: 80_000,
+    maxRecentToolMessages: 12,
+    maxToolResultChars: 8_000,
+    maxVisibleToolSchemas: 128,
+    maxContextBlockChars: 8_000,
+    toolResultFullRetentionTurns: 5,
+    toolResultMaxStaleChars: 1_000,
+    maxHoldDurationMs: 1_800_000, // 30 min
+  },
+};
+
+/**
+ * Resolve the effective runtime policy for an agent.
+ * Style defaults form the base; runtime_policy_overrides win on a per-field basis.
+ * Falls back to 'balanced' style when the style is invalid or missing.
+ */
+export function resolveAgentRuntimePolicy(
+  style: string | undefined | null,
+  overrides: AgentRuntimePolicyOverrides | undefined | null,
+): ResolvedAgentRuntimePolicy {
+  const effectiveStyle: AgentStyleValue = (
+    style === 'careful' || style === 'balanced' || style === 'bold'
+  ) ? style : 'balanced';
+
+  const defaults = AGENT_STYLE_RUNTIME_DEFAULTS[effectiveStyle];
+  const o = overrides ?? {};
+
+  return {
+    scoutMaxTurns: o.scoutMaxTurns ?? defaults.scoutMaxTurns,
+    judgeMaxTurns: o.judgeMaxTurns ?? defaults.judgeMaxTurns,
+    scoutMaxTokens: o.scoutMaxTokens ?? defaults.scoutMaxTokens,
+    judgeMaxTokens: o.judgeMaxTokens ?? defaults.judgeMaxTokens,
+    lightThinkingTokens: o.lightThinkingTokens ?? defaults.lightThinkingTokens,
+    deepThinkingTokens: o.deepThinkingTokens ?? defaults.deepThinkingTokens,
+    allowedHoursUtc: o.allowedHoursUtc ?? defaults.allowedHoursUtc,
+    weekendPause: o.weekendPause ?? defaults.weekendPause,
+    maxHistoryMessages: o.maxHistoryMessages ?? defaults.maxHistoryMessages,
+    maxHistoryTokens: o.maxHistoryTokens ?? defaults.maxHistoryTokens,
+    maxRecentToolMessages: o.maxRecentToolMessages ?? defaults.maxRecentToolMessages,
+    maxToolResultChars: o.maxToolResultChars ?? defaults.maxToolResultChars,
+    maxVisibleToolSchemas: o.maxVisibleToolSchemas ?? defaults.maxVisibleToolSchemas,
+    maxContextBlockChars: o.maxContextBlockChars ?? defaults.maxContextBlockChars,
+    toolResultFullRetentionTurns: o.toolResultFullRetentionTurns ?? defaults.toolResultFullRetentionTurns,
+    toolResultMaxStaleChars: o.toolResultMaxStaleChars ?? defaults.toolResultMaxStaleChars,
+    maxHoldDurationMs: o.maxHoldDurationMs ?? defaults.maxHoldDurationMs,
+  };
+}
+
 export const LlmCatalogConfigSchema = z.object({
   /** Short fetch timeout for catalog discovery — independent of llm.timeoutMs which is tuned for generation */
   timeoutMs: z.number().min(100).default(3_000),
@@ -188,8 +378,6 @@ export const AgentRiskDefaultsSchema = z.object({
   dailyMaxLossPct: z.number().min(0).max(100).default(20),
   stopLossCooldownMs: z.number().min(0).default(300_000),
   maxOrderNotionalMultiplier: z.number().min(0).default(1),
-  /** Minimum paper/shadow LLM ticks before agent may promote itself to live mode. */
-  minPaperCyclesBeforeLive: z.number().int().min(0).default(10),
 }).default({});
 
 export const StreamConfigSchema = z.object({

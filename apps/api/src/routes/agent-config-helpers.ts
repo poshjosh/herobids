@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS, validateLlmModelSelection, resolveAgentRiskContract, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS, validateLlmModelSelection, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
 
@@ -333,7 +333,7 @@ export function resolveNotificationPolicy(
   };
 }
 
-export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; dailyTokenBudget?: number | null }>(agent: T): T & {
+export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; dailyTokenBudget?: number | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null }>(agent: T): T & {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -341,6 +341,7 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
   dailySpendBudgetUsd: number | null;
   dailyLlmTokenBudget: number | null;
   dexWatchlistSymbols: string[] | null;
+  resolvedRuntimePolicy: Record<string, unknown> | null;
 } {
   const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
   return {
@@ -354,6 +355,10 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     dexWatchlistSymbols: Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
       ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
       : null,
+    resolvedRuntimePolicy: resolveAgentRuntimePolicy(
+      agent.style ?? null,
+      (agent.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
+    ) as unknown as Record<string, unknown> | null,
   };
 }
 

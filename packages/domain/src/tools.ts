@@ -188,7 +188,6 @@ export interface ToolContext {
     appendJournal(type: string, payload: Record<string, unknown>): Promise<void>;
     notifyActorConfigUpdate(newConfig: import('./config/schema.js').UnifiedAgentConfig | null): Promise<void>;
     getLlmTickCount(): number;
-    getMinPaperCyclesBeforeLive(): number;
   };
   /** Instrument repository for find_instrument lookups. */
   instrumentRepo?: {

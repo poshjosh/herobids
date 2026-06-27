@@ -246,12 +246,31 @@ interface AgentConfig {
     maxPositionSize: number;
     maxOrderNotionalMultiplier: number;
     dailyMaxLossPct: number;
-    minPaperCyclesBeforeLive?: number;
   };
   /** True when agent has both technical scanner + LLM intelligence config — ticks are event-driven */
   hybridMode?: boolean;
   /** Per-agent open position escalation to judge policy: never | uncovered_or_triggered | always */
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
+  /** Resolved per-agent runtime policy — derived from style + overrides at session start */
+  resolvedRuntimePolicy?: {
+    scoutMaxTurns: number;
+    judgeMaxTurns: number;
+    scoutMaxTokens: number;
+    judgeMaxTokens: number;
+    lightThinkingTokens: number;
+    deepThinkingTokens: number;
+    allowedHoursUtc: number[];
+    weekendPause: boolean;
+    maxHistoryMessages: number;
+    maxHistoryTokens: number;
+    maxRecentToolMessages: number;
+    maxToolResultChars: number;
+    maxVisibleToolSchemas: number;
+    maxContextBlockChars: number;
+    toolResultFullRetentionTurns: number;
+    toolResultMaxStaleChars: number;
+    maxHoldDurationMs?: number;
+  };
 }
 
 let agentConfig: AgentConfig;
@@ -331,7 +350,12 @@ const skillIds = agentConfig.runtimeDescriptor?.resolvedSkills
   .filter((skillId) => skillId !== 'base')
   ?? [];
 const initialToolPolicy = agentConfig.runtimeDescriptor?.toolPolicy ?? parseToolPolicy(TOOL_POLICY_RAW);
-const tradingHours = parseTradingHours(TRADING_HOURS_RAW);
+const tradingHours = agentConfig.resolvedRuntimePolicy
+  ? {
+    allowedHoursUtc: agentConfig.resolvedRuntimePolicy.allowedHoursUtc,
+    weekendPause: agentConfig.resolvedRuntimePolicy.weekendPause,
+  }
+  : parseTradingHours(TRADING_HOURS_RAW);
 const { provider: resolvedProvider, heavyModel: resolvedHeavyModel, lightModel: resolvedLightModel } = resolveEffectiveLlmSelection({
   agentConfig,
 });
@@ -429,6 +453,34 @@ const runtimeDescriptor = agentConfig.runtimeDescriptor
     budgets: { ...agentRuntimePolicy.defaultBudgets },
   }
   : buildFallbackRuntimeDescriptor();
+
+// Overlay per-agent resolved runtime policy onto the budgets and loop configs.
+// The resolved policy (from style + runtime_policy_overrides) tops the operator defaults.
+if (agentConfig.resolvedRuntimePolicy) {
+  const rp = agentConfig.resolvedRuntimePolicy;
+  runtimeDescriptor.budgets = {
+    ...runtimeDescriptor.budgets,
+    maxHistoryMessages: rp.maxHistoryMessages,
+    maxHistoryTokens: rp.maxHistoryTokens,
+    maxRecentToolMessages: rp.maxRecentToolMessages,
+    maxToolResultChars: rp.maxToolResultChars,
+    maxVisibleToolSchemas: rp.maxVisibleToolSchemas,
+    maxContextBlockChars: rp.maxContextBlockChars,
+    toolResultFullRetentionTurns: rp.toolResultFullRetentionTurns,
+    toolResultMaxStaleChars: rp.toolResultMaxStaleChars,
+  };
+  // Patch the loop-level controls that are read from agentRuntimePolicy.llm.*
+  // These are destructured into scoutLoopConfig/judgeLoopConfig later in the file.
+  agentRuntimePolicy.llm.scout.maxTurns = rp.scoutMaxTurns;
+  agentRuntimePolicy.llm.scout.maxTokens = rp.scoutMaxTokens;
+  agentRuntimePolicy.llm.judge.maxTurns = rp.judgeMaxTurns;
+  agentRuntimePolicy.llm.thinking.lightBudgetTokens = rp.lightThinkingTokens;
+  agentRuntimePolicy.llm.thinking.deepBudgetTokens = rp.deepThinkingTokens;
+  if (rp.maxHoldDurationMs !== undefined) {
+    agentRuntimePolicy.llm.scout.maxHoldDurationMs = rp.maxHoldDurationMs;
+  }
+}
+
 const workspacePaths = getWorkspacePaths(AGENT_ID!);
 const runtimeState: RuntimeCompositionState = createRuntimeCompositionState(runtimeDescriptor, {
   workspaceRoot: workspacePaths.root,
@@ -1319,10 +1371,6 @@ function buildAgentConfigOps(): ToolContext['agentConfigOps'] {
       // Uses LLM cycle count as a proxy for paper trading experience — this is an approximation.
       // For precise paper trade counting, a separate paper-trades counter would be needed.
       return tickCount;
-    },
-
-    getMinPaperCyclesBeforeLive() {
-      return (agentConfig.agentRiskDefaults?.minPaperCyclesBeforeLive as number | undefined) ?? 10;
     },
   };
 }

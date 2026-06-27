@@ -26,7 +26,7 @@ import {
   venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { AgentRiskDefaultsSchema, normalizePersistedAiModelConfig, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
+import { AgentRiskDefaultsSchema, AgentRuntimePolicyOverridesSchema, RUNTIME_POLICY_CEILINGS, normalizePersistedAiModelConfig, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -99,6 +99,7 @@ const CreateAgentSchema = z.object({
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
+  runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
@@ -113,6 +114,7 @@ const CreateAgentSchema = z.object({
 const UpdateAgentSchema = z.object({
   name: AgentNameSchema.optional(),
   prompt: z.string().max(4000).optional(),
+  style: z.enum(['careful', 'balanced', 'bold']).nullable().optional(),
   skillIds: z.array(z.string().min(1)).optional(),
   toolPolicy: z.record(z.unknown()).optional(),
   modelPolicy: z.record(z.unknown()).optional(),
@@ -145,6 +147,7 @@ const UpdateAgentSchema = z.object({
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
   technical: TechnicalConfigSchema.nullable().optional(),
+  runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.nullable().optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
 });
 
@@ -423,6 +426,7 @@ export async function agentRoutes(
       stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
       stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
       costPerTickEstimates: agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 },
+      runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,
     });
   });
 
@@ -570,6 +574,7 @@ export async function agentRoutes(
       tickIntervalMs: parsed.data.tickIntervalMs ?? null,
       capital: parsed.data.capital ?? null,
       style: parsed.data.style ?? null,
+      runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
       openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
       ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
       createdAt: now,

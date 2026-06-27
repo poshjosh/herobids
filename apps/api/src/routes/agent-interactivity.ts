@@ -6,6 +6,7 @@ import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
+import { AgentRuntimePolicyOverridesSchema } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
@@ -64,6 +65,8 @@ const UpdateAgentSchema = z.object({
   maxSlippageBps: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
+  style: z.enum(['careful', 'balanced', 'bold']).nullable().optional(),
+  runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.nullable().optional(),
 });
 
 type SkillAssignmentResolution = {
@@ -355,6 +358,7 @@ export async function agentInteractivityRoutes(
       dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
       skillIds: _skillIds,
+      runtimePolicyOverrides: _runtimePolicyOverrides,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
@@ -363,6 +367,7 @@ export async function agentInteractivityRoutes(
       ...agentUpdates,
       executionMode: executionMode.value ?? 'paper',
       ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
+      ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,
       updatedAt: new Date(),

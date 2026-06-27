@@ -160,7 +160,6 @@ describe('get_risk_limits tool', () => {
         appendJournal: vi.fn(),
         notifyActorConfigUpdate: vi.fn(),
         getLlmTickCount: vi.fn(),
-        getMinPaperCyclesBeforeLive: vi.fn(),
       },
       agentRepo: {
         getAgent: vi.fn().mockResolvedValue({ capital: '5000' }),
@@ -203,7 +202,6 @@ describe('get_risk_limits tool', () => {
         appendJournal: vi.fn(),
         notifyActorConfigUpdate: vi.fn(),
         getLlmTickCount: vi.fn(),
-        getMinPaperCyclesBeforeLive: vi.fn(),
       },
       agentRepo: {
         getAgent: vi.fn().mockResolvedValue({ capital: '5000' }),
@@ -244,7 +242,6 @@ describe('get_risk_limits tool', () => {
         appendJournal: vi.fn(),
         notifyActorConfigUpdate: vi.fn(),
         getLlmTickCount: vi.fn(),
-        getMinPaperCyclesBeforeLive: vi.fn(),
       },
       agentRepo: {
         getAgent: vi.fn().mockResolvedValue({ capital: '10000' }),
