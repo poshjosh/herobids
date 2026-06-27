@@ -2,7 +2,7 @@ import { useIntl } from 'react-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billing, agents as agentsApi } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, Button } from '../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, Button } from '../../lib/ui.js';
 import { formatCurrencyFromCents, formatShortDate } from '../../lib/formatting.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 
@@ -44,6 +44,9 @@ export function BillingPage() {
   const [softCapInput, setSoftCapInput] = useState('');
   const [hardCapInput, setHardCapInput] = useState('');
   const [selectedTopUpPackId, setSelectedTopUpPackId] = useState('');
+  const [spendCapsError, setSpendCapsError] = useState<string | null>(null);
+  const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
   const USAGE_EVENTS_PAGE_SIZE = 50;
 
   const usageFilters = useMemo(() => ({
@@ -113,15 +116,23 @@ export function BillingPage() {
   const spendCapsMutation = useMutation({
     mutationFn: (caps: { softCapCents?: number | null; hardCapCents?: number | null }) => billing.updateSpendCaps(caps),
     onSuccess: () => {
+      setSpendCapsError(null);
       void queryClient.invalidateQueries({ queryKey: ['billing', 'usage-summary'] });
       void queryClient.invalidateQueries({ queryKey: ['billing', 'periods'] });
+    },
+    onError: (err: unknown) => {
+      setSpendCapsError(localizeApiError(intl, err, 'common.errorTitle'));
     },
   });
 
   const topUpMutation = useMutation({
     mutationFn: (packId: string) => billing.createTopUpCheckoutSession(packId),
     onSuccess: (data) => {
+      setTopUpError(null);
       window.location.href = data.url;
+    },
+    onError: (err: unknown) => {
+      setTopUpError(localizeApiError(intl, err, 'common.errorTitle'));
     },
   });
 
@@ -143,6 +154,22 @@ export function BillingPage() {
   }, [usageSummary?.currentPeriod?.id]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get('session');
+    if (session === 'success') {
+      setCheckoutBanner('success');
+      void queryClient.invalidateQueries({ queryKey: ['billing', 'summary'] });
+      void queryClient.invalidateQueries({ queryKey: ['billing', 'usage-summary'] });
+      void queryClient.invalidateQueries({ queryKey: ['billing', 'periods'] });
+    } else if (session === 'cancelled') {
+      setCheckoutBanner('cancelled');
+    }
+    if (session) {
+      window.history.replaceState({}, '', '/billing');
+    }
+  }, []);
+
+  useEffect(() => {
     const packs = usageSummary?.topUpPacks ?? [];
     if (packs.length === 0) {
       setSelectedTopUpPackId('');
@@ -159,6 +186,36 @@ export function BillingPage() {
         title={intl.formatMessage({ id: 'billing.title' })}
         subtitle={intl.formatMessage({ id: 'billing.subtitle' })}
       />
+
+      {checkoutBanner && (
+        <div
+          style={{
+            padding: '12px 16px',
+            marginBottom: '16px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            border: `1px solid ${checkoutBanner === 'success' ? 'var(--color-success)' : 'var(--color-warning)'}`,
+            background: checkoutBanner === 'success' ? 'var(--color-success-bg, #f0fff4)' : 'var(--color-warning-bg, #fffbeb)',
+            color: checkoutBanner === 'success' ? 'var(--color-success-text, #276749)' : 'var(--color-warning-text, #92400e)',
+          }}
+        >
+          <span>
+            {checkoutBanner === 'success'
+              ? 'Payment successful — your credits will be applied shortly.'
+              : 'Checkout was cancelled — your payment was not processed.'}
+          </span>
+          <button
+            onClick={() => setCheckoutBanner(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 0 0 12px', color: 'inherit' }}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {summaryQuery.isLoading && <LoadingRows count={3} />}
       {summaryQuery.isError && (
@@ -423,6 +480,9 @@ export function BillingPage() {
                 {spendCapsMutation.isPending ? 'Saving...' : 'Update Spend Caps'}
               </Button>
             </div>
+            {spendCapsError && (
+              <ErrorBanner message={spendCapsError} onDismiss={() => setSpendCapsError(null)} />
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px' }}>
               <select
                 value={selectedTopUpPackId}
@@ -445,6 +505,9 @@ export function BillingPage() {
                 {topUpMutation.isPending ? 'Opening...' : 'Buy Top-up'}
               </Button>
             </div>
+            {topUpError && (
+              <ErrorBanner message={topUpError} onDismiss={() => setTopUpError(null)} />
+            )}
             {!usageSummary?.topUpsEnabled && (
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                 {usageAccount
