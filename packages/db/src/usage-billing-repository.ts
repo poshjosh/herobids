@@ -11,6 +11,7 @@ import {
   agents,
   agentRuntimeSessions,
   users,
+  llmPricingSnapshots,
 } from './schema/index.js';
 
 // ---------------------------------------------------------------------------
@@ -933,6 +934,55 @@ export class UsageBillingRepository {
     const newStatus = computeSpendStatus(period);
     await this.updateAccountStatus(accountId, newStatus);
     return newStatus;
+  }
+
+  // ---------------------------------------------------------------------------
+  // LLM pricing snapshots
+  // ---------------------------------------------------------------------------
+
+  /** Get the active pricing snapshot for a provider, or null if none exists. */
+  async getLatestPricingSnapshot(provider: string): Promise<typeof llmPricingSnapshots.$inferSelect | null> {
+    const [row] = await this.db
+      .select()
+      .from(llmPricingSnapshots)
+      .where(
+        and(
+          eq(llmPricingSnapshots.provider, provider),
+          eq(llmPricingSnapshots.isActive, true),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Upsert a new pricing snapshot. Sets the new row active, deactivates previous rows for the same provider. */
+  async upsertPricingSnapshot(params: {
+    id: string;
+    provider: string;
+    fetchedAt: Date | null;
+    models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number }>;
+  }): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(llmPricingSnapshots)
+        .set({ isActive: false })
+        .where(
+          and(
+            eq(llmPricingSnapshots.provider, params.provider),
+            eq(llmPricingSnapshots.isActive, true),
+          ),
+        );
+      await tx
+        .insert(llmPricingSnapshots)
+        .values({
+          id: params.id,
+          provider: params.provider,
+          fetchedAt: params.fetchedAt,
+          models: params.models,
+          isActive: true,
+        })
+        .onConflictDoNothing();
+    });
   }
 }
 
