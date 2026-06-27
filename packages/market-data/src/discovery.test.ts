@@ -9,6 +9,15 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+function makeErrorResponse(status: number): Response {
+  return {
+    ok: false,
+    status,
+    statusText: status === 500 ? 'Internal Server Error' : 'Bad Request',
+    json: async () => ({ success: false, message: 'Error' }),
+  } as Response;
+}
+
 describe('discoverTokens', () => {
   it('merges provider results, deduplicates by network+address, and keeps discovery vectors', async () => {
     globalThis.fetch = async (input) => {
@@ -1169,5 +1178,129 @@ describe('discoverTokens', () => {
     });
 
     expect(result).toEqual([]);
+  });
+
+  it('Birdeye runtime failure does not block other providers', async () => {
+    let birdeyeCalled = false;
+    let dexscreenerReturned = false;
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      // Birdeye trending — simulate a 500 failure
+      if (url.includes('birdeye.so') && url.includes('token_trending')) {
+        birdeyeCalled = true;
+        return makeErrorResponse(500);
+      }
+      // DexScreener — return a valid token to prove it still works
+      if (url.includes('token-boosts/top')) {
+        dexscreenerReturned = true;
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'survivor-addr', amount: 200 }],
+        } as Response;
+      }
+      // DexScreener enrichment pass (fetchDexScreenerTokensByAddress) —
+      // provide real on-chain data so the boost token passes the liquidity threshold
+      if (url.includes('/tokens/v1/')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            pairs: [{
+              chainId: 'solana',
+              baseToken: { address: 'survivor-addr', symbol: 'SURV', name: 'Survivor' },
+              priceUsd: '2.0',
+              volume: { h24: 50000 },
+              liquidity: { usd: 25000 },
+            }],
+          }),
+        } as Response;
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      birdeye: {
+        baseUrl: 'https://public-api.birdeye.so',
+        apiKey: 'test-key',
+        rateLimiter,
+        timeoutMs: 5_000,
+      },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+    });
+
+    expect(birdeyeCalled).toBe(true);
+    expect(dexscreenerReturned).toBe(true);
+    // The DexScreener boost token should still appear even though Birdeye failed
+    expect(result.some((t) => t.address === 'survivor-addr')).toBe(true);
+  });
+
+  it('Birdeye discovery only runs when explicitly configured', async () => {
+    let birdeyeCalled = false;
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('birdeye.so')) {
+        birdeyeCalled = true;
+        return makeErrorResponse(400);
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    // Birdeye not provided — when all other providers also return nothing
+    // the function throws because there are no fulfilled results.
+    await expect(discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      // birdeye NOT provided → should not be called
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+    })).rejects.toThrow('No discovery providers returned data');
+
+    expect(birdeyeCalled).toBe(false);
+  });
+
+  it('Birdeye discovery is skipped when solana is not in the network list', async () => {
+    let birdeyeCalled = false;
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('birdeye.so')) {
+        birdeyeCalled = true;
+        return makeErrorResponse(400);
+      }
+      if (url.includes('token-boosts') || url.includes('token-profiles')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    // Birdeye is configured but solana is not in networks → birdeye fan-out is empty.
+    // When other providers also return nothing, the function throws.
+    await expect(discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      birdeye: {
+        baseUrl: 'https://public-api.birdeye.so',
+        apiKey: 'test-key',
+        rateLimiter,
+        timeoutMs: 5_000,
+      },
+      networks: ['base'], // Solana not included
+      minLiquidityUsd: 0,
+    })).rejects.toThrow('No discovery providers returned data');
+
+    expect(birdeyeCalled).toBe(false);
   });
 });

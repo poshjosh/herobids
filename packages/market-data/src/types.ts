@@ -105,7 +105,7 @@ export interface DiscoveredToken {
   volume24hUsd: number;
   liquidityUsd: number;
   priceChange24hPct?: number;
-  source: 'dexscreener' | 'geckoterminal' | 'coinmarketcap';
+  source: 'dexscreener' | 'geckoterminal' | 'coinmarketcap' | 'birdeye';
   discoveryVectors: string[];
   poolAddress?: string;
   poolCreatedAt?: string;

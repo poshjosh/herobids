@@ -1,3 +1,17 @@
+/**
+ * Typed HTTP error that carries the HTTP status code so callers can
+ * branch on it without parsing error messages.
+ */
+export class HttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
+
 export async function fetchJson<T>(params: {
   url: string;
   timeoutMs: number;
@@ -18,7 +32,10 @@ export async function fetchJson<T>(params: {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
+      throw new HttpError(
+        `HTTP error: ${response.status} ${response.statusText}`,
+        response.status,
+      );
     }
 
     return await response.json() as T;

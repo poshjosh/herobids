@@ -81,3 +81,14 @@ Only include Birdeye vectors when `solana` is present in the configured network 
 - HTTP 400 from Birdeye does not crash token discovery.
 - Birdeye runtime failures do not block other providers from returning data.
 - `pnpm lint` passes with coverage for the new Birdeye path.
+
+## Outstanding Issues (Post-Implementation Code Review)
+
+### [Item 3 - Registry] Birdeye registry methods exist even when disabled
+**Severity: LOW.** Unlike CMC (which omits its methods when disabled), Birdeye's `tokenOverview` and `ohlcv` are always present on the registry. When disabled, the loader returns `null`/`[]`. This is a deliberate design choice — removing the property would require callers to use optional chaining everywhere. The current approach keeps the API surface stable regardless of config state. Revisit if callers need to distinguish "not configured" from "no data."
+
+### [Item 2 - Client] OHLCV and overview use `requestClass: 'discovery'`
+**Severity: LOW.** All Birdeye endpoints share a single `'discovery'` rate-limit budget. Birdeye has a global API-wide rate limit, so this is correct. If Birdeye later introduces per-endpoint rate limits, split into separate request classes.
+
+### [Item 1 - Types] `fetchBirdeyeTrending` sets `priceUsd: 0`
+**Severity: LOW.** The Birdeye trending endpoint doesn't return price. Downstream consumers (discovery merger, token safety) must handle zero prices gracefully. This is a data-quality concern rather than a code defect.

@@ -17,6 +17,10 @@ import {
   fetchCmcTrending,
   type CoinMarketCapConfig,
 } from './coinmarketcap.js';
+import {
+  fetchBirdeyeTrending,
+  type BirdeyeConfig,
+} from './birdeye.js';
 import type { DiscoveredToken } from './types.js';
 import type { DiscoverySeenTracker } from './discovery-seen-tracker.js';
 
@@ -24,6 +28,7 @@ export interface DiscoveryConfig {
   dexscreener: DexScreenerConfig;
   geckoterminal: GeckoTerminalConfig;
   coinmarketcap?: CoinMarketCapConfig;
+  birdeye?: BirdeyeConfig;
   networks: string[];
   maxResults?: number;
   minLiquidityUsd?: number;
@@ -129,6 +134,12 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
       ]
     : [];
 
+  // Birdeye is Solana-only and opt-in — only fan out when enabled and solana
+  // is in the network list.
+  const birdeyeFanOut = config.birdeye && networks.includes('solana')
+    ? [fetchBirdeyeTrending('solana', config.birdeye)]
+    : [];
+
   const extraPages = config.extraGeckoTerminalPages ?? 0;
   const pageNumbers = [1, ...Array.from({ length: extraPages }, (_, i) => i + 2)];
 
@@ -142,6 +153,7 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
       fetchGeckoTerminalNewPools(network, config.geckoterminal),
     ]),
     ...cmcFanOut,
+    ...birdeyeFanOut,
   ]);
 
   const fulfilled = results

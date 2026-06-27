@@ -137,18 +137,13 @@ intelligence available beyond the single request that fetched it.
 | Provider | Current use | Implemented surface |
 |---|---|---|
 | Binance | regime candles | candle fetch via `fetchBinanceCandles()` |
-| DexScreener | token search, oracle price support, discovery | search, trending/boosts/profiles discovery vectors |
+| DexScreener | token search, oracle price support, discovery | search, trending/boosts/profiles discovery vectors; boost-to-pool enrichment pipeline (fills real liquidity for tokens surfaced via paid promotion endpoints) |
 | GeckoTerminal | DEX candles and discovery | candles, trending pools, top pools, new pools |
 | Hyperliquid REST | perp intelligence | funding, annualized funding, open interest, mark/mid/oracle price, mark-oracle spread, 24h volume, 24h price change |
 | Bybit REST | crowding signal | long/short ratio |
 | CoinMarketCap | optional discovery and enrichment | trending, new listings, enrichment, only when enabled |
+| Birdeye | optional Solana-only discovery, overview, and OHLCV | token trending, token overview, OHLCV candles, only when enabled; HTTP 400 treated as warn-and-skip (Birdeye returns 400 for both rate limits and unsupported tokens) |
 | CoinGecko | reference oracle mark fallback | separate `OracleMarkSource`, not part of the shared registry |
-
-### Configured but not yet wired
-
-`MarketDataConfig` and operator config include a `birdeye` block, but there is
-currently no Birdeye client or registry wiring in `packages/market-data/src/`.
-That support is planned rather than implemented.
 
 ## Source-of-Truth Rules
 
@@ -192,9 +187,14 @@ Discovery is intentionally multi-provider.
 - GeckoTerminal top pools per network
 - GeckoTerminal new pools per network
 - CoinMarketCap trending and new listings when enabled
+- Birdeye trending when enabled and when `solana` is in the network list
 
 Results are merged by `network:address`, ranked by liquidity or market-cap-like
-proxy, filtered by threshold, then optionally enriched with CoinMarketCap.
+proxy, then a DexScreener boost-enrichment pass fills real on-chain liquidity for
+zero-liquidity boost/profile tokens before the threshold filter runs. After
+filtering and ranking, CoinMarketCap enrichment optionally adds market-cap and
+CEX-listing metadata. Birdeye 400s (rate limits / unsupported tokens) are caught
+and discarded by `Promise.allSettled` — they do not block other providers.
 
 ## Configuration Flow
 
@@ -226,6 +226,8 @@ Notable current behavior:
 - GeckoTerminal candle and discovery paths share one combined provider budget,
   with reservation for `regime` traffic.
 - Hyperliquid and Bybit intelligence use their own rate-limited budgets.
+- Birdeye uses a single `discovery`-class budget for all endpoints (trending,
+  overview, OHLCV) — Birdeye has a global API-wide rate limit.
 
 ### Cache semantics
 
@@ -234,7 +236,7 @@ Provider responses go through `loadWithCache()` and return freshness metadata.
 Current patterns:
 
 - discovery and intelligence paths commonly allow stale-while-revalidate
-- CoinMarketCap enrichment is opt-in and fail-soft
+- CoinMarketCap and Birdeye are opt-in and fail-soft; enabled-without-API-key is a loud startup error caught by both Zod schema validation and a safety-net throw in the provider registry
 - Binance candles currently use an effective TTL of `0`, so the registry treats
   them as uncached per request
 
@@ -307,6 +309,7 @@ When a registry-backed provider fails:
 - stale cached data may still be served when the policy allows it
 - multi-provider discovery continues when only some providers fail
 - optional enrichment must not block base discovery results
+- Birdeye HTTP 400 responses (rate limits, unsupported tokens) are caught by the Birdeye client and treated as empty results — other providers proceed unaffected
 
 ### Coordinator failure
 
