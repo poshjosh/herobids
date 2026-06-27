@@ -10,3 +10,6 @@ export type {
 	LlmProviderError,
 	LlmResult,
 } from './llm-provider.js';
+
+export { fetchOpenRouterPricing } from './openrouter-pricing.js';
+export type { OpenRouterPricingResult } from './openrouter-pricing.js';
