@@ -651,3 +651,10 @@ Phases 1, 2, 3, 4, and 6 can run in parallel after Phase 0. Phase 5 depends on P
 | L4 | LOW | Phase 1 | `noIndicators` fixture in scan-engine.test.ts omits explicit `vwap: { enabled: false }` and `priceAction: { enabled: false }`. Harmless today but may silently activate future indicators. |
 | L5 | LOW | Phase 1 | Redundant nullish coalescing in VWAP/price-action scoring (`?? 0`, `?? 0.10`) — confCfg already provides defaults. Inconsistent with other indicators. |
 | L6 | LOW | Phase 1 | Asymmetric defaults: vwap.enabled defaults false (opt-in), priceAction.enabled defaults true (opt-out). |
+| L7 | LOW | Phase 2 | `lookbackPeriod` references remain in 6 test files as opaque test data. Documentation debt, functionally harmless. |
+| L8 | MEDIUM | Phase 5 | DcaParamsSchema defined in strategy package instead of domain (plan deviation but architecturally better). |
+| L9 | MEDIUM | Phase 5 | Magic string `'lastDcaBuy'` as snapshot data key — should be extracted to constant. |
+| L10 | MEDIUM | Phase 6 | Sentiment hard-veto bypasses `hasOpenPosition` exit logic — sentiment veto is entry-only, does not trigger position exit. Add comment. |
+| L11 | MEDIUM | Phase 6 | No test for positive sentiment boost path. |
+| L12 | LOW | Phase 6 | `minDataPoints` field exists in schema but unused by strategy code. Deferred to future phase. |
+| L13 | LOW | Phase 6 | Hardcoded `0.5` for sentiment confidence veto threshold. Consider making configurable in future. |

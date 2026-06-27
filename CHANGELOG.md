@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased] — 2026-06-27
+### Added
+- **Strategy Presets Expansion & Mechanical Parity** — Full implementation across 6 phases
+  - Phase 0: Expanded `MechanicalParamsSchema` with VWAP, Price Action, Sentiment configs, exit targets (`stopLossPct`, `takeProfitPct`, `trailingStopPct`), and `minCandleCount`
+  - Phase 1: VWAP and price-action scoring in `scoreCandidate()` with 6 unit tests
+  - Phase 2: Removed momentum-to-mechanical translation bridge, simplified both `createStrategy()` factories
+  - Phase 3: 7 strategy presets in web UI (momentum-day, momentum-position, swing, range, contrarian, scalper, dca) with mechanical-format params
+  - Phase 4: Blueprint presets aligned with mechanical-format params (7 presets including momentum-position)
+  - Phase 5: `DcaStrategy` implemented (timer-driven buys with `intervalMs`/`amountPerBuy`)
+  - Phase 6: Sentiment threshold gating with hard-veto and boost logic in `MechanicalStrategy`
+- `VwapParamsSchema`, `PriceActionParamsSchema`, `SentimentConfigSchema` in domain config
+- `DcaStrategy` class with `DcaParamsSchema` in strategy package
+
+### Changed
+- `candleLimit` default: 100 → 48
+- `MechanicalParamsSchema`: `stopLossPct` and `takeProfitPct` now required (no defaults)
+- `MechanicalStrategy`: uses `params.minCandleCount` (was hardcoded 20)
+
+### Removed
+- `momentum-to-mechanical.ts` and `.test.ts` — translation bridge deleted
+- `translateMomentumToMechanicalParams` export from strategy package
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
