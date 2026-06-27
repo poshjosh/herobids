@@ -481,3 +481,33 @@ In the `SkillCard` component within `SkillsPage.tsx`:
 3. Merge UI component + form integration (Phase 3).
 4. No migration needed. No config changes needed.
 5. Backward compatible: `requiredTools` is optional on both create and update; existing skills without tools are unaffected.
+
+---
+
+## Outstanding Issues (post-implementation review)
+
+### Phase 1 — Domain Tool Catalog
+
+**LOW:**
+- **Redundant KNOWN_AGENT_TOOL_NAMES check**: `assertToolCatalogMatchesRegistry()` performs both `KNOWN_AGENT_TOOL_NAMES` ↔ registry and `TOOL_CATALOG` ↔ registry checks. Redundant but safe. Consider making `TOOL_CATALOG` the single canonical source.
+- **Test coverage**: `tools.test.ts` only tests `submit_decision` happy path. Could add parameterized test iterating all 46 entries.
+
+### Phase 2 — API Endpoint
+
+**LOW:**
+- **Missing ToolCategory type import**: Route only imports `TOOL_CATALOG`, not the `ToolCategory` type. Cosmetic.
+- **No 400 test**: Zod schema uses `z.string().optional()` so there's no real 400 case today.
+- **Filter test shape validation**: Category filter test doesn't re-validate shape of each filtered tool. Covered by unfiltered test.
+
+### Phase 3 — Web UI
+
+**MEDIUM (deferred):**
+- **Keyboard navigation not implemented**: Arrow keys + Enter to navigate/select tools in the dropdown. Plan specified this; accessibility gap.
+- **Hardcoded English strings**: ToolTagPicker hardcodes strings instead of using react-intl. Should accept labels as props or use useIntl().
+
+**LOW:**
+- `selectedSet` recreated every render (negligible for 46 items).
+- Redundant Escape key handling in both useEffect and onKeyDown.
+- Dropdown maxHeight 360px vs plan's ~320px.
+- "No tools available" shown misleadingly during API error states.
+- Event handler uses `e` instead of `event` naming convention.
