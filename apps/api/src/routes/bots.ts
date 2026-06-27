@@ -408,4 +408,105 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       feesByCurrency,
     });
   });
+
+  // ── Bot Lifecycle Endpoints ──────────────────────────────────────────
+
+  // DELETE /bots/:id — delete a stopped or crashed bot
+  app.delete<{ Params: { id: string } }>('/bots/:id', async (request, reply) => {
+    const { id } = request.params;
+
+    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    if (bot.status === 'running') {
+      return reply.status(409).send({ error: 'conflict', message: 'Cannot delete a running bot. Stop it first.' });
+    }
+
+    // Check for pending start jobs to avoid deleting a bot that is about to start.
+    // Without this guard, a start job enqueued milliseconds earlier would try to
+    // operate on a deleted bot and fail silently in the dead-letter queue.
+    const pendingJobs = await queue.getJobs(['delayed', 'waiting', 'active']);
+    const pendingStart = pendingJobs.find((j) => j.name === 'start-instance' && j.data?.botId === id);
+    if (pendingStart) {
+      await pendingStart.remove();
+    }
+
+    await db.delete(bots).where(eq(bots.id, id));
+    return reply.status(204).send();
+  });
+
+  // POST /bots/:id/stop — stop a running bot (idempotent)
+  app.post<{ Params: { id: string } }>('/bots/:id/stop', async (request, reply) => {
+    const { id } = request.params;
+
+    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    // Already in a terminal state — no-op to preserve crash forensic data
+    if (bot.status === 'stopped' || bot.status === 'crashed') {
+      return reply.status(200).send({ status: 'already_stopped', botId: id });
+    }
+
+    // Enqueue stop job on the lifecycle queue
+    await queue.add('stop-instance', { command: 'stop', botId: id });
+
+    return reply.status(202).send({ status: 'stopping', botId: id });
+  });
+
+  // POST /bots/:id/start — start a stopped or crashed bot (idempotent)
+  app.post<{ Params: { id: string } }>('/bots/:id/start', async (request, reply) => {
+    const { id } = request.params;
+
+    const [bot] = await db.select().from(bots).where(and(eq(bots.id, id), eq(bots.userId, request.userId)));
+    if (!bot) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+
+    if (bot.status === 'running') {
+      return reply.status(200).send({ status: 'already_running', botId: id });
+    }
+
+    // Resolve execution mode from config for capability validation
+    const execConfig = (bot.config as Record<string, unknown> | undefined)?.['execution'] as Record<string, unknown> | undefined;
+    const executionMode = (execConfig?.['mode'] as string | undefined) ?? 'paper';
+
+    // Validate execution capability
+    const [binding] = await db.select({ provider: tradingBindings.provider }).from(tradingBindings)
+      .where(eq(tradingBindings.id, bot.tradingBindingId));
+    const botVenueType = binding ? venueTypeFromProvider(binding.provider) : undefined;
+    if (botVenueType) {
+      const capCheck = validateExecutionCapability({
+        actorType: 'bot',
+        executionMode: executionMode as 'paper' | 'shadow' | 'live',
+        venueType: botVenueType,
+      });
+      if (!capCheck.ok) {
+        return reply.status(400).send({
+          error: `execution_capability.${capCheck.error.code}`,
+          message: capCheck.error.message,
+        });
+      }
+    }
+
+    // Live-mode plan gate
+    if (plansConfig && executionMode === 'live') {
+      const liveCheck = checkLiveEnabled(plansConfig, request.userPlanId || 'free', request.isAdmin);
+      if (!liveCheck.ok) {
+        return reply.status(403).send({ error: liveCheck.error.code, message: liveCheck.error.message });
+      }
+    }
+
+    // Enqueue start job on the lifecycle queue
+    await queue.add('start-instance', {
+      command: 'start',
+      botId: id,
+      config: { ...bot.config as Record<string, unknown>, tradingBindingId: bot.tradingBindingId, venueAccountId: bot.venueAccountId, userId: bot.userId },
+    });
+
+    return reply.status(202).send({ status: 'starting', botId: id });
+  });
 }

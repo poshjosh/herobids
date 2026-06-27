@@ -869,6 +869,15 @@ const runtime = new WorkerRuntime(
       instanceExecutionModes.delete(botId);
     },
     onStopped: async (instanceId: string) => {
+      // Persist stopped state to DB so bots stopped via BullMQ or worker
+      // shutdown are consistent with in-memory state. Don't let a DB failure
+      // block in-memory cleanup (plan risk mitigation).
+      try {
+        await botRepo.markBotStopped(instanceId);
+      } catch (err) {
+        logger.error({ err, instanceId }, 'Failed to persist stopped state to DB');
+      }
+
       actorRegistry.delete(instanceId);
       agentStreamConsumer.unsubscribe(instanceId);
       // Sessions are agent-scoped, not instance-scoped; stop session via agentRepo.getActiveSession if needed

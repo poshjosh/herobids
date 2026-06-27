@@ -547,6 +547,12 @@ export const bots = {
     request<{ status: string; botId: string }>(`/bots/${id}/config`, { method: 'PATCH', body: JSON.stringify({ config }) }),
   positions: (id: string) => request<{ botId: string; positions: Position[] }>(`/bots/${id}/positions`),
   openPositions: (id: string) => request<{ botId: string; positions: Position[] }>(`/bots/${id}/positions/open`),
+  stop: (id: string) =>
+    request<{ status: string; botId: string }>(`/bots/${id}/stop`, { method: 'POST' }),
+  start: (id: string) =>
+    request<{ status: string; botId: string }>(`/bots/${id}/start`, { method: 'POST' }),
+  delete: (id: string) =>
+    request<void>(`/bots/${id}`, { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------

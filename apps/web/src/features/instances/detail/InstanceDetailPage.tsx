@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import Decimal from 'decimal.js';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { bots as botsApi, journal, type ActivityEvent, ApiError } from '../../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel } from '../../../lib/ui.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, ErrorBanner, EmptyState, Button, StatusBadge, KV, SectionLabel, Modal } from '../../../lib/ui.js';
 import { TimelineEvent } from '../../timeline/TimelineEvent.js';
 import { useEventStream, type UserEvent } from '../../../lib/useEventStream.js';
 
@@ -50,6 +50,41 @@ export function InstanceDetailPage() {
   });
 
   const inst = instanceQuery.data;
+
+  // ── Lifecycle mutation hooks ───────────────────────────────────────
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const stopMutation = useMutation({
+    mutationFn: () => botsApi.stop(id!),
+    onSuccess: () => {
+      setLifecycleError(null);
+      void qc.invalidateQueries({ queryKey: ['bots', id] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+    },
+    onError: (err: Error) => setLifecycleError(err.message),
+  });
+
+  const startMutation = useMutation({
+    mutationFn: () => botsApi.start(id!),
+    onSuccess: () => {
+      setLifecycleError(null);
+      void qc.invalidateQueries({ queryKey: ['bots', id] });
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+    },
+    onError: (err: Error) => setLifecycleError(err.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => botsApi.delete(id!),
+    onSuccess: () => {
+      setLifecycleError(null);
+      void qc.invalidateQueries({ queryKey: ['bots'] });
+      navigate('/bots');
+    },
+    onError: (err: Error) => setLifecycleError(err.message),
+  });
 
   if (instanceQuery.isLoading) {
     return <PageShell><LoadingRows count={4} /></PageShell>;
@@ -113,6 +148,36 @@ export function InstanceDetailPage() {
         subtitle={strategyType}
         action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {(inst.status === 'running' || inst.status === 'starting') && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setShowStopConfirm(true)}
+                disabled={stopMutation.isPending}
+              >
+                {stopMutation.isPending ? 'Stopping…' : 'Stop'}
+              </Button>
+            )}
+            {(inst.status === 'stopped' || inst.status === 'crashed') && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => startMutation.mutate()}
+                disabled={startMutation.isPending}
+              >
+                {startMutation.isPending ? 'Starting…' : 'Start'}
+              </Button>
+            )}
+            {(inst.status === 'stopped' || inst.status === 'crashed') && !startMutation.isPending && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => navigate('/bots')}>← Back</Button>
           </div>
         }
@@ -133,6 +198,12 @@ export function InstanceDetailPage() {
           {execMode} mode
         </span>
       </div>
+
+      {lifecycleError && (
+        <div style={{ marginBottom: '16px' }}>
+          <ErrorBanner message={lifecycleError} />
+        </div>
+      )}
 
       {inst.status === 'crashed' && (
         <div style={{ marginBottom: '16px' }}>
@@ -199,6 +270,47 @@ export function InstanceDetailPage() {
             </Card>
         </div>
       </div>
+      {/* ── Confirmation Modals ──────────────────────────────────── */}
+      {showStopConfirm && (
+        <Modal title="Stop bot?" onClose={() => setShowStopConfirm(false)}>
+          <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
+            The bot will stop scanning but any open positions will remain in your portfolio.
+            You can restart it later.
+          </p>
+          {positionsQuery.data && (positionsQuery.data.positions.length ?? 0) > 0 && (
+            <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '13px' }}>
+              ⚠ You have {positionsQuery.data.positions.length} open position{positionsQuery.data.positions.length !== 1 ? 's' : ''}.
+            </p>
+          )}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+            <Button variant="ghost" size="sm" onClick={() => setShowStopConfirm(false)}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={() => { setShowStopConfirm(false); stopMutation.mutate(); }}>
+              Stop bot
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {showDeleteConfirm && (
+        <Modal title="Delete bot?" onClose={() => setShowDeleteConfirm(false)}>
+          <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '14px' }}>
+            This action is irreversible. The bot will be permanently deleted. Its trade records and
+            event history will be preserved in the database but will no longer be linked to a bot.
+          </p>
+          {positionsQuery.data && (positionsQuery.data.positions.length ?? 0) > 0 && (
+            <p style={{ margin: '0 0 16px', color: 'var(--color-warning)', fontSize: '13px' }}>
+              ⚠ You have {positionsQuery.data.positions.length} open position{positionsQuery.data.positions.length !== 1 ? 's' : ''}.
+              These positions will remain in the exchange but will no longer be tracked by this bot.
+            </p>
+          )}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={() => { setShowDeleteConfirm(false); deleteMutation.mutate(); }}>
+              Delete permanently
+            </Button>
+          </div>
+        </Modal>
+      )}
     </PageShell>
   );
 }

@@ -808,11 +808,13 @@ export class BotRepository {
   /**
    * Mark a bot as running. Called just before the lifecycle start job is enqueued
    * so that the DB status matches the API start-bot path behaviour.
+   *
+   * Clears stoppedAt so a restarted bot never shows startedAt > stoppedAt.
    */
   async markBotRunning(botId: string): Promise<void> {
     await this.db
       .update(bots)
-      .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
+      .set({ status: 'running', startedAt: new Date(), stoppedAt: null, updatedAt: new Date() })
       .where(eq(bots.id, botId));
   }
 
