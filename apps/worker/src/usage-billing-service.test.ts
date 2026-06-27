@@ -79,4 +79,64 @@ describe('UsageBillingService', () => {
     expect(openPeriodSpy.mock.calls[1]?.[1]).toBeInstanceOf(Date);
     expect((openPeriodSpy.mock.calls[1]?.[1] as Date).toISOString()).toContain('2026-02');
   });
+
+  // ── Billing enforcement: observation-only warnings ─────────────────────
+  // Soft cap must not change agent behavior — it only emits a warning event.
+  // These tests verify the service-level spend-state checks that the runtime
+  // uses to decide whether to emit a warning or stop the tick.
+
+  it('returns isSoftLimited=true when account spend state is soft_limited', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    vi.spyOn(UsageBillingRepository.prototype, 'getSpendState').mockResolvedValue({ status: 'soft_limited' });
+
+    const service = createService();
+    await expect(service.isSoftLimited()).resolves.toBe(true);
+    // Soft-limited accounts are NOT hard-limited — the tick still runs.
+    await expect(service.isHardLimited()).resolves.toBe(false);
+  });
+
+  it('returns isSoftLimited=false when account spend state is active', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    vi.spyOn(UsageBillingRepository.prototype, 'getSpendState').mockResolvedValue({ status: 'active' });
+
+    const service = createService();
+    await expect(service.isSoftLimited()).resolves.toBe(false);
+    await expect(service.isHardLimited()).resolves.toBe(false);
+  });
+
+  it('returns isHardLimited=true for both hard_limited and suspended statuses', async () => {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+
+    vi.spyOn(UsageBillingRepository.prototype, 'getSpendState').mockResolvedValue({ status: 'hard_limited' });
+    await expect(createService().isHardLimited()).resolves.toBe(true);
+
+    vi.spyOn(UsageBillingRepository.prototype, 'getSpendState').mockResolvedValue({ status: 'suspended' });
+    await expect(createService().isHardLimited()).resolves.toBe(true);
+  });
+
+  it('returns false for both checks when billing is not enabled', async () => {
+    const service = new UsageBillingService({} as import('@herobids/db').Database, {
+      userId: 'user-1',
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      defaultRateCardName: 'default',
+      runtimeChargeWindowMs: 60_000,
+      enabled: false,
+    });
+
+    await expect(service.isSoftLimited()).resolves.toBe(false);
+    await expect(service.isHardLimited()).resolves.toBe(false);
+  });
 });

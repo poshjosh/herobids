@@ -230,14 +230,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               transition: 'left 0.15s',
             }} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
-              {intl.formatMessage({ id: 'agents.create.technicalPreFilter.label' })}
-            </span>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-              {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
-            </span>
-          </div>
+          <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
+            {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
+          </span>
         </div>
       )}
 

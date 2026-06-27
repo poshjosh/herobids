@@ -380,7 +380,6 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.slowdownCaveat': 'बेस गति: {cadence}। निष्क्रिय रहने या विफलताओं के बाद धीमी हो सकती है।',
   'agents.controls.capital': 'पूंजी (USD)',
   'agents.controls.capital.help': 'वह राशि जिससे एजेंट ट्रेड कर सकता है — पूरा वॉलेट बैलेंस नहीं।',
-  'agents.create.technicalPreFilter.label': 'तकनीकी प्री-फ़िल्टर',
   'agents.create.technicalPreFilter.help': 'LLM का अंतिम निर्णय लेने से पहले ट्रेड उम्मीदवारों को फ़िल्टर करें। (LLM लागत कम करता है)',
   'agents.controls.dailyLossLimit': 'दैनिक हानि सीमा (USD)',
   'agents.controls.dailyLossLimit.help': 'एक कठोर सीमा लागू करने के लिए इसे सेट करें। प्लेटफ़ॉर्म डिफ़ॉल्ट व्यवहार उपयोग करने के लिए खाली छोड़ें।',

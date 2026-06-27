@@ -27,6 +27,7 @@ function makeCtx(overrides: {
   priceService?: ToolContext['priceService'];
 } = {}): ToolContext {
   const hstore = new Map<string, Record<string, string>>();
+  const sets = new Map<string, Set<string>>();
 
   const redis: ToolContext['redis'] = {
     hset: vi.fn(async (key: string, field: string, value: string) => {
@@ -45,6 +46,23 @@ function makeCtx(overrides: {
       }
       return count;
     }),
+    smembers: vi.fn(async (key: string) => [...(sets.get(key) ?? [])]),
+    sadd: vi.fn(async (key: string, ...members: string[]) => {
+      if (!sets.has(key)) sets.set(key, new Set());
+      let added = 0;
+      for (const m of members) {
+        if (!sets.get(key)!.has(m)) { sets.get(key)!.add(m); added++; }
+      }
+      return added;
+    }),
+    srem: vi.fn(async (key: string, ...members: string[]) => {
+      const s = sets.get(key);
+      if (!s) return 0;
+      let removed = 0;
+      for (const m of members) { if (s.delete(m)) removed++; }
+      return removed;
+    }),
+    expire: vi.fn().mockResolvedValue(1),
     publish: vi.fn().mockResolvedValue(1),
     ...overrides.redis,
   };
@@ -406,5 +424,111 @@ describe('check_watches', () => {
     const data = result.data as { unchecked: Array<{ symbol: string; reason: string }> };
     expect(data.unchecked).toHaveLength(1);
     expect(data.unchecked[0]!.symbol).toBe('UNKNOWN');
+  });
+});
+
+// ── Notified-set integration tests ───────────────────────────────────────
+// The agent.ts scout gating uses a Redis SET (`agent:watches:notified:{agentId}`)
+// to prevent a triggered watch from forcing escalation on every subsequent tick.
+// check_watches clears the notified set when the condition resets (true → false),
+// and remove_watch clears it on explicit removal.
+
+describe('check_watches — notified set', () => {
+  it('SREMs the notified set when a triggered watch condition resets (true → false)', async () => {
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(150))  // watch_token initial: below, not triggered
+      .mockResolvedValueOnce(okPrice(250))  // check_watches: crosses above → triggered
+      .mockResolvedValueOnce(okPrice(150)); // check_watches: falls back → reset
+    const ctx = makeCtx({ priceService: { getPrice } });
+
+    await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
+      ctx,
+    );
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // Verify it triggered
+    const listAfterTrigger = (await listWatchesTool.execute({}, ctx)).data as { watches: Array<{ lastConditionMet: boolean }> };
+    expect(listAfterTrigger.watches[0]!.lastConditionMet).toBe(true);
+
+    // Reset: price falls back below
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    const listAfterReset = (await listWatchesTool.execute({}, ctx)).data as { watches: Array<{ lastConditionMet: boolean }> };
+    expect(listAfterReset.watches[0]!.lastConditionMet).toBe(false);
+
+    // Should have SREM'd from the notified set
+    const sremCalls = (ctx.redis.srem as ReturnType<typeof vi.fn>).mock.calls;
+    const notifiedCall = sremCalls.find(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('agent:watches:notified:'),
+    );
+    expect(notifiedCall).toBeDefined();
+  });
+
+  it('does NOT SREM the notified set when condition stays met (true → true)', async () => {
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(150))
+      .mockResolvedValueOnce(okPrice(250))
+      .mockResolvedValueOnce(okPrice(260)); // still above
+    const ctx = makeCtx({ priceService: { getPrice } });
+
+    await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
+      ctx,
+    );
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    const sremCallsBefore = (ctx.redis.srem as ReturnType<typeof vi.fn>).mock.calls.length;
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // No new SREM calls against the notified set
+    const sremCallsAfter = (ctx.redis.srem as ReturnType<typeof vi.fn>).mock.calls;
+    const newNotifiedSremCalls = sremCallsAfter.slice(sremCallsBefore).filter(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('agent:watches:notified:'),
+    );
+    expect(newNotifiedSremCalls).toHaveLength(0);
+  });
+
+  it('does NOT SREM the notified set when condition stays unmet (false → false)', async () => {
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(150))
+      .mockResolvedValueOnce(okPrice(140)) // still below
+      .mockResolvedValueOnce(okPrice(130)); // still below
+    const ctx = makeCtx({ priceService: { getPrice } });
+
+    await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
+      ctx,
+    );
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    const sremCallsBefore = (ctx.redis.srem as ReturnType<typeof vi.fn>).mock.calls.length;
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    const sremCallsAfter = (ctx.redis.srem as ReturnType<typeof vi.fn>).mock.calls;
+    const newNotifiedSremCalls = sremCallsAfter.slice(sremCallsBefore).filter(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('agent:watches:notified:'),
+    );
+    expect(newNotifiedSremCalls).toHaveLength(0);
+  });
+});
+
+describe('remove_watch — notified set', () => {
+  it('SREMs the watch ID from the notified set on removal', async () => {
+    const ctx = makeCtx();
+    const createResult = await watchTokenTool.execute(
+      { symbol: 'WIF', chain: 'solana', thresholdPrice: 5, condition: 'above' },
+      ctx,
+    );
+    const { watchId } = createResult.data as { watchId: string };
+
+    await removeWatchTool.execute({ watchId }, ctx);
+
+    // Should have called SREM on the notified set key with the watch ID
+    const sremCalls = (ctx.redis.srem as ReturnType<typeof vi.fn>).mock.calls;
+    const notifiedCall = sremCalls.find(
+      (call: unknown[]) => typeof call[0] === 'string' && call[0].includes('agent:watches:notified:') && call[1] === watchId,
+    );
+    expect(notifiedCall).toBeDefined();
   });
 });

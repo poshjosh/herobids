@@ -65,6 +65,13 @@ describe('normalizeTrackedSymbol', () => {
     expect(normalizeTrackedSymbol('BONK/USDT')).toBe('BONK');
     expect(normalizeTrackedSymbol('sol:usd')).toBe('SOL');
   });
+
+  it('normalizes real open-position symbol formats used by the worker', () => {
+    expect(normalizeTrackedSymbol('BTC/USD:USD')).toBe('BTC');
+    expect(normalizeTrackedSymbol('ETH/USDT:USDT')).toBe('ETH');
+    expect(normalizeTrackedSymbol('BTCUSDT')).toBe('BTC');
+    expect(normalizeTrackedSymbol('SOL-PERP')).toBe('SOL');
+  });
 });
 
 describe('collectPerpsTrackedSymbols', () => {

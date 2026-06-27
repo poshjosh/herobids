@@ -57,14 +57,14 @@ import {
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
-import { resolvePreScoutDecision } from './scout-gating.js';
+import { hasUncoveredTrackedPosition, resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
-import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
+import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, normalizeTrackedSymbol } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
@@ -640,6 +640,18 @@ function parseRuntimeActiveWatch(raw: string): RuntimeActiveWatch | null {
   }
 }
 
+async function loadRawActiveWatches(agentId: string): Promise<RuntimeActiveWatch[]> {
+  try {
+    const rawWatches = await redis.hgetall(`agent:watches:${agentId}`);
+    return Object.values(rawWatches ?? {})
+      .map(parseRuntimeActiveWatch)
+      .filter((watch): watch is RuntimeActiveWatch => watch !== null);
+  } catch (err) {
+    logger.warn({ err, agentId }, 'Failed to load raw active watches for scout gating');
+    return [];
+  }
+}
+
 async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWatchSummary | null> {
   try {
     const summaryKey = `agent:watches:summary:${agentId}`;
@@ -656,10 +668,7 @@ async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWat
       }
     }
 
-    const rawWatches = await redis.hgetall(`agent:watches:${agentId}`);
-    const watches = Object.values(rawWatches ?? {})
-      .map(parseRuntimeActiveWatch)
-      .filter((watch): watch is RuntimeActiveWatch => watch !== null);
+    const watches = await loadRawActiveWatches(agentId);
 
     if (watches.length === 0) {
       return null;
@@ -1417,6 +1426,10 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       publish: redis.publish.bind(redis),
       blpop: (key: string, timeoutSeconds: number) =>
         redis.blpop(key, timeoutSeconds) as Promise<[string, string] | null>,
+      smembers: redis.smembers.bind(redis),
+      sadd: redis.sadd.bind(redis),
+      srem: redis.srem.bind(redis),
+      expire: redis.expire.bind(redis),
     },
     publishToInbound,
     botRepo: toolBotRepo,
@@ -1776,10 +1789,12 @@ async function runTick(): Promise<void> {
     const tradingTickWorkPlan = getTradingTickWorkPlan();
 
     let hasOpenPositions = Boolean(sessionMetrics.lastPositionSide && sessionMetrics.lastPositionSide !== 'flat');
+    let openPositionSymbols: string[] = [];
     if (botRepo) {
       try {
         const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
         hasOpenPositions = openPositions.length > 0;
+        openPositionSymbols = openPositions.map((p) => p.symbol);
         setDependencyAvailability('database', true);
       } catch (err) {
         logger.warn({ err }, 'Failed to resolve open positions for tick gating — falling back to cached runtime state');
@@ -1928,21 +1943,38 @@ async function runTick(): Promise<void> {
       // so hard-limited accounts cannot leak LLM usage through the hybrid evaluator.
       if (usageBillingService && await usageBillingService.isHardLimited()) {
         logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping hybrid tick');
+        // Collect open-position context for the stop notification.
+        let hybridHardLimitPositions: string[] = [];
+        if (botRepo) {
+          try {
+            const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
+            hybridHardLimitPositions = openPositions.map((p) => p.symbol);
+          } catch (err) {
+            logger.warn({ err }, 'Failed to resolve open positions for hard-limit notification in hybrid path');
+          }
+        }
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
           tickId,
           reason: 'billing.limit_exceeded',
           gate: 'billing',
           trigger: 'wake',
           positionSide: sessionMetrics.lastPositionSide ?? undefined,
+          openPositions: hybridHardLimitPositions.length > 0 ? hybridHardLimitPositions : undefined,
         });
         handleTickSuccess();
         await sendHeartbeat('ready');
         return;
       }
 
-      const isHybridSoftLimited = usageBillingService ? await usageBillingService.isSoftLimited() : false;
-      if (isHybridSoftLimited) {
-        logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — hybrid evaluator will proceed as single-shot (no escalation)');
+      if (usageBillingService && await usageBillingService.isSoftLimited()) {
+        logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — tick will proceed normally (warning only)');
+        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+          tickId,
+          reason: 'billing.soft_limit_reached',
+          gate: 'billing_warning',
+          trigger: 'wake',
+          positionSide: sessionMetrics.lastPositionSide ?? undefined,
+        });
       }
 
       const maxPositions = agentConfig.maxOpenPositions
@@ -2091,14 +2123,93 @@ async function runTick(): Promise<void> {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
     });
 
-    const preScoutResolution = resolvePreScoutDecision({ tickCount, reminderScheduledBy, hasOpenPositions, openPositionEscalationToJudgePolicy: agentConfig.openPositionEscalationToJudgePolicy });
+    const rawWatches = await loadRawActiveWatches(AGENT_ID!);
+
+    // ── Watch-notification dedup ──────────────────────────────────────────
+    // A triggered watch only forces escalation ONCE per crossing. After the
+    // agent has been notified, the watch goes into a Redis set so it won't
+    // re-escalate on future ticks. The set is cleared when:
+    //   - check_watches detects the condition has reset (true → false), or
+    //   - the agent calls remove_watch.
+    // This prevents the "nag loop" where a persistently-crossed threshold
+    // forces judge dispatch on every tick.
+    const notifiedWatchesKey = `agent:watches:notified:${AGENT_ID}`;
+    let notifiedSet: Set<string>;
+    try {
+      const notifiedMembers = await redis.smembers(notifiedWatchesKey);
+      notifiedSet = new Set(notifiedMembers);
+    } catch (err) {
+      logger.warn({ err }, 'Failed to load notified watch set — treating all triggered watches as new');
+      notifiedSet = new Set();
+    }
+
+    const triggeredWatchIds = rawWatches
+      .filter((w) => w.lastConditionMet === true)
+      .map((w) => w.watchId);
+    // Only count watches that have NOT already been notified.
+    const hasTriggeredWatch = triggeredWatchIds.some((id) => !notifiedSet.has(id));
+    // Reuse the worker's tracked-symbol normalizer so watch coverage matches
+    // real position symbols such as BTC/USD:USD, ETH/USDT:USDT, BTCUSDT, and SOL-PERP.
+    const coveredSymbols = new Set(
+      rawWatches
+        .map((w) => normalizeTrackedSymbol(w.symbol))
+        .filter((symbol): symbol is string => symbol !== null),
+    );
+    const hasUncoveredPosition = hasUncoveredTrackedPosition({
+      openPositionSymbols,
+      watchSymbols: rawWatches.map((watch) => watch.symbol),
+    });
+
+    const preScoutResolution = resolvePreScoutDecision({
+      tickCount,
+      reminderScheduledBy,
+      hasOpenPositions,
+      openPositionEscalationToJudgePolicy: agentConfig.openPositionEscalationToJudgePolicy,
+      hasTriggeredWatch,
+      hasUncoveredPosition,
+    });
+
     let resolvedScoutDecision: ScoutDecision;
-    let isSoftLimited = false;
+    const isHardLimited = usageBillingService ? await usageBillingService.isHardLimited() : false;
+    const forcedPreScoutBillingOutcome = preScoutResolution.decision
+      ? resolveForcedPreScoutBillingOutcome({
+        preScoutDecision: preScoutResolution.decision,
+        isHardLimited,
+      })
+      : null;
+
+    if (forcedPreScoutBillingOutcome?.action === 'skip_tick' || (isHardLimited && !preScoutResolution.decision)) {
+      logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping tick');
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+        tickId,
+        reason: 'billing.limit_exceeded',
+        gate: 'billing',
+        trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+        positionSide: sessionMetrics.lastPositionSide ?? undefined,
+        openPositions: openPositionSymbols.length > 0 ? openPositionSymbols : undefined,
+      });
+      return;
+    }
+
+    if (usageBillingService && await usageBillingService.isSoftLimited()) {
+      logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — tick will proceed normally (warning only)');
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+        tickId,
+        reason: 'billing.soft_limit_reached',
+        gate: 'billing_warning',
+        trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+        positionSide: sessionMetrics.lastPositionSide ?? undefined,
+      });
+    }
+
     if (preScoutResolution.decision) {
       redis.del(scoutSystemPromptKey, scoutUserContextPromptKey).catch((err: unknown) => {
         logger.warn({ err }, 'Failed to clear skipped scout prompt surfaces from Redis');
       });
-      resolvedScoutDecision = preScoutResolution.decision;
+      resolvedScoutDecision = resolveForcedPreScoutBillingOutcome({
+        preScoutDecision: preScoutResolution.decision,
+        isHardLimited: false,
+      }).decision;
     } else {
       scoutTickCount++;
       // Scout tools: auto-derived from registry — all tools with 'read-*' categories
@@ -2132,39 +2243,6 @@ async function runTick(): Promise<void> {
         model: lightModel,
         maxTurns: scoutLoopConfig.maxTurns,
       });
-
-      // Check commercial spend state before dispatching LLM calls.
-      // Hard-limited accounts skip the tick to avoid accumulating charges.
-      if (usageBillingService && await usageBillingService.isHardLimited()) {
-        logger.warn({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is hard-limited — skipping tick');
-        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.LLM_DISPATCH, {
-          tickId,
-          phase: 'scout',
-          model: lightModel,
-          maxTurns: 0,
-        });
-        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
-          tickId,
-          reason: 'billing.limit_exceeded',
-          gate: 'billing',
-          trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
-          positionSide: sessionMetrics.lastPositionSide ?? undefined,
-        });
-        return;
-      }
-
-      // Soft-limited accounts proceed but with degraded behavior (scout-only, no escalation).
-      isSoftLimited = usageBillingService ? await usageBillingService.isSoftLimited() : false;
-      if (isSoftLimited) {
-        logger.info({ agentId: AGENT_ID, sessionId: SESSION_ID }, 'Account is soft-limited — proceeding with degraded tick (scout only)');
-        emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
-          tickId,
-          reason: 'billing.soft_limit_reached',
-          gate: 'billing',
-          trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
-          positionSide: sessionMetrics.lastPositionSide ?? undefined,
-        });
-      }
 
       const scoutLoopResult = await runStructuredToolLoop({
         providerConfig: {
@@ -2282,15 +2360,27 @@ async function runTick(): Promise<void> {
         : parseScoutDecision(scoutLoopResult.assistantResponse);
     }
 
-    // Soft-limited: suppress escalation to planner/judge to reduce token spend
-    if (isSoftLimited && resolvedScoutDecision.disposition === 'escalate') {
-      logger.info({ agentId: AGENT_ID, reason: resolvedScoutDecision.reason }, 'Soft-limit active — suppressing escalation to judge');
-      resolvedScoutDecision = { disposition: 'hold', reason: 'billing.soft_limit_reached' };
+    // Only mark triggered watches as notified when they actually caused a
+    // surviving escalation to judge. Hard-limit skips must not suppress
+    // future escalation once billing constraints clear.
+    if (
+      preScoutResolution.source === 'forced_open_positions'
+      && preScoutResolution.decision?.reason === 'watch_triggered'
+      && resolvedScoutDecision.disposition === 'escalate'
+      && resolvedScoutDecision.reason === 'watch_triggered'
+      && triggeredWatchIds.length > 0
+    ) {
+      try {
+        await redis.sadd(notifiedWatchesKey, ...triggeredWatchIds);
+        await redis.expire(notifiedWatchesKey, 86400); // 24 h
+      } catch (err) {
+        logger.warn({ err, watchIds: triggeredWatchIds }, 'Failed to update notified watch set after watch-triggered escalation');
+      }
     }
 
     if (resolvedScoutDecision.disposition === 'hold') {
       const maxHoldMs = agentRuntimePolicy.llm.scout.maxHoldDurationMs;
-      if (!isSoftLimited && maxHoldMs != null && lastEscalationTimestamp > 0 && (Date.now() - lastEscalationTimestamp) >= maxHoldMs) {
+      if (maxHoldMs != null && lastEscalationTimestamp > 0 && (Date.now() - lastEscalationTimestamp) >= maxHoldMs) {
         resolvedScoutDecision = { disposition: 'escalate', reason: 'max_hold_duration_exceeded' };
         logger.info({ maxHoldMs, msSinceLastEscalation: Date.now() - lastEscalationTimestamp }, 'Overriding scout hold — max hold duration exceeded');
       } else {

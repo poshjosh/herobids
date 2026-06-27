@@ -254,6 +254,13 @@ const removeWatchTool: AgentTool = {
       return { success: false, error: `watch ${watchId} not found`, retryable: false, fault: false };
     }
 
+    // Remove from the notified set so a future watch with the same ID (re-created)
+    // isn't incorrectly treated as already-notified.
+    const notifiedKey = `agent:watches:notified:${ctx.agentId}`;
+    ctx.redis.srem(notifiedKey, watchId).catch((err: unknown) => {
+      logger.warn({ err, watchId }, 'Failed to clear notified watch on removal');
+    });
+
     await refreshWatchSummaryCache(ctx);
 
     return { success: true, data: { ok: true, watchId, removed: true } };
@@ -349,6 +356,15 @@ const checkWatchesTool: AgentTool = {
         lastCheckedAt: priceData.fetchedAt,
       };
       updatedWatches.set(watch.watchId, updatedWatch);
+
+      // When the condition clears (true → false), remove the watch from the
+      // notified set so the next crossing can trigger a fresh escalation.
+      if (watch.lastConditionMet === true && !conditionMet) {
+        const notifiedKey = `agent:watches:notified:${ctx.agentId}`;
+        ctx.redis.srem(notifiedKey, watch.watchId).catch((err: unknown) => {
+          logger.warn({ err, watchId: watch.watchId }, 'Failed to clear notified watch on condition reset');
+        });
+      }
 
       if (isTriggered) {
         triggered.push({

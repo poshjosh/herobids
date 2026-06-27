@@ -110,6 +110,11 @@ export interface ToolContext {
     publish: (channel: string, message: string) => Promise<number>;
     /** Blocking list pop — used to await async decision replies. Returns [key, value] or null on timeout. */
     blpop: (key: string, timeoutSeconds: number) => Promise<[string, string] | null>;
+    /** Redis SET operations — used by watch tools for notified-watch dedup. */
+    smembers: (key: string) => Promise<string[]>;
+    sadd: (key: string, ...members: string[]) => Promise<number>;
+    srem: (key: string, ...members: string[]) => Promise<number>;
+    expire: (key: string, seconds: number) => Promise<number>;
   };
   /** Publish agent protocol message to inbound stream */
   publishToInbound: (type: string, payload: Record<string, unknown>) => Promise<void>;
