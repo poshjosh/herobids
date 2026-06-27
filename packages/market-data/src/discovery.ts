@@ -1,4 +1,5 @@
 import {
+  enrichDexScreenerBoostTokens,
   fetchDexScreenerBoostsLatest,
   fetchDexScreenerProfilesLatest,
   fetchDexScreenerTrending,
@@ -152,7 +153,13 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
     throw rejected?.reason instanceof Error ? rejected.reason : new Error('No discovery providers returned data');
   }
 
-  const merged = mergeDiscoveredTokens(fulfilled)
+  const merged = mergeDiscoveredTokens(fulfilled);
+
+  // Enrich DexScreener boost/profile tokens that have no liquidity yet.
+  // This runs before the threshold filter so enriched tokens can enter the pool.
+  const enrichedMerge = await enrichDexScreenerBoostTokens(merged, networks, config.dexscreener);
+
+  const filtered = enrichedMerge
     .filter((token) => passesDiscoveryThreshold(token, minLiquidityUsd))
     .sort((left, right) => {
       const rightScore = discoveryScoreUsd(right);
@@ -170,8 +177,8 @@ export async function discoverTokens(config: DiscoveryConfig): Promise<Discovere
 
   const cooldownMs = (config.antistalenessCooldownHours ?? 0) * 60 * 60 * 1000;
   const reordered = (config.seenTracker && cooldownMs > 0)
-    ? await config.seenTracker.applyAntiStaleness(merged, cooldownMs)
-    : merged;
+    ? await config.seenTracker.applyAntiStaleness(filtered, cooldownMs)
+    : filtered;
 
   const sliced = reordered.slice(0, maxResults);
 
