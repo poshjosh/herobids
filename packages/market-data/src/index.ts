@@ -84,6 +84,13 @@ export {
   enrichWithCmc,
   type CoinMarketCapConfig,
 } from './coinmarketcap.js';
+export {
+  fetchBirdeyeTrending,
+  fetchBirdeyeTokenOverview,
+  fetchBirdeyeOhlcv,
+  type BirdeyeConfig,
+  type BirdeyeTokenOverview,
+} from './birdeye.js';
 export { searchTokens, searchTokensWithPolicy, applyTokenSearchPolicy, type SearchTokensOptions } from './token-search.js';
 export {
   evaluateTokenSafety,

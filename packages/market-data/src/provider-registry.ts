@@ -25,6 +25,13 @@ import { fetchHyperliquidAssetContexts, type HyperliquidInfoConfig } from './hyp
 import { fetchBybitLongShortRatio, type BybitInfoConfig } from './bybit-info.js';
 import { type CoinMarketCapConfig } from './coinmarketcap.js';
 import {
+  fetchBirdeyeTokenOverview,
+  fetchBirdeyeOhlcv,
+  type BirdeyeConfig,
+  type BirdeyeTokenOverview,
+} from './birdeye.js';
+import type { PriceCandle } from './types.js';
+import {
   CoordinatedRateLimiter,
   createSharedRateBudgetCoordinator,
   type RedisEvalClient,
@@ -63,6 +70,10 @@ export interface ProviderRegistry {
   };
   bybit: {
     longShortRatio(symbol: string, options?: { period?: '5min' | '15min' | '30min' | '1h' | '4h' | '1d'; limit?: number }): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof fetchBybitLongShortRatio>>>>;
+  };
+  birdeye: {
+    tokenOverview(address: string, chain: string): ReturnType<typeof loadWithCache<BirdeyeTokenOverview | null>>;
+    ohlcv(address: string, chain: string, interval: string): ReturnType<typeof loadWithCache<PriceCandle[]>>;
   };
   discovery: {
     discover(options?: { networks?: string[]; maxResults?: number; minLiquidityUsd?: number }): ReturnType<typeof loadWithCache<Awaited<ReturnType<typeof discoverTokens>>>>;
@@ -203,6 +214,27 @@ export function createProviderRegistry(
       })()
     : undefined;
 
+  // Birdeye is opt-in — enabled without an API key is a loud startup error
+  const birdeyeConfig: BirdeyeConfig | undefined = config.birdeye.enabled
+    ? (() => {
+        if (!config.birdeye.apiKey) {
+          throw new Error('Birdeye is enabled but no API key is configured');
+        }
+        const birdeyeBudget: SharedBudgetConfig = {
+          requestsPerMinute: config.birdeye.requestsPerMinute,
+          burstCapacity: config.birdeye.requestsPerMinute,
+          maxWaitMs: config.timeoutMs,
+        };
+        return {
+          baseUrl: config.birdeye.baseUrl,
+          apiKey: config.birdeye.apiKey,
+          rateLimiter: createLimiter(coordinator, 'birdeye', 'discovery', birdeyeBudget),
+          timeoutMs: config.timeoutMs,
+          fetchFn,
+        };
+      })()
+    : undefined;
+
   return {
     binance: {
       candles: (symbol, options) => loadWithCache({
@@ -311,6 +343,30 @@ export function createProviderRegistry(
         allowStale: true,
       }),
     },
+    birdeye: {
+      tokenOverview: (address, chain) => loadWithCache({
+        provider: 'birdeye',
+        requestClass: 'discovery',
+        cache,
+        cacheKey: `birdeye:overview:${chain}:${address}`,
+        policy: { ttlMs: config.birdeye.cacheTtlMs },
+        loader: () => {
+          if (!birdeyeConfig) return Promise.resolve(null);
+          return fetchBirdeyeTokenOverview(address, chain, birdeyeConfig);
+        },
+      }),
+      ohlcv: (address, chain, interval) => loadWithCache({
+        provider: 'birdeye',
+        requestClass: 'discovery',
+        cache,
+        cacheKey: `birdeye:ohlcv:${chain}:${address}:${interval}`,
+        policy: { ttlMs: config.birdeye.cacheTtlMs },
+        loader: () => {
+          if (!birdeyeConfig) return Promise.resolve([]);
+          return fetchBirdeyeOhlcv(address, chain, interval, birdeyeConfig);
+        },
+      }),
+    },
     discovery: {
       discover: (discoveryOptions) => {
         const maxResults = discoveryOptions?.maxResults ?? config.discovery.maxResults;
@@ -324,15 +380,19 @@ export function createProviderRegistry(
               config.dexscreener.discovery.cacheTtlMs ?? 0,
               config.geckoterminal.discovery.cacheTtlMs ?? 0,
             );
-            const ttlMs = config.coinMarketCap.enabled
+            const withCmc = config.coinMarketCap.enabled
               ? Math.min(baseTtl, config.coinMarketCap.cacheTtlMs)
               : baseTtl;
+            const ttlMs = config.birdeye.enabled
+              ? Math.min(withCmc, config.birdeye.cacheTtlMs)
+              : withCmc;
             return { ttlMs, staleWhileRevalidateMs: ttlMs };
           })(),
           loader: () => discoverTokens({
             dexscreener: dexscreenerDiscoveryConfig,
             geckoterminal: geckoDiscoveryConfig,
             coinmarketcap: cmcConfig,
+            birdeye: birdeyeConfig,
             networks: discoveryOptions?.networks ?? ['solana', 'base'],
             maxResults,
             minLiquidityUsd: discoveryOptions?.minLiquidityUsd,
