@@ -46,3 +46,9 @@ See [FAQs](/help/faqs#scout-judge-escalation) for more on the scout-judge model.
 - **Balanced** — General-purpose trading agents. Balanced cadence and reasoning quality.
 - **Bold** — High-frequency or time-sensitive agents. Fastest cadence, deepest reasoning, no skipping gates.
 - **Custom** — Set your own daily budget and let the system derive the cadence and model routing automatically.
+
+## Billing limits
+
+Agent style controls how your agent spends within its daily budget. Separate from style, you can also set **spending caps** (soft and hard limits) from the Billing page. These caps protect you from surprise bills without changing how your agent trades.
+
+See [Agent Billing Limits](/documentation/agents/billing-limits) for details.

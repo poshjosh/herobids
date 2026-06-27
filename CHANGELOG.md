@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Documented the billing enforcement policy: soft cap warns without changing agent behavior, hard cap stops with explicit open-position notification, and added a public billing limits page, internal technical contract, and ADR-009 to freeze the decision.
+
 ### Fixed
 
 - Bug which allowed agents excalate/increase bot execution mode e.g paper agent cannot create bot with exection mode shadow.

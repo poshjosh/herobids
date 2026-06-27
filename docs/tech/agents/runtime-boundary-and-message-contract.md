@@ -7,6 +7,7 @@ Use this document for decisions about ownership, invariants, isolation, identity
 - [Message Catalog](./message-catalog.md)
 - [Recovery And Replay](./recovery-and-replay.md)
 - [Tool Access And Sandboxing](./tool-access-and-sandboxing.md)
+- [Billing Enforcement Semantics](./billing-enforcement-semantics.md)
 
 ## Purpose
 
@@ -32,9 +33,10 @@ This document defines:
 This document does not define:
 
 - orchestrator-specific infrastructure wiring
-- billing or token-meter semantics
 - a generalized tool protocol for every future platform service
 - human approval workflows
+
+Billing enforcement semantics are defined in [Billing Enforcement Semantics](./billing-enforcement-semantics.md), which extends the Agent Mode Purity rules for spending caps.
 
 ## Core Terms
 

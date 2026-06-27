@@ -30,4 +30,17 @@ Three triggers can force escalation, bypassing the scout:
    - **On missing coverage** — Escalates only when a position lacks active protection (no stop-loss, no take-profit, no active watch). This is the default for Balanced agents.
    - **Always** — Every tick with open positions goes straight to the judge. Highest cost, but ensures the most capable model reviews every position every time.
 
-Your [agent style](/documentation/agent-style) sets the default policy (Careful → Never, Balanced → On missing coverage, Bold → Always), but you can override it manually at any time.
+Your [agent style](/documentation/agents/agent-style) sets the default policy (Careful → Never, Balanced → On missing coverage, Bold → Always), but you can override it manually at any time.
+
+## What are billing limits, and what happens when I hit them?
+
+HeroBids lets you set spending limits so you never get a surprise bill. There are two kinds:
+
+- **Soft cap** — A warning threshold. When reached, you receive a notification (Telegram, email, or both) but your agent **keeps running normally**. No trading behavior changes.
+- **Hard cap** — A spending stop. When reached, your agent halts on the next tick. No further LLM calls are made. You receive a notification explaining the stop, and if you have open positions, the notification lists them so you can act.
+
+The hard cap never closes your positions automatically. It simply stops reasoning. If you have open positions at the hard cap, those positions become unmanaged until you top up, raise the cap, or take manual action.
+
+You can set your own caps from the **Billing** page at any time. If you do not set any caps, no spending limits are enforced.
+
+See [Agent Billing Limits](/documentation/agents/billing-limits) for the full explanation.

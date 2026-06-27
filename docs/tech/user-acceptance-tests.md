@@ -282,6 +282,10 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | BL-03 | Spend controls and top-ups render | Inspect the usage billing card | "Spend Controls" shows soft cap and hard cap inputs, "Update Spend Caps", and a top-up selector / "Buy Top-up" CTA when top-ups are enabled | — | |
 | BL-04 | Usage filters and ledger render | Open billing usage history | "Usage Filters", "Usage by Meter", "Usage by Agent", "Usage Events", and "Billing Periods" sections render; Previous / Next paginate the ledger | — | |
 | BL-05 | Spend-state banner appears | Force the account into a soft or hard limited state | Banner says either "Approaching usage limit" or "Usage limit reached" and explains the operational impact | — | |
+| BL-06 | Soft cap does not change agent behavior | Set a low soft cap; let the agent reach it | Agent continues running normally; no tick skip, no model downgrade, no scout suppression. Notification is sent. | — | |
+| BL-07 | Hard cap stops the agent | Set a low hard cap; let the agent reach it | Agent halts on next tick; `TICK_SKIPPED` event emitted with reason `billing.limit_exceeded`. Notification sent with open-position context if applicable. | — | |
+| BL-08 | Hard cap with open positions notifies clearly | Create an agent with an open position; force hard cap | Notification includes list of open positions and a statement that they are now unmanaged. Agent does not close or modify positions. | — | |
+| BL-09 | Caps can be raised to unblock | After hard-cap stop, raise the cap from the Billing page | Agent resumes on next tick; status returns to active. | — | |
 | ST-01 | Settings page renders | Navigate to `/settings` | Settings page loads without crash | ✅ | Shows Language, AI models, and Telegram Notifications sections; Save button disabled by default |
 
 ---
