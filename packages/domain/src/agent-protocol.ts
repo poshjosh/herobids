@@ -480,6 +480,7 @@ export const TickSkippedPayloadSchema = z.object({
   gate: z.string().optional(),
   trigger: z.string().optional(),
   positionSide: z.string().optional(),
+  openPositions: z.array(z.string()).optional(),
 });
 export type TickSkippedPayload = z.infer<typeof TickSkippedPayloadSchema>;
 

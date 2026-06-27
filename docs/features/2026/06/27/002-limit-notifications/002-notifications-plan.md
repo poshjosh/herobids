@@ -163,3 +163,27 @@ Add unit tests in `apps/worker/src/agents/agent-broker-billing.test.ts`:
 4. **Soft-cap notification priority**: Should the soft-cap notification use the `alert` message class (which is email-eligible under the existing `send_message` policy) or should these system-generated notifications bypass the agent's notification policy entirely?
 
 5. **Agent names in notifications**: The plan uses the agent's display name. Does the `AgentRepository.getAgent()` return the name, or should we use a more specific identifier?
+
+## Outstanding Issues
+
+### H2 — Unresolved clarifying questions (from code review)
+
+The five clarifying questions in the plan remain unresolved. The implementation makes the following assumptions:
+
+| Q | Topic | Assumption made |
+|---|-------|----------------|
+| 1 | Notification frequency | Once-per-transition with Redis dedup (24h TTL) |
+| 2 | Email cooldown | Billing emails **bypass** the existing `handleEmailFanout` rate limiter (3/min) — they use `emailClient.send()` directly |
+| 3 | Billing page link | No link included (base URL not yet configurable) |
+| 4 | Notification policy bypass | System-generated billing notifications bypass `notificationPolicy.sendMessage.email.enabled` entirely |
+| 5 | Agent names | Uses `agent.name` from `AgentRepository.getAgent()` — verified available |
+
+**Action:** Resolve these questions with product owner before deploying to production. If assumptions are correct, update the plan to reflect final decisions. If not, adjust the code accordingly.
+
+### L2 — Test naming inconsistency
+
+Some tests use `does NOT` while others use `does not`. Minor cosmetic issue — pick one convention.
+
+### L3 — Empty agent.name edge case
+
+If `agent.name` is an empty string, the notification reads `Agent "" has reached...`. Harmless but odd. Not worth a separate code path at this time.

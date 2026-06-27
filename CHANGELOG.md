@@ -19,6 +19,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
 
+- **Broker-side billing notifications**: Telegram and email notification dispatch when agents hit soft-cap (`billing.soft_limit_reached`) or hard-cap (`billing.limit_exceeded`) spending limits. Redis-based deduplication (24h TTL) prevents notification spam — users are notified once per status transition. HTML-escaped message templates include open position context for hard caps. Graceful degradation when Telegram/email/Redis are unavailable.
+
 ### Changed
 
 - Agent export endpoints (`/agents/:id/export/*`) now include agent-native fills, positions, and journal events alongside bot-owned records; added `actorType` discriminator to agent-native and bot journal queries in export bundle for actor-scope correctness.
