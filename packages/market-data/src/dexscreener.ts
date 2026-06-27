@@ -9,6 +9,8 @@ interface DexScreenerPair {
   priceChange?: { h24?: number };
   dexId?: string;
   chainId?: string;
+  /** DexScreener returns pairCreatedAt as epoch milliseconds. */
+  pairCreatedAt?: number;
 }
 
 interface DexScreenerResponse {
@@ -42,6 +44,9 @@ function mapPairToTokenInfo(pair: DexScreenerPair): TokenInfo {
     liquidityUsd: pair.liquidity?.usd ?? 0,
     priceChange24hPct: pair.priceChange?.h24 ?? 0,
     dexId: pair.dexId ?? '',
+    poolCreatedAt: pair.pairCreatedAt != null
+      ? new Date(pair.pairCreatedAt).toISOString()
+      : undefined,
   };
 }
 

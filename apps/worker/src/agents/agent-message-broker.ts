@@ -675,6 +675,30 @@ export class AgentMessageBroker {
         await this.botLiveCheck(agent.userId);
       }
 
+      // Safety gate: swap-venue symbol validation.
+      // Each swap-venue binding maps to a specific chain (e.g. Base, Solana).
+      // Reject bot creation when the symbol format is wrong or when the symbol
+      // parts look like raw addresses instead of human-readable tickers.
+      // Per-token network validity is enforced downstream by token safety.
+      if (venueType === 'swap' && payload.config.symbol) {
+        const symbol = payload.config.symbol;
+        const parts = symbol.split('/');
+        if (parts.length !== 2 || !parts[0] || !parts[1]) {
+          throw new Error(
+            `Invalid symbol format "${symbol}". ` +
+            `Swap venues require BASE/QUOTE format (e.g. "ETH/USDC" for 1inch on Base).`,
+          );
+        }
+        // Reject raw addresses — agents must use human-readable symbols.
+        const looksLikeAddress = (s: string) => s.startsWith('0x') || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
+        if (looksLikeAddress(parts[0]!) || looksLikeAddress(parts[1]!)) {
+          throw new Error(
+            `Symbol "${symbol}" looks like a raw token address. ` +
+            `Use a human-readable symbol (e.g. "ETH/USDC"), not a contract address.`,
+          );
+        }
+      }
+
       const botId = await this.botRepo.createBot({
         userId: agent.userId,
         tradingBindingId: binding.bindingId,

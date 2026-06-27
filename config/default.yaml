@@ -238,6 +238,18 @@ marketData:
           address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf"
           name: Coinbase Wrapped BTC
           aliases: []
+        LINK:
+          address: "0x88Fb150BDc53A65fe94Dea0c9BA0a6dAf8C6e196"
+          name: Chainlink
+          aliases: []
+        AAVE:
+          address: "0x63706e401c06ac8513145b7687A14804d17f814b"
+          name: Aave
+          aliases: []
+        UNI:
+          address: "0xc3De830EA07524a0761646a6a4e4be0e114a3C83"
+          name: Uniswap
+          aliases: []
   discovery:
     maxResults: 50                  # Default when agent does not specify a limit; agent may request 1–100 per call
     geckoTerminalExtraPages: 1      # Set to 1 to fetch page 2 of GT trending + top pools (~35 extra tokens, 4 extra req/run)

@@ -61,6 +61,28 @@ async function enrichTokenWithDiscovery(
     return { ...match, ageResolution: 'available', hasRealMarketData: true };
   }
 
+  // Try a targeted DexScreener search by address first — this is a direct
+  // lookup that returns poolCreatedAt when the upstream API provides it.
+  try {
+    const directResult = await registry.dexscreener.search(resolvedAddress);
+    const directMatch = directResult.data.find((token) => (
+      token.network.toLowerCase() === network.toLowerCase()
+      && token.address.toLowerCase() === resolvedAddress.toLowerCase()
+    ));
+    if (directMatch) {
+      const poolCreatedAt = (directMatch as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt;
+      return {
+        ...match,
+        poolCreatedAt: poolCreatedAt ?? (match as TokenInfo & { poolCreatedAt?: string }).poolCreatedAt,
+        ageResolution: poolCreatedAt ? 'available' : 'indeterminate',
+        hasRealMarketData: true,
+      };
+    }
+  } catch (err) {
+    // Fall through to discovery if the direct search fails.
+    console.warn('[enrichTokenWithDiscovery] direct DexScreener search failed, falling back to discovery', { network, resolvedAddress, err });
+  }
+
   try {
     // Discovery is a targeted lookup for a specific token address to find
     // poolCreatedAt.  minLiquidityUsd: 0 maximises the chance of finding the
