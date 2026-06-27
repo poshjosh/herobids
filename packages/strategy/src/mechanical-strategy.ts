@@ -130,8 +130,18 @@ export class MechanicalStrategy implements Strategy {
     if (params.sentiment.enabled && this.sentimentProvider != null) {
       const sentResult = await this.sentimentProvider.getScore(snapshot.symbol);
       if (sentResult.ok && sentResult.data != null) {
-        const boost = sentResult.data.score * sentResult.data.confidence * 0.1;
-        adjustedConfidence = Math.min(1, Math.max(0, signal.confidence + boost));
+        // Hard veto: strongly negative sentiment with high confidence
+        if (
+          sentResult.data.score < params.sentiment.negativeThreshold &&
+          sentResult.data.confidence > 0.5
+        ) {
+          return ok(null); // sentiment veto
+        }
+        // Boost: positive sentiment above threshold
+        if (sentResult.data.score > params.sentiment.positiveThreshold) {
+          const boost = sentResult.data.score * sentResult.data.confidence * params.sentiment.maxBoost;
+          adjustedConfidence = Math.min(1, Math.max(0, signal.confidence + boost));
+        }
       }
     }
 

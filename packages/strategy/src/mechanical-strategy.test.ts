@@ -201,7 +201,7 @@ describe('MechanicalStrategy', () => {
     }
   });
 
-  it('suppresses go_long and returns go_flat when negative sentiment drops confidence below threshold', async () => {
+  it('returns null when sentiment hard-veto fires (score below negativeThreshold with high confidence)', async () => {
     const sentimentProvider: SentimentProvider = {
       getScore: vi.fn().mockResolvedValue(
         ok({ symbol: SYMBOL, score: -1, confidence: 1, source: 'test', fetchedAt: Date.now() }),
@@ -209,12 +209,7 @@ describe('MechanicalStrategy', () => {
     };
 
     const strat = new MechanicalStrategy(makeFetcher(), sentimentProvider, idGen);
-    // Signal has borderline confidence of 0.46; minConfidence default is 0.45
-    // Negative sentiment: boost = -1 * 1 * 0.1 = -0.1 → adjusted = 0.36 < 0.45 → suppress
-    mockScoreCandidate.mockReturnValue({
-      ...HIGH_CONFIDENCE_SIGNAL,
-      confidence: 0.46,
-    });
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
 
     const config = { ...BASE_CONFIG, sentiment: { enabled: true } };
     const snapshot: MarketSnapshot = {
@@ -226,8 +221,8 @@ describe('MechanicalStrategy', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // Sentiment suppressed signal + open position → go_flat
-      expect(result.data?.intent).toBe('go_flat');
+      // Hard veto: score (-1) < negativeThreshold (-0.2) && confidence (1) > 0.5 → veto entry
+      expect(result.data).toBeNull();
     }
   });
 
