@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { BillingConfig, BillingProvider, PlansConfig, UsageBillingConfig } from '@herobids/domain';
+import type { BillingConfig, BillingProvider, PlansConfig, UsageBillingConfig, ProvidersYaml } from '@herobids/domain';
 import type { Database } from '@herobids/db';
 import { BillingRepository, UsageBillingRepository, users, fills, bots, agents, agentRuntimeSessions, billingPeriods } from '@herobids/db';
 import { eq, and, desc, gte, lte, inArray, or, type SQL } from 'drizzle-orm';
@@ -30,9 +30,10 @@ export async function billingRoutes(
   plansConfig: PlansConfig,
   db: Database,
   usageBillingConfig?: UsageBillingConfig,
+  providersYaml?: ProvidersYaml,
 ) {
   const billingRepo = new BillingRepository(db);
-  const usageBillingRepo = new UsageBillingRepository(db, usageBillingConfig?.defaultRateCardItems);
+  const usageBillingRepo = new UsageBillingRepository(db, usageBillingConfig?.defaultRateCardItems, providersYaml);
   const providerManager = createProviderManager(billingConfig, billingRepo);
   const entitlementSync = new EntitlementSync(
     billingRepo,

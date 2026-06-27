@@ -777,6 +777,11 @@ const marketIntelligencePolicy = agentRuntimePolicy.marketIntelligence;
 const DEFAULT_RATE_CARD_NAME = process.env['USAGE_BILLING_RATE_CARD'] ?? 'default';
 const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WINDOW_MS'] ?? '60000', 10);
 
+// Provider registry — forwarded by the worker so the agent container can seed
+// per-model LLM token rate card items via llm_pricing_snapshots without an
+// additional filesystem read inside the container.
+const providersYaml = agentConfig.providersYaml as import('@herobids/domain').ProvidersYaml | undefined;
+
 const usageBillingService = createUsageBillingService(db, {
   userId: agentConfig.userId ?? '',
   agentId: AGENT_ID!,
@@ -789,6 +794,7 @@ const usageBillingService = createUsageBillingService(db, {
   defaultRateCardName: DEFAULT_RATE_CARD_NAME,
   runtimeChargeWindowMs: RUNTIME_CHARGE_WINDOW_MS,
   rateCardItems: agentConfig.usageBillingRateCardItems,
+  providersYaml,
   enabled: !!agentConfig.userId,
 });
 

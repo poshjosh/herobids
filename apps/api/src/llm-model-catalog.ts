@@ -492,11 +492,6 @@ export async function getProviderCatalogEntry(
   };
 }
 
-/** @deprecated No-op — DB replaces in-memory cache. Kept for test compatibility. */
-export function clearOpenRouterPricingCache(): void {
-  // Intentionally empty: pricing is now read from DB, no in-memory cache to clear.
-}
-
 export async function validateAiModelSelection(
   selection: { provider: string; lightModel: string; heavyModel: string },
   deps: LlmCatalogDeps,

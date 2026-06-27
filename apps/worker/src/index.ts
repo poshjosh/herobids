@@ -137,6 +137,9 @@ const logger = pino(
 // Load operator config: default.yaml → {NODE_ENV}.yaml → env var overrides
 const appConfig = loadConfig();
 
+// Load provider registry — used by UsageBillingRepository for per-model rate card seeding
+const providersYaml = loadProvidersConfig('config/providers.yaml');
+
 // Parse Redis connection from operator config URL — preserving auth, TLS, and DB index
 const parsedRedisUrl = new URL(appConfig.redis.url);
 const redisConnection = {
@@ -667,9 +670,10 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     instanceExecutionModes.delete(agentId);
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
-  usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems),
+  usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml),
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
+  providersYaml,
 }, agentReconnectHandler, platformAlerts);
 
 // Queue used by the broker callback to enqueue bot start jobs
@@ -1377,7 +1381,6 @@ const healthRefreshInterval = setInterval(() => {
 }, HEALTH_REFRESH_INTERVAL_MS);
 
 // ── LLM Pricing — seed static + refresh dynamic on startup ──────────────────
-const providersYaml = loadProvidersConfig('config/providers.yaml');
 const pricingRepo = new UsageBillingRepository(db);
 
 // Seed on startup (idempotent)

@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import pino from 'pino';
 import { UsageBillingRepository } from '@herobids/db';
 import type { Database } from '@herobids/db';
+import type { ProvidersYaml } from '@herobids/domain';
 
 const logger = pino({ name: 'usage-billing-service' });
 
@@ -30,6 +31,7 @@ export interface UsageBillingServiceConfig {
   defaultRateCardName: string;
   runtimeChargeWindowMs: number;
   rateCardItems?: Array<{ meterKey: string; priceMicrousd: number; perUnit: number }>;
+  providersYaml?: ProvidersYaml;
   enabled: boolean;
 }
 
@@ -58,7 +60,7 @@ export class UsageBillingService {
     db: Database,
     private readonly config: UsageBillingServiceConfig,
   ) {
-    this.repo = new UsageBillingRepository(db, config.rateCardItems);
+    this.repo = new UsageBillingRepository(db, config.rateCardItems, config.providersYaml);
   }
 
   /** Lazily resolve billing account and open period. Returns false if unavailable. */

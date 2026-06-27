@@ -59,12 +59,9 @@ providers (e.g. OpenRouter), the worker fetches pricing into `llm_pricing_snapsh
 |----------|-------------|----------------|----------|
 | `openai` | static | — | — |
 | `anthropic` | static | — | — |
-| `openrouter` | dynamic | ✓ | — |
-| `together` | static | — | — |
-| `fireworks` | static | — | — |
-| `mistral` | static | — | — |
-| `cohere` | static | — | — |
+| `deepseek` | static | — | — |
 | `google` | static | — | — |
+| `openrouter` | dynamic | ✓ | — |
 | `ollama` | dynamic | — | ✓ |
 
 ## Architecture
@@ -91,12 +88,11 @@ providers (e.g. OpenRouter), the worker fetches pricing into `llm_pricing_snapsh
 
 ## Removing a Provider
 
-Remove its entry from `config/providers.yaml`. If any code still references the provider by string
-literal, TypeScript will flag it as an error because `LlmProviderId` narrows to the remaining keys.
+Remove its entry from `config/providers.yaml`.
 
 ## Testing
 
-Provider catalog tests live in `apps/api/src/llm-model-catalog.test.ts`. They verify:
+Provider catalog tests live in `apps/api/src/routes/ai.test.ts` and `packages/domain/src/models/llm-models.test.ts`. They verify:
 
 - Static providers from `providers.yaml` produce correct catalog entries
 - `deriveLatestVariants` generates `:latest` aliases from versioned model IDs

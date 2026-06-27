@@ -6,6 +6,7 @@ import type {
   RuntimeBudgetPolicy,
   PlansConfig,
   UsageBillingConfig,
+  ProvidersYaml,
 } from '@herobids/domain';
 import { resolveAgentRuntimePolicy } from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
@@ -68,6 +69,8 @@ export interface AgentSessionManagerConfig {
   /** Optional plan and usage-billing configs — used to apply plan packaging to billing periods */
   plansConfig?: PlansConfig;
   usageBillingConfig?: UsageBillingConfig;
+  /** Provider registry — forwarded to agent containers for per-model rate card seeding */
+  providersYaml?: ProvidersYaml;
 }
 
 /**
@@ -357,6 +360,9 @@ export class AgentSessionManager {
           usageBillingHardCapMicrousd: planUsage?.hardCapCents != null ? planUsage.hardCapCents * 10_000 : null,
           ...(this.config.usageBillingConfig?.defaultRateCardItems
             ? { usageBillingRateCardItems: this.config.usageBillingConfig.defaultRateCardItems }
+            : {}),
+          ...(this.config.providersYaml
+            ? { providersYaml: this.config.providersYaml }
             : {}),
           ...(provider ? { provider } : {}),
           ...(lightModel ? { lightModel } : {}),

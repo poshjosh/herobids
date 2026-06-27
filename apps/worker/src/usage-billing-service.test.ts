@@ -139,4 +139,37 @@ describe('UsageBillingService', () => {
     await expect(service.isSoftLimited()).resolves.toBe(false);
     await expect(service.isHardLimited()).resolves.toBe(false);
   });
+
+  it('accepts providersYaml in config, enabling per-model rate card seeding at the repository layer', async () => {
+    const account = makeAccount();
+    const mockProviders: import('@herobids/domain').ProvidersYaml = {
+      providers: {
+        openai: { catalogMode: 'static', models: { 'gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 } } },
+      },
+    };
+
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    vi.spyOn(UsageBillingRepository.prototype, 'getSpendState').mockResolvedValue({ status: 'active' });
+
+    const service = new UsageBillingService({} as import('@herobids/db').Database, {
+      userId: 'user-1',
+      agentId: 'agent-1',
+      sessionId: 'session-1',
+      defaultRateCardName: 'default',
+      runtimeChargeWindowMs: 60_000,
+      enabled: true,
+      providersYaml: mockProviders,
+    });
+
+    // providersYaml is accepted by the constructor and passed through to
+    // UsageBillingRepository — the repo-level test in
+    // packages/db/src/usage-billing-repository.test.ts verifies that
+    // seedDefaultRateCardItems calls getLatestPricingSnapshot when
+    // providers are configured.
+    await expect(service.isHardLimited()).resolves.toBe(false);
+    expect(service).toBeDefined();
+  });
 });
