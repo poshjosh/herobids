@@ -38,9 +38,11 @@ const BASE_SNAPSHOT: MarketSnapshot = {
 // explicit fields override BASE_SNAPSHOT defaults. Reversing the order would
 // cause the spread of BASE_SNAPSHOT to overwrite the explicit fields.
 
-// Minimum valid MechanicalParamsSchema config (positionSize is required)
+// Minimum valid MechanicalParamsSchema config (positionSize, stopLossPct, takeProfitPct are required)
 const BASE_CONFIG = {
   positionSize: '100',
+  stopLossPct: 5,
+  takeProfitPct: 10,
 };
 
 let idSeq = 0;

@@ -65,6 +65,9 @@ export {
   TechnicalConfigSchema,
   UnifiedAgentConfigSchema,
   IntelligenceConfigSchema,
+  VwapParamsSchema,
+  PriceActionParamsSchema,
+  SentimentConfigSchema,
   deriveStrategyPreset,
   extractStrategyFromConfig,
 } from './schema.js';
@@ -117,6 +120,9 @@ export type {
   TechnicalConfig,
   UnifiedAgentConfig,
   IntelligenceConfig,
+  VwapParams,
+  PriceActionParams,
+  SentimentConfig,
 } from './schema.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';

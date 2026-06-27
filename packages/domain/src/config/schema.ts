@@ -1273,6 +1273,17 @@ export const SupportResistanceParamsSchema = z.object({
   breakoutThreshold: z.number().default(0.005),
 }).default({});
 
+export const VwapParamsSchema = z.object({
+  enabled: z.boolean().default(false),
+  period: z.number().int().min(2).default(24),
+}).default({});
+
+export const PriceActionParamsSchema = z.object({
+  enabled: z.boolean().default(true),
+  minChange24hPct: z.number().default(3),
+  maxChange24hPct: z.number().default(50),
+}).default({});
+
 export const ConfidenceWeightsSchema = z.object({
   rsiWeight: z.number().default(0.15),
   macdCrossoverWeight: z.number().default(0.20),
@@ -1282,6 +1293,7 @@ export const ConfidenceWeightsSchema = z.object({
   chochBullishWeight: z.number().default(0.15),
   chochBearishPenalty: z.number().default(0.10),
   priceActionWeight: z.number().default(0.10),
+  vwapWeight: z.number().default(0),
   minConfidence: z.number().default(0.45),
   minReasons: z.number().int().default(2),
 }).default({});
@@ -1292,27 +1304,41 @@ export const IndicatorConfigSchema = z.object({
   volume: VolumeParamsSchema,
   choch: ChochParamsSchema,
   supportResistance: SupportResistanceParamsSchema,
+  vwap: VwapParamsSchema,
+  priceAction: PriceActionParamsSchema,
   confidence: ConfidenceWeightsSchema,
 });
+
+export const SentimentConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  minDataPoints: z.number().int().min(1).default(5),
+  positiveThreshold: z.number().min(0).max(1).default(0.2),
+  negativeThreshold: z.number().min(-1).max(0).default(-0.2),
+  maxBoost: z.number().min(0).max(0.5).default(0.1),
+}).default({});
 
 export const MechanicalParamsSchema = z.object({
   // Candle fetching
   candleInterval: z.enum(['5m', '15m', '1H', '4H', '1D']).default('15m'),
-  candleLimit: z.number().int().min(20).max(500).default(100),
+  candleLimit: z.number().int().min(20).max(500).default(48),
+  minCandleCount: z.number().int().min(5).default(20),
 
-  // Indicator suite — reuses named sub-schemas from Phase 0
+  // Exit targets (strategy-level, not risk guards)
+  stopLossPct: z.number().min(0).max(100),
+  takeProfitPct: z.number().min(0),
+  trailingStopPct: z.number().min(0).max(100).nullable().default(null),
+
+  // Indicator suite
   indicators: IndicatorConfigSchema.default({}),
 
   // Signal interpretation
   signalBias: z.enum(['trend-following', 'mean-reverting']).default('trend-following'),
 
-  // Sentiment (optional — skipped when not configured)
-  sentiment: z.object({
-    enabled: z.boolean().default(false),
-  }).default({}),
+  // Sentiment
+  sentiment: SentimentConfigSchema,
 
-  // Position sizing — same pattern as existing MomentumStrategy
-  positionSize: z.string().min(1),  // decimal string, e.g. "100"
+  // Position sizing
+  positionSize: z.string().min(1),
   positionSizeMode: z.enum(['fixed', 'percent_equity']).default('fixed'),
 });
 
@@ -1499,5 +1525,8 @@ export type ChochParams = z.infer<typeof ChochParamsSchema>;
 export type SupportResistanceParams = z.infer<typeof SupportResistanceParamsSchema>;
 export type ConfidenceWeights = z.infer<typeof ConfidenceWeightsSchema>;
 export type IndicatorConfig = z.infer<typeof IndicatorConfigSchema>;
+export type VwapParams = z.infer<typeof VwapParamsSchema>;
+export type PriceActionParams = z.infer<typeof PriceActionParamsSchema>;
+export type SentimentConfig = z.infer<typeof SentimentConfigSchema>;
 export type TechnicalConfig = z.infer<typeof TechnicalConfigSchema>;
 export type UnifiedAgentConfig = z.infer<typeof UnifiedAgentConfigSchema>;

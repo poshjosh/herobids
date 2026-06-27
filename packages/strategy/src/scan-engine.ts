@@ -70,6 +70,15 @@ export interface IndicatorConfig {
     confirmBars?: number;
     rejectOnBearish?: boolean;
   };
+  vwap?: {
+    enabled?: boolean;
+    period?: number;
+  };
+  priceAction?: {
+    enabled?: boolean;
+    minChange24hPct?: number;
+    maxChange24hPct?: number;
+  };
   supportResistance?: {
     enabled?: boolean;
     lookback?: number;
@@ -84,6 +93,7 @@ export interface IndicatorConfig {
     chochBullishWeight?: number;
     chochBearishPenalty?: number;
     priceActionWeight?: number;
+    vwapWeight?: number;
     minConfidence?: number;
     minReasons?: number;
   };
@@ -153,6 +163,7 @@ export function scoreCandidate(
     chochBullishWeight: indicators.confidence?.chochBullishWeight ?? 0.15,
     chochBearishPenalty: indicators.confidence?.chochBearishPenalty ?? 0.10,
     priceActionWeight: indicators.confidence?.priceActionWeight ?? 0.10,
+    vwapWeight: indicators.confidence?.vwapWeight ?? 0,
     minConfidence: indicators.confidence?.minConfidence ?? 0.45,
     minReasons: indicators.confidence?.minReasons ?? 2,
   };

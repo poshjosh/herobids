@@ -55,7 +55,7 @@ export class MechanicalStrategy implements Strategy {
       return err({ code: 'strategy.candle_fetch_failed', message });
     }
 
-    if (candles.length < 20) {
+    if (candles.length < params.minCandleCount) {
       return ok(null);
     }
 

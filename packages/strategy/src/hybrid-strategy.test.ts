@@ -16,7 +16,7 @@ const BASE_SNAPSHOT: MarketSnapshot = {
 };
 
 const BASE_CONFIG = {
-  mechanical: { positionSize: '100' },
+  mechanical: { positionSize: '100', stopLossPct: 5, takeProfitPct: 10 },
   provider: 'openai',
   lightModel: 'gpt-4o-mini',
 };
