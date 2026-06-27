@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { skills as skillsApi, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
-import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner } from '../../lib/ui.js';
+import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, type SkillMetrics, type AgentToolInfo, type AgentToolCategory } from '../../lib/api-client.js';
+import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner, ToolTagPicker } from '../../lib/ui.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 
 type SkillCategoryTab = 'all' | 'mine' | 'built-in' | 'marketplace' | 'admin';
@@ -24,6 +24,7 @@ export function SkillsPage() {
     name: '',
     description: '',
     instructions: '',
+    requiredTools: [],
     publicationStatus: 'draft',
   });
   const [createError, setCreateError] = useState<string | null>(null);
@@ -47,6 +48,12 @@ export function SkillsPage() {
   const adminQuery = useQuery({
     queryKey: ['skills', 'admin'],
     queryFn: () => skillsApi.listAdminIfAllowed(),
+  });
+
+  const toolsQuery = useQuery({
+    queryKey: ['agent-tools'],
+    queryFn: () => agentTools.list(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const refreshSkills = () => {
@@ -97,7 +104,7 @@ export function SkillsPage() {
   const renderSkillGrid = (skills: Skill[], mode: 'built-in' | 'mine' | 'marketplace' | 'admin') => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
       {skills.map((skill) => (
-        <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} />
+        <SkillCard key={skill.id} skill={skill} mode={mode} onChanged={refreshSkills} skillsEntitlements={skillsEntitlements} tools={toolsQuery.data?.tools ?? []} categories={toolsQuery.data?.categories ?? []} toolsLoading={toolsQuery.isLoading} toolsError={toolsQuery.error} />
       ))}
     </div>
   );
@@ -338,6 +345,21 @@ export function SkillsPage() {
             />
           </label>
           <label style={fieldLabelStyle}>
+            Tools
+            <ToolTagPicker
+              tools={toolsQuery.data?.tools ?? []}
+              categories={toolsQuery.data?.categories ?? []}
+              value={createDraft.requiredTools ?? []}
+              onChange={(tools) => setCreateDraft((current) => ({ ...current, requiredTools: tools }))}
+              loading={toolsQuery.isLoading}
+            />
+            {toolsQuery.isError && (
+              <div style={{ fontSize: '12px', color: 'var(--color-danger)', marginTop: '4px' }}>
+                {(toolsQuery.error as Error).message}
+              </div>
+            )}
+          </label>
+          <label style={fieldLabelStyle}>
             Visibility
             <select
               value={createDraft.publicationStatus ?? 'draft'}
@@ -393,6 +415,10 @@ function SkillCard({
   mode,
   onChanged,
   skillsEntitlements,
+  tools = [],
+  categories = [],
+  toolsLoading = false,
+  toolsError = null,
 }: {
   skill: Skill;
   mode: 'built-in' | 'mine' | 'marketplace' | 'admin';
@@ -405,6 +431,10 @@ function SkillCard({
     canPriceSkills: boolean;
     canLikeMarketplaceSkills: boolean;
   } | null;
+  tools?: { name: string; category: string; description: string }[];
+  categories?: { name: string; label: string; count: number }[];
+  toolsLoading?: boolean;
+  toolsError?: Error | null;
 }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [showMetrics, setShowMetrics] = useState(false);
@@ -413,6 +443,7 @@ function SkillCard({
   const [editedName, setEditedName] = useState(skill.name);
   const [editedDescription, setEditedDescription] = useState(skill.description);
   const [editedInstructions, setEditedInstructions] = useState(skill.instructions);
+  const [editedRequiredTools, setEditedRequiredTools] = useState<string[]>(skill.requiredTools ?? []);
   const hasUnpublishedRevision = stagedRevisionId !== null || skill.hasStagedRevision;
 
   const publishMutation = useMutation({
@@ -457,6 +488,7 @@ function SkillCard({
       name: editedName.trim(),
       description: editedDescription.trim(),
       instructions: editedInstructions.trim(),
+      requiredTools: editedRequiredTools,
       changeSummary: 'Updated from web editor',
     }),
     onSuccess: (updatedSkill) => {
@@ -538,6 +570,7 @@ function SkillCard({
             variant="secondary"
             onClick={() => {
               setActionError(null);
+              setEditedRequiredTools(skill.requiredTools ?? []);
               setIsEditing((current) => !current);
             }}
             disabled={isActionPending}
@@ -578,6 +611,21 @@ function SkillCard({
               style={textareaStyle}
             />
           </label>
+          <label style={fieldLabelStyle}>
+            Tools
+            <ToolTagPicker
+              tools={tools}
+              categories={categories}
+              value={editedRequiredTools}
+              onChange={setEditedRequiredTools}
+              loading={toolsLoading}
+            />
+            {toolsError && (
+              <div style={{ fontSize: '12px', color: 'var(--color-danger)', marginTop: '4px' }}>
+                {(toolsError as Error).message}
+              </div>
+            )}
+          </label>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <Button
               size="sm"
@@ -599,6 +647,7 @@ function SkillCard({
                 setEditedName(skill.name);
                 setEditedDescription(skill.description);
                 setEditedInstructions(skill.instructions);
+                setEditedRequiredTools(skill.requiredTools ?? []);
                 setIsEditing(false);
               }}
               disabled={updateMutation.isPending}

@@ -430,6 +430,33 @@ export const skills = {
   metrics: (id: string) => request<SkillMetrics>(`/skills/${id}/metrics`),
 };
 
+// ---------------------------------------------------------------------------
+// Agent Tools (discovery endpoint for skill editor)
+// ---------------------------------------------------------------------------
+
+export interface AgentToolInfo {
+  name: string;
+  category: string;
+  description: string;
+}
+
+export interface AgentToolCategory {
+  name: string;
+  label: string;
+  count: number;
+}
+
+export const agentTools = {
+  list: (params?: { category?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set('category', params.category);
+    const query = searchParams.toString();
+    return request<{ ok: true; tools: AgentToolInfo[]; categories: AgentToolCategory[] }>(
+      `/api/v1/agent-tools${query ? `?${query}` : ''}`,
+    );
+  },
+};
+
 export const dashboard = {
   overview: () => request<DashboardOverview>('/dashboard/overview'),
   activity: (params?: { limit?: number; before?: string; beforeId?: string }) => {
