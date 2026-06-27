@@ -501,13 +501,15 @@ In the `SkillCard` component within `SkillsPage.tsx`:
 
 ### Phase 3 — Web UI
 
-**MEDIUM (deferred):**
-- **Keyboard navigation not implemented**: Arrow keys + Enter to navigate/select tools in the dropdown. Plan specified this; accessibility gap.
-- **Hardcoded English strings**: ToolTagPicker hardcodes strings instead of using react-intl. Should accept labels as props or use useIntl().
+**~~MEDIUM~~ RESOLVED:**
+- ~~**Keyboard navigation not implemented**~~ → Arrow keys (↑↓) + Enter to navigate/select tools. Highlighted item has `--color-surface-2` background. Index resets on search change.
+- ~~**Hardcoded English strings**~~ → `addToolsLabel`, `searchPlaceholder`, `noToolsAvailableLabel`, `noMatchLabel` props with English defaults. Callers can override for i18n.
 
-**LOW:**
-- `selectedSet` recreated every render (negligible for 46 items).
-- Redundant Escape key handling in both useEffect and onKeyDown.
+**~~LOW~~ RESOLVED:**
+- ~~`selectedSet` recreated every render~~ → Wrapped in `useMemo([value])`.
+- ~~Redundant Escape key handling~~ → Consolidated to single `useEffect` with both `mousedown` and `keydown` listeners.
+- ~~Event handler uses `e` instead of `event`~~ → All handlers use `event`.
+
+**LOW (remaining):**
 - Dropdown maxHeight 360px vs plan's ~320px.
-- "No tools available" shown misleadingly during API error states.
-- Event handler uses `e` instead of `event` naming convention.
+- "No tools available" shown misleadingly during API error states (error banner below is clearer).

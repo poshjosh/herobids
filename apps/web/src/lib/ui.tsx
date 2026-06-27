@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -514,39 +514,61 @@ export interface ToolTagPickerProps {
   onChange: (tools: string[]) => void;
   disabled?: boolean;
   loading?: boolean;
+  /** Label for the trigger button. Default: "+ Add tools..." */
+  addToolsLabel?: string;
+  /** Placeholder text for the search input. Default: "Search tools..." */
+  searchPlaceholder?: string;
+  /** Message shown when the tools list is empty. Default: "No tools available." */
+  noToolsAvailableLabel?: string;
+  /** Template for the no-search-results message. Use '{query}' as placeholder. Default: "No tools match '{query}'" */
+  noMatchLabel?: string;
 }
 
-export function ToolTagPicker({ tools, categories, value, onChange, disabled = false, loading = false }: ToolTagPickerProps) {
+export function ToolTagPicker({
+  tools,
+  categories,
+  value,
+  onChange,
+  disabled = false,
+  loading = false,
+  addToolsLabel = '+ Add tools...',
+  searchPlaceholder = 'Search tools...',
+  noToolsAvailableLabel = 'No tools available.',
+  noMatchLabel = "No tools match '{query}'",
+}: ToolTagPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectedSet = new Set(value);
+  const selectedSet = useMemo(() => new Set(value), [value]);
 
-  // Close on outside click
+  // Reset highlighted index when filtered results change
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [searchQuery]);
+
+  // Close on outside click or Escape
   useEffect(() => {
     if (!isOpen) return;
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target;
+    const handleClick = (ev: MouseEvent) => {
+      const target = ev.target;
       if (target instanceof Node && containerRef.current && !containerRef.current.contains(target)) {
         setIsOpen(false);
         setSearchQuery('');
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [isOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+    const handleKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
         setIsOpen(false);
         setSearchQuery('');
       }
     };
+    document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [isOpen]);
 
   // Sort tool names by category order then alphabetically within category
@@ -605,6 +627,23 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
 
   const categoryLabelMap = new Map(categories.map((c) => [c.name, c.label]));
 
+  // Flat list for keyboard navigation
+  const flatToolList = sortedGroups.flatMap(([, groupTools]) => groupTools);
+
+  const handleDropdownKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setHighlightedIndex((prev) => Math.min(prev + 1, flatToolList.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+    } else if (event.key === 'Enter' && flatToolList.length > 0) {
+      event.preventDefault();
+      const tool = flatToolList[Math.min(highlightedIndex, flatToolList.length - 1)];
+      if (tool) toggleTool(tool.name);
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -619,7 +658,7 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
   // Empty state (no tools data)
   if (tools.length === 0) {
     return (
-      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No tools available.</div>
+      <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{noToolsAvailableLabel}</div>
     );
   }
 
@@ -646,8 +685,8 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
             {toolName}
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={(event) => {
+                event.stopPropagation();
                 removeTool(toolName);
               }}
               disabled={disabled}
@@ -685,7 +724,7 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
             lineHeight: '1.4',
           }}
         >
-          + Add tools...
+          {addToolsLabel}
         </button>
       </div>
 
@@ -712,8 +751,8 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tools..."
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={searchPlaceholder}
               autoFocus
               style={{
                 width: '100%',
@@ -726,12 +765,7 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setIsOpen(false);
-                  setSearchQuery('');
-                }
-              }}
+              onKeyDown={handleDropdownKeyDown}
             />
           </div>
 
@@ -739,7 +773,7 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
           <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0' }}>
             {sortedGroups.length === 0 ? (
               <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-                No tools match '{searchQuery}'
+                {noMatchLabel.replace('{query}', searchQuery)}
               </div>
             ) : (
               sortedGroups.map(([category, groupTools]) => (
@@ -758,6 +792,8 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
                   </div>
                   {groupTools.map((tool) => {
                     const isSelected = selectedSet.has(tool.name);
+                    const globalIdx = flatToolList.indexOf(tool);
+                    const isHighlighted = globalIdx === highlightedIndex;
                     return (
                       <button
                         key={tool.name}
@@ -769,7 +805,11 @@ export function ToolTagPicker({ tools, categories, value, onChange, disabled = f
                           gap: '8px',
                           width: '100%',
                           padding: '6px 12px',
-                          background: isSelected ? 'var(--color-accent-subtle, rgba(99,102,241,0.08))' : 'transparent',
+                          background: isSelected
+                            ? 'var(--color-accent-subtle, rgba(99,102,241,0.08))'
+                            : isHighlighted
+                              ? 'var(--color-surface-2)'
+                              : 'transparent',
                           border: 'none',
                           cursor: 'pointer',
                           textAlign: 'left',
