@@ -16,6 +16,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Fixed
 
 - Bug which allowed agents excalate/increase bot execution mode e.g paper agent cannot create bot with exection mode shadow.
+- `pnpm install` failure (`ERR_PNPM_NO_MATCHING_VERSION_INSIDE_WORKSPACE`) caused by prerelease version strings in workspace packages — changed all to plain `0.0.1`.
 
 ### Removed
 
