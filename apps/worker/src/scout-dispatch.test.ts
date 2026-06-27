@@ -26,7 +26,7 @@ describe('buildScoutSystemPrompt', () => {
     expect(prompt).toContain('Use paths relative to workspace root, such as log.txt or folder/output.txt.');
     expect(prompt).toContain('Visible read-only tools: read_file, list_files.');
     expect(prompt).toContain('Use tools only when they help decide hold versus escalate.');
-    expect(prompt).toContain('Respond with JSON only. disposition must be "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.');
+    expect(prompt).toContain('Respond with JSON only. disposition must be either "hold" or "escalate". Example: {"disposition":"hold","reason":"short reason"}.');
   });
 
   it('strips Operator context from a legacy goal before rendering', () => {
