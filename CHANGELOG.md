@@ -9,6 +9,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`
+- Bot lifecycle UI controls: Stop/Start/Delete action buttons on bot detail page with confirmation modals
+- E2E bot trade test script (`scripts/ts/bot-trade-test.ts`) and shell wrapper
+- DB timestamp invariant unit tests (6 tests)
+- API endpoint functional tests for bot lifecycle
+- UI interaction tests for bot detail page (11 tests)
+
+### Fixed
+
+- `markBotRunning` now clears `stoppedAt` to prevent inverted lifecycle timestamps on bot restart
+- Worker `onStopped` callback now persists `status='stopped'` and `stoppedAt` to the database
 - Security auditor agent
 
 - Documented the billing enforcement policy: soft cap warns without changing agent behavior, hard cap stops with explicit open-position notification, and added a public billing limits page, internal technical contract, and ADR-009 to freeze the decision.
