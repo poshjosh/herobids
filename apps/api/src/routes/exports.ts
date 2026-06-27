@@ -561,27 +561,27 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      // Fills attributed to bots owned by this agent
+      // Include agent-native fills and fills from agent-owned bots
       const agentBots = await db.select({ id: bots.id }).from(bots)
         .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
       const agentBotIds = agentBots.map((b) => b.id);
 
-      if (agentBotIds.length === 0) {
-        if (parsed.data.format === 'csv') {
-          void reply.header('Content-Type', 'text/csv');
-          void reply.header('Content-Disposition', `attachment; filename="agent-${id}-trades.csv"`);
-          return reply.send(TRADES_CSV_HEADERS);
-        }
-        void reply.header('Content-Type', 'application/json');
-        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-trades.json"`);
-        return reply.send([]);
-      }
+      const [agentRows, botRows] = await Promise.all([
+        db.select().from(fills).where(and(
+          eq(fills.actorType, 'agent'), eq(fills.actorId, id),
+          ...(parsed.data.from ? [gte(fills.filledAt, new Date(parsed.data.from))] : []),
+          ...(parsed.data.to ? [lte(fills.filledAt, new Date(parsed.data.to))] : []),
+        )),
+        agentBotIds.length > 0
+          ? db.select().from(fills).where(and(
+              eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds),
+              ...(parsed.data.from ? [gte(fills.filledAt, new Date(parsed.data.from))] : []),
+              ...(parsed.data.to ? [lte(fills.filledAt, new Date(parsed.data.to))] : []),
+            ))
+          : Promise.resolve([]),
+      ]);
 
-      const conditions = [eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)];
-      if (parsed.data.from) conditions.push(gte(fills.filledAt, new Date(parsed.data.from)));
-      if (parsed.data.to) conditions.push(lte(fills.filledAt, new Date(parsed.data.to)));
-
-      const rows = await db.select().from(fills).where(and(...conditions));
+      const rows = [...agentRows, ...botRows];
 
       if (parsed.data.format === 'csv') {
         void reply.header('Content-Type', 'text/csv');
@@ -611,27 +611,22 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
       const agentBotIds = agentBots.map((b) => b.id);
 
-      if (agentBotIds.length === 0) {
-        if (parsed.data.format === 'md') {
-          void reply.header('Content-Type', 'text/markdown');
-          void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.md"`);
-          return reply.send(eventsToMarkdown([]));
-        }
-        if (parsed.data.format === 'json') {
-          void reply.header('Content-Type', 'application/json');
-          void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.json"`);
-          return reply.send([]);
-        }
-        void reply.header('Content-Type', 'text/csv');
-        void reply.header('Content-Disposition', `attachment; filename="agent-${id}-journal.csv"`);
-        return reply.send('id,actor_type,actor_id,type,created_at\n');
-      }
+      const [agentRows, botRows] = await Promise.all([
+        db.select().from(journalEvents).where(and(
+          eq(journalEvents.actorType, 'agent'), eq(journalEvents.actorId, id),
+          ...(parsed.data.from ? [gte(journalEvents.createdAt, new Date(parsed.data.from))] : []),
+          ...(parsed.data.to ? [lte(journalEvents.createdAt, new Date(parsed.data.to))] : []),
+        )),
+        agentBotIds.length > 0
+          ? db.select().from(journalEvents).where(and(
+              eq(journalEvents.actorType, 'bot'), inArray(journalEvents.actorId, agentBotIds),
+              ...(parsed.data.from ? [gte(journalEvents.createdAt, new Date(parsed.data.from))] : []),
+              ...(parsed.data.to ? [lte(journalEvents.createdAt, new Date(parsed.data.to))] : []),
+            ))
+          : Promise.resolve([]),
+      ]);
 
-      const conditions = [inArray(journalEvents.actorId, agentBotIds)];
-      if (parsed.data.from) conditions.push(gte(journalEvents.createdAt, new Date(parsed.data.from)));
-      if (parsed.data.to) conditions.push(lte(journalEvents.createdAt, new Date(parsed.data.to)));
-
-      const rows = await db.select().from(journalEvents).where(and(...conditions));
+      const rows = [...agentRows, ...botRows];
 
       if (parsed.data.format === 'md') {
         void reply.header('Content-Type', 'text/markdown');
@@ -669,14 +664,20 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
       const agentBotIds = agentBots.map((b) => b.id);
 
-      if (agentBotIds.length === 0) {
+      const [agentFillRows, botFillRows] = await Promise.all([
+        db.select().from(fills).where(and(eq(fills.actorType, 'agent'), eq(fills.actorId, id))),
+        agentBotIds.length > 0
+          ? db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)))
+          : Promise.resolve([]),
+      ]);
+
+      const fillRows = [...agentFillRows, ...botFillRows];
+
+      if (fillRows.length === 0) {
         void reply.header('Content-Type', 'text/csv');
         void reply.header('Content-Disposition', `attachment; filename="agent-${id}-costs.csv"`);
         return reply.send('currency,total_fees\n');
       }
-
-      const fillRows = await db.select().from(fills)
-        .where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)));
 
       const feesByCurrency: Record<string, number> = {};
       for (const row of fillRows) {
@@ -766,19 +767,32 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
       const agentBotIds = agentBots.map((b) => b.id);
 
-      const [allFills, allPositions] = agentBotIds.length > 0
-        ? await Promise.all([
-            db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds))),
-            db.select().from(positions).where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, agentBotIds))),
-          ])
-        : [[], []];
-
-      const [journalRows, sessions] = await Promise.all([
+      // Always include agent-native records (agent trades directly via submit_decision).
+      // Also include records from agent-owned bots if any exist.
+      const [
+        agentFills, botFills,
+        agentPositions, botPositions,
+        agentJournal, botJournal,
+        sessions,
+      ] = await Promise.all([
+        db.select().from(fills).where(and(eq(fills.actorType, 'agent'), eq(fills.actorId, id))),
         agentBotIds.length > 0
-          ? db.select().from(journalEvents).where(inArray(journalEvents.actorId, agentBotIds))
+          ? db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)))
+          : Promise.resolve([]),
+        db.select().from(positions).where(and(eq(positions.actorType, 'agent'), eq(positions.actorId, id))),
+        agentBotIds.length > 0
+          ? db.select().from(positions).where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, agentBotIds)))
+          : Promise.resolve([]),
+        db.select().from(journalEvents).where(and(eq(journalEvents.actorType, 'agent'), eq(journalEvents.actorId, id))),
+        agentBotIds.length > 0
+          ? db.select().from(journalEvents).where(and(eq(journalEvents.actorType, 'bot'), inArray(journalEvents.actorId, agentBotIds)))
           : Promise.resolve([]),
         db.select().from(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id)),
       ]);
+
+      const allFills = [...agentFills, ...botFills];
+      const allPositions = [...agentPositions, ...botPositions];
+      const journalRows = [...agentJournal, ...botJournal];
 
       const agentConfig = sanitizeConfig({
         id: agent.id,

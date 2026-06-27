@@ -21,6 +21,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Agent export endpoints (`/agents/:id/export/*`) now include agent-native fills, positions, and journal events alongside bot-owned records; added `actorType` discriminator to agent-native and bot journal queries in export bundle for actor-scope correctness.
+
 - **Dynamic LLM Pricing**: Provider pricing sourced from PostgreSQL (`llm_pricing_snapshots`) + `config/providers.yaml`. Hardcoded `PROVIDER_DEFINITIONS` removed. OpenRouter pricing fetched hourly by worker, static providers seeded on startup. API model catalog reads from DB. Rate card seeding uses DB snapshots instead of build-time constants.
 
 - Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`

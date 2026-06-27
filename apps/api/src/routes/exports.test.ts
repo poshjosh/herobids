@@ -63,6 +63,51 @@ const sampleJournalEvent = {
   createdAt: now,
 };
 
+const sampleAgentFill = {
+  id: 'fill-agent-1',
+  orderId: 'order-agent-1',
+  venueAccountId: 'va-agent-1',
+  actorType: 'agent',
+  actorId: TEST_AGENT_ID,
+  venueRefId: 'ref-agent-1',
+  venue: 'hyperliquid',
+  symbol: 'ETH-PERP',
+  side: 'sell',
+  quantity: '1.5',
+  price: '3200',
+  fee: '2.40',
+  feeCurrency: 'USDC',
+  filledAt: now,
+  createdAt: now,
+};
+
+const sampleAgentPosition = {
+  id: 'pos-agent-1',
+  venueAccountId: 'va-agent-1',
+  actorType: 'agent',
+  actorId: TEST_AGENT_ID,
+  venue: 'hyperliquid',
+  symbol: 'ETH-PERP',
+  side: 'short',
+  size: '1.5',
+  entryPrice: '3200',
+  realizedPnl: '-50.00',
+  markSource: 'last_fill',
+  openedAt: now,
+  closedAt: null,
+  updatedAt: now,
+};
+
+const sampleAgentJournalEvent = {
+  id: 'ev-agent-1',
+  actorType: 'agent',
+  actorId: TEST_AGENT_ID,
+  backtestRunId: null,
+  type: 'decision.submitted',
+  payload: { intent: 'go_short', symbol: 'ETH-PERP' },
+  createdAt: now,
+};
+
 function buildDb(selectSequence: unknown[][]): Database {
   let i = 0;
 
@@ -451,9 +496,14 @@ describe('export route rate limiting', () => {
 // ─── Agent exports ────────────────────────────────────────────────────────────
 
 describe('GET /agents/:id/export/trades', () => {
-  it('returns CSV for agent with bot fills', async () => {
-    // agent lookup + agent bots + fills
-    const db = buildDb([[{ id: TEST_AGENT_ID }], [{ id: TEST_BOT_ID }], [sampleFill]]);
+  it('returns CSV with agent-native and bot fills', async () => {
+    // agent lookup + agent bots + agentFills + botFills
+    const db = buildDb([
+      [{ id: TEST_AGENT_ID }],
+      [{ id: TEST_BOT_ID }],
+      [sampleAgentFill],
+      [sampleFill],
+    ]);
     const app = Fastify();
     decorateWithAuth(app);
     await exportRoutes(app, db);
@@ -461,7 +511,24 @@ describe('GET /agents/:id/export/trades', () => {
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.body).toContain('ETH-PERP');
     expect(res.body).toContain('BTC-PERP');
+  });
+
+  it('returns agent-native fills when agent has no bots', async () => {
+    // agent lookup + agent bots (empty) + agentFills + botFills (skipped)
+    const db = buildDb([
+      [{ id: TEST_AGENT_ID }],
+      [],
+      [sampleAgentFill],
+    ]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/trades` });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('ETH-PERP');
   });
 
   it('returns 404 for unknown agent', async () => {
@@ -502,15 +569,19 @@ describe('GET /agents/:id/export/config', () => {
 });
 
 describe('GET /agents/:id/export/bundle', () => {
+  // Query order: agents, skills, bots, agentFills, botFills, agentPositions, botPositions, agentJournal, botJournal, sessions
   it('returns a JSON bundle', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
-    // agent lookup + agentBots + Promise.all([fills, positions]) + Promise.all([journal, sessions])
     const db = buildDb([
       [agentRow],
+      [],                    // skills
       [{ id: TEST_BOT_ID }], // agent bots
-      [sampleFill],          // fills
-      [samplePosition],      // positions
-      [sampleJournalEvent],  // journal
+      [sampleAgentFill],     // agentFills
+      [sampleFill],          // botFills
+      [sampleAgentPosition], // agentPositions
+      [samplePosition],      // botPositions
+      [sampleAgentJournalEvent], // agentJournal
+      [sampleJournalEvent],  // botJournal
       [],                    // sessions
     ]);
     const app = Fastify();
@@ -526,9 +597,13 @@ describe('GET /agents/:id/export/bundle', () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     const db = buildDb([
       [agentRow],
+      [],
       [{ id: TEST_BOT_ID }],
+      [sampleAgentFill],
       [sampleFill],
+      [sampleAgentPosition],
       [samplePosition],
+      [sampleAgentJournalEvent],
       [sampleJournalEvent],
       [],
     ]);
@@ -544,5 +619,59 @@ describe('GET /agents/:id/export/bundle', () => {
     expect(body).toHaveProperty('journal');
     expect(body).toHaveProperty('sessions');
     expect(body).toHaveProperty('exportedAt');
+  });
+
+  it('includes agent-native fills when agent has no bots', async () => {
+    const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
+    const db = buildDb([
+      [agentRow],
+      [],                    // skills
+      [],                    // agent bots (none)
+      [sampleAgentFill],     // agentFills
+      // botFills skipped (no bots)
+      [sampleAgentPosition], // agentPositions
+      // botPositions skipped
+      [sampleAgentJournalEvent], // agentJournal
+      // botJournal skipped
+      [],                    // sessions
+    ]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, unknown>>();
+    const trades = body['trades'] as Array<Record<string, unknown>>;
+    expect(trades).toHaveLength(1);
+    expect(trades[0]!['symbol']).toBe('ETH-PERP');
+  });
+
+  it('includes both agent-native and bot fills in trades', async () => {
+    const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
+    const db = buildDb([
+      [agentRow],
+      [],
+      [{ id: TEST_BOT_ID }],
+      [sampleAgentFill],     // agentFills
+      [sampleFill],          // botFills
+      [sampleAgentPosition], // agentPositions
+      [samplePosition],      // botPositions
+      [sampleAgentJournalEvent], // agentJournal
+      [sampleJournalEvent],  // botJournal
+      [],
+    ]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await exportRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/export/bundle` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, unknown>>();
+    const trades = body['trades'] as Array<Record<string, unknown>>;
+    expect(trades).toHaveLength(2);
+    const symbols = trades.map((t) => t['symbol']);
+    expect(symbols).toContain('ETH-PERP');
+    expect(symbols).toContain('BTC-PERP');
   });
 });
