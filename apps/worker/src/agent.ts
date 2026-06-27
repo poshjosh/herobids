@@ -64,7 +64,7 @@ import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
 import { classifyTickThinking, extractDrawdownPct } from './tick-thinking.js';
-import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget, normalizeTrackedSymbol } from './venue-intelligence.js';
+import { buildDiscoveryAddressMap, collectDexTrackedTargets, collectPerpsTrackedSymbols, findDexPositionForTarget } from './venue-intelligence.js';
 import { createToolRegistry } from './tools/index.js';
 import { extractCeilings, extractCreatorInput } from './agent-risk-limits.js';
 import { getWorkspacePaths } from './tools/workspace.js';
@@ -2148,13 +2148,6 @@ async function runTick(): Promise<void> {
       .map((w) => w.watchId);
     // Only count watches that have NOT already been notified.
     const hasTriggeredWatch = triggeredWatchIds.some((id) => !notifiedSet.has(id));
-    // Reuse the worker's tracked-symbol normalizer so watch coverage matches
-    // real position symbols such as BTC/USD:USD, ETH/USDT:USDT, BTCUSDT, and SOL-PERP.
-    const coveredSymbols = new Set(
-      rawWatches
-        .map((w) => normalizeTrackedSymbol(w.symbol))
-        .filter((symbol): symbol is string => symbol !== null),
-    );
     const hasUncoveredPosition = hasUncoveredTrackedPosition({
       openPositionSymbols,
       watchSymbols: rawWatches.map((watch) => watch.symbol),
@@ -2206,10 +2199,15 @@ async function runTick(): Promise<void> {
       redis.del(scoutSystemPromptKey, scoutUserContextPromptKey).catch((err: unknown) => {
         logger.warn({ err }, 'Failed to clear skipped scout prompt surfaces from Redis');
       });
-      resolvedScoutDecision = resolveForcedPreScoutBillingOutcome({
+      const outcome = resolveForcedPreScoutBillingOutcome({
         preScoutDecision: preScoutResolution.decision,
         isHardLimited: false,
-      }).decision;
+      });
+      // isHardLimited=false guarantees action='continue', but TS can't narrow the union.
+      if (outcome.action !== 'continue') {
+        throw new Error('Unexpected: forced pre-scout billing outcome was skip_tick despite isHardLimited=false');
+      }
+      resolvedScoutDecision = outcome.decision;
     } else {
       scoutTickCount++;
       // Scout tools: auto-derived from registry — all tools with 'read-*' categories

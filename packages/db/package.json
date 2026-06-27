@@ -1,6 +1,6 @@
 {
   "name": "@herobids/db",
-  "version": "0.0.1-2026.06.26-b",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "exports": {

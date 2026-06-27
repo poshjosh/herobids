@@ -682,6 +682,11 @@ export class AgentMessageBroker {
       // Per-token network validity is enforced downstream by token safety.
       if (venueType === 'swap' && payload.config.symbol) {
         const symbol = payload.config.symbol;
+        if (typeof symbol !== 'string') {
+          throw new Error(
+            `Invalid symbol type. Expected a string BASE/QUOTE format (e.g. "ETH/USDC"), got ${typeof symbol}.`,
+          );
+        }
         const parts = symbol.split('/');
         if (parts.length !== 2 || !parts[0] || !parts[1]) {
           throw new Error(

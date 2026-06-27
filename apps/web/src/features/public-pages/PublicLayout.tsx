@@ -1,8 +1,9 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
+import { PUBLIC_PAGE_REGISTRY } from './contentRegistry.js';
 
 interface PublicLayoutProps {
   children: ReactNode;
@@ -112,19 +113,8 @@ export function PublicLayout({ children, translated = false, section, page, loca
         {children}
       </main>
 
-      {/* Minimal footer */}
-      <footer
-        style={{
-          textAlign: 'center',
-          padding: '16px 24px',
-          borderTop: '1px solid var(--color-border)',
-          color: 'var(--color-text-secondary)',
-          fontSize: '13px',
-          background: 'var(--color-surface-1)',
-        }}
-      >
-        © {new Date().getFullYear()} HeroBids. All rights reserved.
-      </footer>
+      {/* Footer with links to all public pages */}
+      <PublicFooter locale={effectiveLocale} />
     </div>
   );
 }
@@ -135,3 +125,104 @@ const navLinkStyle: React.CSSProperties = {
   fontSize: '14px',
   fontWeight: '500',
 };
+
+// ── Footer ────────────────────────────────────────────────────────────
+
+interface FooterColumn {
+  heading: string;
+  links: { label: string; href: string }[];
+}
+
+function PublicFooter({ locale }: { locale: SupportedLocale }) {
+  const intl = useIntl();
+
+  const columns = useMemo<FooterColumn[]>(() => {
+    const cols: FooterColumn[] = [];
+
+    for (const [section, meta] of Object.entries(PUBLIC_PAGE_REGISTRY)) {
+      const heading = intl.formatMessage({ id: `public.nav.${section}` });
+      const links: FooterColumn['links'] = [];
+
+      for (const [pageKey, pageMeta] of Object.entries(meta.pages)) {
+        const href = meta.translated
+          ? `/${locale}/${section}/${pageKey}`
+          : `/${section}/${pageKey}`;
+        const label = meta.translated && pageMeta.titleKey
+          ? intl.formatMessage({ id: pageMeta.titleKey })
+          : (pageMeta.title ?? pageKey);
+
+        links.push({ label, href });
+      }
+
+      cols.push({ heading, links });
+    }
+
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale, intl.locale]);
+
+  return (
+    <footer
+      style={{
+        borderTop: '1px solid var(--color-border)',
+        background: 'var(--color-surface-1)',
+        padding: '32px 24px 24px',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: '960px',
+          margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '24px',
+        }}
+      >
+        {columns.map((col) => (
+          <div key={col.heading}>
+            <h4
+              style={{
+                margin: '0 0 12px 0',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: 'var(--color-text-primary)',
+              }}
+            >
+              {col.heading}
+            </h4>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {col.links.map((link) => (
+                <li key={link.href} style={{ marginBottom: '6px' }}>
+                  <a
+                    href={link.href}
+                    style={{
+                      color: 'var(--color-text-secondary)',
+                      textDecoration: 'none',
+                      fontSize: '13px',
+                    }}
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          maxWidth: '960px',
+          margin: '24px auto 0',
+          paddingTop: '16px',
+          borderTop: '1px solid var(--color-border-subtle)',
+          textAlign: 'center',
+          color: 'var(--color-text-muted)',
+          fontSize: '12px',
+        }}
+      >
+        © {new Date().getFullYear()} HeroBids. All rights reserved.
+      </div>
+    </footer>
+  );
+}

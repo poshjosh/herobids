@@ -456,7 +456,7 @@ plans:
           liveEnabled: false
       usage: # required
         includedCreditCents: 0
-        topUpsEnabled: false
+        topUpsEnabled: true
         topUpPackIds: []
 
 # Billing — multi-provider subscription billing.
