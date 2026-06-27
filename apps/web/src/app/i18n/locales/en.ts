@@ -66,10 +66,9 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'Please wait…',
 
   // Auth
-  'auth.tagline': 'Your AI trading operator',
-  'auth.tab.google': 'Google',
-  'auth.tab.email': 'Email',
+  'auth.tagline': 'Your personal AI crypto trader, personal assistant and more',
   'auth.continueWithGoogle': 'Continue with Google',
+  'auth.divider.or': 'or',
   'auth.email.name.label': 'Name',
   'auth.email.name.placeholder': 'Your name',
   'auth.email.email.label': 'Email',
