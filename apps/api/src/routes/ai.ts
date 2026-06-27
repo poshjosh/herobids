@@ -5,12 +5,16 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
-import type { AppConfig } from '@herobids/domain';
+import type { AppConfig, ProvidersYaml } from '@herobids/domain';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
-import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
+import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { getAvailableProviders, getProviderCatalogEntry, makeCatalogContext, revalidatePersistedSelection, validateAiModelSelection } from '../llm-model-catalog.js';
 
 type LlmConfig = AppConfig['llm'];
+
+function makeDeps(db: Database, providersYaml: ProvidersYaml, llmConfig: LlmConfig): LlmCatalogDeps {
+  return { db, providersYaml, context: makeCatalogContext(llmConfig) };
+}
 
 // --- Schemas ---
 
@@ -44,14 +48,16 @@ const ClearedAiModelConfigSchema = z.object({
 
 const AiModelPatchSchema = z.union([AiModelConfigSchema, ClearedAiModelConfigSchema]);
 
-function canServeProviderSelection(selectedProvider: string, context: OperatorLlmCatalogContext): boolean {
-  return getAvailableProviders(context).includes(selectedProvider);
+async function canServeProviderSelection(selectedProvider: string, deps: LlmCatalogDeps): Promise<boolean> {
+  const providers = await getAvailableProviders(deps);
+  return providers.includes(selectedProvider);
 }
 
 async function resolveUserLlmConfig(
   db: Database,
   userId: string,
   baseConfig: LlmConfig,
+  providersYaml: ProvidersYaml,
 ): Promise<{ provider: string; model: string; baseUrl: string | undefined; timeoutMs: number }> {
   const [user] = await db.select({ aiModelConfig: users.aiModelConfig }).from(users).where(eq(users.id, userId));
   const userModelConfig = normalizePersistedAiModelConfig(user?.aiModelConfig);
@@ -61,12 +67,12 @@ async function resolveUserLlmConfig(
   if (
     selectedProvider
     && selectedHeavyModel
-    && canServeProviderSelection(selectedProvider, makeCatalogContext(baseConfig))
+    && await canServeProviderSelection(selectedProvider, makeDeps(db, providersYaml, baseConfig))
   ) {
     // For dynamic providers, revalidate against the live catalog so stale
     // persisted selections don't route to models that no longer exist.
-    const catalogContext = makeCatalogContext(baseConfig);
-    const stillValid = await revalidatePersistedSelection(userModelConfig, catalogContext);
+    const deps = makeDeps(db, providersYaml, baseConfig);
+    const stillValid = await revalidatePersistedSelection(userModelConfig, deps);
     if (!stillValid) {
       return { provider: baseConfig.provider, model: baseConfig.model, baseUrl: baseConfig.baseUrl, timeoutMs: baseConfig.timeoutMs };
     }
@@ -92,17 +98,18 @@ export async function aiRoutes(
   db: Database,
   llmConfig: LlmConfig,
   redisClient: Redis,
+  providersYaml: ProvidersYaml,
 ): Promise<void> {
+  const deps = makeDeps(db, providersYaml, llmConfig);
   // GET /ai/available-models — list configured providers only
   app.get('/ai/available-models', async (_request, reply) => {
-    const context = makeCatalogContext(llmConfig);
-    const configured = getAvailableProviders(context);
+    const configured = await getAvailableProviders(deps);
     if (configured.length === 0) {
       return reply.status(503).send(NO_AI_PROVIDER);
     }
 
     const providers = await Promise.all(
-      configured.map((provider) => getProviderCatalogEntry(provider, context)),
+      configured.map((provider) => getProviderCatalogEntry(provider, deps)),
     );
 
     return reply.send({ providers });
@@ -112,7 +119,7 @@ export async function aiRoutes(
     const [user] = await db.select({ aiModelConfig: users.aiModelConfig }).from(users).where(eq(users.id, request.userId));
     const normalized = normalizePersistedAiModelConfig(user?.aiModelConfig);
     if (normalized) {
-      const stillValid = await revalidatePersistedSelection(normalized, makeCatalogContext(llmConfig));
+      const stillValid = await revalidatePersistedSelection(normalized, deps);
       if (!stillValid) {
         return reply.send({ aiModelConfig: null });
       }
@@ -122,7 +129,7 @@ export async function aiRoutes(
 
   // POST /ai/generate-config — generate blueprint configData from freeform text (rate-limited 10/min)
   app.post<{ Body: unknown }>('/ai/generate-config', async (request, reply) => {
-    const configured = getAvailableProviders(makeCatalogContext(llmConfig));
+    const configured = await getAvailableProviders(deps);
     if (configured.length === 0) return reply.status(503).send(NO_AI_PROVIDER);
 
     // Rate limit 10/min per user
@@ -136,7 +143,7 @@ export async function aiRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const effectiveConfig = await resolveUserLlmConfig(db, request.userId, llmConfig);
+    const effectiveConfig = await resolveUserLlmConfig(db, request.userId, llmConfig, providersYaml);
     const systemPrompt = `You are a trading strategy configuration assistant.
 Given a user's description, generate a JSON object representing a trading bot configuration.
 The config must include these sections: strategy, risk, execution.
@@ -186,7 +193,7 @@ Respond with ONLY a valid JSON object, no prose.`;
 
   // POST /ai/analyze-portfolio — AI portfolio analysis
   app.post<{ Body: unknown }>('/ai/analyze-portfolio', async (request, reply) => {
-    const configured = getAvailableProviders(makeCatalogContext(llmConfig));
+    const configured = await getAvailableProviders(deps);
     if (configured.length === 0) return reply.status(503).send(NO_AI_PROVIDER);
 
     const parsed = AnalyzePortfolioSchema.safeParse(request.body);
@@ -194,7 +201,7 @@ Respond with ONLY a valid JSON object, no prose.`;
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const effectiveConfig = await resolveUserLlmConfig(db, request.userId, llmConfig);
+    const effectiveConfig = await resolveUserLlmConfig(db, request.userId, llmConfig, providersYaml);
     const { openPositions, closedPositions, totalPnl, tradeCount } = parsed.data;
     const portfolioSummary = JSON.stringify({
       openPositions: openPositions.slice(0, 20),
@@ -221,7 +228,7 @@ Respond with ONLY a valid JSON object, no prose.`;
 
   // POST /ai/explain-signal — AI explanation of a trade signal
   app.post<{ Body: unknown }>('/ai/explain-signal', async (request, reply) => {
-    const configured = getAvailableProviders(makeCatalogContext(llmConfig));
+    const configured = await getAvailableProviders(deps);
     if (configured.length === 0) return reply.status(503).send(NO_AI_PROVIDER);
 
     const parsed = ExplainSignalSchema.safeParse(request.body);
@@ -229,7 +236,7 @@ Respond with ONLY a valid JSON object, no prose.`;
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const effectiveConfig = await resolveUserLlmConfig(db, request.userId, llmConfig);
+    const effectiveConfig = await resolveUserLlmConfig(db, request.userId, llmConfig, providersYaml);
     const context = JSON.stringify({
       signal: parsed.data.signal,
       ...(parsed.data.candles ? { candles: parsed.data.candles.slice(0, 50) } : {}),
@@ -259,7 +266,7 @@ Respond with ONLY a valid JSON object, no prose.`;
     }
 
     if (parsed.data.provider !== null) {
-      const issues = await validateAiModelSelection(parsed.data, makeCatalogContext(llmConfig));
+      const issues = await validateAiModelSelection(parsed.data, deps);
       if (issues.length > 0) {
         return reply.status(400).send({ error: 'validation_error', details: issues });
       }

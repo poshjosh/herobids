@@ -27,13 +27,16 @@ import { eventsRoutes } from './routes/events.js';
 import { toolSchemaRoutes } from './routes/tool-schemas.js';
 import { venueDefaultsRoutes } from './routes/venue-defaults.js';
 import { strategySchemaRoutes } from './routes/strategy-schemas.js';
-import { makeCatalogContext } from './llm-model-catalog.js';
+import { loadProvidersConfig } from '@herobids/domain';
+import { makeCatalogContext, type LlmCatalogDeps } from './llm-model-catalog.js';
 import { connectionRoutes } from './routes/connections.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';
 import { setupRoutes } from './routes/setup.js';
 import { providerRoutes } from './routes/providers.js';
 import { authPlugin } from './plugins/auth.js';
 import { loadConfig } from './config.js';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { LifecycleJob, BacktestJob } from './types.js';
 import { syncSystemSkills } from './sync-system-skills.js';
 
@@ -69,6 +72,11 @@ process.on('SIGINT', () => {
 });
 
 const appConfig = loadConfig();
+
+// Load the provider registry (providers.yaml) for LLM catalog functions.
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../config');
+const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
 
 const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_ENV'] === 'development';
 const app = Fastify({
@@ -138,7 +146,7 @@ await providerRoutes(app);
 await connectionRoutes(app, db, appConfig.agentRuntime.defaultBudgets, redisClient, appConfig.plans);
 
 // ── Agent-first platform routes ───────────────────────────────────────────
-await agentRoutes(app, db, appConfig.plans, makeCatalogContext(appConfig.llm), appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient);
+await agentRoutes(app, db, appConfig.plans, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.agentRiskDefaults, appConfig.agentCostEstimates, redisClient);
 
 // ── Advanced/secondary trading constructs ─────────────────────────────────
 // These are retained as optional advanced paths. Step 21.3 will migrate
@@ -158,9 +166,9 @@ await dashboardRoutes(app, db, appConfig.plans);
 await billingRoutes(app, appConfig.billing, appConfig.plans, db, appConfig.usageBilling);
 await sessionRoutes(app, db);
 await blueprintRoutes(app, db);
-await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, makeCatalogContext(appConfig.llm), appConfig.plans);
+await agentInteractivityRoutes(app, db, redisClient, appConfig.alerts, { db, providersYaml, context: makeCatalogContext(appConfig.llm) } satisfies LlmCatalogDeps, appConfig.plans);
 await analyticsRoutes(app, db);
-await aiRoutes(app, db, appConfig.llm, redisClient);
+await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);

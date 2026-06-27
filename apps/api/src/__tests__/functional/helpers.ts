@@ -24,8 +24,11 @@ import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import { loadProvidersConfig } from '@herobids/domain';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TEST_BUDGETS: RuntimeBudgetPolicy = {
   maxHistoryMessages: 20,
@@ -198,7 +201,10 @@ export async function buildApp() {
     tickIntervalMs: 900_000,
     heartbeatIntervalMs: 5_000,
   });
-  await aiRoutes(app, db, stubLlmConfig, redisClient);
+  const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+  const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../../config');
+  const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
+  await aiRoutes(app, db, stubLlmConfig, redisClient, providersYaml);
 
   // Sync system skills before route registration, mirroring the startup sequence
   // in apps/api/src/index.ts. This is the single canonical sync point.

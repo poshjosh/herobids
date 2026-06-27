@@ -6,7 +6,7 @@ import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
 import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
-import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
+import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
 import {
@@ -78,7 +78,7 @@ export async function agentInteractivityRoutes(
   db: Database,
   redisClient: Redis,
   alertsConfig?: AlertsConfig,
-  llmCatalogContext?: OperatorLlmCatalogContext,
+  llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
 ): Promise<void> {
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
@@ -317,7 +317,7 @@ export async function agentInteractivityRoutes(
         dexWatchlistSymbols: parsed.data.dexWatchlistSymbols,
       },
     );
-    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
+    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }

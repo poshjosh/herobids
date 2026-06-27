@@ -1,6 +1,6 @@
-import { KNOWN_LLM_PROVIDERS as KNOWN_PROVIDERS, PROVIDER_DEFINITIONS, getLlmProviderModels, validateLlmModelSelection } from '@herobids/domain';
-import type { LlmProviderDefinition } from '@herobids/domain';
-import { discoverOllamaModels, normalizeOllamaCatalogUrl } from './ollama-model-discovery.js';
+import { getProviderModelIds, validateLlmModelSelection, type ProvidersYaml, type ModelPricing } from '@herobids/domain';
+import type { Database } from '@herobids/db';
+import { discoverOllamaModels } from './ollama-model-discovery.js';
 
 // --- Provider catalog metadata ---
 
@@ -23,9 +23,6 @@ export interface ProviderCatalogEntry {
   isMultiProvider?: boolean;
 }
 
-// Provider metadata is now owned by domain — see PROVIDER_DEFINITIONS in @herobids/domain.
-const PROVIDER_METADATA = PROVIDER_DEFINITIONS as Record<string, LlmProviderDefinition>;
-
 // --- Operator context ---
 
 /** Operator-level LLM config context passed to all catalog helpers. */
@@ -38,24 +35,16 @@ export interface OperatorLlmCatalogContext {
   catalogLocality: 'auto' | 'local' | 'remote';
 }
 
+// --- Internal helpers ---
+
+// Legacy OpenRouter pricing types used by UI formatting helpers (deriveLatestVariants, mapOpenRouterModelPricingMetadata).
+// These are kept for compatibility with existing presentation logic.
+// New code should work with ModelPricing from @herobids/domain and convert via modelPricingToOpenRouter().
+
 interface OpenRouterModelPricing {
   prompt?: string;
   completion?: string;
   request?: string;
-}
-
-interface OpenRouterModelRecord {
-  id: string;
-  pricing?: OpenRouterModelPricing;
-}
-
-interface OpenRouterModelsResponse {
-  data?: OpenRouterModelRecord[];
-}
-
-interface OpenRouterPricingCacheEntry {
-  catalog: OpenRouterCatalog;
-  fetchedAt: number;
 }
 
 interface OpenRouterCatalog {
@@ -67,15 +56,6 @@ interface ParsedOpenRouterPricing {
   promptPerToken: number;
   completionPerToken: number;
   requestUsd?: number;
-}
-
-const openRouterPricingCache = new Map<string, OpenRouterPricingCacheEntry>();
-const openRouterPricingInFlight = new Map<string, Promise<OpenRouterCatalog>>();
-
-// --- Internal helpers ---
-
-function resolveApiKey(provider: string): string | undefined {
-  return process.env[`LLM_API_KEY_${provider.toUpperCase()}`] ?? process.env['LLM_API_KEY'];
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -124,10 +104,6 @@ function asUsdPer1M(raw: string | undefined): string | undefined {
 
 function asValidatedUsd(raw: string | undefined): string | undefined {
   return parseUsdDecimal(raw) === null ? undefined : raw;
-}
-
-function hasOpenRouterCatalogEntries(catalog: OpenRouterCatalog): boolean {
-  return catalog.modelIds.length > 0 || Object.keys(catalog.pricingByModel).length > 0;
 }
 
 // --- :latest tag derivation ---
@@ -257,30 +233,6 @@ function isFreeOpenRouterPricing(pricing: OpenRouterModelPricing): boolean {
   return parseUsdDecimal(pricing.request) === 0;
 }
 
-function resolveOpenRouterBaseUrl(context: OperatorLlmCatalogContext): string {
-  if (context.provider === 'openrouter' && context.baseUrl) {
-    return context.baseUrl;
-  }
-  return 'https://openrouter.ai/api/v1';
-}
-
-function toOpenRouterModelsUrl(baseUrl: string): string | null {
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return null;
-    }
-
-    const cleanPath = parsed.pathname.replace(/\/+$/, '');
-    const rootPath = cleanPath.endsWith('/v1') ? cleanPath.slice(0, -3) : cleanPath;
-    const modelsUrl = new URL(parsed.origin);
-    modelsUrl.pathname = `${rootPath}/v1/models`;
-    return modelsUrl.toString();
-  } catch {
-    return null;
-  }
-}
-
 function buildOpenRouterPricingLabel(inputUsdPer1M: string | undefined, outputUsdPer1M: string | undefined): string {
   const input = inputUsdPer1M ? Number(inputUsdPer1M) : null;
   const output = outputUsdPer1M ? Number(outputUsdPer1M) : null;
@@ -291,104 +243,40 @@ function buildOpenRouterPricingLabel(inputUsdPer1M: string | undefined, outputUs
   return 'Usage-based';
 }
 
-async function fetchOpenRouterCatalog(
-  context: OperatorLlmCatalogContext,
-): Promise<OpenRouterCatalog> {
-  const apiKey = resolveApiKey('openrouter');
-  if (!apiKey) {
-    return { modelIds: [], pricingByModel: {} };
-  }
+/**
+ * Convert a DB ModelPricing snapshot (numeric USD-per-1M) to the legacy
+ * OpenRouterModelPricing string format used by UI formatting helpers.
+ */
+function modelPricingToOpenRouter(pricing: ModelPricing): OpenRouterModelPricing {
+  return {
+    prompt: (pricing.inputUsdPerM / 1_000_000).toFixed(10),
+    completion: (pricing.outputUsdPerM / 1_000_000).toFixed(10),
+  };
+}
 
-  const modelsUrl = toOpenRouterModelsUrl(resolveOpenRouterBaseUrl(context));
-  if (!modelsUrl) {
-    return { modelIds: [], pricingByModel: {} };
-  }
+/**
+ * Get the active pricing snapshot for a provider from the database.
+ * Returns null if no active snapshot exists (worker hasn't fetched yet).
+ */
+async function getDbPricingSnapshot(
+  db: Database,
+  provider: string,
+): Promise<Record<string, ModelPricing> | null> {
+  const { llmPricingSnapshots } = await import('@herobids/db/schema');
+  const { eq, and } = await import('drizzle-orm');
 
-  const now = Date.now();
-  const cached = openRouterPricingCache.get(modelsUrl);
-  if (cached && now - cached.fetchedAt < context.catalogCacheTtlMs) {
-    return cached.catalog;
-  }
+  const [row] = await db
+    .select({ models: llmPricingSnapshots.models })
+    .from(llmPricingSnapshots)
+    .where(
+      and(
+        eq(llmPricingSnapshots.provider, provider),
+        eq(llmPricingSnapshots.isActive, true),
+      ),
+    )
+    .limit(1);
 
-  let pending = openRouterPricingInFlight.get(modelsUrl);
-  if (!pending) {
-    pending = (async (): Promise<OpenRouterCatalog> => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), context.catalogTimeoutMs);
-
-      try {
-        const response = await fetch(modelsUrl, {
-          signal: controller.signal,
-          redirect: 'error',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-        });
-
-        if (!response.ok) {
-          console.warn(`[llm-catalog] OpenRouter model catalog returned HTTP ${response.status}.`);
-          return { modelIds: [], pricingByModel: {} };
-        }
-
-        const payload = await response.json() as OpenRouterModelsResponse;
-        const modelRecords = Array.isArray(payload.data) ? payload.data : [];
-        const modelIds: string[] = [];
-        const pricingByModel: Record<string, OpenRouterModelPricing> = {};
-
-        for (const modelRecord of modelRecords) {
-          if (typeof modelRecord.id !== 'string' || modelRecord.id.length === 0) {
-            continue;
-          }
-          modelIds.push(modelRecord.id);
-          if (!modelRecord.pricing || typeof modelRecord.pricing !== 'object') {
-            continue;
-          }
-
-          pricingByModel[modelRecord.id] = {
-            prompt: typeof modelRecord.pricing.prompt === 'string' ? modelRecord.pricing.prompt : undefined,
-            completion: typeof modelRecord.pricing.completion === 'string' ? modelRecord.pricing.completion : undefined,
-            request: typeof modelRecord.pricing.request === 'string' ? modelRecord.pricing.request : undefined,
-          };
-        }
-
-        return {
-          modelIds: [...new Set(modelIds)].sort(),
-          pricingByModel,
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[llm-catalog] OpenRouter pricing fetch failed: ${message}`);
-        return { modelIds: [], pricingByModel: {} };
-      } finally {
-        clearTimeout(timeout);
-      }
-    })().then((result) => {
-      openRouterPricingInFlight.delete(modelsUrl);
-      if (hasOpenRouterCatalogEntries(result)) {
-        const enriched = deriveLatestVariants(result);
-        openRouterPricingCache.set(modelsUrl, {
-          catalog: enriched,
-          fetchedAt: Date.now(),
-        });
-        return enriched;
-      }
-      return result;
-    });
-
-    openRouterPricingInFlight.set(modelsUrl, pending);
-  }
-
-  const fetched = await pending;
-  if (hasOpenRouterCatalogEntries(fetched)) {
-    return fetched;
-  }
-
-  if (cached) {
-    console.warn('[llm-catalog] OpenRouter pricing fetch failed. Serving stale pricing metadata.');
-    return deriveLatestVariants(cached.catalog);
-  }
-
-  return { modelIds: [], pricingByModel: {} };
+  return (row?.models as Record<string, ModelPricing>) ?? null;
 }
 
 function mapOpenRouterModelPricingMetadata(pricing: OpenRouterModelPricing | undefined): ModelPricingMetadata | undefined {
@@ -442,11 +330,6 @@ function mapProviderModels(
   });
 }
 
-export function clearOpenRouterPricingCache(): void {
-  openRouterPricingCache.clear();
-  openRouterPricingInFlight.clear();
-}
-
 function isKnownLocalHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   return normalized === 'localhost'
@@ -481,28 +364,13 @@ function isLocalProviderEndpoint(baseUrl: string | undefined, locality: Operator
   }
 }
 
-function isProviderExplicitlyConfigured(provider: string): boolean {
-  return !!process.env[`LLM_API_KEY_${provider.toUpperCase()}`];
-}
+// --- LlmCatalogDeps ---
 
-function isProviderAllowed(provider: string): boolean {
-  const meta = PROVIDER_METADATA[provider];
-  if (meta?.devOnly && process.env['NODE_ENV'] === 'production') {
-    return false;
-  }
-  return true;
-}
-
-function getConfiguredProviders(): string[] {
-  return KNOWN_PROVIDERS.filter((p) => isProviderExplicitlyConfigured(p) && isProviderAllowed(p));
-}
-
-function hasUsableDynamicCatalogConfig(context: OperatorLlmCatalogContext): boolean {
-  if (context.provider !== 'ollama' || !context.baseUrl) {
-    return false;
-  }
-
-  return normalizeOllamaCatalogUrl(context.baseUrl).ok;
+/** Dependencies required by catalog functions after Phase 4 refactor. */
+export interface LlmCatalogDeps {
+  db: Database;
+  providersYaml: ProvidersYaml;
+  context: OperatorLlmCatalogContext;
 }
 
 // --- Exported catalog helpers ---
@@ -524,81 +392,92 @@ export function makeCatalogContext(llmConfig: {
   };
 }
 
-export function getAvailableProviders(context: OperatorLlmCatalogContext): string[] {
-  // Production: only expose providers with dynamically fetched pricing.
-  // Static pricing goes stale and we cannot risk computing costs on inaccurate data.
-  const explicit = process.env['NODE_ENV'] === 'production'
-    ? getConfiguredProviders().filter((p) => PROVIDER_METADATA[p]?.catalogMode === 'dynamic')
-    : getConfiguredProviders();
+export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<string[]> {
+  const providers: string[] = [];
+  const isProduction = process.env['NODE_ENV'] === 'production';
 
-  const meta = PROVIDER_METADATA[context.provider];
+  for (const [providerId, config] of Object.entries(deps.providersYaml.providers)) {
+    // In production, only expose dynamic providers (static pricing goes stale)
+    if (isProduction && config.catalogMode !== 'dynamic') continue;
+    // Hide dev-only providers in production
+    if (config.devOnly && isProduction) continue;
 
-  // Dynamic providers (e.g. Ollama) are available whenever the operator explicitly
-  // selected them and configured a usable catalog URL — regardless of environment.
-  // This takes precedence over the devOnly restriction because the operator made
-  // an explicit configuration choice.
-  if (meta?.catalogMode === 'dynamic' && hasUsableDynamicCatalogConfig(context) && !explicit.includes(context.provider)) {
-    return [...explicit, context.provider];
+    // Dynamic providers must have an active pricing snapshot in production
+    const hasSnapshot = !!(await getDbPricingSnapshot(deps.db, providerId));
+    if (!hasSnapshot && config.catalogMode === 'dynamic' && isProduction) continue;
+
+    providers.push(providerId);
   }
 
-  if (!isProviderAllowed(context.provider)) {
-    return explicit;
-  }
-
-  if (resolveApiKey(context.provider) && !explicit.includes(context.provider)) {
-    return [...explicit, context.provider];
-  }
-
-  return explicit;
+  return providers.sort();
 }
 
-export async function getProviderModels(provider: string, context: OperatorLlmCatalogContext): Promise<string[]> {
+export async function getProviderModels(provider: string, deps: LlmCatalogDeps): Promise<string[]> {
+  const providerConfig = deps.providersYaml.providers[provider];
+
   if (provider === 'openrouter') {
-    const catalog = await fetchOpenRouterCatalog(context);
-    if (catalog.modelIds.length > 0) {
-      return catalog.modelIds;
+    const snapshot = await getDbPricingSnapshot(deps.db, provider);
+    if (snapshot) {
+      const modelIds = Object.keys(snapshot);
+      if (modelIds.length > 0) return modelIds;
     }
-    return getLlmProviderModels(provider);
+    // Fallback to static model list from providers.yaml
+    return getProviderModelIds(providerConfig);
   }
 
-  const meta = PROVIDER_METADATA[provider];
-  if (meta?.catalogMode === 'dynamic') {
+  if (providerConfig?.catalogMode === 'dynamic') {
+    // Ollama — live discovery
     const result = await discoverOllamaModels({
-      baseUrl: context.baseUrl,
-      configuredModel: context.model,
-      timeoutMs: context.catalogTimeoutMs,
-      cacheTtlMs: context.catalogCacheTtlMs,
+      baseUrl: deps.context.baseUrl,
+      configuredModel: deps.context.model,
+      timeoutMs: deps.context.catalogTimeoutMs,
+      cacheTtlMs: deps.context.catalogCacheTtlMs,
     });
     if (result.ok) {
       return result.data.models;
     }
-    // Invalid base URL scheme — log and expose only the configured model
     console.warn(`[llm-catalog] Ollama discovery error (${result.error.code}): ${result.error.message}. Exposing configured model only.`);
-    return [context.model];
+    return [deps.context.model];
   }
-  return getLlmProviderModels(provider);
+
+  return getProviderModelIds(providerConfig);
 }
 
 export async function getProviderCatalogEntry(
   provider: string,
-  context: OperatorLlmCatalogContext,
+  deps: LlmCatalogDeps,
 ): Promise<ProviderCatalogEntry> {
-  const meta = PROVIDER_METADATA[provider];
-  const isMultiProvider = meta?.isMultiProvider === true ? true : undefined;
+  const providerConfig = deps.providersYaml.providers[provider];
+  const isMultiProvider = providerConfig?.isMultiProvider === true ? true : undefined;
 
   if (provider === 'openrouter') {
-    const catalog = await fetchOpenRouterCatalog(context);
-    const models = catalog.modelIds.length > 0 ? catalog.modelIds : getLlmProviderModels(provider);
+    const snapshot = await getDbPricingSnapshot(deps.db, provider);
+    const modelIds = snapshot ? Object.keys(snapshot) : getProviderModelIds(providerConfig);
+
+    // Convert DB ModelPricing → legacy OpenRouterModelPricing format for UI helpers
+    const pricingByModel: Record<string, OpenRouterModelPricing> = {};
+    if (snapshot) {
+      for (const [modelId, mp] of Object.entries(snapshot)) {
+        pricingByModel[modelId] = modelPricingToOpenRouter(mp);
+      }
+    }
+
+    // Apply :latest variant derivation (presentation logic)
+    const enriched = deriveLatestVariants({ modelIds, pricingByModel });
+
     return {
       provider,
-      models: mapProviderModels(models, (modelId) => mapOpenRouterModelPricingMetadata(catalog.pricingByModel[modelId])).filter((m) => m.pricing !== undefined),
+      models: mapProviderModels(
+        enriched.modelIds,
+        (modelId) => mapOpenRouterModelPricingMetadata(enriched.pricingByModel[modelId]),
+      ).filter((m) => m.pricing !== undefined),
       isMultiProvider,
     };
   }
 
-  const models = await getProviderModels(provider, context);
+  const models = await getProviderModels(provider, deps);
 
-  if (provider === 'ollama' && isLocalProviderEndpoint(context.baseUrl, context.catalogLocality)) {
+  if (provider === 'ollama' && isLocalProviderEndpoint(deps.context.baseUrl, deps.context.catalogLocality)) {
     return {
       provider,
       models: mapProviderModels(models, () => ({ label: 'Free', source: 'local' })),
@@ -613,19 +492,24 @@ export async function getProviderCatalogEntry(
   };
 }
 
+/** @deprecated No-op — DB replaces in-memory cache. Kept for test compatibility. */
+export function clearOpenRouterPricingCache(): void {
+  // Intentionally empty: pricing is now read from DB, no in-memory cache to clear.
+}
+
 export async function validateAiModelSelection(
   selection: { provider: string; lightModel: string; heavyModel: string },
-  context: OperatorLlmCatalogContext,
+  deps: LlmCatalogDeps,
 ): Promise<Array<{ code: 'custom'; path: string[]; message: string }>> {
-  const available = new Set(getAvailableProviders(context));
-  if (!available.has(selection.provider)) {
+  const available = await getAvailableProviders(deps);
+  if (!available.includes(selection.provider)) {
     return [{ code: 'custom', path: ['provider'], message: 'Selected provider is not available on this platform' }];
   }
 
-  const meta = PROVIDER_METADATA[selection.provider];
-  if (meta?.catalogMode === 'dynamic') {
-    // Validate against the live-discovered catalog (with soft-expiry cache and static fallback)
-    const models = await getProviderModels(selection.provider, context);
+  const providerConfig = deps.providersYaml.providers[selection.provider];
+  if (providerConfig?.catalogMode === 'dynamic') {
+    // Validate against the live-discovered catalog (DB snapshot or Ollama discovery)
+    const models = await getProviderModels(selection.provider, deps);
     const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
     if (!models.includes(selection.lightModel)) {
       issues.push({ code: 'custom', path: ['lightModel'], message: 'Selected economy model is not available for this provider' });
@@ -636,32 +520,33 @@ export async function validateAiModelSelection(
     return issues;
   }
 
-  return validateLlmModelSelection(selection);
+  return validateLlmModelSelection(selection, providerConfig);
 }
 
 /**
  * Revalidate a persisted user model selection against the live catalog.
- * For dynamic providers (Ollama) this checks that the selected model is still
+ * For dynamic providers (Ollama, OpenRouter) this checks that the selected model is still
  * present in the discovered catalog. For static providers it delegates to domain.
  * Returns the selection unchanged if valid, or null if it should be ignored.
  */
 export async function revalidatePersistedSelection(
   selection: { provider: string; lightModel: string; heavyModel: string },
-  context: OperatorLlmCatalogContext,
+  deps: LlmCatalogDeps,
 ): Promise<{ provider: string; lightModel: string; heavyModel: string } | null> {
-  const meta = PROVIDER_METADATA[selection.provider];
-  if (meta?.catalogMode !== 'dynamic') {
+  const providerConfig = deps.providersYaml.providers[selection.provider];
+  if (!providerConfig || providerConfig.catalogMode !== 'dynamic') {
     // Static providers are validated by the domain normalizer already
     return selection;
   }
 
   // Dynamic provider — check availability first
-  if (!getAvailableProviders(context).includes(selection.provider)) {
+  const available = await getAvailableProviders(deps);
+  if (!available.includes(selection.provider)) {
     return null;
   }
 
   // Then validate model names against the live-discovered catalog
-  const models = await getProviderModels(selection.provider, context);
+  const models = await getProviderModels(selection.provider, deps);
   if (!models.includes(selection.lightModel) || !models.includes(selection.heavyModel)) {
     return null;
   }

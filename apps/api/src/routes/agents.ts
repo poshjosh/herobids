@@ -29,7 +29,7 @@ import type { PlansConfig } from '@herobids/domain';
 import { AgentRiskDefaultsSchema, normalizePersistedAiModelConfig, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
-import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
+import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import {
   CostPresetSchema,
   decorateAgentResponse,
@@ -403,7 +403,7 @@ export async function agentRoutes(
   app: FastifyInstance,
   db: Database,
   plansConfig?: PlansConfig,
-  llmCatalogContext?: OperatorLlmCatalogContext,
+  llmCatalogDeps?: LlmCatalogDeps,
   agentRiskDefaults: AgentRiskDefaultsConfig = DEFAULT_AGENT_RISK_DEFAULTS,
   agentCostEstimates?: AgentCostEstimatesConfig,
   redisClient?: Redis,
@@ -497,7 +497,7 @@ export async function agentRoutes(
     const effectiveToolPolicy = Object.keys(basePolicy).length > 0 ? basePolicy : null;
 
     const effectiveModelPolicy = mergeModelPolicy(parsed.data.modelPolicy ?? null, parsed.data);
-    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
+    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
@@ -704,7 +704,7 @@ export async function agentRoutes(
         dexWatchlistSymbols: parsed.data.dexWatchlistSymbols,
       },
     );
-    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogContext);
+    const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
     }
