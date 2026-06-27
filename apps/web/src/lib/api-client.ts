@@ -826,7 +826,6 @@ export interface Agent {
   dailyLlmTokenBudget: number | null;
   telegramChatId: string | null;
   executionMode: string | null;
-  dailyTokenBudget: number | null;
   dailyLossLimit: string | null;
   maxBots: number | null;
   maxSlippageBps: number | null;
@@ -837,6 +836,8 @@ export interface Agent {
   tickIntervalMs: number | null;
   capital: string | null;
   style: string | null;
+  runtimePolicyOverrides: Record<string, unknown> | null;
+  resolvedRuntimePolicy: Record<string, unknown> | null;
   openPositionEscalationToJudgePolicy: string | null;
   technical: Record<string, unknown> | null;
   createdAt: string;
@@ -919,8 +920,6 @@ export const agents = {
     dailySpendBudgetUsd?: number | null;
     executionMode?: string | null;
     telegramChatId?: string | null;
-    dailyLlmTokenBudget?: number | null;
-    dailyTokenBudget?: number | null;
     dailyLossLimit?: string | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
@@ -931,6 +930,7 @@ export const agents = {
     tickIntervalMs?: number | null;
     capital?: string | null;
     style?: string | null;
+    runtimePolicyOverrides?: Record<string, unknown> | null;
     openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   }) =>
     request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
@@ -947,8 +947,6 @@ export const agents = {
     dailySpendBudgetUsd?: number | null;
     telegramChatId?: string | null;
     executionMode?: string | null;
-    dailyLlmTokenBudget?: number | null;
-    dailyTokenBudget?: number | null;
     dailyLossLimit?: string | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
@@ -958,6 +956,8 @@ export const agents = {
     stopLossCooldownMs?: number | null;
     tickIntervalMs?: number | null;
     capital?: string | null;
+    style?: string | null;
+    runtimePolicyOverrides?: Record<string, unknown> | null;
     openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   }) =>
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

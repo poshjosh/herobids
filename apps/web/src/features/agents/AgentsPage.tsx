@@ -16,12 +16,13 @@ import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
-import { type AgentStyleValue, resolveStyleDefaults, formatStyleSummary } from './style-mapping.js';
+import { type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, type RuntimePolicyOverrides } from './style-mapping.js';
 import { generateAgentName } from './agent-name.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { intentToFormState } from './agent-form-state.js';
 import { defaultTechnicalConfigFormState, technicalFormStateToPayload, type TechnicalConfigFormState } from './technical-config-helpers.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
+import { RuntimePolicySection } from './RuntimePolicySection.js';
 
 
 /** Maps provider IDs to their venue type for the technical scanner. */
@@ -66,6 +67,7 @@ interface IntentState {
   stopLossPct: string;
   stopLossCooldownSecs: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
+  runtimePolicyOverrides: RuntimePolicyOverrides | null;
 }
 
 export function AgentsPage() {
@@ -196,6 +198,7 @@ function CreateAgentFlow({
     stopLossPct: '',
     stopLossCooldownSecs: '',
     openPositionEscalationToJudgePolicy: styleDefaults.openPositionEscalationToJudgePolicy,
+    runtimePolicyOverrides: null,
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -372,6 +375,7 @@ function CreateAgentFlow({
         stopLossCooldownSecs: intent.stopLossCooldownSecs,
         style: intent.style,
         openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
+        runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
       }));
 
       if (requiresTradingSetup && intent.tradingBindingId) {
@@ -514,6 +518,13 @@ function CreateAgentFlow({
             {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
             {formatStyleSummary(intent.style)}
           </div>
+
+          {/* 3b. Runtime Policy Overrides */}
+          <RuntimePolicySection
+            style={intent.style}
+            overrides={intent.runtimePolicyOverrides}
+            onChange={(overrides) => setIntent((s) => ({ ...s, runtimePolicyOverrides: overrides }))}
+          />
 
           {/* 3. Agent Form Body */}
           <AgentFormBody

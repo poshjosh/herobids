@@ -26,7 +26,6 @@ export interface RuntimeBudgetPolicy {
 }
 
 export interface RuntimeGuardrailDescriptor {
-  dailyTokenBudget?: number | null;
   dailyLossLimit?: string | null;
   maxBots?: number | null;
   maxSlippageBps?: number | null;

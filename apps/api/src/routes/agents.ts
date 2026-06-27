@@ -40,7 +40,6 @@ import {
   nullablePositiveIntegerSchema,
   optionalPositiveDecimalStringSchema,
   optionalPositiveIntegerSchema,
-  resolveDailyLlmTokenBudget,
   resolveExecutionModeForSkills,
   resolveNotificationPolicy,
   resolveAgentRiskContractForResponse,
@@ -87,8 +86,6 @@ const CreateAgentSchema = z.object({
     }).optional(),
   }).nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
-  dailyTokenBudget: optionalPositiveIntegerSchema(),
-  dailyLlmTokenBudget: optionalPositiveIntegerSchema(),
   dailyLossLimit: optionalPositiveDecimalStringSchema,
   maxBots: optionalPositiveIntegerSchema(),
   maxSlippageBps: optionalPositiveIntegerSchema(0),
@@ -135,8 +132,6 @@ const UpdateAgentSchema = z.object({
   }).nullable().optional(),
   // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
-  dailyTokenBudget: nullablePositiveIntegerSchema(),
-  dailyLlmTokenBudget: nullablePositiveIntegerSchema(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
@@ -444,11 +439,6 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: riskIssues });
     }
 
-    const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
-    if (dailyLlmTokenBudget.issue) {
-      return reply.status(400).send({ error: 'validation_error', details: [dailyLlmTokenBudget.issue] });
-    }
-
     if (hasModelFieldsWithoutProvider(parsed.data)) {
       return reply.status(400).send({
         error: 'validation_error',
@@ -563,7 +553,6 @@ export async function agentRoutes(
         ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
         : null,
       ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
-      dailyTokenBudget: dailyLlmTokenBudget.value ?? null,
       dailyLossLimit: parsed.data.dailyLossLimit ?? null,
       maxBots: resolvedMaxBots,
       maxSlippageBps: parsed.data.maxSlippageBps ?? null,
@@ -639,11 +628,6 @@ export async function agentRoutes(
     const riskIssues = validateAgentRiskBounds(parsed.data, agentRiskDefaults);
     if (riskIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: riskIssues });
-    }
-
-    const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
-    if (dailyLlmTokenBudget.issue) {
-      return reply.status(400).send({ error: 'validation_error', details: [dailyLlmTokenBudget.issue] });
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -779,7 +763,6 @@ export async function agentRoutes(
       costPreset: _costPreset,
       dailySpendBudgetUsd: _dailySpendBudgetUsd,
       dexWatchlistSymbols: _dexWatchlistSymbols,
-      dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
       skillIds: _skillIds,
       notificationPolicy: notificationPolicyInput,
@@ -835,7 +818,6 @@ export async function agentRoutes(
       ...resolvedMaxBotsPatch,
       ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
       ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
-      ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

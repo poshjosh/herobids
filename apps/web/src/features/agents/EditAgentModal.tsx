@@ -13,10 +13,11 @@ import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
-import { type AgentStyleValue, resolveStyleDefaults } from './style-mapping.js';
+import { type AgentStyleValue, resolveStyleDefaults, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
+import { RuntimePolicySection } from './RuntimePolicySection.js';
 
 interface EditAgentModalProps {
   agentId: string;
@@ -62,6 +63,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const [form, setForm] = useState<AgentFormState>(() => agentToFormState(initialData));
   const [style, setStyle] = useState<AgentStyleValue>(
     (initialData.style as AgentStyleValue) ?? 'balanced',
+  );
+  const [runtimePolicyOverrides, setRuntimePolicyOverrides] = useState<RuntimePolicyOverrides | null>(
+    (initialData.runtimePolicyOverrides as RuntimePolicyOverrides | null) ?? null,
   );
   const [skillPreset, setSkillPreset] = useState<SkillPresetId>(() =>
     resolvePresetFromSkillIds(initialData.skillIds ?? []),
@@ -221,6 +225,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         modelOverrideEnabled,
         modelForm,
         style,
+        runtimePolicyOverrides: runtimePolicyOverrides ?? undefined,
       }));
     },
     onSuccess: () => {
@@ -324,6 +329,11 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
                 }));
               }}
+            />
+            <RuntimePolicySection
+              style={style}
+              overrides={runtimePolicyOverrides}
+              onChange={setRuntimePolicyOverrides}
             />
           </div>
 

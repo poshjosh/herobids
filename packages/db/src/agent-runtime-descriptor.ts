@@ -283,7 +283,6 @@ export function buildRuntimeDescriptor(input: {
   goal: string;
   executionMode?: string | null;
   toolPolicy?: Record<string, unknown> | null;
-  dailyTokenBudget?: number | null;
   dailyLossLimit?: string | null;
   maxBots?: number | null;
   maxSlippageBps?: number | null;
@@ -302,7 +301,6 @@ export function buildRuntimeDescriptor(input: {
     readinessByFamily: input.capabilityDescriptor.readinessByFamily,
     toolPolicy: input.toolPolicy ?? {},
     guardrails: {
-      dailyTokenBudget: input.dailyTokenBudget ?? null,
       dailyLossLimit: input.dailyLossLimit ?? null,
       maxBots: input.maxBots ?? null,
       maxSlippageBps: input.maxSlippageBps ?? null,

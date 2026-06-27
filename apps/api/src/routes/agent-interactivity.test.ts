@@ -249,7 +249,7 @@ describe('PUT /agents/:id', () => {
     vi.unstubAllGlobals();
   });
 
-  it('normalizes capital and canonical dailyLlmTokenBudget on PUT', async () => {
+  it('normalizes capital on PUT', async () => {
     const updateSet = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
     let selectCount = 0;
     const updatedAgent = {
@@ -257,7 +257,6 @@ describe('PUT /agents/:id', () => {
       name: 'Updated',
       prompt: 'New prompt',
       capital: '750',
-      dailyTokenBudget: 12_000,
     };
     const db = {
       select: vi.fn().mockImplementation(() => {
@@ -278,19 +277,16 @@ describe('PUT /agents/:id', () => {
         name: 'Updated',
         prompt: 'New prompt',
         capital: '750.00',
-        dailyLlmTokenBudget: 12_000,
       },
     });
 
     expect(res.statusCode).toBe(200);
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({
       capital: '750',
-      dailyTokenBudget: 12_000,
     }));
     expect(res.json()).toEqual(expect.objectContaining({
       capital: '750',
-      dailyLlmTokenBudget: 12_000,
-      dailyTokenBudget: 12_000,
+      dailyLlmTokenBudget: null,
     }));
   });
 

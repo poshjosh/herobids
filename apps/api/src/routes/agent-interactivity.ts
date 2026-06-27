@@ -17,7 +17,6 @@ import {
   mergeModelPolicy,
   nullablePositiveDecimalStringSchema,
   nullablePositiveIntegerSchema,
-  resolveDailyLlmTokenBudget,
   resolveExecutionModeForSkills,
   validateAgentModelPolicy,
 } from './agent-config-helpers.js';
@@ -58,8 +57,6 @@ const UpdateAgentSchema = z.object({
   dexWatchlistSymbols: z.array(z.string().min(1).max(64)).max(25).nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
-  dailyTokenBudget: nullablePositiveIntegerSchema(),
-  dailyLlmTokenBudget: nullablePositiveIntegerSchema(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
@@ -268,11 +265,6 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const dailyLlmTokenBudget = resolveDailyLlmTokenBudget(parsed.data);
-    if (dailyLlmTokenBudget.issue) {
-      return reply.status(400).send({ error: 'validation_error', details: [dailyLlmTokenBudget.issue] });
-    }
-
     if (hasModelFieldsWithoutProvider(parsed.data)) {
       return reply.status(400).send({
         error: 'validation_error',
@@ -355,7 +347,6 @@ export async function agentInteractivityRoutes(
       costPreset: _costPreset,
       dailySpendBudgetUsd: _dailySpendBudgetUsd,
       dexWatchlistSymbols: _dexWatchlistSymbols,
-      dailyLlmTokenBudget: _dailyLlmTokenBudget,
       modelPolicy: _modelPolicy,
       skillIds: _skillIds,
       runtimePolicyOverrides: _runtimePolicyOverrides,
@@ -366,7 +357,6 @@ export async function agentInteractivityRoutes(
     await db.update(agents).set({
       ...agentUpdates,
       executionMode: executionMode.value ?? 'paper',
-      ...(dailyLlmTokenBudget.value !== undefined ? { dailyTokenBudget: dailyLlmTokenBudget.value } : {}),
       ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
       toolPolicy: effectiveToolPolicy,
       modelPolicy: effectiveModelPolicy,

@@ -81,30 +81,6 @@ export const nullablePositiveDecimalStringSchema = z.preprocess((value) => {
   return value;
 }, positiveDecimalStringSchema.nullable().optional());
 
-export function resolveDailyLlmTokenBudget(payload: {
-  dailyTokenBudget?: number | null;
-  dailyLlmTokenBudget?: number | null;
-}): { value: number | null | undefined; issue?: { code: 'custom'; path: string[]; message: string } } {
-  if (
-    payload.dailyTokenBudget !== undefined &&
-    payload.dailyLlmTokenBudget !== undefined &&
-    payload.dailyTokenBudget !== payload.dailyLlmTokenBudget
-  ) {
-    return {
-      value: undefined,
-      issue: {
-        code: 'custom',
-        path: ['dailyLlmTokenBudget'],
-        message: 'dailyLlmTokenBudget and dailyTokenBudget must match when both are provided',
-      },
-    };
-  }
-
-  return {
-    value: payload.dailyLlmTokenBudget ?? payload.dailyTokenBudget,
-  };
-}
-
 export function hasSkillCapabilityFamily(skillIds: string[] | null | undefined, capabilityFamily: string): boolean {
   return (skillIds ?? []).some((skillId) => CAPABILITY_FAMILIES_BY_SKILL_ID.get(skillId)?.includes(capabilityFamily));
 }
@@ -330,7 +306,7 @@ export function resolveNotificationPolicy(
   };
 }
 
-export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; dailyTokenBudget?: number | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null }>(agent: T): T & {
+export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null }>(agent: T): T & {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -348,7 +324,7 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
     heavyModel: typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : null,
     costPreset: typeof modelPolicy?.['costPreset'] === 'string' ? modelPolicy['costPreset'] as CostPreset : null,
     dailySpendBudgetUsd: typeof modelPolicy?.['dailySpendBudgetUsd'] === 'number' ? modelPolicy['dailySpendBudgetUsd'] : null,
-    dailyLlmTokenBudget: typeof agent.dailyTokenBudget === 'number' ? agent.dailyTokenBudget : null,
+    dailyLlmTokenBudget: null,
     dexWatchlistSymbols: Array.isArray(modelPolicy?.['dexWatchlistSymbols'])
       ? modelPolicy['dexWatchlistSymbols'].filter((value): value is string => typeof value === 'string')
       : null,

@@ -219,7 +219,6 @@ interface AgentConfig {
   costPreset?: CostPreset;
   dailySpendBudgetUsd?: number;
   dexWatchlistSymbols?: string[];
-  dailyTokenBudget?: number;
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
@@ -437,7 +436,6 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     readinessByFamily: {},
     toolPolicy: initialToolPolicy,
     guardrails: {
-      dailyTokenBudget: agentConfig.dailyTokenBudget ?? null,
       dailyLossLimit: agentConfig.dailyLossLimit ?? null,
       maxBots: agentConfig.maxBots ?? null,
       maxSlippageBps: agentConfig.maxSlippageBps ?? null,

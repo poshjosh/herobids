@@ -1430,7 +1430,6 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       skillIds: [],
       modelPolicy: null,
       tickIntervalMs: 600_000,
-      dailyTokenBudget: 42_000,
       capital: '5000',
       maxOpenPositions: 4,
       maxPositionSizePct: '40',
@@ -1453,7 +1452,6 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
         name: 'agent with controls',
         prompt: 'trade carefully',
         tickIntervalMs: 600_000,
-        dailyLlmTokenBudget: 42_000,
         capital: '5000.00',
         maxOpenPositions: 4,
         maxPositionSizePct: 40,
@@ -1465,7 +1463,6 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(res.statusCode).toBe(201);
     expect(insertedValues).toContainEqual(expect.objectContaining({
       tickIntervalMs: 600_000,
-      dailyTokenBudget: 42_000,
       capital: '5000',
       maxOpenPositions: 4,
       maxPositionSizePct: '40',
@@ -1473,8 +1470,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       stopLossCooldownMs: 120000,
     }));
     expect(res.json()).toEqual(expect.objectContaining({
-      dailyLlmTokenBudget: 42_000,
-      dailyTokenBudget: 42_000,
+      dailyLlmTokenBudget: null,
       capital: '5000',
       maxOpenPositions: 4,
       maxPositionSizePct: '40',
@@ -1502,32 +1498,6 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       stopLossPct: 10,
       stopLossCooldownMs: 300000,
       runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,
-    });
-  });
-
-  it('rejects conflicting dailyLlmTokenBudget aliases on create', async () => {
-    const { agentRoutes } = await import('./agents.js');
-    const { db } = buildDb();
-
-    const app = Fastify();
-    decorateWithAuth(app);
-    await agentRoutes(app, db);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/agents',
-      payload: {
-        name: 'agent',
-        prompt: 'p',
-        dailyLlmTokenBudget: 1000,
-        dailyTokenBudget: 2000,
-      },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({
-      error: 'validation_error',
-      details: [expect.objectContaining({ path: ['dailyLlmTokenBudget'] })],
     });
   });
 
@@ -1603,11 +1573,11 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     expect(updateSets).toContainEqual(expect.objectContaining({ tickIntervalMs: 1_200_000 }));
   });
 
-  it('normalizes capital and canonical token budget on PATCH', async () => {
+  it('normalizes capital on PATCH', async () => {
     const { agentRoutes } = await import('./agents.js');
     const updatedAgent = {
       id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null,
-      tickIntervalMs: null, capital: '750', dailyTokenBudget: 12_000,
+      tickIntervalMs: null, capital: '750',
     };
     const { db, updateSets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null, modelPolicy: null }],
@@ -1621,12 +1591,12 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: '/agents/agent-1',
-      payload: { capital: '750.00', dailyLlmTokenBudget: 12_000 },
+      payload: { capital: '750.00' },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(updateSets).toContainEqual(expect.objectContaining({ capital: '750', dailyTokenBudget: 12_000 }));
-    expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: 12_000 }));
+    expect(updateSets).toContainEqual(expect.objectContaining({ capital: '750' }));
+    expect(res.json()).toEqual(expect.objectContaining({ capital: '750', dailyLlmTokenBudget: null }));
   });
 
   it('normalizes telegramChatId on PATCH', async () => {

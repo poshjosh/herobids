@@ -1553,7 +1553,6 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
   const staticContext = buildContextSection(state, 'static');
   const tradingAgent = hasTradingCapability(state.runtimeDescriptor);
   const guardRailLines = [
-    `- Daily token budget: ${state.runtimeDescriptor.guardrails.dailyTokenBudget ?? 'unlimited'} tokens`,
     ...(tradingAgent
       ? [
           `- Daily loss limit: ${state.runtimeDescriptor.guardrails.dailyLossLimit ?? 'none'}`,

@@ -29,7 +29,6 @@ export interface InsertAgent {
     };
   } | null;
   executionMode?: string;
-  dailyTokenBudget?: number;
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
@@ -50,7 +49,6 @@ export interface UpdateAgent {
     };
   } | null;
   executionMode?: string;
-  dailyTokenBudget?: number;
   dailyLossLimit?: string;
   maxBots?: number;
   maxSlippageBps?: number;
@@ -154,7 +152,6 @@ export class AgentRepository {
       telegramChatId: input.telegramChatId ?? null,
       notificationPolicy: input.notificationPolicy ?? null,
       executionMode: input.executionMode ?? 'paper',
-      dailyTokenBudget: input.dailyTokenBudget ?? null,
       dailyLossLimit: input.dailyLossLimit ?? null,
       maxBots: input.maxBots ?? null,
       maxSlippageBps: input.maxSlippageBps ?? null,
