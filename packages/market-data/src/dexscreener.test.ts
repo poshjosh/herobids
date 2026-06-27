@@ -9,6 +9,8 @@ import {
   fetchDexScreenerTrending,
   fetchDexScreenerBoostsLatest,
   fetchDexScreenerProfilesLatest,
+  fetchDexScreenerTokensByAddress,
+  enrichDexScreenerBoostTokens,
   type DexScreenerConfig,
 } from './dexscreener.js';
 
@@ -287,5 +289,291 @@ describe('fetchDexScreenerTrending / fetchDexScreenerBoostsLatest / fetchDexScre
 
     expect(result[0]!.symbol).toBe('ABCDEF');
     expect(result[0]!.address).toBe('ABCDEF123456');
+  });
+});
+
+describe('fetchDexScreenerTokensByAddress', () => {
+  it('returns [] for empty addresses', async () => {
+    const config = makeMockConfig(vi.fn());
+    const result = await fetchDexScreenerTokensByAddress('solana', [], config);
+    expect(result).toEqual([]);
+  });
+
+  it('maps the highest-liquidity pair for each token address', async () => {
+    const mockResponse = {
+      pairs: [
+        {
+          baseToken: { address: 'addr-a', symbol: 'TOKA', name: 'Token A' },
+          priceUsd: '0.5',
+          volume: { h24: 100_000 },
+          liquidity: { usd: 100_000 },
+          chainId: 'solana',
+        },
+        {
+          baseToken: { address: 'addr-a', symbol: 'TOKA', name: 'Token A' },
+          priceUsd: '0.55',
+          volume: { h24: 200_000 },
+          liquidity: { usd: 200_000 },
+          chainId: 'solana',
+        },
+        {
+          baseToken: { address: 'addr-b', symbol: 'TOKB', name: 'Token B' },
+          priceUsd: '0.1',
+          volume: { h24: 50_000 },
+          liquidity: { usd: 50_000 },
+          chainId: 'solana',
+        },
+      ],
+    };
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockResponse), { status: 200 }),
+    );
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await fetchDexScreenerTokensByAddress('solana', ['addr-a', 'addr-b'], config);
+
+    expect(result).toHaveLength(2);
+    const tokenA = result.find((t) => t.address === 'addr-a');
+    expect(tokenA?.liquidityUsd).toBe(200_000);
+    expect(tokenA?.symbol).toBe('TOKA');
+  });
+
+  it('when a token has no pairs in the response, it is absent from the result', async () => {
+    const mockResponse = {
+      pairs: [
+        {
+          baseToken: { address: 'addr-found', symbol: 'FOUND', name: 'Found' },
+          priceUsd: '0.5',
+          volume: { h24: 100_000 },
+          liquidity: { usd: 100_000 },
+          chainId: 'solana',
+        },
+      ],
+    };
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockResponse), { status: 200 }),
+    );
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await fetchDexScreenerTokensByAddress(
+      'solana',
+      ['addr-found', 'addr-not-found'],
+      config,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.address).toBe('addr-found');
+  });
+
+  it('batches >30 addresses into sequential requests of ≤30 each', async () => {
+    const addresses = Array.from({ length: 45 }, (_, i) => `addr-${i}`);
+    const fetchFn = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ pairs: [] }), { status: 200 })),
+    );
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    await fetchDexScreenerTokensByAddress('solana', addresses, config);
+
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    const firstUrl = fetchFn.mock.calls[0]?.[0] as string;
+    const secondUrl = fetchFn.mock.calls[1]?.[0] as string;
+
+    // URLs have the shape: {baseUrl}/tokens/v1/solana/addr-0,addr-1,...
+    const firstAddrs = (firstUrl.split('/').pop() ?? '').split(',');
+    const secondAddrs = (secondUrl.split('/').pop() ?? '').split(',');
+
+    expect(firstAddrs.length).toBe(30);
+    expect(secondAddrs.length).toBe(15);
+  });
+});
+
+describe('enrichDexScreenerBoostTokens', () => {
+  it('overwrites liquidityUsd, volume24hUsd, priceUsd on source=dexscreener tokens with liquidityUsd=0', async () => {
+    const tokens: DiscoveredToken[] = [
+      {
+        address: 'boost-addr',
+        symbol: 'BOOST',
+        name: 'Boost Token',
+        network: 'solana',
+        priceUsd: 0,
+        volume24hUsd: 100,
+        liquidityUsd: 0,
+        source: 'dexscreener',
+        discoveryVectors: ['boosts_top'],
+      },
+    ];
+
+    const mockPairs = {
+      pairs: [
+        {
+          baseToken: { address: 'boost-addr', symbol: 'BOOST', name: 'Boost Token' },
+          priceUsd: '0.00001',
+          volume: { h24: 500_000 },
+          liquidity: { usd: 200_000 },
+          chainId: 'solana',
+        },
+      ],
+    };
+
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockPairs), { status: 200 }),
+    );
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await enrichDexScreenerBoostTokens(tokens, ['solana'], config);
+
+    expect(result[0]?.liquidityUsd).toBe(200_000);
+    expect(result[0]?.volume24hUsd).toBe(500_000);
+    expect(result[0]?.priceUsd).toBe(0.00001);
+  });
+
+  it('preserves discoveryVectors and source from original token', async () => {
+    const tokens: DiscoveredToken[] = [
+      {
+        address: 'boost-addr',
+        symbol: 'BOOST',
+        name: 'Boost Token',
+        network: 'solana',
+        priceUsd: 0,
+        volume24hUsd: 100,
+        liquidityUsd: 0,
+        source: 'dexscreener',
+        discoveryVectors: ['boosts_top'],
+      },
+    ];
+
+    const mockPairs = {
+      pairs: [
+        {
+          baseToken: { address: 'boost-addr', symbol: 'BOOST', name: 'Boost Token' },
+          priceUsd: '0.00001',
+          volume: { h24: 500_000 },
+          liquidity: { usd: 200_000 },
+          chainId: 'solana',
+        },
+      ],
+    };
+
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockPairs), { status: 200 }),
+    );
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await enrichDexScreenerBoostTokens(tokens, ['solana'], config);
+
+    expect(result[0]?.discoveryVectors).toContain('boosts_top');
+    expect(result[0]?.source).toBe('dexscreener');
+  });
+
+  it('overwrites volume24hUsd with real trading volume (not boost spend amount)', async () => {
+    const tokens: DiscoveredToken[] = [
+      {
+        address: 'boost-addr',
+        symbol: 'BOOST',
+        name: 'Boost Token',
+        network: 'solana',
+        priceUsd: 0,
+        volume24hUsd: 999,
+        liquidityUsd: 0,
+        source: 'dexscreener',
+        discoveryVectors: ['boosts_top'],
+      },
+    ];
+
+    const mockPairs = {
+      pairs: [
+        {
+          baseToken: { address: 'boost-addr', symbol: 'BOOST', name: 'Boost Token' },
+          priceUsd: '0.00001',
+          volume: { h24: 500_000 },
+          liquidity: { usd: 200_000 },
+          chainId: 'solana',
+        },
+      ],
+    };
+
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockPairs), { status: 200 }),
+    );
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await enrichDexScreenerBoostTokens(tokens, ['solana'], config);
+
+    expect(result[0]?.volume24hUsd).toBe(500_000);
+  });
+
+  it('skips tokens whose network is not in configured networks', async () => {
+    const tokens: DiscoveredToken[] = [
+      {
+        address: 'eth-addr',
+        symbol: 'ETH',
+        name: 'Ethereum Token',
+        network: 'ethereum',
+        priceUsd: 0,
+        volume24hUsd: 100,
+        liquidityUsd: 0,
+        source: 'dexscreener',
+        discoveryVectors: ['boosts_top'],
+      },
+    ];
+
+    const fetchFn = vi.fn();
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await enrichDexScreenerBoostTokens(tokens, ['solana'], config);
+
+    // Token returned unchanged; no HTTP calls made because network was filtered out
+    expect(result[0]?.liquidityUsd).toBe(0);
+    expect(result[0]?.volume24hUsd).toBe(100);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('skips tokens that already have liquidityUsd > 0', async () => {
+    const tokens: DiscoveredToken[] = [
+      {
+        address: 'rich-addr',
+        symbol: 'RICH',
+        name: 'Rich Token',
+        network: 'solana',
+        priceUsd: 1.0,
+        volume24hUsd: 100_000,
+        liquidityUsd: 50_000,
+        source: 'dexscreener',
+        discoveryVectors: ['search'],
+      },
+    ];
+
+    const fetchFn = vi.fn();
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await enrichDexScreenerBoostTokens(tokens, ['solana'], config);
+
+    expect(result[0]?.liquidityUsd).toBe(50_000);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('returns original tokens unchanged when the fetch throws', async () => {
+    const tokens: DiscoveredToken[] = [
+      {
+        address: 'boost-addr',
+        symbol: 'BOOST',
+        name: 'Boost Token',
+        network: 'solana',
+        priceUsd: 0,
+        volume24hUsd: 100,
+        liquidityUsd: 0,
+        source: 'dexscreener',
+        discoveryVectors: ['boosts_top'],
+      },
+    ];
+
+    const fetchFn = vi.fn().mockRejectedValue(new Error('Network error'));
+    const config = makeMockConfig(fetchFn as unknown as typeof fetch);
+
+    const result = await enrichDexScreenerBoostTokens(tokens, ['solana'], config);
+
+    expect(result).toEqual(tokens);
+    expect(result[0]?.liquidityUsd).toBe(0);
   });
 });

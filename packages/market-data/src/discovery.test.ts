@@ -1059,4 +1059,115 @@ describe('discoverTokens', () => {
 
     expect(result).toHaveLength(1);
   });
+
+  it('DexScreener boost tokens with real on-chain liquidity appear in discovery results', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'boost-addr', amount: 100 }],
+        } as Response;
+      }
+      if (url.includes('token-boosts/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('token-profiles/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('/tokens/v1/solana/boost-addr')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({
+            pairs: [{
+              baseToken: { address: 'boost-addr', symbol: 'BOOST', name: 'Boost Token' },
+              priceUsd: '0.00001',
+              volume: { h24: 200_000 },
+              liquidity: { usd: 50_000 },
+              chainId: 'solana',
+            }],
+          }),
+        } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 10_000,
+    });
+
+    const boostToken = result.find((t) => t.address === 'boost-addr');
+    expect(boostToken).toBeDefined();
+    expect(boostToken?.liquidityUsd).toBe(50_000);
+    expect(boostToken?.volume24hUsd).toBe(200_000);
+    expect(boostToken?.source).toBe('dexscreener');
+  });
+
+  it('DexScreener boost tokens with no DexScreener pair remain filtered', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'solana', tokenAddress: 'no-pair-addr', amount: 100 }],
+        } as Response;
+      }
+      if (url.includes('token-boosts/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('token-profiles/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('/tokens/v1/')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => ({ pairs: [] }),
+        } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 1,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('DexScreener boost tokens from non-configured networks do not appear', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes('token-boosts/top')) {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          json: async () => [{ chainId: 'ethereum', tokenAddress: 'eth-addr', amount: 100 }],
+        } as Response;
+      }
+      if (url.includes('token-boosts/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      if (url.includes('token-profiles/latest')) {
+        return { ok: true, status: 200, statusText: 'OK', json: async () => [] } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [], included: [] }) } as Response;
+    };
+
+    const rateLimiter = new TokenBucketRateLimiter({ requestsPerMinute: 1_000 });
+    const result = await discoverTokens({
+      dexscreener: { baseUrl: 'https://api.dexscreener.com', timeoutMs: 5_000, rateLimiter },
+      geckoterminal: { baseUrl: 'https://api.geckoterminal.com', timeoutMs: 5_000, rateLimiter },
+      networks: ['solana'],
+      minLiquidityUsd: 0,
+    });
+
+    expect(result).toEqual([]);
+  });
 });
