@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  PROVIDER_DEFINITIONS,
-  KNOWN_LLM_PROVIDERS,
-  getLlmProviderModels,
+  getProviderModelIds,
   validateLlmModelSelection,
+  getLlmModelPricing,
+  getLlmModelRateCardItems,
+  ModelPricingSchema,
+  ProvidersYamlSchema,
   type LlmProviderDefinition,
+  type ProviderConfig,
 } from './llm-models.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -19,129 +22,226 @@ function isLlmProviderDefinition(value: unknown): value is LlmProviderDefinition
     && (def.catalogMode === 'static' || def.catalogMode === 'dynamic');
 }
 
+// ── Mock provider configs ───────────────────────────────────────────────────
+
+const staticProviderConfig: ProviderConfig = {
+  catalogMode: 'static',
+  models: {
+    'gpt-4o-mini': { inputUsdPerM: 0.15, outputUsdPerM: 0.6 },
+    'gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 },
+  },
+};
+
+const dynamicProviderConfig: ProviderConfig = {
+  catalogMode: 'dynamic',
+  models: {},
+};
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
-describe('PROVIDER_DEFINITIONS', () => {
-  it('every provider definition has required fields', () => {
-    for (const [key, def] of Object.entries(PROVIDER_DEFINITIONS)) {
-      expect(isLlmProviderDefinition(def), `provider "${key}" must be a valid LlmProviderDefinition`).toBe(true);
-      expect(def.id, `provider "${key}" definition.id must match its key`).toBe(key);
-      expect(Object.keys(def.models).length, `provider "${key}" must have at least one model`).toBeGreaterThan(0);
-    }
+describe('ModelPricingSchema', () => {
+  it('accepts valid pricing', () => {
+    expect(() =>
+      ModelPricingSchema.parse({ inputUsdPerM: 1, outputUsdPerM: 5 }),
+    ).not.toThrow();
   });
 
-  it('provider ids are unique', () => {
-    const ids = Object.values(PROVIDER_DEFINITIONS).map((d) => d.id);
-    expect(new Set(ids).size).toBe(ids.length);
+  it('accepts pricing with optional reasoningUsdPerM', () => {
+    expect(() =>
+      ModelPricingSchema.parse({ inputUsdPerM: 1, outputUsdPerM: 5, reasoningUsdPerM: 10 }),
+    ).not.toThrow();
   });
 
-  it('all catalog modes are valid', () => {
-    for (const def of Object.values(PROVIDER_DEFINITIONS)) {
-      expect(['static', 'dynamic']).toContain(def.catalogMode);
-    }
+  it('rejects negative inputUsdPerM', () => {
+    expect(() =>
+      ModelPricingSchema.parse({ inputUsdPerM: -1, outputUsdPerM: 5 }),
+    ).toThrow();
   });
 
-  it('dynamic providers have at least one model for static fallback', () => {
-    for (const def of Object.values(PROVIDER_DEFINITIONS)) {
-      if (def.catalogMode === 'dynamic') {
-        expect(Object.keys(def.models).length, `dynamic provider "${def.id}" must have fallback models`).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('devOnly providers have explicit opt-in semantics', () => {
-    // devOnly is optional, but if set it must be boolean true
-    for (const [key, def] of Object.entries(PROVIDER_DEFINITIONS)) {
-      if (def.devOnly !== undefined) {
-        expect(def.devOnly, `provider "${key}" devOnly must be true if present`).toBe(true);
-      }
-    }
+  it('rejects missing outputUsdPerM', () => {
+    expect(() =>
+      ModelPricingSchema.parse({ inputUsdPerM: 1 }),
+    ).toThrow();
   });
 });
 
-describe('KNOWN_LLM_PROVIDERS', () => {
-  it('contains exactly the keys of PROVIDER_DEFINITIONS', () => {
-    const expected = Object.keys(PROVIDER_DEFINITIONS).sort();
-    const actual = [...KNOWN_LLM_PROVIDERS].sort();
-    expect(actual).toEqual(expected);
+describe('ProvidersYamlSchema', () => {
+  it('accepts valid static provider with full pricing', () => {
+    const result = ProvidersYamlSchema.parse({
+      providers: {
+        test: {
+          catalogMode: 'static',
+          models: {
+            'model-a': { inputUsdPerM: 1, outputUsdPerM: 5 },
+            'model-b': { inputUsdPerM: 2, outputUsdPerM: 10 },
+          },
+        },
+      },
+    });
+    expect(result.providers.test.catalogMode).toBe('static');
   });
 
-  it('does not contain duplicates', () => {
-    expect(new Set(KNOWN_LLM_PROVIDERS).size).toBe(KNOWN_LLM_PROVIDERS.length);
+  it('rejects static provider with missing pricing', () => {
+    expect(() =>
+      ProvidersYamlSchema.parse({
+        providers: {
+          test: {
+            catalogMode: 'static',
+            models: {
+              'model-a': { inputUsdPerM: 1 }, // missing outputUsdPerM
+            },
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts dynamic provider with empty models', () => {
+    const result = ProvidersYamlSchema.parse({
+      providers: {
+        test: {
+          catalogMode: 'dynamic',
+          models: {},
+        },
+      },
+    });
+    expect(result.providers.test.models).toEqual({});
+  });
+
+  it('rejects missing catalogMode', () => {
+    expect(() =>
+      ProvidersYamlSchema.parse({
+        providers: {
+          test: {
+            models: {},
+          },
+        },
+      }),
+    ).toThrow();
   });
 });
 
-describe('getLlmProviderModels', () => {
-  it('returns models for known providers', () => {
-    const models = getLlmProviderModels('openai');
-    expect(models).toEqual(Object.keys(PROVIDER_DEFINITIONS.openai.models));
+describe('getProviderModelIds', () => {
+  it('returns model IDs for valid provider config', () => {
+    const ids = getProviderModelIds(staticProviderConfig);
+    expect(ids).toEqual(['gpt-4o-mini', 'gpt-4o']);
   });
 
-  it('returns empty array for unknown providers', () => {
-    expect(getLlmProviderModels('nonexistent')).toEqual([]);
+  it('returns empty array for undefined', () => {
+    expect(getProviderModelIds(undefined)).toEqual([]);
+  });
+
+  it('returns empty array for empty models', () => {
+    const emptyConfig: ProviderConfig = {
+      catalogMode: 'static',
+      models: {},
+    };
+    expect(getProviderModelIds(emptyConfig)).toEqual([]);
   });
 });
 
 describe('validateLlmModelSelection', () => {
   it('rejects unknown provider', () => {
-    const issues = validateLlmModelSelection({
-      provider: 'nonexistent',
-      lightModel: 'gpt-4o',
-      heavyModel: 'gpt-4o',
-    });
+    const issues = validateLlmModelSelection(
+      {
+        provider: 'nonexistent',
+        lightModel: 'gpt-4o',
+        heavyModel: 'gpt-4o',
+      },
+      undefined,
+    );
     expect(issues).toHaveLength(1);
     expect(issues[0]!.path).toEqual(['provider']);
   });
 
   it('rejects unknown model for static provider', () => {
-    const issues = validateLlmModelSelection({
-      provider: 'openai',
-      lightModel: 'unknown-model',
-      heavyModel: 'gpt-4o',
-    });
+    const issues = validateLlmModelSelection(
+      {
+        provider: 'openai',
+        lightModel: 'unknown-model',
+        heavyModel: 'gpt-4o',
+      },
+      staticProviderConfig,
+    );
     const paths = issues.map((i) => i.path.join('.'));
     expect(paths).toContain('lightModel');
   });
 
   it('accepts valid selection for static provider', () => {
-    const issues = validateLlmModelSelection({
-      provider: 'openai',
-      lightModel: 'gpt-4o-mini',
-      heavyModel: 'gpt-4o',
-    });
+    const issues = validateLlmModelSelection(
+      {
+        provider: 'openai',
+        lightModel: 'gpt-4o-mini',
+        heavyModel: 'gpt-4o',
+      },
+      staticProviderConfig,
+    );
     expect(issues).toHaveLength(0);
   });
 
-  it('defers ollama model validation to runtime catalog', () => {
-    // Domain does not validate Ollama models — that's done at runtime by the API layer
-    const issues = validateLlmModelSelection({
-      provider: 'ollama',
-      lightModel: 'any-custom-model',
-      heavyModel: 'another-custom-model',
-    });
+  it('defers dynamic model validation', () => {
+    const issues = validateLlmModelSelection(
+      {
+        provider: 'ollama',
+        lightModel: 'any-custom-model',
+        heavyModel: 'another-custom-model',
+      },
+      dynamicProviderConfig,
+    );
     expect(issues).toHaveLength(0);
   });
 });
 
-describe('adding a new provider', () => {
-  it('is a single-line addition to PROVIDER_DEFINITIONS', () => {
-    // Simulate: adding a new provider is as simple as adding one entry.
-    const simulated = {
-      ...PROVIDER_DEFINITIONS,
-      deepseek: {
-        id: 'deepseek',
-        models: ['deepseek-chat', 'deepseek-reasoner'],
-        catalogMode: 'static',
-      },
-    } as const satisfies Record<string, LlmProviderDefinition>;
+describe('getLlmModelRateCardItems', () => {
+  it('generates correct µUSD per 1K conversion from snapshot', () => {
+    const items = getLlmModelRateCardItems('test', {
+      'model-a': { inputUsdPerM: 1, outputUsdPerM: 5 },
+    });
+    // $1/M input → 1000 µUSD/1K
+    const inputItem = items.find((i) => i.meterKey === 'llm.input_tokens');
+    expect(inputItem).toBeDefined();
+    expect(inputItem!.priceMicrousd).toBe(1000);
+    expect(inputItem!.perUnit).toBe(1000);
+    expect(inputItem!.provider).toBe('test');
+    expect(inputItem!.modelPattern).toBe('model-a');
 
-    // The new provider propagates to derived structures
-    const derivedKeys = Object.keys(simulated);
-    expect(derivedKeys).toContain('deepseek');
+    // $5/M output → 5000 µUSD/1K
+    const outputItem = items.find((i) => i.meterKey === 'llm.output_tokens');
+    expect(outputItem!.priceMicrousd).toBe(5000);
+  });
 
-    const derivedModels = Object.fromEntries(
-      Object.entries(simulated).map(([id, def]) => [id, def.models]),
-    );
-    expect(derivedModels['deepseek']).toEqual(['deepseek-chat', 'deepseek-reasoner']);
+  it('returns empty array for null snapshot', () => {
+    expect(getLlmModelRateCardItems('test', null)).toEqual([]);
+  });
+
+  it('skips models with incomplete pricing', () => {
+    const items = getLlmModelRateCardItems('test', {
+      incomplete: { inputUsdPerM: 1 }, // missing outputUsdPerM
+      complete: { inputUsdPerM: 2, outputUsdPerM: 10 },
+    });
+    const modelIds = [...new Set(items.map((i) => i.modelPattern))];
+    expect(modelIds).not.toContain('incomplete');
+    expect(modelIds).toContain('complete');
+  });
+});
+
+describe('getLlmModelPricing', () => {
+  const snapshot = {
+    'model-a': { inputUsdPerM: 1, outputUsdPerM: 5 },
+  };
+
+  it('returns pricing for existing model', () => {
+    expect(getLlmModelPricing(snapshot, 'model-a')).toEqual({
+      inputUsdPerM: 1,
+      outputUsdPerM: 5,
+    });
+  });
+
+  it('returns undefined for unknown model', () => {
+    expect(getLlmModelPricing(snapshot, 'model-b')).toBeUndefined();
+  });
+
+  it('returns undefined for null snapshot', () => {
+    expect(getLlmModelPricing(null, 'model-a')).toBeUndefined();
   });
 });
