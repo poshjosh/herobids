@@ -13,8 +13,6 @@ export function LoginPage() {
   const { login } = useSession();
   const intl = useIntl();
 
-  // 'email' tab state
-  const [tab, setTab] = useState<'google' | 'email'>('google');
   const [emailMode, setEmailMode] = useState<EmailMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -70,152 +68,127 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Tab switcher */}
-        <div role="tablist" style={{ display: 'flex', gap: '4px', background: 'var(--color-surface-0)', borderRadius: '8px', padding: '4px' }}>
-          {(['google', 'email'] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => { setTab(t); setError(null); }}
-              style={{
-                flex: 1,
-                padding: '8px',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
-                background: tab === t ? 'var(--color-surface-1)' : 'transparent',
-                color: tab === t ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                transition: 'all 0.15s',
-              }}
-            >
-              {t === 'google'
-                ? intl.formatMessage({ id: 'auth.tab.google' })
-                : intl.formatMessage({ id: 'auth.tab.email' })}
-            </button>
-          ))}
+        {/* Email / password form */}
+        <form onSubmit={(e) => { void handleEmailSubmit(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {emailMode === 'register' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label htmlFor="login-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+                {intl.formatMessage({ id: 'auth.email.name.label' })}
+              </label>
+              <input
+                id="login-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder={intl.formatMessage({ id: 'auth.email.name.placeholder' })}
+                required
+                autoComplete="name"
+                style={inputStyle}
+              />
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+              {intl.formatMessage({ id: 'auth.email.email.label' })}
+            </label>
+            <input
+              id="login-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoComplete="email"
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
+              {intl.formatMessage({ id: 'auth.email.password.label' })}
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={emailMode === 'register' ? intl.formatMessage({ id: 'auth.email.password.placeholder' }) : ''}
+              required
+              autoComplete={emailMode === 'register' ? 'new-password' : 'current-password'}
+              style={inputStyle}
+            />
+          </div>
+
+          {error && (
+            <div style={{ fontSize: '13px', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={pending}
+            style={{
+              padding: '12px',
+              background: 'var(--color-brand)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '15px',
+              fontWeight: '500',
+              cursor: pending ? 'not-allowed' : 'pointer',
+              opacity: pending ? 0.7 : 1,
+            }}
+          >
+            {pending
+              ? intl.formatMessage({ id: 'auth.pendingSubmit' })
+              : emailMode === 'register'
+                ? intl.formatMessage({ id: 'auth.register.submit' })
+                : intl.formatMessage({ id: 'auth.login.submit' })}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setEmailMode(emailMode === 'login' ? 'register' : 'login'); setError(null); }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text-muted)', textDecoration: 'underline' }}
+          >
+            {emailMode === 'login'
+              ? intl.formatMessage({ id: 'auth.switchToRegister' })
+              : intl.formatMessage({ id: 'auth.switchToLogin' })}
+          </button>
+        </form>
+
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0' }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'auth.divider.or' })}</span>
+          <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
         </div>
 
-        {/* Sign-in panel */}
-        {tab === 'google' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <a
-              href={config.googleAuthUrl}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                padding: '12px 20px',
-                background: 'white',
-                color: '#3c4043',
-                borderRadius: '8px',
-                border: '1px solid #dadce0',
-                textDecoration: 'none',
-                fontSize: '15px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#f8f9fa'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = 'white'; }}
-            >
-              <GoogleIcon />
-              {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
-            </a>
-          </div>
-        ) : (
-          <form onSubmit={(e) => { void handleEmailSubmit(e); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {emailMode === 'register' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label htmlFor="login-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-                  {intl.formatMessage({ id: 'auth.email.name.label' })}
-                </label>
-                <input
-                  id="login-name"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder={intl.formatMessage({ id: 'auth.email.name.placeholder' })}
-                  required
-                  autoComplete="name"
-                  style={inputStyle}
-                />
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label htmlFor="login-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-                {intl.formatMessage({ id: 'auth.email.email.label' })}
-              </label>
-              <input
-                id="login-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-                autoComplete="email"
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label htmlFor="login-password" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)' }}>
-                {intl.formatMessage({ id: 'auth.email.password.label' })}
-              </label>
-              <input
-                id="login-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={emailMode === 'register' ? intl.formatMessage({ id: 'auth.email.password.placeholder' }) : ''}
-                required
-                autoComplete={emailMode === 'register' ? 'new-password' : 'current-password'}
-                style={inputStyle}
-              />
-            </div>
-
-            {error && (
-              <div style={{ fontSize: '13px', color: 'var(--color-danger, #e05252)', padding: '10px 12px', background: 'rgba(224,82,82,0.08)', borderRadius: '6px' }}>
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={pending}
-              style={{
-                padding: '12px',
-                background: 'var(--color-brand)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontWeight: '500',
-                cursor: pending ? 'not-allowed' : 'pointer',
-                opacity: pending ? 0.7 : 1,
-              }}
-            >
-              {pending
-                ? intl.formatMessage({ id: 'auth.pendingSubmit' })
-                : emailMode === 'register'
-                  ? intl.formatMessage({ id: 'auth.register.submit' })
-                  : intl.formatMessage({ id: 'auth.login.submit' })}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setEmailMode(emailMode === 'login' ? 'register' : 'login'); setError(null); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text-muted)', textDecoration: 'underline' }}
-            >
-              {emailMode === 'login'
-                ? intl.formatMessage({ id: 'auth.switchToRegister' })
-                : intl.formatMessage({ id: 'auth.switchToLogin' })}
-            </button>
-          </form>
-        )}
+        {/* Google sign-in */}
+        <a
+          href={config.googleAuthUrl}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            padding: '12px 20px',
+            background: '#4285F4',
+            color: 'white',
+            borderRadius: '8px',
+            border: 'none',
+            textDecoration: 'none',
+            fontSize: '15px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#3367D6'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = '#4285F4'; }}
+        >
+          <GoogleIcon />
+          {intl.formatMessage({ id: 'auth.continueWithGoogle' })}
+        </a>
 
         <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', textAlign: 'center' }}>
           {intl.formatMessage({ id: 'auth.terms' })}

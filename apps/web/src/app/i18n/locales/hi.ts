@@ -45,10 +45,9 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'कृपया प्रतीक्षा करें…',
 
   // Auth
-  'auth.tagline': 'आपका AI ट्रेडिंग ऑपरेटर',
-  'auth.tab.google': 'Google',
-  'auth.tab.email': 'ईमेल',
+  'auth.tagline': 'आपका निजी AI क्रिप्टो ट्रेडर, निजी सहायक और बहुत कुछ',
   'auth.continueWithGoogle': 'Google से जारी रखें',
+  'auth.divider.or': 'या',
   'auth.email.name.label': 'नाम',
   'auth.email.name.placeholder': 'आपका नाम',
   'auth.email.email.label': 'ईमेल',

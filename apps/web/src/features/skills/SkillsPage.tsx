@@ -253,65 +253,6 @@ export function SkillsPage() {
         )}
       />
 
-      {isLoading && <LoadingRows count={3} />}
-      {queryError && (
-        <ErrorState
-          message={(queryError as Error).message}
-          onRetry={() => {
-            void selectableQuery.refetch();
-            void mineQuery.refetch();
-            if (canViewMarketplace) {
-              void marketplaceQuery.refetch();
-            }
-          }}
-        />
-      )}
-
-      {!isLoading && !queryError && !hasAnySkills && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <EmptyState
-            title="No skills yet"
-            message="Skills will appear here once built-in or user-authored capability bundles are available."
-          />
-          {adminQuery.isError ? (
-            <ErrorBanner message={(adminQuery.error as Error).message} />
-          ) : adminAccessDenied ? (
-            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-              Admin scope unavailable for this account.
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {!isLoading && !queryError && hasAnySkills && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-            {skillTabs.map((tab) => (
-              <Button
-                key={tab.key}
-                variant={activeCategory === tab.key ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setActiveCategory(tab.key)}
-              >
-                {tab.label}
-              </Button>
-            ))}
-          </div>
-
-          <div>
-            {renderActiveCategory()}
-          </div>
-        </div>
-      )}
-
-      {!isLoading && !queryError && privateSkillsDisabled && (
-        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
-          {autoPublishesNonDraftSkills
-            ? 'Your current plan auto-publishes non-draft skills and does not allow private skills.'
-            : 'Your current plan does not allow private skills.'}
-        </div>
-      )}
-
       {showCreateComposer && (
         <Card style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>Create skill</div>
@@ -405,6 +346,65 @@ export function SkillsPage() {
           </div>
           {createError && <ErrorBanner message={createError} />}
         </Card>
+      )}
+
+      {isLoading && <LoadingRows count={3} />}
+      {queryError && (
+        <ErrorState
+          message={(queryError as Error).message}
+          onRetry={() => {
+            void selectableQuery.refetch();
+            void mineQuery.refetch();
+            if (canViewMarketplace) {
+              void marketplaceQuery.refetch();
+            }
+          }}
+        />
+      )}
+
+      {!isLoading && !queryError && !hasAnySkills && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <EmptyState
+            title="No skills yet"
+            message="Skills will appear here once built-in or user-authored capability bundles are available."
+          />
+          {adminQuery.isError ? (
+            <ErrorBanner message={(adminQuery.error as Error).message} />
+          ) : adminAccessDenied ? (
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
+              Admin scope unavailable for this account.
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {!isLoading && !queryError && hasAnySkills && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            {skillTabs.map((tab) => (
+              <Button
+                key={tab.key}
+                variant={activeCategory === tab.key ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setActiveCategory(tab.key)}
+              >
+                {tab.label}
+              </Button>
+            ))}
+          </div>
+
+          <div>
+            {renderActiveCategory()}
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !queryError && privateSkillsDisabled && (
+        <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
+          {autoPublishesNonDraftSkills
+            ? 'Your current plan auto-publishes non-draft skills and does not allow private skills.'
+            : 'Your current plan does not allow private skills.'}
+        </div>
       )}
     </PageShell>
   );

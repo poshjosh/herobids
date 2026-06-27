@@ -45,10 +45,9 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'يرجى الانتظار…',
 
   // Auth
-  'auth.tagline': 'مشغّل التداول بالذكاء الاصطناعي',
-  'auth.tab.google': 'Google',
-  'auth.tab.email': 'البريد الإلكتروني',
+  'auth.tagline': 'متداولك الشخصي بالذكاء الاصطناعي ومساعدك الشخصي والمزيد',
   'auth.continueWithGoogle': 'المتابعة مع Google',
+  'auth.divider.or': 'أو',
   'auth.email.name.label': 'الاسم',
   'auth.email.name.placeholder': 'اسمك',
   'auth.email.email.label': 'البريد الإلكتروني',
