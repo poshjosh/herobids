@@ -298,6 +298,9 @@ importers:
       '@herobids/market-data':
         specifier: workspace:*
         version: link:../market-data
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^25.9.1

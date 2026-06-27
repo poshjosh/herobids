@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import pino from 'pino';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal, DecisionRepository } from '@herobids/db';
-import { LlmStrategy, MechanicalStrategy } from '@herobids/strategy';
+import { LlmStrategy, MechanicalStrategy, DcaStrategy } from '@herobids/strategy';
 import { runBacktest, ArrayHistoricalDataFeed, runValidation } from '@herobids/backtesting';
 import type { HistoricalFrame, ValidationThresholds, BacktestConfig } from '@herobids/backtesting';
 import { quantity, price } from '@herobids/domain';
@@ -121,7 +121,7 @@ export class BacktestRuntime {
     const repo = new BacktestingRepository(this.db);
     // DCA is timer-driven, no signal evaluation
     if (strategyType === 'dca') {
-      throw new Error('DCA strategy not yet implemented for backtesting');
+      throw new Error('DCA strategy is not supported for backtesting — it requires real-time scheduling');
     }
     // Key on decisionMode to select the engine
     switch (decisionMode ?? 'mechanical') {

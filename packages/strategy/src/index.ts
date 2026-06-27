@@ -5,3 +5,5 @@ export { scoreCandidate, scanCandidates } from './scan-engine.js';
 export type { CandidateContext, ScoredSignal, ScanConfig, IndicatorConfig } from './scan-engine.js';
 export { MechanicalStrategy } from './mechanical-strategy.js';
 export { HybridStrategy } from './hybrid-strategy.js';
+export { DcaStrategy, DcaParamsSchema } from './dca-strategy.js';
+export type { DcaParams } from './dca-strategy.js';

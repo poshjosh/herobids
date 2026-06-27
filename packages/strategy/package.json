@@ -19,6 +19,7 @@
   "dependencies": {
     "@herobids/domain": "workspace:*",
     "@herobids/llm": "workspace:*",
-    "@herobids/market-data": "workspace:*"
+    "@herobids/market-data": "workspace:*",
+    "zod": "^3.25.0"
   }
 }

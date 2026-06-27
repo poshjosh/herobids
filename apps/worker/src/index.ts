@@ -12,7 +12,7 @@ import { VenueAdapterFactory } from './venue-adapter-factory.js';
 import { AgentTradingActor } from './agent-trading-actor.js';
 import { createSwapTokenSafetyAdapter } from './token-safety-adapter.js';
 import { ActorStateOwner } from './agents/actor-state-owner.js';
-import { LlmStrategy, MechanicalStrategy, HybridStrategy } from '@herobids/strategy';
+import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
@@ -763,7 +763,7 @@ const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, even
 function createStrategy(strategyConfig: StrategyConfig, candleFetcher?: CandleFetcher): Strategy {
   // DCA is timer-driven, no signal evaluation — route to DCA executor
   if (strategyConfig.type === 'dca') {
-    throw new Error('DCA strategy not yet implemented — use momentum/range/swing/scalper/contrarian with a decisionMode');
+    return new DcaStrategy();
   }
 
   // For non-DCA, key on decisionMode to select the engine
