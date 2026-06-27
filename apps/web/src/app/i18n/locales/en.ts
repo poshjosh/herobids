@@ -19,6 +19,25 @@ export const messages: Record<string, string> = {
   'nav.signOut': 'Sign out',
   'nav.createAgent': 'New AI Agent',
 
+  // Public pages — navigation
+  'public.nav.help': 'Help',
+  'public.nav.company': 'Company',
+  'public.nav.docs': 'Docs',
+  'public.nav.legal': 'Legal',
+
+  // Public pages — help
+  'public.help.getStarted': 'Get Started',
+  'public.help.faqs': 'FAQs',
+  'public.help.pricing': 'Pricing',
+
+  // Public pages — company
+  'public.company.aboutUs': 'About Us',
+  'public.company.contactUs': 'Contact Us',
+
+  // Public pages — fallback
+  'public.notAvailableInLanguage': 'This page is not available in your language.',
+  'public.viewInEnglish': 'View in English',
+
   // Skills
   'skills.title': 'Skills',
   'skills.subtitle': 'Skills extend what AI agents know and can do',

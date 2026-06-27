@@ -57,5 +57,3 @@ When a cap is reached, HeroBids notifies you through your configured channels (T
 - Current spending vs the cap
 - Whether open positions exist
 - What actions you can take
-
-Make sure your notification preferences are set in **Settings** so you do not miss these alerts.
