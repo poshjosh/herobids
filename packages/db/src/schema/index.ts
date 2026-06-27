@@ -53,3 +53,4 @@ export { capabilityGrants } from './capability-grants.js';
 export { capabilityGrantAudit } from './capability-grant-audit.js';
 export { tokenSafetyOverrides } from './token-safety-overrides.js';
 export { decisionFailures } from './decision-failures.js';
+export { llmPricingSnapshots } from './llm-pricing-snapshots.js';
