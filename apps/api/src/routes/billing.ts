@@ -909,7 +909,7 @@ export async function billingRoutes(
         return reply.status(400).send(errorPayload('billing.top_up.unknown_pack', 'Unknown top-up pack', { packId }));
       }
 
-      if (!planUsage.topUpPackIds.includes(packId)) {
+      if (!planUsage?.topUpPackIds.includes(packId)) {
         return reply.status(400).send(errorPayload('billing.top_up.pack_not_allowed_for_plan', 'This top-up pack is not available on the current plan', {
           packId,
           planId,

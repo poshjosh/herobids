@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Decimal, SYSTEM_SKILLS, validateLlmModelSelection, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig } from '@herobids/domain';
+import { Decimal, SYSTEM_SKILLS, resolveAgentRiskContract, resolveAgentRuntimePolicy, type AgentRiskCeilings, type AgentRiskCreatorInput, type AgentRiskOverrides, type ResolvedAgentRiskContract, type AgentRiskDefaultsConfig } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { validateAiModelSelection, normalizeAgentModelPolicy } from '../llm-model-catalog.js';
 
@@ -246,11 +246,8 @@ export async function validateAgentModelPolicy(
   if (deps) {
     return validateAiModelSelection({ provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! }, deps);
   }
-  // No catalog deps — fall back to static domain validation
-  return validateLlmModelSelection(
-    { provider: selection.provider, lightModel: selection.lightModel!, heavyModel: selection.heavyModel! },
-    undefined,
-  );
+  // No catalog deps — skip catalog validation
+  return [];
 }
 
 export function extractSubmittedModelSelection(payload: {

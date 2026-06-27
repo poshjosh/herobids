@@ -118,18 +118,21 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
   });
 
   // ─── AI endpoints ─────────────────────────────────────────────────────────
-  // No LLM provider keys are set in the test environment, so all AI endpoints
-  // must return 503 with { error: 'no_ai_provider' }.
+  // Providers are configured in the test environment via providers.yaml.
+  // Without API keys, LLM-calling endpoints return 502 (ai_error).
+  // The available-models endpoint returns 200 with the provider list.
 
   describe('GET /ai/available-models', () => {
-    it('returns 503 when no provider is configured', async () => {
+    it('returns providers when providers.yaml is loaded', async () => {
       const res = await ctx.app.inject({
         method: 'GET',
         url: '/ai/available-models',
         headers: authHeader(),
       });
-      expect(res.statusCode).toBe(503);
-      expect(res.json<{ error: string }>().error).toBe('no_ai_provider');
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ providers: unknown[] }>();
+      expect(body.providers).toBeDefined();
+      expect(Array.isArray(body.providers)).toBe(true);
     });
 
     it('returns 401 without auth', async () => {
@@ -139,41 +142,41 @@ describe.skipIf(SKIP)('Analytics / AI / Skills / Datasets functional', () => {
   });
 
   describe('POST /ai/generate-config', () => {
-    it('returns 503 when no provider is configured', async () => {
+    it('returns 502 when LLM call fails (no API keys)', async () => {
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/ai/generate-config',
         headers: authHeader(),
         payload: { text: 'Create a momentum strategy' },
       });
-      expect(res.statusCode).toBe(503);
-      expect(res.json<{ error: string }>().error).toBe('no_ai_provider');
+      expect(res.statusCode).toBe(502);
+      expect(res.json<{ error: string }>().error).toBe('ai_error');
     });
   });
 
   describe('POST /ai/analyze-portfolio', () => {
-    it('returns 503 when no provider is configured', async () => {
+    it('returns 502 when LLM call fails (no API keys)', async () => {
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/ai/analyze-portfolio',
         headers: authHeader(),
         payload: { totalPnl: '100', tradeCount: 5 },
       });
-      expect(res.statusCode).toBe(503);
-      expect(res.json<{ error: string }>().error).toBe('no_ai_provider');
+      expect(res.statusCode).toBe(502);
+      expect(res.json<{ error: string }>().error).toBe('ai_error');
     });
   });
 
   describe('POST /ai/explain-signal', () => {
-    it('returns 503 when no provider is configured', async () => {
+    it('returns 502 when LLM call fails (no API keys)', async () => {
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/ai/explain-signal',
         headers: authHeader(),
         payload: { signal: { type: 'buy', price: '100' } },
       });
-      expect(res.statusCode).toBe(503);
-      expect(res.json<{ error: string }>().error).toBe('no_ai_provider');
+      expect(res.statusCode).toBe(502);
+      expect(res.json<{ error: string }>().error).toBe('ai_error');
     });
   });
 

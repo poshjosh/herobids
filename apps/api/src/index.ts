@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -89,14 +89,15 @@ const isPrettyLog = process.env['LOG_FORMAT'] === 'pretty' || process.env['NODE_
 // The /events WebSocket endpoint passes the JWT as a ?token= query parameter
 // (browsers can't set Authorization on WS upgrade). Without redaction,
 // every WS connect logs the full token in plaintext.
-function redactReqSerializer(req: Record<string, unknown>) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function redactReqSerializer(req: any): Record<string, unknown> {
   // Replicate the default Pino std serializer fields so we don't drop
   // remoteAddress, remotePort, id, query, params, or headers.
   const connection: Record<string, unknown> | undefined =
     (req['socket'] as Record<string, unknown> | undefined) ??
     (req['info'] as Record<string, unknown> | undefined);
   return {
-    id: typeof req['id'] === 'function' ? (req['id'] as () => string)() : (req['id'] ?? req['raw']?.['id']),
+    id: typeof req['id'] === 'function' ? (req['id'] as () => string)() : (req['id'] ?? (req['raw'] as Record<string, unknown> | undefined)?.['id']),
     method: req['method'],
     url: typeof req['url'] === 'string'
       ? (req['url'] as string).replace(/([?&])token=[^&]*/g, '$1token=[redacted]').replace(/[?&]$/, '')
@@ -105,8 +106,8 @@ function redactReqSerializer(req: Record<string, unknown>) {
     params: req['params'],
     headers: req['headers'],
     remoteAddress: req['ip'] ?? connection?.['remoteAddress'] ?? '',
-    remotePort: connection?.['remotePort'] ?? '',
-  };
+    remotePort: connection?.['remotePort'] ?? undefined,
+  } satisfies Record<string, unknown>;
 }
 
 function redactQueryToken(query: unknown): unknown {
@@ -118,6 +119,9 @@ function redactQueryToken(query: unknown): unknown {
   return redacted;
 }
 
+// Fastify() infers Http2SecureServer from @types/node v25, but route
+// registrations expect the default http.Server. The type assertion
+// bridges the gap without weakening downstream type safety.
 const app = Fastify({
   logger: isPrettyLog
     ? {
@@ -132,7 +136,7 @@ const app = Fastify({
         redact: ['req.headers.authorization'],
         serializers: { req: redactReqSerializer },
       },
-});
+}) as unknown as FastifyInstance;
 
 const parsedRedisUrl = new URL(appConfig.redis.url);
 const redisConnection = {

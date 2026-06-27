@@ -12,7 +12,7 @@ import {
   users,
 } from './schema/index.js';
 import { resolveRuntimeCapabilityDescriptor } from './agent-runtime-descriptor.js';
-import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig } from '@herobids/domain';
+import { normalizePersistedAiModelConfig, type PersistedAiModelConfig, type AgentRiskOverrides, type UnifiedAgentConfig, type ProvidersYaml } from '@herobids/domain';
 
 // --- Agent ---
 
@@ -130,7 +130,10 @@ export interface InsertAgentOutboundMessage {
  * Repository for agent-related persistence.
  */
 export class AgentRepository {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly providersYaml?: ProvidersYaml,
+  ) {}
 
   async getRuntimeCapabilityDescriptor(agentId: string) {
     return resolveRuntimeCapabilityDescriptor(this.db, agentId);
@@ -170,7 +173,14 @@ export class AgentRepository {
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
-    return normalizePersistedAiModelConfig(rows[0]?.aiModelConfig);
+    const raw = rows[0]?.aiModelConfig;
+    const provider = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)['provider']
+      : undefined;
+    const providerConfig = typeof provider === 'string' && this.providersYaml
+      ? this.providersYaml.providers[provider]
+      : undefined;
+    return normalizePersistedAiModelConfig(raw, providerConfig);
   }
 
   async getAgentsByUser(userId: string) {

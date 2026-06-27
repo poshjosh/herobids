@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import type { Database } from '@herobids/db';
 import type { Redis } from 'ioredis';
+import type { ProvidersYaml } from '@herobids/domain';
 import { aiRoutes } from './ai.js';
 import { clearOllamaModelCache } from '../ollama-model-discovery.js';
 
@@ -80,6 +81,55 @@ const stubLlmConfig = {
   catalog: { timeoutMs: 3_000, cacheTtlMs: 86_400_000, locality: 'auto' as const },
 };
 
+// ─── Providers YAML mocks ─────────────────────────────────────────────────
+
+const emptyProvidersYaml: ProvidersYaml = { providers: {} };
+
+const mockOpenaiProvidersYaml: ProvidersYaml = {
+  providers: {
+    openai: {
+      catalogMode: 'static',
+      models: {
+        'gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 },
+        'gpt-4o-mini': { inputUsdPerM: 0.15, outputUsdPerM: 0.6 },
+      },
+    },
+  },
+};
+
+const mockOpenrouterProvidersYaml: ProvidersYaml = {
+  providers: {
+    openrouter: {
+      catalogMode: 'dynamic',
+      isMultiProvider: true,
+      models: {},
+    },
+  },
+};
+
+const mockOllamaProvidersYaml: ProvidersYaml = {
+  providers: {
+    ollama: {
+      catalogMode: 'dynamic',
+      devOnly: true,
+      models: {},
+    },
+  },
+};
+
+/**
+ * Build a DB mock that returns the given models as an active OpenRouter pricing
+ * snapshot (simulates a row in `llm_pricing_snapshots`).
+ */
+function buildDbWithOpenrouterSnapshot(
+  models: Record<string, { inputUsdPerM: number; outputUsdPerM: number }>,
+): Database {
+  return {
+    select: vi.fn().mockImplementation(() => makeChain([{ models }])),
+    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
+  } as unknown as Database;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Ensure no real API keys are set
@@ -99,21 +149,19 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('no_ai_provider');
   });
 
-  it('returns configured providers when API key is set', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
+  it('returns providers listed in the yaml config', async () => {
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -121,93 +169,50 @@ describe('GET /ai/available-models', () => {
     expect(body.providers).toBeInstanceOf(Array);
     const providers = body.providers as Array<{ provider: string }>;
     expect(providers.some((p) => p.provider === 'openai')).toBe(true);
-    // Unconfigured providers must NOT appear
+    // Providers absent from the yaml must NOT appear
     expect(providers.every((p) => p.provider !== 'anthropic')).toBe(true);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
-  it('returns 200 with the operator provider when only the generic LLM_API_KEY is set', async () => {
-    // Deployment pattern: LLM_API_KEY (generic) + operator config provider=openai.
-    // The provider must be available — only that one provider is shown, not all 8.
-    process.env['LLM_API_KEY'] = 'generic-key';
-
+  it('returns exactly the providers present in the yaml (no extras)', async () => {
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    // Use openai as operator provider so it appears in PROVIDER_MODELS
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ providers: Array<{ provider: string }> }>();
     expect(body.providers).toHaveLength(1);
     expect(body.providers[0]!.provider).toBe('openai');
-    // No other providers must appear — the generic key must not advertise all 8.
-    delete process.env['LLM_API_KEY'];
   });
 
-  it('returns 503 for operator ollama when no usable baseUrl is set', async () => {
+  it('returns ollama with fallback model when no baseUrl is configured (no live discovery)', async () => {
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
-    expect(res.statusCode).toBe(503);
-    expect(res.json().error).toBe('no_ai_provider');
+    expect(res.statusCode).toBe(200);
+    const body = res.json<AvailableModelsTestResponse>();
+    expect(body.providers[0]!.provider).toBe('ollama');
+    // Operator-configured model must appear as the fallback when discovery is unavailable
+    expect(body.providers[0]!.models.map((m) => m.id)).toContain('qwen3:8b');
   });
 
-  it('returns OpenRouter pricing metadata sourced from the fetched model payload', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'anthropic/claude-sonnet-4-5',
-            pricing: {
-              prompt: '0.00000015',
-              completion: '0.00000060',
-              request: '0.001',
-            },
-          },
-          {
-            id: 'openai/gpt-4o',
-            pricing: {
-              prompt: '0.00000250',
-              completion: '0.00001000',
-              request: '0.003',
-            },
-          },
-          {
-            id: 'meta-llama/llama-3.3-70b-instruct',
-            pricing: {
-              prompt: '0.00000012',
-              completion: '0.00000050',
-              request: '0.002',
-            },
-          },
-          {
-            id: 'google/gemini-2.5-flash',
-            pricing: {
-              prompt: '0.00000018',
-              completion: '0.00000072',
-              request: '0.0025',
-            },
-          },
-        ],
-      }),
+  it('returns OpenRouter pricing metadata sourced from the DB pricing snapshot', async () => {
+    const db = buildDbWithOpenrouterSnapshot({
+      'anthropic/claude-sonnet-4-5': { inputUsdPerM: 0.15, outputUsdPerM: 0.6 },
+      'openai/gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 },
+      'meta-llama/llama-3.3-70b-instruct': { inputUsdPerM: 0.12, outputUsdPerM: 0.5 },
+      'google/gemini-2.5-flash': { inputUsdPerM: 0.18, outputUsdPerM: 0.72 },
     });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -219,80 +224,32 @@ describe('GET /ai/available-models', () => {
       source: 'openrouter',
       inputUsdPer1M: '0.180000',
       outputUsdPer1M: '0.720000',
-      requestUsd: '0.0025',
     });
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
   });
 
-  it('does not label OpenRouter as Free when only partial pricing fields are zero', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'anthropic/claude-sonnet-4-5',
-            pricing: {
-              request: '0',
-            },
-          },
-        ],
-      }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
+  it('returns openrouter with an empty models list when no DB pricing snapshot is available', async () => {
+    const db = buildEmptyDb(); // no snapshot rows
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
     const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openrouter');
     expect(body.providers[0]!.models).toHaveLength(0);
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
   });
 
-  it('drops negative OpenRouter sentinel prices instead of surfacing them in model labels', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'openai/gpt-5.4',
-            pricing: {
-              prompt: '-1',
-              completion: '-1',
-              request: '-1',
-            },
-          },
-          {
-            id: 'anthropic/claude-sonnet-4-5',
-            pricing: {
-              prompt: '0.00000100',
-              completion: '0.00000300',
-              request: '0.001',
-            },
-          },
-        ],
-      }),
+  it('drops OpenRouter models with negative DB snapshot prices instead of surfacing them', async () => {
+    const db = buildDbWithOpenrouterSnapshot({
+      'openai/gpt-5.4': { inputUsdPerM: -1, outputUsdPerM: -1 }, // sentinel negative — must be filtered
+      'anthropic/claude-sonnet-4-5': { inputUsdPerM: 1, outputUsdPerM: 3 },
     });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4' }, redis, mockOpenrouterProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -303,103 +260,47 @@ describe('GET /ai/available-models', () => {
       source: 'openrouter',
       inputUsdPer1M: '1.000000',
       outputUsdPer1M: '3.000000',
-      requestUsd: '0.001',
     });
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
   });
 
-  it('does not surface $0 / $0 when token prices are zero but request pricing is invalid', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'openai/gpt-5.4-mini',
-            pricing: {
-              prompt: '0',
-              completion: '0',
-              request: '-1',
-            },
-          },
-        ],
-      }),
+  it('labels OpenRouter models with zero DB snapshot prices as Free', async () => {
+    const db = buildDbWithOpenrouterSnapshot({
+      'openai/gpt-5.4-mini': { inputUsdPerM: 0, outputUsdPerM: 0 },
     });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4-mini' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4-mini' }, redis, mockOpenrouterProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
     const body = res.json<AvailableModelsTestResponse>();
-    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-5.4-mini')).toBeUndefined();
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
+    const model = body.providers[0]!.models.find((m) => m.id === 'openai/gpt-5.4-mini');
+    expect(model).toBeDefined();
+    expect(model!.pricing?.label).toBe('Free');
   });
 
   it('does not invent pricing labels for non-OpenRouter remote providers', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai', model: 'gpt-4o' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai', model: 'gpt-4o' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
     const body = res.json<AvailableModelsTestResponse>();
     expect(body.providers[0]!.provider).toBe('openai');
     expect(body.providers[0]!.models.every((model) => model.pricing === undefined)).toBe(true);
-
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
-  it('reuses cached OpenRouter pricing metadata across requests within TTL', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'anthropic/claude-sonnet-4-5',
-            pricing: {
-              prompt: '0.00000020',
-              completion: '0.00000080',
-              request: '0',
-            },
-          },
-          {
-            id: 'openai/gpt-4o',
-            pricing: {
-              prompt: '0.00000020',
-              completion: '0.00000080',
-              request: '0',
-            },
-          },
-          {
-            id: 'meta-llama/llama-3.3-70b-instruct',
-            pricing: {
-              prompt: '0.00000020',
-              completion: '0.00000080',
-              request: '0',
-            },
-          },
-        ],
-      }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
+  it('returns consistent OpenRouter models for repeated requests', async () => {
+    const snapshot = {
+      'anthropic/claude-sonnet-4-5': { inputUsdPerM: 0.2, outputUsdPerM: 0.8 },
+      'openai/gpt-4o': { inputUsdPerM: 0.2, outputUsdPerM: 0.8 },
+      'meta-llama/llama-3.3-70b-instruct': { inputUsdPerM: 0.2, outputUsdPerM: 0.8 },
+    };
+    const db = buildDbWithOpenrouterSnapshot(snapshot);
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
@@ -407,60 +308,25 @@ describe('GET /ai/available-models', () => {
       ...stubLlmConfig,
       provider: 'openrouter',
       model: 'anthropic/claude-sonnet-4-5',
-      baseUrl: 'https://openrouter-cache-test.example/v1',
-    }, redis);
+    }, redis, mockOpenrouterProvidersYaml);
 
     const first = await app.inject({ method: 'GET', url: '/ai/available-models' });
     const second = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
+    expect(first.json()).toEqual(second.json());
   });
 
   it('preserves explicit zero-valued numeric fields when all OpenRouter priced models are free', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'anthropic/claude-sonnet-4-5',
-            pricing: {
-              prompt: '0',
-              completion: '0',
-              request: '0',
-            },
-          },
-          {
-            id: 'openai/gpt-4o',
-            pricing: {
-              prompt: '0',
-              completion: '0',
-              request: '0',
-            },
-          },
-          {
-            id: 'meta-llama/llama-3.3-70b-instruct',
-            pricing: {
-              prompt: '0',
-              completion: '0',
-              request: '0',
-            },
-          },
-        ],
-      }),
+    const db = buildDbWithOpenrouterSnapshot({
+      'anthropic/claude-sonnet-4-5': { inputUsdPerM: 0, outputUsdPerM: 0 },
+      'openai/gpt-4o': { inputUsdPerM: 0, outputUsdPerM: 0 },
+      'meta-llama/llama-3.3-70b-instruct': { inputUsdPerM: 0, outputUsdPerM: 0 },
     });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -471,54 +337,19 @@ describe('GET /ai/available-models', () => {
       source: 'openrouter',
       inputUsdPer1M: '0.000000',
       outputUsdPer1M: '0.000000',
-      requestUsd: '0',
     });
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
   });
 
-  it('preserves model-level requestUsd formatting when present', async () => {
-    process.env['LLM_API_KEY_OPENROUTER'] = 'test-key';
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            id: 'anthropic/claude-sonnet-4-5',
-            pricing: {
-              prompt: '0.00000020',
-              completion: '0.00000080',
-              request: '0',
-            },
-          },
-          {
-            id: 'openai/gpt-4o',
-            pricing: {
-              prompt: '0.00000020',
-              completion: '0.00000080',
-              request: '0.0',
-            },
-          },
-          {
-            id: 'meta-llama/llama-3.3-70b-instruct',
-            pricing: {
-              prompt: '0.00000020',
-              completion: '0.00000080',
-              request: '0.000',
-            },
-          },
-        ],
-      }),
+  it('formats pricing labels correctly from DB snapshot values', async () => {
+    const db = buildDbWithOpenrouterSnapshot({
+      'anthropic/claude-sonnet-4-5': { inputUsdPerM: 0.2, outputUsdPerM: 0.8 },
+      'openai/gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 },
+      'meta-llama/llama-3.3-70b-instruct': { inputUsdPerM: 0.12, outputUsdPerM: 0.5 },
     });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -529,12 +360,13 @@ describe('GET /ai/available-models', () => {
       source: 'openrouter',
       inputUsdPer1M: '0.200000',
       outputUsdPer1M: '0.800000',
-      requestUsd: '0',
     });
-    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-4o')!.pricing?.requestUsd).toBe('0.0');
-
-    vi.unstubAllGlobals();
-    delete process.env['LLM_API_KEY_OPENROUTER'];
+    expect(body.providers[0]!.models.find((model) => model.id === 'openai/gpt-4o')!.pricing).toEqual({
+      label: '$2.5 / $10',
+      source: 'openrouter',
+      inputUsdPer1M: '2.500000',
+      outputUsdPer1M: '10.000000',
+    });
   });
 });
 
@@ -547,7 +379,7 @@ describe('POST /ai/generate-config', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -560,7 +392,6 @@ describe('POST /ai/generate-config', () => {
 
   it('returns 400 for missing text field', async () => {
     // Provider must be configured so we get past the 503 guard to reach body validation
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
@@ -568,7 +399,7 @@ describe('POST /ai/generate-config', () => {
     app.setErrorHandler((error, _request, reply) => {
       reply.status(500).send({ message: error.message, stack: error.stack });
     });
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -576,17 +407,14 @@ describe('POST /ai/generate-config', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(400);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
   it('returns 429 when rate limit exceeded', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
     const db = buildEmptyDb();
     const redis = buildMockRedis({ incr: vi.fn().mockResolvedValue(11) });
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -594,19 +422,16 @@ describe('POST /ai/generate-config', () => {
       payload: { text: 'Generate momentum strategy' },
     });
     expect(res.statusCode).toBe(429);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
   it('returns 200 with configData when LLM returns valid JSON', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
     const db = {
       select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
     } as unknown as Database;
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -619,7 +444,6 @@ describe('POST /ai/generate-config', () => {
     expect(body.configData).toHaveProperty('risk');
     expect(body.configData).toHaveProperty('execution');
     expect(body.model).toBe('gpt-4o');
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 });
 
@@ -632,7 +456,7 @@ describe('POST /ai/analyze-portfolio', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -643,12 +467,11 @@ describe('POST /ai/analyze-portfolio', () => {
   });
 
   it('returns 400 for invalid body (wrong types)', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -656,7 +479,6 @@ describe('POST /ai/analyze-portfolio', () => {
       payload: { tradeCount: 'not-a-number' },
     });
     expect(res.statusCode).toBe(400);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 });
 
@@ -669,7 +491,7 @@ describe('POST /ai/explain-signal', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -680,12 +502,11 @@ describe('POST /ai/explain-signal', () => {
   });
 
   it('returns 400 when signal is missing', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',
@@ -693,7 +514,6 @@ describe('POST /ai/explain-signal', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(400);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 });
 
@@ -707,7 +527,7 @@ describe('GET /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -728,7 +548,7 @@ describe('GET /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -750,7 +570,8 @@ describe('GET /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    // openai yaml only has gpt-4o and gpt-4o-mini — claude-haiku-3-5 is not openai → null
+    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -760,8 +581,6 @@ describe('GET /settings/ai-model', () => {
 
 describe('PATCH /settings/ai-model', () => {
   it('returns 200 and updated config when valid body provided', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
     const db = {
       select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
       update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
@@ -769,7 +588,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -778,11 +597,9 @@ describe('PATCH /settings/ai-model', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().aiModelConfig).toEqual({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
   it('returns 200 when setting a field to null (clearing preference)', async () => {
-
     const db = {
       select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }])),
       update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
@@ -790,7 +607,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -802,12 +619,11 @@ describe('PATCH /settings/ai-model', () => {
   });
 
   it('returns 400 for invalid provider shape', async () => {
-
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -818,13 +634,12 @@ describe('PATCH /settings/ai-model', () => {
   });
 
   it('returns 400 when the selected provider is not available on this platform', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
+    // mockOpenaiProvidersYaml only has openai — anthropic is not available
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -833,17 +648,15 @@ describe('PATCH /settings/ai-model', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
   it('returns 400 when a selected model is not available for the provider', async () => {
-    process.env['LLM_API_KEY_OPENAI'] = 'test-key';
-
+    // claude-haiku-3-5 is not in mockOpenaiProvidersYaml’s openai model list
     const db = buildEmptyDb();
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -852,10 +665,10 @@ describe('PATCH /settings/ai-model', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    delete process.env['LLM_API_KEY_OPENAI'];
   });
 
-  it('returns 400 when selecting ollama with no usable baseUrl configured', async () => {
+  it('returns 400 when the selected provider is not present in the yaml config', async () => {
+    // mockOpenaiProvidersYaml has no ollama entry — selecting ollama must be rejected
     const db = {
       select: vi.fn().mockImplementation(() => makeChain([{ aiModelConfig: null }])),
       update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) }),
@@ -863,7 +676,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -890,7 +703,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -935,7 +748,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -961,7 +774,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     // Must NOT return 503 — ollama is configured and must be surfaced even on discovery failure
@@ -990,7 +803,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -1017,7 +830,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'https://remote-ollama.example.com/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -1045,7 +858,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       model: 'qwen3:8b',
       baseUrl: 'https://proxy.example.com/v1',
       catalog: { ...stubLlmConfig.catalog, locality: 'local' },
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -1073,7 +886,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
       catalog: { ...stubLlmConfig.catalog, locality: 'remote' },
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -1112,7 +925,7 @@ describe('PATCH /settings/ai-model — Ollama dynamic validation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -1141,7 +954,7 @@ describe('PATCH /settings/ai-model — Ollama dynamic validation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -1180,7 +993,7 @@ describe('persisted Ollama model revalidation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -1222,7 +1035,7 @@ describe('persisted Ollama model revalidation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis);
+    }, redis, mockOllamaProvidersYaml);
 
     const res = await app.inject({
       method: 'POST',

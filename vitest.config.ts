@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@herobids/db': new URL('./packages/db/src/index.ts', import.meta.url).pathname,
+      '@herobids/db/schema': new URL('./packages/db/src/schema/index.ts', import.meta.url).pathname,
       '@herobids/domain': new URL('./packages/domain/src/index.ts', import.meta.url).pathname,
       '@herobids/engine': new URL('./packages/engine/src/index.ts', import.meta.url).pathname,
       '@herobids/venues': new URL('./packages/venues/src/index.ts', import.meta.url).pathname,

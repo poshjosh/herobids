@@ -1,5 +1,6 @@
 import { getProviderModelIds, validateLlmModelSelection, type ProvidersYaml, type ModelPricing } from '@herobids/domain';
-import type { Database } from '@herobids/db';
+import { llmPricingSnapshots, type Database } from '@herobids/db';
+import { eq, and } from 'drizzle-orm';
 import { discoverOllamaModels } from './ollama-model-discovery.js';
 
 // --- Provider catalog metadata ---
@@ -262,9 +263,6 @@ async function getDbPricingSnapshot(
   db: Database,
   provider: string,
 ): Promise<Record<string, ModelPricing> | null> {
-  const { llmPricingSnapshots } = await import('@herobids/db/schema');
-  const { eq, and } = await import('drizzle-orm');
-
   const [row] = await db
     .select({ models: llmPricingSnapshots.models })
     .from(llmPricingSnapshots)
@@ -403,8 +401,10 @@ export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<strin
     if (config.devOnly && isProduction) continue;
 
     // Dynamic providers must have an active pricing snapshot in production
-    const hasSnapshot = !!(await getDbPricingSnapshot(deps.db, providerId));
-    if (!hasSnapshot && config.catalogMode === 'dynamic' && isProduction) continue;
+    if (config.catalogMode === 'dynamic' && isProduction) {
+      const hasSnapshot = !!(await getDbPricingSnapshot(deps.db, providerId));
+      if (!hasSnapshot) continue;
+    }
 
     providers.push(providerId);
   }

@@ -205,11 +205,23 @@ describe('PUT /agents/:id', () => {
       redis,
       undefined,
       {
-        provider: 'ollama',
-        model: 'deepseek-r1:latest',
-        baseUrl: 'http://localhost:11434/v1',
-        catalogTimeoutMs: 3_000,
-        catalogCacheTtlMs: 86_400_000,
+        db: db,
+        providersYaml: {
+          providers: {
+            ollama: {
+              catalogMode: 'dynamic',
+              models: {},
+            },
+          },
+        },
+        context: {
+          provider: 'ollama',
+          model: 'deepseek-r1:latest',
+          baseUrl: 'http://localhost:11434/v1',
+          catalogTimeoutMs: 3_000,
+          catalogCacheTtlMs: 86_400_000,
+          catalogLocality: 'auto',
+        },
       },
     );
 

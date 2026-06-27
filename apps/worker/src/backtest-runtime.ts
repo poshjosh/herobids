@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import pino from 'pino';
 import type { Database } from '@herobids/db';
 import { BacktestingRepository, PgJournal, DecisionRepository } from '@herobids/db';
-import { LlmStrategy, MechanicalStrategy, DcaStrategy } from '@herobids/strategy';
+import { LlmStrategy, MechanicalStrategy } from '@herobids/strategy';
 import { runBacktest, ArrayHistoricalDataFeed, runValidation } from '@herobids/backtesting';
 import type { HistoricalFrame, ValidationThresholds, BacktestConfig } from '@herobids/backtesting';
 import { quantity, price } from '@herobids/domain';

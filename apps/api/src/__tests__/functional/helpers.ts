@@ -200,7 +200,7 @@ export async function buildApp() {
     heartbeatIntervalMs: 5_000,
   });
   const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-  const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../../config');
+  const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../../../config');
   const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
   await aiRoutes(app, db, stubLlmConfig, redisClient, providersYaml);
 

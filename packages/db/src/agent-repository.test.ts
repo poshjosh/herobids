@@ -1,5 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AgentRepository } from './agent-repository.js';
+import type { ProvidersYaml } from '@herobids/domain';
+
+const mockProvidersYaml: ProvidersYaml = {
+  providers: {
+    openai: {
+      catalogMode: 'static',
+      models: {
+        'gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 },
+        'gpt-4o-mini': { inputUsdPerM: 0.15, outputUsdPerM: 0.6 },
+      },
+    },
+  },
+};
 
 function buildDb(aiModelConfig: unknown) {
   return {
@@ -16,14 +29,14 @@ function buildDb(aiModelConfig: unknown) {
 describe('AgentRepository.getUserAiModelConfig', () => {
   it('returns null for persisted settings that no longer match the catalog', async () => {
     const db = buildDb({ provider: 'openai', lightModel: 'claude-haiku-3-5', heavyModel: 'gpt-4o' });
-    const repository = new AgentRepository(db as never);
+    const repository = new AgentRepository(db as never, mockProvidersYaml);
 
     await expect(repository.getUserAiModelConfig('user-1')).resolves.toBeNull();
   });
 
   it('returns normalized settings for a valid persisted tuple', async () => {
     const db = buildDb({ provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' });
-    const repository = new AgentRepository(db as never);
+    const repository = new AgentRepository(db as never, mockProvidersYaml);
 
     await expect(repository.getUserAiModelConfig('user-1')).resolves.toEqual({
       provider: 'openai',
@@ -34,7 +47,7 @@ describe('AgentRepository.getUserAiModelConfig', () => {
 
   it('returns null for persisted settings that still use the removed legacy shape', async () => {
     const db = buildDb({ primary: { provider: 'openai', model: 'gpt-4o' } });
-    const repository = new AgentRepository(db as never);
+    const repository = new AgentRepository(db as never, mockProvidersYaml);
 
     await expect(repository.getUserAiModelConfig('user-1')).resolves.toBeNull();
   });

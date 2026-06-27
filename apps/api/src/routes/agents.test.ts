@@ -15,6 +15,38 @@ import {
   venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
+import { RUNTIME_POLICY_CEILINGS } from '@herobids/domain';
+import type { LlmCatalogDeps } from '../llm-model-catalog.js';
+
+const mockLlmCatalogDeps: LlmCatalogDeps = {
+  db: {} as never,
+  providersYaml: {
+    providers: {
+      openai: {
+        catalogMode: 'static',
+        models: {
+          'gpt-4o': { inputUsdPerM: 2.5, outputUsdPerM: 10 },
+          'gpt-4o-mini': { inputUsdPerM: 0.15, outputUsdPerM: 0.6 },
+        },
+      },
+      anthropic: {
+        catalogMode: 'static',
+        models: {
+          'claude-haiku-3-5': { inputUsdPerM: 0.8, outputUsdPerM: 4 },
+          'claude-sonnet-4-5': { inputUsdPerM: 3, outputUsdPerM: 15 },
+        },
+      },
+    },
+  },
+  context: {
+    provider: 'openai',
+    model: 'gpt-4o',
+    baseUrl: undefined,
+    catalogTimeoutMs: 3000,
+    catalogCacheTtlMs: 86_400_000,
+    catalogLocality: 'auto',
+  },
+};
 
 const TEST_USER_ID = 'user-1';
 
@@ -997,7 +1029,7 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 
     const app = Fastify();
     decorateWithAuth(app);
-    await agentRoutes(app, db);
+    await agentRoutes(app, db, undefined, mockLlmCatalogDeps);
 
     const res = await app.inject({
       method: 'POST',
@@ -1469,6 +1501,7 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       maxPositionSizePct: 100,
       stopLossPct: 10,
       stopLossCooldownMs: 300000,
+      runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,
     });
   });
 

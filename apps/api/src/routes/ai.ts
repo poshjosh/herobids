@@ -117,7 +117,12 @@ export async function aiRoutes(
 
   app.get('/settings/ai-model', async (request, reply) => {
     const [user] = await db.select({ aiModelConfig: users.aiModelConfig }).from(users).where(eq(users.id, request.userId));
-    const normalized = normalizePersistedAiModelConfig(user?.aiModelConfig);
+    const raw = user?.aiModelConfig;
+    const rawProvider = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)['provider']
+      : undefined;
+    const providerConfig = typeof rawProvider === 'string' ? providersYaml.providers[rawProvider] : undefined;
+    const normalized = normalizePersistedAiModelConfig(raw, providerConfig);
     if (normalized) {
       const stillValid = await revalidatePersistedSelection(normalized, deps);
       if (!stillValid) {
