@@ -58,7 +58,7 @@ function buildDb(
 // ─── GET /blueprints/presets ───────────────────────────────────────────────
 
 describe('GET /blueprints/presets', () => {
-  it('returns list of all 6 presets', async () => {
+  it('returns list of all 7 presets', async () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
@@ -68,7 +68,7 @@ describe('GET /blueprints/presets', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(Array.isArray(body.presets)).toBe(true);
-    expect(body.presets).toHaveLength(6);
+    expect(body.presets).toHaveLength(7);
     const keys = body.presets.map((p: { key: string }) => p.key);
     expect(keys).toContain('momentum');
     expect(keys).toContain('dca');
@@ -181,16 +181,17 @@ describe('POST /blueprints/from-preset', () => {
     await app2.inject({
       method: 'POST',
       url: '/blueprints/from-preset',
-      payload: { preset: 'momentum', overrides: { strategy: { lookbackPeriod: 21 } } },
+      payload: { preset: 'momentum', overrides: { strategy: { params: { candleLimit: 60 } } } },
     });
 
     const configData2 = capturedValues2?.['configData'] as Record<string, unknown> | undefined;
     const strategy = configData2?.['strategy'] as Record<string, unknown> | undefined;
-    // The override updates lookbackPeriod
-    expect(strategy?.['lookbackPeriod']).toBe(21);
-    // But must NOT drop sibling fields from the preset
+    const params = strategy?.['params'] as Record<string, unknown> | undefined;
+    // The override updates params.candleLimit
+    expect(params?.['candleLimit']).toBe(60);
+    // But must NOT drop sibling fields from the strategy level
     expect(strategy?.['type']).toBe('momentum');
-    expect(strategy?.['entryThreshold']).toBeDefined();
+    expect(strategy?.['decisionMode']).toBeDefined();
   });
 });
 
