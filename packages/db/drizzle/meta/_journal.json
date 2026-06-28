@@ -169,6 +169,13 @@
       "when": 1782568364880,
       "tag": "0023_silky_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782679911484,
+      "tag": "0024_wide_puff_adder",
+      "breakpoints": true
     }
   ]
 }

@@ -49,3 +49,17 @@ export {
   loadAgentPositions,
 } from './agent-evidence-loaders.js';
 export type { LoaderTimeFilter, LoadPositionsOpts } from './agent-evidence-loaders.js';
+export {
+  resolveScope,
+  normalizeScopeKey,
+  hasActiveRunForScope,
+  createRun,
+  markRunning,
+  markSucceeded,
+  markFailed,
+  markTimedOut,
+  getRun,
+  listByAgent,
+} from './agent-evaluation-repository.js';
+export { EVALUATION_QUEUE_NAME } from './agent-evaluation-job.js';
+export type { EvaluationJobData } from './agent-evaluation-job.js';

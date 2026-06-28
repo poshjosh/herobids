@@ -1,0 +1,245 @@
+import crypto from 'node:crypto';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import type { Database } from './index.js';
+import { agentEvaluations, agentRuntimeSessions } from './schema/index.js';
+import type {
+  EvaluationRunRequest,
+  EvaluationRunRecord,
+  EvaluationRunResult,
+  EvaluationScope,
+  ResolvedEvaluationScope,
+  EvaluationRunStatus,
+} from '@herobids/domain';
+
+// ── Scope resolution ────────────────────────────────────────────────────────
+
+/**
+ * Resolve `latestSession` to the most recent completed session for the agent.
+ * All other scope types pass through unchanged.
+ *
+ * Throws if `latestSession` is requested but the agent has no completed sessions.
+ */
+export async function resolveScope(
+  db: Database,
+  agentId: string,
+  scope: EvaluationScope,
+): Promise<ResolvedEvaluationScope> {
+  if (scope.type === 'latestSession') {
+    const [session] = await db
+      .select({ id: agentRuntimeSessions.id })
+      .from(agentRuntimeSessions)
+      .where(and(
+        eq(agentRuntimeSessions.agentId, agentId),
+        eq(agentRuntimeSessions.status, 'stopped'),
+      ))
+      .orderBy(desc(agentRuntimeSessions.stoppedAt))
+      .limit(1);
+    if (!session) {
+      throw new Error(`No completed session found for agent ${agentId}`);
+    }
+    return { type: 'session', sessionId: session.id };
+  }
+  // Pass-through for concrete scopes
+  return scope as ResolvedEvaluationScope;
+}
+
+/**
+ * Derive a deterministic dedupe key from a resolved scope.
+ * Only operates on `ResolvedEvaluationScope` — never sees `latestSession`.
+ */
+export function normalizeScopeKey(resolved: ResolvedEvaluationScope): string {
+  switch (resolved.type) {
+    case 'session':
+      return `session:${resolved.sessionId}`;
+    case 'timeRange':
+      return `range:${resolved.from.toISOString()}-${resolved.to.toISOString()}`;
+    case 'allTime':
+      return 'allTime';
+  }
+}
+
+// ── CRUD ────────────────────────────────────────────────────────────────────
+
+/**
+ * Check if there is an active (queued or running) evaluation for the given
+ * agent and scope key. Used for scope-aware deduplication.
+ */
+export async function hasActiveRunForScope(
+  db: Database,
+  agentId: string,
+  scopeKey: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: agentEvaluations.id })
+    .from(agentEvaluations)
+    .where(and(
+      eq(agentEvaluations.agentId, agentId),
+      eq(agentEvaluations.scopeKey, scopeKey),
+      sql`${agentEvaluations.status} IN ('queued', 'running')`,
+    ))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Create a new evaluation run row. Returns the generated run ID.
+ */
+export async function createRun(
+  db: Database,
+  request: EvaluationRunRequest,
+  resolved: ResolvedEvaluationScope,
+): Promise<{ id: string }> {
+  const id = crypto.randomUUID();
+  const scopeKey = normalizeScopeKey(resolved);
+
+  await db.insert(agentEvaluations).values({
+    id,
+    agentId: request.agentId,
+    status: 'queued',
+    trigger: request.trigger,
+    requestedScopeJson: request.scope as unknown as Record<string, unknown>,
+    resolvedScopeJson: resolved as unknown as Record<string, unknown>,
+    scopeKey,
+    requestedByType: request.requester.type,
+    requestedById: request.requester.type !== 'system' ? request.requester.id : null,
+    attempt: 1,
+  });
+
+  return { id };
+}
+
+/**
+ * Transition a run to `running` status. Returns false if the run was not in `queued` status.
+ */
+export async function markRunning(db: Database, id: string): Promise<boolean> {
+  const result = await db
+    .update(agentEvaluations)
+    .set({ status: 'running', startedAt: new Date() })
+    .where(and(eq(agentEvaluations.id, id), eq(agentEvaluations.status, 'queued')));
+  // drizzle returns no row count; we check by re-reading
+  const [row] = await db
+    .select({ status: agentEvaluations.status })
+    .from(agentEvaluations)
+    .where(eq(agentEvaluations.id, id))
+    .limit(1);
+  return row?.status === 'running';
+}
+
+/**
+ * Mark a run as succeeded with result data.
+ */
+export async function markSucceeded(
+  db: Database,
+  id: string,
+  result: EvaluationRunResult,
+): Promise<void> {
+  await db
+    .update(agentEvaluations)
+    .set({
+      status: 'succeeded',
+      completedAt: new Date(),
+      scorecardJson: result.scorecard as unknown as Record<string, unknown>,
+      summaryJson: result.summary as unknown as Record<string, unknown>,
+      artifactManifestJson: result.artifactManifest as unknown as Record<string, unknown>[],
+    })
+    .where(eq(agentEvaluations.id, id));
+}
+
+/**
+ * Mark a run as failed with an error code and message.
+ */
+export async function markFailed(
+  db: Database,
+  id: string,
+  errorCode: string,
+  errorMessage: string,
+): Promise<void> {
+  await db
+    .update(agentEvaluations)
+    .set({
+      status: 'failed',
+      failedAt: new Date(),
+      errorCode,
+      errorMessage,
+    })
+    .where(eq(agentEvaluations.id, id));
+}
+
+/**
+ * Mark a run as timed out.
+ */
+export async function markTimedOut(db: Database, id: string): Promise<void> {
+  await db
+    .update(agentEvaluations)
+    .set({
+      status: 'timed_out',
+      timedOutAt: new Date(),
+    })
+    .where(eq(agentEvaluations.id, id));
+}
+
+/**
+ * Fetch a single run by ID.
+ */
+export async function getRun(
+  db: Database,
+  id: string,
+): Promise<EvaluationRunRecord | null> {
+  const [row] = await db
+    .select()
+    .from(agentEvaluations)
+    .where(eq(agentEvaluations.id, id))
+    .limit(1);
+  if (!row) return null;
+  return toRunRecord(row);
+}
+
+/**
+ * List runs for an agent, most recent first.
+ */
+export async function listByAgent(
+  db: Database,
+  agentId: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<EvaluationRunRecord[]> {
+  const rows = await db
+    .select()
+    .from(agentEvaluations)
+    .where(eq(agentEvaluations.agentId, agentId))
+    .orderBy(desc(agentEvaluations.requestedAt))
+    .limit(opts?.limit ?? 50)
+    .offset(opts?.offset ?? 0);
+  return rows.map(toRunRecord);
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+type AgentEvaluationRow = typeof agentEvaluations.$inferSelect;
+
+function toRunRecord(row: AgentEvaluationRow): EvaluationRunRecord {
+  return {
+    id: row.id,
+    agentId: row.agentId,
+    status: row.status as EvaluationRunStatus,
+    trigger: row.trigger as EvaluationRunRecord['trigger'],
+    requestedScope: row.requestedScopeJson as unknown as EvaluationScope,
+    resolvedScope: row.resolvedScopeJson as unknown as ResolvedEvaluationScope,
+    scopeKey: row.scopeKey,
+    requester: row.requestedByType === 'system'
+      ? { type: 'system' }
+      : { type: row.requestedByType as 'user' | 'agent', id: row.requestedById! },
+    requestedAt: row.requestedAt,
+    startedAt: row.startedAt ?? undefined,
+    completedAt: row.completedAt ?? undefined,
+    failedAt: row.failedAt ?? undefined,
+    timedOutAt: row.timedOutAt ?? undefined,
+    attempt: row.attempt,
+    result: row.scorecardJson
+      ? {
+          scorecard: row.scorecardJson as unknown as EvaluationRunResult['scorecard'],
+          artifactManifest: (row.artifactManifestJson ?? []) as unknown as EvaluationRunResult['artifactManifest'],
+          summary: row.summaryJson as unknown as EvaluationRunResult['summary'],
+        }
+      : undefined,
+  };
+}
