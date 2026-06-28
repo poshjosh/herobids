@@ -1243,6 +1243,7 @@ const evaluationRuntime = new EvaluationRuntime(
     redis: redisConnection,
     concurrency: appConfig.evaluation.concurrency,
     maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
+    thresholds: appConfig.evaluation.thresholds,
   },
   db,
 );

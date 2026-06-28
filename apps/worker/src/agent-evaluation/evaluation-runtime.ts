@@ -1,9 +1,10 @@
 import { Worker } from 'bullmq';
 import pino from 'pino';
 import type { Database } from '@herobids/db';
-import { EVALUATION_QUEUE_NAME, markRunning, markSucceeded, markFailed, markTimedOut } from '@herobids/db';
+import { EVALUATION_QUEUE_NAME, markRunning, markTimedOut } from '@herobids/db';
 import type { EvaluationJobData } from '@herobids/db';
-import type { EvaluationRunResult } from '@herobids/domain';
+import type { EvaluationThresholds } from '@herobids/domain';
+import { runEvaluation } from './run-evaluation.js';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,8 @@ export interface EvaluationRuntimeConfig {
   concurrency?: number;
   /** Maximum runtime per job in milliseconds before timing out (default 120_000) */
   maxRuntimeMs?: number;
+  /** Thresholds for deterministic analyzers */
+  thresholds: EvaluationThresholds;
 }
 
 // ── Logger ──────────────────────────────────────────────────────────────────
@@ -23,9 +26,6 @@ const logger = pino({ name: 'evaluation-runtime' });
 /**
  * EvaluationRuntime — processes agent evaluation jobs via BullMQ.
  * Follows the same pattern as BacktestRuntime.
- *
- * Phase 3: no-op handler that transitions queued → running → succeeded.
- * Later phases will wire in evidence collection, analysis, and reporting.
  */
 export class EvaluationRuntime {
   private worker: Worker<EvaluationJobData> | undefined;
@@ -44,31 +44,24 @@ export class EvaluationRuntime {
         const { runId, agentId, resolvedScope, includeNarrative } = job.data;
         logger.info({ runId, agentId, scope: resolvedScope }, 'Starting evaluation run');
 
-        try {
-          // Transition queued → running
-          const started = await markRunning(this.db, runId);
-          if (!started) {
-            logger.warn({ runId }, 'Run was not in queued state — skipping');
-            return;
-          }
-
-          // ── Phase 3: no-op placeholder ──
-          // Later phases will add: collect evidence → analyze → render → persist
-          const placeholderResult: EvaluationRunResult = {
-            scorecard: { overallScore: 100, sections: [] },
-            artifactManifest: [],
-            summary: { totalFindings: 0, criticalCount: 0, highCount: 0 },
-          };
-
-          await markSucceeded(this.db, runId, placeholderResult);
-          logger.info({ runId, agentId }, 'Evaluation completed (no-op)');
-        } catch (err) {
-          const error = err instanceof Error ? err : new Error(String(err));
-          const code = err instanceof Error && 'code' in err ? (err as Error & { code?: string }).code : 'evaluation.internal_error';
-          await markFailed(this.db, runId, code ?? 'evaluation.internal_error', error.message);
-          logger.error({ runId, agentId, err: error.message }, 'Evaluation failed');
-          throw error;
+        // Transition queued → running
+        const started = await markRunning(this.db, runId);
+        if (!started) {
+          logger.warn({ runId }, 'Run was not in queued state — skipping');
+          return;
         }
+
+        // Run full evaluation pipeline
+        await runEvaluation({
+          db: this.db,
+          runId,
+          agentId,
+          resolvedScope,
+          includeNarrative,
+          thresholds: this.config.thresholds,
+        });
+
+        logger.info({ runId, agentId }, 'Evaluation completed');
       },
       {
         connection: this.config.redis,
