@@ -5,8 +5,11 @@ import { BotRepository } from '../repositories.js';
  * Build a mock DB that captures the .set() values passed to .update().where().
  * Each call to .set() records its argument in `updates[]`.
  */
-function buildMockDb() {
+function buildMockDb(options?: {
+  selectedRows?: Array<Record<string, unknown>>;
+}) {
   const updates: Array<Record<string, unknown>> = [];
+  const selectedRows = options?.selectedRows ?? [];
 
   const whereFn = vi.fn().mockResolvedValue(undefined);
   const setFn = vi.fn().mockImplementation((values: Record<string, unknown>) => {
@@ -18,7 +21,7 @@ function buildMockDb() {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([]),
+          limit: vi.fn().mockResolvedValue(selectedRows),
         }),
       }),
     }),
@@ -49,6 +52,42 @@ describe('BotRepository — lifecycle timestamp invariants', () => {
     expect(set.startedAt).toBeInstanceOf(Date);
     expect(set.stoppedAt).toBeNull();
     expect(set.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('markBotRunning preserves startedAt for an already running bot', async () => {
+    const existingStartedAt = new Date('2024-01-01T00:00:00.000Z');
+    const { db, updates } = buildMockDb({
+      selectedRows: [{ status: 'running', startedAt: existingStartedAt }],
+    });
+    const repo = new BotRepository(db as never);
+
+    await repo.markBotRunning('bot-1');
+
+    expect(updates.length).toBe(1);
+    const set = updates[0]!;
+    expect(set.status).toBe('running');
+    expect(set.startedAt).toEqual(existingStartedAt);
+    expect(set.stoppedAt).toBeNull();
+    expect(set.updatedAt).toBeInstanceOf(Date);
+    expect(set.updatedAt).not.toEqual(existingStartedAt);
+  });
+
+  it('markBotRunning restamps startedAt when restarting from stopped', async () => {
+    const existingStartedAt = new Date('2024-01-01T00:00:00.000Z');
+    const { db, updates } = buildMockDb({
+      selectedRows: [{ status: 'stopped', startedAt: existingStartedAt }],
+    });
+    const repo = new BotRepository(db as never);
+
+    await repo.markBotRunning('bot-1');
+
+    expect(updates.length).toBe(1);
+    const set = updates[0]!;
+    expect(set.status).toBe('running');
+    expect(set.startedAt).toBeInstanceOf(Date);
+    expect(set.startedAt).not.toEqual(existingStartedAt);
+    expect(set.startedAt).toBe(set.updatedAt);
+    expect(set.stoppedAt).toBeNull();
   });
 
   it('markBotStopped sets stoppedAt and status=stopped', async () => {

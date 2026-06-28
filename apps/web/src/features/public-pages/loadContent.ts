@@ -37,9 +37,6 @@ export async function loadContent(
   page: string,
   locale?: string,
 ): Promise<LoadedContent | null> {
-
-  let modulePath: string;
-
   if (isTranslatedSection(section)) {
     // Try the requested locale first, then fall back to English
     const localesToTry = locale && locale !== 'en' ? [locale, 'en'] : ['en'];
@@ -61,8 +58,9 @@ export async function loadContent(
   }
 
   // English-only section — no locale in path
-  modulePath = `./content/${section}/${page}.md`;
-  const loader = contentModules[modulePath];
+  const directPath = `./content/${section}/${page}.md`;
+  const indexPath = `./content/${section}/${page}/index.md`;
+  const loader = contentModules[directPath] ?? contentModules[indexPath];
   if (!loader) return null;
 
   const raw = await loader();

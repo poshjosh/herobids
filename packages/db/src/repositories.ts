@@ -810,11 +810,29 @@ export class BotRepository {
    * so that the DB status matches the API start-bot path behaviour.
    *
    * Clears stoppedAt so a restarted bot never shows startedAt > stoppedAt.
+   * If the bot is already marked running, preserve the original startedAt so
+   * reclaim/rehydration does not rewrite lifecycle history.
    */
   async markBotRunning(botId: string): Promise<void> {
+    const now = new Date();
+    const [current] = await this.db
+      .select({ status: bots.status, startedAt: bots.startedAt })
+      .from(bots)
+      .where(eq(bots.id, botId))
+      .limit(1);
+
+    const startedAt = current?.status === 'running' && current.startedAt
+      ? current.startedAt
+      : now;
+
     await this.db
       .update(bots)
-      .set({ status: 'running', startedAt: new Date(), stoppedAt: null, updatedAt: new Date() })
+      .set({
+        status: 'running',
+        startedAt,
+        stoppedAt: null,
+        updatedAt: now,
+      })
       .where(eq(bots.id, botId));
   }
 

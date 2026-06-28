@@ -66,7 +66,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'Please wait…',
 
   // Auth
-  'auth.tagline': 'Your personal AI crypto trader, personal assistant and more',
+  'auth.tagline': 'AI crypto trader, personal assistant and more',
   'auth.continueWithGoogle': 'Continue with Google',
   'auth.divider.or': 'or',
   'auth.email.name.label': 'Name',
@@ -338,9 +338,9 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'Creating…',
   'agents.create.advancedSettings': 'Advanced Settings',
   'agents.create.tradingControls.title': 'Trading guardrails',
-  'agents.advanced.aiConfig': 'AI Configuration',
+  'agents.advanced.aiConfig': 'AI Config',
   'agents.advanced.skills': 'Skills',
-  'agents.advanced.tradingSetup': 'Trading Setup',
+  'agents.advanced.tradingSetup': 'Trading',
   'agents.advanced.strategy': 'Strategy',
   'agents.review.title': 'Review and create AI agent',
   'agents.review.capabilityMode': 'Capability mode',

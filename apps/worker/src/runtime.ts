@@ -25,8 +25,8 @@ export interface WorkerRuntimeConfig {
   onStartFailed?: (botId: string, error: Error) => Promise<void>;
   /** Called after an instance actor is stopped (both graceful stop and shutdown). Use to clean up external state. */
   onStopped?: (botId: string) => void | Promise<void>;
-  /** Called after actor.start() completes successfully. Use to publish status events. */
-  onStarted?: (botId: string) => void;
+  /** Called after actor.start() completes successfully. Use to publish status events and persist state. */
+  onStarted?: (botId: string) => void | Promise<void>;
 }
 
 /** Persisted instance record needed for rehydration */
@@ -71,7 +71,7 @@ export class WorkerRuntime {
 
   private readonly onStartFailed?: (botId: string, error: Error) => Promise<void>;
   private readonly onStopped?: (botId: string) => void;
-  private readonly onStarted?: (botId: string) => void;
+  private readonly onStarted?: (botId: string) => void | Promise<void>;
 
   constructor(
     config: WorkerRuntimeConfig,
@@ -283,7 +283,7 @@ export class WorkerRuntime {
     try {
       await actor.start();
       this.logger.info({ botId: id }, 'Instance started');
-      this.onStarted?.(id);
+      await this.onStarted?.(id);
       return true;
     } catch (err) {
       this.actors.delete(id);

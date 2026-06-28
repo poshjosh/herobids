@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import { useLocale } from '../../app/i18n/I18nProvider.js';
 import type { SupportedLocale } from '../../app/i18n/resolveLocale.js';
-import { PUBLIC_PAGE_REGISTRY } from './contentRegistry.js';
+import { PUBLIC_PAGE_REGISTRY, getSectionPages } from './contentRegistry.js';
 
 interface PublicLayoutProps {
   children: ReactNode;
@@ -128,9 +128,22 @@ const navLinkStyle: React.CSSProperties = {
 
 // ── Footer ────────────────────────────────────────────────────────────
 
+interface FooterLink {
+  label: string;
+  href: string;
+}
+
+interface FooterGroup {
+  title: string;
+  href: string;
+  links: FooterLink[];
+}
+
 interface FooterColumn {
   heading: string;
-  links: { label: string; href: string }[];
+  links: FooterLink[];
+  /** Sub-groups for sections that use `groups` (e.g. Docs → Agents, Messaging). */
+  groups?: FooterGroup[];
 }
 
 export function PublicFooter({ locale }: { locale: SupportedLocale }) {
@@ -141,20 +154,36 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
 
     for (const [section, meta] of Object.entries(PUBLIC_PAGE_REGISTRY)) {
       const heading = intl.formatMessage({ id: `public.nav.${section}` });
-      const links: FooterColumn['links'] = [];
 
-      for (const [pageKey, pageMeta] of Object.entries(meta.pages)) {
-        const href = meta.translated
-          ? `/${locale}/${section}/${pageKey}`
-          : `/${section}/${pageKey}`;
-        const label = meta.translated && pageMeta.titleKey
-          ? intl.formatMessage({ id: pageMeta.titleKey })
-          : (pageMeta.title ?? pageKey);
-
-        links.push({ label, href });
+      if (meta.groups) {
+        // Section with subgroups (e.g. Docs)
+        const groups: FooterGroup[] = [];
+        for (const [groupKey, group] of Object.entries(meta.groups)) {
+          const groupLinks: FooterLink[] = [];
+          for (const [pageKey, pageMeta] of Object.entries(group.pages)) {
+            groupLinks.push({
+              label: pageMeta.title ?? pageKey,
+              href: `/${section}/${pageKey}`,
+            });
+          }
+          groups.push({ title: group.title, href: `/${section}/${groupKey}`, links: groupLinks });
+        }
+        cols.push({ heading, links: [], groups });
+      } else {
+        // Flat section (e.g. Help, Company, Legal)
+        const links: FooterLink[] = [];
+        const pages = getSectionPages(meta);
+        for (const [pageKey, pageMeta] of Object.entries(pages)) {
+          const href = meta.translated
+            ? `/${locale}/${section}/${pageKey}`
+            : `/${section}/${pageKey}`;
+          const label = meta.translated && pageMeta.titleKey
+            ? intl.formatMessage({ id: pageMeta.titleKey })
+            : (pageMeta.title ?? pageKey);
+          links.push({ label, href });
+        }
+        cols.push({ heading, links });
       }
-
-      cols.push({ heading, links });
     }
 
     return cols;
@@ -188,22 +217,62 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
             >
               {col.heading}
             </h4>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {col.links.map((link) => (
-                <li key={link.href} style={{ marginBottom: '6px' }}>
-                  <a
-                    href={link.href}
-                    style={{
-                      color: 'var(--color-text-secondary)',
-                      textDecoration: 'none',
-                      fontSize: '13px',
-                    }}
-                  >
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            {col.groups ? (
+              // Nested groups (e.g. Docs → Agents, Messaging)
+              col.groups.map((group) => (
+                <div key={group.title} style={{ marginBottom: '12px' }}>
+                  <h5 style={{ margin: '0 0 4px 0' }}>
+                    <a
+                      href={group.href}
+                      style={{
+                        color: 'var(--color-text-tertiary)',
+                        textDecoration: 'none',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      {group.title}
+                    </a>
+                  </h5>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                    {group.links.map((link) => (
+                      <li key={link.href} style={{ marginBottom: '4px' }}>
+                        <a
+                          href={link.href}
+                          style={{
+                            color: 'var(--color-text-secondary)',
+                            textDecoration: 'none',
+                            fontSize: '13px',
+                          }}
+                        >
+                          {link.label}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            ) : (
+              // Flat list (e.g. Help, Company, Legal)
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {col.links.map((link) => (
+                  <li key={link.href} style={{ marginBottom: '6px' }}>
+                    <a
+                      href={link.href}
+                      style={{
+                        color: 'var(--color-text-secondary)',
+                        textDecoration: 'none',
+                        fontSize: '13px',
+                      }}
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ))}
       </div>

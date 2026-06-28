@@ -1,5 +1,5 @@
 import { Navigate, type RouteObject } from 'react-router';
-import { PUBLIC_PAGE_REGISTRY } from './contentRegistry.js';
+import { PUBLIC_PAGE_REGISTRY, getSectionPages } from './contentRegistry.js';
 import { SUPPORTED_LOCALES, type SupportedLocale } from '../../app/i18n/resolveLocale.js';
 import { PublicPage } from './PublicPage.js';
 import { PublicNotFound } from './PublicNotFound.js';
@@ -18,7 +18,7 @@ export function createPublicRoutes(): RouteObject[] {
   const routes: RouteObject[] = [];
 
   for (const [section, meta] of Object.entries(PUBLIC_PAGE_REGISTRY)) {
-    for (const page of Object.keys(meta.pages)) {
+    for (const page of Object.keys(getSectionPages(meta))) {
       if (meta.translated) {
         // Translated: /:locale/<section>/<page>
         routes.push({
@@ -38,7 +38,7 @@ export function createPublicRoutes(): RouteObject[] {
   // Redirect non-locale-prefixed translated pages to /en/...
   // e.g. /help/faqs → /en/help/faqs
   for (const section of ['help', 'company']) {
-    for (const page of Object.keys(PUBLIC_PAGE_REGISTRY[section]!.pages)) {
+    for (const page of Object.keys(getSectionPages(PUBLIC_PAGE_REGISTRY[section]!))) {
       routes.push({
         path: `${section}/${page}`,
         element: <Navigate to={`/en/${section}/${page}`} replace />,

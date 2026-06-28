@@ -3,6 +3,7 @@ import { useParams, Navigate } from 'react-router';
 import { useIntl } from 'react-intl';
 import {
   PUBLIC_PAGE_REGISTRY,
+  getSectionPages,
   SUPPORTED_LOCALES,
   isTranslatedSection,
   isPublicSection,
@@ -33,7 +34,7 @@ export function PublicPage({ section, page }: PublicPageProps) {
   // ── Validate inputs (pure — no hooks after this) ──────────────
   const validSection = isPublicSection(section);
   const sectionMeta = validSection ? PUBLIC_PAGE_REGISTRY[section] : undefined;
-  const pageMeta = sectionMeta?.pages[page];
+  const pageMeta = sectionMeta ? getSectionPages(sectionMeta)[page] : undefined;
   const translated = validSection && sectionMeta ? isTranslatedSection(section) : false;
 
   // ── Resolve effective locale and redirect ─────────────────────

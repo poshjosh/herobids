@@ -45,7 +45,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'يرجى الانتظار…',
 
   // Auth
-  'auth.tagline': 'متداولك الشخصي بالذكاء الاصطناعي ومساعدك الشخصي والمزيد',
+  'auth.tagline': 'متداول AI للعملات الرقمية ومساعدك الشخصي والمزيد',
   'auth.continueWithGoogle': 'المتابعة مع Google',
   'auth.divider.or': 'أو',
   'auth.email.name.label': 'الاسم',
@@ -336,9 +336,9 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'جارٍ الإنشاء…',
   'agents.create.advancedSettings': 'الإعدادات المتقدمة',
   'agents.create.tradingControls.title': 'ضوابط التداول',
-  'agents.advanced.aiConfig': 'تكوين الذكاء الاصطناعي',
+  'agents.advanced.aiConfig': 'إعدادات AI',
   'agents.advanced.skills': 'المهارات',
-  'agents.advanced.tradingSetup': 'إعداد التداول',
+  'agents.advanced.tradingSetup': 'التداول',
   'agents.advanced.strategy': 'الاستراتيجية',
   'agents.review.title': 'مراجعة وإنشاء وكيل ذكاء اصطناعي',
   'agents.review.capabilityMode': 'وضع القدرة',

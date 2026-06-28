@@ -45,7 +45,7 @@ export const messages: Record<string, string> = {
   'common.pleaseWait': 'कृपया प्रतीक्षा करें…',
 
   // Auth
-  'auth.tagline': 'आपका निजी AI क्रिप्टो ट्रेडर, निजी सहायक और बहुत कुछ',
+  'auth.tagline': 'AI क्रिप्टो ट्रेडर, निजी सहायक और बहुत कुछ',
   'auth.continueWithGoogle': 'Google से जारी रखें',
   'auth.divider.or': 'या',
   'auth.email.name.label': 'नाम',
@@ -338,9 +338,9 @@ export const messages: Record<string, string> = {
   'agents.create.creating': 'बनाया जा रहा है…',
   'agents.create.advancedSettings': 'उन्नत सेटिंग्स',
   'agents.create.tradingControls.title': 'ट्रेडिंग गार्डरेल्स',
-  'agents.advanced.aiConfig': 'AI कॉन्फ़िगरेशन',
+  'agents.advanced.aiConfig': 'AI सेटअप',
   'agents.advanced.skills': 'कौशल',
-  'agents.advanced.tradingSetup': 'ट्रेडिंग सेटअप',
+  'agents.advanced.tradingSetup': 'ट्रेडिंग',
   'agents.advanced.strategy': 'रणनीति',
   'agents.review.title': 'समीक्षा और AI एजेंट निर्माण',
   'agents.review.capabilityMode': 'क्षमता मोड',

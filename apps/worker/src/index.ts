@@ -890,7 +890,16 @@ const runtime = new WorkerRuntime(
       instanceUserIds.delete(instanceId);
       instanceExecutionModes.delete(instanceId);
     },
-    onStarted: (botId) => {
+    onStarted: async (botId) => {
+      // Persist running status to DB so user-started bots (API path) and
+      // reclaim-rehydrated bots converge. Agent-created bots are pre-marked
+      // by the broker, making this a no-op for that path.
+      try {
+        await botRepo.markBotRunning(botId);
+      } catch (err) {
+        logger.error({ err, botId }, 'Failed to persist running state to DB');
+      }
+
       // Publish running event after actor.start() has completed successfully.
       // instanceUserId was stored by the factory into instanceUserIds.
       const userId = instanceUserIds.get(botId);

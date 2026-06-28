@@ -13,9 +13,32 @@ export interface PageMeta {
   title?: string;
 }
 
+/** A named subgroup of pages (e.g. "Agents", "Messaging" under Docs). */
+export interface DocGroup {
+  title: string;
+  pages: Record<string, PageMeta>;
+}
+
 export interface SectionMeta {
   translated: boolean;
-  pages: Record<string, PageMeta>;
+  /** Flat page map for simple sections (help, company, legal). */
+  pages?: Record<string, PageMeta>;
+  /** Nested groups for sections that need sub-headings (docs). */
+  groups?: Record<string, DocGroup>;
+}
+
+/** Flatten a section's pages, whether they come from `pages` or `groups`. */
+export function getSectionPages(meta: SectionMeta): Record<string, PageMeta> {
+  if (meta.pages) return meta.pages;
+  if (meta.groups) {
+    const flat: Record<string, PageMeta> = {};
+    for (const [groupKey, group] of Object.entries(meta.groups)) {
+      flat[groupKey] = { title: group.title };
+      Object.assign(flat, group.pages);
+    }
+    return flat;
+  }
+  return {};
 }
 
 export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
@@ -39,11 +62,21 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
   // ── English-only sections ────────────────────────────────────────
   docs: {
     translated: false,
-    pages: {
-      'agents/agent-style': { title: 'Agent Style' },
-      'agents/billing-limits': { title: 'Agent Billing Limits' },
-      'messaging/telegram/reply-threading': { title: 'Telegram Reply Threading' },
-      'messaging/telegram/slash-commands': { title: 'Telegram Slash Commands' },
+    groups: {
+      agents: {
+        title: 'Agents',
+        pages: {
+          'agents/agent-style': { title: 'Agent Style' },
+          'agents/billing-limits': { title: 'Billing Limits' },
+        },
+      },
+      messaging: {
+        title: 'Messaging',
+        pages: {
+          'messaging/telegram/reply-threading': { title: 'Telegram Reply Threading' },
+          'messaging/telegram/slash-commands': { title: 'Telegram Slash Commands' },
+        },
+      },
     },
   },
   legal: {

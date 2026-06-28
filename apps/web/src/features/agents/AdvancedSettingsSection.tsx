@@ -36,6 +36,9 @@ const tabBarStyle: React.CSSProperties = {
   gap: '0',
   borderBottom: '1px solid var(--color-border)',
   padding: '0 16px',
+  overflowX: 'auto',
+  whiteSpace: 'nowrap',
+  WebkitOverflowScrolling: 'touch',
 };
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
