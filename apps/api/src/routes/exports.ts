@@ -3,7 +3,19 @@ import { stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import { eq, and, gte, lte, inArray, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, agents, agentSkills, fills, journalEvents, agentRuntimeSessions, positions } from '@herobids/db';
+import {
+  bots,
+  agents,
+  agentSkills,
+  fills,
+  journalEvents,
+  positions,
+  loadAgentBotIds,
+  loadAgentFills,
+  loadAgentJournalEvents,
+  loadAgentRuntimeSessions,
+  loadAgentPositions,
+} from '@herobids/db';
 
 // --- Rate limiter (5 req / 60 s per user) ---
 
@@ -561,27 +573,10 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      // Include agent-native fills and fills from agent-owned bots
-      const agentBots = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
-      const agentBotIds = agentBots.map((b) => b.id);
-
-      const [agentRows, botRows] = await Promise.all([
-        db.select().from(fills).where(and(
-          eq(fills.actorType, 'agent'), eq(fills.actorId, id),
-          ...(parsed.data.from ? [gte(fills.filledAt, new Date(parsed.data.from))] : []),
-          ...(parsed.data.to ? [lte(fills.filledAt, new Date(parsed.data.to))] : []),
-        )),
-        agentBotIds.length > 0
-          ? db.select().from(fills).where(and(
-              eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds),
-              ...(parsed.data.from ? [gte(fills.filledAt, new Date(parsed.data.from))] : []),
-              ...(parsed.data.to ? [lte(fills.filledAt, new Date(parsed.data.to))] : []),
-            ))
-          : Promise.resolve([]),
-      ]);
-
-      const rows = [...agentRows, ...botRows];
+      const rows = await loadAgentFills(db, id, {
+        from: parsed.data.from ? new Date(parsed.data.from) : undefined,
+        to: parsed.data.to ? new Date(parsed.data.to) : undefined,
+      });
 
       if (parsed.data.format === 'csv') {
         void reply.header('Content-Type', 'text/csv');
@@ -607,26 +602,10 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const agentBots = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
-      const agentBotIds = agentBots.map((b) => b.id);
-
-      const [agentRows, botRows] = await Promise.all([
-        db.select().from(journalEvents).where(and(
-          eq(journalEvents.actorType, 'agent'), eq(journalEvents.actorId, id),
-          ...(parsed.data.from ? [gte(journalEvents.createdAt, new Date(parsed.data.from))] : []),
-          ...(parsed.data.to ? [lte(journalEvents.createdAt, new Date(parsed.data.to))] : []),
-        )),
-        agentBotIds.length > 0
-          ? db.select().from(journalEvents).where(and(
-              eq(journalEvents.actorType, 'bot'), inArray(journalEvents.actorId, agentBotIds),
-              ...(parsed.data.from ? [gte(journalEvents.createdAt, new Date(parsed.data.from))] : []),
-              ...(parsed.data.to ? [lte(journalEvents.createdAt, new Date(parsed.data.to))] : []),
-            ))
-          : Promise.resolve([]),
-      ]);
-
-      const rows = [...agentRows, ...botRows];
+      const rows = await loadAgentJournalEvents(db, id, {
+        from: parsed.data.from ? new Date(parsed.data.from) : undefined,
+        to: parsed.data.to ? new Date(parsed.data.to) : undefined,
+      });
 
       if (parsed.data.format === 'md') {
         void reply.header('Content-Type', 'text/markdown');
@@ -660,18 +639,7 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const agentBots = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
-      const agentBotIds = agentBots.map((b) => b.id);
-
-      const [agentFillRows, botFillRows] = await Promise.all([
-        db.select().from(fills).where(and(eq(fills.actorType, 'agent'), eq(fills.actorId, id))),
-        agentBotIds.length > 0
-          ? db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)))
-          : Promise.resolve([]),
-      ]);
-
-      const fillRows = [...agentFillRows, ...botFillRows];
+      const fillRows = await loadAgentFills(db, id);
 
       if (fillRows.length === 0) {
         void reply.header('Content-Type', 'text/csv');
@@ -703,8 +671,7 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
         .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
       if (!agent) return reply.status(404).send({ error: 'not_found' });
 
-      const sessions = await db.select().from(agentRuntimeSessions)
-        .where(eq(agentRuntimeSessions.agentId, id));
+      const sessions = await loadAgentRuntimeSessions(db, id);
 
       void reply.header('Content-Type', 'application/json');
       void reply.header('Content-Disposition', `attachment; filename="agent-${id}-sessions.json"`);
@@ -762,36 +729,12 @@ export async function exportRoutes(app: FastifyInstance, db: Database): Promise<
       if (!agent) return reply.status(404).send({ error: 'not_found' });
       const skillIds = await listSkillIdsForAgent(db, id);
 
-      const agentBots = await db.select({ id: bots.id }).from(bots)
-        .where(and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)));
-      const agentBotIds = agentBots.map((b) => b.id);
-
-      // Always include agent-native records (agent trades directly via submit_decision).
-      // Also include records from agent-owned bots if any exist.
-      const [
-        agentFills, botFills,
-        agentPositions, botPositions,
-        agentJournal, botJournal,
-        sessions,
-      ] = await Promise.all([
-        db.select().from(fills).where(and(eq(fills.actorType, 'agent'), eq(fills.actorId, id))),
-        agentBotIds.length > 0
-          ? db.select().from(fills).where(and(eq(fills.actorType, 'bot'), inArray(fills.actorId, agentBotIds)))
-          : Promise.resolve([]),
-        db.select().from(positions).where(and(eq(positions.actorType, 'agent'), eq(positions.actorId, id))),
-        agentBotIds.length > 0
-          ? db.select().from(positions).where(and(eq(positions.actorType, 'bot'), inArray(positions.actorId, agentBotIds)))
-          : Promise.resolve([]),
-        db.select().from(journalEvents).where(and(eq(journalEvents.actorType, 'agent'), eq(journalEvents.actorId, id))),
-        agentBotIds.length > 0
-          ? db.select().from(journalEvents).where(and(eq(journalEvents.actorType, 'bot'), inArray(journalEvents.actorId, agentBotIds)))
-          : Promise.resolve([]),
-        db.select().from(agentRuntimeSessions).where(eq(agentRuntimeSessions.agentId, id)),
-      ]);
-
-      const allFills = [...agentFills, ...botFills];
-      const allPositions = [...agentPositions, ...botPositions];
-      const journalRows = [...agentJournal, ...botJournal];
+      // Use shared loaders sequentially (each calls loadAgentBotIds internally;
+      // sequential calls keep mock DB select ordering deterministic for tests).
+      const allFills = await loadAgentFills(db, id);
+      const allPositions = await loadAgentPositions(db, id);
+      const journalRows = await loadAgentJournalEvents(db, id);
+      const sessions = await loadAgentRuntimeSessions(db, id);
 
       const agentConfig = sanitizeConfig({
         id: agent.id,

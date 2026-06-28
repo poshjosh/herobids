@@ -569,20 +569,24 @@ describe('GET /agents/:id/export/config', () => {
 });
 
 describe('GET /agents/:id/export/bundle', () => {
-  // Query order: agents, skills, bots, agentFills, botFills, agentPositions, botPositions, agentJournal, botJournal, sessions
+  // Query order: agents, skills, loadAgentBotIds(fills), agentFills, botFills,
+  //   loadAgentBotIds(positions), agentPositions, botPositions,
+  //   loadAgentBotIds(journal), agentJournal, botJournal, sessions
   it('returns a JSON bundle', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     const db = buildDb([
-      [agentRow],
-      [],                    // skills
-      [{ id: TEST_BOT_ID }], // agent bots
-      [sampleAgentFill],     // agentFills
-      [sampleFill],          // botFills
-      [sampleAgentPosition], // agentPositions
-      [samplePosition],      // botPositions
-      [sampleAgentJournalEvent], // agentJournal
-      [sampleJournalEvent],  // botJournal
-      [],                    // sessions
+      [agentRow],                    // agent lookup
+      [],                            // skills
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (fills)
+      [sampleAgentFill],             // agentFills
+      [sampleFill],                  // botFills
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (positions)
+      [sampleAgentPosition],         // agentPositions
+      [samplePosition],              // botPositions
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (journal)
+      [sampleAgentJournalEvent],     // agentJournal
+      [sampleJournalEvent],          // botJournal
+      [],                            // sessions
     ]);
     const app = Fastify();
     decorateWithAuth(app);
@@ -596,16 +600,18 @@ describe('GET /agents/:id/export/bundle', () => {
   it('agent bundle JSON contains expected keys', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     const db = buildDb([
-      [agentRow],
-      [],
-      [{ id: TEST_BOT_ID }],
-      [sampleAgentFill],
-      [sampleFill],
-      [sampleAgentPosition],
-      [samplePosition],
-      [sampleAgentJournalEvent],
-      [sampleJournalEvent],
-      [],
+      [agentRow],                    // agent lookup
+      [],                            // skills
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (fills)
+      [sampleAgentFill],             // agentFills
+      [sampleFill],                  // botFills
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (positions)
+      [sampleAgentPosition],         // agentPositions
+      [samplePosition],              // botPositions
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (journal)
+      [sampleAgentJournalEvent],     // agentJournal
+      [sampleJournalEvent],          // botJournal
+      [],                            // sessions
     ]);
     const app = Fastify();
     decorateWithAuth(app);
@@ -624,16 +630,19 @@ describe('GET /agents/:id/export/bundle', () => {
   it('includes agent-native fills when agent has no bots', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     const db = buildDb([
-      [agentRow],
-      [],                    // skills
-      [],                    // agent bots (none)
-      [sampleAgentFill],     // agentFills
-      // botFills skipped (no bots)
-      [sampleAgentPosition], // agentPositions
-      // botPositions skipped
-      [sampleAgentJournalEvent], // agentJournal
-      // botJournal skipped
-      [],                    // sessions
+      [agentRow],                    // agent lookup
+      [],                            // skills
+      // loadAgentFills: botIds + agentFills
+      [],                            // loadAgentBotIds (fills)
+      [sampleAgentFill],             // agentFills
+      // loadAgentPositions: botIds + agentPositions
+      [],                            // loadAgentBotIds (positions)
+      [sampleAgentPosition],         // agentPositions
+      // loadAgentJournalEvents: botIds + agentJournal
+      [],                            // loadAgentBotIds (journal)
+      [sampleAgentJournalEvent],     // agentJournal
+      // loadAgentRuntimeSessions
+      [],                            // sessions
     ]);
     const app = Fastify();
     decorateWithAuth(app);
@@ -650,16 +659,22 @@ describe('GET /agents/:id/export/bundle', () => {
   it('includes both agent-native and bot fills in trades', async () => {
     const agentRow = { id: TEST_AGENT_ID, name: 'ag', prompt: 'p', skillIds: [], executionMode: null, dailyTokenBudget: null, dailyLossLimit: null, maxBots: null, maxSlippageBps: null, createdAt: now };
     const db = buildDb([
-      [agentRow],
-      [],
-      [{ id: TEST_BOT_ID }],
-      [sampleAgentFill],     // agentFills
-      [sampleFill],          // botFills
-      [sampleAgentPosition], // agentPositions
-      [samplePosition],      // botPositions
-      [sampleAgentJournalEvent], // agentJournal
-      [sampleJournalEvent],  // botJournal
-      [],
+      [agentRow],                    // agent lookup
+      [],                            // skills
+      // loadAgentFills: botIds + agentFills + botFills
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (fills)
+      [sampleAgentFill],             // agentFills
+      [sampleFill],                  // botFills
+      // loadAgentPositions: botIds + agentPositions + botPositions
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (positions)
+      [sampleAgentPosition],         // agentPositions
+      [samplePosition],              // botPositions
+      // loadAgentJournalEvents: botIds + agentJournal + botJournal
+      [{ id: TEST_BOT_ID }],         // loadAgentBotIds (journal)
+      [sampleAgentJournalEvent],     // agentJournal
+      [sampleJournalEvent],          // botJournal
+      // loadAgentRuntimeSessions
+      [],                            // sessions
     ]);
     const app = Fastify();
     decorateWithAuth(app);

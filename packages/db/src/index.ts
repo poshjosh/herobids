@@ -41,3 +41,11 @@ export { TokenSafetyOverrideRepository } from './token-safety-override-repositor
 export type { IssueOverrideParams, TokenSafetyOverrideRow } from './token-safety-override-repository.js';
 export { DecisionFailureRepository } from './decision-failure-repository.js';
 export type { InsertDecisionFailure, DecisionFailureQuery } from './decision-failure-repository.js';
+export {
+  loadAgentBotIds,
+  loadAgentFills,
+  loadAgentJournalEvents,
+  loadAgentRuntimeSessions,
+  loadAgentPositions,
+} from './agent-evidence-loaders.js';
+export type { LoaderTimeFilter, LoadPositionsOpts } from './agent-evidence-loaders.js';
