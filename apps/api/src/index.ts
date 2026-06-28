@@ -2,7 +2,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { createDatabase } from '@herobids/db';
+import { createDatabase, EVALUATION_QUEUE_NAME } from '@herobids/db';
+import type { EvaluationJobData } from '@herobids/db';
 import { botRoutes } from './routes/bots.js';
 import { venueAccountRoutes } from './routes/accounts.js';
 import { credentialRoutes } from './routes/credentials.js';
@@ -21,6 +22,7 @@ import { aiRoutes } from './routes/ai.js';
 import { skillsRoutes } from './routes/skills.js';
 import { datasetRoutes } from './routes/datasets.js';
 import { exportRoutes } from './routes/exports.js';
+import { agentEvaluationRoutes } from './routes/agent-evaluations.js';
 import { actorHealthRoutes } from './routes/actor-health.js';
 import { adminRoutes } from './routes/admin.js';
 import { eventsRoutes } from './routes/events.js';
@@ -164,6 +166,10 @@ const backtestQueue = new Queue<BacktestJob>(BACKTEST_QUEUE_NAME, {
   connection: redisConnection,
 });
 
+const evaluationQueue = new Queue<EvaluationJobData>(EVALUATION_QUEUE_NAME, {
+  connection: redisConnection,
+});
+
 // Register auth plugin (JWT verification on all non-public routes)
 await authPlugin(app, { config: appConfig.auth, db });
 
@@ -220,6 +226,7 @@ await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
+await agentEvaluationRoutes(app, evaluationQueue, db);
 await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 
