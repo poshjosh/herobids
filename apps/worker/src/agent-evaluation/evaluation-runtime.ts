@@ -2,6 +2,8 @@ import { Worker } from 'bullmq';
 import pino from 'pino';
 import type { Database } from '@herobids/db';
 import { EVALUATION_QUEUE_NAME, markRunning, markTimedOut } from '@herobids/db';
+import { agentEvaluations } from '@herobids/db';
+import { eq, and, sql, lt } from 'drizzle-orm';
 import type { EvaluationJobData } from '@herobids/db';
 import type { EvaluationThresholds } from '@herobids/domain';
 import { runEvaluation } from './run-evaluation.js';
@@ -29,6 +31,7 @@ const logger = pino({ name: 'evaluation-runtime' });
  */
 export class EvaluationRuntime {
   private worker: Worker<EvaluationJobData> | undefined;
+  private reaperInterval: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly config: EvaluationRuntimeConfig,
@@ -88,9 +91,38 @@ export class EvaluationRuntime {
     });
 
     logger.info({ concurrency: this.config.concurrency ?? 2, maxRuntimeMs }, 'Evaluation runtime started');
+
+    // ── Dead-run reaper ──────────────────────────────────────────────────
+    // Periodically marks runs stuck in 'running' for > 2× maxRuntimeMs as timed_out
+    const reaperIntervalMs = 60_000;
+    const staleThresholdMs = 2 * maxRuntimeMs;
+
+    this.reaperInterval = setInterval(async () => {
+      try {
+        const staleCutoff = new Date(Date.now() - staleThresholdMs);
+        const staleRuns = await this.db
+          .select({ id: agentEvaluations.id, agentId: agentEvaluations.agentId })
+          .from(agentEvaluations)
+          .where(and(
+            eq(agentEvaluations.status, 'running'),
+            lt(agentEvaluations.startedAt, staleCutoff),
+          ));
+
+        for (const run of staleRuns) {
+          await markTimedOut(this.db, run.id);
+          logger.warn({ runId: run.id, agentId: run.agentId }, 'Reaped stale evaluation run — marked as timed_out');
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Dead-run reaper cycle failed');
+      }
+    }, reaperIntervalMs);
   }
 
   async stop(): Promise<void> {
+    if (this.reaperInterval) {
+      clearInterval(this.reaperInterval);
+      this.reaperInterval = undefined;
+    }
     if (this.worker) {
       await this.worker.close();
       this.worker = undefined;

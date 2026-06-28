@@ -2,12 +2,15 @@ import type { Database } from '@herobids/db';
 import { FsEvaluationArtifactStore, markSucceeded, markFailed } from '@herobids/db';
 import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore } from '@herobids/domain';
 import type { EvaluationThresholds } from '@herobids/domain';
+import pino from 'pino';
 import { assembleEvidence } from './collectors/evidence-assembler.js';
 import { analyzeCore } from './analyzers/core.js';
 import { analyzeTrading } from './analyzers/trading.js';
 import { analyzeSecurity } from './analyzers/security.js';
 import { renderReport } from './render-report.js';
 import { redact } from './redaction.js';
+
+const logger = pino({ name: 'run-evaluation' });
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +44,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
 
   try {
     // ── Step 1: Assemble evidence ─────────────────────────────────────────
+    logger.info({ runId, agentId }, 'Collecting evidence');
     const manifest = await assembleEvidence({
       db,
       agentId,
@@ -48,10 +52,16 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       store,
       runId,
     });
+    logger.info({ runId, entries: manifest.entries.filter((e) => e.collected).length }, 'Evidence collected');
 
     // ── Step 2: Run analyzers ────────────────────────────────────────────
+    logger.info({ runId }, 'Running core analyzer');
     const coreSections = await analyzeCore(store, runId, manifest, thresholds);
+
+    logger.info({ runId }, 'Running trading analyzer');
     const tradingSections = await analyzeTrading(store, runId, manifest, thresholds);
+
+    logger.info({ runId }, 'Running security analyzer');
     const securitySection = await analyzeSecurity(store, runId);
 
     // ── Step 3: Compose scorecard ────────────────────────────────────────
@@ -71,6 +81,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     };
 
     // ── Step 4: Redact and render ────────────────────────────────────────
+    logger.info({ runId, totalFindings: allFindings.length, criticalCount, highCount }, 'Rendering report');
     const reportText = renderReport({
       scorecard,
       artifactManifest: [],
@@ -98,6 +109,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     ]);
 
     // ── Step 6: Persist result ───────────────────────────────────────────
+    logger.info({ runId, overallScore: scorecard.overallScore }, 'Persisting evaluation result');
     const result: EvaluationRunResult = {
       scorecard,
       artifactManifest: [evalRef, reportRef],
