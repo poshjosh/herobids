@@ -63,3 +63,4 @@ export {
 } from './agent-evaluation-repository.js';
 export { EVALUATION_QUEUE_NAME } from './agent-evaluation-job.js';
 export type { EvaluationJobData } from './agent-evaluation-job.js';
+export { FsEvaluationArtifactStore } from './agent-evaluation-storage-fs.js';
