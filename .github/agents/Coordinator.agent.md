@@ -30,7 +30,9 @@ Follow these steps to implement all the items in the plan or task-list provided 
       ii. print a brief descriptive message for the user including any "Outstanding Issues" 
       iii. STOP.
 
-   b. If there is an item marked PENDING, go to Step 3 with that item's text (or link to the item's document/resource if present) as the target/argument. 
+   b. If there is an item marked PENDING, go to Step 3 with any of the following that is available as argument:
+      i. the item's text (or link to the item's document/resource if present).
+      ii. the link to the main plan and a short description explaining the context of the item being implemented with respect to the main plan.
 
 3. Trigger **"Implementer"**.
 
