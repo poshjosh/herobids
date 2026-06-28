@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] — 2026-06-28
+### Added
+- **Agent Evaluation (Level 1)** — Full implementation across 10 phases
+  - Phase 0: Extracted reusable data loaders (`loadAgentFills`, `loadAgentJournalEvents`, `loadAgentRuntimeSessions`, `loadAgentPositions`, `loadAgentBotIds`) from `apps/api/src/routes/exports.ts` into `packages/db/src/agent-evidence-loaders.ts`
+  - Phase 1: Defined core evaluation contracts in `packages/domain/src/agent-evaluation.ts` (`EvaluationScope`, `EvaluationRunRecord`, `EvaluationScorecard`, `EvaluationArtifactStore`, etc.)
+  - Phase 2: Created `agent_evaluations` table (migration 0024), repository (`resolveScope`, `createRun`, `markRunning`, `markSucceeded`, `markFailed`, `markTimedOut`), and shared job contract (`EvaluationJobData`)
+  - Phase 3: Built `EvaluationRuntime` class (BullMQ Worker pattern) with no-op handler, wired into worker startup/shutdown
+  - Phase 4: Implemented `FsEvaluationArtifactStore` in `packages/db/` (shared by API + worker)
+  - Phase 5: Evidence assembler — orchestrates shared loaders and writes artifacts to store
+  - Phase 6: Deterministic analyzers — core (session health, tool failures, cost, persistence), trading (drawdown, expectancy, hold time, rate limits), security (secret leakage, thinking traces)
+  - Phase 7: Report renderer (pure Markdown from scorecard), redaction layer, `runEvaluation()` orchestrator
+  - Phase 8: API routes — `POST /agents/:id/evaluations` (trigger), `GET` (list/status/artifacts/download), scope-aware dedupe (409), `allTime` opt-in gating
+  - Phase 9: Structured pino logging throughout pipeline, dead-run reaper (periodic 60s sweep for stale `running` evaluations)
+- Configuration: `evaluation` section in `config/default.yaml` with `concurrency`, `maxRuntimeMs`, and `thresholds`
+
+### Changed
+- `apps/api/src/routes/exports.ts`: agent routes refactored to use shared data loaders (reduced duplication)
+
 ## [Unreleased] — 2026-06-27
 ### Added
 - **Strategy Presets Expansion & Mechanical Parity** — Full implementation across 6 phases
