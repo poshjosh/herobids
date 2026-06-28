@@ -91,6 +91,21 @@ export const BacktestingConfigSchema = z.object({
   concurrency: z.number().int().min(1).default(2),
 });
 
+export const EvaluationThresholdsSchema = z.object({
+  toolFailureRatePct: z.number().min(0).max(100).default(20),
+  highDrawdownPct: z.number().min(0).max(100).default(20),
+  negativeExpectancyFlag: z.boolean().default(true),
+  veryShortHoldSec: z.number().min(1).default(30),
+  rateLimitAnomalyCount: z.number().int().min(1).default(5),
+  veryShortSessionSec: z.number().min(1).default(60),
+});
+
+export const EvaluationConfigSchema = z.object({
+  concurrency: z.number().int().min(1).default(2),
+  maxRuntimeMs: z.number().int().min(1_000).default(120_000),
+  thresholds: EvaluationThresholdsSchema.default({}),
+});
+
 export const MarketDataRecordingConfigSchema = z.object({
   enabled: z.boolean().default(false),
   captureTrades: z.boolean().default(true),
@@ -1001,6 +1016,7 @@ export const AppConfigSchema = z.object({
   streams: StreamConfigSchema.default({}),
   marking: MarkingConfigSchema.default({}),
   backtesting: BacktestingConfigSchema.default({}),
+  evaluation: EvaluationConfigSchema.default({}),
   marketDataRecording: MarketDataRecordingConfigSchema.default({}),
   marketData: MarketDataConfigSchema.optional(),
   marketIntelligence: MarketIntelligenceConfigSchema.default({}),
@@ -1148,6 +1164,8 @@ export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
 export type AgentRuntimePolicy = z.infer<typeof AgentRuntimePolicySchema>;
 export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
+export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
+export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;
 export type MarketDataRecordingConfig = z.infer<typeof MarketDataRecordingConfigSchema>;
 export type LlmRuntimeConfig = z.infer<typeof LlmRuntimeConfigSchema>;
 export type LlmValidationConfig = z.infer<typeof LlmValidationConfigSchema>;

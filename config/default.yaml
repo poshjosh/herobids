@@ -109,6 +109,18 @@ backtesting:
   persistJournal: true
   concurrency: 2       # BullMQ consumer concurrency for backtest jobs
 
+# Agent evaluation — automated run analysis
+evaluation:
+  concurrency: 2       # BullMQ consumer concurrency for evaluation jobs
+  maxRuntimeMs: 120000 # 2 minutes — max wall-clock time per evaluation run
+  thresholds:
+    toolFailureRatePct: 20       # tool failure rate above which a medium finding is raised
+    highDrawdownPct: 20          # max drawdown % above which a high finding is raised
+    negativeExpectancyFlag: true # flag negative expectancy as medium
+    veryShortHoldSec: 30         # avg hold time below which a low finding is raised
+    rateLimitAnomalyCount: 5     # number of rate-limit journal events above which a medium finding is raised
+    veryShortSessionSec: 60      # session duration below which an info finding is raised
+
 marketDataRecording:
   enabled: false
   captureTrades: true

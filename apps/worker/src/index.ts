@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { WorkerRuntime, QUEUE_NAME } from './runtime.js';
 import type { PersistedInstance } from './runtime.js';
 import { BacktestRuntime } from './backtest-runtime.js';
+import { EvaluationRuntime } from './agent-evaluation/index.js';
 import { InstanceLease } from './instance-lease.js';
 import { TradingActor } from './trading-actor.js';
 import type { TradingActorDeps } from './trading-actor.js';
@@ -1236,6 +1237,17 @@ const backtestRuntime = new BacktestRuntime(
 );
 backtestRuntime.start();
 
+// Start evaluation runtime (BullMQ consumer for agent evaluation jobs)
+const evaluationRuntime = new EvaluationRuntime(
+  {
+    redis: redisConnection,
+    concurrency: appConfig.evaluation.concurrency,
+    maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
+  },
+  db,
+);
+evaluationRuntime.start();
+
 // Start alert dispatcher (polls journal → routes → delivers to Telegram)
 // Uses Redis lease for singleton coordination across multiple workers
 const alertDispatcher = new AlertDispatcher(appConfig.alerts, journal, alertDeliveryRepo, logger, redisClient, workerId);
@@ -1433,6 +1445,7 @@ process.on('SIGTERM', async () => {
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
+  await evaluationRuntime.stop();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
@@ -1455,6 +1468,7 @@ process.on('SIGINT', async () => {
   await sessionManager.stop(); // stops loop only; containers keep running
   await alertDispatcher.stop();
   await backtestRuntime.stop();
+  await evaluationRuntime.stop();
   await runtime.shutdown();
   await publicStreamPool?.shutdown();
   await lifecycleQueue.close();
