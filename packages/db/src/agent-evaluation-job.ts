@@ -32,10 +32,6 @@ export interface EvaluationJobData {
   agentId: string;
   resolvedScope: ResolvedEvaluationScope;
   includeNarrative: boolean;
-  /**
-   * Fully resolved narrative LLM config.
-   * Phase 2: always undefined (placeholder).
-   * Phase 3: resolved at enqueue time when includeNarrative is true and resolution succeeds.
-   */
+  /** Fully resolved narrative LLM config. Resolved at enqueue time when includeNarrative is true and resolution succeeds. */
   narrativeLlm?: ResolvedNarrativeLlmConfig;
 }

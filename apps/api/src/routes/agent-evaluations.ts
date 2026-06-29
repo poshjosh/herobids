@@ -13,15 +13,17 @@ import {
   getRun,
   listByAgent,
   FsEvaluationArtifactStore,
+  AgentRepository,
 } from '@herobids/db';
-import type { EvaluationJobData } from '@herobids/db';
-import type { EvaluationScope, EvaluationTrigger } from '@herobids/domain';
+import type { EvaluationJobData, ResolvedNarrativeLlmConfig } from '@herobids/db';
+import type { EvaluationScope, EvaluationTrigger, ProvidersYaml } from '@herobids/domain';
+import { resolveNarrativeLlmConfig } from './agent-evaluation-narrative-llm.js';
 
 // ── Schemas ─────────────────────────────────────────────────────────────────
 
 const NarrativeLlmSchema = z.object({
-  provider: z.string().optional(),
-  model: z.string(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1),
 });
 
 const TriggerEvaluationSchema = z.object({
@@ -66,6 +68,19 @@ export interface EvaluationRouteConfig {
   maxAttempts: number;
 }
 
+export interface NarrativeLlmDeps {
+  /** Operator default LLM provider */
+  provider: string;
+  /** Operator default LLM base URL */
+  baseUrl?: string;
+  /** LLM call timeout for narrative generation */
+  timeoutMs: number;
+  /** Max tokens for narrative generation */
+  maxTokens: number;
+  /** Provider registry for model validation */
+  providersYaml: ProvidersYaml;
+}
+
 /**
  * Agent evaluation API routes.
  *
@@ -79,8 +94,10 @@ export async function agentEvaluationRoutes(
   queue: Queue<EvaluationJobData>,
   db: Database,
   evalConfig: EvaluationRouteConfig,
+  narrativeLlmDeps: NarrativeLlmDeps,
 ): Promise<void> {
   const store = new FsEvaluationArtifactStore();
+  const agentRepo = new AgentRepository(db, narrativeLlmDeps.providersYaml);
 
   // ── POST /agents/:id/evaluations — trigger evaluation ──────────────────
 
@@ -127,6 +144,38 @@ export async function agentEvaluationRoutes(
           error: 'validation_error',
           message: 'narrativeLlm must not be provided when includeNarrative is false',
         });
+      }
+
+      // Resolve narrative LLM configuration at enqueue time
+      let resolvedNarrativeLlm: ResolvedNarrativeLlmConfig | undefined;
+      if (includeNarrative) {
+        try {
+          // Read agent model policy
+          const [agentRow] = await db
+            .select({ modelPolicy: agents.modelPolicy, userId: agents.userId })
+            .from(agents)
+            .where(eq(agents.id, id))
+            .limit(1);
+
+          // Read user AI model config
+          const userAiConfig = await agentRepo.getUserAiModelConfig(agentRow?.userId ?? request.userId);
+
+          resolvedNarrativeLlm = resolveNarrativeLlmConfig({
+            agentModelPolicy: (agentRow?.modelPolicy as Record<string, unknown>) ?? null,
+            userAiModelConfig: userAiConfig,
+            narrativeLlmOverride: narrativeLlm,
+            operatorDefaultProvider: narrativeLlmDeps.provider,
+            operatorBaseUrl: narrativeLlmDeps.baseUrl,
+            operatorTimeoutMs: narrativeLlmDeps.timeoutMs,
+            operatorMaxTokens: narrativeLlmDeps.maxTokens,
+            providersYaml: narrativeLlmDeps.providersYaml,
+          });
+        } catch (err) {
+          return reply.status(400).send({
+            error: 'narrative_llm_resolution_failed',
+            message: (err as Error).message,
+          });
+        }
       }
 
       // Resolve scope (expands latestSession → concrete session)
@@ -183,7 +232,7 @@ export async function agentEvaluationRoutes(
         agentId: id,
         resolvedScope: resolved,
         includeNarrative: parsed.data.includeNarrative,
-        narrativeLlm: undefined, // Phase 3 will resolve and set this
+        narrativeLlm: resolvedNarrativeLlm,
       }, {
         attempts: evalConfig.maxAttempts,
         backoff: { type: 'exponential', delay: 5000 },

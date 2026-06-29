@@ -229,6 +229,12 @@ await exportRoutes(app, db);
 await agentEvaluationRoutes(app, evaluationQueue, db, {
   maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
   maxAttempts: appConfig.evaluation.maxAttempts ?? 3,
+}, {
+  provider: appConfig.llm.provider,
+  baseUrl: appConfig.llm.baseUrl,
+  timeoutMs: appConfig.llm.timeoutMs,
+  maxTokens: appConfig.llm.maxTokens,
+  providersYaml,
 });
 await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
