@@ -26,7 +26,8 @@ function assertKnownRequiredTools(skillId: string, requiredTools: string[]): str
   return requiredTools;
 }
 
-type RuntimeGrantRow = {
+export type RuntimeAssignmentRow = {
+  assignmentId: string;
   grantStatus: string;
   grantedAt: Date;
   connectionId: string;
@@ -39,7 +40,7 @@ type RuntimeGrantRow = {
   capabilities: string[];
 };
 
-function deriveReadiness(row?: RuntimeGrantRow, family = 'trading'): CapabilityReadiness {
+export function deriveReadiness(row?: RuntimeAssignmentRow, family = 'trading'): CapabilityReadiness {
   if (!row) {
     return {
       family,
@@ -98,11 +99,20 @@ function deriveReadiness(row?: RuntimeGrantRow, family = 'trading'): CapabilityR
   };
 }
 
-function chooseLatest(rows: RuntimeGrantRow[]): RuntimeGrantRow | undefined {
-  return rows.slice().sort((left, right) => right.grantedAt.getTime() - left.grantedAt.getTime())[0];
+export function chooseLatest(rows: RuntimeAssignmentRow[]): RuntimeAssignmentRow | undefined {
+  if (rows.length === 0) {
+    return undefined;
+  }
+  return rows.slice().sort((left, right) => {
+    const delta = right.grantedAt.getTime() - left.grantedAt.getTime();
+    if (delta !== 0) {
+      return delta;
+    }
+    return right.assignmentId.localeCompare(left.assignmentId);
+  })[0];
 }
 
-function chooseDefaultConnectionId(rows: RuntimeGrantRow[]): string | null {
+function chooseDefaultConnectionId(rows: RuntimeAssignmentRow[]): string | null {
   const readyRows = rows.filter((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
   return chooseLatest(readyRows)?.connectionId ?? chooseLatest(rows)?.connectionId ?? null;
 }
@@ -207,6 +217,7 @@ export async function resolveRuntimeCapabilityDescriptor(
 
   const connectionRows = await db
     .select({
+      assignmentId: agentConnections.id,
       grantStatus: agentConnections.status,
       grantedAt: agentConnections.grantedAt,
       connectionId: connections.id,

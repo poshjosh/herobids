@@ -1,33 +1,11 @@
 import type { FastifyInstance } from 'fastify';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { agents, connections, capabilityGrants } from '@herobids/db';
-import type { CapabilityReadiness, ReadinessState, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
+import { agents, connections, agentConnections, providers, deriveReadiness, chooseLatest } from '@herobids/db';
+import type { RuntimeAssignmentRow } from '@herobids/db';
+import type { CapabilityReadiness, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { tradingCapabilityRoutes } from './trading.js';
-
-function deriveReadiness(
-  grantStatus: string,
-  connectionStatus: string,
-): { state: ReadinessState; reasons: string[] } {
-  if (connectionStatus === 'revoked') {
-    return { state: 'revoked', reasons: ['connection has been revoked'] };
-  }
-  if (grantStatus === 'revoked') {
-    return { state: 'revoked', reasons: ['grant has been revoked'] };
-  }
-  return { state: 'ready', reasons: [] };
-}
-
-function chooseFallbackGrant<T extends { grantedAt: Date; grantId: string }>(rows: T[]): T {
-  return rows.slice().sort((left, right) => {
-    const grantedAtDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
-    if (grantedAtDelta !== 0) {
-      return grantedAtDelta;
-    }
-    return right.grantId.localeCompare(left.grantId);
-  })[0]!;
-}
 
 export async function capabilityRoutes(
   app: FastifyInstance,
@@ -64,97 +42,43 @@ export async function capabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const rows = await db
+      const rows: RuntimeAssignmentRow[] = await db
         .select({
-          grantId: capabilityGrants.id,
-          capabilityFamily: capabilityGrants.capabilityFamily,
-          grantStatus: capabilityGrants.status,
-          grantedAt: capabilityGrants.grantedAt,
+          assignmentId: agentConnections.id,
+          grantStatus: agentConnections.status,
+          grantedAt: agentConnections.grantedAt,
           connectionId: connections.id,
           connectionStatus: connections.status,
+          provider: connections.provider,
+          label: connections.label,
+          providerRef: connections.providerRef,
+          profile: connections.profile,
+          resolvedVenueAccountId: connections.resolvedVenueAccountId,
+          capabilities: providers.capabilities,
         })
-        .from(capabilityGrants)
-        .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
-        .where(eq(capabilityGrants.agentId, agentId))
-        .orderBy(desc(capabilityGrants.grantedAt), desc(capabilityGrants.id));
+        .from(agentConnections)
+        .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+        .innerJoin(providers, eq(connections.provider, providers.id))
+        .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.status, 'active')));
 
-      const byFamily = new Map<string, typeof rows>();
+      // Collect all families from provider capabilities across all rows
+      const allFamilies = new Set<string>();
       for (const row of rows) {
-        const existing = byFamily.get(row.capabilityFamily) ?? [];
-        existing.push(row);
-        byFamily.set(row.capabilityFamily, existing);
+        for (const cap of row.capabilities ?? []) {
+          allFamilies.add(cap);
+        }
+      }
+      // Ensure known families are always present
+      for (const family of knownFamilies) {
+        allFamilies.add(family);
       }
 
       const capabilities: CapabilityReadiness[] = [];
-      for (const family of knownFamilies) {
-        const familyRows = byFamily.get(family) ?? [];
-        if (familyRows.length === 0) {
-          capabilities.push({
-            family,
-            state: 'unconfigured',
-            connectionReadiness: 'unconfigured',
-            agentEligibility: 'ineligible',
-            effectiveReady: false,
-            reasons: ['no grants have been created for this capability family'],
-          });
-          continue;
-        }
-
-        const activeGrant = familyRows.find((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
-        if (activeGrant) {
-          capabilities.push({
-            family,
-            state: 'ready',
-            connectionReadiness: 'ready',
-            agentEligibility: 'eligible',
-            effectiveReady: true,
-            connectionId: activeGrant.connectionId,
-            reasons: [],
-          });
-        } else {
-          const first = chooseFallbackGrant(familyRows);
-          const { state, reasons } = deriveReadiness(first.grantStatus, first.connectionStatus);
-          capabilities.push({
-            family,
-            state,
-            connectionReadiness: state,
-            agentEligibility: 'ineligible',
-            effectiveReady: false,
-            connectionId: first.connectionId,
-            reasons,
-          });
-        }
-      }
-
-      for (const [family, familyRows] of byFamily) {
-        if (knownFamilies.includes(family as (typeof knownFamilies)[number])) {
-          continue;
-        }
-
-        const activeGrant = familyRows.find((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
-        if (activeGrant) {
-          capabilities.push({
-            family,
-            state: 'ready',
-            connectionReadiness: 'ready',
-            agentEligibility: 'eligible',
-            effectiveReady: true,
-            connectionId: activeGrant.connectionId,
-            reasons: [],
-          });
-        } else {
-          const first = chooseFallbackGrant(familyRows);
-          const { state, reasons } = deriveReadiness(first.grantStatus, first.connectionStatus);
-          capabilities.push({
-            family,
-            state,
-            connectionReadiness: state,
-            agentEligibility: 'ineligible',
-            effectiveReady: false,
-            connectionId: first.connectionId,
-            reasons,
-          });
-        }
+      for (const family of allFamilies) {
+        const familyRows = rows.filter((row) => (row.capabilities ?? []).includes(family));
+        const latest = chooseLatest(familyRows);
+        const readiness = deriveReadiness(latest, family);
+        capabilities.push(readiness);
       }
 
       return reply.send({ agentId, capabilities });
