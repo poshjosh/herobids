@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -15,7 +15,7 @@ import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
 import { type AgentStyleValue, resolveStyleDefaults, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
-import { VENUE_TYPE_MAP } from './venue-mapping.js';
+import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
@@ -97,6 +97,15 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     queryKey: ['capabilities', 'trading', 'connections'],
     queryFn: () => capabilitiesApi.tradingConnections(),
   });
+  const providerCatalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalogApi.get(),
+    staleTime: 60 * 60 * 1000,
+  });
+
+  const venueTypeMap = providerCatalogQuery.data?.providers
+    ? buildVenueTypeMap(providerCatalogQuery.data.providers)
+    : VENUE_TYPE_MAP;
   const availableConnections = (availableConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
@@ -227,7 +236,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       const activeConnection = agentConnectionsQuery.data?.connections
         ?.find(c => c.grantStatus === 'active' && c.connectionStatus === 'active');
       const connectionVenue = activeConnection?.provider ?? '';
-      const connectionVenueType = (VENUE_TYPE_MAP[connectionVenue] ?? '') as '' | 'orderbook' | 'swap';
+      const connectionVenueType = (venueTypeMap[connectionVenue] ?? '') as '' | 'orderbook' | 'swap';
       const technicalPayload = form.technicalPreFilterEnabled
         ? technicalFormStateToPayload(form.technicalConfig, connectionVenue || undefined, connectionVenueType || undefined)
         : null;

@@ -12,6 +12,8 @@ export interface ProviderDefinition {
   displayName: string;
   status: 'supported' | 'deprecated';
   categories: string[];
+  /** Derived venue type for trading providers: 'orderbook' | 'swap' | null for non-trading */
+  venueType?: 'orderbook' | 'swap' | null;
   logoUrl?: string;
   credentials?: CredentialSchema;
   connections?: ConnectionSchema;

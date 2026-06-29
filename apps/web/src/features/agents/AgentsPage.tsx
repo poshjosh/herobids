@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, type Skill } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
@@ -25,7 +25,7 @@ import { validateCreateAgentForm, type ValidationConstraints } from './form-vali
 import { RuntimePolicySection } from './RuntimePolicySection.js';
 
 
-import { VENUE_TYPE_MAP } from './venue-mapping.js';
+import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 
 type CreateStep = 'intent' | 'review';
 
@@ -224,6 +224,15 @@ function CreateAgentFlow({
     queryKey: ['agents', 'risk-defaults'],
     queryFn: () => agentsApi.riskDefaults(),
   });
+  const providerCatalogQuery = useQuery({
+    queryKey: ['providerCatalog'],
+    queryFn: () => providerCatalogApi.get(),
+    staleTime: 60 * 60 * 1000, // 1 hour — providers rarely change
+  });
+
+  const venueTypeMap = providerCatalogQuery.data?.providers
+    ? buildVenueTypeMap(providerCatalogQuery.data.providers)
+    : VENUE_TYPE_MAP;
 
   useEffect(() => {
     if (modelTouched) {
@@ -330,7 +339,7 @@ function CreateAgentFlow({
   // Derive venue + venueType from selected connection's provider
   useEffect(() => {
     if (selectedConnection?.provider) {
-      const derivedVenueType = VENUE_TYPE_MAP[selectedConnection.provider] ?? '';
+      const derivedVenueType = venueTypeMap[selectedConnection.provider] ?? '';
       setIntent((state) => {
         if (state.venue !== selectedConnection.provider || state.venueType !== derivedVenueType) {
           return { ...state, venue: selectedConnection.provider, venueType: derivedVenueType };
@@ -696,7 +705,7 @@ function CreateAgentFlow({
                       value={intent.venue}
                       onChange={(e) => {
                         const v = e.target.value;
-                        const vt = VENUE_TYPE_MAP[v] ?? '';
+                        const vt = venueTypeMap[v] ?? '';
                         clearFieldError('venue');
                         setIntent((state) => ({ ...state, venue: v, venueType: vt }));
                       }}

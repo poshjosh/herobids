@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased] — 2026-06-29
 
 ### Changed
+- **Generalize credentials & agent connection assignment (Phase 1.7)** — Provider-driven venue type and credential field derivation
+  - Added `venueType` field to `ProviderDefinition` domain type, derived from provider categories in the catalog
+  - `GET /providers/catalog` now returns `venueType` ('orderbook' | 'swap' | null) for each provider
+  - `AgentsPage` and `EditAgentModal` now derive venue type from the provider catalog API instead of the hardcoded `VENUE_TYPE_MAP`
+  - Added `buildVenueTypeMap()` utility in `venue-mapping.ts` to construct a venue-type lookup from catalog data
+  - Deprecated hardcoded `VENUE_TYPE_MAP` and `PROVIDER_TEMPLATES` in favor of API-driven data
 - **Move Venue to Trading Setup (Phase 1 — Frontend)** — Venue is now derived from trading connections instead of stored in technical config
   - EditAgentModal derives venue/venueType from agent's active trading connection at save time
   - Paper mode venue dropdown shows whenever no connection is selected (not just when no connections exist)

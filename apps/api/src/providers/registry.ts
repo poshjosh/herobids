@@ -224,12 +224,19 @@ const CUSTOM_MODE: CustomModeDefinition = {
   connections: { allowFreeformProvider: true, autoCreatesTradingConnection: false },
 };
 
+function deriveVenueType(categories: string[]): 'orderbook' | 'swap' | null {
+  if (categories.includes('swap')) return 'swap';
+  if (categories.includes('trading')) return 'orderbook';
+  return null;
+}
+
 function toPublicProvider(entry: RegistryEntry): ProviderDefinition {
   return {
     id: entry.id,
     displayName: entry.displayName,
     status: entry.status,
     categories: entry.categories,
+    venueType: deriveVenueType(entry.categories),
     logoUrl: entry.logoUrl,
     credentials: entry.credentials
       ? {
