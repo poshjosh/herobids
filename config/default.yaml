@@ -113,6 +113,7 @@ backtesting:
 evaluation:
   concurrency: 2       # BullMQ consumer concurrency for evaluation jobs
   maxRuntimeMs: 120000 # 2 minutes — max wall-clock time per evaluation run
+  maxAttempts: 3       # max retry attempts for failed evaluation jobs
   thresholds:
     toolFailureRatePct: 20       # tool failure rate above which a medium finding is raised
     highDrawdownPct: 20          # max drawdown % above which a high finding is raised

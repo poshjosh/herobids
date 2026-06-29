@@ -69,6 +69,8 @@ export class EvaluationRuntime {
       {
         connection: this.config.redis,
         concurrency: this.config.concurrency ?? 2,
+        lockDuration: maxRuntimeMs + 30_000,
+        stalledInterval: 30_000,
       },
     );
 

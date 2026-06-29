@@ -25,7 +25,7 @@ const TriggerEvaluationSchema = z.object({
     sessionId: z.string().optional(),
     from: z.string().datetime().optional(),
     to: z.string().datetime().optional(),
-  }),
+  }).optional().default({ type: 'latestSession' }),
   includeNarrative: z.boolean().optional().default(false),
 });
 
@@ -53,17 +53,26 @@ function parseScope(raw: z.infer<typeof TriggerEvaluationSchema>['scope']): Eval
 
 // ── Route module ────────────────────────────────────────────────────────────
 
+export interface EvaluationRouteConfig {
+  /** Max wall-clock time per evaluation run in ms (job timeout). */
+  maxRuntimeMs: number;
+  /** Max retry attempts for failed evaluation jobs. */
+  maxAttempts: number;
+}
+
 /**
  * Agent evaluation API routes.
  *
  * Dependencies:
  * - `queue`: BullMQ Queue for enqueuing evaluation jobs.
  * - `db`: Database handle.
+ * - `evalConfig`: Evaluation timeout/retry settings from operator config.
  */
 export async function agentEvaluationRoutes(
   app: FastifyInstance,
   queue: Queue<EvaluationJobData>,
   db: Database,
+  evalConfig: EvaluationRouteConfig,
 ): Promise<void> {
   const store = new FsEvaluationArtifactStore();
 
@@ -94,12 +103,15 @@ export async function agentEvaluationRoutes(
         return reply.status(400).send({ error: 'validation_error', message: (err as Error).message });
       }
 
-      // `allTime` requires explicit opt-in
+      // `allTime` requires explicit opt-in via query parameter
       if (scope.type === 'allTime') {
-        return reply.status(400).send({
-          error: 'validation_error',
-          message: 'allTime scope requires explicit operator approval. Use latestSession or a specific scope.',
-        });
+        const allowAllTime = request.query['allowAllTime'] === 'true';
+        if (!allowAllTime) {
+          return reply.status(400).send({
+            error: 'validation_error',
+            message: 'allTime scope requires explicit operator approval. Set ?allowAllTime=true to opt in.',
+          });
+        }
       }
 
       // Resolve scope (expands latestSession → concrete session)
@@ -137,12 +149,15 @@ export async function agentEvaluationRoutes(
         resolved,
       );
 
-      // Enqueue job
+      // Enqueue job with timeout and retry settings from operator config
       await queue.add(`eval-${runId}`, {
         runId,
         agentId: id,
         resolvedScope: resolved,
         includeNarrative: parsed.data.includeNarrative,
+      }, {
+        attempts: evalConfig.maxAttempts,
+        backoff: { type: 'exponential', delay: 5000 },
       });
 
       return reply.status(202).send({ runId });

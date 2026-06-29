@@ -103,6 +103,7 @@ export const EvaluationThresholdsSchema = z.object({
 export const EvaluationConfigSchema = z.object({
   concurrency: z.number().int().min(1).default(2),
   maxRuntimeMs: z.number().int().min(1_000).default(120_000),
+  maxAttempts: z.number().int().min(1).max(10).default(3),
   thresholds: EvaluationThresholdsSchema.default({}),
 });
 

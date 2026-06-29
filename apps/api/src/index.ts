@@ -226,7 +226,10 @@ await aiRoutes(app, db, appConfig.llm, redisClient, providersYaml);
 await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
-await agentEvaluationRoutes(app, evaluationQueue, db);
+await agentEvaluationRoutes(app, evaluationQueue, db, {
+  maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
+  maxAttempts: appConfig.evaluation.maxAttempts ?? 3,
+});
 await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });
 

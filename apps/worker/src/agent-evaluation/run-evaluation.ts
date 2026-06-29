@@ -1,5 +1,11 @@
+import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { FsEvaluationArtifactStore, markSucceeded, markFailed } from '@herobids/db';
+import {
+  agentRuntimeSessions,
+  FsEvaluationArtifactStore,
+  markSucceeded,
+  markFailed,
+} from '@herobids/db';
 import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore } from '@herobids/domain';
 import type { EvaluationThresholds } from '@herobids/domain';
 import pino from 'pino';
@@ -43,6 +49,25 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
   const store = ctx.store ?? new FsEvaluationArtifactStore();
 
   try {
+    // ── Step 0: Resolve session timestamps for session-scoped evaluations ─
+    let sessionTimestamps: { startedAt: Date; stoppedAt: Date } | undefined;
+    if (resolvedScope.type === 'session') {
+      const [sess] = await db
+        .select({
+          startedAt: agentRuntimeSessions.startedAt,
+          stoppedAt: agentRuntimeSessions.stoppedAt,
+        })
+        .from(agentRuntimeSessions)
+        .where(eq(agentRuntimeSessions.id, resolvedScope.sessionId))
+        .limit(1);
+      if (sess?.startedAt && sess?.stoppedAt) {
+        sessionTimestamps = { startedAt: sess.startedAt, stoppedAt: sess.stoppedAt };
+        logger.info({ runId, sessionId: resolvedScope.sessionId, sessionTimestamps }, 'Resolved session timestamps for evidence filtering');
+      } else {
+        logger.warn({ runId, sessionId: resolvedScope.sessionId }, 'Session not found or missing timestamps — evidence collection will not be time-filtered');
+      }
+    }
+
     // ── Step 1: Assemble evidence ─────────────────────────────────────────
     logger.info({ runId, agentId }, 'Collecting evidence');
     const manifest = await assembleEvidence({
@@ -51,6 +76,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       scope: resolvedScope,
       store,
       runId,
+      sessionTimestamps,
     });
     logger.info({ runId, entries: manifest.entries.filter((e) => e.collected).length }, 'Evidence collected');
 
@@ -108,11 +134,24 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       store.write(runId, 'REPORT.md', finalReport),
     ]);
 
+    // Build the full artifact manifest: evidence artifacts from the store +
+    // the evaluation.json and REPORT.md we just wrote. This ensures the
+    // download route can resolve MIME types for all artifacts, not just the
+    // two we explicitly write here.
+    const storeArtifacts = await store.list(runId);
+    const fullManifest = [
+      evalRef,
+      reportRef,
+      ...storeArtifacts.filter(
+        (a) => a.name !== evalRef.name && a.name !== reportRef.name,
+      ),
+    ];
+
     // ── Step 6: Persist result ───────────────────────────────────────────
-    logger.info({ runId, overallScore: scorecard.overallScore }, 'Persisting evaluation result');
+    logger.info({ runId, overallScore: scorecard.overallScore, artifactCount: fullManifest.length }, 'Persisting evaluation result');
     const result: EvaluationRunResult = {
       scorecard,
-      artifactManifest: [evalRef, reportRef],
+      artifactManifest: fullManifest,
       summary: { totalFindings: allFindings.length, criticalCount, highCount },
     };
 
