@@ -17,6 +17,7 @@ import {
 } from '@herobids/db';
 import type { EvaluationJobData, ResolvedNarrativeLlmConfig } from '@herobids/db';
 import type { EvaluationScope, EvaluationTrigger, ProvidersYaml } from '@herobids/domain';
+import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { resolveNarrativeLlmConfig } from './agent-evaluation-narrative-llm.js';
 
 // ── Schemas ─────────────────────────────────────────────────────────────────
@@ -79,6 +80,12 @@ export interface NarrativeLlmDeps {
   maxTokens: number;
   /** Provider registry for model validation */
   providersYaml: ProvidersYaml;
+  /** Catalog discovery timeout (for dynamic provider model validation) */
+  catalogTimeoutMs: number;
+  /** Catalog cache TTL (for dynamic provider model validation) */
+  catalogCacheTtlMs: number;
+  /** Catalog locality policy (for dynamic provider model validation) */
+  catalogLocality: OperatorLlmCatalogContext['catalogLocality'];
 }
 
 /**
@@ -160,7 +167,7 @@ export async function agentEvaluationRoutes(
           // Read user AI model config
           const userAiConfig = await agentRepo.getUserAiModelConfig(agentRow?.userId ?? request.userId);
 
-          resolvedNarrativeLlm = resolveNarrativeLlmConfig({
+          resolvedNarrativeLlm = await resolveNarrativeLlmConfig({
             agentModelPolicy: (agentRow?.modelPolicy as Record<string, unknown>) ?? null,
             userAiModelConfig: userAiConfig,
             narrativeLlmOverride: narrativeLlm,
@@ -169,6 +176,18 @@ export async function agentEvaluationRoutes(
             operatorTimeoutMs: narrativeLlmDeps.timeoutMs,
             operatorMaxTokens: narrativeLlmDeps.maxTokens,
             providersYaml: narrativeLlmDeps.providersYaml,
+            catalogDeps: {
+              db,
+              providersYaml: narrativeLlmDeps.providersYaml,
+              context: {
+                provider: narrativeLlmDeps.provider,
+                model: '', // not used for model validation — only needed for Ollama fallback
+                baseUrl: narrativeLlmDeps.baseUrl,
+                catalogTimeoutMs: narrativeLlmDeps.catalogTimeoutMs,
+                catalogCacheTtlMs: narrativeLlmDeps.catalogCacheTtlMs,
+                catalogLocality: narrativeLlmDeps.catalogLocality,
+              },
+            },
           });
         } catch (err) {
           return reply.status(400).send({

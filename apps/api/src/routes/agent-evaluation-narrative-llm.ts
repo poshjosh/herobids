@@ -3,6 +3,7 @@ import { getProviderModelIds, type ProvidersYaml, type ProviderConfig } from '@h
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 import type { NarrativeLlmRequest } from '@herobids/domain';
 import type { PersistedAiModelConfig } from '@herobids/domain';
+import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 
 export interface NarrativeLlmResolutionInput {
   /** The agent's modelPolicy JSONB (may contain provider, lightModel, heavyModel, costPreset, dailySpendBudgetUsd) */
@@ -21,13 +22,16 @@ export interface NarrativeLlmResolutionInput {
   operatorMaxTokens: number;
   /** Provider registry for model validation */
   providersYaml: ProvidersYaml;
+  /** Optional catalog deps for dynamic provider model validation (OpenRouter/Ollama).
+   * When omitted, dynamic provider models are not validated at request time. */
+  catalogDeps?: LlmCatalogDeps;
 }
 
 /**
  * Resolve the narrative LLM configuration at enqueue time.
  * Throws with a user-friendly message on failure (catch and return 400).
  */
-export function resolveNarrativeLlmConfig(input: NarrativeLlmResolutionInput): ResolvedNarrativeLlmConfig {
+export async function resolveNarrativeLlmConfig(input: NarrativeLlmResolutionInput): Promise<ResolvedNarrativeLlmConfig> {
   // 1. Extract agent model policy fields
   const agentProvider = typeof input.agentModelPolicy?.provider === 'string' ? input.agentModelPolicy.provider : undefined;
   const agentLightModel = typeof input.agentModelPolicy?.lightModel === 'string' ? input.agentModelPolicy.lightModel : undefined;
@@ -93,11 +97,19 @@ export function resolveNarrativeLlmConfig(input: NarrativeLlmResolutionInput): R
   }
 
   // For static providers, validate the model exists in the catalog.
-  // Dynamic providers (e.g. Ollama) defer model validation to the worker's
+  // For dynamic providers, use the catalog-aware validation path (DB-backed for
+  // OpenRouter, network-discovered for Ollama) when catalog deps are available.
+  // When catalog deps are absent, defer dynamic model validation to the worker's
   // actual LLM call — matching the existing validateLlmModelSelection pattern.
   if (providerConfig.catalogMode === 'static') {
     const modelIds = getProviderModelIds(providerConfig);
     if (!modelIds.includes(finalModel)) {
+      throw new Error(`Narrative LLM model "${finalModel}" is not available for provider "${finalProvider}".`);
+    }
+  } else if (input.catalogDeps) {
+    const { getProviderModels } = await import('../llm-model-catalog.js');
+    const modelIds = await getProviderModels(finalProvider, input.catalogDeps);
+    if (modelIds.length > 0 && !modelIds.includes(finalModel)) {
       throw new Error(`Narrative LLM model "${finalModel}" is not available for provider "${finalProvider}".`);
     }
   }

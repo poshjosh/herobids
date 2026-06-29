@@ -175,6 +175,12 @@ export async function markSucceeded(
 
 /**
  * Mark a run as failed with an error code and message.
+ *
+ * Only transitions from 'running' — if the run was already reaped as timed_out,
+ * it stays timed_out to prevent a late-arriving failure from overwriting the timeout status.
+ *
+ * On failure, when the run has remaining retry attempts (attempt < maxAttempts),
+ * the caller should use `markRetrying` instead to re-queue the run for BullMQ retry.
  */
 export async function markFailed(
   db: Database,
@@ -190,7 +196,34 @@ export async function markFailed(
       errorCode,
       errorMessage,
     })
-    .where(eq(agentEvaluations.id, id));
+    .where(and(eq(agentEvaluations.id, id), eq(agentEvaluations.status, 'running')));
+}
+
+/**
+ * Reset a run to 'queued' and increment its attempt counter for BullMQ retry.
+ *
+ * Called when a job fails but still has retry attempts remaining. The BullMQ
+ * retry mechanism will re-deliver the job, which will then call `markRunning`
+ * to transition queued → running.
+ *
+ * Only transitions from 'running' — a run reaped as timed_out stays timed_out.
+ */
+export async function markRetrying(
+  db: Database,
+  id: string,
+  errorCode: string,
+  errorMessage: string,
+): Promise<void> {
+  await db
+    .update(agentEvaluations)
+    .set({
+      status: 'queued',
+      errorCode,
+      errorMessage,
+      startedAt: null,
+      attempt: sql`${agentEvaluations.attempt} + 1`,
+    })
+    .where(and(eq(agentEvaluations.id, id), eq(agentEvaluations.status, 'running')));
 }
 
 /**

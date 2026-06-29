@@ -45,11 +45,12 @@ function baseMetadata(config: ResolvedNarrativeLlmConfig): NarrativeGenerationMe
 
 /**
  * Build a concise prompt for the narrative LLM.
- * Uses only redacted deterministic inputs: scorecard + top findings.
+ * Uses only redacted deterministic inputs: scorecard, top findings, and report text.
  */
 function buildNarrativePrompt(
   scorecard: EvaluationScorecard,
   topFindings: EvaluationFinding[],
+  reportText: string,
 ): string {
   const sectionLines = scorecard.sections
     .filter((s) => s.applicable)
@@ -62,6 +63,13 @@ function buildNarrativePrompt(
     return `- [${f.severity.toUpperCase()}] ${f.code}: ${f.title} — ${f.detail}`;
   });
 
+  // Truncate report text to a reasonable length for the prompt (avoid token bloat).
+  // The full report is still available as a standalone artifact.
+  const maxReportChars = 8_000;
+  const truncatedReport = reportText.length > maxReportChars
+    ? reportText.slice(0, maxReportChars) + '\n\n[... report truncated for length ...]'
+    : reportText;
+
   return `You are an expert trading system auditor writing a concise evaluation commentary.
 
 Overall Score: ${scorecard.overallScore}/100
@@ -71,6 +79,9 @@ ${sectionLines.join('\n')}
 
 Top Findings:
 ${findingLines.length > 0 ? findingLines.join('\n') : '- No significant findings.'}
+
+Deterministic Report:
+${truncatedReport}
 
 Write a SHORT commentary (3-5 sentences) in Markdown format. Focus on the most important findings. Be direct and actionable. Do NOT use headings, lists, or code blocks — just plain paragraph text. Do NOT preface with "Here is the commentary" or similar meta-text.`;
 }
@@ -87,6 +98,7 @@ export async function generateEvaluationNarrative(
   narrativeConfig: ResolvedNarrativeLlmConfig,
   scorecard: EvaluationScorecard,
   topFindings: EvaluationFinding[],
+  reportText: string,
 ): Promise<NarrativeGenerationResult> {
   const meta = baseMetadata(narrativeConfig);
 
@@ -98,7 +110,7 @@ export async function generateEvaluationNarrative(
     baseUrl: narrativeConfig.baseUrl,
   };
 
-  const prompt = buildNarrativePrompt(scorecard, topFindings);
+  const prompt = buildNarrativePrompt(scorecard, topFindings, reportText);
 
   const request: LlmRequest = {
     messages: [

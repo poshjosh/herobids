@@ -181,6 +181,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
         ctx.narrativeLlm,
         scorecard,
         safeFindings,
+        redactedReport,
       );
 
       // Write narrative metadata artifact (always, even on failure)

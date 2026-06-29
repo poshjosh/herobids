@@ -5,8 +5,8 @@ import { agents } from './agents.js';
  * Agent evaluation runs — persisted metadata for each evaluation job.
  *
  * Scope-aware dedupe: only one active run (queued/running) per agent per resolved scope.
- * The exclusion constraint is enforced at the application level via `hasActiveRunForScope()`
- * because PostgreSQL exclusion constraints on `text` columns require the btree_gist extension.
+ * Enforced by a partial unique index on (agent_id, scope_key) WHERE status IN ('queued', 'running')
+ * (see migration 0025), with an application-level transaction guard as a secondary check.
  *
  * Both `requested_scope_json` and `resolved_scope_json` are stored:
  * - `requested_scope_json`: what the caller asked for (may include `latestSession`)

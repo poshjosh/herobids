@@ -176,6 +176,13 @@
       "when": 1782679911484,
       "tag": "0024_wide_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782700000000,
+      "tag": "0025_mute_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

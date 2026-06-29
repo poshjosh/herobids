@@ -235,6 +235,9 @@ await agentEvaluationRoutes(app, evaluationQueue, db, {
   timeoutMs: appConfig.llm.timeoutMs,
   maxTokens: appConfig.llm.maxTokens,
   providersYaml,
+  catalogTimeoutMs: appConfig.llm.catalog.timeoutMs,
+  catalogCacheTtlMs: appConfig.llm.catalog.cacheTtlMs,
+  catalogLocality: appConfig.llm.catalog.locality,
 });
 await actorHealthRoutes(app, db, redisClient);
 await adminRoutes(app, db, redisClient, { marketDataConfig: appConfig.marketData });

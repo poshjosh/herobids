@@ -7,6 +7,8 @@ import { bots, fills, journalEvents, agentRuntimeSessions, positions } from './s
 export interface LoaderTimeFilter {
   from?: Date;
   to?: Date;
+  /** Pre-resolved bot IDs to avoid redundant loadAgentBotIds queries. When provided, the loader skips its internal bot-ID lookup. */
+  botIds?: string[];
 }
 
 // ── Agent-owned bot discovery ────────────────────────────────────────────────
@@ -36,7 +38,7 @@ export async function loadAgentFills(
   agentId: string,
   opts?: LoaderTimeFilter,
 ): Promise<typeof fills.$inferSelect[]> {
-  const agentBotIds = await loadAgentBotIds(db, agentId);
+  const agentBotIds = opts?.botIds ?? await loadAgentBotIds(db, agentId);
 
   const [agentRows, botRows] = await Promise.all([
     db
@@ -77,7 +79,7 @@ export async function loadAgentJournalEvents(
   agentId: string,
   opts?: LoaderTimeFilter,
 ): Promise<typeof journalEvents.$inferSelect[]> {
-  const agentBotIds = await loadAgentBotIds(db, agentId);
+  const agentBotIds = opts?.botIds ?? await loadAgentBotIds(db, agentId);
 
   const [agentRows, botRows] = await Promise.all([
     db
@@ -137,6 +139,8 @@ export interface LoadPositionsOpts extends LoaderTimeFilter {
    * (closedAt IS NULL OR closedAt > at). This gives a point-in-time snapshot.
    */
   at?: Date;
+  /** Pre-resolved bot IDs to avoid redundant loadAgentBotIds queries. */
+  botIds?: string[];
 }
 
 /**
@@ -151,7 +155,7 @@ export async function loadAgentPositions(
   agentId: string,
   opts?: LoadPositionsOpts,
 ): Promise<typeof positions.$inferSelect[]> {
-  const agentBotIds = await loadAgentBotIds(db, agentId);
+  const agentBotIds = opts?.botIds ?? await loadAgentBotIds(db, agentId);
 
   const buildConditions = (actorType: 'agent' | 'bot', actorId: string | string[]) => {
     const base = actorType === 'agent'

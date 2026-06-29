@@ -4,11 +4,13 @@ import {
   loadAgentJournalEvents,
   loadAgentRuntimeSessions,
   loadAgentPositions,
+  loadAgentBotIds,
   AgentRepository,
-  UsageBillingRepository,
+  billingUsageEvents,
 } from '@herobids/db';
+import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { ResolvedEvaluationScope, EvaluationArtifactStore } from '@herobids/domain';
-import { redactJson } from '../redaction.js';
+import { collectContainerLogs } from './container-logs.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,58 +82,47 @@ function scopeTimeFilter(
 /**
  * Assemble all deterministic evidence for an agent evaluation run.
  *
- * Writes collected data as artifacts to the store and returns a manifest
+ * Writes raw evidence as artifacts to the store and returns a manifest
  * listing what was collected and what failed (with reason).
  *
- * Best-effort collectors (Redis, container logs) catch and record failures
- * without aborting the entire collection.
+ * Core evidence (fills, journal, sessions, positions) must succeed —
+ * failure throws and aborts the evaluation run.
+ *
+ * Best-effort collectors (agent metadata, costs, Redis, container logs)
+ * catch and record failures without aborting.
  */
 export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<EvidenceManifest> {
   const entries: EvidenceManifestEntry[] = [];
   const timeFilter = scopeTimeFilter(ctx.scope, ctx.sessionTimestamps);
 
-  // ── Fills ──────────────────────────────────────────────────────────────
-  try {
-    const fills = await loadAgentFills(ctx.db, ctx.agentId, timeFilter);
-    const redacted = redactJson(fills);
-    await ctx.store.write(ctx.runId, 'fills.json', JSON.stringify(redacted, null, 2));
-    entries.push({ artifactName: 'fills.json', collected: true, itemCount: fills.length });
-  } catch (err) {
-    entries.push({ artifactName: 'fills.json', collected: false, error: String(err) });
-  }
+  // Pre-fetch bot IDs once — shared across fills, journal, and positions loaders
+  // to avoid querying the bots table 4 times per evaluation run.
+  const botIds = await loadAgentBotIds(ctx.db, ctx.agentId);
+  const loaderOpts = { ...timeFilter, botIds };
 
-  // ── Journal events ─────────────────────────────────────────────────────
-  try {
-    const journal = await loadAgentJournalEvents(ctx.db, ctx.agentId, timeFilter);
-    const redacted = redactJson(journal);
-    await ctx.store.write(ctx.runId, 'journal.json', JSON.stringify(redacted, null, 2));
-    entries.push({ artifactName: 'journal.json', collected: true, itemCount: journal.length });
-  } catch (err) {
-    entries.push({ artifactName: 'journal.json', collected: false, error: String(err) });
-  }
+  // ── Fills (core — must succeed) ────────────────────────────────────────
+  const fills = await loadAgentFills(ctx.db, ctx.agentId, loaderOpts);
+  // Write raw data — redaction happens after analysis in the orchestrator
+  await ctx.store.write(ctx.runId, 'fills.json', JSON.stringify(fills, null, 2));
+  entries.push({ artifactName: 'fills.json', collected: true, itemCount: fills.length });
 
-  // ── Runtime sessions ───────────────────────────────────────────────────
-  try {
-    const sessions = await loadAgentRuntimeSessions(ctx.db, ctx.agentId, timeFilter);
-    const redacted = redactJson(sessions);
-    await ctx.store.write(ctx.runId, 'sessions.json', JSON.stringify(redacted, null, 2));
-    entries.push({ artifactName: 'sessions.json', collected: true, itemCount: sessions.length });
-  } catch (err) {
-    entries.push({ artifactName: 'sessions.json', collected: false, error: String(err) });
-  }
+  // ── Journal events (core — must succeed) ───────────────────────────────
+  const journal = await loadAgentJournalEvents(ctx.db, ctx.agentId, loaderOpts);
+  await ctx.store.write(ctx.runId, 'journal.json', JSON.stringify(journal, null, 2));
+  entries.push({ artifactName: 'journal.json', collected: true, itemCount: journal.length });
 
-  // ── Positions (snapshot) ───────────────────────────────────────────────
-  try {
-    const at = timeFilter?.at;
-    const positions = await loadAgentPositions(ctx.db, ctx.agentId, at ? { at } : {});
-    const redacted = redactJson(positions);
-    await ctx.store.write(ctx.runId, 'positions.json', JSON.stringify(redacted, null, 2));
-    entries.push({ artifactName: 'positions.json', collected: true, itemCount: positions.length });
-  } catch (err) {
-    entries.push({ artifactName: 'positions.json', collected: false, error: String(err) });
-  }
+  // ── Runtime sessions (core — must succeed) ─────────────────────────────
+  const sessions = await loadAgentRuntimeSessions(ctx.db, ctx.agentId, timeFilter);
+  await ctx.store.write(ctx.runId, 'sessions.json', JSON.stringify(sessions, null, 2));
+  entries.push({ artifactName: 'sessions.json', collected: true, itemCount: sessions.length });
 
-  // ── Agent metadata ─────────────────────────────────────────────────────
+  // ── Positions snapshot (core — must succeed) ───────────────────────────
+  const at = timeFilter?.at;
+  const positions = await loadAgentPositions(ctx.db, ctx.agentId, { ...(at ? { at } : {}), botIds });
+  await ctx.store.write(ctx.runId, 'positions.json', JSON.stringify(positions, null, 2));
+  entries.push({ artifactName: 'positions.json', collected: true, itemCount: positions.length });
+
+  // ── Agent metadata (best-effort) ───────────────────────────────────────
   try {
     const agentRepo = new AgentRepository(ctx.db);
     const agent = await agentRepo.getAgent(ctx.agentId);
@@ -147,8 +138,7 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
         maxSlippageBps: agent.maxSlippageBps,
         createdAt: agent.createdAt,
       };
-      const redacted = redactJson(metadata);
-      await ctx.store.write(ctx.runId, 'agent-metadata.json', JSON.stringify(redacted, null, 2));
+      await ctx.store.write(ctx.runId, 'agent-metadata.json', JSON.stringify(metadata, null, 2));
       entries.push({ artifactName: 'agent-metadata.json', collected: true });
     } else {
       entries.push({ artifactName: 'agent-metadata.json', collected: false, error: 'Agent not found' });
@@ -157,13 +147,30 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
     entries.push({ artifactName: 'agent-metadata.json', collected: false, error: String(err) });
   }
 
-  // ── Cost data (best-effort) ────────────────────────────────────────────
+  // ── Cost data (best-effort — queries billingUsageEvents by agentId) ────
   try {
-    const billingRepo = new UsageBillingRepository(ctx.db);
-    // Note: getUsageSummary requires an accountId, not an agentId.
-    // Agent-level cost data collection is a best-effort placeholder for Level 1.
-    // Future: query billingUsageEvents by agentId directly.
-    entries.push({ artifactName: 'costs.json', collected: false, error: 'Agent-level cost collection not yet implemented' });
+    const billingEvents = await ctx.db
+      .select({
+        meterKey: billingUsageEvents.meterKey,
+        totalQuantity: sql<number>`sum(${billingUsageEvents.quantity})`,
+        unit: billingUsageEvents.unit,
+      })
+      .from(billingUsageEvents)
+      .where(and(
+        eq(billingUsageEvents.agentId, ctx.agentId),
+        ...(timeFilter?.from ? [gte(billingUsageEvents.occurredAt, timeFilter.from)] : []),
+        ...(timeFilter?.to ? [lte(billingUsageEvents.occurredAt, timeFilter.to)] : []),
+      ))
+      .groupBy(billingUsageEvents.meterKey, billingUsageEvents.unit);
+
+    const costSummary = billingEvents.map((e) => ({
+      meterKey: e.meterKey,
+      totalQuantity: e.totalQuantity,
+      unit: e.unit,
+    }));
+
+    await ctx.store.write(ctx.runId, 'costs.json', JSON.stringify(costSummary, null, 2));
+    entries.push({ artifactName: 'costs.json', collected: true, itemCount: costSummary.length });
   } catch (err) {
     entries.push({ artifactName: 'costs.json', collected: false, error: String(err) });
   }
@@ -178,6 +185,10 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
       entries.push({ artifactName: 'redis-snapshot.json', collected: false, error: String(err) });
     }
   }
+
+  // ── Container logs (best-effort) ───────────────────────────────────────
+  const logsEntry = await collectContainerLogs(ctx.agentId, ctx.store, ctx.runId);
+  entries.push(logsEntry);
 
   return { entries, scope: ctx.scope };
 }
