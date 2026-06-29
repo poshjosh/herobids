@@ -6,7 +6,7 @@ import { agents as agentsTable, capabilityGrants as capabilityGrantsTable, bots 
 
 const TEST_USER_ID = 'user-1';
 const TEST_AGENT_ID = 'agent-1';
-const TEST_BINDING_ID = 'binding-1';
+const TEST_CONNECTION_ID = 'binding-1';
 const TEST_RUNTIME_BUDGETS = {
   maxHistoryMessages: 20,
   maxRecentToolMessages: 6,
@@ -23,16 +23,16 @@ async function capabilityRoutes(app: ReturnType<typeof Fastify>, db: unknown, re
   await registerCapabilityRoutesImpl(app, db as never, undefined, TEST_RUNTIME_BUDGETS, redisClient as never);
 }
 
-const DEFAULT_ACTIVE_BINDING = {
+const DEFAULT_ACTIVE_CONNECTION = {
   id: 'binding-1',
   userId: 'user-1',
   connectionId: 'conn-1',
   provider: 'hyperliquid',
   label: 'HL binding',
-  bindingRef: 'acct-1',
+  connectionRef: 'acct-1',
   status: 'active',
-  bindingProfile: { venue: 'hyperliquid' },
-  sourceVenueAccountId: 'va-1',
+  connectionProfile: { venue: 'hyperliquid' },
+  resolvedVenueAccountId: 'va-1',
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   connection: {
@@ -48,7 +48,7 @@ const DEFAULT_ACTIVE_BINDING = {
   },
 };
 
-const mockAssertBindingOwnership = vi.fn().mockResolvedValue(DEFAULT_ACTIVE_BINDING);
+const mockAssertConnectionOwnership = vi.fn().mockResolvedValue(DEFAULT_ACTIVE_CONNECTION);
 
 function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID) {
   app.decorateRequest('userId', '');
@@ -76,8 +76,8 @@ vi.mock('drizzle-orm', () => ({
 vi.mock('../../grant-service.js', () => ({
   createGrant: vi.fn().mockResolvedValue('grant-1'),
   revokeGrant: vi.fn().mockResolvedValue(true),
-  getBindingAudit: vi.fn().mockResolvedValue([]),
-  assertBindingOwnership: (...args: unknown[]) => mockAssertBindingOwnership(...args),
+  getConnectionAudit: vi.fn().mockResolvedValue([]),
+  assertConnectionOwnership: (...args: unknown[]) => mockAssertConnectionOwnership(...args),
 }));
 
 const AGENT_ROW = {
@@ -171,20 +171,20 @@ describe('trading capability routes', () => {
     ]);
   });
 
-  it('lists trading bindings as real binding resources', async () => {
+  it('lists trading connections as real connection resources', async () => {
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildDb([[{
       binding: {
-        id: TEST_BINDING_ID,
+        id: TEST_CONNECTION_ID,
         userId: TEST_USER_ID,
         connectionId: 'conn-1',
         provider: 'hyperliquid',
         label: 'HL binding',
-        bindingRef: 'acct-1',
+        connectionRef: 'acct-1',
         status: 'active',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-01'),
       },
@@ -197,31 +197,31 @@ describe('trading capability routes', () => {
     }]]);
     await tradingCapabilityRoutes(app, db);
 
-    const res = await app.inject({ method: 'GET', url: '/capabilities/trading/bindings' });
+    const res = await app.inject({ method: 'GET', url: '/capabilities/trading/connections' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.family).toBe('trading');
-    expect(body.bindings[0].bindingId).toBe(TEST_BINDING_ID);
-    expect(body.bindings[0].provider).toBe('hyperliquid');
-    expect(body.bindings[0].bindingRef).toBe('acct-1');
+    expect(body.connections[0].connectionId).toBe(TEST_CONNECTION_ID);
+    expect(body.connections[0].provider).toBe('hyperliquid');
+    expect(body.connections[0].connectionRef).toBe('acct-1');
     // No inserts — the endpoint is now read-only
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it('returns empty bindings list when no bindings are provisioned', async () => {
+  it('returns empty connections list when no connections are provisioned', async () => {
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildDb([[]]);
     await tradingCapabilityRoutes(app, db);
 
-    const res = await app.inject({ method: 'GET', url: '/capabilities/trading/bindings' });
+    const res = await app.inject({ method: 'GET', url: '/capabilities/trading/connections' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.bindings).toHaveLength(0);
+    expect(body.connections).toHaveLength(0);
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it('returns binding-backed readiness for an agent', async () => {
+  it('returns connection-backed readiness for an agent', async () => {
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildDb([
@@ -231,11 +231,11 @@ describe('trading capability routes', () => {
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: null,
-        bindingId: TEST_BINDING_ID,
-        bindingStatus: 'active',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: TEST_CONNECTION_ID,
+        connectionStatus: 'active',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding',
         connectionId: 'conn-1',
@@ -248,11 +248,11 @@ describe('trading capability routes', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.state).toBe('ready');
-    expect(body.bindingId).toBe(TEST_BINDING_ID);
+    expect(body.connectionId).toBe(TEST_CONNECTION_ID);
     expect(body.effectiveReady).toBe(true);
   });
 
-  it('binds an existing trading binding to an agent', async () => {
+  it('binds an existing trading connection to an agent', async () => {
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildDb([[AGENT_ROW], []]);
@@ -261,19 +261,19 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(201);
-    expect(res.json().bindingId).toBe(TEST_BINDING_ID);
+    expect(res.json().connectionId).toBe(TEST_CONNECTION_ID);
   });
 
-  it('rejects binding a trading connection that is no longer effectively ready', async () => {
-    mockAssertBindingOwnership.mockResolvedValueOnce({
-      ...DEFAULT_ACTIVE_BINDING,
+  it('rejects connecting a trading connection that is no longer effectively ready', async () => {
+    mockAssertConnectionOwnership.mockResolvedValueOnce({
+      ...DEFAULT_ACTIVE_CONNECTION,
       status: 'revoked',
       connection: {
-        ...DEFAULT_ACTIVE_BINDING.connection,
+        ...DEFAULT_ACTIVE_CONNECTION.connection,
         status: 'revoked',
       },
     });
@@ -286,11 +286,11 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('binding.not_ready');
+    expect(res.json().error).toBe('connection.not_ready');
   });
 
   it('publishes a runtime refresh envelope after binding a trading connection', async () => {
@@ -303,7 +303,7 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(201);
@@ -327,10 +327,10 @@ describe('trading capability routes', () => {
     const app = Fastify();
     decorateWithAuth(app);
     const redisClient = { xadd: vi.fn().mockResolvedValue('msg-1') };
-    mockAssertBindingOwnership.mockResolvedValueOnce({
-      ...DEFAULT_ACTIVE_BINDING,
-      id: TEST_BINDING_ID,
-      sourceVenueAccountId: 'va-1',
+    mockAssertConnectionOwnership.mockResolvedValueOnce({
+      ...DEFAULT_ACTIVE_CONNECTION,
+      id: TEST_CONNECTION_ID,
+      resolvedVenueAccountId: 'va-1',
     });
     const db = buildDb([
       [AGENT_ROW],
@@ -339,11 +339,11 @@ describe('trading capability routes', () => {
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: null,
-        bindingId: 'binding-old',
-        bindingStatus: 'active',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: .binding-old',
+        connectionStatus: 'active',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding old',
         connectionId: 'conn-1',
@@ -356,7 +356,7 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(201);
@@ -373,11 +373,11 @@ describe('trading capability routes', () => {
         grantStatus: 'revoked',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: new Date('2026-03-01T00:00:00.000Z'),
-        bindingId: TEST_BINDING_ID,
-        bindingStatus: 'revoked',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: TEST_CONNECTION_ID,
+        connectionStatus: 'revoked',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding',
         connectionId: 'conn-1',
@@ -406,11 +406,11 @@ describe('trading capability routes', () => {
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: null,
-        bindingId: TEST_BINDING_ID,
-        bindingStatus: 'active',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: TEST_CONNECTION_ID,
+        connectionStatus: 'active',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding',
         connectionId: 'conn-1',
@@ -440,11 +440,11 @@ describe('trading capability routes', () => {
       grantStatus: 'active',
       grantedAt: new Date('2026-02-01T00:00:00.000Z'),
       revokedAt: null,
-      bindingId: TEST_BINDING_ID,
-      bindingStatus: 'active',
-      bindingRef: 'acct-1',
-      bindingProfile: { venue: 'hyperliquid' },
-      sourceVenueAccountId: 'va-1',
+      connectionId: TEST_CONNECTION_ID,
+      connectionStatus: 'active',
+      connectionRef: 'acct-1',
+      connectionProfile: { venue: 'hyperliquid' },
+      resolvedVenueAccountId: 'va-1',
       provider: 'hyperliquid',
       label: 'HL binding',
       connectionId: 'conn-1',
@@ -518,11 +518,11 @@ describe('trading capability routes', () => {
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: null,
-        bindingId: TEST_BINDING_ID,
-        bindingStatus: 'active',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: TEST_CONNECTION_ID,
+        connectionStatus: 'active',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding',
         connectionId: 'conn-1',
@@ -538,7 +538,7 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/unbind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(200);
@@ -555,8 +555,8 @@ describe('trading capability routes', () => {
         capabilityFamily: 'trading',
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
-        bindingId: TEST_BINDING_ID,
-        bindingStatus: 'active',
+        connectionId: TEST_CONNECTION_ID,
+        connectionStatus: 'active',
         connectionStatus: 'active',
       }],
     ]);
@@ -565,16 +565,16 @@ describe('trading capability routes', () => {
     const res = await app.inject({ method: 'GET', url: `/agents/${TEST_AGENT_ID}/capabilities/readiness` });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.capabilities[0].bindingId).toBe(TEST_BINDING_ID);
+    expect(body.capabilities[0].connectionId).toBe(TEST_CONNECTION_ID);
   });
 
   it('rejects binding switch when resting orders exist on current venue account', async () => {
     const app = Fastify();
     decorateWithAuth(app);
-    mockAssertBindingOwnership.mockResolvedValueOnce({
-      ...DEFAULT_ACTIVE_BINDING,
-      id: TEST_BINDING_ID,
-      sourceVenueAccountId: 'va-new',
+    mockAssertConnectionOwnership.mockResolvedValueOnce({
+      ...DEFAULT_ACTIVE_CONNECTION,
+      id: TEST_CONNECTION_ID,
+      resolvedVenueAccountId: 'va-new',
     });
     const db = buildDb([
       [AGENT_ROW],
@@ -584,11 +584,11 @@ describe('trading capability routes', () => {
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: null,
-        bindingId: 'binding-old',
-        bindingStatus: 'active',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: .binding-old',
+        connectionStatus: 'active',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding old',
         connectionId: 'conn-1',
@@ -604,12 +604,12 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/bind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(409);
     const body = res.json();
-    expect(body.error).toBe('binding.open_orders');
+    expect(body.error).toBe('connection.open_orders');
     expect(body.openOrderCount).toBe(2);
   });
 
@@ -624,11 +624,11 @@ describe('trading capability routes', () => {
         grantStatus: 'active',
         grantedAt: new Date('2026-02-01T00:00:00.000Z'),
         revokedAt: null,
-        bindingId: TEST_BINDING_ID,
-        bindingStatus: 'active',
-        bindingRef: 'acct-1',
-        bindingProfile: { venue: 'hyperliquid' },
-        sourceVenueAccountId: 'va-1',
+        connectionId: TEST_CONNECTION_ID,
+        connectionStatus: 'active',
+        connectionRef: 'acct-1',
+        connectionProfile: { venue: 'hyperliquid' },
+        resolvedVenueAccountId: 'va-1',
         provider: 'hyperliquid',
         label: 'HL binding',
         connectionId: 'conn-1',
@@ -644,12 +644,12 @@ describe('trading capability routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/agents/${TEST_AGENT_ID}/capabilities/trading/actions/unbind`,
-      payload: { bindingId: TEST_BINDING_ID },
+      payload: { connectionId: TEST_CONNECTION_ID },
     });
 
     expect(res.statusCode).toBe(409);
     const body = res.json();
-    expect(body.error).toBe('binding.open_orders');
+    expect(body.error).toBe('connection.open_orders');
     expect(body.openOrderCount).toBe(3);
   });
 });

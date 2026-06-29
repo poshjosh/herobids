@@ -3,7 +3,7 @@
  *
  * Verifies that an agent can submit a decision and have it executed
  * WITHOUT creating a bot first — resolution goes through:
- *   capability_grants → trading_bindings → venue_accounts
+ *   capability_grants → connections → venue_accounts
  *
  * The full pipeline is exercised: DecisionIntakeResolver → AgentIntakeResolver
  * → PaperExecutor → persistence (DB writes).
@@ -91,7 +91,6 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
   let userId: string;
   let agentId: string;
   let connectionId: string;
-  let bindingId: string;
   let grantId: string;
   let venueAccountId: string;
   let sessionId: string;
@@ -129,7 +128,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       TRUNCATE
         fills, orders, execution_plans, decisions, positions,
         decision_contexts, journal_events,
-        capability_grants, trading_bindings, connections,
+        capability_grants, connections,
         venue_accounts, user_credentials,
         agent_runtime_sessions, agent_messages, agent_artifacts,
         agent_outbound_messages, agents,
@@ -186,8 +185,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       updatedAt: now,
     });
 
-    // 4. Seed trading connection (connection already exists from step 3; this bindingId is used for grants)
-    bindingId = connectionId; // bindingId is now the connectionId
+    // 4. Use connectionId for grants (connection already seeded in step 3)
 
     // 5. Seed agent
     agentId = crypto.randomUUID();
@@ -209,7 +207,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
     await db.insert(capabilityGrants).values({
       id: grantId,
       agentId,
-      bindingId,
+      connectionId,
       capabilityFamily: 'trading',
       status: 'active',
       grantedBy: userId,
@@ -468,7 +466,6 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
   describe('1inch swap path', () => {
     let swapVenueAccountId: string;
     let swapConnectionId: string;
-    let swapBindingId: string;
     let swapGrantId: string;
     let swapTokenSafety: { checkSwapTarget: ReturnType<typeof vi.fn> };
     let swapHandler: AgentDecisionHandler;
@@ -500,14 +497,12 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
         updatedAt: now,
       });
 
-      // Seed 1inch connection (connection already exists; swapBindingId is the connectionId)
-      swapBindingId = swapConnectionId;
       // Grant 1inch trading capability (more recent than Hyperliquid grant)
       swapGrantId = crypto.randomUUID();
       await db.insert(capabilityGrants).values({
         id: swapGrantId,
         agentId,
-        bindingId: swapBindingId,
+        connectionId: swapConnectionId,
         capabilityFamily: 'trading',
         status: 'active',
         grantedBy: userId,

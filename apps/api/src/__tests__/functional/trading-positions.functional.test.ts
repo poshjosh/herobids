@@ -51,7 +51,7 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     return res.json<{ id: string }>().id;
   }
 
-  async function setupTradingLink(token: string): Promise<{ bindingId: string }> {
+  async function setupTradingLink(token: string): Promise<{ connectionId: string }> {
     const res = await ctx.app.inject({
       method: 'POST',
       url: '/setup/provider-link',
@@ -68,23 +68,23 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
       },
     });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ tradingBinding: { id: string } }>();
-    return { bindingId: body.tradingBinding.id };
+    const body = res.json<{ connection: { id: string } }>();
+    return { connectionId: body.connection.id };
   }
 
-  async function bindAgent(token: string, agentId: string, bindingId: string): Promise<void> {
+  async function bindAgent(token: string, agentId: string, connectionId: string): Promise<void> {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/agents/${agentId}/capabilities/trading/actions/bind`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { bindingId },
+      payload: { connectionId },
     });
     expect([200, 201]).toContain(res.statusCode);
   }
 
   async function seedBotWithPositions(opts: {
     userId: string;
-    bindingId: string;
+    connectionId: string;
     botId: string;
     venueAccountId: string;
   }) {
@@ -99,7 +99,7 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
       id: opts.botId,
       userId: opts.userId,
       venueAccountId: opts.venueAccountId,
-      tradingBindingId: opts.bindingId,
+      connectionId: opts.connectionId,
       config: { strategy: { type: 'momentum' } },
       status: 'stopped',
     });
@@ -144,12 +144,12 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     const token = await registerUser(ctx.app, ctx.db, 'closed@positions.test');
     const userId = await getUserId(token);
     const agentId = await createAgent(token);
-    const { bindingId } = await setupTradingLink(token);
-    await bindAgent(token, agentId, bindingId);
+    const { connectionId } = await setupTradingLink(token);
+    await bindAgent(token, agentId, connectionId);
 
     const botId = 'bot-01000000-0000-7000-8000-000000000001';
     const venueAccountId = 'va-01000000-0000-7000-8000-000000000001';
-    await seedBotWithPositions({ userId, bindingId, botId, venueAccountId });
+    await seedBotWithPositions({ userId, connectionId, botId, venueAccountId });
 
     const openedAt = new Date('2026-06-01T10:00:00Z');
     const closedAt = new Date('2026-06-01T14:30:00Z');
@@ -210,12 +210,12 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     const token = await registerUser(ctx.app, ctx.db, 'open@positions.test');
     const userId = await getUserId(token);
     const agentId = await createAgent(token);
-    const { bindingId } = await setupTradingLink(token);
-    await bindAgent(token, agentId, bindingId);
+    const { connectionId } = await setupTradingLink(token);
+    await bindAgent(token, agentId, connectionId);
 
     const botId = 'bot-03000000-0000-7000-8000-000000000001';
     const venueAccountId = 'va-03000000-0000-7000-8000-000000000001';
-    await seedBotWithPositions({ userId, bindingId, botId, venueAccountId });
+    await seedBotWithPositions({ userId, connectionId, botId, venueAccountId });
 
     const openedAt = new Date('2026-06-01T11:15:00Z');
 
@@ -255,12 +255,12 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
     const token = await registerUser(ctx.app, ctx.db, 'paginate@positions.test');
     const userId = await getUserId(token);
     const agentId = await createAgent(token);
-    const { bindingId } = await setupTradingLink(token);
-    await bindAgent(token, agentId, bindingId);
+    const { connectionId } = await setupTradingLink(token);
+    await bindAgent(token, agentId, connectionId);
 
     const botId = 'bot-02000000-0000-7000-8000-000000000001';
     const venueAccountId = 'va-02000000-0000-7000-8000-000000000001';
-    await seedBotWithPositions({ userId, bindingId, botId, venueAccountId });
+    await seedBotWithPositions({ userId, connectionId, botId, venueAccountId });
 
     // Insert 3 positions with different openedAt times
     const positionData = [

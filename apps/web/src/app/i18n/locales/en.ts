@@ -525,7 +525,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.nextSteps': 'Next steps',
   'agents.capabilityPage.noGuidedSetup': 'No guided setup actions are defined for this capability family yet. Use the readiness reasons and agent detail page to decide the next operator step.',
   'agents.capabilityPage.availableConnections': 'Available connections',
-  'agents.capabilityPage.failedBindings': 'Failed to load platform links',
+  'agents.capabilityPage.failedConnections': 'Failed to load platform links',
   'agents.capabilityPage.noConnections': 'No platform links yet. Complete trading setup from Mission Control or when creating an agent, then return here to link.',
   'agents.capabilityPage.connectionMeta': 'Provider: {provider} · Connection: {connectionStatus} · Grant: {grantStatus}',
   'agents.capabilityPage.reference': 'Reference: {reference}',

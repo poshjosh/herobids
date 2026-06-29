@@ -489,7 +489,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.nextSteps': 'अगले कदम',
   'agents.capabilityPage.noGuidedSetup': 'इस क्षमता परिवार के लिए अभी कोई निर्देशित सेटअप कार्रवाई परिभाषित नहीं है। अगला ऑपरेटर कदम तय करने के लिए तैयारी कारणों और एजेंट विवरण पेज का उपयोग करें।',
   'agents.capabilityPage.availableConnections': 'उपलब्ध कनेक्शन',
-  'agents.capabilityPage.failedBindings': 'प्लेटफ़ॉर्म लिंक लोड नहीं हो सके',
+  'agents.capabilityPage.failedConnections': 'प्लेटफ़ॉर्म लिंक लोड नहीं हो सके',
   'agents.capabilityPage.noConnections': 'अभी तक कोई प्लेटफ़ॉर्म लिंक नहीं। मिशन कंट्रोल से या एजेंट बनाते समय ट्रेडिंग सेटअप पूरा करें, फिर लिंक करने के लिए यहाँ लौटें।',
   'agents.capabilityPage.connectionMeta': 'प्रदाता: {provider} · कनेक्शन: {connectionStatus} · अनुदान: {grantStatus}',
   'agents.capabilityPage.reference': 'संदर्भ: {reference}',

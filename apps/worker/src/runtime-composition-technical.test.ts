@@ -42,27 +42,27 @@ const baseDescriptor = {
       state: 'ready' as const,
       agentEligibility: 'eligible' as const,
       reasons: [],
-      bindingId: 'b1',
+      connectionId: 'b1',
       effectiveReady: true,
     },
   },
-  grantedBindingsByFamily: {
+  grantedConnectionsByFamily: {
     trading: [
       {
-        bindingId: 'b1',
+        connectionId: 'b1',
         provider: 'hyperliquid',
         isDefault: true,
         readiness: {
           state: 'ready' as const,
           agentEligibility: 'eligible' as const,
           reasons: [],
-          bindingId: 'b1',
+          connectionId: 'b1',
           effectiveReady: true,
         },
       },
     ],
   },
-  defaultBindingByFamily: {},
+  defaultConnectionByFamily: {},
   budgets: {
     maxHistoryMessages: 20,
     maxRecentToolMessages: 5,

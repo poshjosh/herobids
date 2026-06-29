@@ -546,16 +546,16 @@ describe('agent routes lifecycle', () => {
     expect(billingUpdate!.values).toEqual({ sessionId: null, agentId: null });
   });
 
-  it('resolves orphaned trading_bindings via capability_grants join before deleting the agent', async () => {
+  it('resolves orphaned connections via capability_grants join before deleting the agent', async () => {
     const { agentRoutes } = await import('./agents.js');
     const orphanedBinding = {
       id: 'binding-1',
-      sourceVenueAccountId: 'va-1',
+      resolvedVenueAccountId: 'va-1', provider: 'hyperliquid', label: 'Test', status: 'active',
     };
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
       connectionRows: [orphanedBinding],
-      capabilityGrantRows: [{ id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-1' }],
+      capabilityGrantRows: [{ id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-1' }],
     });
 
     const app = Fastify();
@@ -569,7 +569,7 @@ describe('agent routes lifecycle', () => {
     const vaUpdate = updateTableCalls.find((c) => c.table === venueAccounts);
     expect(vaUpdate).toBeDefined();
     expect(vaUpdate!.values).toEqual({ credentialId: null });
-    // Verify trading_bindings was marked revoked
+    // Verify connections was marked revoked
     const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
     expect(connectionUpdate).toBeDefined();
     expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
@@ -590,7 +590,7 @@ describe('agent routes lifecycle', () => {
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
-    // No venue account or trading binding updates should have occurred
+    // No venue account or connection updates should have occurred
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
     const connectionUpdates = updateTableCalls.filter((c) => c.table === connections);
@@ -603,14 +603,14 @@ describe('agent routes lifecycle', () => {
     const { agentRoutes } = await import('./agents.js');
     const sharedBinding = {
       id: 'binding-shared',
-      sourceVenueAccountId: 'va-shared',
+      resolvedVenueAccountId: 'va-shared', provider: 'hyperliquid', label: 'Shared', status: 'active',
     };
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
       connectionRows: [sharedBinding],
       capabilityGrantRows: [
-        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-shared' },
-        { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
+        { id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-shared' },
+        { id: 'grant-2', agentId: 'agent-2', connectionId: 'binding-shared' },
       ],
     });
 
@@ -653,17 +653,17 @@ describe('agent routes lifecycle', () => {
     expect(deletedTargets).toContain(bots);
   });
 
-  it('handles orphaned venue account with null sourceVenueAccountId gracefully', async () => {
+  it('handles orphaned venue account with null resolvedVenueAccountId gracefully', async () => {
     const { agentRoutes } = await import('./agents.js');
     const bindingNullVa = {
       id: 'binding-null-va',
-      sourceVenueAccountId: null,
+      resolvedVenueAccountId: null, provider: 'hyperliquid', label: 'Null VA', status: 'active',
     };
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
       connectionRows: [bindingNullVa],
       capabilityGrantRows: [
-        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-null-va' },
+        { id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-null-va' },
       ],
     });
 
@@ -674,7 +674,7 @@ describe('agent routes lifecycle', () => {
     const res = await app.inject({ method: 'DELETE', url: '/agents/agent-1' });
 
     expect(res.statusCode).toBe(204);
-    // No venue account update should occur since sourceVenueAccountId is null
+    // No venue account update should occur since resolvedVenueAccountId is null
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
     // But binding should still be revoked
@@ -685,16 +685,16 @@ describe('agent routes lifecycle', () => {
 
   it('full cleanup chain: agent with trading capability → delete → credentialId nulled and binding revoked', async () => {
     // End-to-end simulation of plan test item 2:
-    // Agent has a trading binding via capability_grant → delete agent →
+    // Agent has a connection via capability_grant → delete agent →
     // credentialId is nulled (unblocking credential deletion) and binding is revoked.
     const { agentRoutes } = await import('./agents.js');
     const { db, updateTableCalls, deletedTargets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
       connectionRows: [
-        { id: 'binding-1', sourceVenueAccountId: 'va-1' },
+        { id: 'binding-1', resolvedVenueAccountId: 'va-1', provider: 'hyperliquid', label: 'Test', status: 'active' },
       ],
       capabilityGrantRows: [
-        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-1' },
+        { id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-1' },
       ],
     });
 
@@ -714,7 +714,7 @@ describe('agent routes lifecycle', () => {
     expect(vaUpdate).toBeDefined();
     expect(vaUpdate!.values).toEqual({ credentialId: null });
 
-    // Step 8: trading binding revoked
+    // Step 8: connection revoked
     const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
     expect(connectionUpdate).toBeDefined();
     expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
@@ -723,21 +723,21 @@ describe('agent routes lifecycle', () => {
     expect(deletedTargets).toContain(agents);
   });
 
-  it('two agents sharing one trading binding: deleting first agent preserves the shared binding', async () => {
+  it('two agents sharing one connection: deleting first agent preserves the shared binding', async () => {
     // Plan test item 3: Two agents both have grants on the same binding.
     // When agent-1 is deleted, the binding must stay active because agent-2
     // still has a grant on it. The count query returns 2 → not orphaned.
     const { agentRoutes } = await import('./agents.js');
     const sharedBinding = {
       id: 'binding-shared',
-      sourceVenueAccountId: 'va-shared',
+      resolvedVenueAccountId: 'va-shared', provider: 'hyperliquid', label: 'Shared', status: 'active',
     };
     const { db: db1, updateTableCalls: calls1 } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
       connectionRows: [sharedBinding],
       capabilityGrantRows: [
-        { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-shared' },
-        { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
+        { id: 'grant-1', agentId: 'agent-1', connectionId: 'binding-shared' },
+        { id: 'grant-2', agentId: 'agent-2', connectionId: 'binding-shared' },
       ],
     });
 
@@ -756,19 +756,19 @@ describe('agent routes lifecycle', () => {
     expect(vaUpdates1).toHaveLength(0);
   });
 
-  it('two agents sharing one trading binding: deleting last agent revokes the shared binding', async () => {
+  it('two agents sharing one connection: deleting last agent revokes the shared binding', async () => {
     // Plan test item 4: Agent-2 is the last agent using this binding.
     // The count query returns 1 → binding is orphaned and must be revoked.
     const { agentRoutes } = await import('./agents.js');
     const sharedBinding = {
       id: 'binding-shared',
-      sourceVenueAccountId: 'va-shared',
+      resolvedVenueAccountId: 'va-shared', provider: 'hyperliquid', label: 'Shared', status: 'active',
     };
     const { db: db2, updateTableCalls: calls2 } = buildDb({
       agentRows: [{ id: 'agent-2', status: 'stopped', userId: TEST_USER_ID }],
       connectionRows: [sharedBinding],
       capabilityGrantRows: [
-        { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
+        { id: 'grant-2', agentId: 'agent-2', connectionId: 'binding-shared' },
       ],
     });
 

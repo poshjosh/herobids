@@ -18,9 +18,9 @@ describe('AgentSessionManager', () => {
       goal: 'Test agent',
       executionMode: 'paper',
       resolvedSkills: [{ id: 'base', capabilityFamilies: [], requiredTools: ['send_message', 'publish_artifact', 'set_memory'] }],
-      grantedBindingsByFamily: {},
+      grantedConnectionsByFamily: {},
       readinessByFamily: {},
-      defaultBindingByFamily: {},
+      defaultConnectionByFamily: {},
       toolPolicy: {},
       guardrails: {
         dailyTokenBudget: null,
@@ -120,7 +120,7 @@ describe('AgentSessionManager', () => {
         budgets: TEST_RUNTIME_BUDGETS,
         resolvedSkills: expect.any(Array),
         readinessByFamily: expect.any(Object),
-        grantedBindingsByFamily: expect.any(Object),
+        grantedConnectionsByFamily: expect.any(Object),
       }),
     }));
     expect(runtimeLauncher.launch).toHaveBeenCalledWith(expect.objectContaining({
@@ -152,24 +152,23 @@ describe('AgentSessionManager', () => {
       maxSlippageBps: 25,
     });
     (agentRepo.getRuntimeCapabilityDescriptor as ReturnType<typeof vi.fn>).mockResolvedValue({
-      grantedBindingsByFamily: {
+      grantedConnectionsByFamily: {
         trading: [
           {
             family: 'trading',
-            bindingId: 'binding-1',
-            connectionId: 'conn-1',
+            connectionId: 'binding-1',
             provider: 'hyperliquid',
             label: 'Primary HL binding',
             bindingRef: 'acct-1',
             bindingProfile: { venue: 'hyperliquid' },
-            sourceVenueAccountId: 'va-1',
+            resolvedVenueAccountId: 'va-1',
             readiness: {
               family: 'trading',
               state: 'ready',
-              bindingReadiness: 'ready',
+              connectionReadiness: 'ready',
               agentEligibility: 'eligible',
               effectiveReady: true,
-              bindingId: 'binding-1',
+              connectionId: 'binding-1',
               reasons: [],
             },
             isDefault: true,
@@ -180,14 +179,14 @@ describe('AgentSessionManager', () => {
         trading: {
           family: 'trading',
           state: 'ready',
-          bindingReadiness: 'ready',
+          connectionReadiness: 'ready',
           agentEligibility: 'eligible',
           effectiveReady: true,
-          bindingId: 'binding-1',
+          connectionId: 'binding-1',
           reasons: [],
         },
       },
-      defaultBindingByFamily: { trading: 'binding-1' },
+      defaultConnectionByFamily: { trading: 'binding-1' },
     });
 
     await manager.reconcileStartingSessions();
@@ -200,11 +199,11 @@ describe('AgentSessionManager', () => {
         agentId: 'agent-1',
         goal: 'Trade BTC conservatively',
         executionMode: 'paper',
-        defaultBindingByFamily: { trading: 'binding-1' },
+        defaultConnectionByFamily: { trading: 'binding-1' },
         readinessByFamily: {
-          trading: expect.objectContaining({ effectiveReady: true, bindingId: 'binding-1' }),
+          trading: expect.objectContaining({ effectiveReady: true, connectionId: 'binding-1' }),
         },
-        grantedBindingsByFamily: {
+        grantedConnectionsByFamily: {
           trading: [expect.objectContaining({ provider: 'hyperliquid', isDefault: true })],
         },
       }),

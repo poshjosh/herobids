@@ -46,7 +46,7 @@ describe('getBindingAudit', () => {
     const rows = await getBindingAudit(db as never, 'binding-1', 'agent-1');
 
     expect(rows).toEqual(auditRows);
-    expect(eq).toHaveBeenCalledWith(capabilityGrants.bindingId, 'binding-1');
+    expect(eq).toHaveBeenCalledWith(capabilityGrants.connectionId, 'binding-1');
     expect(eq).toHaveBeenCalledWith(capabilityGrants.agentId, 'agent-1');
     expect(inArray).toHaveBeenCalledWith(capabilityGrantAudit.grantId, ['grant-1']);
   });

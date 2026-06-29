@@ -233,11 +233,9 @@ export async function truncateAll(db: ReturnType<typeof createDatabase>) {
     TRUNCATE
       capability_grant_audit,
       capability_grants,
-      trading_bindings,
       connections,
       user_credentials,
       venue_accounts,
-      agent_credentials,
       agent_skills,
       bots,
       fills,

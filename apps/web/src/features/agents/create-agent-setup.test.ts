@@ -79,15 +79,15 @@ describe('Create Agent — inline setup auto-select logic', () => {
 // Available bindings filter (mirrors CreateAgentFlow)
 // ---------------------------------------------------------------------------
 
-describe('Create Agent — available trading bindings filter', () => {
+describe('Create Agent — available trading connections filter', () => {
   /**
    * Mirrors the availableConnections derivation in CreateAgentFlow:
-   *   (tradingBindingsQuery.data?.connections ?? []).filter(
-   *     (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
+   *   (tradingConnectionsQuery.data?.connections ?? []).filter(
+   *     (connection) => connection.status === 'active',
    *   )
    *
    * This filter determines whether the "Set up trading now" escape hatch is shown
-   * (length === 0) or whether the binding selector is shown (length > 0).
+   * (length === 0) or whether the connection selector is shown (length > 0).
    */
   function filterAvailableConnections(bindings: ConnectionSummary[]): ConnectionSummary[] {
     return bindings.filter(

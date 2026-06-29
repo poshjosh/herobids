@@ -38,8 +38,8 @@ const BotConfigInputSchema = z.object({
 // --- create_bot ---
 
 const CreateBotParamsSchema = z.object({
-  bindingId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Trading binding ID to use. You can find this in the Capability Readiness section as "binding=<id>". Omit to use your default trading binding.'),
-  config: BotConfigInputSchema.optional().describe('Bot configuration (strategy, symbol, risk params). venue is resolved from your trading binding automatically.'),
+  connectionId: z.string().optional().transform(v => v === '' ? undefined : v).describe('Connection ID to use. You can find this in the Capability Readiness section as "connection=<id>". Omit to use your default trading connection.'),
+  config: BotConfigInputSchema.optional().describe('Bot configuration (strategy, symbol, risk params). venue is resolved from your trading connection automatically.'),
   rationale: z.string().max(500).optional().describe('Brief rationale for creating this bot. Used for audit.'),
   dryRun: z.boolean().optional().describe('If true, validates the bot config without creating it. Returns a preview of what would be sent.'),
 });
@@ -52,7 +52,7 @@ const createBotTool: AgentTool = {
   category: 'execute-trade',
   promptGuidance: 'dryRun=true previews the bot config without creating it. find_instrument resolves instrument IDs. get_schema("create_bot.config.strategy") and get_schema("create_bot.config.execution") show available strategy and execution options.',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { bindingId, config, rationale, dryRun } = params as z.infer<typeof CreateBotParamsSchema>;
+    const { connectionId, config, rationale, dryRun } = params as z.infer<typeof CreateBotParamsSchema>;
 
     // Dry-run: validate and preview without creating.
     // Schema-level validation (shape, types, required fields) has already run
@@ -65,7 +65,7 @@ const createBotTool: AgentTool = {
           ok: true,
           dryRun: true,
           preview: {
-            bindingId: bindingId ?? '(default trading binding)',
+            connectionId: connectionId ?? '(default trading connection)',
             config: config ?? null,
             rationale: rationale ?? null,
           },
@@ -76,7 +76,7 @@ const createBotTool: AgentTool = {
 
     await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
       action: 'create_and_start',
-      bindingId,
+      connectionId,
       config,
       rationale,
     });

@@ -36,8 +36,8 @@ export interface RuntimeDescriptor {
   goal: string;
   executionMode: string;
   resolvedSkills: SkillDefinition[];
-  grantedBindingsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]>;
-  defaultBindingByFamily: Record<string, string | null>;
+  grantedConnectionsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]>;
+  defaultConnectionByFamily: Record<string, string | null>;
   readinessByFamily: Record<string, CapabilityReadiness>;
   toolPolicy: Record<string, unknown>;
   guardrails: RuntimeGuardrailDescriptor;

@@ -373,7 +373,7 @@ export async function tradingCapabilityRoutes(
         const readiness: CapabilityReadiness = {
           family: 'trading',
           state: 'unconfigured',
-          bindingReadiness: 'unconfigured',
+          connectionReadiness: 'unconfigured',
           agentEligibility: 'ineligible',
           effectiveReady: false,
           reasons: ['no grants have been created for this capability family'],
@@ -386,7 +386,7 @@ export async function tradingCapabilityRoutes(
         const readiness: CapabilityReadiness = {
           family: 'trading',
           state: 'ready',
-          bindingReadiness: 'ready',
+          connectionReadiness: 'ready',
           agentEligibility: 'eligible',
           effectiveReady: true,
           connectionId: activeGrant.connectionId,
@@ -400,7 +400,7 @@ export async function tradingCapabilityRoutes(
       const readiness: CapabilityReadiness = {
         family: 'trading',
         state,
-        bindingReadiness: state,
+        connectionReadiness: state,
         agentEligibility: 'ineligible',
         effectiveReady: false,
         connectionId: first.connectionId,

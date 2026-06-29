@@ -23,8 +23,8 @@ const baseDescriptor = {
     maxBots: null,
   },
   readinessByFamily: {},
-  grantedBindingsByFamily: {},
-  defaultBindingByFamily: {},
+  grantedConnectionsByFamily: {},
+  defaultConnectionByFamily: {},
   budgets: {
     maxHistoryMessages: 20,
     maxHistoryTokens: 40000,

@@ -132,10 +132,10 @@ export type SendMessagePayload = z.infer<typeof SendMessagePayloadSchema>;
 /** Brokered tool: agent requests creation (and optionally auto-start) of a bot. */
 export const ManageBotPayloadSchema = z.object({
   action: z.enum(['create_and_start', 'stop', 'start', 'adjust_config']),
-  /** For create_and_start — the trading binding ID (primary selector — the agent sees this in its readiness summary).
-   * The platform resolves the venue account from the binding internally. */
-  bindingId: z.string().min(1).optional(),
-  /** @deprecated For create_and_start — use bindingId instead. Retained for backward compatibility. */
+  /** For create_and_start — the connection ID (primary selector — the agent sees this in its readiness summary).
+   * The platform resolves the venue account from the connection internally. */
+  connectionId: z.string().min(1).optional(),
+  /** @deprecated For create_and_start — use connectionId instead. Retained for backward compatibility. */
   venueAccountId: z.string().min(1).optional(),
   /** For create_and_start — full bot config (strategy, risk params, execution mode) */
   config: z.record(z.unknown()).optional(),

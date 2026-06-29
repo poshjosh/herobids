@@ -364,7 +364,7 @@ describe('WebSocket /events — platform envelope semantics', () => {
         actorType: 'agent',
         actorId: 'agent-99',
         capabilityFamily: 'trading',
-        bindingId: 'grant-42',
+        connectionId: 'grant-42',
         eventType: 'trading.order.submitted',
         payload: { orderId: 'ord-1', symbol: 'BTC-PERP' },
       };
@@ -378,7 +378,7 @@ describe('WebSocket /events — platform envelope semantics', () => {
       const received = JSON.parse(receivedMessages[0]!) as typeof envelope;
       expect(received.id).toBe(envelope.id);
       expect(received.capabilityFamily).toBe('trading');
-      expect(received.bindingId).toBe('grant-42');
+      expect(received.connectionId).toBe('grant-42');
 
       ws.close();
     } finally {

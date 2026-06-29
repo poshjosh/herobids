@@ -135,17 +135,19 @@ Route: `/agents` — goal-driven platform agents with explicit skills and execut
 | AG-11 | Unhealthy alert banner | Open detail for agent with unhealthy session | Warning banner about missing heartbeats | — | "Agent runtime is unhealthy. Heartbeats are missing and the worker is recovering." shown when activeSession.status=unhealthy and agent.status≠stopped. Bug 005 fixed. |
 | AG-12 | Start delay | Click "Start" on stopped agent | `starting` phase lasts ≤2 s (worker reconcile interval) before transitioning | — | healthCheckIntervalMs: 2000 in config/default.yaml; container death detected immediately when Docker event stream live |
 | AG-13 | Sessions run count | Open agent detail | "Sessions run" KV shows correct count | ✅ | Shows 1 after first Start; increments correctly |
-| AG-14 | Capability section | Open detail for agent with capabilities | Capability cards show readiness, binding readiness, agent eligibility, reasons, and an "Open" action | ✅ | Trading capability page shows State, Binding readiness, AI agent eligibility, Effective ready, Binding, Why this state reasons, Next steps |
+| AG-14 | Capability section | Open detail for agent with capabilities | Capability cards show readiness, connection readiness, agent eligibility, reasons, and an "Open" action | ✅ | Trading capability page shows State, Connection readiness, AI agent eligibility, Effective ready, Connection, Why this state reasons, Next steps |
 | AG-15 | Messages to User section | Open detail for agent with messages | Messages listed with subject, body, delivery status, timestamp; safety alerts styled distinctly | — | Messages shown with author icon, subject bold, body text, delivery status badge (delivered/pending), relative timestamp |
 | AG-16 | Protocol Activity section | Open detail for agent with activity | Activity entries listed with type and timestamp | ✅ | "Activity Timeline" shows Tick started, LLM dispatched, Tool called, Tool result, Session started events with relative timestamps |
 | AG-17 | Artifacts section | Open detail for agent with artifacts | Artifacts listed with type, content type, optional summary, timestamp | — | Shows artifact_type · content_type, summary text, relative timestamp |
 | AG-18 | Real-time refresh | Leave agent detail open while agent is starting | Status badge updates via 5 s polling without manual refresh | ✅ | Status updated starting → active without manual refresh |
 | AG-19 | Create agent — no bindings shows setup button | Open Create Agent with a trading skill; ensure no connections exist | "No active connections yet" text + "Set up trading now" secondary button shown instead of connection selector | ✅ | "No active connections yet. Set up trading now..." + "Set up trading now" button shown |
 | AG-20 | Create agent — inline setup opens form | Click "Set up trading now" | Modal replaces with ProviderSetupForm; main create flow is suspended | ✅ | "Add trading connection" form appeared when clicked |
-| AG-21 | Create agent — inline setup success auto-selects | Complete setup form with valid credentials | ProviderSetupForm closes; connection selector appears with new binding pre-selected | — | |
+| AG-21 | Create agent — inline setup success auto-selects | Complete setup form with valid credentials | ProviderSetupForm closes; connection selector appears with new connection pre-selected | — | |
 | AG-22 | Capability page — trading next steps | Open any agent's trading capability page | "Go to Mission Control" primary button shown in Next steps; no longer shows /connections or /credentials links for trading | ✅ | "Go to Mission Control" button in Next steps; no /connections or /credentials links |
 | AG-23 | Prompt surfaces render when allowed | Open an agent detail page on a plan that allows prompt visibility and has a recent runtime snapshot | "Prompt surfaces" section shows tabs for Judge System, Scout System, User Context, and Judge User Context; switching tabs changes the prompt pane | ✅ | All four tabs visible when agent active; switching tabs changes prompt text |
 | AG-24 | Prompt visibility is plan-gated | Open an agent detail page on a plan that disallows viewing own prompts | "Prompt visibility is not available on your current plan." is shown and the prompt query is not loaded | — | |
+| AG-25 | Create agent — connection selector shows connections | Open Create Agent with trading skill; have active connections | Dropdown lists active connections by label and provider | — | |
+| AG-26 | Create agent — inline setup creates connection directly | Click "Set up trading now"; complete form | Connection created (no intermediate binding); connection appears in selector | — | |
 
 ### 6.1 Edit Agent Form
 
@@ -245,6 +247,7 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 | CN-03 | Create connection — happy path | Click "New connection"; fill provider and label; optionally choose a credential; submit | Connection appears in the list with provider and status | ✅ | "Test Connection" (hyperliquid) appeared with "active" status |
 | CN-04 | Create connection — validation | Submit with missing provider or label | Create action disabled or error shown; connection not created | ✅ | "Create" button disabled until both provider and label filled |
 | CN-05 | Revoke active connection | Click "Revoke" on an active connection | Status updates and the revoke button disappears | ✅ | Status changed to "revoked"; Revoke button disappeared |
+| CN-06 | Connection shows profile/providerRef | Create connection via provider-link setup | Connection card shows provider reference (e.g. wallet address) if present | — | |
 
 ---
 

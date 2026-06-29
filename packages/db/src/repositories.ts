@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, isNull, desc, or, gte, inArray, notInArray, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, bots, tradingBindings, executionPlans, orders, balanceSnapshots, decisions, venueAccounts } from './schema/index.js';
+import { fills, positions, bots, connections, executionPlans, orders, balanceSnapshots, decisions, venueAccounts } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -721,7 +721,7 @@ export class BotRepository {
   /** Create a bot record. Returns the created bot's ID. */
   async createBot(params: {
     userId: string;
-    tradingBindingId: string;
+    connectionId: string;
     venueAccountId: string;
     config: Record<string, unknown>;
     creatorType: string;
@@ -733,7 +733,7 @@ export class BotRepository {
       id,
       userId: params.userId,
       venueAccountId: params.venueAccountId,
-      tradingBindingId: params.tradingBindingId,
+      connectionId: params.connectionId,
       config: params.config,
       status: 'stopped',
       creatorType: params.creatorType,
@@ -855,14 +855,14 @@ export class BotRepository {
   }
 
   /**
-   * Confirm that a trading binding exists and belongs to the given user.
+   * Confirm that a connection exists and belongs to the given user.
    * Used by the broker before creating a bot on behalf of an agent.
    */
-  async isTradingBindingOwnedBy(tradingBindingId: string, userId: string): Promise<boolean> {
+  async isConnectionOwnedBy(connectionId: string, userId: string): Promise<boolean> {
     const [row] = await this.db
-      .select({ id: tradingBindings.id })
-      .from(tradingBindings)
-      .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, userId)));
+      .select({ id: connections.id })
+      .from(connections)
+      .where(and(eq(connections.id, connectionId), eq(connections.userId, userId)));
     return !!row;
   }
 
@@ -884,6 +884,16 @@ export class BotRepository {
       .select({ id: venueAccounts.id, venue: venueAccounts.venue, userId: venueAccounts.userId })
       .from(venueAccounts)
       .where(eq(venueAccounts.id, venueAccountId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Get a venue account by user + provider (venue). Used to resolve the venue account for a connection. */
+  async getVenueAccountByUserAndProvider(userId: string, provider: string): Promise<{ id: string; venue: string } | null> {
+    const [row] = await this.db
+      .select({ id: venueAccounts.id, venue: venueAccounts.venue })
+      .from(venueAccounts)
+      .where(and(eq(venueAccounts.userId, userId), eq(venueAccounts.venue, provider)))
       .limit(1);
     return row ?? null;
   }

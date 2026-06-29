@@ -651,7 +651,7 @@ describe('POST /bots with blueprintId', () => {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([{ id: 'tb-1', sourceVenueAccountId: 'va-1' }]),
+              where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active' }]),
             }),
           }),
           insert: vi.fn().mockReturnValue({
@@ -681,7 +681,7 @@ describe('POST /bots with blueprintId', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'tb-1',
+        connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         blueprintId: BLUEPRINT_ID,
@@ -720,7 +720,7 @@ describe('POST /bots with blueprintId', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'tb-1',
+        connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         blueprintId: 'bp-nonexistent',
@@ -741,7 +741,7 @@ describe('POST /bots with blueprintId', () => {
         const tx = {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', sourceVenueAccountId: 'va-1' }]) }),
+            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active' }]) }),
           }),
           insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
         };
@@ -765,7 +765,7 @@ describe('POST /bots with blueprintId', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'tb-1',
+        connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: { strategy: { type: 'momentum' } },
@@ -797,7 +797,7 @@ describe('POST /bots with blueprintId', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'tb-1',
+        connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: { strategy: { type: 'momentum' } },
@@ -825,7 +825,7 @@ describe('POST /bots with blueprintId', () => {
         const tx = {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', sourceVenueAccountId: 'va-1' }]) }),
+            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active' }]) }),
           }),
           insert: vi.fn().mockReturnValue({
             // Simulate the FK violation thrown when blueprint is deleted concurrently.
@@ -849,7 +849,7 @@ describe('POST /bots with blueprintId', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'tb-1',
+        connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         blueprintId: BLUEPRINT_ID,

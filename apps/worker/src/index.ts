@@ -682,11 +682,11 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
 
 const botRepo = new BotRepository(db);
-const botStartCallback = async (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => {
+const botStartCallback = async (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('start-instance', {
     command: 'start',
     botId,
-    config: { ...config, tradingBindingId, userId },
+    config: { ...config, connectionId, userId },
   });
 };
 const botStopCallback = async (botId: string) => {
@@ -695,11 +695,11 @@ const botStopCallback = async (botId: string) => {
     botId,
   });
 };
-const botRestartCallback = async (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => {
+const botRestartCallback = async (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('restart-instance', {
     command: 'restart',
     botId,
-    config: { ...config, tradingBindingId, userId },
+    config: { ...config, connectionId, userId },
   });
 };
 
@@ -942,10 +942,10 @@ const runtime = new WorkerRuntime(
       venueType,
     });
 
-    const venueAccountId = startupContext.sourceVenueAccountId;
-    // The resolver already validated the source-venue-account requirement per provider type.
+    const venueAccountId = startupContext.resolvedVenueAccountId;
+    // The resolver already validated the venue-account requirement per provider type.
     // Consume the resolver's decision here rather than re-encoding provider-specific logic.
-    if (startupContext.sourceVenueAccountRequired && !venueAccountId) {
+    if (startupContext.venueAccountRequired && !venueAccountId) {
       throw new BotStartupError('missing_source_venue_account', `Bot ${botId} has no resolved source venue account — refusing to start`);
     }
     // Narrow for downstream: orderbook venues fail the throw above, supported swap
@@ -1033,7 +1033,7 @@ const runtime = new WorkerRuntime(
         userId: instanceUserId,
         metadata: {
           botId,
-            tradingBindingId: startupContext.tradingBindingId,
+          connectionId: startupContext.connectionId,
           venueAccountId,
           captureTrades: appConfig.marketDataRecording.captureTrades,
           captureTopOfBook: appConfig.marketDataRecording.captureTopOfBook,
@@ -1215,7 +1215,7 @@ const runtime = new WorkerRuntime(
     const running = await db.select().from(bots).where(eq(bots.status, 'running'));
     return running.map((row) => ({
       id: row.id,
-      config: { ...row.config, tradingBindingId: row.tradingBindingId, venueAccountId: row.venueAccountId, userId: row.userId },
+      config: { ...row.config, connectionId: row.connectionId, venueAccountId: row.venueAccountId, userId: row.userId },
     }));
   },
   lease,

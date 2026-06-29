@@ -405,10 +405,10 @@ describe('DELETE /connections/:id', () => {
   it('publishes a runtime refresh after revoking a connection with active trading grants', async () => {
     const dbModule = await import('@herobids/db');
     vi.spyOn(dbModule, 'resolveRuntimeCapabilityDescriptor').mockResolvedValue({
-      grantedBindingsByFamily: {},
+      grantedConnectionsByFamily: {},
       readinessByFamily: {},
       resolvedSkills: [],
-      defaultBindingByFamily: {},
+      defaultConnectionByFamily: {},
     } as never);
     vi.spyOn(dbModule, 'buildRuntimeDescriptor').mockReturnValue({
       agentId: 'agent-1',
@@ -418,10 +418,10 @@ describe('DELETE /connections/:id', () => {
       executionMode: 'paper',
       toolPolicy: {},
       budgets: TEST_RUNTIME_BUDGETS,
-      grantedBindingsByFamily: {},
+      grantedConnectionsByFamily: {},
       readinessByFamily: {},
       resolvedSkills: [],
-      defaultBindingByFamily: {},
+      defaultConnectionByFamily: {},
       guardrails: {
         dailyTokenBudget: null,
         dailyLossLimit: null,

@@ -43,7 +43,7 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
     return {
       family: 'trading',
       state: 'unconfigured',
-      bindingReadiness: 'unconfigured',
+      connectionReadiness: 'unconfigured',
       agentEligibility: 'ineligible',
       effectiveReady: false,
       reasons: ['no grants have been created for this capability family'],
@@ -54,7 +54,7 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
     return {
       family: row.family,
       state: 'revoked',
-      bindingReadiness: 'revoked',
+      connectionReadiness: 'revoked',
       agentEligibility: 'ineligible',
       effectiveReady: false,
       connectionId: row.connectionId,
@@ -65,7 +65,7 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
     return {
       family: row.family,
       state: 'revoked',
-      bindingReadiness: 'ready',
+      connectionReadiness: 'ready',
       agentEligibility: 'ineligible',
       effectiveReady: false,
       connectionId: row.connectionId,
@@ -76,7 +76,7 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
   return {
     family: row.family,
     state: 'ready',
-    bindingReadiness: 'ready',
+    connectionReadiness: 'ready',
     agentEligibility: 'eligible',
     effectiveReady: true,
     connectionId: row.connectionId,
@@ -146,9 +146,9 @@ function inferSkillFromRevisionRow(row: {
 
 export interface RuntimeCapabilityDescriptor {
   resolvedSkills: SkillDefinition[];
-  grantedBindingsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]>;
+  grantedConnectionsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]>;
   readinessByFamily: Record<string, CapabilityReadiness>;
-  defaultBindingByFamily: Record<string, string | null>;
+  defaultConnectionByFamily: Record<string, string | null>;
 }
 
 export async function resolveRuntimeCapabilityDescriptor(
@@ -207,14 +207,14 @@ export async function resolveRuntimeCapabilityDescriptor(
     .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
     .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.capabilityFamily, 'trading')));
 
-  const grantedBindingsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]> = {};
+  const grantedConnectionsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]> = {};
   const readinessByFamily: Record<string, CapabilityReadiness> = {};
-  const defaultBindingByFamily: Record<string, string | null> = {};
+  const defaultConnectionByFamily: Record<string, string | null> = {};
 
   const familiesFromSkills = new Set(resolvedSkills.flatMap((skill) => skill.capabilityFamilies));
   if (tradingRows.length > 0 || familiesFromSkills.has('trading')) {
     const defaultConnectionId = chooseDefaultConnectionId(tradingRows);
-    grantedBindingsByFamily['trading'] = tradingRows.map((row) => ({
+    grantedConnectionsByFamily['trading'] = tradingRows.map((row) => ({
       family: 'trading',
       connectionId: row.connectionId,
       provider: row.provider,
@@ -227,7 +227,7 @@ export async function resolveRuntimeCapabilityDescriptor(
     readinessByFamily['trading'] = deriveReadiness(
       tradingRows.find((row) => row.connectionId === defaultConnectionId) ?? chooseLatest(tradingRows),
     );
-    defaultBindingByFamily['trading'] = defaultConnectionId;
+    defaultConnectionByFamily['trading'] = defaultConnectionId;
   }
 
   for (const family of familiesFromSkills) {
@@ -235,25 +235,25 @@ export async function resolveRuntimeCapabilityDescriptor(
       readinessByFamily[family] = {
         family,
         state: 'unconfigured',
-        bindingReadiness: 'unconfigured',
+        connectionReadiness: 'unconfigured',
         agentEligibility: 'ineligible',
         effectiveReady: false,
         reasons: ['no grants have been created for this capability family'],
       };
     }
-    if (!grantedBindingsByFamily[family]) {
-      grantedBindingsByFamily[family] = [];
+    if (!grantedConnectionsByFamily[family]) {
+      grantedConnectionsByFamily[family] = [];
     }
-    if (!(family in defaultBindingByFamily)) {
-      defaultBindingByFamily[family] = null;
+    if (!(family in defaultConnectionByFamily)) {
+      defaultConnectionByFamily[family] = null;
     }
   }
 
   return {
     resolvedSkills,
-    grantedBindingsByFamily,
+    grantedConnectionsByFamily,
     readinessByFamily,
-    defaultBindingByFamily,
+    defaultConnectionByFamily,
   };
 }
 
@@ -276,8 +276,8 @@ export function buildRuntimeDescriptor(input: {
     goal: input.goal,
     executionMode: input.executionMode ?? 'paper',
     resolvedSkills: input.capabilityDescriptor.resolvedSkills,
-    grantedBindingsByFamily: input.capabilityDescriptor.grantedBindingsByFamily,
-    defaultBindingByFamily: input.capabilityDescriptor.defaultBindingByFamily,
+    grantedConnectionsByFamily: input.capabilityDescriptor.grantedConnectionsByFamily,
+    defaultConnectionByFamily: input.capabilityDescriptor.defaultConnectionByFamily,
     readinessByFamily: input.capabilityDescriptor.readinessByFamily,
     toolPolicy: input.toolPolicy ?? {},
     guardrails: {

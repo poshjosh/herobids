@@ -24,9 +24,9 @@ export function AgentCapabilityPage() {
     enabled: Boolean(agentId && family),
   });
 
-  const availableBindingsQuery = useQuery({
-    queryKey: ['capabilities', 'trading', 'bindings'],
-    queryFn: () => capabilitiesApi.tradingBindings(),
+  const availableConnectionsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'connections'],
+    queryFn: () => capabilitiesApi.tradingConnections(),
     enabled: family === 'trading',
   });
 
@@ -113,10 +113,10 @@ export function AgentCapabilityPage() {
             <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.readiness' })}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <KV label={intl.formatMessage({ id: 'common.state' })} value={formatCapabilityState(readiness.state, intl)} />
-              <KV label={intl.formatMessage({ id: 'agents.detail.bindingReadiness' })} value={formatCapabilityState(readiness.bindingReadiness, intl)} />
+              <KV label={intl.formatMessage({ id: 'agents.detail.connectionReadiness' })} value={formatCapabilityState(readiness.connectionReadiness, intl)} />
               <KV label={intl.formatMessage({ id: 'agents.detail.agentEligibility' })} value={intl.formatMessage({ id: `agents.eligibility.${readiness.agentEligibility}` })} />
               <KV label={intl.formatMessage({ id: 'agents.detail.effectiveReady' })} value={readiness.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })} />
-              <KV label={intl.formatMessage({ id: 'common.binding' })} value={readiness.bindingId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })} />
+              <KV label={intl.formatMessage({ id: 'common.connection' })} value={readiness.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })} />
             </div>
           </Card>
         </section>
@@ -154,7 +154,7 @@ export function AgentCapabilityPage() {
               <LoadingRows count={2} />
             ) : availableConnectionsQuery.isError || agentConnectionsQuery.isError ? (
               <ErrorState
-                message={String((availableConnectionsQuery.error as Error | undefined)?.message ?? (agentConnectionsQuery.error as Error | undefined)?.message ?? intl.formatMessage({ id: 'agents.capabilityPage.failedBindings' }))}
+                message={String((availableConnectionsQuery.error as Error | undefined)?.message ?? (agentConnectionsQuery.error as Error | undefined)?.message ?? intl.formatMessage({ id: 'agents.capabilityPage.failedConnections' }))}
                 onRetry={() => {
                   void availableConnectionsQuery.refetch();
                   void agentConnectionsQuery.refetch();

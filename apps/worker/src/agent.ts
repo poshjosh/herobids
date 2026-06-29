@@ -433,8 +433,8 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     goal: agentGoal,
     executionMode: agentConfig.executionMode ?? 'paper',
     resolvedSkills,
-    grantedBindingsByFamily: {},
-    defaultBindingByFamily: {},
+    grantedConnectionsByFamily: {},
+    defaultConnectionByFamily: {},
     readinessByFamily: {},
     toolPolicy: initialToolPolicy,
     guardrails: {
@@ -889,7 +889,7 @@ function providerFreshness(
 
 function extractTradingProviders(): Set<string> {
   return new Set(
-    (runtimeState.runtimeDescriptor.grantedBindingsByFamily['trading'] ?? [])
+    (runtimeState.runtimeDescriptor.grantedConnectionsByFamily['trading'] ?? [])
       .map((binding) => binding.provider.toLowerCase()),
   );
 }

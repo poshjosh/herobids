@@ -11,15 +11,15 @@ export type ReadinessState = typeof READINESS_STATES[number];
  * CapabilityReadiness — the shared readiness contract for any capability family.
  *
  * Combines two orthogonal axes:
- * - bindingReadiness: is the underlying infrastructure provisioned and healthy?
- * - agentEligibility: may this specific agent use the binding right now?
+ * - connectionReadiness: is the underlying infrastructure provisioned and healthy?
+ * - agentEligibility: may this specific agent use the connection right now?
  *
  * effectiveReady is true only when both axes are satisfied.
  */
 export interface CapabilityReadiness {
   family: string;
   state: ReadinessState;
-  bindingReadiness: ReadinessState;
+  connectionReadiness: ReadinessState;
   agentEligibility: 'eligible' | 'ineligible';
   effectiveReady: boolean;
   connectionId?: string;

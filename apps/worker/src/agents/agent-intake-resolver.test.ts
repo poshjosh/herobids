@@ -12,7 +12,7 @@ describe('AgentIntakeResolver', () => {
       orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue([
         {
-          sourceVenueAccountId: 'va-1',
+          resolvedVenueAccountId: 'va-1',
           provider: 'hyperliquid',
           venueAccountVenue: 'hyperliquid',
           venueAccountId: 'va-1',
@@ -132,7 +132,7 @@ describe('AgentIntakeResolver', () => {
     it('returns undefined when binding has no venue account reference', async () => {
       const { deps, mocks } = makeDeps();
       mocks.db.limit.mockResolvedValue([
-        { sourceVenueAccountId: null, provider: 'hyperliquid', venueAccountVenue: null, venueAccountId: null },
+        { resolvedVenueAccountId: null, provider: 'hyperliquid', venueAccountVenue: null, venueAccountId: null },
       ]);
       const resolver = new AgentIntakeResolver(deps);
 
@@ -241,7 +241,7 @@ describe('AgentIntakeResolver', () => {
       });
       mocks.db.limit.mockResolvedValue([
         {
-          sourceVenueAccountId: 'va-1inch',
+          resolvedVenueAccountId: 'va-1inch',
           provider: '1inch',
           venueAccountVenue: '1inch',
           venueAccountId: 'va-1inch',
@@ -393,7 +393,7 @@ describe('AgentIntakeResolver', () => {
                   orderBy: vi.fn().mockReturnValue({
                     limit: vi.fn().mockResolvedValue([
                       {
-                        sourceVenueAccountId: 'va-2',
+                        resolvedVenueAccountId: 'va-2',
                         provider: 'bybit',
                         venueAccountVenue: null,
                         venueAccountId: null,
@@ -416,7 +416,7 @@ describe('AgentIntakeResolver', () => {
       expect(binding!.venueAccountId).toBe('va-2');
     });
 
-    it('returns undefined when both venueAccountId and sourceVenueAccountId are null', async () => {
+    it('returns undefined when both venueAccountId and resolvedVenueAccountId are null', async () => {
       const { deps, mocks } = makeDeps();
       mocks.db.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -427,7 +427,7 @@ describe('AgentIntakeResolver', () => {
                   orderBy: vi.fn().mockReturnValue({
                     limit: vi.fn().mockResolvedValue([
                       {
-                        sourceVenueAccountId: null,
+                        resolvedVenueAccountId: null,
                         provider: 'hyperliquid',
                         venueAccountVenue: null,
                         venueAccountId: null,

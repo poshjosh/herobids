@@ -514,10 +514,10 @@ export function AgentDetailPage() {
                   </Button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                  <div>{intl.formatMessage({ id: 'agents.detail.bindingReadiness' })}: {formatCapabilityState(tradingCapability.bindingReadiness, intl)}</div>
+                  <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
                   <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
                   <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
-                  <div>{intl.formatMessage({ id: 'common.binding' })}: {tradingCapability.bindingId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
+                  <div>{intl.formatMessage({ id: 'common.connection' })}: {tradingCapability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
                   {tradingCapability.reasons.length > 0 && (
                     <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {tradingCapability.reasons.join('; ')}</div>
                   )}

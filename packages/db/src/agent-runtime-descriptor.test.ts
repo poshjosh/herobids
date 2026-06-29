@@ -155,29 +155,25 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
                 family: 'trading',
                 grantStatus: 'active',
                 grantedAt: new Date('2026-06-11T06:00:00Z'),
-                bindingId: 'binding-1',
-                bindingStatus: 'active',
-                connectionId: 'conn-1',
+                connectionId: 'binding-1',
                 connectionStatus: 'active',
                 provider: 'hyperliquid',
                 label: 'Older ready binding',
-                bindingRef: null,
-                bindingProfile: null,
-                sourceVenueAccountId: 'va-1',
+                providerRef: null,
+                profile: null,
+                resolvedVenueAccountId: 'va-1',
               },
               {
                 family: 'trading',
                 grantStatus: 'active',
                 grantedAt: new Date('2026-06-11T07:00:00Z'),
-                bindingId: 'binding-2',
-                bindingStatus: 'active',
-                connectionId: 'conn-2',
+                connectionId: 'binding-2',
                 connectionStatus: 'active',
                 provider: 'jupiter',
                 label: 'Newest ready binding',
-                bindingRef: null,
-                bindingProfile: null,
-                sourceVenueAccountId: 'va-2',
+                providerRef: null,
+                profile: null,
+                resolvedVenueAccountId: 'va-2',
               },
             ]);
       }),
@@ -185,10 +181,10 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
 
     const descriptor = await resolveRuntimeCapabilityDescriptor(db, 'agent-1');
 
-    expect(descriptor.defaultBindingByFamily.trading).toBe('binding-2');
-    expect(descriptor.grantedBindingsByFamily.trading).toEqual([
-      expect.objectContaining({ bindingId: 'binding-1', isDefault: false }),
-      expect.objectContaining({ bindingId: 'binding-2', isDefault: true }),
+    expect(descriptor.defaultConnectionByFamily.trading).toBe('binding-2');
+    expect(descriptor.grantedConnectionsByFamily.trading).toEqual([
+      expect.objectContaining({ connectionId: 'binding-1', isDefault: false }),
+      expect.objectContaining({ connectionId: 'binding-2', isDefault: true }),
     ]);
   });
 });
@@ -209,9 +205,9 @@ describe('buildRuntimeDescriptor', () => {
       budgets,
       capabilityDescriptor: {
         resolvedSkills: [],
-        grantedBindingsByFamily: {},
+        grantedConnectionsByFamily: {},
         readinessByFamily: {},
-        defaultBindingByFamily: {},
+        defaultConnectionByFamily: {},
       },
     });
 

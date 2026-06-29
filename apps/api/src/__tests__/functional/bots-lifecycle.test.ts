@@ -35,8 +35,8 @@ beforeEach(async () => {
 /**
  * Create a stopped bot via the API, returning its ID and binding ID.
  */
-async function createBot(token: string, overrides: Record<string, unknown> = {}): Promise<{ botId: string; bindingId: string }> {
-  // First set up a trading binding via provider-link
+async function createBot(token: string, overrides: Record<string, unknown> = {}): Promise<{ botId: string; connectionId: string }> {
+  // First set up a connection via provider-link
   const linkRes = await ctx.app.inject({
     method: 'POST',
     url: '/setup/provider-link',
@@ -54,14 +54,14 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
     },
   });
   expect(linkRes.statusCode).toBe(201);
-  const bindingId = linkRes.json<{ tradingBinding: { id: string } }>().tradingBinding.id;
+  const connectionId = linkRes.json<{ connection: { id: string } }>().connection.id;
 
   const res = await ctx.app.inject({
     method: 'POST',
     url: '/bots',
     headers: { Authorization: `Bearer ${token}` },
     payload: {
-      tradingBindingId: bindingId,
+      connectionId,
       venue: 'hyperliquid',
       symbol: 'BTC-PERP',
       config: {
@@ -75,14 +75,14 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
   });
   expect(res.statusCode).toBe(201);
   const botId = res.json<{ id: string }>().id;
-  return { botId, bindingId };
+  return { botId, connectionId };
 }
 
 describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
   let token: string;
   let otherUserToken: string;
   let botId: string;
-  let tradingBindingId: string;
+  let connectionId: string;
 
   beforeEach(async () => {
     if (SKIP) return;
@@ -90,7 +90,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
     otherUserToken = await registerUser(ctx.app, ctx.db, 'other@test.test', 'testpassword456', 'Other User');
     const created = await createBot(token);
     botId = created.botId;
-    tradingBindingId = created.bindingId;
+    connectionId = created.connectionId;
   });
 
   // ── DELETE /bots/:id ───────────────────────────────────────────────
@@ -179,14 +179,14 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       },
     });
     expect(linkRes.statusCode).toBe(201);
-    const bindingId = linkRes.json<{ tradingBinding: { id: string } }>().tradingBinding.id;
+    const connectionId = linkRes.json<{ connection: { id: string } }>().connection.id;
 
     const createRes = await ctx.app.inject({
       method: 'POST',
       url: '/bots',
       headers: { Authorization: `Bearer ${token}` },
       payload: {
-        tradingBindingId: bindingId,
+        connectionId,
         venue: '1inch',
         symbol: 'ETH-USDC',
         config: {
@@ -219,7 +219,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
       url: '/bots',
       headers: { Authorization: `Bearer ${token}` },
       payload: {
-        tradingBindingId,
+        connectionId,
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: {

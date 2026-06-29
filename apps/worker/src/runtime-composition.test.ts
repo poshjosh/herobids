@@ -58,36 +58,35 @@ const baseDescriptor = {
       visibility: 'public' as const,
     },
   ],
-  grantedBindingsByFamily: {
+  grantedConnectionsByFamily: {
     trading: [
       {
         family: 'trading',
-        bindingId: 'binding-1',
-        connectionId: 'conn-1',
+        connectionId: 'binding-1',
         provider: 'hyperliquid',
         label: 'Primary binding',
         readiness: {
           family: 'trading',
           state: 'ready',
-          bindingReadiness: 'ready',
+          connectionReadiness: 'ready',
           agentEligibility: 'eligible',
           effectiveReady: true,
-          bindingId: 'binding-1',
+          connectionId: 'binding-1',
           reasons: [],
         },
         isDefault: true,
       },
     ],
   },
-  defaultBindingByFamily: { trading: 'binding-1' },
+  defaultConnectionByFamily: { trading: 'binding-1' },
   readinessByFamily: {
     trading: {
       family: 'trading',
       state: 'ready',
-      bindingReadiness: 'ready',
+      connectionReadiness: 'ready',
       agentEligibility: 'eligible',
       effectiveReady: true,
-      bindingId: 'binding-1',
+      connectionId: 'binding-1',
       reasons: [],
     },
   },
@@ -162,8 +161,8 @@ describe('runtime composition helpers', () => {
     const state = createRuntimeCompositionState({
       ...baseDescriptor,
       resolvedSkills: [baseDescriptor.resolvedSkills[0]!],
-      grantedBindingsByFamily: {},
-      defaultBindingByFamily: {},
+      grantedConnectionsByFamily: {},
+      defaultConnectionByFamily: {},
       readinessByFamily: {},
     }, {
       workspaceRoot: '/tmp/herobids-agent-workspaces/agent-1',
@@ -265,45 +264,43 @@ describe('runtime composition helpers', () => {
   it('renders only the configured default executable trading venue', () => {
     const state = createRuntimeCompositionState({
       ...baseDescriptor,
-      grantedBindingsByFamily: {
+      grantedConnectionsByFamily: {
         trading: [
           {
             family: 'trading',
-            bindingId: 'binding-1',
-            connectionId: 'conn-1',
+            connectionId: 'binding-1',
             provider: 'hyperliquid',
             label: 'Old default flag',
             readiness: {
               family: 'trading',
               state: 'ready',
-              bindingReadiness: 'ready',
+              connectionReadiness: 'ready',
               agentEligibility: 'eligible',
               effectiveReady: true,
-              bindingId: 'binding-1',
+              connectionId: 'binding-1',
               reasons: [],
             },
             isDefault: true,
           },
           {
             family: 'trading',
-            bindingId: 'binding-2',
-            connectionId: 'conn-2',
+            connectionId: 'binding-2',
             provider: 'jupiter',
             label: 'Actual default',
             readiness: {
               family: 'trading',
               state: 'ready',
-              bindingReadiness: 'ready',
+              connectionReadiness: 'ready',
               agentEligibility: 'eligible',
               effectiveReady: true,
-              bindingId: 'binding-2',
+              connectionId: 'binding-2',
               reasons: [],
             },
             isDefault: false,
           },
         ],
       },
-      defaultBindingByFamily: { trading: 'binding-2' },
+      defaultConnectionByFamily: { trading: 'binding-2' },
     });
 
     expect(buildVenueLines(state)).toEqual([
@@ -446,21 +443,20 @@ describe('runtime composition helpers', () => {
   it('omits non-executable trading bindings from venue guidance', () => {
     const state = createRuntimeCompositionState({
       ...baseDescriptor,
-      grantedBindingsByFamily: {
+      grantedConnectionsByFamily: {
         trading: [
           {
             family: 'trading',
-            bindingId: 'binding-1',
-            connectionId: 'conn-1',
+            connectionId: 'binding-1',
             provider: 'hyperliquid',
             label: 'Revoked binding',
             readiness: {
               family: 'trading',
               state: 'revoked',
-              bindingReadiness: 'revoked',
+              connectionReadiness: 'revoked',
               agentEligibility: 'ineligible',
               effectiveReady: false,
-              bindingId: 'binding-1',
+              connectionId: 'binding-1',
               reasons: ['underlying connection has been revoked'],
             },
             isDefault: true,
@@ -492,14 +488,14 @@ describe('runtime composition helpers', () => {
     const updatedDescriptor = {
       ...baseDescriptor,
       goal: 'Updated goal',
-      defaultBindingByFamily: { trading: 'binding-2' },
+      defaultConnectionByFamily: { trading: 'binding-2' },
     };
 
     const summary = buildTickUserContext(state, [{ type: 'agent.runtime.config_update', payload: { reason: 'binding_changed', runtimeDescriptor: updatedDescriptor } }]);
 
     expect(summary).toContain('Runtime config updated: binding_changed');
     expect(state.runtimeDescriptor.goal).toBe('Updated goal');
-    expect(state.runtimeDescriptor.defaultBindingByFamily.trading).toBe('binding-2');
+    expect(state.runtimeDescriptor.defaultConnectionByFamily.trading).toBe('binding-2');
   });
 
   it('preserves the existing agent name when a runtime config update omits it', () => {
@@ -736,10 +732,10 @@ describe('runtime composition helpers', () => {
   it('marks positions as dex when only DEX bindings are active', () => {
     const dexDescriptor = {
       ...baseDescriptor,
-      grantedBindingsByFamily: {
+      grantedConnectionsByFamily: {
         trading: [
           {
-            ...baseDescriptor.grantedBindingsByFamily.trading[0],
+            ...baseDescriptor.grantedConnectionsByFamily.trading[0],
             provider: 'jupiter',
           },
         ],

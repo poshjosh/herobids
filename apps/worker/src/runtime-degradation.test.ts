@@ -27,8 +27,8 @@ function buildRuntimeDescriptor(): RuntimeDescriptor {
         visibility: 'public',
       },
     ],
-    grantedBindingsByFamily: {},
-    defaultBindingByFamily: {},
+    grantedConnectionsByFamily: {},
+    defaultConnectionByFamily: {},
     readinessByFamily: {},
     toolPolicy: {},
     guardrails: {

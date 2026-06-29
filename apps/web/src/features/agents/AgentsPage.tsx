@@ -640,14 +640,14 @@ function CreateAgentFlow({
                 ) : (
                   <>
                     <select
-                      value={intent.tradingBindingId}
-                      onChange={(e) => setIntent((state) => ({ ...state, tradingBindingId: e.target.value }))}
+                      value={intent.connectionId}
+                      onChange={(e) => setIntent((state) => ({ ...state, connectionId: e.target.value }))}
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
                       <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
-                      {availableTradingBindings.map((binding) => (
-                        <option key={binding.bindingId} value={binding.bindingId}>
-                          {binding.label} ({binding.provider})
+                      {availableTradingConnections.map((connection) => (
+                        <option key={connection.connectionId} value={connection.connectionId}>
+                          {connection.label} ({connection.provider})
                         </option>
                       ))}
                     </select>
@@ -827,13 +827,13 @@ function CreateAgentFlow({
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
               value={requiresTradingSetup
-                ? (selectedTradingBinding
+                ? (selectedConnection
                   ? intl.formatMessage({ id: 'agents.review.capabilitySetup.bound' })
                   : intl.formatMessage({ id: 'agents.review.capabilitySetup.defer' }))
                 : intl.formatMessage({ id: 'agents.review.capabilitySetup.none' })}
             />
-            {requiresTradingSetup && selectedTradingBinding && (
-              <ReviewRow label={intl.formatMessage({ id: 'agents.create.tradingBinding' })} value={`${selectedTradingBinding.label} (${selectedTradingBinding.provider})`} />
+            {requiresTradingSetup && selectedConnection && (
+              <ReviewRow label={intl.formatMessage({ id: 'agents.create.connection' })} value={`${selectedConnection.label} (${selectedConnection.provider})`} />
             )}
             {requiresTradingSetup && (
               <ReviewRow

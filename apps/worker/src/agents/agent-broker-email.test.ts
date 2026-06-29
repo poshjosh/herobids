@@ -57,7 +57,7 @@ function makeAgentRepo(agentOverrides: Record<string, unknown> = {}) {
     markOutboundMessageEmailFailed: vi.fn().mockResolvedValue(undefined),
     getEffectiveTelegramChatId: vi.fn().mockResolvedValue(null),
     getUserEmailByAgentId: vi.fn().mockResolvedValue('user@example.com'),
-    getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue({ grantedBindingsByFamily: {}, defaultBindingByFamily: {} }),
+    getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue({ grantedConnectionsByFamily: {}, defaultConnectionByFamily: {} }),
   };
 }
 

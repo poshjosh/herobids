@@ -487,7 +487,7 @@ export const messages: Record<string, string> = {
   'agents.capabilityPage.nextSteps': 'الخطوات التالية',
   'agents.capabilityPage.noGuidedSetup': 'لا توجد خطوات إعداد موجهة لهذه القدرة بعد. استخدم أسباب الجاهزية وصفحة تفاصيل الوكيل لتحديد الخطوة التالية.',
   'agents.capabilityPage.availableConnections': 'الاتصالات المتاحة',
-  'agents.capabilityPage.failedBindings': 'فشل تحميل روابط المنصة',
+  'agents.capabilityPage.failedConnections': 'فشل تحميل روابط المنصة',
   'agents.capabilityPage.noConnections': 'لا توجد روابط منصة بعد. أكمل إعداد التداول من مركز التحكم أو عند إنشاء وكيل، ثم عد هنا للربط.',
   'agents.capabilityPage.connectionMeta': 'المزوّد: {provider} · الاتصال: {connectionStatus} · المنحة: {grantStatus}',
   'agents.capabilityPage.reference': 'المرجع: {reference}',

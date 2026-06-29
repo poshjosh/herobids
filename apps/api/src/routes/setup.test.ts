@@ -30,7 +30,7 @@ vi.mock('../crypto.js', () => ({
 vi.mock('../trading-provisioner.js', () => ({
   provisionTradingTarget: vi.fn().mockResolvedValue({
     venueAccountId: 'va-new',
-    bindingId: 'binding-new',
+    connectionId: 'connection-new',
   }),
 }));
 
@@ -223,8 +223,7 @@ describe('POST /setup/provider-link', () => {
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
     expect(body['venueAccount']).toBeDefined();
-    expect(body['tradingBinding']).toBeDefined();
-    expect((body['tradingBinding'] as Record<string, unknown>)['sourceVenueAccountId']).toBe('va-new');
+    expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBe('va-new');
   });
 
   it('propagates transaction failure and returns 500 — rollback path', async () => {
@@ -293,7 +292,7 @@ describe('POST /setup/provider-link', () => {
     const body = res.json<Record<string, unknown>>();
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
-    expect(body['tradingBinding']).toBeDefined();
+    expect(body['connection']).toBeDefined();
   });
 
   it('accepts bybit with apiSecret field name (canonicalized to secret)', async () => {

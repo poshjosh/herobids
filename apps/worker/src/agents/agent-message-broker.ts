@@ -43,15 +43,15 @@ const SEND_MESSAGE_MAX_BODY_LENGTH = 2000;
 /**
  * Callback the broker uses to enqueue a bot start job on the runtime queue.
  * Decouples the broker from BullMQ — the caller wires this to queue.add().
- * tradingBindingId is explicit so the type system enforces the binding-first routing contract.
+ * connectionId is explicit so the type system enforces the connection-first routing contract.
  */
-export type BotStartCallback = (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => Promise<void>;
+export type BotStartCallback = (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => Promise<void>;
 
 /** Callback used to enqueue a bot stop job on the runtime queue. */
 export type BotStopCallback = (botId: string, userId: string) => Promise<void>;
 
 /** Callback used to enqueue a bot restart job on the runtime queue. */
-export type BotRestartCallback = (botId: string, userId: string, tradingBindingId: string, config: Record<string, unknown>) => Promise<void>;
+export type BotRestartCallback = (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => Promise<void>;
 
 /**
  * Optional callback for enforcing a subscription-level bot cap before create.
@@ -576,54 +576,69 @@ export class AgentMessageBroker {
       if (!payload.config) throw new Error('config is required for create_and_start');
       if (!this.botRepo) throw new Error('BotRepository not wired — manage_bot unavailable');
 
-      // Resolve the binding using the same runtime descriptor the agent sees in its prompt.
-      // Primary path: bindingId (the agent sees this in its readiness summary).
+      // Resolve the connection using the same runtime descriptor the agent sees in its prompt.
+      // Primary path: connectionId (the agent sees this in its readiness summary).
       // Fallback: venueAccountId (legacy — deprecated).
       const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
-      const grantedTradingBindings = capabilityDescriptor.grantedBindingsByFamily['trading'] ?? [];
-      const defaultBindingId = capabilityDescriptor.defaultBindingByFamily['trading'];
+      const grantedTradingConnections = capabilityDescriptor.grantedConnectionsByFamily['trading'] ?? [];
+      const defaultConnectionId = capabilityDescriptor.defaultConnectionByFamily['trading'];
 
-      let binding: (typeof grantedTradingBindings)[number] | undefined;
+      let connection: (typeof grantedTradingConnections)[number] | undefined;
 
-      if (payload.bindingId) {
-        // Primary: resolve by bindingId — what the agent sees in readiness
-        const byBindingId = grantedTradingBindings.filter(
-          (candidate) => candidate.bindingId === payload.bindingId,
+      if (payload.connectionId) {
+        // Primary: resolve by connectionId — what the agent sees in readiness
+        const byConnectionId = grantedTradingConnections.filter(
+          (candidate) => candidate.connectionId === payload.connectionId,
         );
-        if (byBindingId.length === 0) {
-          throw new Error(`No trading capability binding found with bindingId ${payload.bindingId}`);
+        if (byConnectionId.length === 0) {
+          throw new Error(`No trading capability connection found with connectionId ${payload.connectionId}`);
         }
-        if (byBindingId.length > 1) {
-          throw new Error(`Multiple trading capability bindings found with bindingId ${payload.bindingId}`);
+        if (byConnectionId.length > 1) {
+          throw new Error(`Multiple trading capability connections found with connectionId ${payload.connectionId}`);
         }
-        binding = byBindingId[0];
+        connection = byConnectionId[0];
       } else if (payload.venueAccountId) {
-        // Legacy fallback: resolve by sourceVenueAccountId
-        const byVenueAccountId = grantedTradingBindings.filter(
-          (candidate) => candidate.sourceVenueAccountId === payload.venueAccountId,
+        // Legacy fallback: resolve by venueAccountId
+        // Venue account lookup is provider-based now — find the connection whose provider matches
+        const [vaForLegacy] = await this.botRepo!.db
+          .select({ venue: venueAccounts.venue })
+          .from(venueAccounts)
+          .where(eq(venueAccounts.id, payload.venueAccountId))
+          .limit(1);
+        if (!vaForLegacy) {
+          throw new Error(`No venue account found for venueAccountId ${payload.venueAccountId}`);
+        }
+        const byProvider = grantedTradingConnections.filter(
+          (candidate) => candidate.provider === vaForLegacy.venue,
         );
-        if (byVenueAccountId.length === 0) {
-          throw new Error(`No trading capability binding found for venue account ${payload.venueAccountId}`);
+        if (byProvider.length === 0) {
+          throw new Error(`No trading capability connection found for venue account ${payload.venueAccountId}`);
         }
-        if (byVenueAccountId.length > 1) {
-          throw new Error(`Multiple trading capability bindings found for venue account ${payload.venueAccountId}`);
+        if (byProvider.length > 1) {
+          // Multiple connections for same provider — use the first ready one, or first active
+          const ready = byProvider.find((c) => c.readiness.effectiveReady);
+          connection = ready ?? byProvider[0];
+        } else {
+          connection = byProvider[0];
         }
-        binding = byVenueAccountId[0];
       } else {
-        // Default: use the agent's default trading binding
-        binding = grantedTradingBindings.find((candidate) => candidate.bindingId === defaultBindingId);
+        // Default: use the agent's default trading connection
+        connection = grantedTradingConnections.find((candidate) => candidate.connectionId === defaultConnectionId);
       }
-      if (!binding || !binding.readiness.effectiveReady) {
-        throw new Error('No ready trading capability binding found for this agent — cannot create bot');
-      }
-      if (!binding.sourceVenueAccountId) {
-        throw new Error(`Trading binding ${binding.bindingId} is missing sourceVenueAccountId — cannot create bot until the binding migration is completed`);
+      if (!connection || !connection.readiness.effectiveReady) {
+        throw new Error('No ready trading capability connection found for this agent — cannot create bot');
       }
 
-      // Security: verify the binding belongs to the agent's own user before creating the bot.
-      const owned = await this.botRepo.isTradingBindingOwnedBy(binding.bindingId, agent.userId);
+      // Resolve venue account from the connection's provider
+      const venueAccount = await this.botRepo!.getVenueAccountByUserAndProvider(agent.userId, connection.provider);
+      if (!venueAccount) {
+        throw new Error(`Cannot resolve venue account for provider "${connection.provider}" — cannot create bot`);
+      }
+
+      // Security: verify the connection belongs to the agent's own user before creating the bot.
+      const owned = await this.botRepo!.isConnectionOwnedBy(connection.connectionId, agent.userId);
       if (!owned) {
-        throw new Error(`Trading binding ${binding.bindingId} not found or not owned by this agent's user`);
+        throw new Error(`Trading connection ${connection.connectionId} not found or not owned by this agent's user`);
       }
 
       // Enforce subscription-wide plan bot cap (same limit the API enforces for direct bot creation).
@@ -638,17 +653,12 @@ export class AgentMessageBroker {
         throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
       }
 
-      // Resolve venue account from the binding and stamp venue/venueType unconditionally
-      const venueAccount = await this.botRepo.getVenueAccountById(binding.sourceVenueAccountId);
-      if (!venueAccount) {
-        throw new Error(`Cannot resolve venue account ${binding.sourceVenueAccountId} from trading binding — cannot create bot`);
-      }
+      // Stamp venue/venueType unconditionally — agent-provided values are discarded
       const venueType = venueTypeFromProvider(venueAccount.venue);
       if (!venueType) {
-        throw new Error(`Unsupported venue "${venueAccount.venue}" resolved from trading binding — cannot create bot`);
+        throw new Error(`Unsupported venue "${venueAccount.venue}" resolved from trading connection — cannot create bot`);
       }
       const rawConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
-      // Stamp venue/venueType unconditionally — agent-provided values are discarded
       rawConfig['venue'] = venueAccount.venue;
       rawConfig['venueType'] = venueType;
 
@@ -712,10 +722,10 @@ export class AgentMessageBroker {
         }
       }
 
-      const botId = await this.botRepo.createBot({
+      const botId = await this.botRepo!.createBot({
         userId: agent.userId,
-        tradingBindingId: binding.bindingId,
-        venueAccountId: binding.sourceVenueAccountId,
+        connectionId: connection.connectionId,
+        venueAccountId: venueAccount.id,
         config: validatedConfig,
         creatorType: 'agent',
         creatorId: agent.id,
@@ -725,10 +735,10 @@ export class AgentMessageBroker {
 
       if (this.botStart) {
         // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
-        await this.botRepo.markBotRunning(botId);
-        await this.botStart(botId, agent.userId, binding.bindingId, {
+        await this.botRepo!.markBotRunning(botId);
+        await this.botStart(botId, agent.userId, connection.connectionId, {
           ...validatedConfig,
-          venueAccountId: binding.sourceVenueAccountId,
+          venueAccountId: venueAccount.id,
         });
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }
@@ -772,9 +782,9 @@ export class AgentMessageBroker {
       if (this.botStart) {
         await this.botRepo.markBotRunning(payload.botId);
         try {
-          // venueAccountId is resolved via startupContext.sourceVenueAccountId at job processing
+          // venueAccountId is resolved via startupContext at job processing
           // time — no longer passed in the config payload to avoid stale/dual sources of truth.
-          await this.botStart(payload.botId, agent.userId, bot.tradingBindingId, {
+          await this.botStart(payload.botId, agent.userId, bot.connectionId, {
             ...effectiveConfig,
           });
         } catch (err) {
@@ -873,9 +883,9 @@ export class AgentMessageBroker {
 
       if (bot.status === 'running' && this.botRestart) {
         try {
-          // venueAccountId is resolved via startupContext.sourceVenueAccountId at job processing
+          // venueAccountId is resolved via startupContext at job processing
           // time — no longer passed in the config payload to avoid stale/dual sources of truth.
-          await this.botRestart(payload.botId, agent.userId, bot.tradingBindingId, {
+          await this.botRestart(payload.botId, agent.userId, bot.connectionId, {
             ...mergedConfig,
           });
         } catch (err) {

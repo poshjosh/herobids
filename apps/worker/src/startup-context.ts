@@ -34,9 +34,9 @@ export interface BotStartupContext {
   userId: string;
   connectionId: string;
   provider: string;
-  sourceVenueAccountId: string | null;
-  /** True when the resolved provider requires a source venue account for execution. */
-  sourceVenueAccountRequired: boolean;
+  resolvedVenueAccountId: string | null;
+  /** True when the resolved provider requires a venue account for execution. */
+  venueAccountRequired: boolean;
   venueAccount: VenueAccountStartupRow | null;
 }
 
@@ -95,7 +95,7 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     throw new BotStartupError('connection_not_usable', `Connection ${connectionId} is not usable for startup — connection is inactive`);
   }
 
-  // Look up venue account by matching user + provider (legacy: was sourceVenueAccountId on trading_bindings)
+  // Look up venue account from the bot row
   const [vaRow] = await params.db
     .select({
       id: venueAccounts.id,
@@ -109,18 +109,18 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     .where(eq(venueAccounts.id, (bot as Record<string, unknown>).venueAccountId as string))
     .limit(1);
 
-  const sourceVenueAccountId = vaRow?.id ?? null;
-  const needsSourceVenueAccount = requiresSourceVenueAccount(params.venue, params.venueType);
+  const resolvedVenueAccountId = vaRow?.id ?? null;
+  const needsVenueAccount = requiresSourceVenueAccount(params.venue, params.venueType);
 
-  if (!sourceVenueAccountId && needsSourceVenueAccount) {
+  if (!resolvedVenueAccountId && needsVenueAccount) {
     throw new BotStartupError('missing_source_venue_account', `Bot ${params.botId} has no venue account — cannot start ${params.venueType} bot`);
   }
 
   let venueAccount: VenueAccountStartupRow | null = null;
-  if (sourceVenueAccountId) {
+  if (resolvedVenueAccountId) {
     if (!vaRow) {
-      if (needsSourceVenueAccount) {
-        throw new BotStartupError('source_venue_account_not_found', `Source venue account ${sourceVenueAccountId} not found — cannot start bot ${params.botId}`);
+      if (needsVenueAccount) {
+        throw new BotStartupError('source_venue_account_not_found', `Venue account ${resolvedVenueAccountId} not found — cannot start bot ${params.botId}`);
       }
     } else {
       venueAccount = vaRow;
@@ -132,8 +132,8 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     userId: bot.userId,
     connectionId,
     provider: connRow.provider,
-    sourceVenueAccountId,
-    sourceVenueAccountRequired: needsSourceVenueAccount,
+    resolvedVenueAccountId,
+    venueAccountRequired: needsVenueAccount,
     venueAccount,
   };
 }

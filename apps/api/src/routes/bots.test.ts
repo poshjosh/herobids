@@ -103,7 +103,7 @@ describe('bot routes', () => {
               where: vi.fn().mockImplementation(() => {
                 selectCallCount++;
                 if (selectCallCount === 1) {
-                  return Promise.resolve([{ id: 'binding-1', sourceVenueAccountId: 'va-1' }]);
+                  return Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
                 }
                 return Promise.resolve([{ id: 'inst-1' }, { id: 'inst-2' }, { id: 'inst-3' }]);
               }),
@@ -123,7 +123,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'binding-1',
+        connectionId: 'binding-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: validConfig,
@@ -142,7 +142,7 @@ describe('bot routes', () => {
       id: 'new-bot-id',
       userId: TEST_USER_ID,
       venueAccountId: 'va-1',
-      tradingBindingId: 'binding-1',
+      connectionId: 'binding-1',
       config: validConfig,
       status: 'stopped',
       creatorType: 'user',
@@ -159,7 +159,7 @@ describe('bot routes', () => {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => Promise.resolve([{ id: 'binding-1', sourceVenueAccountId: 'va-1' }])),
+              where: vi.fn().mockImplementation(() => Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }])),
             }),
           }),
           insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
@@ -181,7 +181,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'binding-1',
+        connectionId: 'binding-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: validConfig,
@@ -200,7 +200,7 @@ describe('bot routes', () => {
       id: 'new-bot-id',
       userId: TEST_USER_ID,
       venueAccountId: 'va-1',
-      tradingBindingId: 'binding-1',
+      connectionId: 'binding-1',
       config: validConfig,
       status: 'stopped',
       creatorType: 'user',
@@ -221,7 +221,7 @@ describe('bot routes', () => {
               where: vi.fn().mockImplementation(() => {
                 selectCallCount++;
                 if (selectCallCount === 1) {
-                  return Promise.resolve([{ id: 'binding-1', sourceVenueAccountId: 'va-1' }]);
+                  return Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: 'va-1' }]);
                 }
                 return Promise.resolve([]);
               }),
@@ -246,7 +246,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'binding-1',
+        connectionId: 'binding-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: validConfig,
@@ -257,10 +257,10 @@ describe('bot routes', () => {
     const body = JSON.parse(res.body);
     expect(body.userId).toBe(TEST_USER_ID);
     expect(body.status).toBe('stopped');
-    expect(body.tradingBindingId).toBe('binding-1');
+    expect(body.connectionId).toBe('binding-1');
   });
 
-  it('returns 400 when both tradingBindingId and venueAccountId are provided', async () => {
+  it('returns 400 when both connectionId and venueAccountId are provided', async () => {
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
@@ -276,7 +276,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'binding-1',
+        connectionId: 'binding-1',
         venueAccountId: 'va-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
@@ -288,7 +288,7 @@ describe('bot routes', () => {
     expect(res.json().error).toBe('validation_error');
   });
 
-  it('returns 400 when a trading binding cannot supply a venue account id', async () => {
+  it('returns 400 when a connection cannot supply a venue account id', async () => {
     const { botRoutes } = await import('./bots.js');
 
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
@@ -303,7 +303,7 @@ describe('bot routes', () => {
               where: vi.fn().mockImplementation(() => {
                 selectCallCount++;
                 if (selectCallCount === 1) {
-                  return Promise.resolve([{ id: 'binding-1', sourceVenueAccountId: null }]);
+                  return Promise.resolve([{ id: 'binding-1', resolvedVenueAccountId: null }]);
                 }
                 return Promise.resolve([]);
               }),
@@ -323,7 +323,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'binding-1',
+        connectionId: 'binding-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: validConfig,
@@ -331,14 +331,14 @@ describe('bot routes', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('binding.missing_venue_account');
+    expect(res.json().error).toBe('connection.missing_venue_account');
   });
 
   // Regression: bug 001 — test payloads used venueAccountId (old field) and the mock DB
-  // returned { id } instead of { id, sourceVenueAccountId }. Both caused the route to fail.
-  // This test verifies the bot's venueAccountId is sourced from the trading binding's
-  // sourceVenueAccountId so the field mapping can never silently regress.
-  it('maps sourceVenueAccountId from the trading binding to the created bot venueAccountId', async () => {
+  // returned { id } instead of { id, resolvedVenueAccountId }. Both caused the route to fail.
+  // This test verifies the bot's venueAccountId is sourced from the connection's
+  // resolvedVenueAccountId so the field mapping can never silently regress.
+  it('maps resolvedVenueAccountId from the connection to the created bot venueAccountId', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -347,7 +347,7 @@ describe('bot routes', () => {
       id: 'new-bot',
       userId: TEST_USER_ID,
       venueAccountId: 'va-42',
-      tradingBindingId: 'binding-42',
+      connectionId: 'binding-42',
       config: validConfig,
       status: 'stopped',
       creatorType: 'user',
@@ -367,9 +367,9 @@ describe('bot routes', () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 selectCount++;
-                // First call: trading binding lookup — must return { id, sourceVenueAccountId }
+                // First call: connection lookup — must return { id, resolvedVenueAccountId }
                 if (selectCount === 1) {
-                  return Promise.resolve([{ id: 'binding-42', sourceVenueAccountId: 'va-42' }]);
+                  return Promise.resolve([{ id: 'binding-42', resolvedVenueAccountId: 'va-42' }]);
                 }
                 // Subsequent calls: bot limit check — no existing bots
                 return Promise.resolve([]);
@@ -400,7 +400,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'binding-42',
+        connectionId: 'binding-42',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: validConfig,
@@ -408,14 +408,14 @@ describe('bot routes', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    // Critical: venueAccountId in the INSERT must come from binding.sourceVenueAccountId
+    // Critical: venueAccountId in the INSERT must come from connection.resolvedVenueAccountId
     expect(capturedBotInsert!['venueAccountId']).toBe('va-42');
-    expect(capturedBotInsert!['tradingBindingId']).toBe('binding-42');
+    expect(capturedBotInsert!['connectionId']).toBe('binding-42');
   });
 
   // Regression: bug 001 — when the DB returns an empty array for the binding lookup
   // (binding not found), the route must return 404, not a 500 TypeError on undefined.
-  it('returns 404 when tradingBindingId references a nonexistent trading binding', async () => {
+  it('returns 404 when connectionId references a nonexistent connection', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
 
@@ -442,7 +442,7 @@ describe('bot routes', () => {
       method: 'POST',
       url: '/bots',
       payload: {
-        tradingBindingId: 'nonexistent-binding',
+        connectionId: 'nonexistent-binding',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: validConfig,
@@ -454,10 +454,10 @@ describe('bot routes', () => {
   });
 
   // Regression: bug 2026-06-09-004 — web client was sending venueAccountId
-  // instead of tradingBindingId. The schema uses .strict() so any payload that
-  // sends venueAccountId (with or without tradingBindingId) must be rejected
+  // instead of connectionId. The schema uses .strict() so any payload that
+  // sends venueAccountId (with or without connectionId) must be rejected
   // with 400 validation_error, never silently accepted.
-  it('returns 400 validation_error when venueAccountId is sent instead of tradingBindingId (bug-2026-06-09-004 regression)', async () => {
+  it('returns 400 validation_error when venueAccountId is sent instead of connectionId (bug-2026-06-09-004 regression)', async () => {
     const { botRoutes } = await import('./bots.js');
     const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
     const db = { transaction: vi.fn() };
@@ -479,8 +479,8 @@ describe('bot routes', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toBe('validation_error');
-    // tradingBindingId must be present and missing from the payload triggers the error
+    // connectionId must be present and missing from the payload triggers the error
     const issues = res.json<{ details: Array<{ path: string[] }> }>().details;
-    expect(issues.some((issue) => issue.path.includes('tradingBindingId'))).toBe(true);
+    expect(issues.some((issue) => issue.path.includes('connectionId'))).toBe(true);
   });
 });

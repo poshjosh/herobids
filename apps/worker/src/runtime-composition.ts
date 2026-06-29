@@ -463,8 +463,8 @@ function refreshDerivedPerformanceInputs(state: RuntimeCompositionState): void {
 }
 
 function inferVenueType(state: RuntimeCompositionState, instrumentId: string): RuntimePositionSnapshot['venueType'] {
-  const tradingBindings = state.runtimeDescriptor.grantedBindingsByFamily['trading'] ?? [];
-  const providers = new Set(tradingBindings.map((binding) => binding.provider.toLowerCase()));
+  const tradingConnections = state.runtimeDescriptor.grantedConnectionsByFamily['trading'] ?? [];
+  const providers = new Set(tradingConnections.map((connection) => connection.provider.toLowerCase()));
   const hasPerpsBindings = providers.has('hyperliquid') || providers.has('bybit');
   const hasDexBindings = providers.has('jupiter') || providers.has('1inch');
 
@@ -504,7 +504,7 @@ function formatVisibleTools(runtimeDescriptor: RuntimeDescriptor): string {
 }
 
 function hasTradingCapability(runtimeDescriptor: RuntimeDescriptor): boolean {
-  if ((runtimeDescriptor.grantedBindingsByFamily['trading']?.length ?? 0) > 0) {
+  if ((runtimeDescriptor.grantedConnectionsByFamily['trading']?.length ?? 0) > 0) {
     return true;
   }
 
@@ -528,9 +528,9 @@ function hasVisibleWorkspacePathTooling(state: RuntimeCompositionState): boolean
 }
 
 function renderReadinessLine(family: string, readiness: CapabilityReadiness): string {
-  const bindingSuffix = readiness.bindingId ? ` binding=${readiness.bindingId}` : '';
+  const connectionSuffix = readiness.connectionId ? ` connection=${readiness.connectionId}` : '';
   const reasonSuffix = readiness.reasons.length > 0 ? ` reasons=${readiness.reasons.join('; ')}` : '';
-  return `${family}: ${readiness.state} (${readiness.agentEligibility}${bindingSuffix}${reasonSuffix})`;
+  return `${family}: ${readiness.state} (${readiness.agentEligibility}${connectionSuffix}${reasonSuffix})`;
 }
 
 const PROVIDER_VENUE_DETAILS: Record<string, { type: string; tradeInstrumentHint: string }> = {
@@ -560,22 +560,22 @@ function formatTradingVenueLine(provider: string): string {
   return `- ${provider} (${details.type}) — ${details.tradeInstrumentHint}`;
 }
 
-function getEffectiveTradingBindings(state: RuntimeCompositionState): typeof state.runtimeDescriptor.grantedBindingsByFamily[string] {
-  const bindings = state.runtimeDescriptor.grantedBindingsByFamily['trading'] ?? [];
-  const executableBindings = bindings.filter((binding) => binding.readiness.effectiveReady);
-  if (executableBindings.length <= 1) return executableBindings;
+function getEffectiveTradingConnections(state: RuntimeCompositionState): typeof state.runtimeDescriptor.grantedConnectionsByFamily[string] {
+  const connections = state.runtimeDescriptor.grantedConnectionsByFamily['trading'] ?? [];
+  const executableConnections = connections.filter((connection) => connection.readiness.effectiveReady);
+  if (executableConnections.length <= 1) return executableConnections;
 
-  const defaultBindingId = state.runtimeDescriptor.defaultBindingByFamily['trading'];
-  if (defaultBindingId) {
-    const defaultBinding = executableBindings.find((binding) => binding.bindingId === defaultBindingId);
-    if (defaultBinding) return [defaultBinding];
+  const defaultConnectionId = state.runtimeDescriptor.defaultConnectionByFamily['trading'];
+  if (defaultConnectionId) {
+    const defaultConnection = executableConnections.find((connection) => connection.connectionId === defaultConnectionId);
+    if (defaultConnection) return [defaultConnection];
   }
 
-  const defaultBinding = executableBindings.find((binding) => binding.isDefault);
-  if (defaultBinding) return [defaultBinding];
+  const defaultConnection = executableConnections.find((connection) => connection.isDefault);
+  if (defaultConnection) return [defaultConnection];
 
-  // No explicit default metadata — surface all executable bindings rather than guessing.
-  return executableBindings;
+  // No explicit default metadata — surface all executable connections rather than guessing.
+  return executableConnections;
 }
 
 function computePerformanceSummary(state: RuntimeCompositionState): string {
@@ -648,10 +648,10 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     trimOrder: 0,
     preserveWhenTrimmed: true,
     build: (state) => {
-      const bindings = getEffectiveTradingBindings(state);
-      if (bindings.length === 0) return null;
+      const connections = getEffectiveTradingConnections(state);
+      if (connections.length === 0) return null;
 
-      const lines = bindings.map((b) => formatTradingVenueLine(b.provider));
+      const lines = connections.map((c) => formatTradingVenueLine(c.provider));
 
       return {
         id: 'tradingVenue',
@@ -992,7 +992,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
 function buildBlockList(state: RuntimeCompositionState, section: 'static' | 'dynamic'): Array<{ provider: RuntimeContextProvider; block: RuntimeContextBlock }> {
   return RUNTIME_CONTEXT_PROVIDERS
     .filter((provider) => provider.section === section)
-    .filter((provider) => provider.requiredFamilies.every((family) => Boolean(state.runtimeDescriptor.readinessByFamily[family] || state.runtimeDescriptor.grantedBindingsByFamily[family])))
+    .filter((provider) => provider.requiredFamilies.every((family) => Boolean(state.runtimeDescriptor.readinessByFamily[family] || state.runtimeDescriptor.grantedConnectionsByFamily[family])))
     .map((provider) => ({ provider, block: provider.build(state) }))
     .filter((entry): entry is { provider: RuntimeContextProvider; block: RuntimeContextBlock } => entry.block !== null);
 }
@@ -1610,9 +1610,9 @@ export function buildTickUserContext(state: RuntimeCompositionState, incomingMes
 }
 
 export function buildVenueLines(state: RuntimeCompositionState): string[] {
-  const bindings = getEffectiveTradingBindings(state);
-  if (bindings.length === 0) return [];
-  return bindings.map((b) => formatTradingVenueLine(b.provider));
+  const connections = getEffectiveTradingConnections(state);
+  if (connections.length === 0) return [];
+  return connections.map((c) => formatTradingVenueLine(c.provider));
 }
 
 export function getVisibleToolNames(state: RuntimeCompositionState): string[] {
