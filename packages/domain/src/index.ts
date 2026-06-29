@@ -17,3 +17,5 @@ export * from './trading/execution-capability.js';
 export * from './trading/venue-capability.js';
 export * from './trading/actor-health.js';
 export * from './agent-evaluation.js';
+export * from './llm-selection.js';
+export * from './cost-profile.js';
