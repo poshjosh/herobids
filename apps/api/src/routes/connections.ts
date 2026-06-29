@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
+import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
@@ -268,9 +268,9 @@ export async function connectionRoutes(
 
     if (redisClient) {
       const affectedAgents = await db
-        .select({ agentId: capabilityGrants.agentId })
-        .from(capabilityGrants)
-        .where(and(eq(capabilityGrants.connectionId, id), eq(capabilityGrants.status, 'active')));
+        .select({ agentId: agentConnections.agentId })
+        .from(agentConnections)
+        .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
 
       for (const row of affectedAgents) {
         await publishRuntimeRefresh(row.agentId).catch((err: unknown) => {
@@ -278,11 +278,6 @@ export async function connectionRoutes(
         });
       }
     }
-
-    // TODO(21.3): cascade-revoke active grants that reference this connection and write
-    // audit entries for each. For now, readiness.ts derives the correct "revoked" state
-    // from connection status, so active grants on a revoked connection are effectively
-    // blocked even though their status still reads "active".
 
     return reply.status(204).send();
   });
