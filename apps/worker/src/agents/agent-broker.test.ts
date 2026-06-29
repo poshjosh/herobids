@@ -423,15 +423,24 @@ describe('AgentMessageBroker', () => {
         createdAt: new Date().toISOString(),
         payload: {
           action: 'create_and_start',
-          venueAccountId: 'va-001',
+          connectionId: 'binding-1',
           config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
         ...overrides,
       };
     }
 
+    const mockDbSelect = vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+        }),
+      }),
+    });
+
     function makeBotRepo() {
       return {
+        db: { select: mockDbSelect },
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-new-001'),
@@ -564,12 +573,22 @@ describe('AgentMessageBroker', () => {
         createdAt: new Date().toISOString(),
         payload: {
           action: 'create_and_start',
-          venueAccountId: 'va-001',
+          connectionId: 'binding-1',
           config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
         ...overrides,
       };
     }
+
+    const instanceStatusDbMock = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+          }),
+        }),
+      }),
+    };
 
     describe('bot_query emits tool results', () => {
       it('emits a bot list result', async () => {
@@ -853,6 +872,7 @@ describe('AgentMessageBroker', () => {
 
     it('emits instance status with bot list after create_and_start', async () => {
       const botRepo = {
+        db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-abc'),
@@ -891,6 +911,7 @@ describe('AgentMessageBroker', () => {
 
     it('emits instance status with empty bot list when agent has no bots', async () => {
       const botRepo = {
+        db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-xyz'),
@@ -920,6 +941,7 @@ describe('AgentMessageBroker', () => {
 
     it('emits bot with undefined strategyPreset when config has none', async () => {
       const botRepo = {
+        db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-min'),
@@ -948,18 +970,20 @@ describe('AgentMessageBroker', () => {
       expect(call[1].managedBots[0].symbol).toBeUndefined();
     });
 
-    it('uses the requested venue account connection when provided', async () => {
+    it('uses the requested connection by connectionId when provided', async () => {
       agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
         grantedConnectionsByFamily: {
           trading: [
             {
               connectionId: 'binding-1',
               resolvedVenueAccountId: 'va-001',
+              provider: 'hyperliquid',
               readiness: { effectiveReady: true },
             },
             {
               connectionId: 'binding-2',
               resolvedVenueAccountId: 'va-002',
+              provider: 'hyperliquid',
               readiness: { effectiveReady: true },
             },
           ],
@@ -967,7 +991,18 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-1' },
       }));
 
+      const mockDbV2 = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbV2,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-targeted'),
@@ -991,7 +1026,7 @@ describe('AgentMessageBroker', () => {
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
         payload: {
           action: 'create_and_start',
-          venueAccountId: 'va-002',
+          connectionId: 'binding-2',
           config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
       }));
@@ -1026,7 +1061,18 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-1' },
       }));
 
+      const mockDbByConn = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbByConn,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-by-connectionid'),
@@ -1114,7 +1160,18 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-2' },
       }));
 
+      const mockDbDefault = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbDefault,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-default'),
@@ -1149,18 +1206,20 @@ describe('AgentMessageBroker', () => {
       }));
     });
 
-    it('rejects create_and_start when the requested venue account maps to multiple connections', async () => {
+    it('falls back to default connection when no connectionId is provided', async () => {
       agentRepo.getRuntimeCapabilityDescriptor.mockResolvedValue(makeTradingCapabilityDescriptor({
         grantedConnectionsByFamily: {
           trading: [
             {
               connectionId: 'binding-1',
               resolvedVenueAccountId: 'va-002',
+              provider: 'hyperliquid',
               readiness: { effectiveReady: true },
             },
             {
               connectionId: 'binding-2',
               resolvedVenueAccountId: 'va-002',
+              provider: 'hyperliquid',
               readiness: { effectiveReady: true },
             },
           ],
@@ -1168,7 +1227,18 @@ describe('AgentMessageBroker', () => {
         defaultConnectionByFamily: { trading: 'binding-1' },
       }));
 
+      const mockDbAmbiguous = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbAmbiguous,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-ambiguous'),
@@ -1188,21 +1258,34 @@ describe('AgentMessageBroker', () => {
         vi.fn().mockResolvedValue(undefined),
       );
 
+      // No connectionId provided — broker falls back to default connection
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope({
         payload: {
           action: 'create_and_start',
-          venueAccountId: 'va-002',
           config: { venue: 'hyperliquid', symbol: 'BTC-USD', strategy: { type: 'momentum', decisionMode: 'mechanical' }, venueType: 'orderbook' },
         },
       }));
 
-      expect(result.accepted).toBe(false);
-      expect(result.error).toMatch(/multiple trading capability connections/i);
-      expect(botRepo.createBot).not.toHaveBeenCalled();
+      expect(result.accepted).toBe(true);
+      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+        connectionId: 'binding-1',
+        venueAccountId: 'va-002',
+      }));
     });
 
     it('rejects create_and_start when resolved binding is not owned by agent user', async () => {
+      const mockDbNotOwned = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbNotOwned,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(false),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-never'),
@@ -1233,7 +1316,18 @@ describe('AgentMessageBroker', () => {
         toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
       });
 
+      const mockDbMaxBots = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbMaxBots,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(2), // at limit
         createBot: vi.fn().mockResolvedValue('bot-over'),
@@ -1267,7 +1361,18 @@ describe('AgentMessageBroker', () => {
         toolPolicy: { manage_bot: MANAGE_BOT_ENABLED_GRANT },
       });
 
+      const mockDbCap = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const botRepo = {
+        db: mockDbCap,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-cap'),
@@ -1569,7 +1674,7 @@ describe('AgentMessageBroker', () => {
           id: 'bot-run',
           userId: 'user-1',
           venueAccountId: 'va-001',
-          connectionId: 'va-001',
+          connectionId: 'binding-1',
           status: 'running',
           config: {
             strategy: { type: 'momentum', decisionMode: 'mechanical', threshold: 2 },
@@ -1613,7 +1718,7 @@ describe('AgentMessageBroker', () => {
         strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
         risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
       }));
-      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'va-001', expect.objectContaining({
+      expect(botRestart).toHaveBeenCalledWith('bot-run', 'user-1', 'binding-1', expect.objectContaining({
         strategy: expect.objectContaining({ type: 'momentum', threshold: 2 }),
         risk: expect.objectContaining({ maxDrawdownPct: 10, maxOrderNotional: '750' }),
       }));
@@ -1824,7 +1929,18 @@ describe('AgentMessageBroker', () => {
     });
 
     describe('execution mode constraint', () => {
+      const execModeDbMock = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+            }),
+          }),
+        }),
+      };
+
       const makeBotRepo = () => ({
+        db: execModeDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
         createBot: vi.fn().mockResolvedValue('bot-exec-mode'),

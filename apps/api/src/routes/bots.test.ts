@@ -483,4 +483,84 @@ describe('bot routes', () => {
     const issues = res.json<{ details: Array<{ path: string[] }> }>().details;
     expect(issues.some((issue) => issue.path.includes('connectionId'))).toBe(true);
   });
+
+  // Regression: Phase 3 — when a user has two Hyperliquid connections each with
+  // different resolvedVenueAccountId values, creating a bot with connection-2
+  // must resolve to va-002, never to va-001. This proves the route does not
+  // accidentally cross-wire connection A to venue account B.
+  it('resolves the correct venue account when user has multiple Hyperliquid connections', async () => {
+    const { botRoutes } = await import('./bots.js');
+    const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
+
+    let capturedBotInsert: Record<string, unknown> | undefined;
+    const createdBot = {
+      id: 'new-bot',
+      userId: TEST_USER_ID,
+      venueAccountId: 'va-002',
+      connectionId: 'connection-2',
+      config: validConfig,
+      status: 'stopped',
+      creatorType: 'user',
+      creatorId: TEST_USER_ID,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      startedAt: null,
+      stoppedAt: null,
+    };
+
+    const db = {
+      transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+        let selectCount = 0;
+        const tx = {
+          execute: vi.fn().mockResolvedValue({ rows: [] }),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockImplementation(() => {
+                selectCount++;
+                // First call: connection lookup for connection-2
+                // Must return its own resolvedVenueAccountId (va-002), not va-001
+                if (selectCount === 1) {
+                  return Promise.resolve([{ id: 'connection-2', resolvedVenueAccountId: 'va-002' }]);
+                }
+                // Subsequent calls: bot limit check — no existing bots
+                return Promise.resolve([]);
+              }),
+            }),
+          }),
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockImplementation((vals: Record<string, unknown>) => {
+              capturedBotInsert = vals;
+              return Promise.resolve(undefined);
+            }),
+          }),
+        };
+        return callback(tx);
+      }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([createdBot]),
+        }),
+      }),
+    };
+
+    const app = Fastify();
+    decorateWithAuth(app, TEST_USER_ID, 'free');
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/bots',
+      payload: {
+        connectionId: 'connection-2',
+        venue: 'hyperliquid',
+        symbol: 'BTC-PERP',
+        config: validConfig,
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    // Critical: venueAccountId must be 'va-002' (connection-2's own), NOT 'va-001'
+    expect(capturedBotInsert!['venueAccountId']).toBe('va-002');
+    expect(capturedBotInsert!['connectionId']).toBe('connection-2');
+  });
 });

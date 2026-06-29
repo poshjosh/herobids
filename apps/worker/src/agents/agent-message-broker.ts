@@ -22,6 +22,8 @@ import {
   extractStrategyFromConfig,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
+import { connections } from '@herobids/db';
+import { eq } from 'drizzle-orm';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -578,7 +580,7 @@ export class AgentMessageBroker {
 
       // Resolve the connection using the same runtime descriptor the agent sees in its prompt.
       // Primary path: connectionId (the agent sees this in its readiness summary).
-      // Fallback: venueAccountId (legacy — deprecated).
+      // Fallback: default trading connection for the agent.
       const capabilityDescriptor = await this.agentRepo.getRuntimeCapabilityDescriptor(agent.id);
       const grantedTradingConnections = capabilityDescriptor.grantedConnectionsByFamily['trading'] ?? [];
       const defaultConnectionId = capabilityDescriptor.defaultConnectionByFamily['trading'];
@@ -597,30 +599,6 @@ export class AgentMessageBroker {
           throw new Error(`Multiple trading capability connections found with connectionId ${payload.connectionId}`);
         }
         connection = byConnectionId[0];
-      } else if (payload.venueAccountId) {
-        // Legacy fallback: resolve by venueAccountId
-        // Venue account lookup is provider-based now — find the connection whose provider matches
-        const [vaForLegacy] = await this.botRepo!.db
-          .select({ venue: venueAccounts.venue })
-          .from(venueAccounts)
-          .where(eq(venueAccounts.id, payload.venueAccountId))
-          .limit(1);
-        if (!vaForLegacy) {
-          throw new Error(`No venue account found for venueAccountId ${payload.venueAccountId}`);
-        }
-        const byProvider = grantedTradingConnections.filter(
-          (candidate) => candidate.provider === vaForLegacy.venue,
-        );
-        if (byProvider.length === 0) {
-          throw new Error(`No trading capability connection found for venue account ${payload.venueAccountId}`);
-        }
-        if (byProvider.length > 1) {
-          // Multiple connections for same provider — use the first ready one, or first active
-          const ready = byProvider.find((c) => c.readiness.effectiveReady);
-          connection = ready ?? byProvider[0];
-        } else {
-          connection = byProvider[0];
-        }
       } else {
         // Default: use the agent's default trading connection
         connection = grantedTradingConnections.find((candidate) => candidate.connectionId === defaultConnectionId);
@@ -629,10 +607,17 @@ export class AgentMessageBroker {
         throw new Error('No ready trading capability connection found for this agent — cannot create bot');
       }
 
-      // Resolve venue account from the connection's provider
-      const venueAccount = await this.botRepo!.getVenueAccountByUserAndProvider(agent.userId, connection.provider);
-      if (!venueAccount) {
-        throw new Error(`Cannot resolve venue account for provider "${connection.provider}" — cannot create bot`);
+      // Resolve venue account from the connection's resolvedVenueAccountId directly.
+      const [connRow] = await this.botRepo!.db
+        .select({
+          resolvedVenueAccountId: connections.resolvedVenueAccountId,
+          venue: connections.provider,
+        })
+        .from(connections)
+        .where(eq(connections.id, connection.connectionId))
+        .limit(1);
+      if (!connRow || !connRow.resolvedVenueAccountId) {
+        throw new Error(`Connection ${connection.connectionId} has no resolved venue account — cannot create bot`);
       }
 
       // Security: verify the connection belongs to the agent's own user before creating the bot.
@@ -654,12 +639,12 @@ export class AgentMessageBroker {
       }
 
       // Stamp venue/venueType unconditionally — agent-provided values are discarded
-      const venueType = venueTypeFromProvider(venueAccount.venue);
+      const venueType = venueTypeFromProvider(connRow.venue);
       if (!venueType) {
-        throw new Error(`Unsupported venue "${venueAccount.venue}" resolved from trading connection — cannot create bot`);
+        throw new Error(`Unsupported venue "${connRow.venue}" resolved from trading connection — cannot create bot`);
       }
       const rawConfig = applyAgentCapitalLimit(payload.config, agent.capital ?? null);
-      rawConfig['venue'] = venueAccount.venue;
+      rawConfig['venue'] = connRow.venue;
       rawConfig['venueType'] = venueType;
 
       // Validate the full config against BotConfigSchema before persisting
@@ -725,7 +710,7 @@ export class AgentMessageBroker {
       const botId = await this.botRepo!.createBot({
         userId: agent.userId,
         connectionId: connection.connectionId,
-        venueAccountId: venueAccount.id,
+        venueAccountId: connRow.resolvedVenueAccountId,
         config: validatedConfig,
         creatorType: 'agent',
         creatorId: agent.id,
@@ -738,7 +723,7 @@ export class AgentMessageBroker {
         await this.botRepo!.markBotRunning(botId);
         await this.botStart(botId, agent.userId, connection.connectionId, {
           ...validatedConfig,
-          venueAccountId: venueAccount.id,
+          venueAccountId: connRow.resolvedVenueAccountId,
         });
         logger.info({ agentId: agent.id, botId }, 'Agent-created bot marked running and enqueued for start');
       }

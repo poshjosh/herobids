@@ -888,16 +888,6 @@ export class BotRepository {
     return row ?? null;
   }
 
-  /** Get a venue account by user + provider (venue). Used to resolve the venue account for a connection. */
-  async getVenueAccountByUserAndProvider(userId: string, provider: string): Promise<{ id: string; venue: string } | null> {
-    const [row] = await this.db
-      .select({ id: venueAccounts.id, venue: venueAccounts.venue })
-      .from(venueAccounts)
-      .where(and(eq(venueAccounts.userId, userId), eq(venueAccounts.venue, provider)))
-      .limit(1);
-    return row ?? null;
-  }
-
   /** Open positions for all bots created by the given actor, plus any agent-direct positions. */
   async getOpenPositionsByCreator(creatorType: string, creatorId: string, botId?: string) {
     const botRows = await this.getBotsForQuery(creatorType, creatorId, undefined, botId);

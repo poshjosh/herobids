@@ -3,7 +3,7 @@ import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, connections, blueprints, PgJournal, fills, journalEvents, venueAccounts } from '@herobids/db';
+import { bots, connections, blueprints, PgJournal, fills, journalEvents } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -100,16 +100,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         await tx.execute(sql`SELECT pg_advisory_xact_lock(1, hashtext(${request.userId}))`);
 
         // Verify connection ownership inside the transaction.
-        const [conn] = await tx.select({ id: connections.id, provider: connections.provider, credentialId: connections.credentialId }).from(connections)
+        const [conn] = await tx.select({ id: connections.id, provider: connections.provider, credentialId: connections.credentialId, resolvedVenueAccountId: connections.resolvedVenueAccountId }).from(connections)
           .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
         if (!conn) return { kind: 'not_found' as const };
-
-        // Resolve venue account for this connection: look up a venue account
-        // matching the user and provider, preferring one linked to the same credential.
-        const [va] = await tx.select({ id: venueAccounts.id }).from(venueAccounts)
-          .where(and(eq(venueAccounts.userId, request.userId), eq(venueAccounts.venue, conn.provider)))
-          .limit(1);
-        if (!va) return { kind: 'missing_venue_account' as const };
+        if (!conn.resolvedVenueAccountId) return { kind: 'missing_venue_account' as const };
 
         // Atomic count-and-insert: re-check the limit inside the lock.
         const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId, request.isAdmin);
@@ -119,7 +113,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
           await tx.insert(bots).values({
             id,
             userId: request.userId,
-            venueAccountId: va.id,
+            venueAccountId: conn.resolvedVenueAccountId,
             connectionId,
             config: resolvedConfig,
             blueprintId,
@@ -154,16 +148,12 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     } else {
       // No plan config — verify connection ownership then insert directly.
-      const [conn] = await db.select({ id: connections.id, provider: connections.provider }).from(connections)
+      const [conn] = await db.select({ id: connections.id, provider: connections.provider, resolvedVenueAccountId: connections.resolvedVenueAccountId }).from(connections)
         .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
       if (!conn) {
         return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
       }
-
-      const [va] = await db.select({ id: venueAccounts.id }).from(venueAccounts)
-        .where(and(eq(venueAccounts.userId, request.userId), eq(venueAccounts.venue, conn.provider)))
-        .limit(1);
-      if (!va) {
+      if (!conn.resolvedVenueAccountId) {
         return reply.status(400).send({ error: 'connection.missing_venue_account', message: 'No venue account found for this connection. Please complete trading setup first.' });
       }
 
@@ -171,7 +161,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         await db.insert(bots).values({
           id,
           userId: request.userId,
-          venueAccountId: va.id,
+          venueAccountId: conn.resolvedVenueAccountId,
           connectionId,
           config: resolvedConfig,
           blueprintId,

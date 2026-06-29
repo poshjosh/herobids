@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { capabilityGrants, venueAccounts, connections } from '@herobids/db';
+import { capabilityGrants, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
@@ -167,6 +167,7 @@ export class AgentIntakeResolver {
         provider: connections.provider,
         profile: connections.profile,
         providerRef: connections.providerRef,
+        resolvedVenueAccountId: connections.resolvedVenueAccountId,
       })
       .from(capabilityGrants)
       .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
@@ -187,21 +188,12 @@ export class AgentIntakeResolver {
       return undefined;
     }
 
-    // Look up venue account matching the connection's provider
-    const [va] = await this.deps.db
-      .select({ id: venueAccounts.id, venue: venueAccounts.venue })
-      .from(venueAccounts)
-      .where(eq(venueAccounts.venue, row.provider))
-      .limit(1);
-
-    const venueAccountId = va?.id;
-    if (!venueAccountId) {
-      logger.warn({ agentId, provider: row.provider }, 'Connection has no associated venue account');
+    if (!row.resolvedVenueAccountId) {
+      logger.warn({ agentId, connectionId: row.connectionId }, 'Connection has no resolved venue account');
       return undefined;
     }
 
-    const venue = va.venue ?? row.provider;
-    return { id: row.connectionId, venue, venueAccountId, profile: row.profile };
+    return { id: row.connectionId, venue: row.provider, venueAccountId: row.resolvedVenueAccountId, profile: row.profile };
   }
 
   private buildPersistence(agentId: string, venueAccountId: string, venue: string): TradingCyclePersistence {
