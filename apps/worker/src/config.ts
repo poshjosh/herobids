@@ -75,6 +75,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   AUTH_JWT_TTL_SECS: { path: 'auth.jwtTtlSecs', type: 'number' },
   GOOGLE_CLIENT_ID: { path: 'auth.googleClientId', type: 'string' },
   GOOGLE_CLIENT_SECRET: { path: 'auth.googleClientSecret', type: 'string' },
+  // Evaluation
+  EVALUATION_STORAGE_ROOT: { path: 'evaluation.storageRoot', type: 'string' },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

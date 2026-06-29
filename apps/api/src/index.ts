@@ -227,6 +227,7 @@ await skillsRoutes(app, db, appConfig.plans);
 await datasetRoutes(app, db, redisClient);
 await exportRoutes(app, db);
 await agentEvaluationRoutes(app, evaluationQueue, db, {
+  storageRoot: appConfig.evaluation.storageRoot,
   maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
   maxAttempts: appConfig.evaluation.maxAttempts ?? 3,
 }, {

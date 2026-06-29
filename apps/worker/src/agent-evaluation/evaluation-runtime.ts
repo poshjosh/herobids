@@ -16,6 +16,8 @@ import { createRedisSnapshotClient, type RedisSnapshotClient } from './collector
 export interface EvaluationRuntimeConfig {
   redis: { host: string; port: number; password?: string; username?: string; db?: number };
   concurrency?: number;
+  /** Root directory for evaluation artifacts */
+  storageRoot: string;
   /** Maximum runtime per job in milliseconds before timing out (default 120_000) */
   maxRuntimeMs?: number;
   /** Thresholds for deterministic analyzers */
@@ -81,6 +83,7 @@ export class EvaluationRuntime {
           includeNarrative,
           narrativeLlm: job.data.narrativeLlm,
           thresholds: this.config.thresholds,
+          storageRoot: this.config.storageRoot,
           attemptNumber: job.attemptsMade + 1,
           maxAttempts: job.opts.attempts ?? 3,
           redis: this.snapshotClient,

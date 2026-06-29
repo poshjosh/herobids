@@ -1241,6 +1241,7 @@ backtestRuntime.start();
 const evaluationRuntime = new EvaluationRuntime(
   {
     redis: redisConnection,
+    storageRoot: appConfig.evaluation.storageRoot,
     concurrency: appConfig.evaluation.concurrency,
     maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
     thresholds: appConfig.evaluation.thresholds,

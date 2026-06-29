@@ -38,6 +38,8 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   TELEGRAM_BOT_TOKEN: { path: 'alerts.telegram.botToken', type: 'string' },
   TELEGRAM_WEBHOOK_SECRET: { path: 'alerts.telegram.webhookSecret', type: 'string' },
   TELEGRAM_WEBHOOK_URL: { path: 'alerts.telegram.webhookUrl', type: 'string' },
+  // Evaluation
+  EVALUATION_STORAGE_ROOT: { path: 'evaluation.storageRoot', type: 'string' },
   // Market data providers
   BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
 

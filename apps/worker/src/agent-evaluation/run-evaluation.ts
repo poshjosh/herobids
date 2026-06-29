@@ -40,6 +40,8 @@ export interface RunEvaluationContext {
   thresholds: EvaluationThresholds;
   /** Optional store override (defaults to FsEvaluationArtifactStore) */
   store?: EvaluationArtifactStore;
+  /** Root directory for evaluation artifacts (from operator config). */
+  storageRoot: string;
   /** Current attempt number (1-based, from BullMQ). Used for retry decisions. */
   attemptNumber: number;
   /** Max total attempts for this job. attemptNumber === maxAttempts means last try. */
@@ -68,7 +70,7 @@ export interface RunEvaluationContext {
  */
 export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
   const { db, runId, agentId, resolvedScope, includeNarrative, thresholds } = ctx;
-  const store = ctx.store ?? new FsEvaluationArtifactStore();
+  const store = ctx.store ?? new FsEvaluationArtifactStore(ctx.storageRoot);
 
   try {
     // ── Step 0: Resolve session timestamps for session-scoped evaluations ─

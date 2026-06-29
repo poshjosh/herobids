@@ -62,6 +62,8 @@ function parseScope(raw: z.infer<typeof TriggerEvaluationSchema>['scope']): Eval
 // ── Route module ────────────────────────────────────────────────────────────
 
 export interface EvaluationRouteConfig {
+  /** Root directory for evaluation artifacts */
+  storageRoot: string;
   /** Max wall-clock time per evaluation run in ms (job timeout). */
   maxRuntimeMs: number;
   /** Max retry attempts for failed evaluation jobs. */
@@ -102,7 +104,7 @@ export async function agentEvaluationRoutes(
   evalConfig: EvaluationRouteConfig,
   narrativeLlmDeps: NarrativeLlmDeps,
 ): Promise<void> {
-  const store = new FsEvaluationArtifactStore();
+  const store = new FsEvaluationArtifactStore(evalConfig.storageRoot);
   const agentRepo = new AgentRepository(db, narrativeLlmDeps.providersYaml);
 
   // ── POST /agents/:id/evaluations — trigger evaluation ──────────────────
