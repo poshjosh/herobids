@@ -4,7 +4,7 @@ import type { CapabilityReadiness, Skill } from '../../lib/api-client.js';
 // They must be kept in sync if the stored-prompt format ever changes.
 const OPERATOR_CONTEXT_MARKER = '\n\nOperator context:\n';
 const LEGACY_PROMPT_CONTEXT = /\sExecution mode: (paper|shadow|live)\.(?:\sTrading capability selected(?: with provider hint (.+?))?\.)?(?:\sRisk tolerance: (conservative|moderate|aggressive)\.)?\s*$/;
-const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading binding:|Risk tolerance:)/;
+const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading (?:binding|connection):|Risk tolerance:)/;
 
 export const EXECUTION_MODE_LABELS: Record<string, string> = {
   paper: 'Paper',

@@ -1,5 +1,5 @@
 /**
- * Resolves swap asset metadata from a trading binding's profile.
+ * Resolves swap asset metadata from a trading connection's profile.
  * Used at agent startup when the venue type is 'swap' — the binding carries
  * the specific asset pair the agent will trade.
  */

@@ -32,7 +32,7 @@ const BotConfigInputSchema = z.object({
     slippageBps: z.number().optional(),
   }).optional(),
   risk: z.record(z.unknown()).optional(),
-  // venue and venueType are omitted — injected from the trading binding by the broker
+  // venue and venueType are omitted — injected from the trading connection by the broker
 });
 
 // --- create_bot ---

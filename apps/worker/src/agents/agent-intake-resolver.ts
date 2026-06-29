@@ -1,6 +1,6 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { capabilityGrants, connections } from '@herobids/db';
+import { agentConnections, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
@@ -168,17 +168,18 @@ export class AgentIntakeResolver {
         providerRef: connections.providerRef,
         resolvedVenueAccountId: connections.resolvedVenueAccountId,
       })
-      .from(capabilityGrants)
-      .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
+      .from(agentConnections)
+      .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+      .innerJoin(sql`providers`, sql`connections.provider = providers.id`)
       .where(
         and(
-          eq(capabilityGrants.agentId, agentId),
-          eq(capabilityGrants.capabilityFamily, 'trading'),
-          eq(capabilityGrants.status, 'active'),
+          eq(agentConnections.agentId, agentId),
+          eq(agentConnections.status, 'active'),
           eq(connections.status, 'active'),
+          sql`providers.capabilities ? 'trading'`,
         ),
       )
-      .orderBy(desc(capabilityGrants.grantedAt))
+      .orderBy(desc(agentConnections.grantedAt))
       .limit(1);
 
     const row = rows[0];

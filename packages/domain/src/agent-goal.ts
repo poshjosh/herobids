@@ -8,7 +8,7 @@
  */
 
 const OPERATOR_CONTEXT_MARKER = '\n\nOperator context:\n';
-const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading binding:|Risk tolerance:)/;
+const GENERATED_OPERATOR_CONTEXT_LINE = /^- (Selected skills:|Trading capability selected\.|Selected trading (?:binding|connection):|Risk tolerance:)/;
 
 // Matches the older inline-suffix format produced before the marker convention.
 const LEGACY_INLINE_CONTEXT =
