@@ -149,9 +149,19 @@ export async function setupRoutes(
         label,
         status: 'active',
         credentialId,
+        resolvedVenueAccountId: tradingResult?.venueAccountId ?? null,
         createdAt: now,
       },
     };
+
+    if (tradingResult) {
+      response.venueAccount = {
+        id: tradingResult.venueAccountId,
+        venue: provider,
+        label,
+        createdAt: now,
+      };
+    }
 
     return reply.status(201).send(response);
   });

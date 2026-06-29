@@ -1,13 +1,14 @@
 import crypto from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts } from '@herobids/db';
+import { connections, venueAccounts } from '@herobids/db';
 
 export interface TradingProvisionResult {
   venueAccountId: string;
 }
 
 /** Minimal database interface required for provisioning — accepts both a full Database and a PgTransaction. */
-type Insertable = Pick<Database, 'insert'>;
+type TxClient = Pick<Database, 'insert' | 'update'>;
 
 /**
  * Provisions a venue account for a trading connection.
@@ -15,7 +16,7 @@ type Insertable = Pick<Database, 'insert'>;
  * the directly grantable entity.
  */
 export async function provisionTradingTarget(
-  tx: Insertable,
+  tx: TxClient,
   opts: {
     userId: string;
     connectionId: string;
@@ -37,6 +38,11 @@ export async function provisionTradingTarget(
     createdAt: opts.now,
     updatedAt: opts.now,
   });
+
+  await tx
+    .update(connections)
+    .set({ resolvedVenueAccountId: venueAccountId, updatedAt: opts.now })
+    .where(eq(connections.id, opts.connectionId));
 
   return { venueAccountId };
 }

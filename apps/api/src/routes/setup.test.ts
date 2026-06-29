@@ -37,11 +37,17 @@ vi.mock('../trading-provisioner.js', () => ({
 let insertedValues: Record<string, unknown>[] = [];
 let transactionCallCount = 0;
 
-function buildMockDb(credentialRows: unknown[] = [], venueAccountRows: unknown[] = []) {
+function buildMockDb(...selectResults: unknown[][]) {
   insertedValues = [];
   transactionCallCount = 0;
   let selectCallIdx = 0;
-  const allSelectResults = [credentialRows, venueAccountRows];
+  const allSelectResults = selectResults.length > 0 ? selectResults : [[], []];
+
+  const mockUpdateChain = {
+    set: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
+  };
 
   return {
     select: vi.fn().mockImplementation(() => ({
@@ -55,6 +61,7 @@ function buildMockDb(credentialRows: unknown[] = [], venueAccountRows: unknown[]
         return Promise.resolve();
       }),
     })),
+    update: vi.fn().mockReturnValue(mockUpdateChain),
     transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       transactionCallCount++;
       return fn({
@@ -70,6 +77,7 @@ function buildMockDb(credentialRows: unknown[] = [], venueAccountRows: unknown[]
             return Promise.resolve();
           }),
         })),
+        update: vi.fn().mockReturnValue({ ...mockUpdateChain }),
       });
     }),
   } as any;
@@ -166,7 +174,7 @@ describe('POST /setup/provider-link', () => {
     // Two inserts: credential + connection
     expect(insertedValues).toHaveLength(2);
     const [credInsert, connInsert] = insertedValues;
-    expect(credInsert!['venue']).toBe('hyperliquid');
+    expect(credInsert!['provider']).toBe('hyperliquid');
     expect(credInsert!['label']).toBe('My HL Setup');
     expect(connInsert!['provider']).toBe('hyperliquid');
     expect(connInsert!['credentialId']).toBe(credInsert!['id']);
@@ -176,6 +184,7 @@ describe('POST /setup/provider-link', () => {
     expect(body['connection']).toBeDefined();
     expect(body['tradingBinding']).toBeUndefined();
     expect(body['venueAccount']).toBeUndefined();
+    expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
 
   it('accepts custom non-trading providers such as gmail when capability is omitted', async () => {
@@ -202,6 +211,7 @@ describe('POST /setup/provider-link', () => {
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
     expect(body['tradingBinding']).toBeUndefined();
+    expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
 
   it('creates credential, connection, venue account, and binding for capability=trading', async () => {
@@ -223,6 +233,10 @@ describe('POST /setup/provider-link', () => {
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
     expect(body['venueAccount']).toBeDefined();
+    expect(body['venueAccount']).toMatchObject({
+      id: 'va-new',
+      venue: 'hyperliquid',
+    });
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBe('va-new');
   });
 
@@ -368,7 +382,7 @@ describe('POST /setup/provider-link', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('enforces trading binding plan limit for capability=trading', async () => {
+  it('enforces venue account plan limit for capability=trading', async () => {
     const plansConfig = {
       defaultPlanId: 'free',
       plans: {
@@ -391,7 +405,7 @@ describe('POST /setup/provider-link', () => {
               maxConnections: 5,
               maxCredentials: 5,
               maxBindings: 1,
-              maxVenueAccounts: 5,
+              maxVenueAccounts: 1,
               maxConcurrentBacktests: 1,
               liveEnabled: false,
             },
@@ -401,38 +415,9 @@ describe('POST /setup/provider-link', () => {
       },
     };
 
-    let selectCallIdx = 0;
-    const db = {
-      select: vi.fn().mockImplementation(() => ({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockImplementation(() => {
-            selectCallIdx++;
-            if (selectCallIdx === 4) {
-              return [{ id: 'binding-1' }];
-            }
-            return [];
-          }),
-        }),
-      })),
-      insert: vi.fn().mockImplementation(() => ({
-        values: vi.fn().mockResolvedValue(undefined),
-      })),
-      transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
-        execute: vi.fn().mockResolvedValue([]),
-        select: vi.fn().mockImplementation(() => ({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockImplementation(() => {
-              selectCallIdx++;
-              if (selectCallIdx === 4) {
-                return [{ id: 'binding-1' }];
-              }
-              return [];
-            }),
-          }),
-        })),
-        insert: vi.fn().mockImplementation(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
-      })),
-    } as any;
+    // Return an existing venue account so that the limit (1) is hit.
+    // Three select result slots: [credentials, connections, venueAccounts]
+    const db = buildMockDb([], [], [{ id: 'existing-va' }]);
 
     const app = Fastify();
     decorateWithAuth(app);
