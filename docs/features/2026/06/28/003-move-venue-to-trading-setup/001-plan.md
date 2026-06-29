@@ -205,3 +205,7 @@ Total estimated scope: ~4 files modified, 1 new file created, ~50–80 lines of 
 
 - **M3**: Duplicate paper-mode-swap warning JSX in two locations (when connections selected and when no connections). Extract to shared `const paperSwapWarning` to avoid divergence.
 - **L5**: Venue derivation uses only `connectionIds[0]`. If multiple connections with different providers are selected, only the first determines venue. Pre-existing, not blocking.
+
+### [Task 4] i18n Cleanup
+
+- **L6**: Venue validation error in `form-validation.ts:100` is a hardcoded English string (`'Venue is required for live or shadow trading.'`). Arabic/Hindi users see English-only validation error. Consider wrapping in `intl.formatMessage` with a trading-setup namespace key.

@@ -595,7 +595,6 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.venue.placeholder': 'اختر المنصة…',
   'agents.technical.filters.venue.hyperliquid': 'Hyperliquid',
   'agents.technical.filters.venue.jupiter': 'Jupiter',
-  'agents.technical.filters.venue.required': 'الرجاء اختيار منصة.',
   'agents.technical.filters.venueType': 'نوع المنصة',
   'agents.technical.filters.venueTypeAuto': 'تلقائي',
   'agents.technical.filters.minVolume': 'الحد الأدنى لحجم 24 ساعة (USD)',
