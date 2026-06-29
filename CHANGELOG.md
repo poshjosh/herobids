@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] — 2026-06-29
+
+### Added
+- **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers
+  - Added evaluation API methods to `apps/web/src/lib/api-client.ts` (`list`, `get`, `trigger`, `listArtifacts`, `getArtifactUrl`)
+  - Created `AgentEvaluations` component with collapsible `<details>` section, run list with status/scores, inline scorecard, findings table, and artifact downloads
+  - Created `AgentEvaluationReport` component for inline Markdown report rendering using `react-markdown`
+  - Integrated `AgentEvaluations` section into `AgentDetailPage` (after Activity Timeline)
+  - Added i18n keys under `agents.evaluations.*` namespace
+  - Added `@herobids/domain` as a workspace dependency of `@herobids/web`
+
 ## [Unreleased] — 2026-06-28
 ### Added
 - **Agent Evaluation (Level 1)** — Full implementation across 10 phases

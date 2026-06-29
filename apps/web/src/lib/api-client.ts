@@ -1,6 +1,11 @@
 import { config } from './config.js';
 import { getToken, clearToken } from './session.js';
-import type { ProviderCatalogResponse } from '@herobids/domain';
+import type {
+  ProviderCatalogResponse,
+  EvaluationRunRecord,
+  EvaluationArtifactRef,
+  EvaluationScope,
+} from '@herobids/domain';
 
 export class ApiError extends Error {
   constructor(
@@ -1004,6 +1009,21 @@ export const agents = {
     if (params?.offset !== undefined) qs.set('offset', String(params.offset));
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return request<{ agentId: string; family: 'trading'; items: AgentPosition[]; limit: number; offset: number }>(`/agents/${id}/capabilities/trading/positions${query}`);
+  },
+  evaluations: {
+    list: (agentId: string, opts?: { limit?: number; offset?: number }) =>
+      request<EvaluationRunRecord[]>(`/agents/${agentId}/evaluations?limit=${opts?.limit ?? 50}&offset=${opts?.offset ?? 0}`),
+    get: (agentId: string, runId: string) =>
+      request<EvaluationRunRecord>(`/agents/${agentId}/evaluations/${runId}`),
+    trigger: (agentId: string, scope?: EvaluationScope) =>
+      request<{ runId: string }>(`/agents/${agentId}/evaluations`, {
+        method: 'POST',
+        body: JSON.stringify({ scope: scope ?? { type: 'latestSession' } }),
+      }),
+    listArtifacts: (agentId: string, runId: string) =>
+      request<EvaluationArtifactRef[]>(`/agents/${agentId}/evaluations/${runId}/artifacts`),
+    getArtifactUrl: (agentId: string, runId: string, artifactName: string) =>
+      `${config.apiBaseUrl}/agents/${agentId}/evaluations/${runId}/artifacts/${artifactName}`,
   },
 };
 
