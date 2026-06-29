@@ -405,3 +405,96 @@ Delete it last, after the remaining live readers and writers are moved to:
 - `connections.resolvedVenueAccountId`
 
 If you drop the table before that migration, the current app will fail in capability readiness, connection revoke refresh, and any remaining legacy grant-service path.
+
+---
+
+# Appendix: Outstanding Issues (Post-Implementation)
+
+All 7 phases have been implemented and committed. The following non-blocking issues remain.
+
+## Phase 1 Outstanding Issues
+
+### Re-Review — Medium (not blocking)
+1. **M1** — `TradingAssignmentRow` extends `RuntimeAssignmentRow` but query selects `id` not `assignmentId`, creating latent type gap (harmless now, no code accesses `.assignmentId` on these rows)
+2. **M2** — `chooseLatestAssignment` in `trading.ts` duplicates shared `chooseLatest` — can be unified by aliasing column as `assignmentId`
+
+### Re-Review — Low (not blocking)
+3. **L1** — O(n log n) sort used where O(n) scan suffices (no perf impact — tiny arrays)
+4. **L2** — No unit tests for `chooseLatest` / `deriveReadiness`
+
+---
+
+## Phase 2 Outstanding Issues
+
+### Medium (not blocking)
+1. **setup.test.ts:311-312** — Duplicate assertion in Jupiter trading test; should assert venueAccount and resolvedVenueAccountId instead
+2. **trading-provisioner.ts vs setup.test.ts** — Test mock returns `connectionId` property not in `TradingProvisionResult`; misleading
+3. **setup.ts:38** — Stale JSDoc references "trading binding" instead of resolvedVenueAccountId
+
+### Low (not blocking)
+4. **setup.test.ts:148** — Stale `tradingBinding` assertion key still referenced
+5. **connections.test.ts** — Missing assertion that generic POST /connections returns `resolvedVenueAccountId = null`
+6. **trading-provisioner.ts:16-17** — Transition comment (good practice, no action needed)
+7. **L3** — Stale dist build artifacts (gitignored, `pnpm build` regenerates)
+8. **L4** — `_redisClient` parameter dead in `tradingCapabilityRoutes` (harmless)
+9. **L5** — Audit endpoint returns ascending chronological order; UI might prefer descending
+
+---
+
+## Phase 3 Outstanding Issues
+
+### Low (not blocking)
+1. Missing code comment explaining why `agent_connections` rows aren't also marked `revoked` on connection revoke
+2. UPDATE and SELECT not wrapped in a transaction during connection revoke — benign race, self-healing
+
+---
+
+## Phase 4 Outstanding Issues
+
+### Medium (not blocking)
+1. **M3** — `i18n-regressions.test.ts` references stale key `agents.capabilityPage.noBindings` (should be `noConnections`); regression test vacuously passes
+
+### Low (not blocking)
+2. **L1** — Test name "excludes a connection whose status is revoked (connectionStatus revoked is irrelevant)" is slightly misleading
+3. **L2** — `ConnectionSummary` type declares `connectionStatus` as required but generic endpoint doesn't return it — shared type for two different endpoints
+
+---
+
+## Phase 5 Outstanding Issues
+
+### Medium (not blocking)
+1. Stale compiled output in `packages/db/dist/schema/` — orphaned `.d.ts`/`.js` for deleted capability-grants/capability-grant-audit. Run `pnpm --filter @herobids/db clean` + `pnpm build` to purge.
+2. `agent-native-decision.integration.test.ts` TRUNCATE still references `capability_grants` — now resolved in Phase 6.
+
+### Low (not blocking)
+3. Stale comment in `apps/api/src/routes/agents.ts:483` mentioning `CapabilityGrant` (worker sandbox type — distinct from platform contract). Clarify with note.
+
+---
+
+## Phase 6 Outstanding Issues
+
+### Medium (not blocking)
+1. `capabilityGrantRows` is dead test data in `agents.test.ts` — 7 tests pass it but mock doesn't use it. Rename to `agentConnectionRows` at call sites.
+2. Stale "capability grant" / "binding" comments in `agents.test.ts` (lines ~624, ~688, ~710)
+
+### Low (not blocking)
+3. Pre-existing build errors in `@herobids/api` (unrelated to this migration):
+   - `credentials.ts:85` — `'venue' does not exist in type` (insert schema mismatch)
+   - `credentials.ts:189` — `'provider' does not exist in type 'CredentialRotatedPayload'`
+   - `credentials.ts:274` — `Property 'venue' does not exist`
+   - `agents.ts:26` — `'venueAccounts' is declared but never read`
+   - `trading.ts:149` — `'budgets' is declared but never read`
+
+---
+
+## Phase 8 Outstanding Issues (pre-existing)
+
+### Medium (not blocking — follow-up sweep)
+1. Test descriptions in unchanged test files still use "trading binding"
+2. **M3** — Stale "grant"/"binding" terminology in domain types and test descriptions (partially addressed)
+3. **N1** — Skill assignment sync is outside agent mutation transaction — rare partial-write risk
+
+### Low
+4. Stale comment in `apps/api/src/index.ts` line 207
+5. Script comments in `agent-trade-test.ts` and `bot-trade-test.ts` use "trading binding"
+6. **N2** — Test descriptions use stale "binding" language
