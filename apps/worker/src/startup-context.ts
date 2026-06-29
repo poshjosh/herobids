@@ -20,6 +20,7 @@ export class BotStartupError extends Error {
       | 'missing_connection_id'
       | 'connection_not_found'
       | 'connection_not_usable'
+      | 'connection_venue_account_mismatch'
       | 'missing_source_venue_account'
       | 'source_venue_account_not_found',
     message: string,
@@ -62,9 +63,7 @@ function requiresSourceVenueAccount(venue: string, venueType: 'orderbook' | 'swa
 }
 
 function resolveConnectionId(bot: NonNullable<BotRow>, rawConfig: Record<string, unknown>): string {
-  return readStringValue(rawConfig, 'connectionId')
-    ?? (bot as Record<string, unknown>).connectionId as string
-    ?? '';
+  return readStringValue(rawConfig, 'connectionId') ?? bot.connectionId ?? '';
 }
 
 export async function resolveBotStartupContext(params: ResolveBotStartupContextParams): Promise<BotStartupContext> {
@@ -82,6 +81,7 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     .select({
       provider: connections.provider,
       connectionStatus: connections.status,
+      resolvedVenueAccountId: connections.resolvedVenueAccountId,
     })
     .from(connections)
     .where(eq(connections.id, connectionId))
@@ -92,10 +92,22 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
   }
 
   if (connRow.connectionStatus !== 'active') {
-    throw new BotStartupError('connection_not_usable', `Connection ${connectionId} is not usable for startup — connection is inactive`);
+    throw new BotStartupError('connection_not_usable', `Connection ${connectionId} is not usable for startup — status is "${connRow.connectionStatus}" (expected "active")`);
   }
 
-  // Look up venue account from the bot row
+  // Validate that the bot's venue account matches the connection's resolved venue account.
+  // A mismatch means the bot was created before the connection model was updated and could
+  // silently trade against the wrong account.
+  const botVenueAccountId: string | null = bot.venueAccountId ?? null;
+  const connResolvedVaId = connRow.resolvedVenueAccountId ?? null;
+  if (botVenueAccountId !== connResolvedVaId) {
+    throw new BotStartupError(
+      'connection_venue_account_mismatch',
+      `Bot ${params.botId} venue account (${botVenueAccountId ?? 'none'}) does not match connection ${connectionId} resolved venue account (${connResolvedVaId ?? 'none'}). The bot must be recreated with the correct connection.`,
+    );
+  }
+
+  // Look up venue account using the connection's resolved venue account as the authoritative source
   const [vaRow] = await params.db
     .select({
       id: venueAccounts.id,
@@ -106,7 +118,7 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
       credentialId: venueAccounts.credentialId,
     })
     .from(venueAccounts)
-    .where(eq(venueAccounts.id, (bot as Record<string, unknown>).venueAccountId as string))
+    .where(eq(venueAccounts.id, connRow.resolvedVenueAccountId ?? ''))
     .limit(1);
 
   const resolvedVenueAccountId = vaRow?.id ?? null;

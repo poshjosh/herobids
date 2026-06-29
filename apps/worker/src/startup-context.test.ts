@@ -3,29 +3,21 @@ import type { Database, BotRepository } from '@herobids/db';
 import { resolveBotStartupContext, BotStartupError } from './startup-context.js';
 
 function makeDbMock(connectionRows: unknown[], venueAccountRows: unknown[]) {
-  let selectCall = 0;
-  const select = vi.fn().mockImplementation(() => {
-    selectCall += 1;
-    if (selectCall === 1) {
-      return {
-        from: vi.fn().mockReturnValue({
-          innerJoin: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue(connectionRows),
-            }),
-          }),
+  const select = vi.fn()
+    .mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(connectionRows),
         }),
-      };
-    }
-
-    return {
+      }),
+    })
+    .mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
           limit: vi.fn().mockResolvedValue(venueAccountRows),
         }),
       }),
-    };
-  });
+    });
 
   return { select } as unknown as Database;
 }
@@ -37,7 +29,6 @@ describe('resolveBotStartupContext', () => {
         provider: 'hyperliquid',
         connectionId: 'conn-1',
         resolvedVenueAccountId: 'va-1',
-        bindingStatus: 'active',
         connectionStatus: 'active',
       },
     ], [
@@ -54,7 +45,7 @@ describe('resolveBotStartupContext', () => {
       getBotById: vi.fn().mockResolvedValue({
         id: 'bot-1',
         userId: 'user-1',
-        venueAccountId: 'va-legacy',
+        venueAccountId: 'va-1',
         connectionId: 'binding-bot',
       }),
     } satisfies Pick<BotRepository, 'getBotById'>;
@@ -92,7 +83,6 @@ describe('resolveBotStartupContext', () => {
         provider: 'jupiter',
         connectionId: 'conn-2',
         resolvedVenueAccountId: 'va-2',
-        bindingStatus: 'active',
         connectionStatus: 'active',
       },
     ], [
@@ -135,7 +125,6 @@ describe('resolveBotStartupContext', () => {
         provider: 'jupiter',
         connectionId: 'conn-3',
         resolvedVenueAccountId: null,
-        bindingStatus: 'active',
         connectionStatus: 'active',
       },
     ], []);
@@ -143,19 +132,21 @@ describe('resolveBotStartupContext', () => {
       getBotById: vi.fn().mockResolvedValue({
         id: 'bot-3',
         userId: 'user-3',
-        venueAccountId: 'va-3',
         connectionId: 'binding-3',
       }),
     } satisfies Pick<BotRepository, 'getBotById'>;
 
-    await expect(resolveBotStartupContext({
+    const err = await resolveBotStartupContext({
       db,
       botRepo,
       botId: 'bot-3',
       rawConfig: { connectionId: 'binding-3', userId: 'user-3' },
       venue: 'jupiter',
       venueType: 'swap',
-    })).rejects.toThrow('missing_source_venue_account');
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('missing_source_venue_account');
   });
 
   it('throws BotStartupError with code connection_not_found for an unknown connection', async () => {
@@ -188,7 +179,6 @@ describe('resolveBotStartupContext', () => {
         provider: 'hyperliquid',
         connectionId: 'conn-5',
         resolvedVenueAccountId: null,
-        bindingStatus: 'active',
         connectionStatus: 'active',
       },
     ], []);
@@ -196,7 +186,6 @@ describe('resolveBotStartupContext', () => {
       getBotById: vi.fn().mockResolvedValue({
         id: 'bot-5',
         userId: 'user-5',
-        venueAccountId: 'va-5',
         connectionId: 'binding-5',
       }),
     } satisfies Pick<BotRepository, 'getBotById'>;
@@ -212,5 +201,119 @@ describe('resolveBotStartupContext', () => {
 
     expect(err).toBeInstanceOf(BotStartupError);
     expect((err as BotStartupError).code).toBe('missing_source_venue_account');
+  });
+
+  it('throws connection_venue_account_mismatch when bot.venueAccountId differs from connection.resolvedVenueAccountId', async () => {
+    const db = makeDbMock([
+      {
+        provider: 'hyperliquid',
+        connectionId: 'conn-mismatch',
+        resolvedVenueAccountId: 'va-correct',
+        connectionStatus: 'active',
+      },
+    ], []);
+    const botRepo = {
+      getBotById: vi.fn().mockResolvedValue({
+        id: 'bot-mismatch',
+        userId: 'user-mismatch',
+        venueAccountId: 'va-wrong',
+        connectionId: 'conn-mismatch',
+      }),
+    } satisfies Pick<BotRepository, 'getBotById'>;
+
+    const err = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId: 'bot-mismatch',
+      rawConfig: { connectionId: 'conn-mismatch' },
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('connection_venue_account_mismatch');
+    expect((err as BotStartupError).message).toContain('va-wrong');
+    expect((err as BotStartupError).message).toContain('va-correct');
+  });
+
+  it('throws connection_venue_account_mismatch when bot has venueAccountId but connection resolvedVenueAccountId is null', async () => {
+    const db = makeDbMock([
+      {
+        provider: 'hyperliquid',
+        connectionId: 'conn-va-null',
+        resolvedVenueAccountId: null,
+        connectionStatus: 'active',
+      },
+    ], []);
+    const botRepo = {
+      getBotById: vi.fn().mockResolvedValue({
+        id: 'bot-va-null',
+        userId: 'user-va-null',
+        venueAccountId: 'va-from-bot',
+        connectionId: 'conn-va-null',
+      }),
+    } satisfies Pick<BotRepository, 'getBotById'>;
+
+    const err = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId: 'bot-va-null',
+      rawConfig: { connectionId: 'conn-va-null' },
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('connection_venue_account_mismatch');
+  });
+
+  it('throws BotStartupError with code bot_not_found when getBotById returns null', async () => {
+    const db = makeDbMock([], []);
+    const botRepo = {
+      getBotById: vi.fn().mockResolvedValue(null),
+    } satisfies Pick<BotRepository, 'getBotById'>;
+
+    const err = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId: 'bot-nonexistent',
+      rawConfig: { connectionId: 'any' },
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('bot_not_found');
+  });
+
+  it('throws BotStartupError with code connection_not_usable when connection status is revoked', async () => {
+    const db = makeDbMock([
+      {
+        provider: 'hyperliquid',
+        connectionId: 'conn-revoked',
+        resolvedVenueAccountId: 'va-1',
+        connectionStatus: 'revoked',
+      },
+    ], []);
+    const botRepo = {
+      getBotById: vi.fn().mockResolvedValue({
+        id: 'bot-revoked',
+        userId: 'user-1',
+        venueAccountId: 'va-1',
+        connectionId: 'conn-revoked',
+      }),
+    } satisfies Pick<BotRepository, 'getBotById'>;
+
+    const err = await resolveBotStartupContext({
+      db,
+      botRepo,
+      botId: 'bot-revoked',
+      rawConfig: { connectionId: 'conn-revoked' },
+      venue: 'hyperliquid',
+      venueType: 'orderbook',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BotStartupError);
+    expect((err as BotStartupError).code).toBe('connection_not_usable');
   });
 });
