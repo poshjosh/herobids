@@ -57,10 +57,11 @@ export {
   markRunning,
   markSucceeded,
   markFailed,
+  markRetrying,
   markTimedOut,
   getRun,
   listByAgent,
 } from './agent-evaluation-repository.js';
 export { EVALUATION_QUEUE_NAME } from './agent-evaluation-job.js';
-export type { EvaluationJobData } from './agent-evaluation-job.js';
+export type { EvaluationJobData, ResolvedNarrativeLlmConfig } from './agent-evaluation-job.js';
 export { FsEvaluationArtifactStore } from './agent-evaluation-storage-fs.js';

@@ -19,6 +19,11 @@ import type { EvaluationScope, EvaluationTrigger } from '@herobids/domain';
 
 // ── Schemas ─────────────────────────────────────────────────────────────────
 
+const NarrativeLlmSchema = z.object({
+  provider: z.string().optional(),
+  model: z.string(),
+});
+
 const TriggerEvaluationSchema = z.object({
   scope: z.object({
     type: z.enum(['session', 'latestSession', 'timeRange', 'allTime']),
@@ -27,6 +32,7 @@ const TriggerEvaluationSchema = z.object({
     to: z.string().datetime().optional(),
   }).optional().default({ type: 'latestSession' }),
   includeNarrative: z.boolean().optional().default(false),
+  narrativeLlm: NarrativeLlmSchema.optional(),
 });
 
 const ListQuerySchema = z.object({
@@ -114,6 +120,15 @@ export async function agentEvaluationRoutes(
         }
       }
 
+      // Validate narrativeLlm constraints (parsed.success guaranteed by early return above)
+      const { includeNarrative, narrativeLlm } = parsed.data;
+      if (!includeNarrative && narrativeLlm) {
+        return reply.status(400).send({
+          error: 'validation_error',
+          message: 'narrativeLlm must not be provided when includeNarrative is false',
+        });
+      }
+
       // Resolve scope (expands latestSession → concrete session)
       let resolved: Awaited<ReturnType<typeof resolveScope>>;
       try {
@@ -168,6 +183,7 @@ export async function agentEvaluationRoutes(
         agentId: id,
         resolvedScope: resolved,
         includeNarrative: parsed.data.includeNarrative,
+        narrativeLlm: undefined, // Phase 3 will resolve and set this
       }, {
         attempts: evalConfig.maxAttempts,
         backoff: { type: 'exponential', delay: 5000 },

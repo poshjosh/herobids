@@ -6,6 +6,22 @@ import type { ResolvedEvaluationScope } from '@herobids/domain';
 export const EVALUATION_QUEUE_NAME = 'agent-evaluations';
 
 /**
+ * Fully resolved narrative LLM configuration carried in the job payload.
+ * This is resolved at enqueue time so the worker never needs to
+ * re-derive provider/model selection.
+ */
+export interface ResolvedNarrativeLlmConfig {
+  provider: string;
+  model: string;
+  /** Base URL override (set when using operator-configured provider). */
+  baseUrl?: string;
+  /** LLM call timeout in milliseconds. */
+  timeoutMs: number;
+  /** Maximum tokens for the narrative generation response. */
+  maxTokens: number;
+}
+
+/**
  * Job data contract shared by the API (enqueue) and worker (consume).
  *
  * The resolved scope is always concrete — `latestSession` has been expanded
@@ -16,4 +32,10 @@ export interface EvaluationJobData {
   agentId: string;
   resolvedScope: ResolvedEvaluationScope;
   includeNarrative: boolean;
+  /**
+   * Fully resolved narrative LLM config.
+   * Phase 2: always undefined (placeholder).
+   * Phase 3: resolved at enqueue time when includeNarrative is true and resolution succeeds.
+   */
+  narrativeLlm?: ResolvedNarrativeLlmConfig;
 }

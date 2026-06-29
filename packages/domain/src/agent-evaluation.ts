@@ -110,6 +110,16 @@ export interface EvaluationRunResult {
   };
 }
 
+// ── Narrative LLM override ─────────────────────────────────────────────────
+
+/** Caller-specified narrative LLM override. */
+export interface NarrativeLlmRequest {
+  /** Provider override. If omitted, uses the resolved default provider. */
+  provider?: string;
+  /** Model override. Always required when narrativeLlm is specified. */
+  model: string;
+}
+
 // ── Run request ─────────────────────────────────────────────────────────────
 
 export interface EvaluationRunRequest {
@@ -119,6 +129,8 @@ export interface EvaluationRunRequest {
   requester: EvaluationRequester;
   /** If true, include optional LLM narrative in REPORT.md */
   includeNarrative?: boolean;
+  /** Optional narrative LLM override (only valid when includeNarrative is true) */
+  narrativeLlm?: NarrativeLlmRequest;
 }
 
 // ── Persisted run record ────────────────────────────────────────────────────

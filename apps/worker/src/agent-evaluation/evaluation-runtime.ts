@@ -1,12 +1,14 @@
 import { Worker } from 'bullmq';
+import Redis from 'ioredis';
 import pino from 'pino';
 import type { Database } from '@herobids/db';
 import { EVALUATION_QUEUE_NAME, markRunning, markTimedOut } from '@herobids/db';
 import { agentEvaluations } from '@herobids/db';
-import { eq, and, sql, lt } from 'drizzle-orm';
+import { eq, and, lt } from 'drizzle-orm';
 import type { EvaluationJobData } from '@herobids/db';
 import type { EvaluationThresholds } from '@herobids/domain';
 import { runEvaluation } from './run-evaluation.js';
+import { createRedisSnapshotClient, type RedisSnapshotClient } from './collectors/redis-snapshot.js';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,7 @@ const logger = pino({ name: 'evaluation-runtime' });
 export class EvaluationRuntime {
   private worker: Worker<EvaluationJobData> | undefined;
   private reaperInterval: ReturnType<typeof setInterval> | undefined;
+  private snapshotClient: RedisSnapshotClient | undefined;
 
   constructor(
     private readonly config: EvaluationRuntimeConfig,
@@ -41,11 +44,21 @@ export class EvaluationRuntime {
   start(): void {
     const maxRuntimeMs = this.config.maxRuntimeMs ?? 120_000;
 
+    // Create a dedicated Redis client for snapshot collection (best-effort).
+    // Uses the same connection config as BullMQ but is a separate connection
+    // so snapshot queries don't interfere with job processing.
+    try {
+      const snapshotRedis = new Redis(this.config.redis);
+      this.snapshotClient = createRedisSnapshotClient(snapshotRedis);
+    } catch {
+      logger.warn('Could not create Redis snapshot client — snapshots will be skipped');
+    }
+
     this.worker = new Worker<EvaluationJobData>(
       EVALUATION_QUEUE_NAME,
       async (job) => {
         const { runId, agentId, resolvedScope, includeNarrative } = job.data;
-        logger.info({ runId, agentId, scope: resolvedScope }, 'Starting evaluation run');
+        logger.info({ runId, agentId, scope: resolvedScope, attempt: job.attemptsMade + 1 }, 'Starting evaluation run');
 
         // Transition queued → running
         const started = await markRunning(this.db, runId);
@@ -54,14 +67,20 @@ export class EvaluationRuntime {
           return;
         }
 
-        // Run full evaluation pipeline
+        // Run full evaluation pipeline. On failure, runEvaluation handles
+        // the retry decision (markRetrying vs markFailed) based on attempt
+        // count, then re-throws so BullMQ can schedule a retry if needed.
         await runEvaluation({
           db: this.db,
           runId,
           agentId,
           resolvedScope,
           includeNarrative,
+          narrativeLlm: job.data.narrativeLlm,
           thresholds: this.config.thresholds,
+          attemptNumber: job.attemptsMade + 1,
+          maxAttempts: job.opts.attempts ?? 3,
+          redis: this.snapshotClient,
         });
 
         logger.info({ runId, agentId }, 'Evaluation completed');
