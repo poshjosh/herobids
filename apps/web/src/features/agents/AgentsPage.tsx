@@ -337,8 +337,16 @@ function CreateAgentFlow({
         }
         return state;
       });
+    } else if (intent.connectionIds.length === 0) {
+      // Clear derived venue when all connections are deselected
+      setIntent((state) => {
+        if (state.venue !== '' || state.venueType !== '') {
+          return { ...state, venue: '', venueType: '' };
+        }
+        return state;
+      });
     }
-  }, [selectedConnection?.provider]);
+  }, [selectedConnection?.provider, intent.connectionIds.length]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -602,31 +610,6 @@ function CreateAgentFlow({
                         {intl.formatMessage({ id: 'agents.create.setupTradingNow' })}
                       </Button>
                     </div>
-                    {intent.executionMode === 'paper' && (
-                      <div data-field="venue">
-                        <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
-                        <select
-                          value={intent.venue}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const vt = VENUE_TYPE_MAP[v] ?? '';
-                            clearFieldError('venue');
-                            setIntent((state) => ({ ...state, venue: v, venueType: vt }));
-                          }}
-                          style={{ ...inputStyle, cursor: 'pointer' }}
-                        >
-                          <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
-                          <option value="hyperliquid">{intl.formatMessage({ id: 'agents.technical.filters.venue.hyperliquid' })}</option>
-                          <option value="jupiter">{intl.formatMessage({ id: 'agents.technical.filters.venue.jupiter' })}</option>
-                        </select>
-                        {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
-                        {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
-                          <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
-                            Paper mode is not supported for swap venues. Open <strong>Advanced Settings → Trading Setup</strong> and switch the execution mode to Shadow or Live.
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <>
@@ -705,6 +688,31 @@ function CreateAgentFlow({
                       </div>
                     )}
                   </>
+                )}
+                {intent.executionMode === 'paper' && intent.connectionIds.length === 0 && (
+                  <div data-field="venue">
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
+                    <select
+                      value={intent.venue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const vt = VENUE_TYPE_MAP[v] ?? '';
+                        clearFieldError('venue');
+                        setIntent((state) => ({ ...state, venue: v, venueType: vt }));
+                      }}
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                    >
+                      <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
+                      <option value="hyperliquid">{intl.formatMessage({ id: 'agents.technical.filters.venue.hyperliquid' })}</option>
+                      <option value="jupiter">{intl.formatMessage({ id: 'agents.technical.filters.venue.jupiter' })}</option>
+                    </select>
+                    {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
+                    {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
+                      <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
+                        Paper mode is not supported for swap venues. Open <strong>Advanced Settings → Trading Setup</strong> and switch the execution mode to Shadow or Live.
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             }

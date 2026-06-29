@@ -200,3 +200,8 @@ Total estimated scope: ~4 files modified, 1 new file created, ~50–80 lines of 
 - **L2**: Pre-existing unsafe `as 'orderbook' | 'swap'` cast on `intent.venueType` in `AgentsPage.tsx` line ~345. Align with `|| undefined` pattern.
 - **L3**: New `venue-mapping.ts` missing module-level JSDoc. Add brief doc comment.
 - **L4**: No test coverage for edit-modal venue derivation. Add unit test.
+
+### [Task 2] Paper Mode Venue Dropdown
+
+- **M3**: Duplicate paper-mode-swap warning JSX in two locations (when connections selected and when no connections). Extract to shared `const paperSwapWarning` to avoid divergence.
+- **L5**: Venue derivation uses only `connectionIds[0]`. If multiple connections with different providers are selected, only the first determines venue. Pre-existing, not blocking.
