@@ -916,6 +916,7 @@ export const agents = {
     name: string;
     prompt: string;
     skillIds?: string[];
+    connectionIds?: string[];
     toolPolicy?: Record<string, unknown>;
     modelPolicy?: Record<string, unknown>;
     provider?: string | null;
@@ -943,6 +944,7 @@ export const agents = {
     name?: string;
     prompt?: string;
     skillIds?: string[];
+    connectionIds?: string[];
     toolPolicy?: Record<string, unknown>;
     modelPolicy?: Record<string, unknown>;
     provider?: string | null;
@@ -998,11 +1000,6 @@ export const agents = {
       : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`),
   tradingConnections: (id: string) =>
     request<{ agentId: string; family: 'trading'; connections: ConnectionSummary[] }>(`/agents/${id}/capabilities/trading/connections`),
-  tradingAction: (id: string, action: 'bind' | 'unbind', payload: { connectionId: string }) =>
-    request<{ action: 'bind' | 'unbind'; agentId: string; connectionId: string; status: string }>(`/agents/${id}/capabilities/trading/actions/${action}`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   tradingPositions: (id: string, params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.limit !== undefined) qs.set('limit', String(params.limit));

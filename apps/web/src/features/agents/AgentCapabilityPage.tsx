@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from 'react-router';
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, type CapabilityReadiness } from '../../lib/api-client.js';
@@ -36,9 +37,17 @@ export function AgentCapabilityPage() {
     enabled: Boolean(agentId) && family === 'trading',
   });
 
-  const bindMutation = useMutation({
-    mutationFn: ({ connectionId, action }: { connectionId: string; action: 'bind' | 'unbind' }) =>
-      agentsApi.tradingAction(agentId!, action, { connectionId }),
+  const boundConnectionIds = useMemo(() => {
+    return new Set(
+      (agentConnectionsQuery.data?.connections ?? [])
+        .filter((connection) => connection.grantStatus === 'active')
+        .map((connection) => connection.connectionId),
+    );
+  }, [agentConnectionsQuery.data?.connections]);
+
+  const updateConnectionsMutation = useMutation({
+    mutationFn: (connectionIds: string[]) =>
+      agentsApi.update(agentId!, { connectionIds }),
     onSuccess: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', family] }),
@@ -78,11 +87,6 @@ export function AgentCapabilityPage() {
 
   const capabilityFamilyLabel = formatCapabilityFamily(readiness.family ?? family, intl);
   const nextSteps = getCapabilityNextSteps(intl, readiness.family ?? family);
-  const boundConnectionIds = new Set(
-    (agentConnectionsQuery.data?.connections ?? [])
-      .filter((connection) => connection.grantStatus === 'active')
-      .map((connection) => connection.connectionId),
-  );
 
   return (
     <PageShell>
@@ -185,8 +189,14 @@ export function AgentCapabilityPage() {
                         <Button
                           variant={isBound ? 'secondary' : 'primary'}
                           size="sm"
-                          disabled={bindMutation.isPending || (!isBound && notReady)}
-                          onClick={() => bindMutation.mutate({ connectionId: connection.connectionId, action: isBound ? 'unbind' : 'bind' })}
+                          disabled={updateConnectionsMutation.isPending || (!isBound && notReady)}
+                          onClick={() => {
+                            const currentIds = [...boundConnectionIds];
+                            const newIds = isBound
+                              ? currentIds.filter((id) => id !== connection.connectionId)
+                              : [...currentIds, connection.connectionId];
+                            updateConnectionsMutation.mutate(newIds);
+                          }}
                         >
                           {isBound ? intl.formatMessage({ id: 'agents.capabilityPage.unbind' }) : intl.formatMessage({ id: 'agents.capabilityPage.bind' })}
                         </Button>

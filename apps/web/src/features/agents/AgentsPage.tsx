@@ -11,7 +11,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
-import { buildCreateAgentPayload, resolveCreateAgentConnectionId } from './agent-payloads.js';
+import { buildCreateAgentPayload, resolveCreateAgentConnectionIds } from './agent-payloads.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
@@ -49,7 +49,7 @@ interface IntentState {
   lightModel: string;
   heavyModel: string;
   telegramChatId: string;
-  connectionId: string;
+  connectionIds: string[];
   /** Derived from selected connection's provider, or user-picked for paper mode. */
   venue: string;
   /** Derived from venue: hyperliquid→orderbook, jupiter→swap, etc. */
@@ -183,7 +183,7 @@ function CreateAgentFlow({
     lightModel: '',
     heavyModel: '',
     telegramChatId: '',
-    connectionId: '',
+    connectionIds: [],
     venue: '',
     venueType: '',
     style: 'balanced',
@@ -331,7 +331,7 @@ function CreateAgentFlow({
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active' && connection.connectionStatus === 'active',
   );
-  const selectedConnection = availableConnections.find((connection) => connection.connectionId === intent.connectionId) ?? null;
+  const selectedConnection = availableConnections.find((connection) => connection.connectionId === intent.connectionIds[0]) ?? null;
 
   // Derive venue + venueType from selected connection's provider
   useEffect(() => {
@@ -361,6 +361,7 @@ function CreateAgentFlow({
         hasBotManagementSkill,
         requiresTradingSetup,
         executionMode: intent.executionMode,
+        connectionIds: intent.connectionIds,
         modelPayload,
         costPreset: intent.costPreset,
         dailySpendBudgetUsd: intent.dailySpendBudgetUsd,
@@ -377,10 +378,6 @@ function CreateAgentFlow({
         openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
         runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
       }));
-
-      if (requiresTradingSetup && intent.connectionId) {
-        await agentsApi.tradingAction(agent.id, 'bind', { connectionId: intent.connectionId });
-      }
 
       return agent;
     },
@@ -447,9 +444,9 @@ function CreateAgentFlow({
         onSuccess={(result) => {
           setShowSetup(false);
           void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] });
-          const connectionId = resolveCreateAgentConnectionId(result.connection ?? null);
-          if (connectionId) {
-            setIntent((state) => ({ ...state, connectionId }));
+          const connectionIds = resolveCreateAgentConnectionIds(result.connection ?? null);
+          if (connectionIds.length > 0) {
+            setIntent((state) => ({ ...state, connectionIds: [...new Set([...state.connectionIds, ...connectionIds])] }));
           }
         }}
       />
@@ -640,17 +637,68 @@ function CreateAgentFlow({
                 ) : (
                   <>
                     <select
-                      value={intent.connectionId}
-                      onChange={(e) => setIntent((state) => ({ ...state, connectionId: e.target.value }))}
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) return;
+                        setIntent((state) => ({
+                          ...state,
+                          connectionIds: state.connectionIds.includes(id)
+                            ? state.connectionIds
+                            : [...state.connectionIds, id],
+                        }));
+                      }}
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
                       <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
-                      {availableTradingConnections.map((connection) => (
+                      {availableConnections.map((connection) => (
                         <option key={connection.connectionId} value={connection.connectionId}>
                           {connection.label} ({connection.provider})
                         </option>
                       ))}
                     </select>
+                    {intent.connectionIds.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {intent.connectionIds.map((id) => {
+                          const conn = availableConnections.find((c) => c.connectionId === id);
+                          return (
+                            <span
+                              key={id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                background: 'var(--color-surface-2)',
+                                fontSize: '12px',
+                                cursor: 'default',
+                              }}
+                            >
+                              {conn?.label ?? id}
+                              <button
+                                type="button"
+                                onClick={() => setIntent((state) => ({
+                                  ...state,
+                                  connectionIds: state.connectionIds.filter((cid) => cid !== id),
+                                }))}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '0 2px',
+                                  fontSize: '14px',
+                                  lineHeight: '1',
+                                  color: 'var(--color-text-muted)',
+                                }}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                     {intent.venue && intent.venueType && (
                       <div style={{ display: 'flex', gap: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         <span>Venue: <strong>{intent.venue}</strong></span>
@@ -827,13 +875,21 @@ function CreateAgentFlow({
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
               value={requiresTradingSetup
-                ? (selectedConnection
+                ? (intent.connectionIds.length > 0
                   ? intl.formatMessage({ id: 'agents.review.capabilitySetup.bound' })
                   : intl.formatMessage({ id: 'agents.review.capabilitySetup.defer' }))
                 : intl.formatMessage({ id: 'agents.review.capabilitySetup.none' })}
             />
-            {requiresTradingSetup && selectedConnection && (
-              <ReviewRow label={intl.formatMessage({ id: 'agents.create.connection' })} value={`${selectedConnection.label} (${selectedConnection.provider})`} />
+            {requiresTradingSetup && intent.connectionIds.length > 0 && (
+              <ReviewRow
+                label={intl.formatMessage({ id: 'agents.create.connection' })}
+                value={intent.connectionIds
+                  .map((id) => {
+                    const conn = availableConnections.find((c) => c.connectionId === id);
+                    return conn ? `${conn.label} (${conn.provider})` : id;
+                  })
+                  .join(', ')}
+              />
             )}
             {requiresTradingSetup && (
               <ReviewRow

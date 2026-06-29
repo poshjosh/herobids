@@ -45,6 +45,7 @@ export interface CreateAgentIntentPayloadInput {
   hasBotManagementSkill: boolean;
   requiresTradingSetup: boolean;
   executionMode: 'paper' | 'shadow' | 'live';
+  connectionIds?: string[];
   modelPayload: {
     inherits: boolean;
     provider?: string | null;
@@ -77,6 +78,7 @@ export interface UpdateAgentPayloadInput {
   hasBotManagementSkill: boolean;
   executionMode: string;
   hasTradingCapability: boolean;
+  connectionIds?: string[];
   telegramChatId: string;
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
@@ -105,6 +107,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   name: string;
   prompt: string;
   skillIds: string[];
+  connectionIds?: string[];
   provider?: string | null;
   lightModel?: string | null;
   heavyModel?: string | null;
@@ -133,6 +136,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     name: input.name.trim(),
     prompt: includeIntelligence ? input.goal.trim() : '',
     skillIds: includeIntelligence ? [...input.skillIds] : [],
+    ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
     ...(input.requiresTradingSetup ? { executionMode: input.executionMode } : {}),
     ...(includeIntelligence && !input.modelPayload.inherits && input.modelPayload.provider ? {
       provider: input.modelPayload.provider,
@@ -157,14 +161,15 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   };
 }
 
-export function resolveCreateAgentConnectionId(connection: ProviderSetupResult['connection'] | null | undefined): string | null {
-  return connection?.id ?? null;
+export function resolveCreateAgentConnectionIds(connection: ProviderSetupResult['connection'] | null | undefined): string[] {
+  return connection?.id ? [connection.id] : [];
 }
 
 export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   name: string;
   prompt: string;
   skillIds: string[];
+  connectionIds?: string[];
   executionMode: string | null;
   telegramChatId: string | null;
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom' | null;
@@ -199,6 +204,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     name: input.name.trim(),
     ...(includeIntelligence ? { prompt: input.prompt.trim() } : { prompt: '' }),
     skillIds: includeIntelligence ? [...input.skillIds] : [],
+    ...((input.connectionIds ?? []).length > 0 ? { connectionIds: input.connectionIds } : {}),
     executionMode: includeIntelligence && input.hasTradingCapability ? (input.executionMode || null) : null,
     telegramChatId: input.telegramChatId.trim() || null,
     costPreset: input.costPreset || null,

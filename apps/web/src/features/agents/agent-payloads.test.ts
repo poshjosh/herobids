@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCreateAgentConnectionId } from './agent-payloads.js';
+import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCreateAgentConnectionIds } from './agent-payloads.js';
 
 const TECHNICAL_CONFIG = {
   filters: {
@@ -137,19 +137,19 @@ describe('agent payload builders', () => {
     });
   });
 
-  it('resolveCreateAgentConnectionId returns null when no binding is present', () => {
-    expect(resolveCreateAgentConnectionId(null)).toBeNull();
+  it('resolveCreateAgentConnectionIds returns empty array when no connection is present', () => {
+    expect(resolveCreateAgentConnectionIds(null)).toEqual([]);
   });
 
-  it('resolveCreateAgentConnectionId returns the binding id when present', () => {
-    expect(resolveCreateAgentConnectionId({
-      id: 'binding-1',
-      connectionId: 'conn-1',
+  it('resolveCreateAgentConnectionIds returns single-element array when connection is present', () => {
+    expect(resolveCreateAgentConnectionIds({
+      id: 'conn-1',
       provider: 'hyperliquid',
       label: 'Main',
-       'va-1',
       status: 'active',
-    })).toBe('binding-1');
+      credentialId: 'cred-1',
+      createdAt: '2026-01-01T00:00:00Z',
+    })).toEqual(['conn-1']);
   });
 
   it('buildUpdateAgentPayload normalizes an edited legacy prompt back to pure intent', () => {
@@ -259,6 +259,178 @@ describe('agent payload builders', () => {
     expect(payload.lightModel).toBe('gpt-4.1-mini');
     expect(payload.heavyModel).toBe('gpt-4.1');
     expect(payload.technical).toEqual(TECHNICAL_CONFIG);
+  });
+
+  it('buildCreateAgentPayload includes connectionIds when provided', () => {
+    expect(buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'paper',
+      connectionIds: ['conn-1', 'conn-2'],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    })).toMatchObject({
+      name: 'agent',
+      prompt: 'trade',
+      skillIds: ['trading'],
+      executionMode: 'paper',
+      connectionIds: ['conn-1', 'conn-2'],
+    });
+  });
+
+  it('buildCreateAgentPayload omits connectionIds when empty', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'paper',
+      connectionIds: [],
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('connectionIds');
+  });
+
+  it('buildCreateAgentPayload omits connectionIds when undefined', () => {
+    const payload = buildCreateAgentPayload({
+      name: 'agent',
+      goal: 'trade',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      requiresTradingSetup: true,
+      executionMode: 'paper',
+      modelPayload: { inherits: true },
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      telegramChatId: '',
+      tickIntervalMins: '',
+      capital: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+    });
+    expect(payload).not.toHaveProperty('connectionIds');
+  });
+
+  it('buildUpdateAgentPayload includes connectionIds when provided', () => {
+    expect(buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'trade',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      connectionIds: ['conn-1', 'conn-2'],
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    })).toMatchObject({
+      name: 'agent',
+      prompt: 'trade',
+      skillIds: ['trading'],
+      connectionIds: ['conn-1', 'conn-2'],
+    });
+  });
+
+  it('buildUpdateAgentPayload omits connectionIds when empty', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'trade',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      connectionIds: [],
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    });
+    expect(payload).not.toHaveProperty('connectionIds');
+  });
+
+  it('buildUpdateAgentPayload omits connectionIds when undefined', () => {
+    const payload = buildUpdateAgentPayload({
+      name: 'agent',
+      prompt: 'trade',
+      capabilityMode: 'intelligence',
+      technical: null,
+      skillIds: ['trading'],
+      hasBotManagementSkill: false,
+      executionMode: 'paper',
+      hasTradingCapability: true,
+      telegramChatId: '',
+      costPreset: '',
+      dailySpendBudgetUsd: '',
+      dailyLossLimit: '',
+      maxSlippageBps: '',
+      maxOpenPositions: '',
+      maxPositionSizePct: '',
+      stopLossPct: '',
+      stopLossCooldownSecs: '',
+      tickIntervalMins: '',
+      capital: '',
+      modelOverrideEnabled: false,
+      modelForm: { provider: '', lightModel: '', heavyModel: '' },
+    });
+    expect(payload).not.toHaveProperty('connectionIds');
   });
 
   it('buildUpdateAgentPayload clears execution mode in technical-only mode even when the current agent used to trade', () => {

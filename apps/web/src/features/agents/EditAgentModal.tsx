@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { agents as agentsApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
+import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
 import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
@@ -88,6 +88,34 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     queryKey: ['agents', 'risk-defaults'],
     queryFn: () => agentsApi.riskDefaults(),
   });
+  const agentConnectionsQuery = useQuery({
+    queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'],
+    queryFn: () => agentsApi.tradingConnections(agentId),
+  });
+  const availableConnectionsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'connections'],
+    queryFn: () => capabilitiesApi.tradingConnections(),
+  });
+  const availableConnections = (availableConnectionsQuery.data?.connections ?? []).filter(
+    (connection) => connection.status === 'active' && connection.connectionStatus === 'active',
+  );
+
+  // Initialize connectionIds from the agent's current connections
+  useEffect(() => {
+    if (!agentConnectionsQuery.isSuccess) return;
+    const activeIds = (agentConnectionsQuery.data?.connections ?? [])
+      .filter((c) => c.grantStatus === 'active')
+      .map((c) => c.connectionId);
+    setForm((prev) => {
+      // Only update if different to avoid infinite loops
+      const prevIds = prev.connectionIds ?? [];
+      if (prevIds.length === activeIds.length && prevIds.every((id) => activeIds.includes(id))) {
+        return prev;
+      }
+      return { ...prev, connectionIds: activeIds };
+    });
+  }, [agentConnectionsQuery.isSuccess, agentConnectionsQuery.data?.connections]);
+
   const selectedSkills = resolveSelectedSkills(form.skillIds, selectableSkills);
   const hasBotManagementSkill = form.skillIds.includes('bot-management');
   const tickIntervalValidationMessageId = getTickIntervalValidationMessageId(form.tickIntervalMins);
@@ -208,6 +236,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         hasBotManagementSkill,
         executionMode: form.executionMode,
         hasTradingCapability,
+        connectionIds: (form.connectionIds ?? []).length > 0 ? form.connectionIds : undefined,
         telegramChatId: form.telegramChatId,
         costPreset: form.costPreset,
         dailySpendBudgetUsd: form.dailySpendBudgetUsd,
@@ -358,6 +387,86 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             tickIntervalError={tickIntervalError}
             tickIntervalNotice={tickIntervalNotice}
             effectiveTickIntervalMs={effectiveTickIntervalMs}
+            connectionSlot={
+              showTradingControls ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                  <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
+                  {availableConnectionsQuery.isLoading ? (
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
+                  ) : availableConnections.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+                      {intl.formatMessage({ id: 'agents.create.noConnections' })}
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (!id) return;
+                          setForm((prev) => {
+                            const currentIds = prev.connectionIds ?? [];
+                            return currentIds.includes(id)
+                              ? prev
+                              : { ...prev, connectionIds: [...currentIds, id] };
+                          });
+                        }}
+                        style={{ ...inputStyle, cursor: 'pointer' }}
+                      >
+                        <option value="">{intl.formatMessage({ id: 'agents.create.chooseConnection' })}</option>
+                        {availableConnections.map((connection) => (
+                          <option key={connection.connectionId} value={connection.connectionId}>
+                            {connection.label} ({connection.provider})
+                          </option>
+                        ))}
+                      </select>
+                      {(form.connectionIds ?? []).length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {(form.connectionIds ?? []).map((id) => {
+                            const conn = availableConnections.find((c) => c.connectionId === id);
+                            return (
+                              <span
+                                key={id}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  background: 'var(--color-surface-2)',
+                                  fontSize: '12px',
+                                  cursor: 'default',
+                                }}
+                              >
+                                {conn?.label ?? id}
+                                <button
+                                  type="button"
+                                  onClick={() => setForm((prev) => ({
+                                    ...prev,
+                                    connectionIds: (prev.connectionIds ?? []).filter((cid) => cid !== id),
+                                  }))}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '0 2px',
+                                    fontSize: '14px',
+                                    lineHeight: '1',
+                                    color: 'var(--color-text-muted)',
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : null
+            }
             modelSlot={
               showIntelligence ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>

@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProviderSetupResult, ConnectionSummary } from '../../lib/api-client.js';
 import { createAgentUsesInheritedModels, resolveCreateAgentModelPayload } from './create-agent-models.js';
-import { resolveCreateAgentConnectionId } from './agent-payloads.js';
+import { resolveCreateAgentConnectionIds } from './agent-payloads.js';
 import { resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 
 // ---------------------------------------------------------------------------
@@ -25,11 +25,11 @@ import { resolveDefaultModelSelection } from '../settings/ModelSelectionFields.j
 // ---------------------------------------------------------------------------
 
 describe('Create Agent — inline setup auto-select logic', () => {
-  it('returns the trading binding id when the setup result includes one', () => {
+  it('returns the connection id when the setup result includes a connection', () => {
     const result: ProviderSetupResult = {
       credential: {
         id: 'cred-1',
-        venue: 'hyperliquid',
+        provider: 'hyperliquid',
         label: 'My Cred',
         createdAt: '2026-06-10T00:00:00Z',
       },
@@ -41,37 +41,16 @@ describe('Create Agent — inline setup auto-select logic', () => {
         credentialId: 'cred-1',
         createdAt: '2026-06-10T00:00:00Z',
       },
-      connection: {
-        id: 'binding-1',
-        connectionId: 'conn-1',
-        provider: 'hyperliquid',
-        label: 'My Account',
-         'va-1',
-        status: 'active',
-        createdAt: '2026-06-10T00:00:00Z',
-      },
     };
-    expect(resolveCreateAgentConnectionId(result.tradingBinding)).toBe('binding-1');
+    expect(resolveCreateAgentConnectionIds(result.connection)).toEqual(['conn-1']);
   });
 
-  it('returns null when the setup result has no trading binding (capability not provisioned)', () => {
-    const result: ProviderSetupResult = {
-      credential: {
-        id: 'cred-1',
-        venue: 'hyperliquid',
-        label: 'My Cred',
-        createdAt: '2026-06-10T00:00:00Z',
-      },
-      connection: {
-        id: 'conn-1',
-        provider: 'hyperliquid',
-        label: 'My Account',
-        status: 'active',
-        credentialId: 'cred-1',
-        createdAt: '2026-06-10T00:00:00Z',
-      },
-    };
-    expect(resolveCreateAgentConnectionId(result.tradingBinding)).toBeNull();
+  it('returns empty array when the setup result has no connection', () => {
+    expect(resolveCreateAgentConnectionIds(null)).toEqual([]);
+  });
+
+  it('returns empty array when connection is undefined', () => {
+    expect(resolveCreateAgentConnectionIds(undefined)).toEqual([]);
   });
 });
 
@@ -97,13 +76,11 @@ describe('Create Agent — available trading connections filter', () => {
 
   function makeConnection(overrides: Partial<ConnectionSummary> = {}): ConnectionSummary {
     return {
-      connectionId: 'binding-1',
       connectionId: 'conn-1',
       provider: 'hyperliquid',
       label: 'My Account',
-      bindingRef: null,
-      bindingProfile: null,
-       null,
+      providerRef: null,
+      profile: null,
       connectionStatus: 'active',
       status: 'active',
       family: 'trading',

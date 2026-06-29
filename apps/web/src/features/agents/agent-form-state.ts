@@ -23,6 +23,9 @@ export interface AgentFormState {
   // Skills
   skillIds: string[];
 
+  // Connections
+  connectionIds?: string[];
+
   // Trading setup
   executionMode: 'paper' | 'shadow' | 'live' | '';
   capital: string;
@@ -94,6 +97,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
       ? technicalConfigToFormState(agent.technical)
       : defaultTechnicalConfigFormState(),
     skillIds: agent.skillIds ?? [],
+    connectionIds: [],
     executionMode,
     capital: agent.capital ?? '',
     telegramChatId: agent.telegramChatId ?? '',
@@ -132,6 +136,7 @@ export function intentToFormState(intent: {
   technicalPreFilterEnabled: boolean;
   technicalConfig: TechnicalConfigFormState;
   skillIds: string[];
+  connectionIds?: string[];
   executionMode: 'paper' | 'shadow' | 'live' | '';
   capital: string;
   telegramChatId: string;
@@ -153,6 +158,7 @@ export function intentToFormState(intent: {
     technicalPreFilterEnabled,
     technicalConfig,
     skillIds,
+    connectionIds,
     executionMode,
     capital,
     telegramChatId,
@@ -174,6 +180,7 @@ export function intentToFormState(intent: {
     technicalPreFilterEnabled,
     technicalConfig,
     skillIds,
+    connectionIds,
     executionMode,
     capital,
     telegramChatId,
