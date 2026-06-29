@@ -82,7 +82,13 @@ export async function hasActiveRunForScope(
 }
 
 /**
- * Create a new evaluation run row. Returns the generated run ID.
+ * Create a new evaluation run row atomically.
+ *
+ * Checks for an active run (queued/running) for the same agent + scope
+ * within a transaction to prevent a TOCTOU race between the preflight
+ * `hasActiveRunForScope` call in the API route and the INSERT here.
+ *
+ * Throws if an active run already exists for this agent + scope.
  */
 export async function createRun(
   db: Database,
@@ -92,17 +98,36 @@ export async function createRun(
   const id = crypto.randomUUID();
   const scopeKey = normalizeScopeKey(resolved);
 
-  await db.insert(agentEvaluations).values({
-    id,
-    agentId: request.agentId,
-    status: 'queued',
-    trigger: request.trigger,
-    requestedScopeJson: request.scope as unknown as Record<string, unknown>,
-    resolvedScopeJson: resolved as unknown as Record<string, unknown>,
-    scopeKey,
-    requestedByType: request.requester.type,
-    requestedById: request.requester.type !== 'system' ? request.requester.id : null,
-    attempt: 1,
+  await db.transaction(async (tx) => {
+    // Re-check for active run inside the transaction to prevent races
+    const [active] = await tx
+      .select({ id: agentEvaluations.id })
+      .from(agentEvaluations)
+      .where(and(
+        eq(agentEvaluations.agentId, request.agentId),
+        eq(agentEvaluations.scopeKey, scopeKey),
+        sql`${agentEvaluations.status} IN ('queued', 'running')`,
+      ))
+      .limit(1);
+
+    if (active) {
+      throw new Error(
+        `An evaluation is already active for agent ${request.agentId} with scope ${scopeKey}.`,
+      );
+    }
+
+    await tx.insert(agentEvaluations).values({
+      id,
+      agentId: request.agentId,
+      status: 'queued',
+      trigger: request.trigger,
+      requestedScopeJson: request.scope as unknown as Record<string, unknown>,
+      resolvedScopeJson: resolved as unknown as Record<string, unknown>,
+      scopeKey,
+      requestedByType: request.requester.type,
+      requestedById: request.requester.type !== 'system' ? request.requester.id : null,
+      attempt: 1,
+    });
   });
 
   return { id };
@@ -127,6 +152,9 @@ export async function markRunning(db: Database, id: string): Promise<boolean> {
 
 /**
  * Mark a run as succeeded with result data.
+ * Only transitions from 'running' — silently no-ops if the run was already
+ * reaped as timed_out, to prevent a late-finishing job from overwriting the
+ * timeout status.
  */
 export async function markSucceeded(
   db: Database,
@@ -142,7 +170,7 @@ export async function markSucceeded(
       summaryJson: result.summary as unknown as Record<string, unknown>,
       artifactManifestJson: result.artifactManifest as unknown as Record<string, unknown>[],
     })
-    .where(eq(agentEvaluations.id, id));
+    .where(and(eq(agentEvaluations.id, id), eq(agentEvaluations.status, 'running')));
 }
 
 /**

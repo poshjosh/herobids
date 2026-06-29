@@ -135,19 +135,32 @@ export async function agentEvaluationRoutes(
         });
       }
 
-      // Create run
+      // Create run (atomic — the repository re-checks for duplicates inside
+      // a transaction to close the TOCTOU window between the preflight check
+      // above and the actual INSERT)
       const trigger: EvaluationTrigger = 'manual';
-      const { id: runId } = await createRun(
-        db,
-        {
-          agentId: id,
-          scope,
-          trigger,
-          requester: { type: 'user', id: request.userId },
-          includeNarrative: parsed.data.includeNarrative,
-        },
-        resolved,
-      );
+      let runId: string;
+      try {
+        ({ id: runId } = await createRun(
+          db,
+          {
+            agentId: id,
+            scope,
+            trigger,
+            requester: { type: 'user', id: request.userId },
+            includeNarrative: parsed.data.includeNarrative,
+          },
+          resolved,
+        ));
+      } catch (err) {
+        if ((err as Error).message?.includes('already active')) {
+          return reply.status(409).send({
+            error: 'conflict',
+            message: (err as Error).message,
+          });
+        }
+        throw err;
+      }
 
       // Enqueue job with timeout and retry settings from operator config
       await queue.add(`eval-${runId}`, {
@@ -158,6 +171,7 @@ export async function agentEvaluationRoutes(
       }, {
         attempts: evalConfig.maxAttempts,
         backoff: { type: 'exponential', delay: 5000 },
+        timeout: evalConfig.maxRuntimeMs,
       });
 
       return reply.status(202).send({ runId });

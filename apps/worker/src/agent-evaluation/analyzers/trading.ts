@@ -54,6 +54,10 @@ function finding(
 /**
  * Trading analyzer — runs only if the agent has trading capability or fills exist.
  * Returns `{ applicable: false }` for non-trading agents.
+ *
+ * Trading capability is detected from the agent-metadata artifact:
+ * an agent is considered trading-capable if it has an execution mode,
+ * a daily loss limit, or a max slippage setting configured.
  */
 export async function analyzeTrading(
   store: EvaluationArtifactStore,
@@ -62,12 +66,21 @@ export async function analyzeTrading(
   thresholds: EvaluationThresholds,
 ): Promise<EvaluationSectionScore[]> {
   const fillsEntry = manifest.entries.find((e) => e.artifactName === 'fills.json');
-  const positionsEntry = manifest.entries.find((e) => e.artifactName === 'positions.json');
 
-  // If no fills data was collected, this agent likely has no trading capability
   const hasFills = fillsEntry?.collected && (fillsEntry.itemCount ?? 0) > 0;
 
-  if (!hasFills) {
+  // Determine trading capability from agent metadata (not fill presence)
+  const agentMeta = await readJsonArtifact(store, runId, 'agent-metadata.json') as Record<string, unknown> | null;
+  const hasTradingCapability = agentMeta != null && (
+    agentMeta['executionMode'] != null ||
+    agentMeta['dailyLossLimit'] != null ||
+    agentMeta['maxSlippageBps'] != null
+  );
+
+  // Applicable if the agent is trading-capable OR has fills in the scope
+  const isApplicable = hasTradingCapability || hasFills;
+
+  if (!isApplicable) {
     return [
       { section: 'trading_performance', score: 0, findings: [], applicable: false },
       { section: 'trading_behavior', score: 0, findings: [], applicable: false },

@@ -64,7 +64,10 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
         sessionTimestamps = { startedAt: sess.startedAt, stoppedAt: sess.stoppedAt };
         logger.info({ runId, sessionId: resolvedScope.sessionId, sessionTimestamps }, 'Resolved session timestamps for evidence filtering');
       } else {
-        logger.warn({ runId, sessionId: resolvedScope.sessionId }, 'Session not found or missing timestamps — evidence collection will not be time-filtered');
+        throw new Error(
+          `Session ${resolvedScope.sessionId} not found or missing timestamps — cannot scope evaluation. ` +
+          `The session may have been deleted or is still running.`,
+        );
       }
     }
 
@@ -121,10 +124,16 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
       : redactedReport;
 
     // ── Step 5: Write artifacts ──────────────────────────────────────────
-    const evaluationJson = {
+    // evaluation.json is the full structured EvaluationRunResult per the
+    // plan contract, plus scope/generatedAt metadata for debugging.
+    const result: EvaluationRunResult = {
       scorecard,
+      artifactManifest: [], // filled after we know all written artifacts
       summary: { totalFindings: allFindings.length, criticalCount, highCount },
-      manifest: manifest.entries,
+    };
+
+    const evaluationJson = {
+      ...result,
       scope: resolvedScope,
       generatedAt: new Date().toISOString(),
     };
@@ -148,13 +157,8 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     ];
 
     // ── Step 6: Persist result ───────────────────────────────────────────
+    result.artifactManifest = fullManifest;
     logger.info({ runId, overallScore: scorecard.overallScore, artifactCount: fullManifest.length }, 'Persisting evaluation result');
-    const result: EvaluationRunResult = {
-      scorecard,
-      artifactManifest: fullManifest,
-      summary: { totalFindings: allFindings.length, criticalCount, highCount },
-    };
-
     await markSucceeded(db, runId, result);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
