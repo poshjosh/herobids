@@ -27,6 +27,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Readiness and runtime capability descriptors derive capability families from `providers.capabilities` via `agent_connections`
   - Replaced `capability_grants` vocabulary in AGENTS.md with `agent_connections`
   - Cleaned up transition comments, dead `tradingBinding` test assertions, and unused imports from migration phases
+- **Delete legacy capability_grants tables** — Safe removal after full migration to agent_connections
+  - Migrated capability readiness routes from `capability_grants` to `agent_connections` + `providers.capabilities` joins
+  - Deleted `grant-service.ts` and legacy bind/unbind action endpoints (replaced by declarative `PATCH /agents/:id`)
+  - Moved connection revoke logic from `capability_grants` to `agent_connections` lookup
+  - Fixed UI contract drift: `connectionStatus` → `status` on generic `/capabilities/trading/connections` endpoint
+  - Replaced `CapabilityGrant` domain contract with `AgentConnection`; removed old schema exports
+  - Dropped `capability_grant_audit` and `capability_grants` tables (migration `0028_burly_fallen_one` — IRREVERSIBLE)
+  - Worker sandbox tool-policy `CapabilityGrant` type intentionally preserved (unrelated concept)
 
 ### Added
 - **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers
