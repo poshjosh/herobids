@@ -2,8 +2,8 @@ import { defineConfig } from 'vitest/config';
 import { existsSync } from 'node:fs';
 
 // Load venue testnet credentials if present (developer opt-in — never auto-loaded by pnpm test)
-if (existsSync('.env.test')) {
-  process.loadEnvFile('.env.test');
+if (existsSync('.env.local')) {
+  process.loadEnvFile('.env.local');
 }
 
 export default defineConfig({

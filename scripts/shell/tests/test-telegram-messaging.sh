@@ -11,13 +11,13 @@
 #   5. Each chat ID is reachable (Telegram sendMessage)
 #
 # Usage:
-#   scripts/shell/tests/test-telegram-messaging.sh --env-file scripts/shell/tests/.env.test
+#   scripts/shell/tests/test-telegram-messaging.sh --env-file .env.local
 #
 #   # Override individual vars:
-#   TEST_CHAT_IDS=6846862012 ./test-telegram-messaging.sh --env-file .env.test
+#   TEST_CHAT_IDS=6846862012 ./test-telegram-messaging.sh --env-file .env.local
 #
 # Required env vars (in env file or environment):
-#   HEROBIDS_API_URL       — e.g. https://herobids.com or http://localhost:3000
+#   API_BASE_URL           — e.g. https://herobids.com or http://localhost:3000
 #   TELEGRAM_BOT_TOKEN     — the bot token
 #   TEST_CHAT_IDS          — comma-separated chat IDs to verify
 #
@@ -86,14 +86,14 @@ for cmd in curl jq; do
   command -v "$cmd" >/dev/null 2>&1 || prereq_fail "'$cmd' is required but not installed."
 done
 
-[[ -n "${HEROBIDS_API_URL:-}" ]]    || prereq_fail "HEROBIDS_API_URL is not set"
+[[ -n "${API_BASE_URL:-}" ]]    || prereq_fail "API_BASE_URL is not set"
 [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]  || prereq_fail "TELEGRAM_BOT_TOKEN is not set"
 [[ -n "${TEST_CHAT_IDS:-}" ]]       || prereq_fail "TEST_CHAT_IDS is not set"
 
 IFS=',' read -ra CHAT_IDS <<< "${TEST_CHAT_IDS}"
 
 MASKED_TOKEN="$(echo "${TELEGRAM_BOT_TOKEN}" | sed 's/\(.\{8\}\).*/\1****/')"
-log "HEROBIDS_API_URL=${HEROBIDS_API_URL}"
+log "API_BASE_URL=${API_BASE_URL}"
 log "TELEGRAM_BOT_TOKEN=${MASKED_TOKEN}"
 log "Chat IDs to verify: ${#CHAT_IDS[@]} (${TEST_CHAT_IDS})"
 [[ -n "${EXPECTED_WEBHOOK_URL:-}" ]] && log "Expected webhook URL: ${EXPECTED_WEBHOOK_URL}"
@@ -105,9 +105,9 @@ TG_API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 echo ""
 info "Step 1/5: HeroBids API health check"
 
-HTTP=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${HEROBIDS_API_URL}/health")
-[[ "$HTTP" == "200" ]] || fail "API health check failed (HTTP ${HTTP} at ${HEROBIDS_API_URL}/health)"
-log "API healthy (${HEROBIDS_API_URL}/health)"
+HTTP=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${API_BASE_URL}/health")
+[[ "$HTTP" == "200" ]] || fail "API health check failed (HTTP ${HTTP} at ${API_BASE_URL}/health)"
+log "API healthy (${API_BASE_URL}/health)"
 
 # ─── Step 2 — Bot token validity ─────────────────────────────────────────────
 

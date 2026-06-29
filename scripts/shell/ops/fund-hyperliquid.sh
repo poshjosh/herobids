@@ -6,22 +6,22 @@
 #   scripts/shell/ops/fund-hyperliquid.sh --dry-run  # simulate — no transactions sent
 #
 # Setup:
-#   cp scripts/.env.example scripts/.env
-#   # edit scripts/.env with your BASE_WALLET_PRIVATE_KEY, HYPERLIQUID_ACCOUNT_ADDRESS, AMOUNT_USDC
+#   cp .env.local.example .env.local
+#   # edit .env.local with your BASE_WALLET_PRIVATE_KEY, HL_WALLET_ADDRESS, AMOUNT_USDC
 #   chmod +x scripts/shell/ops/fund-hyperliquid.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/scripts/.env"
+ENV_FILE="$REPO_ROOT/.env.local"
 
 # ---------------------------------------------------------------------------
 # Load .env
 # ---------------------------------------------------------------------------
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: $ENV_FILE not found."
-  echo "  cp scripts/.env.example scripts/.env"
+  echo "  cp .env.local.example .env.local"
   echo "  # then fill in BASE_WALLET_PRIVATE_KEY, HYPERLIQUID_ACCOUNT_ADDRESS, AMOUNT_USDC"
   exit 1
 fi
@@ -36,9 +36,9 @@ set +a
 # Basic validation before invoking the script
 # ---------------------------------------------------------------------------
 missing=0
-for var in BASE_WALLET_PRIVATE_KEY HYPERLIQUID_ACCOUNT_ADDRESS AMOUNT_USDC; do
+for var in BASE_WALLET_PRIVATE_KEY HL_WALLET_ADDRESS AMOUNT_USDC; do
   if [[ -z "${!var:-}" ]]; then
-    echo "Error: $var is not set in scripts/.env"
+    echo "Error: $var is not set in .env.local"
     missing=1
   fi
 done

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate-jupiter.sh — Operator shell wrapper for Jupiter launch validation.
 #
-# Sources credentials from .env.venue-validation, then runs the TS validation script.
+# Sources credentials from .env.local, then runs the TS validation script.
 #
 # Usage:
 #   ./scripts/shell/tests/validate-jupiter.sh            # dry-run
@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-ENV_FILE="${REPO_ROOT}/.env.venue-validation"
+ENV_FILE="${REPO_ROOT}/.env.local"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "[✗] Missing ${ENV_FILE}"

@@ -8,7 +8,7 @@
 # Prerequisites:
 #   - The API must be healthy.
 #   - quick-setup.sh must have run first to provision trading bindings.
-#   - scripts/shell/ops/.env.setup must contain valid credentials.
+#   - .env.local must contain valid credentials.
 #
 # Usage:
 #   scripts/shell/run/create-agents.sh
@@ -23,7 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$SCRIPT_DIR/../ops/.env.setup"
+ENV_FILE="$REPO_ROOT/.env.local"
 DRY_RUN=0
 
 # ---------------------------------------------------------------------------
@@ -82,13 +82,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# Load .env.setup
+# Load .env.local
 # ---------------------------------------------------------------------------
 
 if [[ ! -f "$ENV_FILE" ]]; then
   die "$ENV_FILE not found.
   Copy the example and fill in your values:
-    cp scripts/shell/ops/.env.setup.example scripts/shell/ops/.env.setup"
+    cp .env.local.example .env.local"
 fi
 
 set -a

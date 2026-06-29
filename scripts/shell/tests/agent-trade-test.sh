@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agent-trade-test.sh — Shell wrapper for scripts/ts/agent-trade-test.ts
 #
-# Loads credentials from an env file (default: scripts/.env.trade-test),
+# Loads credentials from an env file (default: .env.local),
 # validates required vars are present, then runs the TypeScript smoke test.
 #
 # Usage:
@@ -11,13 +11,13 @@
 #   scripts/shell/tests/agent-trade-test.sh --help
 #
 # Setup:
-#   cp scripts/.env.trade-test.example scripts/.env.trade-test
+#   cp .env.local.example .env.local
 #   # fill in your credentials, then:
 #   chmod +x scripts/shell/tests/agent-trade-test.sh
 #   scripts/shell/tests/agent-trade-test.sh
 #
 # ─────────────────────────────────────────────────────────────────
-# Variables in .env.trade-test
+# Variables in .env.local
 # ─────────────────────────────────────────────────────────────────
 #
 # Required
@@ -68,7 +68,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/scripts/.env.trade-test"
+ENV_FILE="$REPO_ROOT/.env.local"
 DRY_RUN=0
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ if [[ -f "$ENV_FILE" ]]; then
 else
   warn "Env file not found: $ENV_FILE"
   warn "Continuing with environment variables already set in the shell."
-  warn "To create the file: cp scripts/.env.trade-test.example scripts/.env.trade-test"
+  warn "To create the file: cp .env.local.example .env.local"
 fi
 
 # Restore CLI overrides so they take precedence over env file values
