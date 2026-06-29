@@ -1,4 +1,4 @@
-import type { EvaluationScorecard, EvaluationRunResult } from '@herobids/domain';
+import type { EvaluationRunResult } from '@herobids/domain';
 
 // ── Severity emoji ──────────────────────────────────────────────────────────
 

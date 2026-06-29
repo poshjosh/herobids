@@ -123,6 +123,7 @@ export type {
   VwapParams,
   PriceActionParams,
   SentimentConfig,
+  EvaluationThresholds,
 } from './schema.js';
 
 export type { ProvidersYaml, ProviderConfig } from '../models/llm-models.js';

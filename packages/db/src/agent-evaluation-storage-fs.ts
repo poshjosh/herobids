@@ -26,8 +26,10 @@ function mimeType(name: string): string {
  * Filesystem-backed implementation of `EvaluationArtifactStore`.
  *
  * Artifacts are stored under `<rootDir>/<runId>/<artifactName>`.
- * The root directory defaults to `.ignore/evaluations/` relative to the
- * working directory and can be overridden via constructor.
+ * The root directory is resolved as follows:
+ *   1. Constructor argument (used by tests)
+ *   2. `EVALUATION_STORAGE_ROOT` env var (used in Docker to share across containers)
+ *   3. `app-data/evaluation-output/` relative to the working directory (local dev)
  *
  * Shared by the API (artifact downloads) and worker (artifact writes).
  */
@@ -35,7 +37,9 @@ export class FsEvaluationArtifactStore implements EvaluationArtifactStore {
   private readonly rootDir: string;
 
   constructor(rootDir?: string) {
-    this.rootDir = rootDir ?? join(process.cwd(), '.ignore', 'evaluations');
+    this.rootDir = rootDir
+      ?? process.env['EVALUATION_STORAGE_ROOT']
+      ?? join(process.cwd(), 'app-data', 'evaluation-output');
   }
 
   // ── Write ───────────────────────────────────────────────────────────────

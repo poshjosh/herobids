@@ -5,7 +5,6 @@ import { Queue } from 'bullmq';
 import type { Database } from '@herobids/db';
 import {
   agents,
-  EVALUATION_QUEUE_NAME,
   resolveScope,
   normalizeScopeKey,
   hasActiveRunForScope,
@@ -135,7 +134,7 @@ export async function agentEvaluationRoutes(
 
       // `allTime` requires explicit opt-in via query parameter
       if (scope.type === 'allTime') {
-        const allowAllTime = request.query['allowAllTime'] === 'true';
+        const allowAllTime = (request.query as Record<string, string> | undefined)?.['allowAllTime'] === 'true';
         if (!allowAllTime) {
           return reply.status(400).send({
             error: 'validation_error',
@@ -255,8 +254,7 @@ export async function agentEvaluationRoutes(
       }, {
         attempts: evalConfig.maxAttempts,
         backoff: { type: 'exponential', delay: 5000 },
-        timeout: evalConfig.maxRuntimeMs,
-      });
+      } as Record<string, unknown>);
 
       return reply.status(202).send({ runId });
     },

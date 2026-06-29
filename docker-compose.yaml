@@ -42,12 +42,15 @@ services:
       dockerfile: apps/api/Dockerfile
     ports:
       - '3000:3000'
+    volumes:
+      - evaldata:/app/app-data
     env_file:
       - path: .env
         required: false
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
+      EVALUATION_STORAGE_ROOT: /app/app-data/evaluation-output
       # PORT must stay in sync with the healthcheck below and app.port in config/default.yaml.
       # Changing app.port without updating PORT here will leave the container permanently unhealthy.
       PORT: '3000'
@@ -88,12 +91,15 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
+    volumes:
+      - evaldata:/app/app-data
     env_file:
       - path: .env
         required: false
     environment:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
+      EVALUATION_STORAGE_ROOT: /app/app-data/evaluation-output
       DOCKER_HOST: tcp://docker-proxy:2375
       DOCKER_NETWORK: herobids_default
       AGENT_IMAGE: herobids-agent:latest
@@ -122,3 +128,4 @@ services:
 
 volumes:
   pgdata:
+  evaldata:

@@ -208,20 +208,26 @@ run_tier "Functional tests" \
 # ─── Step 5: API smoke tests (shell-based, against running API) ──────────────
 
 API_STARTED=false
+WORKER_STARTED=false
 header "5 / API smoke tests"
 
-log "Starting API server…"
-docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api
+log "Starting API + worker …"
+docker compose -f "${ROOT}/docker-compose.yaml" up -d --build api worker
 API_STARTED=true
+WORKER_STARTED=true
 wait_healthy api
 
 run_tier "API smoke (runtime-policy)" \
   bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/runtime-policy-e2e.sh"
 
-log "Stopping API server…"
-docker compose -f "${ROOT}/docker-compose.yaml" stop api 2>/dev/null || true
-docker compose -f "${ROOT}/docker-compose.yaml" rm -f api 2>/dev/null || true
+run_tier "API smoke (agent-evaluation)" \
+  bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/agent-evaluation-test.sh"
+
+log "Stopping API + worker …"
+docker compose -f "${ROOT}/docker-compose.yaml" stop api worker 2>/dev/null || true
+docker compose -f "${ROOT}/docker-compose.yaml" rm -f api worker 2>/dev/null || true
 API_STARTED=false
+WORKER_STARTED=false
 
 # Re-seed system skills after functional tests (they truncate the skills table)
 if [[ "${RUN_E2E}" == "true" ]]; then

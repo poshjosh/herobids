@@ -1,6 +1,7 @@
 # Custom
 
 .ignore
+app-data/
 
 # Dependencies
 node_modules/

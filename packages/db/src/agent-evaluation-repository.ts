@@ -137,7 +137,7 @@ export async function createRun(
  * Transition a run to `running` status. Returns false if the run was not in `queued` status.
  */
 export async function markRunning(db: Database, id: string): Promise<boolean> {
-  const result = await db
+  await db
     .update(agentEvaluations)
     .set({ status: 'running', startedAt: new Date() })
     .where(and(eq(agentEvaluations.id, id), eq(agentEvaluations.status, 'queued')));
