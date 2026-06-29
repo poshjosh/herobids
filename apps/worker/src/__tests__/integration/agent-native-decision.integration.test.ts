@@ -128,7 +128,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       TRUNCATE
         fills, orders, execution_plans, decisions, positions,
         decision_contexts, journal_events,
-        capability_grants, agent_connections, connections,
+        agent_connections, connections,
         venue_accounts, user_credentials,
         agent_runtime_sessions, agent_messages, agent_artifacts,
         agent_outbound_messages, agents,

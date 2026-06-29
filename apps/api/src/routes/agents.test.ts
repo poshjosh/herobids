@@ -546,7 +546,7 @@ describe('agent routes lifecycle', () => {
     expect(billingUpdate!.values).toEqual({ sessionId: null, agentId: null });
   });
 
-  it('resolves orphaned connections via capability_grants join before deleting the agent', async () => {
+  it('resolves orphaned connections via agent_connections join before deleting the agent', async () => {
     const { agentRoutes } = await import('./agents.js');
     const orphanedBinding = {
       id: 'binding-1',

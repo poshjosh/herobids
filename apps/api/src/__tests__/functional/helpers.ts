@@ -231,8 +231,6 @@ export async function buildApp() {
 export async function truncateAll(db: ReturnType<typeof createDatabase>) {
   await db.execute(sql`
     TRUNCATE
-      capability_grant_audit,
-      capability_grants,
       connections,
       user_credentials,
       venue_accounts,

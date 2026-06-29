@@ -1,0 +1,38 @@
+-- ============================================================================
+-- IRREVERSIBLE MIGRATION
+-- This migration drops the legacy capability_grants and capability_grant_audit
+-- tables. Data in these tables cannot be recovered after this migration runs.
+-- Operational requirement: take a database backup before applying in any
+-- non-ephemeral environment.
+--
+-- PRE-MIGRATION SAFETY GATE (run before applying this migration):
+-- Ensure every active capability_grants row has a corresponding agent_connections
+-- row. Orphaned active grants will be lost irreversibly.
+--
+--   SELECT cg.*
+--   FROM capability_grants cg
+--   LEFT JOIN agent_connections ac
+--     ON cg.agent_id = ac.agent_id
+--     AND cg.connection_id = ac.connection_id
+--   WHERE cg.status = 'active' AND ac.id IS NULL;
+--
+-- If the query above returns rows, backfill those rows into agent_connections
+-- before applying this migration. Example backfill pattern:
+--
+--   INSERT INTO agent_connections (agent_id, connection_id, status, created_at, updated_at)
+--   SELECT cg.agent_id, cg.connection_id, cg.status, cg.created_at, NOW()
+--   FROM capability_grants cg
+--   LEFT JOIN agent_connections ac
+--     ON cg.agent_id = ac.agent_id AND cg.connection_id = ac.connection_id
+--   WHERE ac.id IS NULL;
+--
+-- To archive capability_grant_audit history before it is dropped:
+--   INSERT INTO agent_connection_audit (id, agent_connection_id, action, actor_type, actor_id, reason, detail, created_at)
+--   SELECT gen_random_uuid()::text, ac.id, cga.action, cga.actor_type, cga.actor_id, cga.reason, cga.detail, cga.created_at
+--   FROM capability_grant_audit cga
+--   JOIN capability_grants cg ON cg.id = cga.grant_id
+--   JOIN agent_connections ac ON ac.agent_id = cg.agent_id AND ac.connection_id = cg.connection_id;
+--
+-- ============================================================================
+DROP TABLE "capability_grant_audit" CASCADE;--> statement-breakpoint
+DROP TABLE "capability_grants" CASCADE;
