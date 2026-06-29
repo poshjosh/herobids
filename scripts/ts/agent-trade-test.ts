@@ -324,7 +324,7 @@ async function authenticate(): Promise<string> {
 }
 
 interface ProviderLinkResult {
-  tradingBinding: { id: string };
+  connection: { id: string };
 }
 
 function buildTradeTestDecision(): { instrumentId: string; targetSize: string } {
@@ -360,9 +360,9 @@ async function createProviderLink(token: string): Promise<string> {
     },
   );
 
-  if (res.status === 201 && res.body.tradingBinding?.id) {
-    ok(`Provider link created — bindingId=${res.body.tradingBinding.id}`);
-    return res.body.tradingBinding.id;
+  if (res.status === 201 && res.body.connection?.id) {
+    ok(`Provider link created — connectionId=${res.body.connection.id}`);
+    return res.body.connection.id;
   }
 
   fatal(`Provider link creation failed: ${res.status} ${JSON.stringify(res.body)}`);
@@ -438,14 +438,14 @@ async function createAgent(token: string): Promise<string> {
   fatal(`Agent creation failed: ${res.status} ${JSON.stringify(res.body)}`);
 }
 
-async function bindTradingCapability(token: string, agentId: string, bindingId: string): Promise<void> {
+async function bindTradingCapability(token: string, agentId: string, connectionId: string): Promise<void> {
   const res = await apiRequest<{ error?: string }>(
     'POST', `/agents/${agentId}/capabilities/trading/actions/bind`,
-    { token, body: { bindingId } },
+    { token, body: { connectionId } },
   );
 
   if (res.status === 200 || res.status === 201) {
-    ok(`Trading capability bound — bindingId=${bindingId}`);
+    ok(`Trading capability bound — connectionId=${connectionId}`);
     return;
   }
 
@@ -1063,10 +1063,10 @@ async function main(): Promise<void> {
   section('Phase 2: Setup');
 
   const token = await authenticate();
-  const bindingId = await createProviderLink(token);
+  const connectionId = await createProviderLink(token);
   const agentId = await createAgent(token);
   await verifyAgentProvisioned(token, agentId);
-  await bindTradingCapability(token, agentId, bindingId);
+  await bindTradingCapability(token, agentId, connectionId);
   await startAgent(token, agentId);
   ok(`Agent ${agentId} is starting`);
 
@@ -1079,7 +1079,7 @@ async function main(): Promise<void> {
     await sleep(5000);
 
     // Publish a manage_bot message to the agent's inbound Redis stream.
-    // This exercises the exact broker path that was broken by the bindingId/venueAccountId confusion.
+    // This exercises the exact broker path that was broken by the connectionId/venueAccountId confusion.
 
     // Build venue-aware bot config — swap venues (1inch) require swapAssets and cannot use paper mode.
     // Symbol must use BASE/QUOTE format for swap venues (validated by the broker's safety gate).
@@ -1111,7 +1111,7 @@ async function main(): Promise<void> {
 
     const botCreatePayload = {
       action: 'create_and_start',
-      bindingId,
+      connectionId,
       config: botConfig,
     };
 

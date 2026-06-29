@@ -1,6 +1,6 @@
 import { and, eq, asc } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { agentSkills, capabilityGrants, connections, skillRevisions, skills, tradingBindings } from './schema/index.js';
+import { agentSkills, capabilityGrants, connections, skillRevisions, skills } from './schema/index.js';
 import {
   BASE_SKILL,
   SYSTEM_SKILLS,
@@ -30,15 +30,12 @@ type RuntimeGrantRow = {
   family: string;
   grantStatus: string;
   grantedAt: Date;
-  bindingId: string;
-  bindingStatus: string;
   connectionId: string;
   connectionStatus: string;
   provider: string;
   label: string;
-  bindingRef: string | null;
-  bindingProfile: Record<string, unknown> | null;
-  sourceVenueAccountId: string | null;
+  providerRef: string | null;
+  profile: Record<string, unknown> | null;
 };
 
 function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
@@ -60,29 +57,18 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
       bindingReadiness: 'revoked',
       agentEligibility: 'ineligible',
       effectiveReady: false,
-      bindingId: row.bindingId,
-      reasons: ['underlying connection has been revoked'],
-    };
-  }
-  if (row.bindingStatus === 'revoked') {
-    return {
-      family: row.family,
-      state: 'revoked',
-      bindingReadiness: 'revoked',
-      agentEligibility: 'ineligible',
-      effectiveReady: false,
-      bindingId: row.bindingId,
-      reasons: ['binding has been revoked'],
+      connectionId: row.connectionId,
+      reasons: ['connection has been revoked'],
     };
   }
   if (row.grantStatus === 'revoked') {
     return {
       family: row.family,
       state: 'revoked',
-      bindingReadiness: row.bindingStatus === 'active' ? 'ready' : 'revoked',
+      bindingReadiness: 'ready',
       agentEligibility: 'ineligible',
       effectiveReady: false,
-      bindingId: row.bindingId,
+      connectionId: row.connectionId,
       reasons: ['grant has been revoked'],
     };
   }
@@ -93,7 +79,7 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
     bindingReadiness: 'ready',
     agentEligibility: 'eligible',
     effectiveReady: true,
-    bindingId: row.bindingId,
+    connectionId: row.connectionId,
     reasons: [],
   };
 }
@@ -102,9 +88,9 @@ function chooseLatest(rows: RuntimeGrantRow[]): RuntimeGrantRow | undefined {
   return rows.slice().sort((left, right) => right.grantedAt.getTime() - left.grantedAt.getTime())[0];
 }
 
-function chooseDefaultBindingId(rows: RuntimeGrantRow[]): string | null {
-  const readyRows = rows.filter((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
-  return chooseLatest(readyRows)?.bindingId ?? chooseLatest(rows)?.bindingId ?? null;
+function chooseDefaultConnectionId(rows: RuntimeGrantRow[]): string | null {
+  const readyRows = rows.filter((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
+  return chooseLatest(readyRows)?.connectionId ?? chooseLatest(rows)?.connectionId ?? null;
 }
 
 function inferSkillFromRevisionRow(row: {
@@ -210,19 +196,15 @@ export async function resolveRuntimeCapabilityDescriptor(
       family: capabilityGrants.capabilityFamily,
       grantStatus: capabilityGrants.status,
       grantedAt: capabilityGrants.grantedAt,
-      bindingId: tradingBindings.id,
-      bindingStatus: tradingBindings.status,
       connectionId: connections.id,
       connectionStatus: connections.status,
-      provider: tradingBindings.provider,
-      label: tradingBindings.label,
-      bindingRef: tradingBindings.bindingRef,
-      bindingProfile: tradingBindings.bindingProfile,
-      sourceVenueAccountId: tradingBindings.sourceVenueAccountId,
+      provider: connections.provider,
+      label: connections.label,
+      providerRef: connections.providerRef,
+      profile: connections.profile,
     })
     .from(capabilityGrants)
-    .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
-    .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
+    .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
     .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.capabilityFamily, 'trading')));
 
   const grantedBindingsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]> = {};
@@ -231,23 +213,21 @@ export async function resolveRuntimeCapabilityDescriptor(
 
   const familiesFromSkills = new Set(resolvedSkills.flatMap((skill) => skill.capabilityFamilies));
   if (tradingRows.length > 0 || familiesFromSkills.has('trading')) {
-    const defaultBindingId = chooseDefaultBindingId(tradingRows);
+    const defaultConnectionId = chooseDefaultConnectionId(tradingRows);
     grantedBindingsByFamily['trading'] = tradingRows.map((row) => ({
       family: 'trading',
-      bindingId: row.bindingId,
       connectionId: row.connectionId,
       provider: row.provider,
       label: row.label,
-      bindingRef: row.bindingRef,
-      bindingProfile: row.bindingProfile,
-      sourceVenueAccountId: row.sourceVenueAccountId,
+      providerRef: row.providerRef,
+      profile: row.profile,
       readiness: deriveReadiness(row),
-      isDefault: row.bindingId === defaultBindingId,
+      isDefault: row.connectionId === defaultConnectionId,
     }));
     readinessByFamily['trading'] = deriveReadiness(
-      tradingRows.find((row) => row.bindingId === defaultBindingId) ?? chooseLatest(tradingRows),
+      tradingRows.find((row) => row.connectionId === defaultConnectionId) ?? chooseLatest(tradingRows),
     );
-    defaultBindingByFamily['trading'] = defaultBindingId;
+    defaultBindingByFamily['trading'] = defaultConnectionId;
   }
 
   for (const family of familiesFromSkills) {

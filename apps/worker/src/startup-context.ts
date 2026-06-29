@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { connections, tradingBindings, venueAccounts } from '@herobids/db';
+import { connections, venueAccounts } from '@herobids/db';
 import type { BotRepository, Database } from '@herobids/db';
 
 type BotRow = Awaited<ReturnType<BotRepository['getBotById']>>;
@@ -17,9 +17,9 @@ export class BotStartupError extends Error {
   constructor(
     public readonly code:
       | 'bot_not_found'
-      | 'missing_trading_binding_id'
-      | 'binding_not_found'
-      | 'binding_not_usable'
+      | 'missing_connection_id'
+      | 'connection_not_found'
+      | 'connection_not_usable'
       | 'missing_source_venue_account'
       | 'source_venue_account_not_found',
     message: string,
@@ -32,9 +32,8 @@ export class BotStartupError extends Error {
 export interface BotStartupContext {
   botId: string;
   userId: string;
-  tradingBindingId: string;
-  provider: string;
   connectionId: string;
+  provider: string;
   sourceVenueAccountId: string | null;
   /** True when the resolved provider requires a source venue account for execution. */
   sourceVenueAccountRequired: boolean;
@@ -62,12 +61,9 @@ function requiresSourceVenueAccount(venue: string, venueType: 'orderbook' | 'swa
   return normalizedVenue === 'jupiter' || normalizedVenue === '1inch';
 }
 
-function resolveTradingBindingId(bot: NonNullable<BotRow>, rawConfig: Record<string, unknown>): string {
-  // Only accept genuine tradingBindingId values — do NOT fall back to venueAccountId
-  // as a surrogate, since a venue-account ID is not a valid trading-binding ID and
-  // would cause misleading lookup failures in resolveBotStartupContext.
-  return readStringValue(rawConfig, 'tradingBindingId')
-    ?? bot.tradingBindingId
+function resolveConnectionId(bot: NonNullable<BotRow>, rawConfig: Record<string, unknown>): string {
+  return readStringValue(rawConfig, 'connectionId')
+    ?? (bot as Record<string, unknown>).connectionId as string
     ?? '';
 }
 
@@ -77,68 +73,65 @@ export async function resolveBotStartupContext(params: ResolveBotStartupContextP
     throw new BotStartupError('bot_not_found', `Bot ${params.botId} not found — cannot resolve startup context`);
   }
 
-  const tradingBindingId = resolveTradingBindingId(bot, params.rawConfig);
-  if (!tradingBindingId) {
-    throw new BotStartupError('missing_trading_binding_id', `Bot ${params.botId} has no tradingBindingId in job config or persisted bot row — refusing to start`);
+  const connectionId = resolveConnectionId(bot, params.rawConfig);
+  if (!connectionId) {
+    throw new BotStartupError('missing_connection_id', `Bot ${params.botId} has no connectionId in job config or persisted bot row — refusing to start`);
   }
 
-  const [bindingRow] = await params.db
+  const [connRow] = await params.db
     .select({
-      provider: tradingBindings.provider,
-      connectionId: tradingBindings.connectionId,
-      sourceVenueAccountId: tradingBindings.sourceVenueAccountId,
-      bindingStatus: tradingBindings.status,
+      provider: connections.provider,
       connectionStatus: connections.status,
     })
-    .from(tradingBindings)
-    .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
-    .where(eq(tradingBindings.id, tradingBindingId))
+    .from(connections)
+    .where(eq(connections.id, connectionId))
     .limit(1);
 
-  if (!bindingRow) {
-    throw new BotStartupError('binding_not_found', `Trading binding ${tradingBindingId} not found — cannot start bot ${params.botId}`);
+  if (!connRow) {
+    throw new BotStartupError('connection_not_found', `Connection ${connectionId} not found — cannot start bot ${params.botId}`);
   }
 
-  if (bindingRow.bindingStatus !== 'active' || bindingRow.connectionStatus !== 'active') {
-    throw new BotStartupError('binding_not_usable', `Trading binding ${tradingBindingId} is not usable for startup — binding or connection is inactive`);
+  if (connRow.connectionStatus !== 'active') {
+    throw new BotStartupError('connection_not_usable', `Connection ${connectionId} is not usable for startup — connection is inactive`);
   }
 
-  const sourceVenueAccountId = bindingRow.sourceVenueAccountId;
+  // Look up venue account by matching user + provider (legacy: was sourceVenueAccountId on trading_bindings)
+  const [vaRow] = await params.db
+    .select({
+      id: venueAccounts.id,
+      userId: venueAccounts.userId,
+      venue: venueAccounts.venue,
+      label: venueAccounts.label,
+      venueAccountRef: venueAccounts.venueAccountRef,
+      credentialId: venueAccounts.credentialId,
+    })
+    .from(venueAccounts)
+    .where(eq(venueAccounts.id, (bot as Record<string, unknown>).venueAccountId as string))
+    .limit(1);
+
+  const sourceVenueAccountId = vaRow?.id ?? null;
   const needsSourceVenueAccount = requiresSourceVenueAccount(params.venue, params.venueType);
+
   if (!sourceVenueAccountId && needsSourceVenueAccount) {
-    throw new BotStartupError('missing_source_venue_account', `Trading binding ${tradingBindingId} is missing sourceVenueAccountId — cannot start ${params.venueType} bot ${params.botId}`);
+    throw new BotStartupError('missing_source_venue_account', `Bot ${params.botId} has no venue account — cannot start ${params.venueType} bot`);
   }
 
   let venueAccount: VenueAccountStartupRow | null = null;
   if (sourceVenueAccountId) {
-    const [venueAccountRow] = await params.db
-      .select({
-        id: venueAccounts.id,
-        userId: venueAccounts.userId,
-        venue: venueAccounts.venue,
-        label: venueAccounts.label,
-        venueAccountRef: venueAccounts.venueAccountRef,
-        credentialId: venueAccounts.credentialId,
-      })
-      .from(venueAccounts)
-      .where(eq(venueAccounts.id, sourceVenueAccountId))
-      .limit(1);
-
-    if (!venueAccountRow) {
+    if (!vaRow) {
       if (needsSourceVenueAccount) {
         throw new BotStartupError('source_venue_account_not_found', `Source venue account ${sourceVenueAccountId} not found — cannot start bot ${params.botId}`);
       }
     } else {
-      venueAccount = venueAccountRow;
+      venueAccount = vaRow;
     }
   }
 
   return {
     botId: params.botId,
     userId: bot.userId,
-    tradingBindingId,
-    provider: bindingRow.provider,
-    connectionId: bindingRow.connectionId,
+    connectionId,
+    provider: connRow.provider,
     sourceVenueAccountId,
     sourceVenueAccountRequired: needsSourceVenueAccount,
     venueAccount,

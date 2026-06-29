@@ -11,7 +11,7 @@ import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 import { resolveCreateAgentModelPayload } from './create-agent-models.js';
-import { buildCreateAgentPayload, resolveCreateAgentBindingId } from './agent-payloads.js';
+import { buildCreateAgentPayload, resolveCreateAgentConnectionId } from './agent-payloads.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
@@ -49,8 +49,8 @@ interface IntentState {
   lightModel: string;
   heavyModel: string;
   telegramChatId: string;
-  tradingBindingId: string;
-  /** Derived from selected trading binding's provider, or user-picked for paper mode. */
+  connectionId: string;
+  /** Derived from selected connection's provider, or user-picked for paper mode. */
   venue: string;
   /** Derived from venue: hyperliquid→orderbook, jupiter→swap, etc. */
   venueType: '' | 'orderbook' | 'swap';
@@ -183,7 +183,7 @@ function CreateAgentFlow({
     lightModel: '',
     heavyModel: '',
     telegramChatId: '',
-    tradingBindingId: '',
+    connectionId: '',
     venue: '',
     venueType: '',
     style: 'balanced',
@@ -222,9 +222,9 @@ function CreateAgentFlow({
     queryKey: ['ai', 'available-models'],
     queryFn: () => aiApi.availableModels(),
   });
-  const tradingBindingsQuery = useQuery({
-    queryKey: ['capabilities', 'trading', 'bindings'],
-    queryFn: () => capabilitiesApi.tradingBindings(),
+  const tradingConnectionsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'connections'],
+    queryFn: () => capabilitiesApi.tradingConnections(),
   });
   const riskDefaultsQuery = useQuery({
     queryKey: ['agents', 'risk-defaults'],
@@ -328,23 +328,23 @@ function CreateAgentFlow({
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
   const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   const showTechnical = intent.technicalPreFilterEnabled && requiresTradingSetup;
-  const availableTradingBindings = (tradingBindingsQuery.data?.bindings ?? []).filter(
-    (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
+  const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
+    (connection) => connection.status === 'active' && connection.connectionStatus === 'active',
   );
-  const selectedTradingBinding = availableTradingBindings.find((binding) => binding.bindingId === intent.tradingBindingId) ?? null;
+  const selectedConnection = availableConnections.find((connection) => connection.connectionId === intent.connectionId) ?? null;
 
-  // Derive venue + venueType from selected trading binding's provider
+  // Derive venue + venueType from selected connection's provider
   useEffect(() => {
-    if (selectedTradingBinding?.provider) {
-      const derivedVenueType = VENUE_TYPE_MAP[selectedTradingBinding.provider] ?? '';
+    if (selectedConnection?.provider) {
+      const derivedVenueType = VENUE_TYPE_MAP[selectedConnection.provider] ?? '';
       setIntent((state) => {
-        if (state.venue !== selectedTradingBinding.provider || state.venueType !== derivedVenueType) {
-          return { ...state, venue: selectedTradingBinding.provider, venueType: derivedVenueType };
+        if (state.venue !== selectedConnection.provider || state.venueType !== derivedVenueType) {
+          return { ...state, venue: selectedConnection.provider, venueType: derivedVenueType };
         }
         return state;
       });
     }
-  }, [selectedTradingBinding?.provider]);
+  }, [selectedConnection?.provider]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -378,8 +378,8 @@ function CreateAgentFlow({
         runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
       }));
 
-      if (requiresTradingSetup && intent.tradingBindingId) {
-        await agentsApi.tradingAction(agent.id, 'bind', { bindingId: intent.tradingBindingId });
+      if (requiresTradingSetup && intent.connectionId) {
+        await agentsApi.tradingAction(agent.id, 'bind', { connectionId: intent.connectionId });
       }
 
       return agent;
@@ -446,10 +446,10 @@ function CreateAgentFlow({
         onClose={() => setShowSetup(false)}
         onSuccess={(result) => {
           setShowSetup(false);
-          void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
-          const tradingBindingId = resolveCreateAgentBindingId(result.tradingBinding ?? null);
-          if (tradingBindingId) {
-            setIntent((state) => ({ ...state, tradingBindingId }));
+          void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] });
+          const connectionId = resolveCreateAgentConnectionId(result.connection ?? null);
+          if (connectionId) {
+            setIntent((state) => ({ ...state, connectionId }));
           }
         }}
       />
@@ -593,15 +593,15 @@ function CreateAgentFlow({
                 </div>
               ) : null
             }
-            tradingBindingSlot={
+            connectionSlot={
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
                 <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                   {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
                 </div>
-                {tradingBindingsQuery.isLoading ? (
+                {tradingConnectionsQuery.isLoading ? (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
-                ) : availableTradingBindings.length === 0 ? (
+                ) : availableConnections.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
                       {intl.formatMessage({ id: 'agents.create.noConnections' })}

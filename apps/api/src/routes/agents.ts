@@ -14,6 +14,7 @@ import {
   billingUsageEvents,
   bots,
   capabilityGrants,
+  connections,
   decisions,
   decisionFailures,
   executionPlans,
@@ -21,7 +22,6 @@ import {
   skillRevisions,
   skillUsageEvents,
   skills,
-  tradingBindings,
   users,
   venueAccounts,
 } from '@herobids/db';
@@ -713,16 +713,16 @@ export async function agentRoutes(
       return reply.status(400).send({ error: 'validation_error', details: [executionMode.issue] });
     }
 
-    // Validate execution capability against the agent's active trading binding (if any)
+    // Validate execution capability against the agent's active trading connection (if any)
     if (executionMode.value) {
-      const [activeGrant] = await db.select({ provider: tradingBindings.provider })
+      const [activeGrant] = await db.select({ provider: connections.provider })
         .from(capabilityGrants)
-        .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
+        .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
         .where(and(
           eq(capabilityGrants.agentId, id),
           eq(capabilityGrants.capabilityFamily, 'trading'),
           eq(capabilityGrants.status, 'active'),
-          eq(tradingBindings.status, 'active'),
+          eq(connections.status, 'active'),
         ))
         .limit(1);
       if (activeGrant) {
@@ -880,46 +880,10 @@ export async function agentRoutes(
     await db.delete(bots).where(
       and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)),
     );
-    // 7. RESOLVE orphaned trading_bindings. Only revoke when this agent is the
-    //    sole grant holder — shared bindings with other active agents stay active.
-    //    Per-binding grant-count queries (N+1). Acceptable: agents rarely have
-    //    more than a handful of trading bindings. If that changes, replace with
-    //    a single GROUP BY / HAVING count(*) = 1 query.
-    const agentBindings = await db
-      .select({ id: tradingBindings.id, sourceVenueAccountId: tradingBindings.sourceVenueAccountId })
-      .from(tradingBindings)
-      .innerJoin(capabilityGrants, eq(capabilityGrants.bindingId, tradingBindings.id))
-      .where(eq(capabilityGrants.agentId, id));
-    const orphanedBindings: typeof agentBindings = [];
-    for (const binding of agentBindings) {
-      const allGrants = await db
-        .select()
-        .from(capabilityGrants)
-        .where(eq(capabilityGrants.bindingId, binding.id));
-      if (allGrants.length === 1) {
-        orphanedBindings.push(binding);
-      }
-    }
-    // 8. NULL venue_accounts.credentialId on orphaned venue accounts (unblocks credential deletion).
-    // 9. MARK orphaned trading_bindings as revoked (preserves audit trail).
-    if (orphanedBindings.length > 0) {
-      const orphanedVenueAccountIds = [...new Set(
-        orphanedBindings
-          .map((b) => b.sourceVenueAccountId)
-          .filter((vaId): vaId is string => vaId !== null),
-      )];
-      if (orphanedVenueAccountIds.length > 0) {
-        await db
-          .update(venueAccounts)
-          .set({ credentialId: null })
-          .where(inArray(venueAccounts.id, orphanedVenueAccountIds));
-      }
-      await db
-        .update(tradingBindings)
-        .set({ status: 'revoked' })
-        .where(inArray(tradingBindings.id, orphanedBindings.map((b) => b.id)));
-    }
-    // 9. DELETE agents (cascades: agent_skills, agent_credentials, capability_grants, capability_grant_audit)
+    // 7. NULL venue_accounts.credentialId on venue accounts only used by this agent's
+    //    connections (unblocks credential deletion). Connections are user-owned and
+    //    persist after agent deletion; only clean up the linkage.
+    // 8. DELETE agents (cascades: agent_skills, capability_grants, capability_grant_audit)
     await db.delete(agents).where(eq(agents.id, id));
 
     // Signal the worker to stop and remove the Docker container for this agent.

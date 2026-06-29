@@ -3,7 +3,7 @@ import { Queue } from 'bullmq';
 import crypto from 'node:crypto';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, tradingBindings, blueprints, PgJournal, fills, journalEvents } from '@herobids/db';
+import { bots, connections, blueprints, PgJournal, fills, journalEvents, venueAccounts } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
@@ -27,7 +27,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     let blueprintId: string | null = null;
     let configSnapshot: Record<string, unknown> | null = null;
     const usingDeprecatedInlineConfig = !parsed.data.blueprintId;
-    const tradingBindingId = parsed.data.tradingBindingId;
+    const connectionId = parsed.data.connectionId;
 
     if (parsed.data.blueprintId) {
       // Look up the blueprint; accepts owner's private or any public blueprint.
@@ -99,11 +99,17 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         // hashtext() returns int4; the two-argument form takes (int4, int4).
         await tx.execute(sql`SELECT pg_advisory_xact_lock(1, hashtext(${request.userId}))`);
 
-        // Verify trading binding ownership inside the transaction.
-        const [binding] = await tx.select({ id: tradingBindings.id, sourceVenueAccountId: tradingBindings.sourceVenueAccountId }).from(tradingBindings)
-          .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, request.userId)));
-        if (!binding) return { kind: 'not_found' as const };
-        if (!binding.sourceVenueAccountId) return { kind: 'missing_source_venue_account' as const };
+        // Verify connection ownership inside the transaction.
+        const [conn] = await tx.select({ id: connections.id, provider: connections.provider, credentialId: connections.credentialId }).from(connections)
+          .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
+        if (!conn) return { kind: 'not_found' as const };
+
+        // Resolve venue account for this connection: look up a venue account
+        // matching the user and provider, preferring one linked to the same credential.
+        const [va] = await tx.select({ id: venueAccounts.id }).from(venueAccounts)
+          .where(and(eq(venueAccounts.userId, request.userId), eq(venueAccounts.venue, conn.provider)))
+          .limit(1);
+        if (!va) return { kind: 'missing_venue_account' as const };
 
         // Atomic count-and-insert: re-check the limit inside the lock.
         const planCheck = await checkBotLimit(tx as unknown as Database, plansConfig, request.userId, planId, request.isAdmin);
@@ -113,8 +119,8 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
           await tx.insert(bots).values({
             id,
             userId: request.userId,
-            venueAccountId: binding.sourceVenueAccountId,
-            tradingBindingId,
+            venueAccountId: va.id,
+            connectionId,
             config: resolvedConfig,
             blueprintId,
             configSnapshot,
@@ -135,10 +141,10 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       });
 
       if (result.kind === 'not_found') {
-        return reply.status(404).send({ error: 'not_found', message: 'Trading binding not found' });
+        return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
       }
-      if (result.kind === 'missing_source_venue_account') {
-        return reply.status(400).send({ error: 'binding.missing_venue_account', message: 'Trading binding does not have a source venue account for bot creation' });
+      if (result.kind === 'missing_venue_account') {
+        return reply.status(400).send({ error: 'connection.missing_venue_account', message: 'No venue account found for this connection. Please complete trading setup first.' });
       }
       if (result.kind === 'blueprint_deleted') {
         return reply.status(404).send({ error: 'not_found', message: 'Blueprint not found' });
@@ -147,22 +153,26 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         return reply.status(403).send(errorPayload(result.error.code, result.error.message, result.error.params));
       }
     } else {
-      // No plan config — verify trading binding ownership then insert directly.
-      const [binding] = await db.select({ id: tradingBindings.id, sourceVenueAccountId: tradingBindings.sourceVenueAccountId }).from(tradingBindings)
-        .where(and(eq(tradingBindings.id, tradingBindingId), eq(tradingBindings.userId, request.userId)));
-      if (!binding) {
-        return reply.status(404).send({ error: 'not_found', message: 'Trading binding not found' });
+      // No plan config — verify connection ownership then insert directly.
+      const [conn] = await db.select({ id: connections.id, provider: connections.provider }).from(connections)
+        .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
+      if (!conn) {
+        return reply.status(404).send({ error: 'not_found', message: 'Connection not found' });
       }
-      if (!binding.sourceVenueAccountId) {
-        return reply.status(400).send({ error: 'binding.missing_venue_account', message: 'Trading binding does not have a source venue account for bot creation' });
+
+      const [va] = await db.select({ id: venueAccounts.id }).from(venueAccounts)
+        .where(and(eq(venueAccounts.userId, request.userId), eq(venueAccounts.venue, conn.provider)))
+        .limit(1);
+      if (!va) {
+        return reply.status(400).send({ error: 'connection.missing_venue_account', message: 'No venue account found for this connection. Please complete trading setup first.' });
       }
 
       try {
         await db.insert(bots).values({
           id,
           userId: request.userId,
-          venueAccountId: binding.sourceVenueAccountId,
-          tradingBindingId,
+          venueAccountId: va.id,
+          connectionId,
           config: resolvedConfig,
           blueprintId,
           configSnapshot,
@@ -206,9 +216,9 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     // Validate execution capability for the updated config against the bot's venue type
     const newExecutionMode = (parsed.data.config['execution'] as Record<string, unknown> | undefined)?.['mode'] as string | undefined;
     if (newExecutionMode) {
-      const [binding] = await db.select({ provider: tradingBindings.provider }).from(tradingBindings)
-        .where(eq(tradingBindings.id, existing.tradingBindingId));
-      const botVenueType = binding ? venueTypeFromProvider(binding.provider) : undefined;
+      const [conn] = await db.select({ provider: connections.provider }).from(connections)
+        .where(eq(connections.id, existing.connectionId));
+      const botVenueType = conn ? venueTypeFromProvider(conn.provider) : undefined;
       if (botVenueType) {
         const capCheck = validateExecutionCapability({
           actorType: 'bot',
@@ -243,7 +253,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       await queue.add('restart-instance', {
         command: 'restart',
         botId: id,
-        config: { ...parsed.data.config, tradingBindingId: existing.tradingBindingId, venueAccountId: existing.venueAccountId, userId: existing.userId },
+        config: { ...parsed.data.config, connectionId: existing.connectionId, venueAccountId: existing.venueAccountId, userId: existing.userId },
       });
     }
 
@@ -483,9 +493,9 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     const executionMode = (execConfig?.['mode'] as string | undefined) ?? 'paper';
 
     // Validate execution capability
-    const [binding] = await db.select({ provider: tradingBindings.provider }).from(tradingBindings)
-      .where(eq(tradingBindings.id, bot.tradingBindingId));
-    const botVenueType = binding ? venueTypeFromProvider(binding.provider) : undefined;
+    const [conn] = await db.select({ provider: connections.provider }).from(connections)
+      .where(eq(connections.id, bot.connectionId));
+    const botVenueType = conn ? venueTypeFromProvider(conn.provider) : undefined;
     if (botVenueType) {
       const capCheck = validateExecutionCapability({
         actorType: 'bot',
@@ -512,7 +522,7 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     await queue.add('start-instance', {
       command: 'start',
       botId: id,
-      config: { ...bot.config as Record<string, unknown>, tradingBindingId: bot.tradingBindingId, venueAccountId: bot.venueAccountId, userId: bot.userId },
+      config: { ...bot.config as Record<string, unknown>, connectionId: bot.connectionId, venueAccountId: bot.venueAccountId, userId: bot.userId },
     });
 
     return reply.status(202).send({ status: 'starting', botId: id });

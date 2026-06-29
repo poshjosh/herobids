@@ -61,7 +61,7 @@ export async function venueAccountRoutes(
     // genuinely missing credential (prevents probing foreign credential IDs).
     if (parsed.data.credentialId) {
       const [cred] = await db
-        .select({ id: userCredentials.id, venue: userCredentials.venue })
+        .select({ id: userCredentials.id, provider: userCredentials.provider })
         .from(userCredentials)
         .where(and(eq(userCredentials.id, parsed.data.credentialId), eq(userCredentials.userId, request.userId)));
 
@@ -73,10 +73,10 @@ export async function venueAccountRoutes(
         );
       }
 
-      if (cred.venue !== parsed.data.venue) {
+      if (cred.provider !== parsed.data.venue) {
         return reply.status(400).send(
-          errorPayload('credential.venue_mismatch', `Credential is for venue "${cred.venue}", not "${parsed.data.venue}"`, {
-            credentialVenue: cred.venue,
+          errorPayload('credential.provider_mismatch', `Credential is for provider "${cred.provider}", not "${parsed.data.venue}"`, {
+            credentialProvider: cred.provider,
             venue: parsed.data.venue,
           }),
         );

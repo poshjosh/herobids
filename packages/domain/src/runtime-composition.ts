@@ -3,15 +3,13 @@ import type { SkillDefinition } from './skills.js';
 
 export interface RuntimeFamilyBindingDescriptor {
   family: string;
-  bindingId: string;
   connectionId: string;
   provider: string;
   label: string;
   readiness: CapabilityReadiness;
   isDefault: boolean;
-  bindingRef?: string | null;
-  bindingProfile?: Record<string, unknown> | null;
-  sourceVenueAccountId?: string | null;
+  providerRef?: string | null;
+  profile?: Record<string, unknown> | null;
 }
 
 export interface RuntimeBudgetPolicy {

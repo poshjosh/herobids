@@ -72,7 +72,7 @@ export interface AgentFormBodyProps {
   // Slots (caller injects shell-specific chrome)
   modelSlot: React.ReactNode;
   skillsSlot?: React.ReactNode;
-  tradingBindingSlot?: React.ReactNode;
+  connectionSlot?: React.ReactNode;
   tradingSetupSlot?: React.ReactNode;
   nameAutoHint?: React.ReactNode;
 }
@@ -283,7 +283,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         aiConfig={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {props.modelSlot}
-            {props.tradingBindingSlot}
+            {props.connectionSlot}
             <AgentControlsSection
               value={{
                 costPreset: props.value.costPreset,

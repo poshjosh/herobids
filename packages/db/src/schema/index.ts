@@ -39,7 +39,7 @@ export { agentSkills } from './agent-skills.js';
 export { skillLikes } from './skill-likes.js';
 export { skillUsageEvents } from './skill-usage-events.js';
 export { skillEntitlements } from './skill-entitlements.js';
-export { agentCredentials } from './agent-credentials.js';
+// agent_credentials REMOVED — agents access credentials exclusively through capability_grants → connections
 // agentInstanceLinks REMOVED — replaced by bots.creatorType/creatorId
 export { agentRuntimeSessions } from './agent-runtime-sessions.js';
 export { agentMessages } from './agent-messages.js';
@@ -48,7 +48,7 @@ export { agentOutboundMessages } from './agent-outbound-messages.js';
 export { datasets } from './datasets.js';
 // Platform primitives — capability model
 export { connections } from './connections.js';
-export { tradingBindings } from './trading-bindings.js';
+// trading_bindings REMOVED — absorbed into connections
 export { capabilityGrants } from './capability-grants.js';
 export { capabilityGrantAudit } from './capability-grant-audit.js';
 export { tokenSafetyOverrides } from './token-safety-overrides.js';

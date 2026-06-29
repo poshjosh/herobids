@@ -33,7 +33,6 @@ import {
   localIdentities,
   userPlans,
   connections,
-  tradingBindings,
   capabilityGrants,
   venueAccounts,
   decisions,
@@ -187,19 +186,8 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       updatedAt: now,
     });
 
-    // 4. Seed trading binding
-    bindingId = crypto.randomUUID();
-    await db.insert(tradingBindings).values({
-      id: bindingId,
-      userId,
-      connectionId,
-      provider: 'hyperliquid',
-      label: 'Test Binding',
-      status: 'active',
-      sourceVenueAccountId: venueAccountId,
-      createdAt: now,
-      updatedAt: now,
-    });
+    // 4. Seed trading connection (connection already exists from step 3; this bindingId is used for grants)
+    bindingId = connectionId; // bindingId is now the connectionId
 
     // 5. Seed agent
     agentId = crypto.randomUUID();
@@ -512,21 +500,8 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
         updatedAt: now,
       });
 
-      // Seed 1inch trading binding with base chain
-      swapBindingId = crypto.randomUUID();
-      await db.insert(tradingBindings).values({
-        id: swapBindingId,
-        userId,
-        connectionId: swapConnectionId,
-        provider: '1inch',
-        label: 'Test 1inch Binding',
-        status: 'active',
-        sourceVenueAccountId: swapVenueAccountId,
-        bindingProfile: { chainId: 8453 },
-        createdAt: now,
-        updatedAt: now,
-      });
-
+      // Seed 1inch connection (connection already exists; swapBindingId is the connectionId)
+      swapBindingId = swapConnectionId;
       // Grant 1inch trading capability (more recent than Hyperliquid grant)
       swapGrantId = crypto.randomUUID();
       await db.insert(capabilityGrants).values({

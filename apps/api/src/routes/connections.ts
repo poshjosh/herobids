@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, tradingBindings, userCredentials, agents } from '@herobids/db';
+import { buildRuntimeDescriptor, capabilityGrants, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
@@ -111,11 +111,11 @@ export async function connectionRoutes(
     }
 
     // If a credentialId is provided, verify it exists, belongs to this user,
-    // and its venue matches the connection provider — prevents a Bybit credential
+    // and its provider matches the connection provider — prevents a Bybit credential
     // from being attached to a Hyperliquid connection, etc.
     if (parsed.data.credentialId) {
       const [cred] = await db
-        .select({ id: userCredentials.id, venue: userCredentials.venue })
+        .select({ id: userCredentials.id, provider: userCredentials.provider })
         .from(userCredentials)
         .where(
           and(
@@ -130,10 +130,10 @@ export async function connectionRoutes(
           }),
         );
       }
-      if (!credentialMatchesConnectionProvider(parsed.data.provider, cred.venue)) {
+      if (!credentialMatchesConnectionProvider(parsed.data.provider, cred.provider)) {
         return reply.status(400).send(
-          errorPayload('credential.provider_mismatch', `Credential is for venue "${cred.venue}", not provider "${parsed.data.provider}"`, {
-            credentialVenue: cred.venue,
+          errorPayload('credential.provider_mismatch', `Credential is for provider "${cred.provider}", not provider "${parsed.data.provider}"`, {
+            credentialProvider: cred.provider,
             provider: parsed.data.provider,
           }),
         );
@@ -266,17 +266,11 @@ export async function connectionRoutes(
       .set({ status: 'revoked', updatedAt: new Date() })
       .where(eq(connections.id, id));
 
-    await db
-      .update(tradingBindings)
-      .set({ status: 'revoked', updatedAt: new Date() })
-      .where(eq(tradingBindings.connectionId, id));
-
     if (redisClient) {
       const affectedAgents = await db
         .select({ agentId: capabilityGrants.agentId })
         .from(capabilityGrants)
-        .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
-        .where(and(eq(tradingBindings.connectionId, id), eq(capabilityGrants.status, 'active')));
+        .where(and(eq(capabilityGrants.connectionId, id), eq(capabilityGrants.status, 'active')));
 
       for (const row of affectedAgents) {
         await publishRuntimeRefresh(row.agentId).catch((err: unknown) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCreateAgentBindingId } from './agent-payloads.js';
+import { buildCreateAgentPayload, buildUpdateAgentPayload, normalizeEscalationPolicy, resolveCreateAgentConnectionId } from './agent-payloads.js';
 
 const TECHNICAL_CONFIG = {
   filters: {
@@ -137,17 +137,17 @@ describe('agent payload builders', () => {
     });
   });
 
-  it('resolveCreateAgentBindingId returns null when no binding is present', () => {
-    expect(resolveCreateAgentBindingId(null)).toBeNull();
+  it('resolveCreateAgentConnectionId returns null when no binding is present', () => {
+    expect(resolveCreateAgentConnectionId(null)).toBeNull();
   });
 
-  it('resolveCreateAgentBindingId returns the binding id when present', () => {
-    expect(resolveCreateAgentBindingId({
+  it('resolveCreateAgentConnectionId returns the binding id when present', () => {
+    expect(resolveCreateAgentConnectionId({
       id: 'binding-1',
       connectionId: 'conn-1',
       provider: 'hyperliquid',
       label: 'Main',
-      sourceVenueAccountId: 'va-1',
+       'va-1',
       status: 'active',
     })).toBe('binding-1');
   });

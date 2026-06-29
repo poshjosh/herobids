@@ -157,8 +157,8 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   };
 }
 
-export function resolveCreateAgentBindingId(binding: ProviderSetupResult['tradingBinding'] | null | undefined): string | null {
-  return binding?.id ?? null;
+export function resolveCreateAgentConnectionId(connection: ProviderSetupResult['connection'] | null | undefined): string | null {
+  return connection?.id ?? null;
 }
 
 export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {

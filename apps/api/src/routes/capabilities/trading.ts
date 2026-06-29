@@ -7,7 +7,6 @@ import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from '@her
 import {
   agents,
   connections,
-  tradingBindings,
   capabilityGrants,
   bots,
   fills,
@@ -30,11 +29,11 @@ const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume', 'bind', 'unbind']
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
 
 const BindActionSchema = z.object({
-  bindingId: z.string().min(1),
+  connectionId: z.string().min(1),
 });
 
 const UnbindActionSchema = z.object({
-  bindingId: z.string().min(1),
+  connectionId: z.string().min(1),
 });
 
 const PauseActionSchema = z.object({
@@ -60,39 +59,35 @@ type TradingGrantRow = {
   grantStatus: string;
   grantedAt: Date;
   revokedAt: Date | null;
-  bindingId: string;
-  bindingStatus: string;
-  bindingRef: string | null;
-  bindingProfile: Record<string, unknown> | null;
-  sourceVenueAccountId: string | null;
-  provider: string;
-  label: string;
   connectionId: string;
   connectionStatus: string;
+  providerRef: string | null;
+  profile: Record<string, unknown> | null;
+  provider: string;
+  label: string;
 };
 
-type TradingBindingResourceRow = {
-  binding: typeof tradingBindings.$inferSelect;
-  connection: {
-    id: string;
-    provider: string;
-    label: string;
-    status: string;
-  };
+type TradingConnectionResourceRow = {
+  id: string;
+  userId: string;
+  credentialId: string | null;
+  provider: string;
+  label: string;
+  status: string;
+  providerRef: string | null;
+  profile: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 const SUPPORTED_TRADING_PROVIDERS = ['hyperliquid', 'jupiter', '1inch', 'bybit'] as const;
 
 function deriveTradingReadiness(
   grantStatus: string,
-  bindingStatus: string,
   connectionStatus: string,
 ): { state: ReadinessState; reasons: string[] } {
   if (connectionStatus === 'revoked') {
-    return { state: 'revoked', reasons: ['underlying connection has been revoked'] };
-  }
-  if (bindingStatus === 'revoked') {
-    return { state: 'revoked', reasons: ['binding has been revoked'] };
+    return { state: 'revoked', reasons: ['connection has been revoked'] };
   }
   if (grantStatus === 'revoked') {
     return { state: 'revoked', reasons: ['grant has been revoked'] };
@@ -117,23 +112,19 @@ async function selectAgentTradingGrantRows(db: Database, agentId: string): Promi
       grantStatus: capabilityGrants.status,
       grantedAt: capabilityGrants.grantedAt,
       revokedAt: capabilityGrants.revokedAt,
-      bindingId: tradingBindings.id,
-      bindingStatus: tradingBindings.status,
-      bindingRef: tradingBindings.bindingRef,
-      bindingProfile: tradingBindings.bindingProfile,
-      sourceVenueAccountId: tradingBindings.sourceVenueAccountId,
-      provider: tradingBindings.provider,
-      label: tradingBindings.label,
       connectionId: connections.id,
       connectionStatus: connections.status,
+      providerRef: connections.providerRef,
+      profile: connections.profile,
+      provider: connections.provider,
+      label: connections.label,
     })
     .from(capabilityGrants)
-    .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
-    .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
+    .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
     .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.capabilityFamily, 'trading')));
 }
 
-function latestGrantPerBinding(rows: TradingGrantRow[]): TradingGrantRow[] {
+function latestGrantPerConnection(rows: TradingGrantRow[]): TradingGrantRow[] {
   const sorted = rows.slice().sort((left, right) => {
     const grantedAtDelta = right.grantedAt.getTime() - left.grantedAt.getTime();
     if (grantedAtDelta !== 0) {
@@ -145,64 +136,22 @@ function latestGrantPerBinding(rows: TradingGrantRow[]): TradingGrantRow[] {
   const seen = new Set<string>();
   const latest: TradingGrantRow[] = [];
   for (const row of sorted) {
-    if (seen.has(row.bindingId)) {
+    if (seen.has(row.connectionId)) {
       continue;
     }
-    seen.add(row.bindingId);
+    seen.add(row.connectionId);
     latest.push(row);
   }
   return latest;
 }
 
-function allBindingIds(rows: TradingGrantRow[]): string[] {
-  return [...new Set(rows.map((row) => row.bindingId))];
+function allConnectionIds(rows: TradingGrantRow[]): string[] {
+  return [...new Set(rows.map((row) => row.connectionId))];
 }
 
 /**
- * Fail-closed guard: returns open position symbols for an agent on the given
- * venue account. If non-empty, binding switches must be blocked.
- */
-async function getOpenPositionSymbols(db: Database, agentId: string, venueAccountId: string): Promise<string[]> {
-  const rows = await db
-    .select({ symbol: positions.symbol })
-    .from(positions)
-    .where(
-      and(
-        eq(positions.actorType, 'agent'),
-        eq(positions.actorId, agentId),
-        eq(positions.venueAccountId, venueAccountId),
-        sql`${positions.side} != 'flat'`,
-        isNull(positions.closedAt),
-      ),
-    );
-  return rows.map((r) => r.symbol);
-}
-
-const TERMINAL_ORDER_STATUSES = ['filled', 'cancelled', 'rejected'];
-
-/**
- * Fail-closed guard: returns count of open (non-terminal) orders for an agent
- * on the given venue account. If > 0, binding switches must be blocked because
- * resting orders can fill after the switch and create untracked exposure.
- */
-async function getOpenOrderCount(db: Database, agentId: string, venueAccountId: string): Promise<number> {
-  const [result] = await db
-    .select({ cnt: count() })
-    .from(orders)
-    .where(
-      and(
-        eq(orders.actorType, 'agent'),
-        eq(orders.actorId, agentId),
-        eq(orders.venueAccountId, venueAccountId),
-        notInArray(orders.status, TERMINAL_ORDER_STATUSES),
-      ),
-    );
-  return result?.cnt ?? 0;
-}
-
-/**
- * Find the currently effective binding for an agent (newest active grant).
- * Returns the grant row or undefined if no active binding exists.
+ * Find the currently effective grant for an agent (newest active grant).
+ * Returns the grant row or undefined if no active grant exists.
  */
 function findEffectiveGrant(grantRows: TradingGrantRow[]): TradingGrantRow | undefined {
   return grantRows
@@ -210,20 +159,11 @@ function findEffectiveGrant(grantRows: TradingGrantRow[]): TradingGrantRow | und
     .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())[0];
 }
 
-async function selectTradingBindingResourceRows(db: Database, userId: string): Promise<TradingBindingResourceRow[]> {
+async function selectTradingConnectionResourceRows(db: Database, userId: string): Promise<TradingConnectionResourceRow[]> {
   return db
-    .select({
-      binding: tradingBindings,
-      connection: {
-        id: connections.id,
-        provider: connections.provider,
-        label: connections.label,
-        status: connections.status,
-      },
-    })
-    .from(tradingBindings)
-    .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
-    .where(eq(tradingBindings.userId, userId));
+    .select()
+    .from(connections)
+    .where(eq(connections.userId, userId));
 }
 
 export async function tradingCapabilityRoutes(
@@ -310,24 +250,21 @@ export async function tradingCapabilityRoutes(
     });
   });
 
-  app.get('/capabilities/trading/bindings', async (request, reply) => {
-    const rows = await selectTradingBindingResourceRows(db, request.userId);
+  app.get('/capabilities/trading/connections', async (request, reply) => {
+    const rows = await selectTradingConnectionResourceRows(db, request.userId);
 
     return reply.send({
       family: 'trading',
-      bindings: rows.map((row) => ({
-        bindingId: row.binding.id,
-        connectionId: row.connection.id,
-        provider: row.binding.provider,
-        label: row.binding.label,
-        bindingRef: row.binding.bindingRef,
-        bindingProfile: row.binding.bindingProfile ?? null,
-        sourceVenueAccountId: row.binding.sourceVenueAccountId ?? null,
-        connectionStatus: row.connection.status,
-        status: row.binding.status,
+      connections: rows.map((row) => ({
+        connectionId: row.id,
+        provider: row.provider,
+        label: row.label,
+        providerRef: row.providerRef,
+        profile: row.profile ?? null,
+        status: row.status,
         family: 'trading',
-        createdAt: row.binding.createdAt.toISOString(),
-        updatedAt: row.binding.updatedAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
       })),
     });
   });
@@ -346,7 +283,7 @@ export async function tradingCapabilityRoutes(
       }
 
       const rows = await selectAgentTradingGrantRows(db, agentId);
-      const effectiveReady = rows.some((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
+      const effectiveReady = rows.some((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
 
       return reply.send({
         agentId,
@@ -372,8 +309,8 @@ export async function tradingCapabilityRoutes(
       }
 
       const rows = await selectAgentTradingGrantRows(db, agentId);
-      const bindingIds = allBindingIds(rows);
-      if (bindingIds.length === 0) {
+      const connectionIds = allConnectionIds(rows);
+      if (connectionIds.length === 0) {
         return reply.send({
           agentId,
           family: 'trading',
@@ -387,7 +324,7 @@ export async function tradingCapabilityRoutes(
       const botRows = await db
         .select({ id: bots.id })
         .from(bots)
-        .where(inArray(bots.tradingBindingId, bindingIds));
+        .where(inArray(bots.connectionId, connectionIds));
       const botIds = botRows.map((bot) => bot.id);
 
       const positionOwners = [
@@ -444,7 +381,7 @@ export async function tradingCapabilityRoutes(
         return reply.send(readiness);
       }
 
-      const activeGrant = rows.find((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
+      const activeGrant = rows.find((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
       if (activeGrant) {
         const readiness: CapabilityReadiness = {
           family: 'trading',
@@ -452,21 +389,21 @@ export async function tradingCapabilityRoutes(
           bindingReadiness: 'ready',
           agentEligibility: 'eligible',
           effectiveReady: true,
-          bindingId: activeGrant.bindingId,
+          connectionId: activeGrant.connectionId,
           reasons: [],
         };
         return reply.send(readiness);
       }
 
       const first = chooseLatestGrant(rows);
-      const { state, reasons } = deriveTradingReadiness(first.grantStatus, first.bindingStatus, first.connectionStatus);
+      const { state, reasons } = deriveTradingReadiness(first.grantStatus, first.connectionStatus);
       const readiness: CapabilityReadiness = {
         family: 'trading',
         state,
         bindingReadiness: state,
         agentEligibility: 'ineligible',
         effectiveReady: false,
-        bindingId: first.bindingId,
+        connectionId: first.connectionId,
         reasons,
       };
       return reply.send(readiness);
@@ -474,7 +411,7 @@ export async function tradingCapabilityRoutes(
   );
 
   app.get<{ Params: { agentId: string } }>(
-    '/agents/:agentId/capabilities/trading/bindings',
+    '/agents/:agentId/capabilities/trading/connections',
     async (request, reply) => {
       const { agentId } = request.params;
 
@@ -490,17 +427,15 @@ export async function tradingCapabilityRoutes(
       return reply.send({
         agentId,
         family: 'trading',
-        bindings: latestGrantPerBinding(rows).map((row) => ({
-          bindingId: row.bindingId,
+        connections: latestGrantPerConnection(rows).map((row) => ({
           connectionId: row.connectionId,
           provider: row.provider,
           label: row.label,
-          bindingRef: row.bindingRef,
-          bindingProfile: row.bindingProfile,
-          sourceVenueAccountId: row.sourceVenueAccountId,
+          providerRef: row.providerRef,
+          profile: row.profile,
           connectionStatus: row.connectionStatus,
           grantStatus: row.grantStatus,
-          readiness: deriveTradingReadiness(row.grantStatus, row.bindingStatus, row.connectionStatus),
+          readiness: deriveTradingReadiness(row.grantStatus, row.connectionStatus),
           grantedAt: row.grantedAt.toISOString(),
           revokedAt: row.revokedAt?.toISOString() ?? null,
           family: 'trading',
@@ -509,10 +444,10 @@ export async function tradingCapabilityRoutes(
     },
   );
 
-  app.get<{ Params: { agentId: string; bindingId: string } }>(
-    '/agents/:agentId/capabilities/trading/bindings/:bindingId',
+  app.get<{ Params: { agentId: string; connectionId: string } }>(
+    '/agents/:agentId/capabilities/trading/connections/:connectionId',
     async (request, reply) => {
-      const { agentId, bindingId } = request.params;
+      const { agentId, connectionId } = request.params;
 
       const [agent] = await db
         .select({ id: agents.id })
@@ -522,28 +457,26 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const binding = await assertBindingOwnership(db, bindingId, request.userId);
-      if (!binding) {
-        return reply.status(404).send({ error: 'binding.not_found' });
+      const conn = await assertBindingOwnership(db, connectionId, request.userId);
+      if (!conn) {
+        return reply.status(404).send({ error: 'connection.not_found' });
       }
 
-      const rows = (await selectAgentTradingGrantRows(db, agentId)).filter((row) => row.bindingId === bindingId);
+      const rows = (await selectAgentTradingGrantRows(db, agentId)).filter((row) => row.connectionId === connectionId);
       if (rows.length === 0) {
-        return reply.status(404).send({ error: 'binding.not_found' });
+        return reply.status(404).send({ error: 'connection.not_found' });
       }
 
       const latestGrant = chooseLatestGrant(rows);
       return reply.send({
-        bindingId: binding.id,
-        connectionId: binding.connection.id,
-        provider: binding.provider,
-        label: binding.label,
-        bindingRef: binding.bindingRef,
-        bindingProfile: binding.bindingProfile ?? null,
-        sourceVenueAccountId: binding.sourceVenueAccountId ?? null,
-        connectionStatus: binding.connection.status,
+        connectionId: conn.id,
+        provider: conn.provider,
+        label: conn.label,
+        providerRef: conn.providerRef,
+        profile: conn.profile ?? null,
+        connectionStatus: conn.status,
         status: latestGrant.grantStatus,
-        readiness: deriveTradingReadiness(latestGrant.grantStatus, latestGrant.bindingStatus, latestGrant.connectionStatus),
+        readiness: deriveTradingReadiness(latestGrant.grantStatus, latestGrant.connectionStatus),
         grantedAt: latestGrant.grantedAt.toISOString(),
         revokedAt: latestGrant.revokedAt?.toISOString() ?? null,
         family: 'trading',
@@ -551,10 +484,10 @@ export async function tradingCapabilityRoutes(
     },
   );
 
-  app.get<{ Params: { agentId: string; bindingId: string } }>(
-    '/agents/:agentId/capabilities/trading/bindings/:bindingId/audit',
+  app.get<{ Params: { agentId: string; connectionId: string } }>(
+    '/agents/:agentId/capabilities/trading/connections/:connectionId/audit',
     async (request, reply) => {
-      const { agentId, bindingId } = request.params;
+      const { agentId, connectionId } = request.params;
 
       const [agent] = await db
         .select({ id: agents.id })
@@ -564,13 +497,13 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const rows = (await selectAgentTradingGrantRows(db, agentId)).filter((row) => row.bindingId === bindingId);
+      const rows = (await selectAgentTradingGrantRows(db, agentId)).filter((row) => row.connectionId === connectionId);
       if (rows.length === 0) {
-        return reply.status(404).send({ error: 'binding.not_found' });
+        return reply.status(404).send({ error: 'connection.not_found' });
       }
 
-      const auditEntries = await getBindingAudit(db, bindingId, agentId);
-      return reply.send({ bindingId, audit: auditEntries });
+      const auditEntries = await getBindingAudit(db, connectionId, agentId);
+      return reply.send({ connectionId, audit: auditEntries });
     },
   );
 
@@ -596,15 +529,15 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const bindingIds = allBindingIds(await selectAgentTradingGrantRows(db, agentId));
-      if (bindingIds.length === 0) {
+      const connectionIds = allConnectionIds(await selectAgentTradingGrantRows(db, agentId));
+      if (connectionIds.length === 0) {
         return reply.send({ agentId, family: 'trading', items: [], limit, offset });
       }
 
       const botRows = await db
         .select({ id: bots.id })
         .from(bots)
-        .where(inArray(bots.tradingBindingId, bindingIds));
+        .where(inArray(bots.connectionId, connectionIds));
       const botIds = botRows.map((bot) => bot.id);
 
       const fillOwners = [
@@ -675,8 +608,8 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const bindingIds = allBindingIds(await selectAgentTradingGrantRows(db, agentId));
-      if (bindingIds.length === 0) {
+      const connectionIds = allConnectionIds(await selectAgentTradingGrantRows(db, agentId));
+      if (connectionIds.length === 0) {
         return reply.send({
           agentId,
           family: 'trading',
@@ -691,7 +624,7 @@ export async function tradingCapabilityRoutes(
       const botRows = await db
         .select({ id: bots.id })
         .from(bots)
-        .where(inArray(bots.tradingBindingId, bindingIds));
+        .where(inArray(bots.connectionId, connectionIds));
       const botIds = botRows.map((bot) => bot.id);
 
       const fillOwners = [
@@ -773,15 +706,15 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const bindingIds = allBindingIds(await selectAgentTradingGrantRows(db, agentId));
-      if (bindingIds.length === 0) {
+      const connectionIds = allConnectionIds(await selectAgentTradingGrantRows(db, agentId));
+      if (connectionIds.length === 0) {
         return reply.send({ agentId, family: 'trading', items: [], limit, offset });
       }
 
       const botRows = await db
         .select({ id: bots.id })
         .from(bots)
-        .where(inArray(bots.tradingBindingId, bindingIds));
+        .where(inArray(bots.connectionId, connectionIds));
       const botIds = botRows.map((bot) => bot.id);
 
       const positionOwners = [
@@ -990,25 +923,25 @@ export async function tradingCapabilityRoutes(
           return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
         }
 
-        const binding = await assertBindingOwnership(db, parsed.data.bindingId, request.userId);
-        if (!binding) {
-          return reply.status(404).send({ error: 'binding.not_found' });
+        const conn = await assertBindingOwnership(db, parsed.data.connectionId, request.userId);
+        if (!conn) {
+          return reply.status(404).send({ error: 'connection.not_found' });
         }
 
-        if (binding.status !== 'active' || binding.connection.status !== 'active') {
+        if (conn.status !== 'active') {
           return reply.status(409).send({
-            error: 'binding.not_ready',
-            message: 'Binding is not effectively ready',
+            error: 'connection.not_ready',
+            message: 'Connection is not effectively ready',
           });
         }
 
         // Validate execution capability: reject binding if agent mode + venue type is unsupported
-        const bindingVenueType = venueTypeFromProvider(binding.provider);
-        if (bindingVenueType && agent.executionMode) {
+        const connectionVenueType = venueTypeFromProvider(conn.provider);
+        if (connectionVenueType && agent.executionMode) {
           const capResult = validateExecutionCapability({
             actorType: 'agent',
             executionMode: agent.executionMode as 'paper' | 'shadow' | 'live',
-            venueType: bindingVenueType,
+            venueType: connectionVenueType,
           });
           if (!capResult.ok) {
             return reply.status(400).send({
@@ -1020,50 +953,21 @@ export async function tradingCapabilityRoutes(
 
         const allGrants = await selectAgentTradingGrantRows(db, agentId);
         const existingGrant = allGrants.find(
-          (row) => row.bindingId === parsed.data.bindingId && row.grantStatus === 'active',
+          (row) => row.connectionId === parsed.data.connectionId && row.grantStatus === 'active',
         );
         if (existingGrant) {
           return reply.status(200).send({
             action: 'bind',
             agentId,
             family: 'trading',
-            bindingId: parsed.data.bindingId,
+            connectionId: parsed.data.connectionId,
             status: 'active',
           });
         }
 
-        // Fail-closed: reject binding switch when the effective venue account
-        // would change while open positions or resting orders still exist on the
-        // current account. Resting orders can fill after the switch and create
-        // untracked exposure on an account the runtime no longer monitors.
-        const effectiveGrant = findEffectiveGrant(allGrants);
-        if (
-          effectiveGrant
-          && effectiveGrant.bindingId !== parsed.data.bindingId
-          && effectiveGrant.sourceVenueAccountId
-          && effectiveGrant.sourceVenueAccountId !== binding.sourceVenueAccountId
-        ) {
-          const openSymbols = await getOpenPositionSymbols(db, agentId, effectiveGrant.sourceVenueAccountId);
-          if (openSymbols.length > 0) {
-            return reply.status(409).send({
-              error: 'binding.open_positions',
-              message: 'Cannot switch binding while agent has open positions',
-              symbols: openSymbols,
-            });
-          }
-          const openOrderCnt = await getOpenOrderCount(db, agentId, effectiveGrant.sourceVenueAccountId);
-          if (openOrderCnt > 0) {
-            return reply.status(409).send({
-              error: 'binding.open_orders',
-              message: 'Cannot switch binding while agent has resting orders on the current venue account',
-              openOrderCount: openOrderCnt,
-            });
-          }
-        }
-
         await createGrant(db, {
           agentId,
-          bindingId: parsed.data.bindingId,
+          connectionId: parsed.data.connectionId,
           capabilityFamily: 'trading',
           grantedBy: request.userId,
         });
@@ -1076,7 +980,7 @@ export async function tradingCapabilityRoutes(
           action: 'bind',
           agentId,
           family: 'trading',
-          bindingId: parsed.data.bindingId,
+          connectionId: parsed.data.connectionId,
           status: 'active',
         });
       }
@@ -1088,32 +992,9 @@ export async function tradingCapabilityRoutes(
         }
 
         const grantRows = await selectAgentTradingGrantRows(db, agentId);
-        const matchingGrant = grantRows.find((row) => row.bindingId === parsed.data.bindingId && row.grantStatus === 'active');
+        const matchingGrant = grantRows.find((row) => row.connectionId === parsed.data.connectionId && row.grantStatus === 'active');
         if (!matchingGrant) {
-          return reply.status(404).send({ error: 'binding.not_found' });
-        }
-
-        // Fail-closed: reject unbinding the effective binding when open positions
-        // or resting orders exist. Orders can fill after unbind and create
-        // exposure on an account the runtime no longer treats as effective.
-        const effectiveGrant = findEffectiveGrant(grantRows);
-        if (effectiveGrant && effectiveGrant.grantId === matchingGrant.grantId && matchingGrant.sourceVenueAccountId) {
-          const openSymbols = await getOpenPositionSymbols(db, agentId, matchingGrant.sourceVenueAccountId);
-          if (openSymbols.length > 0) {
-            return reply.status(409).send({
-              error: 'binding.open_positions',
-              message: 'Cannot unbind while agent has open positions on this binding',
-              symbols: openSymbols,
-            });
-          }
-          const openOrderCnt = await getOpenOrderCount(db, agentId, matchingGrant.sourceVenueAccountId);
-          if (openOrderCnt > 0) {
-            return reply.status(409).send({
-              error: 'binding.open_orders',
-              message: 'Cannot unbind while agent has resting orders on this venue account',
-              openOrderCount: openOrderCnt,
-            });
-          }
+          return reply.status(404).send({ error: 'connection.not_found' });
         }
 
         const revoked = await revokeGrant(db, {
@@ -1123,7 +1004,7 @@ export async function tradingCapabilityRoutes(
         });
 
         if (!revoked) {
-          return reply.status(409).send({ error: 'binding.already_revoked' });
+          return reply.status(409).send({ error: 'connection.already_revoked' });
         }
 
         await publishRuntimeRefresh(agentId, request.userId, 'grant_changed').catch((err: unknown) => {
@@ -1132,7 +1013,7 @@ export async function tradingCapabilityRoutes(
 
         return reply.send({
           action: 'unbind',
-          bindingId: parsed.data.bindingId,
+          connectionId: parsed.data.connectionId,
           agentId,
           status: 'revoked',
         });

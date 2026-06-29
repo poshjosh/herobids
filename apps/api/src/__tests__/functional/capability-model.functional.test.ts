@@ -73,7 +73,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     return res.json<{ id: string; provider: string; label: string }>();
   }
 
-  async function setupTradingLink(): Promise<{ connectionId: string; bindingId: string }> {
+  async function setupTradingLink(): Promise<{ connectionId: string }> {
     const res = await ctx.app.inject({
       method: 'POST',
       url: '/setup/provider-link',
@@ -91,8 +91,8 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     });
 
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ connection: { id: string }; tradingBinding: { id: string } }>();
-    return { connectionId: body.connection.id, bindingId: body.tradingBinding.id };
+    const body = res.json<{ connection: { id: string } }>();
+    return { connectionId: body.connection.id };
   }
 
   async function createCredential() {
@@ -139,7 +139,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(connectionDetail.statusCode).toBe(200);
     expect(connectionDetail.json<{ id: string; status: string }>().status).toBe('active');
 
-    const { bindingId } = await setupTradingLink();
+    const { connectionId: grantConnectionId } = await setupTradingLink();
 
     const readinessBefore = await ctx.app.inject({
       method: 'GET',
@@ -153,7 +153,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       method: 'POST',
       url: `/agents/${agentId}/capabilities/trading/actions/bind`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { bindingId },
+      payload: { connectionId: grantConnectionId },
     });
     expect(bindRes.statusCode).toBe(201);
 
@@ -161,14 +161,14 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       method: 'POST',
       url: `/agents/${agentId}/capabilities/trading/actions/bind`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { bindingId },
+      payload: { connectionId: grantConnectionId },
     });
     expect(duplicateBind.statusCode).toBe(200);
 
     const activeGrants = await ctx.db
       .select({ id: capabilityGrants.id })
       .from(capabilityGrants)
-      .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.bindingId, bindingId), eq(capabilityGrants.status, 'active')));
+      .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.connectionId, grantConnectionId), eq(capabilityGrants.status, 'active')));
     expect(activeGrants).toHaveLength(1);
 
     const readinessAfter = await ctx.app.inject({
@@ -177,9 +177,9 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(readinessAfter.statusCode).toBe(200);
-    const readinessBody = readinessAfter.json<{ state: string; bindingId: string; effectiveReady: boolean; agentEligibility: string }>();
+    const readinessBody = readinessAfter.json<{ state: string; connectionId: string; effectiveReady: boolean; agentEligibility: string }>();
     expect(readinessBody.state).toBe('ready');
-    expect(readinessBody.bindingId).toBe(bindingId);
+    expect(readinessBody.connectionId).toBe(grantConnectionId);
     expect(readinessBody.effectiveReady).toBe(true);
     expect(readinessBody.agentEligibility).toBe('eligible');
 
@@ -189,26 +189,26 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(aggregateReadiness.statusCode).toBe(200);
-    const aggregateBody = aggregateReadiness.json<{ capabilities: Array<{ family: string; state: string; effectiveReady: boolean; bindingId?: string }> }>();
+    const aggregateBody = aggregateReadiness.json<{ capabilities: Array<{ family: string; state: string; effectiveReady: boolean; connectionId?: string }> }>();
     const tradingCapability = aggregateBody.capabilities.find((capability) => capability.family === 'trading');
     expect(tradingCapability).toBeDefined();
     expect(tradingCapability?.state).toBe('ready');
     expect(tradingCapability?.effectiveReady).toBe(true);
-    expect(tradingCapability?.bindingId).toBe(bindingId);
+    expect(tradingCapability?.connectionId).toBe(grantConnectionId);
 
-    const bindings = await ctx.app.inject({
+    const connections = await ctx.app.inject({
       method: 'GET',
-      url: `/agents/${agentId}/capabilities/trading/bindings`,
+      url: `/agents/${agentId}/capabilities/trading/connections`,
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(bindings.statusCode).toBe(200);
-    expect(bindings.json<{ bindings: Array<{ bindingId: string; grantStatus: string }> }>().bindings).toEqual(
-      expect.arrayContaining([expect.objectContaining({ bindingId, grantStatus: 'active' })]),
+    expect(connections.statusCode).toBe(200);
+    expect(connections.json<{ connections: Array<{ connectionId: string; grantStatus: string }> }>().connections).toEqual(
+      expect.arrayContaining([expect.objectContaining({ connectionId: grantConnectionId, grantStatus: 'active' })]),
     );
 
     const auditBeforeUnbind = await ctx.app.inject({
       method: 'GET',
-      url: `/agents/${agentId}/capabilities/trading/bindings/${bindingId}/audit`,
+      url: `/agents/${agentId}/capabilities/trading/connections/${grantConnectionId}/audit`,
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(auditBeforeUnbind.statusCode).toBe(200);
@@ -218,7 +218,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       method: 'POST',
       url: `/agents/${agentId}/capabilities/trading/actions/unbind`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { bindingId },
+      payload: { connectionId: grantConnectionId },
     });
     expect(unbindRes.statusCode).toBe(200);
 
@@ -247,7 +247,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
 
     const auditAfterUnbind = await ctx.app.inject({
       method: 'GET',
-      url: `/agents/${agentId}/capabilities/trading/bindings/${bindingId}/audit`,
+      url: `/agents/${agentId}/capabilities/trading/connections/${grantConnectionId}/audit`,
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(auditAfterUnbind.statusCode).toBe(200);
@@ -255,13 +255,13 @@ describe.skipIf(SKIP)('Capability model functional', () => {
   });
 
   it('marks capability readiness revoked when the underlying connection is revoked', async () => {
-    const { connectionId, bindingId } = await setupTradingLink();
+    const { connectionId } = await setupTradingLink();
 
     const bindRes = await ctx.app.inject({
       method: 'POST',
       url: `/agents/${agentId}/capabilities/trading/actions/bind`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { bindingId },
+      payload: { connectionId },
     });
     expect(bindRes.statusCode).toBe(201);
 
@@ -298,7 +298,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
   });
 
   it('rejects binding a trading capability when the underlying connection is no longer ready', async () => {
-    const { connectionId, bindingId } = await setupTradingLink();
+    const { connectionId } = await setupTradingLink();
 
     const revokeConnection = await ctx.app.inject({
       method: 'DELETE',
@@ -311,7 +311,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       method: 'POST',
       url: `/agents/${agentId}/capabilities/trading/actions/bind`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { bindingId },
+      payload: { connectionId },
     });
 
     expect(bindRes.statusCode).toBe(409);

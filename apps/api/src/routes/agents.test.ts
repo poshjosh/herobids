@@ -10,7 +10,7 @@ import {
   skillEntitlements,
   skillRevisions,
   skills,
-  tradingBindings,
+  connections,
   users,
   venueAccounts,
 } from '@herobids/db';
@@ -69,7 +69,7 @@ function buildDb(options: {
   agentSkillRows?: Array<Record<string, unknown>>;
   botRows?: Array<Record<string, unknown>>;
   sessionRows?: Array<Record<string, unknown>>;
-  tradingBindingRows?: Array<Record<string, unknown>>;
+  connectionRows?: Array<Record<string, unknown>>;
   capabilityGrantRows?: Array<Record<string, unknown>>;
   venueAccountRows?: Array<Record<string, unknown>>;
   userRows?: Array<Record<string, unknown>>;
@@ -121,7 +121,7 @@ function buildDb(options: {
   );
   const botRows = options.botRows ?? options.activeLinkRows ?? [];
   const sessionRows = options.sessionRows ?? [];
-  const tradingBindingRows = options.tradingBindingRows ?? [];
+  const connectionRows = options.connectionRows ?? [];
   const capabilityGrantRows = options.capabilityGrantRows ?? [];
   const venueAccountRows = options.venueAccountRows ?? [];
   const userRows = options.userRows ?? [];
@@ -154,8 +154,8 @@ function buildDb(options: {
     if (table === agentRuntimeSessions) {
       return sessionRows;
     }
-    if (table === tradingBindings) {
-      return tradingBindingRows;
+    if (table === connections) {
+      return connectionRows;
     }
     if (table === capabilityGrants) {
       return capabilityGrantRows;
@@ -554,7 +554,7 @@ describe('agent routes lifecycle', () => {
     };
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [orphanedBinding],
+      connectionRows: [orphanedBinding],
       capabilityGrantRows: [{ id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-1' }],
     });
 
@@ -570,16 +570,16 @@ describe('agent routes lifecycle', () => {
     expect(vaUpdate).toBeDefined();
     expect(vaUpdate!.values).toEqual({ credentialId: null });
     // Verify trading_bindings was marked revoked
-    const bindingUpdate = updateTableCalls.find((c) => c.table === tradingBindings);
-    expect(bindingUpdate).toBeDefined();
-    expect(bindingUpdate!.values).toEqual({ status: 'revoked' });
+    const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
+    expect(connectionUpdate).toBeDefined();
+    expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
   });
 
   it('skips binding cleanup when agent has no capability grants (no orphaned bindings)', async () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateTableCalls, deletedTargets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [],
+      connectionRows: [],
       capabilityGrantRows: [],
     });
 
@@ -593,8 +593,8 @@ describe('agent routes lifecycle', () => {
     // No venue account or trading binding updates should have occurred
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
-    const bindingUpdates = updateTableCalls.filter((c) => c.table === tradingBindings);
-    expect(bindingUpdates).toHaveLength(0);
+    const connectionUpdates = updateTableCalls.filter((c) => c.table === connections);
+    expect(connectionUpdates).toHaveLength(0);
     // But agent-created bots should still be deleted
     expect(deletedTargets).toContain(bots);
   });
@@ -607,7 +607,7 @@ describe('agent routes lifecycle', () => {
     };
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [sharedBinding],
+      connectionRows: [sharedBinding],
       capabilityGrantRows: [
         { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-shared' },
         { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
@@ -623,8 +623,8 @@ describe('agent routes lifecycle', () => {
     expect(res.statusCode).toBe(204);
     // Binding is shared with another agent (2 grants in capabilityGrantRows),
     // so it must NOT be revoked and its venue account credentialId must stay intact.
-    const bindingUpdates = updateTableCalls.filter((c) => c.table === tradingBindings);
-    expect(bindingUpdates).toHaveLength(0);
+    const connectionUpdates = updateTableCalls.filter((c) => c.table === connections);
+    expect(connectionUpdates).toHaveLength(0);
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
   });
@@ -661,7 +661,7 @@ describe('agent routes lifecycle', () => {
     };
     const { db, updateTableCalls } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [bindingNullVa],
+      connectionRows: [bindingNullVa],
       capabilityGrantRows: [
         { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-null-va' },
       ],
@@ -678,9 +678,9 @@ describe('agent routes lifecycle', () => {
     const vaUpdates = updateTableCalls.filter((c) => c.table === venueAccounts);
     expect(vaUpdates).toHaveLength(0);
     // But binding should still be revoked
-    const bindingUpdate = updateTableCalls.find((c) => c.table === tradingBindings);
-    expect(bindingUpdate).toBeDefined();
-    expect(bindingUpdate!.values).toEqual({ status: 'revoked' });
+    const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
+    expect(connectionUpdate).toBeDefined();
+    expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
   });
 
   it('full cleanup chain: agent with trading capability → delete → credentialId nulled and binding revoked', async () => {
@@ -690,7 +690,7 @@ describe('agent routes lifecycle', () => {
     const { agentRoutes } = await import('./agents.js');
     const { db, updateTableCalls, deletedTargets } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [
+      connectionRows: [
         { id: 'binding-1', sourceVenueAccountId: 'va-1' },
       ],
       capabilityGrantRows: [
@@ -715,9 +715,9 @@ describe('agent routes lifecycle', () => {
     expect(vaUpdate!.values).toEqual({ credentialId: null });
 
     // Step 8: trading binding revoked
-    const bindingUpdate = updateTableCalls.find((c) => c.table === tradingBindings);
-    expect(bindingUpdate).toBeDefined();
-    expect(bindingUpdate!.values).toEqual({ status: 'revoked' });
+    const connectionUpdate = updateTableCalls.find((c) => c.table === connections);
+    expect(connectionUpdate).toBeDefined();
+    expect(connectionUpdate!.values).toEqual({ status: 'revoked' });
 
     // Step 9: agent deleted
     expect(deletedTargets).toContain(agents);
@@ -734,7 +734,7 @@ describe('agent routes lifecycle', () => {
     };
     const { db: db1, updateTableCalls: calls1 } = buildDb({
       agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [sharedBinding],
+      connectionRows: [sharedBinding],
       capabilityGrantRows: [
         { id: 'grant-1', agentId: 'agent-1', bindingId: 'binding-shared' },
         { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
@@ -749,7 +749,7 @@ describe('agent routes lifecycle', () => {
     expect(res1.statusCode).toBe(204);
 
     // Binding must NOT be revoked — agent-2 still uses it.
-    const bindingUpdates1 = calls1.filter((c) => c.table === tradingBindings);
+    const bindingUpdates1 = calls1.filter((c) => c.table === connections);
     expect(bindingUpdates1).toHaveLength(0);
     // credentialId must NOT be nulled — agent-2's venue account still needs it.
     const vaUpdates1 = calls1.filter((c) => c.table === venueAccounts);
@@ -766,7 +766,7 @@ describe('agent routes lifecycle', () => {
     };
     const { db: db2, updateTableCalls: calls2 } = buildDb({
       agentRows: [{ id: 'agent-2', status: 'stopped', userId: TEST_USER_ID }],
-      tradingBindingRows: [sharedBinding],
+      connectionRows: [sharedBinding],
       capabilityGrantRows: [
         { id: 'grant-2', agentId: 'agent-2', bindingId: 'binding-shared' },
       ],
@@ -780,7 +780,7 @@ describe('agent routes lifecycle', () => {
     expect(res2.statusCode).toBe(204);
 
     // Binding is the sole remaining grant → must be revoked.
-    const bindingUpdate2 = calls2.find((c) => c.table === tradingBindings);
+    const bindingUpdate2 = calls2.find((c) => c.table === connections);
     expect(bindingUpdate2).toBeDefined();
     expect(bindingUpdate2!.values).toEqual({ status: 'revoked' });
 

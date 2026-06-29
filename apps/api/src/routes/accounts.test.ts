@@ -165,7 +165,7 @@ describe('POST /venue-accounts credential validation', () => {
 
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
-    expect(body.error).toBe('credential.venue_mismatch');
+    expect(body.error).toBe('credential.provider_mismatch');
   });
 
   it('succeeds when credential matches user and venue', async () => {

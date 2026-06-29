@@ -33,7 +33,7 @@ const TEST_PROVIDER_CATALOG = {
         requiresCredential: false,
         allowsCredential: true,
         credentialProviderIds: ['hyperliquid'],
-        autoCreatesTradingBinding: true,
+        autoCreatesTradingConnection: true,
       },
     },
     {
@@ -46,7 +46,7 @@ const TEST_PROVIDER_CATALOG = {
         requiresCredential: false,
         allowsCredential: true,
         credentialProviderIds: ['bybit'],
-        autoCreatesTradingBinding: true,
+        autoCreatesTradingConnection: true,
       },
     },
     {
@@ -59,7 +59,7 @@ const TEST_PROVIDER_CATALOG = {
         requiresCredential: false,
         allowsCredential: true,
         credentialProviderIds: ['jupiter'],
-        autoCreatesTradingBinding: true,
+        autoCreatesTradingConnection: true,
       },
     },
     {
@@ -72,13 +72,13 @@ const TEST_PROVIDER_CATALOG = {
         requiresCredential: false,
         allowsCredential: true,
         credentialProviderIds: ['1inch'],
-        autoCreatesTradingBinding: true,
+        autoCreatesTradingConnection: true,
       },
     },
   ],
   customMode: {
     credentials: { allowFreeformKeys: true },
-    connections: { allowFreeformProvider: true, autoCreatesTradingBinding: false },
+    connections: { allowFreeformProvider: true, autoCreatesTradingConnection: false },
   },
 };
 

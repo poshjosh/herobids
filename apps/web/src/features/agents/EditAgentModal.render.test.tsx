@@ -115,10 +115,10 @@ describe('EditAgentModal rendering', () => {
       capabilityReadiness: {
         family: 'trading',
         state: 'ready',
-        bindingReadiness: 'ready',
+        connectionReadiness: 'ready',
         agentEligibility: 'eligible',
         effectiveReady: true,
-        bindingId: 'binding-1',
+        connectionId: 'binding-1',
         reasons: [],
       },
     });
@@ -136,10 +136,10 @@ describe('EditAgentModal rendering', () => {
       capabilityReadiness: {
         family: 'trading',
         state: 'ready',
-        bindingReadiness: 'ready',
+        connectionReadiness: 'ready',
         agentEligibility: 'eligible',
         effectiveReady: true,
-        bindingId: 'binding-1',
+        connectionId: 'binding-1',
         reasons: [],
       },
     });

@@ -570,7 +570,7 @@ export const bots = {
   list: () => request<{ bots: Bot[] }>('/bots'),
   get: (id: string) => request<Bot>(`/bots/${id}`),
   create: (data: {
-    tradingBindingId: string;
+    connectionId: string;
     venue: string;
     symbol: string;
     config: Record<string, unknown>;
@@ -996,10 +996,10 @@ export const agents = {
     family
       ? request<CapabilityReadiness>(`/agents/${id}/capabilities/${family}/readiness`)
       : request<{ agentId: string; capabilities: CapabilityReadiness[] }>(`/agents/${id}/capabilities/readiness`),
-  tradingBindings: (id: string) =>
-    request<{ agentId: string; family: 'trading'; bindings: TradingBindingSummary[] }>(`/agents/${id}/capabilities/trading/bindings`),
-  tradingAction: (id: string, action: 'bind' | 'unbind', payload: { bindingId: string }) =>
-    request<{ action: 'bind' | 'unbind'; agentId: string; bindingId: string; status: string }>(`/agents/${id}/capabilities/trading/actions/${action}`, {
+  tradingConnections: (id: string) =>
+    request<{ agentId: string; family: 'trading'; connections: ConnectionSummary[] }>(`/agents/${id}/capabilities/trading/connections`),
+  tradingAction: (id: string, action: 'bind' | 'unbind', payload: { connectionId: string }) =>
+    request<{ action: 'bind' | 'unbind'; agentId: string; connectionId: string; status: string }>(`/agents/${id}/capabilities/trading/actions/${action}`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -1059,23 +1059,21 @@ export const providerCatalog = {
 // Platform: Capability Grants
 // ---------------------------------------------------------------------------
 
-export interface TradingBindingReadiness {
+export interface ConnectionReadiness {
   state: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
   reasons: string[];
 }
 
-export interface TradingBindingSummary {
-  bindingId: string;
+export interface ConnectionSummary {
   connectionId: string;
   provider: string;
   label: string;
-  bindingRef: string | null;
-  bindingProfile: Record<string, unknown> | null;
-  sourceVenueAccountId: string | null;
+  providerRef: string | null;
+  profile: Record<string, unknown> | null;
   connectionStatus: 'active' | 'revoked';
   status?: string;
   grantStatus?: string;
-  readiness?: TradingBindingReadiness;
+  readiness?: ConnectionReadiness;
   family: 'trading';
   createdAt?: string;
   updatedAt?: string;
@@ -1084,7 +1082,7 @@ export interface TradingBindingSummary {
 }
 
 export const capabilities = {
-  tradingBindings: () => request<{ family: 'trading'; bindings: TradingBindingSummary[] }>('/capabilities/trading/bindings'),
+  tradingConnections: () => request<{ family: 'trading'; connections: ConnectionSummary[] }>('/capabilities/trading/connections'),
 };
 
 // ---------------------------------------------------------------------------
@@ -1092,10 +1090,8 @@ export const capabilities = {
 // ---------------------------------------------------------------------------
 
 export interface ProviderSetupResult {
-  credential: { id: string; venue: string; label: string; createdAt: string };
+  credential: { id: string; provider: string; label: string; createdAt: string };
   connection: { id: string; provider: string; label: string; status: string; credentialId: string; createdAt: string };
-  venueAccount?: { id: string; venue: string; label: string; credentialId: string; createdAt: string };
-  tradingBinding?: { id: string; connectionId: string; provider: string; label: string; sourceVenueAccountId: string; status: string; createdAt: string };
 }
 
 export const setup = {
@@ -1110,10 +1106,10 @@ export const setup = {
 export interface CapabilityReadiness {
   family: string;
   state: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
-  bindingReadiness: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
+  connectionReadiness: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
   agentEligibility: 'eligible' | 'ineligible';
   effectiveReady: boolean;
-  bindingId?: string;
+  connectionId?: string;
   reasons: string[];
   detail?: Record<string, unknown>;
 }
@@ -1128,7 +1124,7 @@ export interface PlatformEventEnvelope {
   actorType: 'user' | 'agent' | 'platform';
   actorId: string;
   capabilityFamily?: string;
-  bindingId?: string;
+  connectionId?: string;
   eventType: string;
   payload: Record<string, unknown>;
 }

@@ -6,9 +6,9 @@ import { userCredentials } from './user-credentials.js';
  * Connections — user-owned platform resources representing a usable external
  * linkage to a provider or system.
  *
- * Connections are capability-agnostic. Capability families derive family-
- * specific bindings from connections (e.g. a trading account is a trading
- * binding derived from a Hyperliquid connection).
+ * Connections are the single entity for provider linkage. They absorb the
+ * former trading_bindings table. Capability grants (trading, automation,
+ * messaging, etc.) are scoped directly to connections.
  *
  * A connection may reference a credential for secret-based providers, or
  * leave credentialId null for OAuth-based linkages.
@@ -24,6 +24,10 @@ export const connections = pgTable('connections', {
   label: text('label').notNull(),
   /** active | revoked */
   status: text('status').notNull().default('active'),
+  /** Absorbed from trading_bindings: account/wallet reference at the provider */
+  providerRef: text('provider_ref'),
+  /** Absorbed from trading_bindings: normalized capability metadata */
+  profile: jsonb('profile').$type<Record<string, unknown>>(),
   /** Provider-specific cached metadata — never contains raw secrets */
   meta: jsonb('meta').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

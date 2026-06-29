@@ -268,23 +268,23 @@ async function main(): Promise<void> {
 
   // Create provider-link (credential + connection + trading binding)
   log('Creating provider-link...');
-  const linkRes = await post<{ tradingBinding?: { id: string }; error?: string }>('/setup/provider-link', {
+  const linkRes = await post<{ connection?: { id: string }; error?: string }>('/setup/provider-link', {
     provider: VENUE,
     label: `bot-trade-test-${Date.now()}`,
     secrets: secrets,
     capability: 'trading',
   }, token);
-  if (linkRes.status !== 201 || !linkRes.body.tradingBinding?.id) {
+  if (linkRes.status !== 201 || !linkRes.body.connection?.id) {
     fatal(`Provider-link failed: ${linkRes.status} ${JSON.stringify(linkRes.body)}`);
   }
-  const bindingId = linkRes.body.tradingBinding.id;
-  ok(`Provider-link created (binding: ${bindingId})`);
+  const connectionId = linkRes.body.connection.id;
+  ok(`Provider-link created (connection: ${connectionId})`);
 
   // Create bot — venue-aware config (swap venues use BASE/QUOTE symbols)
   log('Creating bot...');
   const botSymbol = VENUE === '1inch' ? 'WETH/USDC' : 'BTC-PERP';
   const botPayload: Record<string, unknown> = {
-    tradingBindingId: bindingId,
+    connectionId: connectionId,
     venue: VENUE,
     symbol: botSymbol,
     config: {

@@ -71,9 +71,6 @@ export function CredentialsPage() {
           venueAccounts: (error.params?.blockingVenueAccountIds as string[])?.join(', ') ?? '',
           bots: (error.params?.blockingBotIds as string[])?.join(', ') ?? '',
           connections: (error.params?.blockingConnectionIds as string[])?.join(', ') ?? '',
-          agentCredentials: ((error.params?.blockingAgentCredentials as Array<{ id: string; label: string | null }>) ?? [])
-            .map((ac) => ac.label ?? ac.id)
-            .join(', ') || 'none',
         }));
       } else {
         // Catch-all: surface any unexpected error to the user
@@ -113,7 +110,7 @@ export function CredentialsPage() {
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{credential.label}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider: findProviderDisplayName(catalogQuery.data?.providers, credential.venue) })}
+                    {intl.formatMessage({ id: 'credentials.providerLabel' }, { provider: findProviderDisplayName(catalogQuery.data?.providers, credential.provider) })}
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'credentials.idLabel' }, { id: credential.id })}</div>
                 </div>

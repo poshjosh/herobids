@@ -359,7 +359,7 @@ ADVANCED_CONNECTION_LABEL=""
 CREDENTIAL_ID=""
 CONNECTION_ID=""
 VENUE_ACCOUNT_ID=""
-TRADING_BINDING_ID=""
+CONNECTION_ID=""
 AUTO_DETECTED_PROVIDERS=()
 MULTI_SETUP_SUMMARIES=()
 
@@ -754,8 +754,8 @@ if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
       multi_credential_id="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
       multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
       multi_venue_account_id="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
-      multi_trading_binding_id="$(echo "$RESPONSE_BODY" | jq -r '.tradingBinding.id // empty')"
-      MULTI_SETUP_SUMMARIES+=("${provider}|${provider_label}|${multi_credential_id}|${multi_connection_id}|${multi_venue_account_id}|${multi_trading_binding_id}")
+      multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id // empty')"
+      MULTI_SETUP_SUMMARIES+=("${provider}|${provider_label}|${multi_credential_id}|${multi_connection_id}|${multi_venue_account_id}|${multi_connection_id}")
       log_ok "Guided setup created provider=${provider} credential=${multi_credential_id} connection=${multi_connection_id}"
     else
       log_error "Guided setup failed for provider ${provider} (HTTP ${HTTP_STATUS})"
@@ -781,7 +781,7 @@ elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
     CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
     CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
     VENUE_ACCOUNT_ID="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
-    TRADING_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.tradingBinding.id // empty')"
+    CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id // empty')"
     log_ok "Guided setup created credential=${CREDENTIAL_ID} connection=${CONNECTION_ID}"
   else
     log_error "Guided setup failed (HTTP ${HTTP_STATUS})"
@@ -900,7 +900,7 @@ elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   log_ok "Credential:  ${CREDENTIAL_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
   log_ok "Connection:  ${CONNECTION_ID}  (${SETUP_PROVIDER_RESOLVED} / ${SETUP_LABEL_RESOLVED})"
   [[ -n "$VENUE_ACCOUNT_ID" ]] && log_ok "Venue acct:  ${VENUE_ACCOUNT_ID}"
-  [[ -n "$TRADING_BINDING_ID" ]] && log_ok "Binding:     ${TRADING_BINDING_ID}"
+  [[ -n "$CONNECTION_ID" ]] && log_ok "Binding:     ${CONNECTION_ID}"
 else
   log_ok "Credential:  ${CREDENTIAL_ID}  (${ADVANCED_CREDENTIAL_VENUE} / ${ADVANCED_CREDENTIAL_LABEL})"
   log_ok "Connection:  ${CONNECTION_ID}  (${ADVANCED_CONNECTION_PROVIDER} / ${ADVANCED_CONNECTION_LABEL})"

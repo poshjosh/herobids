@@ -9,15 +9,15 @@
  *
  * These tests cover:
  *   - Auto-select logic: ProviderSetupResult with tradingBinding → id extracted
- *   - Edge case: result without tradingBinding leaves tradingBindingId unchanged
+ *   - Edge case: result without tradingBinding leaves connectionId unchanged
  *   - Available bindings filter: only bindings with active connection AND binding
  *     status are eligible for selection (mirrors the filter in CreateAgentFlow)
  */
 
 import { describe, expect, it } from 'vitest';
-import type { ProviderSetupResult, TradingBindingSummary } from '../../lib/api-client.js';
+import type { ProviderSetupResult, ConnectionSummary } from '../../lib/api-client.js';
 import { createAgentUsesInheritedModels, resolveCreateAgentModelPayload } from './create-agent-models.js';
-import { resolveCreateAgentBindingId } from './agent-payloads.js';
+import { resolveCreateAgentConnectionId } from './agent-payloads.js';
 import { resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
 
 // ---------------------------------------------------------------------------
@@ -41,17 +41,17 @@ describe('Create Agent — inline setup auto-select logic', () => {
         credentialId: 'cred-1',
         createdAt: '2026-06-10T00:00:00Z',
       },
-      tradingBinding: {
+      connection: {
         id: 'binding-1',
         connectionId: 'conn-1',
         provider: 'hyperliquid',
         label: 'My Account',
-        sourceVenueAccountId: 'va-1',
+         'va-1',
         status: 'active',
         createdAt: '2026-06-10T00:00:00Z',
       },
     };
-    expect(resolveCreateAgentBindingId(result.tradingBinding)).toBe('binding-1');
+    expect(resolveCreateAgentConnectionId(result.tradingBinding)).toBe('binding-1');
   });
 
   it('returns null when the setup result has no trading binding (capability not provisioned)', () => {
@@ -71,7 +71,7 @@ describe('Create Agent — inline setup auto-select logic', () => {
         createdAt: '2026-06-10T00:00:00Z',
       },
     };
-    expect(resolveCreateAgentBindingId(result.tradingBinding)).toBeNull();
+    expect(resolveCreateAgentConnectionId(result.tradingBinding)).toBeNull();
   });
 });
 
@@ -81,29 +81,29 @@ describe('Create Agent — inline setup auto-select logic', () => {
 
 describe('Create Agent — available trading bindings filter', () => {
   /**
-   * Mirrors the availableTradingBindings derivation in CreateAgentFlow:
-   *   (tradingBindingsQuery.data?.bindings ?? []).filter(
+   * Mirrors the availableConnections derivation in CreateAgentFlow:
+   *   (tradingBindingsQuery.data?.connections ?? []).filter(
    *     (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
    *   )
    *
    * This filter determines whether the "Set up trading now" escape hatch is shown
    * (length === 0) or whether the binding selector is shown (length > 0).
    */
-  function filterAvailableBindings(bindings: TradingBindingSummary[]): TradingBindingSummary[] {
+  function filterAvailableConnections(bindings: ConnectionSummary[]): ConnectionSummary[] {
     return bindings.filter(
       (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
     );
   }
 
-  function makeBinding(overrides: Partial<TradingBindingSummary> = {}): TradingBindingSummary {
+  function makeConnection(overrides: Partial<ConnectionSummary> = {}): ConnectionSummary {
     return {
-      bindingId: 'binding-1',
+      connectionId: 'binding-1',
       connectionId: 'conn-1',
       provider: 'hyperliquid',
       label: 'My Account',
       bindingRef: null,
       bindingProfile: null,
-      sourceVenueAccountId: null,
+       null,
       connectionStatus: 'active',
       status: 'active',
       family: 'trading',
@@ -112,33 +112,33 @@ describe('Create Agent — available trading bindings filter', () => {
   }
 
   it('includes a binding where both status and connectionStatus are active', () => {
-    const result = filterAvailableBindings([makeBinding()]);
+    const result = filterAvailableConnections([makeConnection()]);
     expect(result).toHaveLength(1);
   });
 
   it('excludes a binding whose status is revoked', () => {
-    const result = filterAvailableBindings([makeBinding({ status: 'revoked' })]);
+    const result = filterAvailableConnections([makeConnection({ status: 'revoked' })]);
     expect(result).toHaveLength(0);
   });
 
   it('excludes a binding whose connectionStatus is revoked', () => {
-    const result = filterAvailableBindings([makeBinding({ connectionStatus: 'revoked' })]);
+    const result = filterAvailableConnections([makeConnection({ connectionStatus: 'revoked' })]);
     expect(result).toHaveLength(0);
   });
 
   it('returns an empty array when no bindings exist — this is the condition that triggers the escape hatch', () => {
-    expect(filterAvailableBindings([])).toHaveLength(0);
+    expect(filterAvailableConnections([])).toHaveLength(0);
   });
 
   it('keeps only the qualifying binding from a mixed list', () => {
     const bindings = [
-      makeBinding({ bindingId: 'b-active', status: 'active', connectionStatus: 'active' }),
-      makeBinding({ bindingId: 'b-revoked-binding', status: 'revoked', connectionStatus: 'active' }),
-      makeBinding({ bindingId: 'b-revoked-conn', status: 'active', connectionStatus: 'revoked' }),
+      makeConnection({ connectionId: 'b-active', status: 'active', connectionStatus: 'active' }),
+      makeConnection({ connectionId: 'b-revoked-binding', status: 'revoked', connectionStatus: 'active' }),
+      makeConnection({ connectionId: 'b-revoked-conn', status: 'active', connectionStatus: 'revoked' }),
     ];
-    const result = filterAvailableBindings(bindings);
+    const result = filterAvailableConnections(bindings);
     expect(result).toHaveLength(1);
-    expect(result[0]!.bindingId).toBe('b-active');
+    expect(result[0]!.connectionId).toBe('b-active');
   });
 });
 

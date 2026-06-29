@@ -210,21 +210,21 @@ if [[ "$HTTP_STATUS" -ne 200 ]]; then
   die "Binding lookup failed."
 fi
 
-HYPERLIQUID_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.bindings[] | select(.label == "Hyperliquid") | .bindingId' | head -1)"
-ONEINCH_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.bindings[] | select(.label == "1inch") | .bindingId' | head -1)"
+HYPERLIQUID_CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connections[] | select(.label == "Hyperliquid") | .connectionId' | head -1)"
+ONEINCH_CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connections[] | select(.label == "1inch") | .connectionId' | head -1)"
 
-if [[ -z "$HYPERLIQUID_BINDING_ID" || "$HYPERLIQUID_BINDING_ID" == "null" ]]; then
-  die "No trading binding found with label 'Hyperliquid'.
+if [[ -z "$HYPERLIQUID_CONNECTION_ID" || "$HYPERLIQUID_CONNECTION_ID" == "null" ]]; then
+  die "No connection found with label 'Hyperliquid'.
   Run quick-setup.sh first to provision Hyperliquid credentials."
 fi
 
-if [[ -z "$ONEINCH_BINDING_ID" || "$ONEINCH_BINDING_ID" == "null" ]]; then
-  die "No trading binding found with label '1inch'.
+if [[ -z "$ONEINCH_CONNECTION_ID" || "$ONEINCH_CONNECTION_ID" == "null" ]]; then
+  die "No connection found with label '1inch'.
   Run quick-setup.sh first to provision 1inch credentials."
 fi
 
-log_ok "Found Hyperliquid binding: ${HYPERLIQUID_BINDING_ID}"
-log_ok "Found 1inch binding: ${ONEINCH_BINDING_ID}"
+log_ok "Found Hyperliquid connection: ${HYPERLIQUID_CONNECTION_ID}"
+log_ok "Found 1inch connection: ${ONEINCH_CONNECTION_ID}"
 
 # ---------------------------------------------------------------------------
 # Agent creation helper
@@ -260,13 +260,13 @@ build_agent_payload() {
 
 bind_trading_capability() {
   local agent_id="$1"
-  local binding_id="$2"
+  local connection_id="$2"
   local agent_name="$3"
 
-  log_info "Binding trading capability for ${agent_name} (bindingId=${binding_id})..."
+  log_info "Binding trading capability for ${agent_name} (connectionId=${connection_id})..."
 
   api_call POST "/agents/${agent_id}/capabilities/trading/actions/bind" \
-    "$(jq -n --arg bindingId "$binding_id" '{ bindingId: $bindingId }')"
+    "$(jq -n --arg connectionId "$connection_id" '{ connectionId: $connectionId }')"
 
   if [[ "$HTTP_STATUS" -eq 201 || "$HTTP_STATUS" -eq 200 ]]; then
     log_ok "Trading capability bound for ${agent_name}"
@@ -279,7 +279,7 @@ bind_trading_capability() {
 
 create_and_bind_agent() {
   local name="$1"
-  local binding_id="$2"
+  local connection_id="$2"
 
   log_section "Creating agent: ${name}"
 
@@ -292,10 +292,10 @@ create_and_bind_agent() {
       log_info "Agent '${name}' already exists (id=${existing_id}) — binding trading capability"
 
       # Check if already bound
-      api_call GET "/agents/${existing_id}/capabilities/trading/bindings"
+      api_call GET "/agents/${existing_id}/capabilities/trading/connections"
       if [[ "$HTTP_STATUS" -eq 200 ]]; then
         local already_bound
-        already_bound="$(echo "$RESPONSE_BODY" | jq -r --arg bid "$binding_id" '.bindings[] | select(.bindingId == $bid and .grantStatus == "active") | .bindingId' | head -1)"
+        already_bound="$(echo "$RESPONSE_BODY" | jq -r --arg cid "$connection_id" '.connections[] | select(.connectionId == $cid and .grantStatus == "active") | .connectionId' | head -1)"
         if [[ -n "$already_bound" && "$already_bound" != "null" ]]; then
           log_ok "Trading capability already bound for ${name}"
           echo "$existing_id"
@@ -303,7 +303,7 @@ create_and_bind_agent() {
         fi
       fi
 
-      bind_trading_capability "$existing_id" "$binding_id" "$name" || die "Failed to bind trading capability"
+      bind_trading_capability "$existing_id" "$connection_id" "$name" || die "Failed to bind trading capability"
       echo "$existing_id"
       return 0
     fi
@@ -325,7 +325,7 @@ create_and_bind_agent() {
   log_ok "Created agent '${name}' (id=${agent_id})"
 
   # Bind trading capability
-  bind_trading_capability "$agent_id" "$binding_id" "$name" || die "Failed to bind trading capability"
+  bind_trading_capability "$agent_id" "$connection_id" "$name" || die "Failed to bind trading capability"
 
   echo "$agent_id"
 }
@@ -399,8 +399,8 @@ create_non_trading_agent() {
 # Step 3 — Create trading agents
 # ---------------------------------------------------------------------------
 
-THYPER_ID="$(create_and_bind_agent "thyper" "$HYPERLIQUID_BINDING_ID")"
-T1INCH_ID="$(create_and_bind_agent "t1inch" "$ONEINCH_BINDING_ID")"
+THYPER_ID="$(create_and_bind_agent "thyper" "$HYPERLIQUID_CONNECTION_ID")"
+T1INCH_ID="$(create_and_bind_agent "t1inch" "$ONEINCH_CONNECTION_ID")"
 
 # ---------------------------------------------------------------------------
 # Step 4 — Create security-auditor agent
@@ -419,7 +419,7 @@ fi
 # ---------------------------------------------------------------------------
 
 log_section "Agent creation summary"
-log_ok "thyper           → id=${THYPER_ID}  binding=Hyperliquid (${HYPERLIQUID_BINDING_ID})"
-log_ok "t1inch           → id=${T1INCH_ID}  binding=1inch (${ONEINCH_BINDING_ID})"
+log_ok "thyper           → id=${THYPER_ID}  connection=Hyperliquid (${HYPERLIQUID_CONNECTION_ID})"
+log_ok "t1inch           → id=${T1INCH_ID}  connection=1inch (${ONEINCH_CONNECTION_ID})"
 log_ok "security-auditor → id=${SECURITY_AUDITOR_ID}  tick=24h (non-trading)"
 log_info "All agents are in 'stopped' state. Start them via the API or UI when ready."

@@ -1,24 +1,14 @@
 import crypto from 'node:crypto';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { connections, tradingBindings, capabilityGrants, capabilityGrantAudit } from '@herobids/db';
+import { connections, capabilityGrants, capabilityGrantAudit } from '@herobids/db';
 import type { PlatformActorType } from '@herobids/domain';
 
 export interface GrantCreateInput {
   agentId: string;
-  bindingId: string;
+  connectionId: string;
   capabilityFamily: string;
   grantedBy: string;       // userId
-}
-
-export interface BindingCreateInput {
-  userId: string;
-  connectionId: string;
-  provider: string;
-  label: string;
-  bindingRef?: string | null;
-  bindingProfile?: Record<string, unknown> | null;
-  sourceVenueAccountId?: string | null;
 }
 
 export interface GrantRevokeInput {
@@ -47,7 +37,7 @@ export async function createGrant(
     await tx.insert(capabilityGrants).values({
       id: grantId,
       agentId: input.agentId,
-      bindingId: input.bindingId,
+      connectionId: input.connectionId,
       capabilityFamily: input.capabilityFamily,
       status: 'active',
       grantedBy: input.grantedBy,
@@ -65,7 +55,7 @@ export async function createGrant(
       actorType: 'user',
       actorId: input.grantedBy,
       reason: null,
-      detail: { bindingId: input.bindingId, capabilityFamily: input.capabilityFamily },
+      detail: { connectionId: input.connectionId, capabilityFamily: input.capabilityFamily },
       createdAt: now,
     });
   });
@@ -135,17 +125,17 @@ export async function getGrantAudit(
 }
 
 /**
- * Fetch the audit trail for a binding (oldest first).
+ * Fetch the audit trail for a connection (oldest first).
  */
 export async function getBindingAudit(
   db: Database,
-  bindingId: string,
+  connectionId: string,
   agentId: string,
 ): Promise<typeof capabilityGrantAudit.$inferSelect[]> {
   const grants = await db
     .select({ id: capabilityGrants.id })
     .from(capabilityGrants)
-    .where(and(eq(capabilityGrants.bindingId, bindingId), eq(capabilityGrants.agentId, agentId)));
+    .where(and(eq(capabilityGrants.connectionId, connectionId), eq(capabilityGrants.agentId, agentId)));
 
   if (grants.length === 0) {
     return [];
@@ -182,40 +172,33 @@ export async function assertGrantOwnership(
   db: Database,
   grantId: string,
   userId: string,
-): Promise<(typeof capabilityGrants.$inferSelect & { binding: typeof tradingBindings.$inferSelect; connection: typeof connections.$inferSelect }) | null> {
-  // Join via binding → connection → userId to validate the whole ownership chain.
+): Promise<(typeof capabilityGrants.$inferSelect & { connection: typeof connections.$inferSelect }) | null> {
+  // Join via connection → userId to validate the whole ownership chain.
   const rows = await db
     .select({
       grant: capabilityGrants,
-      binding: tradingBindings,
       connection: connections,
     })
     .from(capabilityGrants)
-    .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
-    .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
+    .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
     .where(and(eq(capabilityGrants.id, grantId), eq(connections.userId, userId)));
 
   if (!rows[0]) return null;
-  return { ...rows[0].grant, binding: rows[0].binding, connection: rows[0].connection };
+  return { ...rows[0].grant, connection: rows[0].connection };
 }
 
 /**
- * Verify that a binding belongs to a user.
+ * Verify that a connection belongs to a user and return it with its connection metadata.
  */
 export async function assertBindingOwnership(
   db: Database,
-  bindingId: string,
+  connectionId: string,
   userId: string,
-): Promise<(typeof tradingBindings.$inferSelect & { connection: typeof connections.$inferSelect }) | null> {
-  const rows = await db
-    .select({
-      binding: tradingBindings,
-      connection: connections,
-    })
-    .from(tradingBindings)
-    .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
-    .where(and(eq(tradingBindings.id, bindingId), eq(tradingBindings.userId, userId)));
+): Promise<(typeof connections.$inferSelect) | null> {
+  const [conn] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.userId, userId)));
 
-  if (!rows[0]) return null;
-  return { ...rows[0].binding, connection: rows[0].connection };
+  return conn ?? null;
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bots as botsApi, capabilities as capabilitiesApi } from '../../lib/api-client.js';
-import type { Bot, TradingBindingSummary } from '../../lib/api-client.js';
+import type { Bot, ConnectionSummary } from '../../lib/api-client.js';
 import {
   PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState,
   Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle,
@@ -347,7 +347,7 @@ export function BotsPage() {
 // CreateBotModal
 // ---------------------------------------------------------------------------
 interface CreateBotForm {
-  tradingBindingId: string;
+  connectionId: string;
   strategyPreset: StrategyPresetValue;
   executionMode: ExecutionModeValue;
   symbol: string;
@@ -355,7 +355,7 @@ interface CreateBotForm {
 
 function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState<CreateBotForm>({
-    tradingBindingId: '',
+    connectionId: '',
     strategyPreset: 'momentum',
     executionMode: 'paper',
     symbol: '',
@@ -363,20 +363,19 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [configJson, setConfigJson] = useState('');
 
-  const tradingBindingsQuery = useQuery({
-    queryKey: ['capabilities', 'trading', 'bindings'],
-    queryFn: () => capabilitiesApi.tradingBindings(),
+  const tradingConnectionsQuery = useQuery({
+    queryKey: ['capabilities', 'trading', 'connections'],
+    queryFn: () => capabilitiesApi.tradingConnections(),
   });
-  // Only offer bindings that have a resolved venue account (required by the bot creation API).
-  const tradingBindings: TradingBindingSummary[] = (tradingBindingsQuery.data?.bindings ?? []).filter(
-    (b) => b.connectionStatus === 'active' && b.sourceVenueAccountId !== null,
+  const tradingConnections: ConnectionSummary[] = (tradingConnectionsQuery.data?.connections ?? []).filter(
+    (c) => c.connectionStatus === 'active',
   );
-  const selectedBinding = tradingBindings.find((b) => b.bindingId === form.tradingBindingId) ?? null;
+  const selectedConnection = tradingConnections.find((c) => c.connectionId === form.connectionId) ?? null;
 
   const mutation = useMutation({
     mutationFn: () => {
       const preset = STRATEGY_PRESETS.find((p) => p.value === form.strategyPreset)!;
-      const venue = selectedBinding?.provider ?? 'hyperliquid';
+      const venue = selectedConnection?.provider ?? 'hyperliquid';
       let config: Record<string, unknown> = {
         ...preset.config,
         execution: { mode: form.executionMode },
@@ -395,11 +394,11 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           throw new Error('Invalid JSON in advanced config');
         }
       }
-      if (!form.tradingBindingId) {
+      if (!form.connectionId) {
         throw new Error('Select a platform link before creating a bot');
       }
       return botsApi.create({
-        tradingBindingId: form.tradingBindingId,
+        connectionId: form.connectionId,
         venue: (config['venue'] as string) || venue,
         symbol: form.symbol,
         config,
@@ -417,13 +416,13 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         <div>
           <FieldLabel>Platform link</FieldLabel>
           <select
-            value={form.tradingBindingId}
-            onChange={(e) => setForm((s) => ({ ...s, tradingBindingId: e.target.value }))}
+            value={form.connectionId}
+            onChange={(e) => setForm((s) => ({ ...s, connectionId: e.target.value }))}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
             <option value="">— Select platform link —</option>
-            {tradingBindings.map((b) => (
-              <option key={b.bindingId} value={b.bindingId}>{b.label} ({b.provider})</option>
+            {tradingConnections.map((c) => (
+              <option key={c.connectionId} value={c.connectionId}>{c.label} ({c.provider})</option>
             ))}
           </select>
         </div>
@@ -523,7 +522,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <Button
             variant="primary"
             type="button"
-            disabled={mutation.isPending || !form.tradingBindingId}
+            disabled={mutation.isPending || !form.connectionId}
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? 'Creating…' : 'Create Bot'}

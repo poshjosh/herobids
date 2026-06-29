@@ -107,11 +107,11 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
   const effectiveProvider = providerChoice === CUSTOM_PROVIDER_OPTION ? customProviderId.trim() : providerChoice.trim();
   const filteredCredentials = (credQuery.data?.credentials ?? []).filter((credential) => {
     if (providerChoice === CUSTOM_PROVIDER_OPTION) {
-      return customProviderId.trim().length === 0 || credential.venue === customProviderId.trim();
+      return customProviderId.trim().length === 0 || credential.provider === customProviderId.trim();
     }
 
     const compatibleProviders = selectedProvider?.connections?.credentialProviderIds ?? [];
-    return compatibleProviders.length === 0 || compatibleProviders.includes(credential.venue);
+    return compatibleProviders.length === 0 || compatibleProviders.includes(credential.provider);
   });
 
   const create = useMutation({
@@ -158,12 +158,12 @@ function CreateConnectionModal({ onClose, onCreated }: { onClose: () => void; on
       >
         <option value="">— none —</option>
         {filteredCredentials.map((c) => (
-          <option key={c.id} value={c.id}>{c.venue ? `${c.label} (${c.venue})` : c.label}</option>
+          <option key={c.id} value={c.id}>{c.provider ? `${c.label} (${c.provider})` : c.label}</option>
         ))}
       </select>
       {selectedProvider?.connections ? (
         <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          {selectedProvider.connections.autoCreatesTradingBinding ? 'This provider auto-creates a trading binding.' : 'This provider does not auto-create a trading binding.'}
+          {selectedProvider.connections.autoCreatesTradingConnection ? 'This provider auto-creates a connection for trading.' : 'This provider does not auto-create a connection for trading.'}
         </div>
       ) : null}
       <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

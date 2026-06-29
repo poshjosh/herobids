@@ -9,7 +9,7 @@
 #                         On 401, fall back to POST /auth/register
 #     2. Skill          — ensure the Flight Deal Monitoring skill exists
 #     3. Provider link  — POST /setup/provider-link
-#                         (creates credential + connection + trading binding)
+#                         (creates credential + connection + connection)
 #     4. Telegram       — PATCH /auth/me { telegramChatId }
 #
 #   Advanced mode (fallback for separate labels or explicit resource reuse)
@@ -59,7 +59,7 @@
 #   SETUP_PROVIDER        Optional unified provider identifier
 #                         e.g. hyperliquid | bybit | 1inch
 #   SETUP_LABEL           Optional unified label used for credential,
-#                         connection, and trading binding
+#                         connection, and connection
 #
 # Credential  (venue API keys, stored encrypted)
 #   CREDENTIAL_VENUE      Venue identifier: hyperliquid | bybit | 1inch
@@ -204,7 +204,7 @@ ADVANCED_CONNECTION_LABEL=""
 CREDENTIAL_ID=""
 CONNECTION_ID=""
 VENUE_ACCOUNT_ID=""
-TRADING_BINDING_ID=""
+CONNECTION_ID=""
 AUTO_DETECTED_PROVIDERS=()
 MULTI_SETUP_SUMMARIES=()
 
@@ -672,16 +672,16 @@ if [[ "$RUN_MULTI_PROVIDER" -eq 1 ]]; then
       multi_credential_id="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
       multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
       multi_venue_account_id="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
-      multi_trading_binding_id="$(echo "$RESPONSE_BODY" | jq -r '.tradingBinding.id // empty')"
+      multi_connection_id="$(echo "$RESPONSE_BODY" | jq -r '.connection.id // empty')"
 
-      MULTI_SETUP_SUMMARIES+=("${provider}|${provider_label}|${multi_credential_id}|${multi_connection_id}|${multi_venue_account_id}|${multi_trading_binding_id}")
+      MULTI_SETUP_SUMMARIES+=("${provider}|${provider_label}|${multi_credential_id}|${multi_connection_id}|${multi_venue_account_id}|${multi_connection_id}")
 
       log_ok "Guided setup created provider=${provider} credential=${multi_credential_id} connection=${multi_connection_id}"
       if [[ -n "$multi_venue_account_id" ]]; then
         log_ok "Venue account created: id=${multi_venue_account_id}"
       fi
-      if [[ -n "$multi_trading_binding_id" ]]; then
-        log_ok "Trading binding created: id=${multi_trading_binding_id}"
+      if [[ -n "$multi_connection_id" ]]; then
+        log_ok "Trading binding created: id=${multi_connection_id}"
       fi
     else
       log_error "Guided setup failed for provider ${provider} (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
@@ -708,13 +708,13 @@ elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
     CREDENTIAL_ID="$(echo "$RESPONSE_BODY" | jq -r '.credential.id')"
     CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id')"
     VENUE_ACCOUNT_ID="$(echo "$RESPONSE_BODY" | jq -r '.venueAccount.id // empty')"
-    TRADING_BINDING_ID="$(echo "$RESPONSE_BODY" | jq -r '.tradingBinding.id // empty')"
+    CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connection.id // empty')"
     log_ok "Guided setup created credential=${CREDENTIAL_ID} connection=${CONNECTION_ID}"
     if [[ -n "$VENUE_ACCOUNT_ID" ]]; then
       log_ok "Venue account created: id=${VENUE_ACCOUNT_ID}"
     fi
-    if [[ -n "$TRADING_BINDING_ID" ]]; then
-      log_ok "Trading binding created: id=${TRADING_BINDING_ID}"
+    if [[ -n "$CONNECTION_ID" ]]; then
+      log_ok "Trading binding created: id=${CONNECTION_ID}"
     fi
   else
     log_error "Guided setup failed (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
@@ -847,8 +847,8 @@ elif [[ "$EFFECTIVE_SETUP_MODE" == "guided" ]]; then
   if [[ -n "$VENUE_ACCOUNT_ID" ]]; then
     log_ok "Venue acct:  ${VENUE_ACCOUNT_ID}"
   fi
-  if [[ -n "$TRADING_BINDING_ID" ]]; then
-    log_ok "Binding:     ${TRADING_BINDING_ID}"
+  if [[ -n "$CONNECTION_ID" ]]; then
+    log_ok "Binding:     ${CONNECTION_ID}"
   fi
 else
   log_ok "Credential:  ${CREDENTIAL_ID}  (${ADVANCED_CREDENTIAL_VENUE} / ${ADVANCED_CREDENTIAL_LABEL})"

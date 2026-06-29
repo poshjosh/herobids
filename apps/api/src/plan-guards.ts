@@ -1,6 +1,6 @@
 import type { PlanAgentsEntitlements, PlanEntitlements, PlanLimitsEntitlements, PlanSkillsEntitlements, PlansConfig } from '@herobids/domain';
 import type { Database } from '@herobids/db';
-import { bots, venueAccounts, userCredentials, backtestRuns, agents, connections, tradingBindings } from '@herobids/db';
+import { bots, venueAccounts, userCredentials, backtestRuns, agents, connections } from '@herobids/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Result } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -247,23 +247,23 @@ export async function checkConnectionLimit(db: Database, config: PlansConfig, us
   return ok(undefined);
 }
 
-/** Check if user can create a new trading binding */
+/** Check if user can create a new trading connection (replaces binding limit check) */
 export async function checkBindingLimit(db: Database, config: PlansConfig, userId: string, planId: string, isAdmin: boolean): Promise<PlanCheckResult> {
   const resolved = resolvePlanForCheck(config, planId, isAdmin);
   if (resolved.isAdminBypass) return ok(undefined);
   const limits = resolved.entitlements.limits;
 
-  const rows = await db.select({ id: tradingBindings.id })
-    .from(tradingBindings)
-    .where(and(eq(tradingBindings.userId, userId), eq(tradingBindings.status, 'active')));
+  const rows = await db.select({ id: connections.id })
+    .from(connections)
+    .where(and(eq(connections.userId, userId), eq(connections.status, 'active')));
 
   if (rows.length >= limits.maxBindings) {
     return err({
       code: 'plan.limit_exceeded',
-      message: `Trading binding limit reached (${limits.maxBindings})`,
+      message: `Connection limit reached (${limits.maxBindings})`,
       limit: limits.maxBindings,
       current: rows.length,
-      params: { resource: 'binding', limit: limits.maxBindings, current: rows.length },
+      params: { resource: 'connection', limit: limits.maxBindings, current: rows.length },
     });
   }
 

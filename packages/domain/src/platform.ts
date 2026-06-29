@@ -22,7 +22,7 @@ export interface CapabilityReadiness {
   bindingReadiness: ReadinessState;
   agentEligibility: 'eligible' | 'ineligible';
   effectiveReady: boolean;
-  bindingId?: string;
+  connectionId?: string;
   reasons: string[];
   /** Optional family-specific diagnostic detail */
   detail?: Record<string, unknown>;
@@ -47,7 +47,7 @@ export interface PlatformEventEnvelope {
   actorType: PlatformActorType;
   actorId: string;
   capabilityFamily?: string;    // undefined for platform-level events
-  bindingId?: string;
+  connectionId?: string;
   eventType: string;            // e.g. "agent.capability.readiness_changed"
   payload: Record<string, unknown>;
 }
@@ -62,9 +62,8 @@ export type ConnectionStatus = 'active' | 'revoked';
  * Connection — a user-owned platform resource that links a credential
  * (or OAuth token) to a specific external provider.
  *
- * Connections are capability-agnostic. Capability families derive
- * family-specific bindings from connections (e.g. a trading account
- * is a trading-family binding derived from a Hyperliquid connection).
+ * Connections are the single grantable entity. Capability grants
+ * (trading, automation, messaging, etc.) are scoped directly to connections.
  */
 export interface Connection {
   id: string;
@@ -76,6 +75,10 @@ export interface Connection {
   /** Human-readable label */
   label: string;
   status: ConnectionStatus;
+  /** Absorbed from trading_bindings: account/wallet reference at the provider */
+  providerRef: string | null;
+  /** Absorbed from trading_bindings: normalized capability metadata */
+  profile: Record<string, unknown> | null;
   /** Provider-specific cached metadata (read-only diagnostic surface) */
   meta: Record<string, unknown> | null;
   createdAt: Date;
@@ -117,8 +120,8 @@ export interface CapabilityGrant {
 export type GrantAuditAction =
   | 'granted'
   | 'revoked'
-  | 'binding_provisioned'
-  | 'binding_state_changed'
+  | 'connection_provisioned'
+  | 'connection_state_changed'
   | 'readiness_changed';
 
 /**

@@ -2,20 +2,16 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and, desc } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import type { Database } from '@herobids/db';
-import { agents, connections, tradingBindings, capabilityGrants } from '@herobids/db';
+import { agents, connections, capabilityGrants } from '@herobids/db';
 import type { CapabilityReadiness, ReadinessState, PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { tradingCapabilityRoutes } from './trading.js';
 
 function deriveReadiness(
   grantStatus: string,
-  bindingStatus: string,
   connectionStatus: string,
 ): { state: ReadinessState; reasons: string[] } {
   if (connectionStatus === 'revoked') {
-    return { state: 'revoked', reasons: ['underlying connection has been revoked'] };
-  }
-  if (bindingStatus === 'revoked') {
-    return { state: 'revoked', reasons: ['binding has been revoked'] };
+    return { state: 'revoked', reasons: ['connection has been revoked'] };
   }
   if (grantStatus === 'revoked') {
     return { state: 'revoked', reasons: ['grant has been revoked'] };
@@ -74,13 +70,11 @@ export async function capabilityRoutes(
           capabilityFamily: capabilityGrants.capabilityFamily,
           grantStatus: capabilityGrants.status,
           grantedAt: capabilityGrants.grantedAt,
-          bindingId: tradingBindings.id,
-          bindingStatus: tradingBindings.status,
+          connectionId: connections.id,
           connectionStatus: connections.status,
         })
         .from(capabilityGrants)
-        .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
-        .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
+        .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
         .where(eq(capabilityGrants.agentId, agentId))
         .orderBy(desc(capabilityGrants.grantedAt), desc(capabilityGrants.id));
 
@@ -106,7 +100,7 @@ export async function capabilityRoutes(
           continue;
         }
 
-        const activeGrant = familyRows.find((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
+        const activeGrant = familyRows.find((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
         if (activeGrant) {
           capabilities.push({
             family,
@@ -114,19 +108,19 @@ export async function capabilityRoutes(
             bindingReadiness: 'ready',
             agentEligibility: 'eligible',
             effectiveReady: true,
-            bindingId: activeGrant.bindingId,
+            connectionId: activeGrant.connectionId,
             reasons: [],
           });
         } else {
           const first = chooseFallbackGrant(familyRows);
-          const { state, reasons } = deriveReadiness(first.grantStatus, first.bindingStatus, first.connectionStatus);
+          const { state, reasons } = deriveReadiness(first.grantStatus, first.connectionStatus);
           capabilities.push({
             family,
             state,
             bindingReadiness: state,
             agentEligibility: 'ineligible',
             effectiveReady: false,
-            bindingId: first.bindingId,
+            connectionId: first.connectionId,
             reasons,
           });
         }
@@ -137,7 +131,7 @@ export async function capabilityRoutes(
           continue;
         }
 
-        const activeGrant = familyRows.find((row) => row.grantStatus === 'active' && row.bindingStatus === 'active' && row.connectionStatus === 'active');
+        const activeGrant = familyRows.find((row) => row.grantStatus === 'active' && row.connectionStatus === 'active');
         if (activeGrant) {
           capabilities.push({
             family,
@@ -145,19 +139,19 @@ export async function capabilityRoutes(
             bindingReadiness: 'ready',
             agentEligibility: 'eligible',
             effectiveReady: true,
-            bindingId: activeGrant.bindingId,
+            connectionId: activeGrant.connectionId,
             reasons: [],
           });
         } else {
           const first = chooseFallbackGrant(familyRows);
-          const { state, reasons } = deriveReadiness(first.grantStatus, first.bindingStatus, first.connectionStatus);
+          const { state, reasons } = deriveReadiness(first.grantStatus, first.connectionStatus);
           capabilities.push({
             family,
             state,
             bindingReadiness: state,
             agentEligibility: 'ineligible',
             effectiveReady: false,
-            bindingId: first.bindingId,
+            connectionId: first.connectionId,
             reasons,
           });
         }

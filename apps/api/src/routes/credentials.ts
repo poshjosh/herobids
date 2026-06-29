@@ -124,7 +124,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       .select({
         id: userCredentials.id,
         userId: userCredentials.userId,
-        venue: userCredentials.venue,
+        provider: userCredentials.provider,
         label: userCredentials.label,
         createdAt: userCredentials.createdAt,
         updatedAt: userCredentials.updatedAt,
@@ -141,7 +141,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       .select({
         id: userCredentials.id,
         userId: userCredentials.userId,
-        venue: userCredentials.venue,
+        provider: userCredentials.provider,
         label: userCredentials.label,
         createdAt: userCredentials.createdAt,
         updatedAt: userCredentials.updatedAt,
@@ -163,15 +163,15 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const [existing] = await db.select({ id: userCredentials.id, venue: userCredentials.venue, userId: userCredentials.userId }).from(userCredentials).where(and(eq(userCredentials.id, id), eq(userCredentials.userId, request.userId)));
+    const [existing] = await db.select({ id: userCredentials.id, provider: userCredentials.provider, userId: userCredentials.userId }).from(userCredentials).where(and(eq(userCredentials.id, id), eq(userCredentials.userId, request.userId)));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    const normalizedSecrets = canonicalizeVenueSecrets(existing.venue, parsed.data.secrets);
+    const normalizedSecrets = canonicalizeVenueSecrets(existing.provider, parsed.data.secrets);
 
     // Venue-specific secret validation — fail fast on incomplete credentials
-    const venueSecretErrors = validateVenueSecrets(existing.venue, normalizedSecrets);
+    const venueSecretErrors = validateVenueSecrets(existing.provider, normalizedSecrets);
     if (venueSecretErrors.length > 0) {
       return reply.status(400).send(credentialValidationPayload(venueSecretErrors));
     }
@@ -186,7 +186,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
 
     auditAppend(journal, credentialRotatedEvent({
       credentialId: id,
-      venue: existing.venue,
+      provider: existing.provider,
       userId: request.userId,
     }), app.log);
 
@@ -233,22 +233,21 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
   app.delete<{ Params: { id: string } }>('/credentials/:id', async (request, reply) => {
     const { id } = request.params;
 
-    const [existing] = await db.select({ id: userCredentials.id, venue: userCredentials.venue, userId: userCredentials.userId }).from(userCredentials).where(and(eq(userCredentials.id, id), eq(userCredentials.userId, request.userId)));
+    const [existing] = await db.select({ id: userCredentials.id, provider: userCredentials.provider, userId: userCredentials.userId }).from(userCredentials).where(and(eq(userCredentials.id, id), eq(userCredentials.userId, request.userId)));
     if (!existing) {
       return reply.status(404).send({ error: 'not_found' });
     }
 
     // Check for dependents — block delete if active venue accounts or active connections link to this credential.
     // Revoked connections are handled by ON DELETE SET NULL; only active ones block deletion.
-    const { venueAccountIds, runningInstanceIds, activeConnectionIds, blockingAgentCredentials } = await findCredentialDependents(db, id);
-    if (venueAccountIds.length > 0 || activeConnectionIds.length > 0 || blockingAgentCredentials.length > 0) {
+    const { venueAccountIds, runningInstanceIds, activeConnectionIds } = await findCredentialDependents(db, id);
+    if (venueAccountIds.length > 0 || activeConnectionIds.length > 0) {
       return reply.status(409).send({
         error: 'credential_in_use',
         credentialId: id,
         blockingVenueAccountIds: venueAccountIds,
         blockingBotIds: runningInstanceIds,
         blockingConnectionIds: activeConnectionIds,
-        blockingAgentCredentials,
       });
     }
 
@@ -265,7 +264,6 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
           blockingVenueAccountIds: deps.venueAccountIds,
           blockingBotIds: deps.runningInstanceIds,
           blockingConnectionIds: deps.activeConnectionIds,
-          blockingAgentCredentials: deps.blockingAgentCredentials,
         });
       }
       throw err;

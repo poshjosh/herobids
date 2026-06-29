@@ -2,14 +2,15 @@ import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 
 /**
- * User credentials — encrypted API keys/secrets per venue.
- * User-scoped (one owner). Agents reference these via agent_credentials.
+ * User credentials — encrypted API keys/secrets per provider.
+ * User-scoped (one owner). Agents access these exclusively through
+ * capability_grants → connections → user_credentials.
  * Secrets are encrypted at rest. Decrypted just-in-time by the worker.
  */
 export const userCredentials = pgTable('user_credentials', {
   id: text('id').primaryKey(),               // UUIDv7
   userId: text('user_id').notNull().references(() => users.id),
-  venue: text('venue').notNull(),
+  provider: text('provider').notNull(),
   /** Display label */
   label: text('label').notNull(),
   /** Encrypted credential blob (API key, secret, passphrase) */

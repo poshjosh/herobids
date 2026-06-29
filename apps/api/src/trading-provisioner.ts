@@ -1,19 +1,18 @@
 import crypto from 'node:crypto';
 import type { Database } from '@herobids/db';
-import { venueAccounts, tradingBindings } from '@herobids/db';
+import { venueAccounts } from '@herobids/db';
 
 export interface TradingProvisionResult {
   venueAccountId: string;
-  bindingId: string;
 }
 
 /** Minimal database interface required for provisioning — accepts both a full Database and a PgTransaction. */
 type Insertable = Pick<Database, 'insert'>;
 
 /**
- * Provisions a venue account and trading binding for an existing connection.
- * The binding always has a non-null sourceVenueAccountId so that bots can
- * reference it directly on creation.
+ * Provisions a venue account for a trading connection.
+ * The binding concept has been absorbed into connections — connections are now
+ * the directly grantable entity.
  */
 export async function provisionTradingTarget(
   tx: Insertable,
@@ -27,7 +26,6 @@ export async function provisionTradingTarget(
   },
 ): Promise<TradingProvisionResult> {
   const venueAccountId = crypto.randomUUID();
-  const bindingId = crypto.randomUUID();
 
   await tx.insert(venueAccounts).values({
     id: venueAccountId,
@@ -40,19 +38,5 @@ export async function provisionTradingTarget(
     updatedAt: opts.now,
   });
 
-  await tx.insert(tradingBindings).values({
-    id: bindingId,
-    userId: opts.userId,
-    connectionId: opts.connectionId,
-    provider: opts.provider,
-    label: opts.label,
-    bindingRef: null,
-    status: 'active',
-    bindingProfile: { provider: opts.provider },
-    sourceVenueAccountId: venueAccountId,
-    createdAt: opts.now,
-    updatedAt: opts.now,
-  });
-
-  return { venueAccountId, bindingId };
+  return { venueAccountId };
 }

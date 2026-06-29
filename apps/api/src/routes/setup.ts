@@ -7,7 +7,7 @@ import type { PlansConfig } from '@herobids/domain';
 import { encryptCredential, getEncryptionKey } from '../crypto.js';
 import { canonicalizeVenueSecrets, validateVenueSecrets } from './credentials.js';
 import { provisionTradingTarget } from '../trading-provisioner.js';
-import { checkBindingLimit, checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
+import { checkConnectionLimit, checkCredentialLimit, checkVenueAccountLimit } from '../plan-guards.js';
 import { SetupProviderLinkSchema } from '../schemas.js';
 import { errorPayload, type ApiErrorDetail } from '../error-payload.js';
 import { providerAllowsTradingSetup } from '../providers/registry.js';
@@ -68,7 +68,7 @@ export async function setupRoutes(
     const secretsJson = JSON.stringify(normalizedSecrets);
     const { encryptedData, encryptionMeta } = encryptCredential(secretsJson, encryptionKey);
 
-    let tradingResult: { venueAccountId: string; bindingId: string } | null = null;
+    let tradingResult: { venueAccountId: string } | null = null;
 
     const txResult = await db.transaction(async (tx) => {
       if (plansConfig) {
@@ -90,18 +90,13 @@ export async function setupRoutes(
           if (!venueAccountCheck.ok) {
             return { kind: 'limit' as const, error: venueAccountCheck.error };
           }
-
-          const bindingCheck = await checkBindingLimit(tx as unknown as Database, plansConfig, request.userId, request.userPlanId || 'free', request.isAdmin);
-          if (!bindingCheck.ok) {
-            return { kind: 'limit' as const, error: bindingCheck.error };
-          }
         }
       }
 
       await tx.insert(userCredentials).values({
         id: credentialId,
         userId: request.userId,
-        venue: provider,
+        provider,
         label,
         encryptedData,
         encryptionMeta,
@@ -144,7 +139,7 @@ export async function setupRoutes(
     const response: Record<string, unknown> = {
       credential: {
         id: credentialId,
-        venue: provider,
+        provider,
         label,
         createdAt: now,
       },
@@ -157,26 +152,6 @@ export async function setupRoutes(
         createdAt: now,
       },
     };
-
-    if (tradingResult !== null) {
-      const { venueAccountId, bindingId } = tradingResult as { venueAccountId: string; bindingId: string };
-      response['venueAccount'] = {
-        id: venueAccountId,
-        venue: provider,
-        label,
-        credentialId,
-        createdAt: now,
-      };
-      response['tradingBinding'] = {
-        id: bindingId,
-        connectionId,
-        provider,
-        label,
-        sourceVenueAccountId: venueAccountId,
-        status: 'active',
-        createdAt: now,
-      };
-    }
 
     return reply.status(201).send(response);
   });

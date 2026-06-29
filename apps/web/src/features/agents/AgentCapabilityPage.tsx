@@ -30,21 +30,21 @@ export function AgentCapabilityPage() {
     enabled: family === 'trading',
   });
 
-  const agentBindingsQuery = useQuery({
-    queryKey: ['agents', agentId, 'capabilities', 'trading', 'bindings'],
-    queryFn: () => agentsApi.tradingBindings(agentId!),
+  const agentConnectionsQuery = useQuery({
+    queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'],
+    queryFn: () => agentsApi.tradingConnections(agentId!),
     enabled: Boolean(agentId) && family === 'trading',
   });
 
   const bindMutation = useMutation({
-    mutationFn: ({ bindingId, action }: { bindingId: string; action: 'bind' | 'unbind' }) =>
-      agentsApi.tradingAction(agentId!, action, { bindingId }),
+    mutationFn: ({ connectionId, action }: { connectionId: string; action: 'bind' | 'unbind' }) =>
+      agentsApi.tradingAction(agentId!, action, { connectionId }),
     onSuccess: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', family] }),
-        qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'bindings'] }),
+        qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'] }),
         qc.invalidateQueries({ queryKey: ['agents', agentId] }),
-        qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] }),
+        qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] }),
       ]);
     },
   });
@@ -78,10 +78,10 @@ export function AgentCapabilityPage() {
 
   const capabilityFamilyLabel = formatCapabilityFamily(readiness.family ?? family, intl);
   const nextSteps = getCapabilityNextSteps(intl, readiness.family ?? family);
-  const boundBindingIds = new Set(
-    (agentBindingsQuery.data?.bindings ?? [])
-      .filter((binding) => binding.grantStatus === 'active')
-      .map((binding) => binding.bindingId),
+  const boundConnectionIds = new Set(
+    (agentConnectionsQuery.data?.connections ?? [])
+      .filter((connection) => connection.grantStatus === 'active')
+      .map((connection) => connection.connectionId),
   );
 
   return (
@@ -149,44 +149,44 @@ export function AgentCapabilityPage() {
 
         {family === 'trading' && (
           <Card>
-            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.availableBindings' })}</div>
-            {availableBindingsQuery.isLoading || agentBindingsQuery.isLoading ? (
+            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.availableConnections' })}</div>
+            {availableConnectionsQuery.isLoading || agentConnectionsQuery.isLoading ? (
               <LoadingRows count={2} />
-            ) : availableBindingsQuery.isError || agentBindingsQuery.isError ? (
+            ) : availableConnectionsQuery.isError || agentConnectionsQuery.isError ? (
               <ErrorState
-                message={String((availableBindingsQuery.error as Error | undefined)?.message ?? (agentBindingsQuery.error as Error | undefined)?.message ?? intl.formatMessage({ id: 'agents.capabilityPage.failedBindings' }))}
+                message={String((availableConnectionsQuery.error as Error | undefined)?.message ?? (agentConnectionsQuery.error as Error | undefined)?.message ?? intl.formatMessage({ id: 'agents.capabilityPage.failedBindings' }))}
                 onRetry={() => {
-                  void availableBindingsQuery.refetch();
-                  void agentBindingsQuery.refetch();
+                  void availableConnectionsQuery.refetch();
+                  void agentConnectionsQuery.refetch();
                 }}
               />
-            ) : (availableBindingsQuery.data?.bindings.length ?? 0) === 0 ? (
+            ) : (availableConnectionsQuery.data?.connections.length ?? 0) === 0 ? (
               <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                {intl.formatMessage({ id: 'agents.capabilityPage.noBindings' })}
+                {intl.formatMessage({ id: 'agents.capabilityPage.noConnections' })}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {(availableBindingsQuery.data?.bindings ?? []).map((binding) => {
-                  const isBound = boundBindingIds.has(binding.bindingId);
-                  const notReady = binding.status !== 'active' || binding.connectionStatus !== 'active';
+                {(availableConnectionsQuery.data?.connections ?? []).map((connection) => {
+                  const isBound = boundConnectionIds.has(connection.connectionId);
+                  const notReady = connection.status !== 'active' || connection.connectionStatus !== 'active';
 
                   return (
-                    <div key={binding.bindingId} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px' }}>
+                    <div key={connection.connectionId} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
                         <div>
-                          <div style={{ fontSize: '14px', fontWeight: '600' }}>{binding.label}</div>
+                          <div style={{ fontSize: '14px', fontWeight: '600' }}>{connection.label}</div>
                           <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
-                            {intl.formatMessage({ id: 'agents.capabilityPage.bindingMeta' }, { provider: binding.provider, connectionStatus: binding.connectionStatus, bindingStatus: binding.status ?? 'active' })}
+                            {intl.formatMessage({ id: 'agents.capabilityPage.bindingMeta' }, { provider: connection.provider, connectionStatus: connection.connectionStatus, bindingStatus: connection.status ?? 'active' })}
                           </div>
-                          {binding.bindingRef && (
-                            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '6px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.reference' }, { reference: binding.bindingRef })}</div>
+                          {connection.providerRef && (
+                            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '6px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.reference' }, { reference: connection.providerRef })}</div>
                           )}
                         </div>
                         <Button
                           variant={isBound ? 'secondary' : 'primary'}
                           size="sm"
                           disabled={bindMutation.isPending || (!isBound && notReady)}
-                          onClick={() => bindMutation.mutate({ bindingId: binding.bindingId, action: isBound ? 'unbind' : 'bind' })}
+                          onClick={() => bindMutation.mutate({ connectionId: connection.connectionId, action: isBound ? 'unbind' : 'bind' })}
                         >
                           {isBound ? intl.formatMessage({ id: 'agents.capabilityPage.unbind' }) : intl.formatMessage({ id: 'agents.capabilityPage.bind' })}
                         </Button>

@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] — 2026-06-29
 
+### Changed
+- **Merge connections + trading_bindings** — Simplified credential→connection→agent access model
+  - Merged `trading_bindings` table into `connections` (absorbed `provider_ref`, `profile` columns)
+  - Dropped `agent_credentials` table — agents access credentials exclusively through `capability_grants → connections → user_credentials`
+  - Renamed `user_credentials.venue` → `provider` for consistency
+  - Renamed `capability_grants.binding_id` → `connection_id` with FK to `connections`
+  - Renamed `bots.trading_binding_id` → `connection_id` with FK to `connections`
+  - Updated all API routes, worker resolvers, runtime descriptors, domain types, web frontend, scripts, tests, and documentation
+  - Simplified user flow: "Create credential → Create connection → Select connection" (no more binding step)
+  - Migration: `drizzle/0026_clear_charles_xavier.sql`
+
 ### Added
 - **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers
   - Added evaluation API methods to `apps/web/src/lib/api-client.ts` (`list`, `get`, `trigger`, `listArtifacts`, `getArtifactUrl`)

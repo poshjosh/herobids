@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { agents, bots, connections, fills, tradingBindings, users, venueAccounts } from '@herobids/db';
+import { agents, bots, connections, fills, users, venueAccounts } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
@@ -342,10 +342,9 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
         provider: 'hyperliquid',
         label: 'test-conn-mixed',
       });
-      await ctx.db.insert(tradingBindings).values({
+      await ctx.db.insert(connections).values({
         id: 'tb-mixed',
         userId: owner!.userId,
-        connectionId,
         provider: 'hyperliquid',
         label: 'test-tb-mixed',
       });
@@ -354,7 +353,7 @@ describe.skipIf(SKIP)('Agent interactivity functional', () => {
         id: botId,
         userId: owner!.userId,
         venueAccountId,
-        tradingBindingId: 'tb-mixed',
+        connectionId: 'tb-mixed',
         config: { strategy: { type: 'momentum' } },
         status: 'stopped',
         creatorType: 'agent',

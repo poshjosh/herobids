@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { capabilityGrants, tradingBindings, venueAccounts, connections } from '@herobids/db';
+import { capabilityGrants, venueAccounts, connections } from '@herobids/db';
 import type { AgentRepository, PositionRepository, DecisionRepository, ExecutionPlanRepository, FillRepository, OrderRepository, BalanceSnapshotRepository, BacktestingRepository } from '@herobids/db';
 import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
@@ -35,7 +35,7 @@ export interface AgentIntakeResolverDeps {
 
 /**
  * Resolves DecisionIntakeDeps for agent actors by querying:
- *   capability_grants → trading_bindings → venue_accounts
+ *   capability_grants → connections
  *
  * This enables agents to trade directly without first creating a bot.
  * Currently supports paper execution mode only.
@@ -155,39 +155,30 @@ export class AgentIntakeResolver {
     };
   }
 
-  /** Resolve the active trading binding for an agent (public for AgentTradingActor setup). */
-  async resolveBinding(agentId: string): Promise<{ id: string; venue: string; venueAccountId: string; bindingProfile?: Record<string, unknown> | null } | undefined> {
+  /** Resolve the active trading connection for an agent (public for AgentTradingActor setup). */
+  async resolveBinding(agentId: string): Promise<{ id: string; venue: string; venueAccountId: string; profile?: Record<string, unknown> | null } | undefined> {
     return this.resolveActiveBinding(agentId);
   }
 
-  private async resolveActiveBinding(agentId: string): Promise<{ id: string; venue: string; venueAccountId: string; bindingProfile?: Record<string, unknown> | null } | undefined> {
+  private async resolveActiveBinding(agentId: string): Promise<{ id: string; venue: string; venueAccountId: string; profile?: Record<string, unknown> | null } | undefined> {
     const rows = await this.deps.db
       .select({
-        bindingId: tradingBindings.id,
-        sourceVenueAccountId: tradingBindings.sourceVenueAccountId,
-        provider: tradingBindings.provider,
-        venueAccountVenue: venueAccounts.venue,
-        venueAccountId: venueAccounts.id,
-        bindingProfile: tradingBindings.bindingProfile,
-        connectionStatus: connections.status,
+        connectionId: connections.id,
+        provider: connections.provider,
+        profile: connections.profile,
+        providerRef: connections.providerRef,
       })
       .from(capabilityGrants)
-      .innerJoin(tradingBindings, eq(capabilityGrants.bindingId, tradingBindings.id))
-      .innerJoin(connections, eq(tradingBindings.connectionId, connections.id))
-      .leftJoin(venueAccounts, eq(tradingBindings.sourceVenueAccountId, venueAccounts.id))
+      .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
       .where(
         and(
           eq(capabilityGrants.agentId, agentId),
           eq(capabilityGrants.capabilityFamily, 'trading'),
           eq(capabilityGrants.status, 'active'),
-          eq(tradingBindings.status, 'active'),
           eq(connections.status, 'active'),
         ),
       )
-      .orderBy(
-        // Match the descriptor default-selection rule: newest ready binding wins.
-        desc(capabilityGrants.grantedAt),
-      )
+      .orderBy(desc(capabilityGrants.grantedAt))
       .limit(1);
 
     const row = rows[0];
@@ -196,14 +187,21 @@ export class AgentIntakeResolver {
       return undefined;
     }
 
-    const venueAccountId = row.venueAccountId ?? row.sourceVenueAccountId;
+    // Look up venue account matching the connection's provider
+    const [va] = await this.deps.db
+      .select({ id: venueAccounts.id, venue: venueAccounts.venue })
+      .from(venueAccounts)
+      .where(eq(venueAccounts.venue, row.provider))
+      .limit(1);
+
+    const venueAccountId = va?.id;
     if (!venueAccountId) {
-      logger.warn({ agentId }, 'Trading binding has no venue account reference');
+      logger.warn({ agentId, provider: row.provider }, 'Connection has no associated venue account');
       return undefined;
     }
 
-    const venue = row.venueAccountVenue ?? row.provider;
-    return { id: row.bindingId, venue, venueAccountId, bindingProfile: row.bindingProfile };
+    const venue = va.venue ?? row.provider;
+    return { id: row.connectionId, venue, venueAccountId, profile: row.profile };
   }
 
   private buildPersistence(agentId: string, venueAccountId: string, venue: string): TradingCyclePersistence {

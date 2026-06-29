@@ -84,7 +84,7 @@ export function ProviderSetupForm({ onClose, onSuccess, defaultCapability }: Pro
       return true;
     }
 
-    return provider.connections?.autoCreatesTradingBinding === true;
+    return provider.connections?.autoCreatesTradingConnection === true;
   });
   // Auto-select the first trading provider once the catalog loads
   useEffect(() => {
