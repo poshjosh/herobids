@@ -7,6 +7,7 @@ import { agentEvaluations } from '@herobids/db';
 import { eq, and, lt } from 'drizzle-orm';
 import type { EvaluationJobData } from '@herobids/db';
 import type { EvaluationThresholds } from '@herobids/domain';
+import type { UsageBillingRepository } from '@herobids/db';
 import { runEvaluation } from './run-evaluation.js';
 import { createRedisSnapshotClient, type RedisSnapshotClient } from './collectors/redis-snapshot.js';
 
@@ -19,6 +20,8 @@ export interface EvaluationRuntimeConfig {
   maxRuntimeMs?: number;
   /** Thresholds for deterministic analyzers */
   thresholds: EvaluationThresholds;
+  /** Optional billing repository for recording narrative LLM usage */
+  usageBillingRepo?: UsageBillingRepository;
 }
 
 // ── Logger ──────────────────────────────────────────────────────────────────
@@ -81,6 +84,7 @@ export class EvaluationRuntime {
           attemptNumber: job.attemptsMade + 1,
           maxAttempts: job.opts.attempts ?? 3,
           redis: this.snapshotClient,
+          usageBillingRepo: this.config.usageBillingRepo,
         });
 
         logger.info({ runId, agentId }, 'Evaluation completed');

@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import crypto from 'node:crypto';
 import type { Database } from '@herobids/db';
 import {
   agentRuntimeSessions,
@@ -6,6 +7,10 @@ import {
   markSucceeded,
   markFailed,
   markRetrying,
+  agents,
+  billingAccounts,
+  type UsageBillingRepository,
+  type InsertUsageEvent,
 } from '@herobids/db';
 import type { ResolvedEvaluationScope, EvaluationRunResult, EvaluationScorecard, EvaluationArtifactStore, EvaluationThresholds } from '@herobids/domain';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
@@ -41,6 +46,8 @@ export interface RunEvaluationContext {
   maxAttempts: number;
   /** Optional Redis client for snapshot collection (best-effort, future wiring). */
   redis?: { snapshot: () => Promise<Record<string, unknown>> };
+  /** Optional billing repository for recording narrative LLM usage */
+  usageBillingRepo?: UsageBillingRepository;
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -170,15 +177,99 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
         evidence: f.evidence ? redact(f.evidence) : undefined,
       }));
 
-      narrativeText = await generateEvaluationNarrative(
+      const narrativeResult = await generateEvaluationNarrative(
         ctx.narrativeLlm,
         scorecard,
         safeFindings,
       );
 
+      // Write narrative metadata artifact (always, even on failure)
+      try {
+        await store.write(
+          runId,
+          'narrative-metadata.json',
+          JSON.stringify(narrativeResult.metadata, null, 2),
+        );
+      } catch {
+        logger.warn({ runId }, 'Could not write narrative metadata artifact');
+      }
+
+      // Record billing usage on successful generation
+      if (narrativeResult.text && narrativeResult.metadata.tokensUsed > 0 && ctx.usageBillingRepo) {
+        try {
+          // Get agent info for billing — read user ID
+          const [agentRow] = await db
+            .select({ userId: agents.userId })
+            .from(agents)
+            .where(eq(agents.id, agentId))
+            .limit(1);
+
+          if (agentRow) {
+            // Get billing account for this user
+            const [billingAccount] = await db
+              .select({ id: billingAccounts.id })
+              .from(billingAccounts)
+              .where(eq(billingAccounts.ownerUserId, agentRow.userId))
+              .limit(1);
+
+            if (billingAccount) {
+              const events: InsertUsageEvent[] = [];
+              const base = {
+                accountId: billingAccount.id,
+                userId: agentRow.userId,
+                agentId,
+                sourceType: 'evaluation_narrative',
+                provider: narrativeResult.metadata.provider,
+                model: narrativeResult.metadata.model,
+                unit: 'tokens',
+                occurredAt: new Date(),
+              };
+
+              if (narrativeResult.metadata.inputTokens != null && narrativeResult.metadata.outputTokens != null) {
+                // Granular breakdown available — record input and output separately
+                events.push({
+                  ...base,
+                  id: crypto.randomUUID(),
+                  meterKey: 'llm.input_tokens',
+                  quantity: narrativeResult.metadata.inputTokens,
+                  idempotencyKey: `eval-narrative-input-${runId}`,
+                  metadata: { latencyMs: narrativeResult.metadata.latencyMs },
+                });
+                events.push({
+                  ...base,
+                  id: crypto.randomUUID(),
+                  meterKey: 'llm.output_tokens',
+                  quantity: narrativeResult.metadata.outputTokens,
+                  idempotencyKey: `eval-narrative-output-${runId}`,
+                  metadata: { latencyMs: narrativeResult.metadata.latencyMs },
+                });
+              } else {
+                // Total-only fallback (matches usage-billing-service.ts convention)
+                events.push({
+                  ...base,
+                  id: crypto.randomUUID(),
+                  meterKey: 'llm.output_tokens',
+                  quantity: narrativeResult.metadata.tokensUsed,
+                  idempotencyKey: `eval-narrative-${runId}`,
+                  metadata: {
+                    granularity: 'total_only',
+                    latencyMs: narrativeResult.metadata.latencyMs,
+                  },
+                });
+              }
+
+              await ctx.usageBillingRepo.recordUsageEvents(events);
+              logger.info({ runId, tokensUsed: narrativeResult.metadata.tokensUsed, eventCount: events.length }, 'Narrative usage billed');
+            }
+          }
+        } catch (err) {
+          logger.warn({ runId, err: (err as Error)?.message }, 'Could not record narrative usage billing');
+        }
+      }
+
       // Redact the generated narrative before writing it
-      if (narrativeText) {
-        narrativeText = redact(narrativeText);
+      if (narrativeResult.text) {
+        narrativeText = redact(narrativeResult.text);
       }
     }
 

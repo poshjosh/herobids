@@ -6,6 +6,43 @@ import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 
 const logger = pino({ name: 'generate-narrative' });
 
+// ── Public types ────────────────────────────────────────────────────────────
+
+export interface NarrativeGenerationResult {
+  /** The generated narrative text (null if generation failed) */
+  text: string | null;
+  /** Metadata for provenance — always present, even on failure */
+  metadata: NarrativeGenerationMetadata;
+}
+
+export interface NarrativeGenerationMetadata {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  baseUrlUsed?: string;
+  tokensUsed: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs: number;
+  generated: boolean;
+  error?: string;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Build base metadata populated from config — used as the starting point for both success and failure paths. */
+function baseMetadata(config: ResolvedNarrativeLlmConfig): NarrativeGenerationMetadata {
+  return {
+    enabled: true,
+    provider: config.provider,
+    model: config.model,
+    baseUrlUsed: config.baseUrl,
+    tokensUsed: 0,
+    latencyMs: 0,
+    generated: false,
+  };
+}
+
 /**
  * Build a concise prompt for the narrative LLM.
  * Uses only redacted deterministic inputs: scorecard + top findings.
@@ -41,16 +78,18 @@ Write a SHORT commentary (3-5 sentences) in Markdown format. Focus on the most i
 /**
  * Generate LLM-powered evaluation narrative commentary.
  *
- * Best-effort: returns null on any failure so the evaluation can succeed
+ * Best-effort: returns metadata on any failure so the evaluation can succeed
  * with the deterministic report alone.
  *
- * @returns The generated narrative text, or null if generation failed.
+ * @returns Structured result with text (null on failure) and provenance metadata.
  */
 export async function generateEvaluationNarrative(
   narrativeConfig: ResolvedNarrativeLlmConfig,
   scorecard: EvaluationScorecard,
   topFindings: EvaluationFinding[],
-): Promise<string | null> {
+): Promise<NarrativeGenerationResult> {
+  const meta = baseMetadata(narrativeConfig);
+
   const llmConfig: LlmProviderConfig = {
     provider: narrativeConfig.provider,
     model: narrativeConfig.model,
@@ -86,31 +125,43 @@ export async function generateEvaluationNarrative(
         { error: result.error },
         'Narrative LLM call failed — continuing without commentary',
       );
-      return null;
+      meta.error = result.error.message;
+      return { text: null, metadata: meta };
     }
 
     const narrative = stripReasoningContent(result.data.content).trim();
     if (!narrative) {
       logger.warn('Narrative LLM returned empty content');
-      return null;
+      meta.error = 'LLM returned empty content';
+      return { text: null, metadata: meta };
     }
+
+    meta.provider = result.data.provider;
+    meta.model = result.data.model;
+    meta.tokensUsed = result.data.tokensUsed;
+    meta.inputTokens = result.data.inputTokens;
+    meta.outputTokens = result.data.outputTokens;
+    meta.latencyMs = result.data.latencyMs;
+    meta.generated = true;
 
     logger.info(
       {
-        provider: result.data.provider,
-        model: result.data.model,
-        tokensUsed: result.data.tokensUsed,
-        latencyMs: result.data.latencyMs,
+        provider: meta.provider,
+        model: meta.model,
+        tokensUsed: meta.tokensUsed,
+        latencyMs: meta.latencyMs,
       },
       'Narrative generated successfully',
     );
 
-    return narrative;
+    return { text: narrative, metadata: meta };
   } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
     logger.warn(
-      { err: (err as Error)?.message },
+      { err: message },
       'Narrative generation threw — continuing without commentary',
     );
-    return null;
+    meta.error = message;
+    return { text: null, metadata: meta };
   }
 }

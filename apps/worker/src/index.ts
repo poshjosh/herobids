@@ -1244,6 +1244,7 @@ const evaluationRuntime = new EvaluationRuntime(
     concurrency: appConfig.evaluation.concurrency,
     maxRuntimeMs: appConfig.evaluation.maxRuntimeMs,
     thresholds: appConfig.evaluation.thresholds,
+    usageBillingRepo: new UsageBillingRepository(db),
   },
   db,
 );
