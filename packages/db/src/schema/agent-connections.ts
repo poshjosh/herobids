@@ -7,9 +7,8 @@ import { connections } from './connections.js';
  * Agent connections — records that a user has granted an agent access to a
  * connection.
  *
- * This replaces the former capability_grants table. The simpler model does
- * NOT include a capabilityFamily column because capabilities are derived from
- * the provider record (providers.capabilities), not duplicatively stored here.
+ * Capabilities are derived from the provider record (providers.capabilities),
+ * not duplicatively stored here.
  *
  * One active row per (agent, connection). Revoked rows are retained for audit.
  */

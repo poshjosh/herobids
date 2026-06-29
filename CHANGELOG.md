@@ -16,6 +16,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Updated all API routes, worker resolvers, runtime descriptors, domain types, web frontend, scripts, tests, and documentation
   - Simplified user flow: "Create credential → Create connection → Select connection" (no more binding step)
   - Migration: `drizzle/0026_clear_charles_xavier.sql`
+- **Exact Connection Routing & Atomic Agent Assignment** — Production-hardened connection-based trading routing
+  - Added `providers` table with capability definitions, `agent_connections` table for atomic agent→connection grants
+  - Added `resolvedVenueAccountId` FK to `connections` — trading-ready connections carry an explicit venue account
+  - Rewired bot creation (API + agent broker) to resolve venue accounts from the selected connection row only
+  - Removed provider-based `(userId, provider)` venue account inference — all routing is exact by `connectionId`
+  - `POST /agents` accepts `connectionIds` and creates agent + connection assignments in one transaction
+  - `PATCH /agents/:id` declaratively syncs `agent_connections` rows (insert missing, revoke removed)
+  - Worker startup validates `bot.connectionId` ↔ `connection.resolvedVenueAccountId` consistency; refuses startup on mismatch
+  - Readiness and runtime capability descriptors derive capability families from `providers.capabilities` via `agent_connections`
+  - Replaced `capability_grants` vocabulary in AGENTS.md with `agent_connections`
+  - Cleaned up transition comments, dead `tradingBinding` test assertions, and unused imports from migration phases
 
 ### Added
 - **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers

@@ -182,7 +182,6 @@ describe('POST /setup/provider-link', () => {
     const body = res.json<Record<string, unknown>>();
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
-    expect(body['tradingBinding']).toBeUndefined();
     expect(body['venueAccount']).toBeUndefined();
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
@@ -210,11 +209,10 @@ describe('POST /setup/provider-link', () => {
     const body = res.json<Record<string, unknown>>();
     expect(body['credential']).toBeDefined();
     expect(body['connection']).toBeDefined();
-    expect(body['tradingBinding']).toBeUndefined();
     expect((body['connection'] as Record<string, unknown>)['resolvedVenueAccountId']).toBeNull();
   });
 
-  it('creates credential, connection, venue account, and binding for capability=trading', async () => {
+  it('creates credential, connection, and venue account for capability=trading', async () => {
     const { provisionTradingTarget } = await import('../trading-provisioner.js');
     const app = Fastify();
     decorateWithAuth(app);

@@ -7,9 +7,7 @@ import { venueAccounts } from './venue-accounts.js';
  * Connections — user-owned platform resources representing a usable external
  * linkage to a provider or system.
  *
- * Connections are the single entity for provider linkage. They absorb the
- * former trading_bindings table. Capability grants (trading, automation,
- * messaging, etc.) are scoped directly to connections.
+ * Connections are the single entity for provider linkage.
  *
  * A connection may reference a credential for secret-based providers, or
  * leave credentialId null for OAuth-based linkages.
@@ -25,9 +23,9 @@ export const connections = pgTable('connections', {
   label: text('label').notNull(),
   /** active | revoked */
   status: text('status').notNull().default('active'),
-  /** Absorbed from trading_bindings: account/wallet reference at the provider */
+  /** Account/wallet reference at the provider */
   providerRef: text('provider_ref'),
-  /** Absorbed from trading_bindings: normalized capability metadata */
+  /** Normalized capability metadata */
   profile: jsonb('profile').$type<Record<string, unknown>>(),
   /** Resolved FK to venue_accounts — set when the connection maps to a known venue account.
    *  null for non-trading connections (e.g. telegram, twitter). */

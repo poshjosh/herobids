@@ -34,8 +34,7 @@ export interface AgentIntakeResolverDeps {
 }
 
 /**
- * Resolves DecisionIntakeDeps for agent actors by querying:
- *   capability_grants → connections
+ * Resolves DecisionIntakeDeps for agent actors via active agent connections.
  *
  * This enables agents to trade directly without first creating a bot.
  * Currently supports paper execution mode only.

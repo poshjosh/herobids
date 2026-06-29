@@ -3,9 +3,8 @@ import { users } from './users.js';
 
 /**
  * User credentials — encrypted API keys/secrets per provider.
- * User-scoped (one owner). Agents access these exclusively through
- * capability_grants → connections → user_credentials.
- * Secrets are encrypted at rest. Decrypted just-in-time by the worker.
+ * User-scoped (one owner). Secrets are encrypted at rest.
+ * Decrypted just-in-time by the worker.
  */
 export const userCredentials = pgTable('user_credentials', {
   id: text('id').primaryKey(),               // UUIDv7

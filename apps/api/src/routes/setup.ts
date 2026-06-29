@@ -28,8 +28,8 @@ export async function setupRoutes(
    * POST /setup/provider-link
    *
    * Guided setup flow: creates a credential, a connection, and — when
-   * capability = "trading" — a companion venue account + trading binding,
-   * all in a single transaction.
+   * capability = "trading" — a companion venue account and writes
+   * resolvedVenueAccountId on the connection, all in a single transaction.
    *
   * This is the preferred path for Mission Control and Create AI Agent. The
    * primitive /credentials and /connections endpoints remain available as

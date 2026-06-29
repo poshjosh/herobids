@@ -1,17 +1,17 @@
 /**
  * Tests for the inline trading-setup escape hatch in the Create Agent flow.
  *
- * When no trading bindings are available while creating an agent that requires
+ * When no trading connections are available while creating an agent that requires
  * trading capability, a "Set up trading now" button appears. On successful
  * completion of the inline setup, the Create Agent flow should:
- *   1. Invalidate the trading bindings query (forces a refetch).
- *   2. Auto-select the newly created binding in the agent intent state.
+ *   1. Invalidate the trading connections query (forces a refetch).
+ *   2. Auto-select the newly created connection in the agent intent state.
  *
  * These tests cover:
- *   - Auto-select logic: ProviderSetupResult with tradingBinding → id extracted
- *   - Edge case: result without tradingBinding leaves connectionId unchanged
- *   - Available bindings filter: only bindings with active connection AND binding
- *     status are eligible for selection (mirrors the filter in CreateAgentFlow)
+ *   - Auto-select logic: ProviderSetupResult with connection → id extracted
+ *   - Edge case: result without connection leaves connectionId unchanged
+ *   - Available connections filter: only connections with active status
+ *     are eligible for selection (mirrors the filter in CreateAgentFlow)
  */
 
 import { describe, expect, it } from 'vitest';
@@ -68,9 +68,9 @@ describe('Create Agent — available trading connections filter', () => {
    * This filter determines whether the "Set up trading now" escape hatch is shown
    * (length === 0) or whether the connection selector is shown (length > 0).
    */
-  function filterAvailableConnections(bindings: ConnectionSummary[]): ConnectionSummary[] {
-    return bindings.filter(
-      (binding) => binding.status === 'active' && binding.connectionStatus === 'active',
+  function filterAvailableConnections(connections: ConnectionSummary[]): ConnectionSummary[] {
+    return connections.filter(
+      (conn) => conn.status === 'active' && conn.connectionStatus === 'active',
     );
   }
 
@@ -88,12 +88,12 @@ describe('Create Agent — available trading connections filter', () => {
     };
   }
 
-  it('includes a binding where both status and connectionStatus are active', () => {
+  it('includes a connection where both status and connectionStatus are active', () => {
     const result = filterAvailableConnections([makeConnection()]);
     expect(result).toHaveLength(1);
   });
 
-  it('excludes a binding whose status is revoked', () => {
+  it('excludes a connection whose status is revoked', () => {
     const result = filterAvailableConnections([makeConnection({ status: 'revoked' })]);
     expect(result).toHaveLength(0);
   });

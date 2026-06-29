@@ -12,8 +12,6 @@ type TxClient = Pick<Database, 'insert' | 'update'>;
 
 /**
  * Provisions a venue account for a trading connection.
- * The binding concept has been absorbed into connections — connections are now
- * the directly grantable entity.
  */
 export async function provisionTradingTarget(
   tx: TxClient,

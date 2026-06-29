@@ -83,7 +83,7 @@ See `docs/best-practices/configuration.md` for full details.
 - The `DecisionIntakeResolver` must resolve execution context for any actor that submits a decision — not only bot actors.
 - Execution context resolution varies by actor type:
   - **Bot** → `bots.venue_account_id` → `venue_accounts` (direct, via running TradingActor in actorRegistry)
-  - **Agent** → `capability_grants.connection_id` → `connections` (the `connections` table is the single grantable entity, formerly `trading_bindings`)
+  - **Agent** → `agent_connections.connection_id` → `connections` (the `connections` table is the single grantable entity)
   - **User** (future) → user-owned `connections` → `venue_accounts`
 
 ## Project Structure

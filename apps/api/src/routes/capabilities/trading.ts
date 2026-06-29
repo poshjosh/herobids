@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { eq, and, desc, inArray, isNull, notInArray, sum, count, sql, or } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, sum, count, sql, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor } from '@herobids/db';
 import {
