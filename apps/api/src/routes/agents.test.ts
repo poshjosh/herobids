@@ -6,7 +6,6 @@ import {
   agentRuntimeSessions,
   agentSkills,
   bots,
-  capabilityGrants,
   decisions,
   skillEntitlements,
   skillRevisions,
@@ -71,7 +70,6 @@ function buildDb(options: {
   botRows?: Array<Record<string, unknown>>;
   sessionRows?: Array<Record<string, unknown>>;
   connectionRows?: Array<Record<string, unknown>>;
-  capabilityGrantRows?: Array<Record<string, unknown>>;
   agentConnectionRows?: Array<Record<string, unknown>>;
   venueAccountRows?: Array<Record<string, unknown>>;
   userRows?: Array<Record<string, unknown>>;
@@ -124,7 +122,6 @@ function buildDb(options: {
   const botRows = options.botRows ?? options.activeLinkRows ?? [];
   const sessionRows = options.sessionRows ?? [];
   const connectionRows = options.connectionRows ?? [];
-  const capabilityGrantRows = options.capabilityGrantRows ?? [];
   const agentConnectionRows = options.agentConnectionRows ?? [];
   const venueAccountRows = options.venueAccountRows ?? [];
   const userRows = options.userRows ?? [];
@@ -159,9 +156,6 @@ function buildDb(options: {
     }
     if (table === connections) {
       return connectionRows;
-    }
-    if (table === capabilityGrants) {
-      return capabilityGrantRows;
     }
     if (table === agentConnections) {
       return agentConnectionRows;

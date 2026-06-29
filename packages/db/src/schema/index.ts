@@ -47,8 +47,6 @@ export { agentOutboundMessages } from './agent-outbound-messages.js';
 export { datasets } from './datasets.js';
 // Platform primitives — capability model
 export { connections } from './connections.js';
-export { capabilityGrants } from './capability-grants.js';
-export { capabilityGrantAudit } from './capability-grant-audit.js';
 export { providers } from './providers.js';
 export { agentConnections } from './agent-connections.js';
 export { agentConnectionAudit } from './agent-connection-audit.js';

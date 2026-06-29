@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { capabilityGrants } from '@herobids/db';
+import { agentConnections } from '@herobids/db';
 import { SKIP, buildApp, truncateAll, registerUser } from './helpers.js';
 
 async function createAgent(app: Awaited<ReturnType<typeof buildApp>>['app'], token: string, name: string, prompt: string) {
@@ -115,7 +115,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     return res.json<{ id: string; venue: string; label: string }>();
   }
 
-  it('covers family catalogs, connection creation, grant lifecycle, readiness, and audit history', async () => {
+  it('covers family catalogs, connection creation, agent-connection lifecycle, readiness, and audit history', async () => {
     const familyCatalog = await ctx.app.inject({ method: 'GET', url: '/capabilities/trading', headers: { Authorization: `Bearer ${token}` } });
     expect(familyCatalog.statusCode).toBe(200);
     expect(familyCatalog.json<{ family: string; supportedActions: string[] }>().family).toBe('trading');
@@ -149,27 +149,29 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(readinessBefore.statusCode).toBe(200);
     expect(readinessBefore.json<{ state: string }>().state).toBe('unconfigured');
 
-    const bindRes = await ctx.app.inject({
-      method: 'POST',
-      url: `/agents/${agentId}/capabilities/trading/actions/bind`,
+    // Grant via declarative PATCH connectionIds
+    const grantRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/agents/${agentId}`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { connectionId: grantConnectionId },
+      payload: { connectionIds: [grantConnectionId] },
     });
-    expect(bindRes.statusCode).toBe(201);
+    expect(grantRes.statusCode).toBe(200);
 
-    const duplicateBind = await ctx.app.inject({
-      method: 'POST',
-      url: `/agents/${agentId}/capabilities/trading/actions/bind`,
+    // Duplicate PATCH with same connectionIds is idempotent
+    const duplicateGrantRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/agents/${agentId}`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { connectionId: grantConnectionId },
+      payload: { connectionIds: [grantConnectionId] },
     });
-    expect(duplicateBind.statusCode).toBe(200);
+    expect(duplicateGrantRes.statusCode).toBe(200);
 
-    const activeGrants = await ctx.db
-      .select({ id: capabilityGrants.id })
-      .from(capabilityGrants)
-      .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.connectionId, grantConnectionId), eq(capabilityGrants.status, 'active')));
-    expect(activeGrants).toHaveLength(1);
+    const activeAgentConns = await ctx.db
+      .select({ id: agentConnections.id })
+      .from(agentConnections)
+      .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.connectionId, grantConnectionId), eq(agentConnections.status, 'active')));
+    expect(activeAgentConns).toHaveLength(1);
 
     const readinessAfter = await ctx.app.inject({
       method: 'GET',
@@ -206,21 +208,22 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       expect.arrayContaining([expect.objectContaining({ connectionId: grantConnectionId, grantStatus: 'active' })]),
     );
 
-    const auditBeforeUnbind = await ctx.app.inject({
+    const auditBeforeRevoke = await ctx.app.inject({
       method: 'GET',
       url: `/agents/${agentId}/capabilities/trading/connections/${grantConnectionId}/audit`,
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(auditBeforeUnbind.statusCode).toBe(200);
-    expect(auditBeforeUnbind.json<{ audit: Array<{ action: string }> }>().audit).toHaveLength(1);
+    expect(auditBeforeRevoke.statusCode).toBe(200);
+    expect(auditBeforeRevoke.json<{ audit: Array<{ action: string }> }>().audit).toHaveLength(1);
 
-    const unbindRes = await ctx.app.inject({
-      method: 'POST',
-      url: `/agents/${agentId}/capabilities/trading/actions/unbind`,
+    // Revoke via declarative PATCH with empty connectionIds
+    const revokeRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/agents/${agentId}`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { connectionId: grantConnectionId },
+      payload: { connectionIds: [] },
     });
-    expect(unbindRes.statusCode).toBe(200);
+    expect(revokeRes.statusCode).toBe(200);
 
     const revokedReadiness = await ctx.app.inject({
       method: 'GET',
@@ -245,25 +248,26 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       effectiveReady: false,
     });
 
-    const auditAfterUnbind = await ctx.app.inject({
+    const auditAfterRevoke = await ctx.app.inject({
       method: 'GET',
       url: `/agents/${agentId}/capabilities/trading/connections/${grantConnectionId}/audit`,
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(auditAfterUnbind.statusCode).toBe(200);
-    expect(auditAfterUnbind.json<{ audit: Array<{ action: string }> }>().audit.map((entry) => entry.action)).toEqual(['granted', 'revoked']);
+    expect(auditAfterRevoke.statusCode).toBe(200);
+    expect(auditAfterRevoke.json<{ audit: Array<{ action: string }> }>().audit.map((entry) => entry.action)).toEqual(['granted', 'revoked']);
   });
 
   it('marks capability readiness revoked when the underlying connection is revoked', async () => {
     const { connectionId } = await setupTradingLink();
 
-    const bindRes = await ctx.app.inject({
-      method: 'POST',
-      url: `/agents/${agentId}/capabilities/trading/actions/bind`,
+    // Grant via declarative PATCH connectionIds
+    const grantRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/agents/${agentId}`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { connectionId },
+      payload: { connectionIds: [connectionId] },
     });
-    expect(bindRes.statusCode).toBe(201);
+    expect(grantRes.statusCode).toBe(200);
 
     const revokeConnection = await ctx.app.inject({
       method: 'DELETE',
@@ -297,7 +301,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     });
   });
 
-  it('rejects binding a trading capability when the underlying connection is no longer ready', async () => {
+  it('rejects granting agent access to a revoked connection', async () => {
     const { connectionId } = await setupTradingLink();
 
     const revokeConnection = await ctx.app.inject({
@@ -307,14 +311,15 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     });
     expect(revokeConnection.statusCode).toBe(204);
 
-    const bindRes = await ctx.app.inject({
-      method: 'POST',
-      url: `/agents/${agentId}/capabilities/trading/actions/bind`,
+    const grantRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/agents/${agentId}`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { connectionId },
+      payload: { connectionIds: [connectionId] },
     });
 
-    expect(bindRes.statusCode).toBe(409);
-    expect(bindRes.json<{ error: string }>().error).toBe('binding.not_ready');
+    expect(grantRes.statusCode).toBe(422);
+    const body = grantRes.json<{ error: string; details?: Array<{ message: string }> }>();
+    expect(body.details?.[0]?.message ?? '').toContain('not active');
   });
 });

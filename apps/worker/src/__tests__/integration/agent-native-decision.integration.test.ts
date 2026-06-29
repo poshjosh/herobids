@@ -3,7 +3,7 @@
  *
  * Verifies that an agent can submit a decision and have it executed
  * WITHOUT creating a bot first — resolution goes through:
- *   capability_grants → connections → venue_accounts
+ *   agent_connections → connections → venue_accounts
  *
  * The full pipeline is exercised: DecisionIntakeResolver → AgentIntakeResolver
  * → PaperExecutor → persistence (DB writes).
@@ -33,7 +33,7 @@ import {
   localIdentities,
   userPlans,
   connections,
-  capabilityGrants,
+  agentConnections,
   venueAccounts,
   decisions,
   positions,
@@ -128,7 +128,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       TRUNCATE
         fills, orders, execution_plans, decisions, positions,
         decision_contexts, journal_events,
-        capability_grants, connections,
+        capability_grants, agent_connections, connections,
         venue_accounts, user_credentials,
         agent_runtime_sessions, agent_messages, agent_artifacts,
         agent_outbound_messages, agents,
@@ -202,13 +202,12 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       updatedAt: now,
     });
 
-    // 6. Grant trading capability to agent
+    // 6. Grant agent access to the connection
     grantId = crypto.randomUUID();
-    await db.insert(capabilityGrants).values({
+    await db.insert(agentConnections).values({
       id: grantId,
       agentId,
       connectionId,
-      capabilityFamily: 'trading',
       status: 'active',
       grantedBy: userId,
       grantedAt: now,
@@ -344,7 +343,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
 
   it('rejects decision when agent has no active trading grant', async () => {
     // Revoke the grant
-    await db.update(capabilityGrants).set({ status: 'revoked' }).where(eq(capabilityGrants.id, grantId));
+    await db.update(agentConnections).set({ status: 'revoked' }).where(eq(agentConnections.id, grantId));
 
     const envelope = makeEnvelope();
     const payload = makePayload();
@@ -497,13 +496,12 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
         updatedAt: now,
       });
 
-      // Grant 1inch trading capability (more recent than Hyperliquid grant)
+      // Grant agent access to the 1inch connection
       swapGrantId = crypto.randomUUID();
-      await db.insert(capabilityGrants).values({
+      await db.insert(agentConnections).values({
         id: swapGrantId,
         agentId,
         connectionId: swapConnectionId,
-        capabilityFamily: 'trading',
         status: 'active',
         grantedBy: userId,
         grantedAt: now,

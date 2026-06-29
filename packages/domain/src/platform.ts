@@ -86,25 +86,22 @@ export interface Connection {
 }
 
 // ---------------------------------------------------------------------------
-// Capability grant — agent's scoped authority to use a connection
+// Agent connection — agent's scoped authority to use a connection
 // ---------------------------------------------------------------------------
 
-export type GrantStatus = 'active' | 'revoked';
-
 /**
- * CapabilityGrant — records that a user has granted an agent access to a
- * specific connection for a specific capability family.
+ * AgentConnection — records that a user has granted an agent access to a
+ * specific connection.
  *
- * Grants are capability-family-scoped. One connection may produce multiple
- * grants across different agents and capability families.
+ * Capabilities are derived from the provider record (providers.capabilities),
+ * not duplicatively stored here. One active row per (agent, connection).
  */
-export interface CapabilityGrant {
+export interface AgentConnection {
   id: string;
   agentId: string;
   connectionId: string;
-  /** Capability family this grant covers, e.g. "trading", "automation" */
-  capabilityFamily: string;
-  status: GrantStatus;
+  /** active | revoked */
+  status: 'active' | 'revoked';
   grantedBy: string;    // userId of the granter
   grantedAt: Date;
   revokedAt: Date | null;
@@ -114,24 +111,17 @@ export interface CapabilityGrant {
 }
 
 // ---------------------------------------------------------------------------
-// Grant audit — append-only record of every grant and connection-state change
+// Agent connection audit — append-only record of every connection-state change
 // ---------------------------------------------------------------------------
 
-export type GrantAuditAction =
-  | 'granted'
-  | 'revoked'
-  | 'connection_provisioned'
-  | 'connection_state_changed'
-  | 'readiness_changed';
-
 /**
- * GrantAuditEntry — one immutable record for each grant or connection-state
- * transition. Append-only; rows are never updated or deleted.
+ * AgentConnectionAuditEntry — one immutable record for each agent-connection
+ * state transition. Append-only; rows are never updated or deleted.
  */
-export interface GrantAuditEntry {
+export interface AgentConnectionAuditEntry {
   id: string;
-  grantId: string;
-  action: GrantAuditAction;
+  agentConnectionId: string;
+  action: 'granted' | 'revoked';
   actorType: PlatformActorType;
   actorId: string;
   reason: string | null;
