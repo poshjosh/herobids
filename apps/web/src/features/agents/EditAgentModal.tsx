@@ -15,6 +15,7 @@ import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
 import { type AgentStyleValue, resolveStyleDefaults, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
+import { VENUE_TYPE_MAP } from './venue-mapping.js';
 import { AgentFormBody } from './AgentFormBody.js';
 import { type AgentFormState, agentToFormState } from './agent-form-state.js';
 import { RuntimePolicySection } from './RuntimePolicySection.js';
@@ -223,8 +224,12 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const mutation = useMutation({
     mutationFn: () => {
       const skillIds = Array.from(new Set([...preservedSkillIds, ...form.skillIds.filter((skillId) => selectableSkillIds.has(skillId))]));
+      const activeConnection = agentConnectionsQuery.data?.connections
+        ?.find(c => c.grantStatus === 'active' && c.connectionStatus === 'active');
+      const connectionVenue = activeConnection?.provider ?? '';
+      const connectionVenueType = (VENUE_TYPE_MAP[connectionVenue] ?? '') as '' | 'orderbook' | 'swap';
       const technicalPayload = form.technicalPreFilterEnabled
-        ? technicalFormStateToPayload(form.technicalConfig)
+        ? technicalFormStateToPayload(form.technicalConfig, connectionVenue || undefined, connectionVenueType || undefined)
         : null;
       return agentsApi.update(agentId, buildUpdateAgentPayload({
         name: form.name,

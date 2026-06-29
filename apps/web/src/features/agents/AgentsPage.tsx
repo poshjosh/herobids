@@ -25,13 +25,7 @@ import { validateCreateAgentForm, type ValidationConstraints } from './form-vali
 import { RuntimePolicySection } from './RuntimePolicySection.js';
 
 
-/** Maps provider IDs to their venue type for the technical scanner. */
-const VENUE_TYPE_MAP: Record<string, '' | 'orderbook' | 'swap'> = {
-  hyperliquid: 'orderbook',
-  jupiter: 'swap',
-  bybit: 'orderbook',
-  '1inch': 'swap',
-};
+import { VENUE_TYPE_MAP } from './venue-mapping.js';
 
 type CreateStep = 'intent' | 'review';
 

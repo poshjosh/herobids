@@ -187,3 +187,16 @@ registry or config-driven approach. Keep it as a simple object.
 4. Task 4 (i18n cleanup) — housekeeping
 
 Total estimated scope: ~4 files modified, 1 new file created, ~50–80 lines of net change.
+
+---
+
+## Outstanding Issues
+
+### [Task 1] EditAgentModal Venue Injection
+
+- **M1**: `agentConnectionsQuery` missing `enabled: requiresTradingSetup` gate (plan deviation). Deliberate — the query feeds multiple consumers, not just venue derivation. Low practical impact.
+- **M2**: Venue derived from pre-save DB connections, not form-state connections. If user changes connection in same edit session, venue reflects old connection. Accepted for Phase 1 (lazy approach) per plan.
+- **L1**: Redundant `as` cast on `connectionVenueType` in `EditAgentModal.tsx`. TypeScript already infers the correct type. Remove when convenient.
+- **L2**: Pre-existing unsafe `as 'orderbook' | 'swap'` cast on `intent.venueType` in `AgentsPage.tsx` line ~345. Align with `|| undefined` pattern.
+- **L3**: New `venue-mapping.ts` missing module-level JSDoc. Add brief doc comment.
+- **L4**: No test coverage for edit-modal venue derivation. Add unit test.
