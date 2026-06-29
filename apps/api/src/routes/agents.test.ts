@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import {
   agents,
+  agentConnections,
   agentRuntimeSessions,
   agentSkills,
   bots,
@@ -71,6 +72,7 @@ function buildDb(options: {
   sessionRows?: Array<Record<string, unknown>>;
   connectionRows?: Array<Record<string, unknown>>;
   capabilityGrantRows?: Array<Record<string, unknown>>;
+  agentConnectionRows?: Array<Record<string, unknown>>;
   venueAccountRows?: Array<Record<string, unknown>>;
   userRows?: Array<Record<string, unknown>>;
 } = {}) {
@@ -123,6 +125,7 @@ function buildDb(options: {
   const sessionRows = options.sessionRows ?? [];
   const connectionRows = options.connectionRows ?? [];
   const capabilityGrantRows = options.capabilityGrantRows ?? [];
+  const agentConnectionRows = options.agentConnectionRows ?? [];
   const venueAccountRows = options.venueAccountRows ?? [];
   const userRows = options.userRows ?? [];
 
@@ -159,6 +162,9 @@ function buildDb(options: {
     }
     if (table === capabilityGrants) {
       return capabilityGrantRows;
+    }
+    if (table === agentConnections) {
+      return agentConnectionRows;
     }
     if (table === venueAccounts) {
       return venueAccountRows;
@@ -2213,4 +2219,273 @@ describe('openPositionEscalationToJudgePolicy', () => {
     expect(list[0].openPositionEscalationToJudgePolicy).toBe('never');
   });
 });
+
+describe('agent connection assignment (POST /agents and PATCH /agents/:id)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // --- POST /agents ---
+
+  it('creates agent with connections when valid connectionIds are provided', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'test-agent', prompt: 'test', modelPolicy: null, executionMode: 'paper', toolPolicy: null, skillIds: [] }],
+      connectionRows: [
+        { id: 'conn-1', userId: TEST_USER_ID, status: 'active' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        connectionIds: ['conn-1'],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    // Verify agent_connections row was inserted
+    const acInsert = insertedValues.find((v) => v['connectionId'] === 'conn-1');
+    expect(acInsert).toBeDefined();
+    expect(acInsert!['status']).toBe('active');
+    expect(acInsert!['grantedBy']).toBe(TEST_USER_ID);
+  });
+
+  it('returns 400 when a connectionId does not exist', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [],
+      connectionRows: [],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        connectionIds: ['nonexistent'],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    expect(res.json().details[0].message).toContain('does not exist');
+  });
+
+  it('returns 400 when a connectionId belongs to a different user', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [],
+      connectionRows: [
+        { id: 'foreign-conn', userId: 'other-user', status: 'active' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        connectionIds: ['foreign-conn'],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    expect(res.json().details[0].message).toContain('does not belong to you');
+  });
+
+  it('returns 400 when a connectionId has been revoked', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [],
+      connectionRows: [
+        { id: 'revoked-conn', userId: TEST_USER_ID, status: 'revoked' },
+      ],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        connectionIds: ['revoked-conn'],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    expect(res.json().details[0].message).toContain('is not active');
+  });
+
+  it('creates agent without connections when connectionIds is omitted', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'test-agent', prompt: 'test', modelPolicy: null, executionMode: 'paper', toolPolicy: null, skillIds: [] }],
+      connectionRows: [],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    // No agent_connections rows should be inserted
+    const acInserts = insertedValues.filter((v) => v['connectionId'] !== undefined);
+    expect(acInserts).toHaveLength(0);
+  });
+
+  it('creates agent without connections when connectionIds is an empty array', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, name: 'test-agent', prompt: 'test', modelPolicy: null, executionMode: 'paper', toolPolicy: null, skillIds: [] }],
+      connectionRows: [],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'test-agent',
+        prompt: 'test',
+        connectionIds: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const acInserts = insertedValues.filter((v) => v['connectionId'] !== undefined);
+    expect(acInserts).toHaveLength(0);
+  });
+
+  // --- PATCH /agents/:id ---
+
+  it('adds new agent_connections rows on PATCH with additional connectionIds', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      agentConnectionRows: [],
+      connectionRows: [
+        { id: 'conn-new', userId: TEST_USER_ID, status: 'active' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { connectionIds: ['conn-new'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const acInsert = insertedValues.find((v) => v['connectionId'] === 'conn-new');
+    expect(acInsert).toBeDefined();
+    expect(acInsert!['status']).toBe('active');
+  });
+
+  it('revokes agent_connections rows on PATCH when connectionIds are removed', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      agentConnectionRows: [
+        { id: 'ac-1', agentId: 'agent-1', connectionId: 'conn-old', status: 'active' },
+      ],
+      connectionRows: [],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { connectionIds: [] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Find the agentConnections update that sets status to 'revoked'
+    const acUpdate = updateSets.find((s) => s['status'] === 'revoked');
+    expect(acUpdate).toBeDefined();
+    expect(acUpdate!['revokedAt']).toBeDefined();
+  });
+
+  it('leaves agent_connections unchanged when PATCH provides the same connectionIds', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db, insertedValues, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], toolPolicy: null }],
+      agentConnectionRows: [
+        { id: 'ac-1', agentId: 'agent-1', connectionId: 'conn-1', status: 'active' },
+      ],
+      connectionRows: [
+        { id: 'conn-1', userId: TEST_USER_ID, status: 'active' },
+      ],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { connectionIds: ['conn-1'] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    // No new agent_connections inserts for connectionIds
+    const acInserts = insertedValues.filter((v) => v['connectionId'] !== undefined);
+    expect(acInserts).toHaveLength(0);
+    // No agent_connections revoked
+    const acRevokes = updateSets.filter((s) => s['status'] === 'revoked');
+    expect(acRevokes).toHaveLength(0);
+  });
+});
+
 

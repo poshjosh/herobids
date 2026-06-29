@@ -1,6 +1,6 @@
 import { and, eq, asc } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { agentSkills, capabilityGrants, connections, skillRevisions, skills } from './schema/index.js';
+import { agentSkills, agentConnections, connections, providers, skillRevisions, skills } from './schema/index.js';
 import {
   BASE_SKILL,
   SYSTEM_SKILLS,
@@ -27,7 +27,6 @@ function assertKnownRequiredTools(skillId: string, requiredTools: string[]): str
 }
 
 type RuntimeGrantRow = {
-  family: string;
   grantStatus: string;
   grantedAt: Date;
   connectionId: string;
@@ -36,23 +35,25 @@ type RuntimeGrantRow = {
   label: string;
   providerRef: string | null;
   profile: Record<string, unknown> | null;
+  resolvedVenueAccountId: string | null;
+  capabilities: string[];
 };
 
-function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
+function deriveReadiness(row?: RuntimeGrantRow, family = 'trading'): CapabilityReadiness {
   if (!row) {
     return {
-      family: 'trading',
+      family,
       state: 'unconfigured',
       connectionReadiness: 'unconfigured',
       agentEligibility: 'ineligible',
       effectiveReady: false,
-      reasons: ['no grants have been created for this capability family'],
+      reasons: ['no connections have been assigned for this capability family'],
     };
   }
 
   if (row.connectionStatus === 'revoked') {
     return {
-      family: row.family,
+      family,
       state: 'revoked',
       connectionReadiness: 'revoked',
       agentEligibility: 'ineligible',
@@ -63,18 +64,31 @@ function deriveReadiness(row?: RuntimeGrantRow): CapabilityReadiness {
   }
   if (row.grantStatus === 'revoked') {
     return {
-      family: row.family,
+      family,
       state: 'revoked',
       connectionReadiness: 'ready',
       agentEligibility: 'ineligible',
       effectiveReady: false,
       connectionId: row.connectionId,
-      reasons: ['grant has been revoked'],
+      reasons: ['connection assignment has been revoked'],
+    };
+  }
+
+  // A trading connection with no resolved venue account is not executable.
+  if (family === 'trading' && !row.resolvedVenueAccountId) {
+    return {
+      family,
+      state: 'unconfigured',
+      connectionReadiness: 'ready',
+      agentEligibility: 'ineligible',
+      effectiveReady: false,
+      connectionId: row.connectionId,
+      reasons: ['connection has no resolved venue account — complete trading setup first'],
     };
   }
 
   return {
-    family: row.family,
+    family,
     state: 'ready',
     connectionReadiness: 'ready',
     agentEligibility: 'eligible',
@@ -191,60 +205,65 @@ export async function resolveRuntimeCapabilityDescriptor(
     }
   }
 
-  const tradingRows = await db
+  const connectionRows = await db
     .select({
-      family: capabilityGrants.capabilityFamily,
-      grantStatus: capabilityGrants.status,
-      grantedAt: capabilityGrants.grantedAt,
+      grantStatus: agentConnections.status,
+      grantedAt: agentConnections.grantedAt,
       connectionId: connections.id,
       connectionStatus: connections.status,
       provider: connections.provider,
       label: connections.label,
       providerRef: connections.providerRef,
       profile: connections.profile,
+      resolvedVenueAccountId: connections.resolvedVenueAccountId,
+      capabilities: providers.capabilities,
     })
-    .from(capabilityGrants)
-    .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
-    .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.capabilityFamily, 'trading')));
+    .from(agentConnections)
+    .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
+    .innerJoin(providers, eq(connections.provider, providers.id))
+    .where(and(eq(agentConnections.agentId, agentId), eq(agentConnections.status, 'active')));
 
   const grantedConnectionsByFamily: Record<string, RuntimeFamilyBindingDescriptor[]> = {};
   const readinessByFamily: Record<string, CapabilityReadiness> = {};
   const defaultConnectionByFamily: Record<string, string | null> = {};
 
+  // Collect families from both skill definitions and provider capabilities.
   const familiesFromSkills = new Set(resolvedSkills.flatMap((skill) => skill.capabilityFamilies));
-  if (tradingRows.length > 0 || familiesFromSkills.has('trading')) {
-    const defaultConnectionId = chooseDefaultConnectionId(tradingRows);
-    grantedConnectionsByFamily['trading'] = tradingRows.map((row) => ({
-      family: 'trading',
-      connectionId: row.connectionId,
-      provider: row.provider,
-      label: row.label,
-      providerRef: row.providerRef,
-      profile: row.profile,
-      readiness: deriveReadiness(row),
-      isDefault: row.connectionId === defaultConnectionId,
-    }));
-    readinessByFamily['trading'] = deriveReadiness(
-      tradingRows.find((row) => row.connectionId === defaultConnectionId) ?? chooseLatest(tradingRows),
-    );
-    defaultConnectionByFamily['trading'] = defaultConnectionId;
+  const familiesFromProviders = new Set<string>();
+  for (const row of connectionRows) {
+    for (const cap of row.capabilities ?? []) {
+      familiesFromProviders.add(cap);
+    }
   }
+  const allFamilies = new Set([...familiesFromSkills, ...familiesFromProviders]);
 
-  for (const family of familiesFromSkills) {
-    if (!readinessByFamily[family]) {
+  for (const family of allFamilies) {
+    const familyRows = connectionRows.filter((row) => (row.capabilities ?? []).includes(family));
+    if (familyRows.length > 0) {
+      const defaultConnectionId = chooseDefaultConnectionId(familyRows);
+      grantedConnectionsByFamily[family] = familyRows.map((row) => ({
+        family,
+        connectionId: row.connectionId,
+        provider: row.provider,
+        label: row.label,
+        providerRef: row.providerRef,
+        profile: row.profile,
+        readiness: deriveReadiness(row, family),
+        isDefault: row.connectionId === defaultConnectionId,
+      }));
+      const defaultRow = familyRows.find((row) => row.connectionId === defaultConnectionId) ?? chooseLatest(familyRows);
+      readinessByFamily[family] = deriveReadiness(defaultRow, family);
+      defaultConnectionByFamily[family] = defaultConnectionId;
+    } else {
       readinessByFamily[family] = {
         family,
         state: 'unconfigured',
         connectionReadiness: 'unconfigured',
         agentEligibility: 'ineligible',
         effectiveReady: false,
-        reasons: ['no grants have been created for this capability family'],
+        reasons: ['no connections have been assigned for this capability family'],
       };
-    }
-    if (!grantedConnectionsByFamily[family]) {
       grantedConnectionsByFamily[family] = [];
-    }
-    if (!(family in defaultConnectionByFamily)) {
       defaultConnectionByFamily[family] = null;
     }
   }

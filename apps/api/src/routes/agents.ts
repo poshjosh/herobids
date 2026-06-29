@@ -7,13 +7,13 @@ import type { Database } from '@herobids/db';
 import {
   agents,
   agentArtifacts,
+  agentConnections,
   agentMessages,
   agentOutboundMessages,
   agentRuntimeSessions,
   agentSkills,
   billingUsageEvents,
   bots,
-  capabilityGrants,
   connections,
   decisions,
   decisionFailures,
@@ -98,6 +98,7 @@ const CreateAgentSchema = z.object({
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
+  connectionIds: z.array(z.string().min(1)).max(20).optional(),
 }).superRefine((data, ctx) => {
   if (!data.technical && !data.prompt) {
     ctx.addIssue({
@@ -144,6 +145,7 @@ const UpdateAgentSchema = z.object({
   technical: TechnicalConfigSchema.nullable().optional(),
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.nullable().optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
+  connectionIds: z.array(z.string().min(1)).max(20).optional(),
 });
 
 const PauseAgentSchema = z.object({
@@ -540,35 +542,106 @@ export async function agentRoutes(
       return reply.status(400).send({ error: assignmentResolution.error.code, details: assignmentResolution.error.details ?? [], message: assignmentResolution.error.message });
     }
 
-    await db.insert(agents).values({
-      id: agentId,
-      userId: request.userId,
-      name: parsed.data.name,
-      prompt: parsed.data.prompt ?? '',
-      status: 'stopped',
-      toolPolicy: effectiveToolPolicy,
-      modelPolicy: effectiveModelPolicy,
-      telegramChatId: parsed.data.telegramChatId?.trim() || null,
-      notificationPolicy: parsed.data.notificationPolicy !== undefined
-        ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
-        : null,
-      ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
-      dailyLossLimit: parsed.data.dailyLossLimit ?? null,
-      maxBots: resolvedMaxBots,
-      maxSlippageBps: parsed.data.maxSlippageBps ?? null,
-      maxOpenPositions: parsed.data.maxOpenPositions ?? null,
-      maxPositionSizePct: parsed.data.maxPositionSizePct != null ? String(parsed.data.maxPositionSizePct) : null,
-      stopLossPct: parsed.data.stopLossPct != null ? String(parsed.data.stopLossPct) : null,
-      stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
-      tickIntervalMs: parsed.data.tickIntervalMs ?? null,
-      capital: parsed.data.capital ?? null,
-      style: parsed.data.style ?? null,
-      runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
-      openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
-      ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
-      createdAt: now,
-      updatedAt: now,
-    });
+    const connectionIds = parsed.data.connectionIds ?? [];
+
+    let createValidationError: { status: number; body: Record<string, unknown> } | null = null;
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx.insert(agents).values({
+          id: agentId,
+          userId: request.userId,
+          name: parsed.data.name,
+          prompt: parsed.data.prompt ?? '',
+          status: 'stopped',
+          toolPolicy: effectiveToolPolicy,
+          modelPolicy: effectiveModelPolicy,
+          telegramChatId: parsed.data.telegramChatId?.trim() || null,
+          notificationPolicy: parsed.data.notificationPolicy !== undefined
+            ? (parsed.data.notificationPolicy === null ? null : resolveNotificationPolicy(parsed.data.notificationPolicy, null))
+            : null,
+          ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
+          dailyLossLimit: parsed.data.dailyLossLimit ?? null,
+          maxBots: resolvedMaxBots,
+          maxSlippageBps: parsed.data.maxSlippageBps ?? null,
+          maxOpenPositions: parsed.data.maxOpenPositions ?? null,
+          maxPositionSizePct: parsed.data.maxPositionSizePct != null ? String(parsed.data.maxPositionSizePct) : null,
+          stopLossPct: parsed.data.stopLossPct != null ? String(parsed.data.stopLossPct) : null,
+          stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
+          tickIntervalMs: parsed.data.tickIntervalMs ?? null,
+          capital: parsed.data.capital ?? null,
+          style: parsed.data.style ?? null,
+          runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
+          openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
+          ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        if (connectionIds.length > 0) {
+          // Validate connectionIds inside the transaction for a consistent view
+          const connRows = await tx.select({
+            id: connections.id,
+            userId: connections.userId,
+            status: connections.status,
+          }).from(connections).where(inArray(connections.id, connectionIds));
+
+          const connById = new Map(connRows.map((r) => [r.id, r]));
+          for (const cid of connectionIds) {
+            const conn = connById.get(cid);
+            if (!conn) {
+              createValidationError = {
+                status: 400,
+                body: {
+                  error: 'validation_error',
+                  details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not exist` }],
+                },
+              };
+              throw new Error('ROLLBACK');
+            }
+            if (conn.userId !== request.userId) {
+              createValidationError = {
+                status: 400,
+                body: {
+                  error: 'validation_error',
+                  details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not belong to you` }],
+                },
+              };
+              throw new Error('ROLLBACK');
+            }
+            if (conn.status !== 'active') {
+              createValidationError = {
+                status: 400,
+                body: {
+                  error: 'validation_error',
+                  details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} is not active (status: ${conn.status})` }],
+                },
+              };
+              throw new Error('ROLLBACK');
+            }
+          }
+
+          for (const cid of connectionIds) {
+            await tx.insert(agentConnections).values({
+              id: crypto.randomUUID(),
+              agentId,
+              connectionId: cid,
+              status: 'active',
+              grantedBy: request.userId,
+              grantedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+      });
+    } catch (err) {
+      if (!createValidationError) throw err;
+    }
+
+    if (createValidationError) {
+      return reply.status(createValidationError.status).send(createValidationError.body);
+    }
 
     await syncAgentSkillAssignments(db, agentId, request.userId, assignmentResolution.assignments ?? []);
 
@@ -715,18 +788,17 @@ export async function agentRoutes(
 
     // Validate execution capability against the agent's active trading connection (if any)
     if (executionMode.value) {
-      const [activeGrant] = await db.select({ provider: connections.provider })
-        .from(capabilityGrants)
-        .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
+      const [activeConn] = await db.select({ provider: connections.provider })
+        .from(agentConnections)
+        .innerJoin(connections, eq(agentConnections.connectionId, connections.id))
         .where(and(
-          eq(capabilityGrants.agentId, id),
-          eq(capabilityGrants.capabilityFamily, 'trading'),
-          eq(capabilityGrants.status, 'active'),
+          eq(agentConnections.agentId, id),
+          eq(agentConnections.status, 'active'),
           eq(connections.status, 'active'),
         ))
         .limit(1);
-      if (activeGrant) {
-        const agentVenueType = venueTypeFromProvider(activeGrant.provider);
+      if (activeConn) {
+        const agentVenueType = venueTypeFromProvider(activeConn.provider);
         if (agentVenueType) {
           const capCheck = validateExecutionCapability({
             actorType: 'agent',
@@ -810,19 +882,121 @@ export async function agentRoutes(
       ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
       : undefined;
 
-    await db.update(agents).set({
-      ...agentUpdates,
-      ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
-      ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
-      ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
-      ...resolvedMaxBotsPatch,
-      ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
-      ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
-      ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
-      toolPolicy: effectiveToolPolicy,
-      modelPolicy: effectiveModelPolicy,
-      updatedAt: new Date(),
-    }).where(eq(agents.id, id));
+    let connSyncError: { status: number; body: Record<string, unknown> } | null = null;
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx.update(agents).set({
+          ...agentUpdates,
+          ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
+          ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
+          ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
+          ...resolvedMaxBotsPatch,
+          ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
+          ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
+          ...(unifiedConfigPatch !== undefined ? { unifiedConfig: unifiedConfigPatch } : {}),
+          toolPolicy: effectiveToolPolicy,
+          modelPolicy: effectiveModelPolicy,
+          updatedAt: new Date(),
+        }).where(eq(agents.id, id));
+
+        // Declarative sync of agent_connections when connectionIds is explicitly provided
+        if (parsed.data.connectionIds !== undefined) {
+          const patchConnectionIds = parsed.data.connectionIds;
+
+          // Fetch existing active agent_connections for this agent
+          const existingRows = await tx.select({
+            id: agentConnections.id,
+            connectionId: agentConnections.connectionId,
+          }).from(agentConnections)
+            .where(and(
+              eq(agentConnections.agentId, id),
+              eq(agentConnections.status, 'active'),
+            ));
+
+          const existingConnectionIds = new Set(existingRows.map((r) => r.connectionId));
+          const newConnectionIds = new Set(patchConnectionIds);
+
+          const toAdd = patchConnectionIds.filter((cid) => !existingConnectionIds.has(cid));
+          const toRevoke = existingRows.filter((r) => !newConnectionIds.has(r.connectionId));
+
+          // Validate all new connectionIds inside the transaction
+          if (toAdd.length > 0) {
+            const connRows = await tx.select({
+              id: connections.id,
+              userId: connections.userId,
+              status: connections.status,
+            }).from(connections).where(inArray(connections.id, toAdd));
+
+            const connById = new Map(connRows.map((r) => [r.id, r]));
+            for (const cid of toAdd) {
+              const conn = connById.get(cid);
+              if (!conn) {
+                connSyncError = {
+                  status: 400,
+                  body: {
+                    error: 'validation_error',
+                    details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not exist` }],
+                  },
+                };
+                throw new Error('ROLLBACK');
+              }
+              if (conn.userId !== request.userId) {
+                connSyncError = {
+                  status: 400,
+                  body: {
+                    error: 'validation_error',
+                    details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not belong to you` }],
+                  },
+                };
+                throw new Error('ROLLBACK');
+              }
+              if (conn.status !== 'active') {
+                connSyncError = {
+                  status: 400,
+                  body: {
+                    error: 'validation_error',
+                    details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} is not active (status: ${conn.status})` }],
+                  },
+                };
+                throw new Error('ROLLBACK');
+              }
+            }
+          }
+
+          const now = new Date();
+
+          // Insert rows for newly added connections
+          for (const cid of toAdd) {
+            await tx.insert(agentConnections).values({
+              id: crypto.randomUUID(),
+              agentId: id,
+              connectionId: cid,
+              status: 'active',
+              grantedBy: request.userId,
+              grantedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+
+          // Revoke rows that are no longer in the list
+          for (const row of toRevoke) {
+            await tx.update(agentConnections).set({
+              status: 'revoked',
+              revokedAt: now,
+              updatedAt: now,
+            }).where(eq(agentConnections.id, row.id));
+          }
+        }
+      });
+    } catch (err) {
+      if (!connSyncError) throw err;
+    }
+
+    if (connSyncError) {
+      return reply.status(connSyncError.status).send(connSyncError.body);
+    }
 
     await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);
 
@@ -883,7 +1057,7 @@ export async function agentRoutes(
     // 7. NULL venue_accounts.credentialId on venue accounts only used by this agent's
     //    connections (unblocks credential deletion). Connections are user-owned and
     //    persist after agent deletion; only clean up the linkage.
-    // 8. DELETE agents (cascades: agent_skills, capability_grants, capability_grant_audit)
+    // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit)
     await db.delete(agents).where(eq(agents.id, id));
 
     // Signal the worker to stop and remove the Docker container for this agent.

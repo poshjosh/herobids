@@ -152,7 +152,6 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
           ? [createSkillRow({ skillId: 'trading', requiredTools: ['submit_decision'], capabilityFamilies: ['trading'] })]
           : [
               {
-                family: 'trading',
                 grantStatus: 'active',
                 grantedAt: new Date('2026-06-11T06:00:00Z'),
                 connectionId: 'binding-1',
@@ -162,9 +161,9 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
                 providerRef: null,
                 profile: null,
                 resolvedVenueAccountId: 'va-1',
+                capabilities: ['trading'],
               },
               {
-                family: 'trading',
                 grantStatus: 'active',
                 grantedAt: new Date('2026-06-11T07:00:00Z'),
                 connectionId: 'binding-2',
@@ -174,6 +173,7 @@ describe('resolveRuntimeCapabilityDescriptor', () => {
                 providerRef: null,
                 profile: null,
                 resolvedVenueAccountId: 'va-2',
+                capabilities: ['trading'],
               },
             ]);
       }),
