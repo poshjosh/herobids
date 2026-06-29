@@ -5,10 +5,9 @@
  * to key pages.
  */
 
-import crypto from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { eq } from 'drizzle-orm';
-import { closeDatabase, createDatabase, tradingBindings } from '@herobids/db';
+import { closeDatabase, createDatabase, connections } from '@herobids/db';
 
 export const TEST_EMAIL = `e2e-${Date.now()}@test.local`;
 export const TEST_PASSWORD = 'TestPassword123!';
@@ -233,24 +232,21 @@ export async function createConnection(
   return { id: body.id, provider: body.provider, label: body.label };
 }
 
-export async function bindTradingCapability(
+export async function assignTradingConnection(
   page: Page,
   request: APIRequestContext,
   agentId: string,
-  bindingId: string,
-): Promise<{ status: string; bindingId: string }> {
+  connectionId: string,
+): Promise<void> {
   const token = await getAuthToken(page);
-  const response = await request.post(`/api/agents/${agentId}/capabilities/trading/actions/bind`, {
+  const response = await request.patch(`/api/agents/${agentId}`, {
     headers: { Authorization: `Bearer ${token}` },
-    data: { bindingId },
+    data: { connectionIds: [connectionId] },
   });
 
   if (!response.ok()) {
-    throw new Error(`Failed to bind trading capability: ${response.status()} ${await response.text()}`);
+    throw new Error(`Failed to assign trading connection: ${response.status()} ${await response.text()}`);
   }
-
-  const body = await response.json() as { status: string; bindingId: string };
-  return { status: body.status, bindingId: body.bindingId };
 }
 
 export async function mockTradingReadiness(page: Page, agentId: string) {
@@ -258,10 +254,10 @@ export async function mockTradingReadiness(page: Page, agentId: string) {
     agentId: string;
     family: 'trading';
     state: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
-    bindingReadiness: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
+    connectionReadiness: 'unconfigured' | 'provisioning' | 'ready' | 'degraded' | 'revoked';
     agentEligibility: 'eligible' | 'ineligible';
     effectiveReady: boolean;
-    bindingId?: string;
+    connectionId?: string;
     reasons: string[];
   };
 
@@ -269,7 +265,7 @@ export async function mockTradingReadiness(page: Page, agentId: string) {
     agentId,
     family: 'trading',
     state: 'unconfigured',
-    bindingReadiness: 'unconfigured',
+    connectionReadiness: 'unconfigured',
     agentEligibility: 'ineligible',
     effectiveReady: false,
     reasons: ['no grants have been created for this capability family'],
@@ -284,87 +280,77 @@ export async function mockTradingReadiness(page: Page, agentId: string) {
   });
 
   return {
-    setReady(bindingId: string) {
+    setReady(connectionId: string) {
       readiness = {
         agentId,
         family: 'trading',
         state: 'ready',
-        bindingReadiness: 'ready',
+        connectionReadiness: 'ready',
         agentEligibility: 'eligible',
         effectiveReady: true,
-        bindingId,
+        connectionId,
         reasons: [],
       };
     },
   };
 }
 
-export async function seedTradingBinding(params: {
+export async function seedTradingConnection(params: {
   userId: string;
   connectionId: string;
   provider: string;
   label: string;
-  bindingRef?: string | null;
-  sourceVenueAccountId?: string | null;
-  bindingProfile?: Record<string, unknown> | null;
+  resolvedVenueAccountId?: string | null;
+  providerRef?: string | null;
+  profile?: Record<string, unknown> | null;
 }): Promise<string> {
   const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
-
   const db = createDatabase(databaseUrl);
-  const bindingId = crypto.randomUUID();
   try {
-    await db.insert(tradingBindings).values({
-      id: bindingId,
+    await db.insert(connections).values({
+      id: params.connectionId,
       userId: params.userId,
-      connectionId: params.connectionId,
       provider: params.provider,
       label: params.label,
-      bindingRef: params.bindingRef ?? null,
       status: 'active',
-      bindingProfile: params.bindingProfile ?? null,
-      sourceVenueAccountId: params.sourceVenueAccountId ?? null,
+      resolvedVenueAccountId: params.resolvedVenueAccountId ?? null,
+      providerRef: params.providerRef ?? null,
+      profile: params.profile ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    return bindingId;
+    return params.connectionId;
   } finally {
     await closeDatabase(db);
   }
 }
 
 /**
- * Retrieve a trading binding for a given connection by querying the DB directly.
- * Use seedTradingBinding or setupTradingLink to create bindings — POST /connections
- * no longer auto-creates them.
+ * Retrieve the resolved venue account ID for a connection by querying the DB directly.
  */
-export async function getBindingForConnection(connectionId: string): Promise<string> {
+export async function getConnectionVenueAccount(connectionId: string): Promise<string | null> {
   const databaseUrl = process.env['DATABASE_URL'] ?? 'postgres://herobids:herobids@localhost:5432/herobids';
   const db = createDatabase(databaseUrl);
   try {
-    const [binding] = await db
-      .select({ id: tradingBindings.id })
-      .from(tradingBindings)
-      .where(eq(tradingBindings.connectionId, connectionId));
-    if (!binding) {
-      throw new Error(
-        `No trading binding found for connection ${connectionId}`,
-      );
-    }
-    return binding.id;
+    const [conn] = await db
+      .select({ resolvedVenueAccountId: connections.resolvedVenueAccountId })
+      .from(connections)
+      .where(eq(connections.id, connectionId));
+    return conn?.resolvedVenueAccountId ?? null;
   } finally {
     await closeDatabase(db);
   }
 }
 
 /**
- * Call POST /setup/provider-link to create a credential, connection, venue account,
- * and trading binding in one transaction. Returns the connection and binding IDs.
+ * Call POST /setup/provider-link to create a credential, connection, and venue account
+ * in one transaction. Returns the connection ID.
  */
 export async function setupTradingLink(
   page: Page,
   request: APIRequestContext,
   data: { provider: string; label: string; secrets: Record<string, string> },
-): Promise<{ connectionId: string; bindingId: string }> {
+): Promise<{ connectionId: string }> {
   const token = await getAuthToken(page);
   const response = await request.post('/api/setup/provider-link', {
     headers: { Authorization: `Bearer ${token}` },
@@ -375,6 +361,6 @@ export async function setupTradingLink(
     throw new Error(`Failed to setup trading link: ${response.status()} ${await response.text()}`);
   }
 
-  const body = await response.json() as { connection: { id: string }; tradingBinding: { id: string } };
-  return { connectionId: body.connection.id, bindingId: body.tradingBinding.id };
+  const body = await response.json() as { connection: { id: string; resolvedVenueAccountId?: string } };
+  return { connectionId: body.connection.id };
 }

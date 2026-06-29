@@ -22,8 +22,6 @@ import {
   extractStrategyFromConfig,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
-import { connections } from '@herobids/db';
-import { eq } from 'drizzle-orm';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
 import type { EmailClient } from '../alerting/email-client.js';
 import type { AgentDecisionHandler } from './agent-decision-handler.js';
@@ -608,14 +606,7 @@ export class AgentMessageBroker {
       }
 
       // Resolve venue account from the connection's resolvedVenueAccountId directly.
-      const [connRow] = await this.botRepo!.db
-        .select({
-          resolvedVenueAccountId: connections.resolvedVenueAccountId,
-          venue: connections.provider,
-        })
-        .from(connections)
-        .where(eq(connections.id, connection.connectionId))
-        .limit(1);
+      const connRow = await this.botRepo!.getResolvedVenueAccount(connection.connectionId);
       if (!connRow || !connRow.resolvedVenueAccountId) {
         throw new Error(`Connection ${connection.connectionId} has no resolved venue account — cannot create bot`);
       }

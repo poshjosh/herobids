@@ -68,9 +68,10 @@ export async function setupRoutes(
     const secretsJson = JSON.stringify(normalizedSecrets);
     const { encryptedData, encryptionMeta } = encryptCredential(secretsJson, encryptionKey);
 
-    let tradingResult: { venueAccountId: string } | null = null;
-
-    const txResult = await db.transaction(async (tx) => {
+    const txResult = await db.transaction(async (tx): Promise<
+      | { kind: 'limit'; error: { code: string; message: string; params?: Record<string, unknown> } }
+      | { kind: 'ok'; tradingResult: { venueAccountId: string } | null }
+    > => {
       if (plansConfig) {
         // Serialise setup quota checks per user to avoid over-limit races.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(14, hashtext(${request.userId}))`);
@@ -116,6 +117,7 @@ export async function setupRoutes(
         updatedAt: now,
       });
 
+      let tradingResult: { venueAccountId: string } | null = null;
       if (capability === 'trading') {
         tradingResult = await provisionTradingTarget(tx, {
           userId: request.userId,
@@ -127,7 +129,7 @@ export async function setupRoutes(
         });
       }
 
-      return { kind: 'ok' as const };
+      return { kind: 'ok' as const, tradingResult };
     });
 
     if (txResult.kind === 'limit') {
@@ -149,14 +151,14 @@ export async function setupRoutes(
         label,
         status: 'active',
         credentialId,
-        resolvedVenueAccountId: tradingResult?.venueAccountId ?? null,
+        resolvedVenueAccountId: txResult.tradingResult?.venueAccountId ?? null,
         createdAt: now,
       },
     };
 
-    if (tradingResult) {
+    if (txResult.tradingResult) {
       response.venueAccount = {
-        id: tradingResult.venueAccountId,
+        id: txResult.tradingResult.venueAccountId,
         venue: provider,
         label,
         createdAt: now,

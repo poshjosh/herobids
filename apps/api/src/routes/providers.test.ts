@@ -21,14 +21,14 @@ describe('GET /providers/catalog', () => {
     const body = res.json<{
       schemaVersion: string;
       etag: string;
-      providers: Array<{ id: string; connections?: { autoCreatesTradingBinding: boolean } }>;
+      providers: Array<{ id: string; connections?: { autoCreatesTradingConnection: boolean } }>;
       customMode: { connections: { allowFreeformProvider: boolean } };
     }>();
 
     expect(body.schemaVersion).toBe('v1');
     expect(body.etag).toBeTruthy();
     expect(body.providers.map((provider) => provider.id)).toEqual(expect.arrayContaining(['hyperliquid', 'bybit', '1inch', 'jupiter']));
-    expect(body.providers.find((provider) => provider.id === 'hyperliquid')?.connections?.autoCreatesTradingBinding).toBe(true);
+    expect(body.providers.find((provider) => provider.id === 'hyperliquid')?.connections?.autoCreatesTradingConnection).toBe(true);
     expect(body.customMode.connections.allowFreeformProvider).toBe(true);
   });
 

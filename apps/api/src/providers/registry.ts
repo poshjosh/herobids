@@ -73,7 +73,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
       requiresCredential: false,
       allowsCredential: true,
       credentialProviderIds: ['hyperliquid'],
-      autoCreatesTradingBinding: true,
+      autoCreatesTradingConnection: true,
     },
   },
   {
@@ -124,7 +124,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
       requiresCredential: false,
       allowsCredential: true,
       credentialProviderIds: ['bybit'],
-      autoCreatesTradingBinding: true,
+      autoCreatesTradingConnection: true,
     },
   },
   {
@@ -179,7 +179,7 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
       requiresCredential: false,
       allowsCredential: true,
       credentialProviderIds: ['1inch'],
-      autoCreatesTradingBinding: true,
+      autoCreatesTradingConnection: true,
     },
   },
   {
@@ -214,14 +214,14 @@ const PROVIDER_REGISTRY: RegistryEntry[] = [
       requiresCredential: false,
       allowsCredential: true,
       credentialProviderIds: ['jupiter'],
-      autoCreatesTradingBinding: true,
+      autoCreatesTradingConnection: true,
     },
   },
 ];
 
 const CUSTOM_MODE: CustomModeDefinition = {
   credentials: { allowFreeformKeys: true },
-  connections: { allowFreeformProvider: true, autoCreatesTradingBinding: false },
+  connections: { allowFreeformProvider: true, autoCreatesTradingConnection: false },
 };
 
 function toPublicProvider(entry: RegistryEntry): ProviderDefinition {
@@ -298,7 +298,7 @@ export function providerAllowsCredential(providerId: string): boolean {
 }
 
 export function providerAllowsTradingSetup(providerId: string): boolean {
-  return findProviderRegistryEntry(providerId)?.connections?.autoCreatesTradingBinding ?? false;
+  return findProviderRegistryEntry(providerId)?.connections?.autoCreatesTradingConnection ?? false;
 }
 
 export function credentialMatchesConnectionProvider(providerId: string, credentialVenue: string): boolean {

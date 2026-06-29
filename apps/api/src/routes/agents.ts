@@ -544,10 +544,10 @@ export async function agentRoutes(
 
     const connectionIds = parsed.data.connectionIds ?? [];
 
-    let createValidationError: { status: number; body: Record<string, unknown> } | null = null;
-
-    try {
-      await db.transaction(async (tx) => {
+    const createTxResult = await db.transaction(async (tx): Promise<
+      | { kind: 'ok' }
+      | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
+    > => {
         await tx.insert(agents).values({
           id: agentId,
           userId: request.userId,
@@ -590,34 +590,34 @@ export async function agentRoutes(
           for (const cid of connectionIds) {
             const conn = connById.get(cid);
             if (!conn) {
-              createValidationError = {
+              return {
+                kind: 'conn_error' as const,
                 status: 400,
                 body: {
                   error: 'validation_error',
                   details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not exist` }],
                 },
               };
-              throw new Error('ROLLBACK');
             }
             if (conn.userId !== request.userId) {
-              createValidationError = {
+              return {
+                kind: 'conn_error' as const,
                 status: 400,
                 body: {
                   error: 'validation_error',
                   details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not belong to you` }],
                 },
               };
-              throw new Error('ROLLBACK');
             }
             if (conn.status !== 'active') {
-              createValidationError = {
+              return {
+                kind: 'conn_error' as const,
                 status: 400,
                 body: {
                   error: 'validation_error',
                   details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} is not active (status: ${conn.status})` }],
                 },
               };
-              throw new Error('ROLLBACK');
             }
           }
 
@@ -634,13 +634,11 @@ export async function agentRoutes(
             });
           }
         }
+        return { kind: 'ok' as const };
       });
-    } catch (err) {
-      if (!createValidationError) throw err;
-    }
 
-    if (createValidationError) {
-      return reply.status(createValidationError.status).send(createValidationError.body);
+    if (createTxResult.kind === 'conn_error') {
+      return reply.status(createTxResult.status).send(createTxResult.body);
     }
 
     await syncAgentSkillAssignments(db, agentId, request.userId, assignmentResolution.assignments ?? []);
@@ -882,10 +880,10 @@ export async function agentRoutes(
       ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
       : undefined;
 
-    let connSyncError: { status: number; body: Record<string, unknown> } | null = null;
-
-    try {
-      await db.transaction(async (tx) => {
+    const txResult = await db.transaction(async (tx): Promise<
+      | { kind: 'ok' }
+      | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
+    > => {
         await tx.update(agents).set({
           ...agentUpdates,
           ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
@@ -932,34 +930,34 @@ export async function agentRoutes(
             for (const cid of toAdd) {
               const conn = connById.get(cid);
               if (!conn) {
-                connSyncError = {
+                return {
+                  kind: 'conn_error' as const,
                   status: 400,
                   body: {
                     error: 'validation_error',
                     details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not exist` }],
                   },
                 };
-                throw new Error('ROLLBACK');
               }
               if (conn.userId !== request.userId) {
-                connSyncError = {
+                return {
+                  kind: 'conn_error' as const,
                   status: 400,
                   body: {
                     error: 'validation_error',
                     details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} does not belong to you` }],
                   },
                 };
-                throw new Error('ROLLBACK');
               }
               if (conn.status !== 'active') {
-                connSyncError = {
+                return {
+                  kind: 'conn_error' as const,
                   status: 400,
                   body: {
                     error: 'validation_error',
                     details: [{ code: 'custom', path: ['connectionIds'], message: `Connection ${cid} is not active (status: ${conn.status})` }],
                   },
                 };
-                throw new Error('ROLLBACK');
               }
             }
           }
@@ -989,13 +987,11 @@ export async function agentRoutes(
             }).where(eq(agentConnections.id, row.id));
           }
         }
+        return { kind: 'ok' as const };
       });
-    } catch (err) {
-      if (!connSyncError) throw err;
-    }
 
-    if (connSyncError) {
-      return reply.status(connSyncError.status).send(connSyncError.body);
+    if (txResult.kind === 'conn_error') {
+      return reply.status(txResult.status).send(txResult.body);
     }
 
     await syncAgentSkillAssignments(db, id, request.userId, assignmentResolution.assignments ?? []);

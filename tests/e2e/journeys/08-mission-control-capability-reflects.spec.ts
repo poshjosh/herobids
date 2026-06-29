@@ -8,7 +8,7 @@ import {
   registerUser,
   createAgent,
   setupTradingLink,
-  bindTradingCapability,
+  assignTradingConnection,
 } from '../helpers.js';
 
 const EMAIL = `j8-${Date.now()}@e2e.local`;
@@ -43,7 +43,7 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
     }
     const { id: agentId } = await agentRes.json() as { id: string };
 
-    const { bindingId } = await setupTradingLink(page, request, {
+    const { connectionId } = await setupTradingLink(page, request, {
       provider: 'hyperliquid',
       label: 'Mission control connection',
       secrets: {
@@ -53,7 +53,7 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
       },
     });
 
-    await bindTradingCapability(page, request, agentId, bindingId);
+    await assignTradingConnection(page, request, agentId, connectionId);
 
     await page.goto('/mission-control');
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
@@ -64,7 +64,7 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
     await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });
     const card = readinessCard(page);
     await expect(rowValue(card, /^State$/)).toHaveText('Ready', { timeout: 5_000 });
-    await expect(rowValue(card, /^Binding readiness$/)).toHaveText('Ready', { timeout: 5_000 });
+    await expect(rowValue(card, /^Connection readiness$/)).toHaveText('Ready', { timeout: 5_000 });
     await expect(rowValue(card, /^Effective ready$/)).toHaveText('Yes', { timeout: 5_000 });
   });
 });

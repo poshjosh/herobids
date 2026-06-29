@@ -75,9 +75,9 @@ export interface Connection {
   /** Human-readable label */
   label: string;
   status: ConnectionStatus;
-  /** Absorbed from trading_bindings: account/wallet reference at the provider */
+  /** Account/wallet reference at the provider */
   providerRef: string | null;
-  /** Absorbed from trading_bindings: normalized capability metadata */
+  /** Normalized capability metadata */
   profile: Record<string, unknown> | null;
   /** Provider-specific cached metadata (read-only diagnostic surface) */
   meta: Record<string, unknown> | null;
@@ -114,7 +114,7 @@ export interface CapabilityGrant {
 }
 
 // ---------------------------------------------------------------------------
-// Grant audit — append-only record of every grant and binding-state change
+// Grant audit — append-only record of every grant and connection-state change
 // ---------------------------------------------------------------------------
 
 export type GrantAuditAction =
@@ -125,7 +125,7 @@ export type GrantAuditAction =
   | 'readiness_changed';
 
 /**
- * GrantAuditEntry — one immutable record for each grant or binding-state
+ * GrantAuditEntry — one immutable record for each grant or connection-state
  * transition. Append-only; rows are never updated or deleted.
  */
 export interface GrantAuditEntry {

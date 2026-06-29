@@ -10,7 +10,7 @@ import {
   registerUser,
   createAgent,
   setupTradingLink,
-  bindTradingCapability,
+  assignTradingConnection,
 } from '../helpers.js';
 
 const EMPTY_STATE_EMAIL = `j7-empty-${Date.now()}@e2e.local`;
@@ -51,7 +51,7 @@ test.describe('Journey 7: Capability setup and readiness', () => {
     }
     const { id: agentId } = await agentRes.json() as { id: string };
 
-    const { bindingId } = await setupTradingLink(page, request, {
+    const { connectionId } = await setupTradingLink(page, request, {
       provider: 'hyperliquid',
       label: 'Primary Hyperliquid connection',
       secrets: {
@@ -66,16 +66,16 @@ test.describe('Journey 7: Capability setup and readiness', () => {
     const initialReadiness = readinessCard(page);
     await expect(initialReadiness.getByText(/^State$/)).toBeVisible({ timeout: 5_000 });
     await expect(initialReadiness.getByText(/^State$/).locator('xpath=following-sibling::span')).toHaveText('Unconfigured', { timeout: 5_000 });
-    await expect(initialReadiness.getByText(/^Binding readiness$/)).toBeVisible({ timeout: 5_000 });
-    await expect(initialReadiness.getByText(/^Binding readiness$/).locator('xpath=following-sibling::span')).toHaveText('Unconfigured', { timeout: 5_000 });
+    await expect(initialReadiness.getByText(/^Connection readiness$/)).toBeVisible({ timeout: 5_000 });
+    await expect(initialReadiness.getByText(/^Connection readiness$/).locator('xpath=following-sibling::span')).toHaveText('Unconfigured', { timeout: 5_000 });
 
-    await bindTradingCapability(page, request, agentId, bindingId);
+    await assignTradingConnection(page, request, agentId, connectionId);
     await page.reload();
 
     const readyReadiness = readinessCard(page);
     await expect(readyReadiness.getByText(/^State$/).locator('xpath=following-sibling::span')).toHaveText('Ready', { timeout: 5_000 });
     await expect(readyReadiness.getByText(/^Effective ready$/)).toBeVisible({ timeout: 5_000 });
     await expect(readyReadiness.getByText(/^Effective ready$/).locator('xpath=following-sibling::span')).toHaveText('Yes', { timeout: 5_000 });
-    await expect(readyReadiness.getByText(/^Binding$/).locator('xpath=following-sibling::span')).toHaveText(bindingId, { timeout: 5_000 });
+    await expect(readyReadiness.getByText(/^Connection$/).locator('xpath=following-sibling::span')).toHaveText(connectionId, { timeout: 5_000 });
   });
 });

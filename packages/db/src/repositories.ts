@@ -718,6 +718,16 @@ export class BotRepository {
     return row ?? null;
   }
 
+  /** Get the resolved venue account for a connection. Used by the broker to route bot creation. */
+  async getResolvedVenueAccount(connectionId: string): Promise<{ resolvedVenueAccountId: string | null; venue: string } | null> {
+    const [row] = await this.db
+      .select({ resolvedVenueAccountId: connections.resolvedVenueAccountId, venue: connections.provider })
+      .from(connections)
+      .where(eq(connections.id, connectionId))
+      .limit(1);
+    return row ? { resolvedVenueAccountId: row.resolvedVenueAccountId, venue: row.venue } : null;
+  }
+
   /** Create a bot record. Returns the created bot's ID. */
   async createBot(params: {
     userId: string;

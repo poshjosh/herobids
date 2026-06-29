@@ -27,7 +27,7 @@ export interface ConnectionSchema {
   requiresCredential: boolean;
   allowsCredential: boolean;
   credentialProviderIds: string[];
-  autoCreatesTradingBinding: boolean;
+  autoCreatesTradingConnection: boolean;
 }
 
 export interface FieldDefinition {
@@ -50,5 +50,5 @@ export interface FieldValidation {
 
 export interface CustomModeDefinition {
   credentials: { allowFreeformKeys: boolean };
-  connections: { allowFreeformProvider: boolean; autoCreatesTradingBinding: boolean };
+  connections: { allowFreeformProvider: boolean; autoCreatesTradingConnection: boolean };
 }
