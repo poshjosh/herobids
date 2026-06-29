@@ -19,6 +19,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Phase 9: Structured pino logging throughout pipeline, dead-run reaper (periodic 60s sweep for stale `running` evaluations)
 - Configuration: `evaluation` section in `config/default.yaml` with `concurrency`, `maxRuntimeMs`, and `thresholds`
 
+- **Narrative LLM Selection** — Full implementation across 5 phases
+  - Phase 1: Extracted `resolveEffectiveLlmSelection` and `resolveAgentCostProfile` from worker into `packages/domain/src/` (shared by API + worker)
+  - Phase 2: Extended evaluation request and job contracts with `NarrativeLlmRequest` (caller-facing) and `ResolvedNarrativeLlmConfig` (worker-facing) types
+  - Phase 3: Narrative LLM resolution at enqueue time in API — resolves provider/model via agent modelPolicy + user AI defaults + cost profile, validates against providersYaml, derives baseUrl
+  - Phase 4: Worker narrative generator (`generateEvaluationNarrative`) — LLM-powered commentary using scorecard + top findings, best-effort with temperature=0 and toolChoice='none'
+  - Phase 5: Billing (granular input/output token events with idempotency keys) and provenance metadata (`narrative-metadata.json` artifact)
+
 ### Changed
 - `apps/api/src/routes/exports.ts`: agent routes refactored to use shared data loaders (reduced duplication)
 
