@@ -172,7 +172,7 @@ export function AgentCapabilityPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {(availableConnectionsQuery.data?.connections ?? []).map((connection) => {
                   const isBound = boundConnectionIds.has(connection.connectionId);
-                  const notReady = connection.status !== 'active' || connection.connectionStatus !== 'active';
+                  const notReady = connection.status !== 'active';
 
                   return (
                     <div key={connection.connectionId} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px' }}>
@@ -180,7 +180,7 @@ export function AgentCapabilityPage() {
                         <div>
                           <div style={{ fontSize: '14px', fontWeight: '600' }}>{connection.label}</div>
                           <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
-                            {intl.formatMessage({ id: 'agents.capabilityPage.bindingMeta' }, { provider: connection.provider, connectionStatus: connection.connectionStatus, bindingStatus: connection.status ?? 'active' })}
+                            {intl.formatMessage({ id: 'agents.capabilityPage.connectionMeta' }, { provider: connection.provider, connectionStatus: connection.status, grantStatus: connection.status ?? 'active' })}
                           </div>
                           {connection.providerRef && (
                             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '6px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.reference' }, { reference: connection.providerRef })}</div>

@@ -329,7 +329,7 @@ function CreateAgentFlow({
   const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   const showTechnical = intent.technicalPreFilterEnabled && requiresTradingSetup;
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
-    (connection) => connection.status === 'active' && connection.connectionStatus === 'active',
+    (connection) => connection.status === 'active',
   );
   const selectedConnection = availableConnections.find((connection) => connection.connectionId === intent.connectionIds[0]) ?? null;
 

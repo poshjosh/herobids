@@ -97,7 +97,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     queryFn: () => capabilitiesApi.tradingConnections(),
   });
   const availableConnections = (availableConnectionsQuery.data?.connections ?? []).filter(
-    (connection) => connection.status === 'active' && connection.connectionStatus === 'active',
+    (connection) => connection.status === 'active',
   );
 
   // Initialize connectionIds from the agent's current connections

@@ -368,7 +368,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
     queryFn: () => capabilitiesApi.tradingConnections(),
   });
   const tradingConnections: ConnectionSummary[] = (tradingConnectionsQuery.data?.connections ?? []).filter(
-    (c) => c.connectionStatus === 'active',
+    (c) => c.status === 'active',
   );
   const selectedConnection = tradingConnections.find((c) => c.connectionId === form.connectionId) ?? null;
 

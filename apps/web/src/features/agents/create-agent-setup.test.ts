@@ -55,7 +55,7 @@ describe('Create Agent — inline setup auto-select logic', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Available bindings filter (mirrors CreateAgentFlow)
+// Available connections filter (mirrors CreateAgentFlow)
 // ---------------------------------------------------------------------------
 
 describe('Create Agent — available trading connections filter', () => {
@@ -69,9 +69,7 @@ describe('Create Agent — available trading connections filter', () => {
    * (length === 0) or whether the connection selector is shown (length > 0).
    */
   function filterAvailableConnections(connections: ConnectionSummary[]): ConnectionSummary[] {
-    return connections.filter(
-      (conn) => conn.status === 'active' && conn.connectionStatus === 'active',
-    );
+    return connections.filter((conn) => conn.status === 'active');
   }
 
   function makeConnection(overrides: Partial<ConnectionSummary> = {}): ConnectionSummary {
@@ -88,7 +86,7 @@ describe('Create Agent — available trading connections filter', () => {
     };
   }
 
-  it('includes a connection where both status and connectionStatus are active', () => {
+  it('includes a connection whose status is active', () => {
     const result = filterAvailableConnections([makeConnection()]);
     expect(result).toHaveLength(1);
   });
@@ -98,24 +96,25 @@ describe('Create Agent — available trading connections filter', () => {
     expect(result).toHaveLength(0);
   });
 
-  it('excludes a binding whose connectionStatus is revoked', () => {
-    const result = filterAvailableConnections([makeConnection({ connectionStatus: 'revoked' })]);
-    expect(result).toHaveLength(0);
+  it('excludes a connection whose status is revoked (connectionStatus revoked is irrelevant)', () => {
+    const result = filterAvailableConnections([makeConnection({ connectionStatus: 'revoked', status: 'active' })]);
+    expect(result).toHaveLength(1);
   });
 
-  it('returns an empty array when no bindings exist — this is the condition that triggers the escape hatch', () => {
+  it('returns an empty array when no connections exist — this is the condition that triggers the escape hatch', () => {
     expect(filterAvailableConnections([])).toHaveLength(0);
   });
 
-  it('keeps only the qualifying binding from a mixed list', () => {
-    const bindings = [
-      makeConnection({ connectionId: 'b-active', status: 'active', connectionStatus: 'active' }),
-      makeConnection({ connectionId: 'b-revoked-binding', status: 'revoked', connectionStatus: 'active' }),
-      makeConnection({ connectionId: 'b-revoked-conn', status: 'active', connectionStatus: 'revoked' }),
+  it('keeps only the qualifying connection from a mixed list', () => {
+    const connections = [
+      makeConnection({ connectionId: 'c-active', status: 'active', connectionStatus: 'active' }),
+      makeConnection({ connectionId: 'c-revoked', status: 'revoked', connectionStatus: 'active' }),
+      makeConnection({ connectionId: 'c-revoked-conn-status', status: 'active', connectionStatus: 'revoked' }),
     ];
-    const result = filterAvailableConnections(bindings);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.connectionId).toBe('b-active');
+    const result = filterAvailableConnections(connections);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.connectionId).toBe('c-active');
+    expect(result[1]!.connectionId).toBe('c-revoked-conn-status');
   });
 });
 
