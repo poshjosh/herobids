@@ -51,6 +51,9 @@ export { connections } from './connections.js';
 // trading_bindings REMOVED — absorbed into connections
 export { capabilityGrants } from './capability-grants.js';
 export { capabilityGrantAudit } from './capability-grant-audit.js';
+export { providers } from './providers.js';
+export { agentConnections } from './agent-connections.js';
+export { agentConnectionAudit } from './agent-connection-audit.js';
 export { tokenSafetyOverrides } from './token-safety-overrides.js';
 export { decisionFailures } from './decision-failures.js';
 export { llmPricingSnapshots } from './llm-pricing-snapshots.js';

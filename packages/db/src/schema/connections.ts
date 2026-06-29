@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, jsonb, index, foreignKey } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { userCredentials } from './user-credentials.js';
+import { venueAccounts } from './venue-accounts.js';
 
 /**
  * Connections — user-owned platform resources representing a usable external
@@ -28,6 +29,9 @@ export const connections = pgTable('connections', {
   providerRef: text('provider_ref'),
   /** Absorbed from trading_bindings: normalized capability metadata */
   profile: jsonb('profile').$type<Record<string, unknown>>(),
+  /** Resolved FK to venue_accounts — set when the connection maps to a known venue account.
+   *  null for non-trading connections (e.g. telegram, twitter). */
+  resolvedVenueAccountId: text('resolved_venue_account_id'),
   /** Provider-specific cached metadata — never contains raw secrets */
   meta: jsonb('meta').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -39,4 +43,5 @@ export const connections = pgTable('connections', {
   // SET NULL allows a credential to be deleted even when revoked connection rows still
   // reference it. Active-connection blocking is enforced at the application layer.
   foreignKey({ columns: [t.credentialId], foreignColumns: [userCredentials.id] }).onDelete('set null'),
+  foreignKey({ columns: [t.resolvedVenueAccountId], foreignColumns: [venueAccounts.id] }).onDelete('set null'),
 ]);
