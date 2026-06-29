@@ -7,6 +7,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased] — 2026-06-29
 
 ### Changed
+- **Move Venue to Trading Setup (Phase 1 — Frontend)** — Venue is now derived from trading connections instead of stored in technical config
+  - EditAgentModal derives venue/venueType from agent's active trading connection at save time
+  - Paper mode venue dropdown shows whenever no connection is selected (not just when no connections exist)
+  - Extracted `VENUE_TYPE_MAP` to shared `venue-mapping.ts` module
+  - Removed unused `agents.technical.filters.venue.required` i18n key from all locales
 - **Merge connections + trading_bindings** — Simplified credential→connection→agent access model
   - Merged `trading_bindings` table into `connections` (absorbed `provider_ref`, `profile` columns)
   - Dropped `agent_credentials` table — agents access credentials exclusively through `capability_grants → connections → user_credentials`
