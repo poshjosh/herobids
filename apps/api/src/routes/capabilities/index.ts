@@ -23,7 +23,7 @@ export async function capabilityRoutes(
           family: 'trading',
           description: 'Algorithmic trading across multiple venues',
           status: 'available',
-          supportedActions: ['start', 'stop', 'pause', 'resume', 'bind', 'unbind'],
+          supportedActions: ['start', 'stop', 'pause', 'resume'],
         },
       ],
     });

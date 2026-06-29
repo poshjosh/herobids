@@ -3,12 +3,12 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, desc, inArray, isNull, sum, count, sql, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { buildRuntimeDescriptor, resolveRuntimeCapabilityDescriptor, deriveReadiness } from '@herobids/db';
+import { deriveReadiness } from '@herobids/db';
 import type { RuntimeAssignmentRow } from '@herobids/db';
 import {
   agents,
   connections,
-  capabilityGrants,
+  agentConnectionAudit,
   agentConnections,
   providers,
   bots,
@@ -20,23 +20,8 @@ import {
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import { z } from 'zod';
-import {
-  createGrant,
-  revokeGrant,
-  getBindingAudit,
-  assertBindingOwnership,
-} from '../../grant-service.js';
-
-const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume', 'bind', 'unbind'] as const;
+const SUPPORTED_ACTIONS = ['start', 'stop', 'pause', 'resume'] as const;
 type TradingAction = typeof SUPPORTED_ACTIONS[number];
-
-const BindActionSchema = z.object({
-  connectionId: z.string().min(1),
-});
-
-const UnbindActionSchema = z.object({
-  connectionId: z.string().min(1),
-});
 
 const PauseActionSchema = z.object({
   reason: z.string().min(1).max(500),
@@ -93,6 +78,7 @@ async function selectAgentTradingAssignmentRows(db: Database, agentId: string): 
   return db
     .select({
       id: agentConnections.id,
+      assignmentId: agentConnections.id,
       grantStatus: agentConnections.status,
       grantedAt: agentConnections.grantedAt,
       revokedAt: agentConnections.revokedAt,
@@ -149,40 +135,6 @@ function findEffectiveAssignment(rows: TradingAssignmentRow[]): TradingAssignmen
     .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())[0];
 }
 
-// ── Legacy grant query (Phase 2: remove when bind/unbind migrate to agentConnections) ──
-
-type TradingGrantRow = {
-  grantId: string;
-  grantStatus: string;
-  grantedAt: Date;
-  revokedAt: Date | null;
-  connectionId: string;
-  connectionStatus: string;
-  providerRef: string | null;
-  profile: Record<string, unknown> | null;
-  provider: string;
-  label: string;
-};
-
-async function selectAgentTradingGrantRows(db: Database, agentId: string): Promise<TradingGrantRow[]> {
-  return db
-    .select({
-      grantId: capabilityGrants.id,
-      grantStatus: capabilityGrants.status,
-      grantedAt: capabilityGrants.grantedAt,
-      revokedAt: capabilityGrants.revokedAt,
-      connectionId: connections.id,
-      connectionStatus: connections.status,
-      providerRef: connections.providerRef,
-      profile: connections.profile,
-      provider: connections.provider,
-      label: connections.label,
-    })
-    .from(capabilityGrants)
-    .innerJoin(connections, eq(capabilityGrants.connectionId, connections.id))
-    .where(and(eq(capabilityGrants.agentId, agentId), eq(capabilityGrants.capabilityFamily, 'trading')));
-}
-
 async function selectTradingConnectionResourceRows(db: Database, userId: string): Promise<TradingConnectionResourceRow[]> {
   return db
     .select()
@@ -195,63 +147,8 @@ export async function tradingCapabilityRoutes(
   db: Database,
   _plansConfig: PlansConfig | undefined,
   budgets: RuntimeBudgetPolicy,
-  redisClient?: Redis,
+  _redisClient?: Redis,
 ): Promise<void> {
-  async function publishRuntimeRefresh(agentId: string, userId: string, reason: 'grant_changed' | 'binding_changed' | 'readiness_changed'): Promise<void> {
-    if (!redisClient) {
-      return;
-    }
-
-    const [agentRow] = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        prompt: agents.prompt,
-        toolPolicy: agents.toolPolicy,
-        executionMode: agents.executionMode,
-        dailyLossLimit: agents.dailyLossLimit,
-        maxBots: agents.maxBots,
-        maxSlippageBps: agents.maxSlippageBps,
-      })
-      .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
-
-    if (!agentRow) {
-      return;
-    }
-
-    const capabilityDescriptor = await resolveRuntimeCapabilityDescriptor(db, agentId);
-    const runtimeDescriptor = buildRuntimeDescriptor({
-      agentId,
-      name: agentRow.name,
-      goal: agentRow.prompt,
-      executionMode: agentRow.executionMode,
-      toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
-      dailyLossLimit: agentRow.dailyLossLimit,
-      maxBots: agentRow.maxBots,
-      maxSlippageBps: agentRow.maxSlippageBps,
-      budgets,
-      capabilityDescriptor,
-    });
-
-    await redisClient.xadd(
-      `agent:outbound:${agentId}`,
-      '*',
-      'envelope',
-      JSON.stringify({
-        schemaVersion: 'v1',
-        messageId: crypto.randomUUID(),
-        correlationId: agentId,
-        initiatorType: 'system',
-        initiatorId: agentId,
-        agentId,
-        type: 'agent.runtime.config_update',
-        createdAt: new Date().toISOString(),
-        payload: { reason, runtimeDescriptor },
-      }),
-    );
-  }
-
   app.get('/capabilities/trading', async (_request, reply) => {
     return reply.send({
       family: 'trading',
@@ -456,7 +353,10 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'agent.not_found' });
       }
 
-      const conn = await assertBindingOwnership(db, connectionId, request.userId);
+      const [conn] = await db
+        .select()
+        .from(connections)
+        .where(and(eq(connections.id, connectionId), eq(connections.userId, request.userId)));
       if (!conn) {
         return reply.status(404).send({ error: 'connection.not_found' });
       }
@@ -501,7 +401,17 @@ export async function tradingCapabilityRoutes(
         return reply.status(404).send({ error: 'connection.not_found' });
       }
 
-      const auditEntries = await getBindingAudit(db, connectionId, agentId);
+      const acIds = rows.map((row) => row.id);
+
+      let auditEntries: typeof agentConnectionAudit.$inferSelect[] = [];
+      if (acIds.length > 0) {
+        auditEntries = await db
+          .select()
+          .from(agentConnectionAudit)
+          .where(inArray(agentConnectionAudit.agentConnectionId, acIds))
+          .orderBy(agentConnectionAudit.createdAt);
+      }
+
       return reply.send({ connectionId, audit: auditEntries });
     },
   );
@@ -914,108 +824,6 @@ export async function tradingCapabilityRoutes(
 
         await db.update(agents).set({ status: 'active', pauseState: null, updatedAt: new Date() }).where(eq(agents.id, agentId));
         return reply.send({ action: 'resume', agentId, status: 'active' });
-      }
-
-      if (action === 'bind') {
-        const parsed = BindActionSchema.safeParse(request.body);
-        if (!parsed.success) {
-          return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
-        }
-
-        const conn = await assertBindingOwnership(db, parsed.data.connectionId, request.userId);
-        if (!conn) {
-          return reply.status(404).send({ error: 'connection.not_found' });
-        }
-
-        if (conn.status !== 'active') {
-          return reply.status(409).send({
-            error: 'connection.not_ready',
-            message: 'Connection is not effectively ready',
-          });
-        }
-
-        // Validate execution capability: reject binding if agent mode + venue type is unsupported
-        const connectionVenueType = venueTypeFromProvider(conn.provider);
-        if (connectionVenueType && agent.executionMode) {
-          const capResult = validateExecutionCapability({
-            actorType: 'agent',
-            executionMode: agent.executionMode as 'paper' | 'shadow' | 'live',
-            venueType: connectionVenueType,
-          });
-          if (!capResult.ok) {
-            return reply.status(400).send({
-              error: `execution_capability.${capResult.error.code}`,
-              message: capResult.error.message,
-            });
-          }
-        }
-
-        const allAssignments = await selectAgentTradingAssignmentRows(db, agentId);
-        const existingAssignment = allAssignments.find(
-          (row) => row.connectionId === parsed.data.connectionId && row.grantStatus === 'active',
-        );
-        if (existingAssignment) {
-          return reply.status(200).send({
-            action: 'bind',
-            agentId,
-            family: 'trading',
-            connectionId: parsed.data.connectionId,
-            status: 'active',
-          });
-        }
-
-        await createGrant(db, {
-          agentId,
-          connectionId: parsed.data.connectionId,
-          capabilityFamily: 'trading',
-          grantedBy: request.userId,
-        });
-
-        await publishRuntimeRefresh(agentId, request.userId, 'grant_changed').catch((err: unknown) => {
-          app.log.warn({ err, agentId }, 'Failed to publish runtime refresh after bind');
-        });
-
-        return reply.status(201).send({
-          action: 'bind',
-          agentId,
-          family: 'trading',
-          connectionId: parsed.data.connectionId,
-          status: 'active',
-        });
-      }
-
-      if (action === 'unbind') {
-        const parsed = UnbindActionSchema.safeParse(request.body);
-        if (!parsed.success) {
-          return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
-        }
-
-        const grantRows = await selectAgentTradingGrantRows(db, agentId);
-        const matchingGrant = grantRows.find((row) => row.connectionId === parsed.data.connectionId && row.grantStatus === 'active');
-        if (!matchingGrant) {
-          return reply.status(404).send({ error: 'connection.not_found' });
-        }
-
-        const revoked = await revokeGrant(db, {
-          grantId: matchingGrant.grantId,
-          actorType: 'user',
-          actorId: request.userId,
-        });
-
-        if (!revoked) {
-          return reply.status(409).send({ error: 'connection.already_revoked' });
-        }
-
-        await publishRuntimeRefresh(agentId, request.userId, 'grant_changed').catch((err: unknown) => {
-          app.log.warn({ err, agentId }, 'Failed to publish runtime refresh after unbind');
-        });
-
-        return reply.send({
-          action: 'unbind',
-          connectionId: parsed.data.connectionId,
-          agentId,
-          status: 'revoked',
-        });
       }
 
       return reply.status(500).send({ error: 'internal.unhandled_action' });

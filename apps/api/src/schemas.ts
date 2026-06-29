@@ -117,17 +117,6 @@ export const CreateConnectionSchema = z.object({
   credentialId: z.string().optional(),
 });
 
-export const CreateGrantSchema = z.object({
-  /** Connection to grant access to */
-  connectionId: z.string().min(1),
-  /** Capability family this grant covers: "trading", "automation", etc. */
-  capabilityFamily: z.string().min(1),
-});
-
-export const RevokeGrantSchema = z.object({
-  reason: z.string().min(1).optional(),
-});
-
 export const SetupProviderLinkSchema = z.object({
   /** Provider identifier: "hyperliquid", "bybit", "1inch", etc. */
   provider: z.string().min(1),
@@ -140,5 +129,3 @@ export const SetupProviderLinkSchema = z.object({
 });
 
 export type CreateConnectionInput = z.infer<typeof CreateConnectionSchema>;
-export type CreateGrantInput = z.infer<typeof CreateGrantSchema>;
-export type RevokeGrantInput = z.infer<typeof RevokeGrantSchema>;
