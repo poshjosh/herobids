@@ -85,7 +85,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
       await tx.insert(userCredentials).values({
         id,
         userId: request.userId,
-        venue: parsed.data.venue,
+        provider: parsed.data.venue,
         label: parsed.data.label,
         encryptedData,
         encryptionMeta,
@@ -186,7 +186,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
 
     auditAppend(journal, credentialRotatedEvent({
       credentialId: id,
-      provider: existing.provider,
+      venue: existing.provider,
       userId: request.userId,
     }), app.log);
 
@@ -271,7 +271,7 @@ export async function credentialRoutes(app: FastifyInstance, queue: Queue<Lifecy
 
     auditAppend(journal, credentialDeletedEvent({
       credentialId: id,
-      venue: existing.venue,
+      venue: existing.provider,
       userId: request.userId,
     }), app.log);
 

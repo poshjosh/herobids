@@ -146,7 +146,7 @@ export async function tradingCapabilityRoutes(
   app: FastifyInstance,
   db: Database,
   _plansConfig: PlansConfig | undefined,
-  budgets: RuntimeBudgetPolicy,
+  _budgets: RuntimeBudgetPolicy,
   _redisClient?: Redis,
 ): Promise<void> {
   app.get('/capabilities/trading', async (_request, reply) => {

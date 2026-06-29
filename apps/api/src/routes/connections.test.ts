@@ -216,8 +216,8 @@ describe('POST /connections', () => {
   });
 
   it('creates a connection with a valid credentialId', async () => {
-    // Credential venue must match the connection provider
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'hyperliquid' };
+    // Credential provider must match the connection provider
+    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'hyperliquid' };
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildMockDb([credRow]);
@@ -234,7 +234,7 @@ describe('POST /connections', () => {
   });
 
   it('does not auto-create a trading binding for non-trading providers', async () => {
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'telegram' };
+    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'telegram' };
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildMockDb([credRow]);
@@ -272,7 +272,7 @@ describe('POST /connections', () => {
   );
 
   it('returns 400 when credential venue does not match connection provider', async () => {
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'bybit' };
+    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'bybit' };
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildMockDb([credRow]);
@@ -291,7 +291,7 @@ describe('POST /connections', () => {
   });
 
   it('returns 400 when credential is deleted between validation and insert (FK race)', async () => {
-    const credRow = { id: 'cred-1', userId: TEST_USER_ID, venue: 'hyperliquid' };
+    const credRow = { id: 'cred-1', userId: TEST_USER_ID, provider: 'hyperliquid' };
     const app = Fastify();
     decorateWithAuth(app);
     const db = buildMockDb([credRow]);

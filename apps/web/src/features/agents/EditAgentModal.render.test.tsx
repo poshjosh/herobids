@@ -160,8 +160,10 @@ describe('EditAgentModal rendering', () => {
       stopLossCooldownMs: null,
     });
 
-    expect(html).not.toContain(messages['agents.advanced.tradingSetup']);
+    // "Trading" tab label may also appear in the agent-type selector; verify via the
+    // capital field label and help text instead, which are unique to the trading tab.
     expect(html).not.toContain(messages['agents.controls.capital']);
+    expect(html).not.toContain(messages['agents.controls.capital.help']);
   });
 
   it('renders only the canonical objective when the stored prompt contains legacy operator context', () => {

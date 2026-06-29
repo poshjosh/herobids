@@ -447,6 +447,8 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
     }
 
@@ -881,6 +883,8 @@ describe('AgentMessageBroker', () => {
           { id: 'bot-abc', status: 'running', config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-USD' } },
         ]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -918,6 +922,8 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -950,6 +956,8 @@ describe('AgentMessageBroker', () => {
           { id: 'bot-min', status: 'stopped', config: {} },
         ]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -1009,6 +1017,7 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
       const botStart = vi.fn().mockResolvedValue(undefined);
 
@@ -1079,6 +1088,7 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
       const botStart = vi.fn().mockResolvedValue(undefined);
 
@@ -1178,6 +1188,7 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
       const botStart = vi.fn().mockResolvedValue(undefined);
 
@@ -1245,6 +1256,7 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-002', venue: 'hyperliquid' }),
       };
 
       const brokerWithBot = new AgentMessageBroker(
@@ -1379,6 +1391,7 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       };
       const botStart = vi.fn().mockResolvedValue(undefined);
 
@@ -1947,6 +1960,7 @@ describe('AgentMessageBroker', () => {
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
       });
 
       const makeLiveBotEnvelope = () => makeManageBotEnvelope({
@@ -2215,6 +2229,7 @@ describe('AgentMessageBroker', () => {
           updateBotConfig: vi.fn().mockResolvedValue(undefined),
           getBotsByCreator: vi.fn().mockResolvedValue([]),
           getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+        getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
         });
 
         const makeAdjustLiveEnvelope = () => makeManageBotEnvelope({

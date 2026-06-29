@@ -31,7 +31,7 @@ vi.mock('@herobids/db', () => {
   const userCredentials = {
     id: 'credentials.id',
     userId: 'credentials.user_id',
-    venue: 'credentials.venue',
+    provider: 'credentials.provider',
     label: 'credentials.label',
     encryptedData: 'credentials.encrypted_data',
     encryptionMeta: 'credentials.encryption_meta',
@@ -463,7 +463,7 @@ describe('credential audit events', () => {
 
   describe('POST /credentials/:id/rotate', () => {
     it('emits credential.rotated event with metadata only', async () => {
-      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      mockDbRows = [{ id: 'cred-2', provider: 'hyperliquid', userId: 'user-1' }];
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
@@ -491,7 +491,7 @@ describe('credential audit events', () => {
     });
 
     it('restarts dependent running instances after rotation', async () => {
-      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      mockDbRows = [{ id: 'cred-1', provider: 'hyperliquid', userId: 'user-1' }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1', 'inst-2'],
@@ -529,7 +529,7 @@ describe('credential audit events', () => {
     });
 
     it('does not restart when no running instances depend on credential', async () => {
-      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      mockDbRows = [{ id: 'cred-1', provider: 'hyperliquid', userId: 'user-1' }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1'],
         runningInstanceIds: [],
@@ -574,7 +574,7 @@ describe('credential audit events', () => {
     });
 
     it('rejects rotation with empty walletAddress for Hyperliquid', async () => {
-      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      mockDbRows = [{ id: 'cred-1', provider: 'hyperliquid', userId: 'user-1' }];
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
@@ -595,7 +595,7 @@ describe('credential audit events', () => {
     });
 
     it('normalizes aliased Hyperliquid secret names during rotation', async () => {
-      mockDbRows = [{ id: 'cred-1', venue: 'hyperliquid', userId: 'user-1' }];
+      mockDbRows = [{ id: 'cred-1', provider: 'hyperliquid', userId: 'user-1' }];
       const app = Fastify();
       const db = buildMockDb();
       decorateWithAuth(app);
@@ -627,7 +627,7 @@ describe('credential audit events', () => {
 
   describe('DELETE /credentials/:id', () => {
     it('succeeds and emits credential.deleted when no dependents', async () => {
-      mockDbRows = [{ id: 'cred-2', venue: 'hyperliquid', userId: TEST_USER_ID }];
+      mockDbRows = [{ id: 'cred-2', provider: 'hyperliquid', userId: TEST_USER_ID }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: [],
         runningInstanceIds: [],
@@ -657,7 +657,7 @@ describe('credential audit events', () => {
     });
 
     it('returns 409 when venue accounts still reference the credential', async () => {
-      mockDbRows = [{ id: 'cred-3', venue: 'hyperliquid', userId: TEST_USER_ID }];
+      mockDbRows = [{ id: 'cred-3', provider: 'hyperliquid', userId: TEST_USER_ID }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1', 'va-2'],
         runningInstanceIds: ['inst-1'],
@@ -689,7 +689,7 @@ describe('credential audit events', () => {
     });
 
     it('returns 409 when agent credentials still reference the credential', async () => {
-      mockDbRows = [{ id: 'cred-ac', venue: 'hyperliquid', userId: TEST_USER_ID }];
+      mockDbRows = [{ id: 'cred-ac', provider: 'hyperliquid', userId: TEST_USER_ID }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: [],
         runningInstanceIds: [],
@@ -739,7 +739,7 @@ describe('credential audit events', () => {
     });
 
     it('returns 409 on FK violation during concurrent link (race condition)', async () => {
-      mockDbRows = [{ id: 'cred-4', venue: 'hyperliquid', userId: 'user-4' }];
+      mockDbRows = [{ id: 'cred-4', provider: 'hyperliquid', userId: 'user-4' }];
       // Pre-check passes (no dependents)
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: [],
@@ -781,7 +781,7 @@ describe('credential audit events', () => {
 
   describe('POST /credentials/:id/rotate (restart failure)', () => {
     it('returns restartError when queue enqueue fails', async () => {
-      mockDbRows = [{ id: 'cred-5', venue: 'hyperliquid', userId: 'user-5' }];
+      mockDbRows = [{ id: 'cred-5', provider: 'hyperliquid', userId: 'user-5' }];
       mockFindCredentialDependents.mockResolvedValueOnce({
         venueAccountIds: ['va-1'],
         runningInstanceIds: ['inst-1', 'inst-2'],
@@ -818,7 +818,7 @@ describe('credential audit events', () => {
     });
 
     it('returns restartError when dependent lookup itself fails', async () => {
-      mockDbRows = [{ id: 'cred-6', venue: 'hyperliquid', userId: 'user-6' }];
+      mockDbRows = [{ id: 'cred-6', provider: 'hyperliquid', userId: 'user-6' }];
       mockFindCredentialDependents.mockRejectedValueOnce(new Error('connection timeout'));
 
       const app = Fastify();

@@ -87,10 +87,10 @@ describe('setup flow copy changes', () => {
     expect(enMessages['agents.create.noConnections']).not.toContain('Create a trading connection first');
   });
 
-  it('agents.capabilityPage.noBindings no longer tells users to "Create a trading connection first"', () => {
+  it('agents.capabilityPage.noConnections no longer tells users to "Create a trading connection first"', () => {
     // The old copy pointed to connections as the next step. The correct next step
     // is now Mission Control (guided setup) or Create Agent (inline setup).
-    expect(enMessages['agents.capabilityPage.noBindings']).not.toContain('Create a trading connection first');
+    expect(enMessages['agents.capabilityPage.noConnections']).not.toContain('Create a trading connection first');
   });
 
   it('setup.form.title is defined and names the guided setup flow', () => {
