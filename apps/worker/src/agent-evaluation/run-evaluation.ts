@@ -15,9 +15,12 @@ import { analyzeCore } from './analyzers/core.js';
 import { analyzeTrading } from './analyzers/trading.js';
 import { analyzeSecurity } from './analyzers/security.js';
 import { renderReport } from './render-report.js';
+import { generateEvaluationNarrative } from './generate-narrative.js';
 import { redact, redactJson } from './redaction.js';
 
 const logger = pino({ name: 'run-evaluation' });
+
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -151,9 +154,36 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     });
     const redactedReport = redact(reportText);
 
-    // Level 1: No LLM narrative yet. If includeNarrative, it would be appended here.
-    const finalReport = includeNarrative
-      ? `${redactedReport}\n\n---\n\n## Commentary\n\n*(LLM narrative not yet implemented — Level 2)*\n`
+    // ── Step 5b: Generate LLM narrative commentary (best-effort) ────────
+    let narrativeText: string | null = null;
+    if (includeNarrative && ctx.narrativeLlm) {
+      // Top findings sorted by severity for the prompt
+      const topFindings = [...allFindings]
+        .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
+        .slice(0, 10);
+
+      // Redact finding details before sending to the LLM (defense-in-depth)
+      const safeFindings = topFindings.map((f) => ({
+        ...f,
+        title: redact(f.title),
+        detail: redact(f.detail),
+        evidence: f.evidence ? redact(f.evidence) : undefined,
+      }));
+
+      narrativeText = await generateEvaluationNarrative(
+        ctx.narrativeLlm,
+        scorecard,
+        safeFindings,
+      );
+
+      // Redact the generated narrative before writing it
+      if (narrativeText) {
+        narrativeText = redact(narrativeText);
+      }
+    }
+
+    const finalReport = narrativeText
+      ? `${redactedReport}\n\n---\n\n## Commentary\n\n${narrativeText}\n`
       : redactedReport;
 
     // ── Step 6: Write evaluation.json and REPORT.md ──────────────────────
