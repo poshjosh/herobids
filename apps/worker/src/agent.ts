@@ -784,6 +784,17 @@ const RUNTIME_CHARGE_WINDOW_MS = parseInt(process.env['USAGE_BILLING_RUNTIME_WIN
 // additional filesystem read inside the container.
 const providersYaml = agentConfig.providersYaml;
 
+// Build a provider → baseUrl map from the operator-configured provider registry.
+// This flows into LlmProviderConfig so resolveBaseUrl() prefers operator config
+// over hardcoded defaults.
+const providersBaseUrlMap: Record<string, string> | undefined = providersYaml
+  ? Object.fromEntries(
+      Object.entries(providersYaml.providers)
+        .filter(([, cfg]) => cfg.baseUrl != null)
+        .map(([name, cfg]) => [name, cfg.baseUrl!]),
+    )
+  : undefined;
+
 const usageBillingService = createUsageBillingService(db, {
   userId: agentConfig.userId ?? '',
   agentId: AGENT_ID!,
@@ -2041,6 +2052,7 @@ async function runTick(): Promise<void> {
             maxTokens: LLM_MAX_TOKENS,
             timeoutMs: LLM_TIMEOUT_MS,
             baseUrl: resolvedBaseUrl,
+            providersBaseUrlMap,
           },
           maxPositions,
           submitDecision: async (symbol, intent, sizeUsd) => {
@@ -2299,6 +2311,7 @@ async function runTick(): Promise<void> {
           maxTokens: scoutLoopConfig.maxTokens,
           timeoutMs: LLM_TIMEOUT_MS,
           baseUrl: resolvedBaseUrl,
+          providersBaseUrlMap,
         },
         requestBase: {
           maxTokens: scoutLoopConfig.maxTokens,
@@ -2508,6 +2521,7 @@ async function runTick(): Promise<void> {
         maxTokens: LLM_MAX_TOKENS,
         timeoutMs: LLM_TIMEOUT_MS,
         baseUrl: resolvedBaseUrl,
+        providersBaseUrlMap,
         thinking: agentRuntimePolicy.llm.thinking,
       },
       requestBase: {

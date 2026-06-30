@@ -23,6 +23,7 @@ export const ModelPricingSchema = z.object({
 
 const RawProviderConfigSchema = z.object({
   catalogMode: z.enum(['static', 'dynamic']),
+  baseUrl: z.string().url().optional(),
   devOnly: z.boolean().optional(),
   isMultiProvider: z.boolean().optional(),
   fetchUrl: z.string().url().optional(),

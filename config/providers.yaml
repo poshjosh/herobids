@@ -9,6 +9,7 @@
 
 providers:
   openai:
+    baseUrl: https://api.openai.com/v1
     catalogMode: static
     models:
       gpt-5.5:       { inputUsdPerM: 5,    outputUsdPerM: 30 }
@@ -27,6 +28,7 @@ providers:
       gpt-5.4-nano:  { inputUsdPerM: 0.2,  outputUsdPerM: 1.25 }
 
   anthropic:
+    baseUrl: https://api.anthropic.com/v1
     catalogMode: static
     models:
       claude-opus-4-8:   { inputUsdPerM: 5,   outputUsdPerM: 25 }
@@ -38,6 +40,7 @@ providers:
       claude-haiku-3-5:  { inputUsdPerM: 0.8, outputUsdPerM: 4 }
 
   deepseek:
+    baseUrl: https://api.deepseek.com/v1
     catalogMode: static
     models:
       deepseek-v4-flash: { inputUsdPerM: 0.14, outputUsdPerM: 0.28 }
@@ -46,6 +49,7 @@ providers:
       deepseek-chat:     { inputUsdPerM: 0.32, outputUsdPerM: 0.89 }
 
   google:
+    baseUrl: https://generativelanguage.googleapis.com/v1beta
     catalogMode: static
     models:
       gemini-3.1-pro-preview:        { inputUsdPerM: 2,     outputUsdPerM: 12 }
@@ -58,12 +62,14 @@ providers:
       gemini-1.5-flash:              { inputUsdPerM: 0.075, outputUsdPerM: 0.3 }
 
   openrouter:
+    baseUrl: https://openrouter.ai/api/v1
     catalogMode: dynamic
     isMultiProvider: true
     fetchUrl: https://openrouter.ai/api/v1
     models: {}
 
   ollama:
+    baseUrl: http://localhost:11434/v1
     catalogMode: dynamic
     devOnly: true
     models: {}

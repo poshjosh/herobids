@@ -12,6 +12,12 @@ export interface LlmProviderConfig {
   timeoutMs: number;
   /** Base URL override (for testing or alternative endpoints) */
   baseUrl?: string;
+  /**
+   * Provider → base URL map sourced from operator config (providers.yaml).
+   * Used as the primary fallback when `baseUrl` is not set on this config.
+   * When absent, a hardcoded default per provider is used.
+   */
+  providersBaseUrlMap?: Record<string, string>;
   /** Thinking token budgets (used for Anthropic extended thinking) */
   thinking?: {
     lightBudgetTokens: number;
@@ -102,7 +108,7 @@ async function callOpenAiCompatibleProvider(
   config: LlmProviderConfig,
   request: LlmRequest,
 ): Promise<LlmResult> {
-  const baseUrl = config.baseUrl ?? resolveBaseUrl(config.provider);
+  const baseUrl = config.baseUrl ?? resolveBaseUrl(config.provider, config.providersBaseUrlMap);
   const apiKey = resolveApiKey(config.provider);
 
   // Local providers (e.g. Ollama) don't need an API key when baseUrl is explicitly set.
@@ -240,7 +246,7 @@ async function callAnthropicProvider(
     return { ok: false, error: { code: 'provider.no_credentials', message: 'No API key found for provider "anthropic"', retryable: false } };
   }
 
-  const baseUrl = config.baseUrl ?? resolveBaseUrl('anthropic');
+  const baseUrl = config.baseUrl ?? resolveBaseUrl('anthropic', config.providersBaseUrlMap);
   const startMs = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -365,7 +371,12 @@ async function callAnthropicProvider(
   }
 }
 
-function resolveBaseUrl(provider: string): string {
+function resolveBaseUrl(provider: string, providersBaseUrlMap?: Record<string, string>): string {
+  // 1. Operator-configured base URL from providers.yaml (takes precedence)
+  if (providersBaseUrlMap?.[provider]) {
+    return providersBaseUrlMap[provider]!;
+  }
+  // 2. Hardcoded fallback for known providers
   switch (provider) {
     case 'openai': return 'https://api.openai.com/v1';
     case 'openrouter': return 'https://openrouter.ai/api/v1';
