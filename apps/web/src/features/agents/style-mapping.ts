@@ -181,11 +181,12 @@ export function resolveModelPricing(
  *
  * When `pricing` is omitted (or both prices are 0), falls back to the hardcoded
  * dailySpendBudgetUsd from the style config (the user's budget target, not a cost estimate).
+ *
+ * Both paths produce a consistent format: cost · cadence.
  */
 export function formatStyleSummary(style: AgentStyleValue, pricing?: ModelPricingInfo): string {
   const d = resolveStyleDefaults(style);
-  const turns = `${d.scoutMaxTurns}/${d.judgeMaxTurns} turns`;
-  const tickMins = `${d.tickIntervalMins} min`;
+  const cadence = `every ${d.tickIntervalMins} min`;
 
   // Compute estimated daily cost if we have model pricing
   if (pricing && pricing.economyOutputUsdPer1M > 0 && pricing.premiumOutputUsdPer1M > 0) {
@@ -205,11 +206,9 @@ export function formatStyleSummary(style: AgentStyleValue, pricing?: ModelPricin
     const costPerTick = (economyTokens + premiumTokens) * blendedPricePer1M / 1_000_000;
     const dailyCost = costPerTick * ticksPerDay;
 
-    // Format: "$1.23/day" with 2 decimal places
-    const costStr = `$${dailyCost.toFixed(2)}/day`;
-    return `~${costStr} · ${tickMins} · ${turns}`;
+    return `~$${dailyCost.toFixed(2)}/day · ${cadence}`;
   }
 
   // Fallback: show budget target
-  return `${turns} · ${tickMins} · $${d.dailySpendBudgetUsd}/day target`;
+  return `~$${d.dailySpendBudgetUsd}/day target · ${cadence}`;
 }

@@ -167,23 +167,21 @@ describe('resolveStyleDefaults', () => {
   describe('formatStyleSummary', () => {
     it('produces a fallback summary for careful (no pricing)', () => {
       const summary = formatStyleSummary('careful');
-      expect(summary).toContain('10/25 turns');
-      expect(summary).toContain('90 min');
-      expect(summary).toContain('$3/day target');
+      expect(summary).toContain('~$3/day target');
+      expect(summary).toContain('every 90 min');
+      expect(summary).not.toContain('turns');
     });
 
     it('produces a fallback summary for balanced (no pricing)', () => {
       const summary = formatStyleSummary('balanced');
-      expect(summary).toContain('30/75 turns');
-      expect(summary).toContain('30 min');
-      expect(summary).toContain('$10/day target');
+      expect(summary).toContain('~$10/day target');
+      expect(summary).toContain('every 30 min');
     });
 
     it('produces a fallback summary for bold (no pricing)', () => {
       const summary = formatStyleSummary('bold');
-      expect(summary).toContain('100/300 turns');
-      expect(summary).toContain('10 min');
-      expect(summary).toContain('$30/day target');
+      expect(summary).toContain('~$30/day target');
+      expect(summary).toContain('every 10 min');
     });
 
     it('computes estimated cost when pricing is provided', () => {
@@ -194,11 +192,9 @@ describe('resolveStyleDefaults', () => {
       });
       expect(summary).toContain('~$');
       expect(summary).toContain('/day');
-      expect(summary).toContain('90 min');
-      expect(summary).toContain('10/25 turns');
-      // With careful: 90min ticks → 16 ticks/day, very low token budgets, economy-heavy blend
-      // Output should be a very small number (cents)
+      expect(summary).toContain('every 90 min');
       expect(summary).not.toContain('target');
+      expect(summary).not.toContain('turns');
     });
 
     it('computes higher cost for bold with same pricing', () => {
@@ -222,7 +218,7 @@ describe('resolveStyleDefaults', () => {
         economyOutputUsdPer1M: 0,
         premiumOutputUsdPer1M: 2.00,
       });
-      expect(summary).toContain('$3/day target');
+      expect(summary).toContain('~$3/day target');
     });
 
     it('falls back when premium price is 0', () => {
@@ -230,7 +226,7 @@ describe('resolveStyleDefaults', () => {
         economyOutputUsdPer1M: 0.15,
         premiumOutputUsdPer1M: 0,
       });
-      expect(summary).toContain('$3/day target');
+      expect(summary).toContain('~$3/day target');
     });
   });
 
