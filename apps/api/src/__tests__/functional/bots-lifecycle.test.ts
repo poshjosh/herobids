@@ -201,7 +201,11 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
     });
     // Paper+swap is invalid, so bot creation should be rejected at the API level.
     expect(createRes.statusCode).toBe(400);
-    expect(JSON.parse(createRes.body).error).toContain('execution_capability');
+    const createBody = JSON.parse(createRes.body);
+    expect(createBody.error).toBe('validation_error');
+    // The error should target the execution mode field
+    const issuePaths = createBody.details.map((d: { path: (string | number)[] }) => d.path.join('.'));
+    expect(issuePaths).toContain('execution.mode');
   });
 
   it('POST /bots/:id/start — rejects non-owned bot, returns 404', async () => {

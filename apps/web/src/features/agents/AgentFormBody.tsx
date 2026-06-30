@@ -129,6 +129,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         maxPositionSizePct: props.value.maxPositionSizePct,
         stopLossPct: props.value.stopLossPct,
         venue,
+        venueType: '',
         executionMode: props.value.executionMode,
         requiresTradingSetup: props.requiresTradingSetup,
       },
@@ -195,47 +196,10 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         </div>
       )}
 
-      {/* Telegram Chat ID — always visible */}
-      <div style={fieldGap}>
-        <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}
-        </FieldLabel>
-        <input
-          style={inputStyle}
-          value={props.value.telegramChatId}
-          onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
-          placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
-        />
-        <div style={helperStyle}>
-          {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
-        </div>
-      </div>
+      {/* Platform link — only when trading setup is required */}
+      {props.showTradingControls && props.requiresTradingSetup && props.connectionSlot}
 
-      {/* Name + auto-hint */}
-      <div data-field="name" style={fieldGap}>
-        <FieldLabel>
-          {intl.formatMessage({ id: 'agents.create.name' })}
-        </FieldLabel>
-        <input
-          style={inputStyle}
-          type="text"
-          value={props.value.name}
-          onChange={(e) => {
-            props.onClearFieldError('name');
-            props.onChange({ name: e.target.value });
-          }}
-          onBlur={() => handleFieldBlur('name')}
-          placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
-          maxLength={100}
-          required
-        />
-        {props.formErrors.name && (
-          <div style={errorStyle}>{props.formErrors.name}</div>
-        )}
-        {props.nameAutoHint}
-      </div>
-
-      {/* Technical Pre-Filter Toggle — feature gate shown on main form */}
+      {/* Technical Pre-Filter Toggle — trading advance feature */}
       {props.requiresTradingSetup && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
           <div
@@ -278,6 +242,46 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         </div>
       )}
 
+      {/* Telegram Chat ID — always visible */}
+      <div style={fieldGap}>
+        <FieldLabel>
+          {intl.formatMessage({ id: 'agents.create.telegramChatId' })}
+        </FieldLabel>
+        <input
+          style={inputStyle}
+          value={props.value.telegramChatId}
+          onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
+          placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
+        />
+        <div style={helperStyle}>
+          {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
+        </div>
+      </div>
+
+      {/* Name + auto-hint */}
+      <div data-field="name" style={fieldGap}>
+        <FieldLabel>
+          {intl.formatMessage({ id: 'agents.create.name' })}
+        </FieldLabel>
+        <input
+          style={inputStyle}
+          type="text"
+          value={props.value.name}
+          onChange={(e) => {
+            props.onClearFieldError('name');
+            props.onChange({ name: e.target.value });
+          }}
+          onBlur={() => handleFieldBlur('name')}
+          placeholder={intl.formatMessage({ id: 'agents.create.namePlaceholder' })}
+          maxLength={100}
+          required
+        />
+        {props.formErrors.name && (
+          <div style={errorStyle}>{props.formErrors.name}</div>
+        )}
+        {props.nameAutoHint}
+      </div>
+
       {/* Advanced Settings (tabs) */}
       <AdvancedSettingsSection
         expandSeq={advancedExpandSeq}
@@ -287,7 +291,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         aiConfig={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {props.modelSlot}
-            {props.connectionSlot}
             <AgentControlsSection
               value={{
                 costPreset: props.value.costPreset,

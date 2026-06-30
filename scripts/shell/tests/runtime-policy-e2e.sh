@@ -154,7 +154,7 @@ else
   assert_eq "judgeMaxTurns"    "300"  "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "80000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause"     "false" "$(echo "$policy" | jq -r '.weekendPause')"
-  assert_eq "maxHoldDurationMs" "1800000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
+  assert_eq "maxHoldDurationMs" "600000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
   # Clean up immediately to avoid plan limit
   api DELETE "/agents/$agentId" > /dev/null
@@ -177,7 +177,7 @@ else
   assert_eq "judgeMaxTurns" "25" "$(echo "$policy" | jq -r '.judgeMaxTurns')"
   assert_eq "maxHistoryTokens" "20000" "$(echo "$policy" | jq -r '.maxHistoryTokens')"
   assert_eq "weekendPause" "true" "$(echo "$policy" | jq -r '.weekendPause')"
-  assert_eq "maxHoldDurationMs" "10800000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
+  assert_eq "maxHoldDurationMs" "27000000" "$(echo "$policy" | jq -r '.maxHoldDurationMs')"
 
   hours=$(echo "$policy" | jq -r '.allowedHoursUtc | join(",")')
   assert_eq "allowedHoursUtc" "14,15,16,17,18,19,20" "$hours"
