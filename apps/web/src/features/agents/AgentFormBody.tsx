@@ -363,28 +363,26 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 </span>
               </div>
 
-              {/* Technical Config — only visible when pre-filter is ON */}
-              {props.value.technicalPreFilterEnabled && (
-                <>
-                  <div
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      marginBottom: '12px',
-                    }}
-                  >
-                    {intl.formatMessage({ id: 'agents.technical.title' })}
-                  </div>
-                  <TechnicalConfigSection
-                    value={props.value.technicalConfig}
-                    onChange={(technicalConfig) =>
-                      props.onChange({ technicalConfig })
-                    }
-                    showErrors={Object.keys(props.formErrors).length > 0}
-                    onClearFieldError={props.onClearFieldError}
-                  />
-                </>
-              )}
+              {/* Technical Config — hidden with CSS (not unmounted) to avoid layout jump on toggle */}
+              <div style={{ display: props.value.technicalPreFilterEnabled ? 'block' : 'none' }}>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    marginBottom: '12px',
+                  }}
+                >
+                  {intl.formatMessage({ id: 'agents.technical.title' })}
+                </div>
+                <TechnicalConfigSection
+                  value={props.value.technicalConfig}
+                  onChange={(technicalConfig) =>
+                    props.onChange({ technicalConfig })
+                  }
+                  showErrors={Object.keys(props.formErrors).length > 0}
+                  onClearFieldError={props.onClearFieldError}
+                />
+              </div>
             </div>
           ) : null
         }
