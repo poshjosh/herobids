@@ -373,11 +373,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 }));
               }}
             />
-            <RuntimePolicySection
-              style={style}
-              overrides={runtimePolicyOverrides}
-              onChange={setRuntimePolicyOverrides}
-            />
           </div>
 
           <AgentFormBody
@@ -401,6 +396,13 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             tickIntervalError={tickIntervalError}
             tickIntervalNotice={tickIntervalNotice}
             effectiveTickIntervalMs={effectiveTickIntervalMs}
+            computeBudgetSlot={
+              <RuntimePolicySection
+                style={style}
+                overrides={runtimePolicyOverrides}
+                onChange={setRuntimePolicyOverrides}
+              />
+            }
             connectionSlot={
               showTradingControls ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
