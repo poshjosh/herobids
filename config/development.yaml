@@ -7,3 +7,4 @@ llm:
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   enabled: true                   # master switch — override: ALERTS_ENABLED
+

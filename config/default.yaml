@@ -338,6 +338,13 @@ agentRuntime:
   thinking:
     drawdownThresholdPct: -2   # drawdown % that triggers deep thinking mode
   llm:
+    # UI defaults for model selection forms (Settings page, agent create/edit).
+    # These populate the initial values when no user/agent selection exists.
+    # They are NOT used as runtime fallbacks — agents must have explicit models.
+    modelDefaults:
+      provider: ollama                      # suggested provider in forms
+      lightModel: qwen3:8b                   # suggested economy (scout) model
+      heavyModel: qwen3.6:35b-a3b-q4_K_M     # suggested premium (judge) model
     scout:
       maxTurns: 10             # cap read-only scout tool rounds; raise for deeper discovery, lower to bound latency and spend
       maxTokens: 1024          # scout response budget per turn; increase only if scout JSON/tool planning is getting truncated

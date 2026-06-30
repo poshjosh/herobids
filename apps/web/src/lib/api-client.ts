@@ -182,6 +182,12 @@ export interface AiAvailableModelEntry {
 
 export interface AiAvailableModelsResponse {
   providers: AiAvailableModelProvider[];
+  /** Operator-configured UI defaults for model selection forms. Null when no operator default is set. */
+  defaults: {
+    provider: string;
+    lightModel: string | null;
+    heavyModel: string | null;
+  } | null;
 }
 
 export interface AiModelSettings {

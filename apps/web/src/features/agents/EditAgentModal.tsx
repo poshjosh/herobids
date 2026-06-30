@@ -187,7 +187,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
       return;
     }
-    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? []);
+    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? [], availableModelsQuery.data?.defaults);
     if (!defaultSelection) {
       return;
     }

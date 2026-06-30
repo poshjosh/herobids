@@ -53,7 +53,28 @@ function pickFallbackModel(models: string[], preferredIndex: number): string {
 
 export function resolveDefaultModelSelection(
   providers: AiAvailableModelProvider[],
+  operatorDefaults?: { provider: string; lightModel: string | null; heavyModel: string | null } | null,
 ): ModelSelectionValue | null {
+  // Try operator-configured defaults first
+  if (operatorDefaults?.provider) {
+    const operatorProvider = providers.find((p) => p.provider === operatorDefaults.provider && p.models.length > 0);
+    if (operatorProvider) {
+      const modelIds = getProviderModelIds(getProviderModels(providers, operatorDefaults.provider));
+      const lightModel = operatorDefaults.lightModel && modelIds.includes(operatorDefaults.lightModel)
+        ? operatorDefaults.lightModel
+        : '';
+      const heavyModel = operatorDefaults.heavyModel && modelIds.includes(operatorDefaults.heavyModel)
+        ? operatorDefaults.heavyModel
+        : '';
+      return normalizeModelSelection({
+        provider: operatorDefaults.provider,
+        lightModel,
+        heavyModel,
+      }, providers);
+    }
+  }
+
+  // Fall back to first multi-provider
   const defaultProvider = providers.find((provider) => provider.isMultiProvider && provider.models.length > 0);
   if (!defaultProvider) {
     return null;

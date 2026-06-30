@@ -77,7 +77,7 @@ export function SettingsPage() {
     if (!aiSettingsQuery.isSuccess || savedModelSettings) {
       return;
     }
-    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? []);
+    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? [], availableModelsQuery.data?.defaults);
     if (!defaultSelection) {
       return;
     }

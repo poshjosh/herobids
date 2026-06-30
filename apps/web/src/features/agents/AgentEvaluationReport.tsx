@@ -15,14 +15,13 @@ export function AgentEvaluationReport({ content }: { content: string }) {
         borderRadius: '8px',
         maxHeight: '60vh',
         overflow: 'auto',
-        fontSize: '13px',
-        lineHeight: '1.6',
-        color: 'var(--color-text-primary)',
       }}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-        {content}
-      </ReactMarkdown>
+      <div className="prose prose-invert">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }

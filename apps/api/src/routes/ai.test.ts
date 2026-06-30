@@ -81,6 +81,10 @@ const stubLlmConfig = {
   catalog: { timeoutMs: 3_000, cacheTtlMs: 86_400_000, locality: 'auto' as const },
 };
 
+const stubAgentRuntime = {
+  llm: {},
+} as import('@herobids/domain').AgentRuntimeConfig;
+
 // ─── Providers YAML mocks ─────────────────────────────────────────────────
 
 const emptyProvidersYaml: ProvidersYaml = { providers: {} };
@@ -149,7 +153,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(503);
@@ -161,7 +165,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -178,7 +182,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -192,7 +196,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis, mockOllamaProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -212,7 +216,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -232,7 +236,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -249,7 +253,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4' }, redis, mockOpenrouterProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4' }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -270,7 +274,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4-mini' }, redis, mockOpenrouterProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'openai/gpt-5.4-mini' }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -285,7 +289,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai', model: 'gpt-4o' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai', model: 'gpt-4o' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -308,7 +312,7 @@ describe('GET /ai/available-models', () => {
       ...stubLlmConfig,
       provider: 'openrouter',
       model: 'anthropic/claude-sonnet-4-5',
-    }, redis, mockOpenrouterProvidersYaml);
+    }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const first = await app.inject({ method: 'GET', url: '/ai/available-models' });
     const second = await app.inject({ method: 'GET', url: '/ai/available-models' });
@@ -326,7 +330,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -349,7 +353,7 @@ describe('GET /ai/available-models', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5' }, redis, mockOpenrouterProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -379,7 +383,7 @@ describe('POST /ai/generate-config', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -399,7 +403,7 @@ describe('POST /ai/generate-config', () => {
     app.setErrorHandler((error, _request, reply) => {
       reply.status(500).send({ message: error.message, stack: error.stack });
     });
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -414,7 +418,7 @@ describe('POST /ai/generate-config', () => {
     const redis = buildMockRedis({ incr: vi.fn().mockResolvedValue(11) });
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -431,7 +435,7 @@ describe('POST /ai/generate-config', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -456,7 +460,7 @@ describe('POST /ai/analyze-portfolio', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -471,7 +475,7 @@ describe('POST /ai/analyze-portfolio', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -491,7 +495,7 @@ describe('POST /ai/explain-signal', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -506,7 +510,7 @@ describe('POST /ai/explain-signal', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',
@@ -527,7 +531,7 @@ describe('GET /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -548,7 +552,7 @@ describe('GET /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -571,7 +575,7 @@ describe('GET /settings/ai-model', () => {
     const app = Fastify();
     decorateWithAuth(app);
     // openai yaml only has gpt-4o and gpt-4o-mini — claude-haiku-3-5 is not openai → null
-    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -588,7 +592,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -607,7 +611,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -623,7 +627,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml);
+    await aiRoutes(app, db, stubLlmConfig, redis, emptyProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -639,7 +643,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -656,7 +660,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -676,7 +680,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'openai' }, redis, mockOpenaiProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -703,7 +707,7 @@ describe('PATCH /settings/ai-model', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
-    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis, mockOllamaProvidersYaml);
+    await aiRoutes(app, db, { ...stubLlmConfig, provider: 'ollama', model: 'qwen3:8b' }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -748,7 +752,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -774,7 +778,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     // Must NOT return 503 — ollama is configured and must be surfaced even on discovery failure
@@ -803,7 +807,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -830,7 +834,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'https://remote-ollama.example.com/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -858,7 +862,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       model: 'qwen3:8b',
       baseUrl: 'https://proxy.example.com/v1',
       catalog: { ...stubLlmConfig.catalog, locality: 'local' },
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -886,7 +890,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
       model: 'qwen3:8b',
       baseUrl: 'http://localhost:11434/v1',
       catalog: { ...stubLlmConfig.catalog, locality: 'remote' },
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
     expect(res.statusCode).toBe(200);
@@ -925,7 +929,7 @@ describe('PATCH /settings/ai-model — Ollama dynamic validation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -954,7 +958,7 @@ describe('PATCH /settings/ai-model — Ollama dynamic validation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -993,7 +997,7 @@ describe('persisted Ollama model revalidation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/settings/ai-model' });
     expect(res.statusCode).toBe(200);
@@ -1035,7 +1039,7 @@ describe('persisted Ollama model revalidation', () => {
       provider: 'ollama',
       model: 'deepseek-r1:latest',
       baseUrl: 'http://localhost:11434/v1',
-    }, redis, mockOllamaProvidersYaml);
+    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({
       method: 'POST',

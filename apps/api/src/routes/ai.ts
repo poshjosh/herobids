@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users } from '@herobids/db';
 import { callLlmProvider } from '@herobids/llm';
-import type { AppConfig, ProvidersYaml } from '@herobids/domain';
+import type { AppConfig, ProvidersYaml, AgentRuntimeConfig } from '@herobids/domain';
 import { normalizePersistedAiModelConfig } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { getAvailableProviders, getProviderCatalogEntry, makeCatalogContext, revalidatePersistedSelection, validateAiModelSelection } from '../llm-model-catalog.js';
@@ -99,9 +99,10 @@ export async function aiRoutes(
   llmConfig: LlmConfig,
   redisClient: Redis,
   providersYaml: ProvidersYaml,
+  agentRuntime: AgentRuntimeConfig,
 ): Promise<void> {
   const deps = makeDeps(db, providersYaml, llmConfig);
-  // GET /ai/available-models — list configured providers only
+  // GET /ai/available-models — list configured providers and operator model defaults
   app.get('/ai/available-models', async (_request, reply) => {
     const configured = await getAvailableProviders(deps);
     if (configured.length === 0) {
@@ -112,7 +113,16 @@ export async function aiRoutes(
       configured.map((provider) => getProviderCatalogEntry(provider, deps)),
     );
 
-    return reply.send({ providers });
+    const modelDefaults = agentRuntime.llm.modelDefaults;
+    const defaults = modelDefaults?.provider
+      ? {
+          provider: modelDefaults.provider,
+          lightModel: modelDefaults.lightModel ?? null,
+          heavyModel: modelDefaults.heavyModel ?? null,
+        }
+      : null;
+
+    return reply.send({ providers, defaults });
   });
 
   app.get('/settings/ai-model', async (request, reply) => {

@@ -134,6 +134,17 @@ export const LlmScoutConfigSchema = z.object({
    *  YAML blank values parse as null — nullish() accepts both null and undefined and normalises to undefined. */
   maxHoldDurationMs: z.number().int().min(0).nullish().transform((v) => v ?? undefined),
 });
+
+/** Operator-suggested UI defaults for model selection forms.
+ *  These populate the initial values in user Settings and agent create/edit forms.
+ *  They are NOT used as runtime fallbacks — agents must have explicit model selection.
+ *  All fields are optional: absent/empty = no operator default, frontend falls back to first multi-provider. */
+export const ModelDefaultsSchema = z.object({
+  provider: z.string().min(1).optional(),
+  lightModel: z.string().min(1).optional(),
+  heavyModel: z.string().min(1).optional(),
+}).optional();
+
 const AgentRuntimeLlmScoutControlsSchema = z.object({
   maxTurns: z.number().int().min(1).default(10),
   maxTokens: z.number().int().min(1).default(1_024),
@@ -868,6 +879,7 @@ export const AgentRuntimeConfigSchema = z.object({
     drawdownThresholdPct: z.number().min(-100).max(0).default(-2),
   }).default({}),
   llm: z.object({
+    modelDefaults: ModelDefaultsSchema,
     scout: AgentRuntimeLlmScoutControlsSchema.default({}),
     judge: LlmJudgeConfigSchema.default({}),
   }).default({}),

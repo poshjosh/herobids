@@ -259,7 +259,7 @@ function CreateAgentFlow({
     if (!aiSettingsQuery.isSuccess || aiSettingsQuery.data?.aiModelConfig) {
       return;
     }
-    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? []);
+    const defaultSelection = resolveDefaultModelSelection(availableModelsQuery.data?.providers ?? [], availableModelsQuery.data?.defaults);
     if (!defaultSelection) {
       return;
     }

@@ -202,7 +202,7 @@ export async function buildApp() {
   const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
   const MONOREPO_CONFIG_DIR = resolve(MODULE_DIR, '../../../../../config');
   const providersYaml = loadProvidersConfig(resolve(MONOREPO_CONFIG_DIR, 'providers.yaml'));
-  await aiRoutes(app, db, stubLlmConfig, redisClient, providersYaml);
+  await aiRoutes(app, db, stubLlmConfig, redisClient, providersYaml, { llm: {} } as import('@herobids/domain').AgentRuntimeConfig);
 
   // Sync system skills before route registration, mirroring the startup sequence
   // in apps/api/src/index.ts. This is the single canonical sync point.

@@ -130,7 +130,7 @@ export function MarkdownPage({ section, page, locale, fallbackTitle }: MarkdownP
   }
 
   return (
-    <div className="prose">
+    <div className="prose prose-invert">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={headingComponents}>
         {content}
       </ReactMarkdown>

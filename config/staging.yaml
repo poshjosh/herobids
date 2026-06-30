@@ -2,10 +2,20 @@
 # Resolution: default.yaml → config/{NODE_ENV}.yaml → environment variables.
 
 llm:
-  provider: deepseek                    # LLM provider: openrouter | openai | anthropic | ollama | deepseek
-  model: deepseek-v4-flash              # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
-  baseUrl: https://api.deepseek.com  # DeepSeek API base URL (OpenAI-compatible)
+  provider: openrouter                  # LLM provider: openrouter | openai | anthropic | ollama | deepseek
+  model: deepseek/deepseek-v4-pro       # Model for non-agent API calls (e.g. /ai/generate-config). Agent model is set in agent config or user AI settings.
+  baseUrl: https://openrouter.ai/api/v1 # DeepSeek API base URL (OpenAI-compatible)
   tickIntervalMs: 900000                # Agent reasoning loop interval in ms (how often the agent calls the LLM)
+
+agentRuntime:
+  llm:
+    # UI defaults for model selection forms (Settings page, agent create/edit).
+    # These populate the initial values when no user/agent selection exists.
+    # They are NOT used as runtime fallbacks — agents must have explicit models.
+    modelDefaults:
+      provider: openrouter                    # suggested provider in forms
+      lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
+      heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
