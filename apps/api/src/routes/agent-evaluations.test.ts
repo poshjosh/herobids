@@ -5,7 +5,7 @@ import type { Database } from '@herobids/db';
 import { agentEvaluationRoutes } from './agent-evaluations.js';
 import type { EvaluationRouteConfig, NarrativeLlmDeps } from './agent-evaluations.js';
 
-// ── Mock resolveScope to throw, testing the 400 status code change ──────────
+// ── Mock resolveScope to throw, testing scope resolution error handling ───
 
 vi.mock('@herobids/db', async () => {
   const actual = await vi.importActual('@herobids/db');
@@ -77,7 +77,7 @@ describe('POST /agents/:id/evaluations — scope resolution failure', () => {
     vi.clearAllMocks();
   });
 
-  it('returns 400 (not 404) when scope resolution fails', async () => {
+  it('returns 400 (not 404) when scope resolution fails with a generic error', async () => {
     // Import the mocked resolveScope
     const { resolveScope } = await import('@herobids/db');
     vi.mocked(resolveScope).mockRejectedValue(
@@ -101,6 +101,30 @@ describe('POST /agents/:id/evaluations — scope resolution failure', () => {
     expect(body.error).toBe('scope_resolution_failed');
     expect(body.message).toContain('No session found for agent');
     expect(body.message).toContain('Start the agent to create a session first.');
+  });
+
+  it('returns 404 when NoSessionForScopeError is thrown (agent has no sessions)', async () => {
+    const { resolveScope, NoSessionForScopeError } = await import('@herobids/db');
+    vi.mocked(resolveScope).mockRejectedValue(
+      new NoSessionForScopeError('No completed session found for agent agent-1.'),
+    );
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb(true);
+    const queue = buildMockQueue();
+    await agentEvaluationRoutes(app, queue, db, evalConfig, narrativeLlmDeps);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents/agent-1/evaluations',
+      payload: { scope: { type: 'latestSession' } },
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(body.error).toBe('no_session_found');
+    expect(body.message).toContain('No completed session found for agent');
   });
 
   it('returns 404 when agent does not exist (ownership check)', async () => {

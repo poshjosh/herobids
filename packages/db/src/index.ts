@@ -50,6 +50,7 @@ export {
 } from './agent-evidence-loaders.js';
 export type { LoaderTimeFilter, LoadPositionsOpts } from './agent-evidence-loaders.js';
 export {
+  NoSessionForScopeError,
   resolveScope,
   normalizeScopeKey,
   hasActiveRunForScope,

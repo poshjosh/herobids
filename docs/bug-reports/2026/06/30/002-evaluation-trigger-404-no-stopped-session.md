@@ -1,6 +1,6 @@
 # Bug Report: Evaluation Trigger Returns 404 When No Stopped Session Exists
 
-- **Status:** FIXED
+- **Status:** SUPERSEDED by 003-evaluation-scope-resolution-400-instead-of-404.md
 - **Severity:** High
 - **Date:** 2026-06-30
 - **Summary:** Clicking "Run Evaluation" on a running agent with no prior stopped sessions returns a generic "Could not run evaluation" error. The root cause is that `resolveScope` only looked for `status = 'stopped'` sessions, and the frontend hid the specific error message.

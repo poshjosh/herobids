@@ -19,6 +19,7 @@ import type { EvaluationJobData, ResolvedNarrativeLlmConfig } from '@herobids/db
 import type { EvaluationScope, EvaluationTrigger, ProvidersYaml } from '@herobids/domain';
 import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { resolveNarrativeLlmConfig } from './agent-evaluation-narrative-llm.js';
+import { NoSessionForScopeError } from '@herobids/db';
 
 // ── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -204,6 +205,12 @@ export async function agentEvaluationRoutes(
       try {
         resolved = await resolveScope(db, id, scope);
       } catch (err) {
+        if (err instanceof NoSessionForScopeError) {
+          return reply.status(404).send({
+            error: 'no_session_found',
+            message: err.message,
+          });
+        }
         return reply.status(400).send({
           error: 'scope_resolution_failed',
           message: (err as Error).message,

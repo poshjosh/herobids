@@ -14,12 +14,24 @@ import type {
 // ── Scope resolution ────────────────────────────────────────────────────────
 
 /**
+ * Error thrown when no session exists for the requested scope.
+ * The API layer maps this to HTTP 404 (resource not found, not a bad request).
+ */
+export class NoSessionForScopeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NoSessionForScopeError';
+  }
+}
+
+/**
  * Resolve `latestSession` to the most recent session for the agent.
  * Resolves to the most recently stopped session. Running sessions are not
  * evaluated — evaluation requires a completed session with start/end timestamps
  * for evidence filtering.
  *
- * Throws if no completed (stopped) session exists for the agent.
+ * Throws NoSessionForScopeError if no completed (stopped) session exists for
+ * the agent.
  */
 export async function resolveScope(
   db: Database,
@@ -40,7 +52,7 @@ export async function resolveScope(
       return { type: 'session', sessionId: stopped.id };
     }
 
-    throw new Error(
+    throw new NoSessionForScopeError(
       `No completed session found for agent ${agentId}. ` +
       `Evaluation requires a stopped session with complete start/end timestamps. ` +
       `If the agent is currently running, stop it first, then evaluate.`,
