@@ -37,7 +37,7 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
 
   return (
     <div role="radiogroup" aria-labelledby="style-selector-label">
-      <div id="style-selector-label" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+      <div id="style-selector-label" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
         {intl.formatMessage({ id: 'agents.style.title' })}
       </div>
       <div style={{ display: 'flex', gap: '8px' }}>

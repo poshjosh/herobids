@@ -45,7 +45,6 @@ export async function loadContent(
     for (const loc of localesToTry) {
       const path = `./content/${section}/${loc}/${page}.md`;
       if (path in contentModules) {
-        modulePath = path;
         matched = contentModules[path];
         break;
       }

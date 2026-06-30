@@ -358,6 +358,188 @@ export function AgentDetailPage() {
           </details>
         </Card>
 
+        <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
+          <Card>
+            <details>
+              <summary
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.capabilities' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
+            {skillsQuery.isLoading && <LoadingRows count={2} />}
+            {skillsQuery.isError && <ErrorState message={localizeApiError(intl, skillsQuery.error, 'common.errorTitle')} />}
+            {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
+            {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
+            {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
+            )}
+            {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
+              <section
+                aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
+                style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate(`/agents/${agent.id}/capabilities/${tradingCapability.family}`)}
+                  >
+                    {tradingCapability.effectiveReady
+                      ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })
+                      : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
+                  </Button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                  <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
+                  <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
+                  <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
+                  <div>{intl.formatMessage({ id: 'common.connection' })}: {tradingCapability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
+                  {tradingCapability.reasons.length > 0 && (
+                    <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {tradingCapability.reasons.join('; ')}</div>
+                  )}
+                </div>
+              </section>
+            )}
+              </div>
+            </details>
+          </Card>
+        </section>
+
+        <Card>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.messagesToUser' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
+          {messagesQuery.isLoading && <LoadingRows count={3} />}
+          {messagesQuery.isSuccess && messagesQuery.data.length === 0 && (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noMessages' })}</p>
+          )}
+          {messagesQuery.isSuccess && messagesQuery.data.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {messagesQuery.data.map((msg: AgentOutboundMessage) => {
+                const displayStatus = getMessageDisplayStatus(msg);
+                const deliveryDetail = getMessageDeliveryDetail(msg);
+
+                return <div key={msg.id} style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--color-surface-raised)', fontSize: '13px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: msg.subject ? '4px' : '0' }}>
+                    <span style={{ fontWeight: '500', color: msg.authoredBy === 'platform' ? 'var(--color-warning)' : 'var(--color-text)' }}>
+                      {msg.authoredBy === 'platform' ? intl.formatMessage({ id: 'agents.detail.messageAuthor.platform' }) : intl.formatMessage({ id: 'agents.detail.messageAuthor.agent' })}
+                    </span>
+                    <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <StatusBadge status={displayStatus} />
+                      <RelativeTime timestamp={msg.createdAt} />
+                    </span>
+                  </div>
+                  {msg.subject && <div style={{ fontWeight: '600', marginBottom: '2px' }}>{msg.subject}</div>}
+                  <div style={{ color: 'var(--color-text-muted)' }}>{msg.body}</div>
+                  {deliveryDetail && <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: '4px' }}>{deliveryDetail}</div>}
+                </div>
+              })}
+            </div>
+          )}
+            </div>
+          </details>
+        </Card>
+
+        <Card>
+          <details>
+            <summary
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {intl.formatMessage({ id: 'agents.detail.recentDecisions' })}
+            </summary>
+            <div style={{ marginTop: '12px' }}>
+          {decisionsQuery.isLoading && <LoadingRows count={3} />}
+          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length === 0 && (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noDecisions' })}</p>
+          )}
+          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+              {(decisionsQuery.data as Array<{ id: string; intent: string; createdAt: string }>).map((d) => (
+                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
+                  <span>{d.intent}</span>
+                  <RelativeTime timestamp={d.createdAt} />
+                </div>
+              ))}
+            </div>
+          )}
+            </div>
+          </details>
+        </Card>
+
+        {hasTradingCapability && (
+          <Card>
+            <details open>
+              <summary
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                {intl.formatMessage({ id: 'agents.detail.tradesHistory' })}
+              </summary>
+              <div style={{ marginTop: '12px' }}>
+                <AgentTradesTable agentId={id!} executionMode={agent.executionMode ?? null} isActive={shouldPollRuntimePanels} />
+              </div>
+            </details>
+          </Card>
+        )}
+
+        <Card>
+          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>
+          {activityFeedQuery.isError
+            ? (
+              <ErrorState
+                message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
+                onRetry={() => void activityFeedQuery.refetch()}
+              />
+            )
+            : (
+              <AgentActivityTimeline
+                entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
+                isLoading={activityFeedQuery.isLoading}
+                isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
+              />
+            )}
+        </Card>
+
         <Card>
           <details>
             <summary
@@ -468,188 +650,6 @@ export function AgentDetailPage() {
           })()}
             </div>
           </details>
-        </Card>
-
-        <section aria-label={intl.formatMessage({ id: 'agents.detail.capabilities' })}>
-          <Card>
-            <details>
-              <summary
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--color-text-muted)',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.detail.capabilities' })}
-              </summary>
-              <div style={{ marginTop: '12px' }}>
-            {skillsQuery.isLoading && <LoadingRows count={2} />}
-            {skillsQuery.isError && <ErrorState message={localizeApiError(intl, skillsQuery.error, 'common.errorTitle')} />}
-            {!skillsQuery.isLoading && !skillsQuery.isError && capabilityQuery.isLoading && <LoadingRows count={2} />}
-            {capabilityQuery.isError && <ErrorState message={localizeApiError(intl, capabilityQuery.error, 'common.errorTitle')} />}
-            {!skillsQuery.isLoading && !skillsQuery.isError && !hasTradingCapability && (
-              <div style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.summary.noCapabilitySetup' })}</div>
-            )}
-            {!skillsQuery.isLoading && !skillsQuery.isError && hasTradingCapability && tradingCapability && (
-              <section
-                aria-label={intl.formatMessage({ id: 'agents.summary.capabilityReadinessAria' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
-                style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => navigate(`/agents/${agent.id}/capabilities/${tradingCapability.family}`)}
-                  >
-                    {tradingCapability.effectiveReady
-                      ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })
-                      : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(tradingCapability.family, intl) })}
-                  </Button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                  <div>{intl.formatMessage({ id: 'agents.detail.connectionReadiness' })}: {formatCapabilityState(tradingCapability.connectionReadiness, intl)}</div>
-                  <div>{intl.formatMessage({ id: 'agents.detail.agentEligibility' })}: {intl.formatMessage({ id: `agents.eligibility.${tradingCapability.agentEligibility}` })}</div>
-                  <div>{intl.formatMessage({ id: 'agents.detail.effectiveReady' })}: {tradingCapability.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })}</div>
-                  <div>{intl.formatMessage({ id: 'common.connection' })}: {tradingCapability.connectionId ?? intl.formatMessage({ id: 'agents.detail.notAssigned' })}</div>
-                  {tradingCapability.reasons.length > 0 && (
-                    <div>{intl.formatMessage({ id: 'agents.detail.reasons' })}: {tradingCapability.reasons.join('; ')}</div>
-                  )}
-                </div>
-              </section>
-            )}
-              </div>
-            </details>
-          </Card>
-        </section>
-
-        {hasTradingCapability && (
-          <Card>
-            <details>
-              <summary
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--color-text-muted)',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.detail.tradesHistory' })}
-              </summary>
-              <div style={{ marginTop: '12px' }}>
-                <AgentTradesTable agentId={id!} executionMode={agent.executionMode ?? null} isActive={shouldPollRuntimePanels} />
-              </div>
-            </details>
-          </Card>
-        )}
-
-        <Card>
-          <details>
-            <summary
-              style={{
-                fontSize: '11px',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >
-              {intl.formatMessage({ id: 'agents.detail.messagesToUser' })}
-            </summary>
-            <div style={{ marginTop: '12px' }}>
-          {messagesQuery.isLoading && <LoadingRows count={3} />}
-          {messagesQuery.isSuccess && messagesQuery.data.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noMessages' })}</p>
-          )}
-          {messagesQuery.isSuccess && messagesQuery.data.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {messagesQuery.data.map((msg: AgentOutboundMessage) => {
-                const displayStatus = getMessageDisplayStatus(msg);
-                const deliveryDetail = getMessageDeliveryDetail(msg);
-
-                return <div key={msg.id} style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--color-surface-raised)', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: msg.subject ? '4px' : '0' }}>
-                    <span style={{ fontWeight: '500', color: msg.authoredBy === 'platform' ? 'var(--color-warning)' : 'var(--color-text)' }}>
-                      {msg.authoredBy === 'platform' ? intl.formatMessage({ id: 'agents.detail.messageAuthor.platform' }) : intl.formatMessage({ id: 'agents.detail.messageAuthor.agent' })}
-                    </span>
-                    <span style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <StatusBadge status={displayStatus} />
-                      <RelativeTime timestamp={msg.createdAt} />
-                    </span>
-                  </div>
-                  {msg.subject && <div style={{ fontWeight: '600', marginBottom: '2px' }}>{msg.subject}</div>}
-                  <div style={{ color: 'var(--color-text-muted)' }}>{msg.body}</div>
-                  {deliveryDetail && <div style={{ color: 'var(--color-text-muted)', fontSize: '12px', marginTop: '4px' }}>{deliveryDetail}</div>}
-                </div>
-              })}
-            </div>
-          )}
-            </div>
-          </details>
-        </Card>
-
-        <Card>
-          <details>
-            <summary
-              style={{
-                fontSize: '11px',
-                fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--color-text-muted)',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >
-              {intl.formatMessage({ id: 'agents.detail.recentDecisions' })}
-            </summary>
-            <div style={{ marginTop: '12px' }}>
-          {decisionsQuery.isLoading && <LoadingRows count={3} />}
-          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>{intl.formatMessage({ id: 'agents.detail.noDecisions' })}</p>
-          )}
-          {decisionsQuery.isSuccess && (decisionsQuery.data as unknown[]).length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-              {(decisionsQuery.data as Array<{ id: string; intent: string; createdAt: string }>).map((d) => (
-                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
-                  <span>{d.intent}</span>
-                  <RelativeTime timestamp={d.createdAt} />
-                </div>
-              ))}
-            </div>
-          )}
-            </div>
-          </details>
-        </Card>
-
-        <Card>
-          <SectionLabel>{intl.formatMessage({ id: 'agents.detail.activityTimeline', defaultMessage: 'Activity Timeline' })}</SectionLabel>
-          {activityFeedQuery.isError
-            ? (
-              <ErrorState
-                message={localizeApiError(intl, activityFeedQuery.error, 'common.errorTitle')}
-                onRetry={() => void activityFeedQuery.refetch()}
-              />
-            )
-            : (
-              <AgentActivityTimeline
-                entries={(activityFeedQuery.data?.entries ?? []) as AgentActivityEntry[]}
-                isLoading={activityFeedQuery.isLoading}
-                isEmpty={activityFeedQuery.isSuccess && (activityFeedQuery.data?.entries.length ?? 0) === 0}
-              />
-            )}
         </Card>
 
         {/* Evaluations */}

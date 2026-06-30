@@ -331,17 +331,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         skills={
           props.skillsSlot ??
           (props.showIntelligence ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                padding: '16px',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                background: 'var(--color-surface-1)',
-              }}
-            >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <div
                   style={{
@@ -375,13 +365,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         tradingSetup={props.tradingSetupSlot}
         strategy={
           props.showTechnical ? (
-            <div
-              style={{
-                padding: '12px',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-              }}
-            >
+            <div>
               <div
                 style={{
                   fontSize: '13px',

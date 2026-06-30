@@ -359,7 +359,7 @@ export function validateMaxHoldDurationInvariant(params: {
     (params.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
   );
   const maxHoldMs = resolved.maxHoldDurationMs;
-  if (maxHoldMs === undefined) {
+  if (maxHoldMs === undefined || maxHoldMs === 0) {
     return [];
   }
 

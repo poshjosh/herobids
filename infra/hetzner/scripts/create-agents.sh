@@ -246,7 +246,8 @@ build_agent_payload() {
       lightModel: $lightModel,
       heavyModel: $heavyModel,
       skillIds: $skillIds,
-      tickIntervalMs: ($tickIntervalMs | tonumber)
+      tickIntervalMs: ($tickIntervalMs | tonumber),
+      runtimePolicyOverrides: { maxHoldDurationMs: 0 }
     }'
 }
 

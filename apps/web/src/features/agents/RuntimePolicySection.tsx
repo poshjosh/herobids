@@ -179,15 +179,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
   }
 
   return (
-    <div
-      style={{
-        border: '1px solid var(--color-border)',
-        borderRadius: '8px',
-        padding: '16px',
-        background: 'var(--color-surface-1)',
-        marginTop: '8px',
-      }}
-    >
+    <div style={{ marginTop: '8px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <div style={{ fontWeight: 600, fontSize: '14px' }}>
           {intl.formatMessage({ id: 'agents.runtimePolicy.title' })}

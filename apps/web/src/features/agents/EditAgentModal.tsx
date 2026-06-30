@@ -377,7 +377,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 }));
               }}
             />
-            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '8px', padding: '0 4px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
               {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
               {formatStyleSummary(
                 style,
@@ -422,7 +422,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
             connectionSlot={
               showTradingControls ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
                   {availableConnectionsQuery.isLoading ? (
                     <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
@@ -502,7 +502,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
             modelSlot={
               showIntelligence ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
                       {intl.formatMessage({ id: 'agents.edit.models.title' })}
