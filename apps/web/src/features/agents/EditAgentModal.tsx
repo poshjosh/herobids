@@ -13,7 +13,7 @@ import { TradingGuardrailsFields } from './AgentControlsSection.js';
 import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
-import { type AgentStyleValue, resolveStyleDefaults, type RuntimePolicyOverrides } from './style-mapping.js';
+import { type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 import { AgentFormBody } from './AgentFormBody.js';
@@ -373,6 +373,18 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 }));
               }}
             />
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '8px', padding: '0 4px' }}>
+              {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
+              {formatStyleSummary(
+                style,
+                resolveModelPricing(
+                  availableModelsQuery.data?.providers ?? [],
+                  modelOverrideEnabled ? modelForm.provider : (inheritedModelSettings?.provider ?? ''),
+                  modelOverrideEnabled ? modelForm.lightModel : (inheritedModelSettings?.lightModel ?? ''),
+                  modelOverrideEnabled ? modelForm.heavyModel : (inheritedModelSettings?.heavyModel ?? ''),
+                ),
+              )}
+            </div>
           </div>
 
           <AgentFormBody
