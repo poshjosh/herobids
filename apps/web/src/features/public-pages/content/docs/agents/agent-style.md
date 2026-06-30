@@ -4,23 +4,25 @@ Agent style controls how aggressively the AI agent spends its daily LLM budget. 
 
 ## Styles
 
-| | **Careful** | **Balanced** | **Bold** | **Custom** |
+| | **Economy** | **Standard** | **Premium** | **Custom** |
 |---|---|---|---|---|
 | **Daily budget (default)** | $3 | $10 | $30 | $5 (or user input) |
 | **Tick interval** | 90 min | 30 min | 10 min | Derived from budget |
-| **Heavy model** | Same as light model | Full heavy model | Full heavy model | ≤$3: light model; >$3: heavy model |
+| **Premium model** | Same as economy model | Full premium model | Full premium model | ≤$3: economy model; >$3: premium model |
 | **Session gate** | ✅ On | ❌ Off | ❌ Off | ✅ On |
 | **Regime gate** | ✅ On | ✅ On | ❌ Off | ✅ On |
 | **Context-hash gate** | ✅ On | ✅ On | ✅ On | ✅ On |
 | **Adaptive interval** | ✅ On | ❌ Off | ❌ Off | ✅ On |
 | **Open position escalation** | Never | On missing coverage | Always | ≤$3: never; >$3: on missing coverage |
-| **Default thinking depth** | None | Light | Deep | ≤$3: none; >$3: light |
+| **Default thinking depth** | None | Economy | Premium | ≤$3: none; >$3: economy |
 
 ## What each field means
 
 **Tick interval** — How often the agent wakes up to reason and act. Shorter intervals mean faster reactions but higher cost.
 
-**Heavy model** — The more capable (and expensive) model used for complex reasoning steps. On **Careful**, the agent uses its light model for everything to stay within budget.
+**Economy model** — The cheaper, faster model used for lighter reasoning tasks. On **Economy** style, the agent uses its economy model for everything to stay within budget.
+
+**Premium model** — The more capable (and expensive) model used for complex reasoning steps.
 
 **Session gate** — Skips a tick if the agent's context hash and market regime match the previous session, indicating nothing has materially changed.
 

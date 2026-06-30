@@ -203,7 +203,7 @@ export async function agentEvaluationRoutes(
       try {
         resolved = await resolveScope(db, id, scope);
       } catch (err) {
-        return reply.status(404).send({
+        return reply.status(400).send({
           error: 'scope_resolution_failed',
           message: (err as Error).message,
         });

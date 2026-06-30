@@ -16,7 +16,7 @@ const STYLES: Array<{
     id: 'careful',
     labelKey: 'agents.style.careful.label',
     descriptionKey: 'agents.style.careful.description',
-    icon: '🛡️',
+    icon: '🪙',
   },
   {
     id: 'balanced',
@@ -28,7 +28,7 @@ const STYLES: Array<{
     id: 'bold',
     labelKey: 'agents.style.bold.label',
     descriptionKey: 'agents.style.bold.description',
-    icon: '🚀',
+    icon: '💎',
   },
 ];
 

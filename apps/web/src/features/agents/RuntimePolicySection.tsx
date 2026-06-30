@@ -29,27 +29,91 @@ const NUMERIC_FIELDS: NumericField[] = [
   'maxHoldDurationMs',
 ];
 
-function parseHoursInput(raw: string): number[] | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') return [];
-  const parts = trimmed.split(',').map((s) => s.trim());
-  const hours: number[] = [];
-  for (const part of parts) {
-    const n = Number(part);
-    if (!Number.isInteger(n) || n < 0 || n > 23) return null;
-    hours.push(n);
-  }
-  return hours;
+/** 24-hour checkbox grid for selecting active hours */
+function HourGrid({
+  selected,
+  onChange,
+  defaultHours,
+}: {
+  selected: number[] | null | undefined;
+  onChange: (hours: number[] | null) => void;
+  defaultHours: number[];
+}) {
+  const active = selected ?? defaultHours;
+  const isCustom = selected != null;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', marginTop: '4px' }}>
+        {Array.from({ length: 24 }, (_, h) => {
+          const checked = active.includes(h);
+          return (
+            <label
+              key={h}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '32px',
+                height: '28px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                cursor: 'pointer',
+                background: checked ? 'var(--color-brand)' : 'var(--color-surface-2)',
+                color: checked ? '#fff' : 'var(--color-text-secondary)',
+                border: `1px solid ${checked ? 'var(--color-brand)' : 'var(--color-border)'}`,
+                transition: 'background 0.1s, color 0.1s',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => {
+                  const next = checked
+                    ? active.filter((v) => v !== h)
+                    : [...active, h].sort((a, b) => a - b);
+                  // If result matches defaults, clear override
+                  const sorted = next.length > 0 ? next : [];
+                  const matchesDefault =
+                    sorted.length === defaultHours.length &&
+                    sorted.every((v, i) => v === defaultHours[i]);
+                  onChange(matchesDefault ? null : sorted);
+                }}
+                style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+              />
+              {h}
+            </label>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+        <span>{isCustom ? 'Custom hours' : 'Style default'}</span>
+        {isCustom && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '0',
+              cursor: 'pointer',
+              color: 'var(--color-accent)',
+              fontSize: '11px',
+              textDecoration: 'underline',
+            }}
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function RuntimePolicySection({ style, overrides, onChange }: RuntimePolicySectionProps) {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
-  const [hoursInput, setHoursInput] = useState<string>(() => {
-    const v = overrides?.allowedHoursUtc;
-    return v != null ? v.join(', ') : '';
-  });
-  const [hoursError, setHoursError] = useState<string | null>(null);
 
   const defaults = resolveStyleDefaults(style);
 
@@ -161,29 +225,20 @@ export function RuntimePolicySection({ style, overrides, onChange }: RuntimePoli
           <FieldLabel htmlFor="rp-allowedHoursUtc">
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtc' })}
           </FieldLabel>
-          <input
-            id="rp-allowedHoursUtc"
-            type="text"
-            style={inputStyle}
-            value={hoursInput}
-            placeholder={defaults.allowedHoursUtc.join(', ') || intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setHoursInput(raw);
-              setHoursError(null);
-              if (raw.trim() === '') {
+          <HourGrid
+            selected={overrides?.allowedHoursUtc ?? null}
+            onChange={(hours) => {
+              if (hours === null) {
                 clearOverride('allowedHoursUtc');
-                return;
-              }
-              const parsed = parseHoursInput(raw);
-              if (parsed === null) {
-                setHoursError(intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' }));
               } else {
-                setOverride('allowedHoursUtc', parsed);
+                setOverride('allowedHoursUtc', hours);
               }
             }}
+            defaultHours={defaults.allowedHoursUtc}
           />
-          {hoursError && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{hoursError}</div>}
+          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+            {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
+          </div>
         </div>
 
         {/* weekendPause */}

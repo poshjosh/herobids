@@ -527,13 +527,6 @@ function CreateAgentFlow({
             {formatStyleSummary(intent.style)}
           </div>
 
-          {/* 3b. Runtime Policy Overrides */}
-          <RuntimePolicySection
-            style={intent.style}
-            overrides={intent.runtimePolicyOverrides}
-            onChange={(overrides) => setIntent((s) => ({ ...s, runtimePolicyOverrides: overrides }))}
-          />
-
           {/* 3. Agent Form Body */}
           <AgentFormBody
             value={intentToFormState(intent)}
@@ -554,6 +547,13 @@ function CreateAgentFlow({
             onBlurField={validateFieldOnBlur}
             validationConstraints={validationConstraints}
             tickIntervalError={tickIntervalError}
+            computeBudgetSlot={
+              <RuntimePolicySection
+                style={intent.style}
+                overrides={intent.runtimePolicyOverrides}
+                onChange={(overrides) => setIntent((s) => ({ ...s, runtimePolicyOverrides: overrides }))}
+              />
+            }
             modelSlot={
               showIntelligence ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-1)' }}>

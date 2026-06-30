@@ -543,7 +543,9 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
               <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
                 {triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).status === 409
                   ? intl.formatMessage({ id: 'agents.evaluations.alreadyRunning' })
-                  : intl.formatMessage({ id: 'agents.evaluations.triggerError' })}
+                  : (triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).message)
+                    ? (triggerMutation.error as ApiError).message
+                    : intl.formatMessage({ id: 'agents.evaluations.triggerError' })}
               </span>
             )}
 

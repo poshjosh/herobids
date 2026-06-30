@@ -14,10 +14,11 @@ import type {
 // ── Scope resolution ────────────────────────────────────────────────────────
 
 /**
- * Resolve `latestSession` to the most recent completed session for the agent.
- * All other scope types pass through unchanged.
+ * Resolve `latestSession` to the most recent session for the agent.
+ * Prefers stopped sessions; falls back to the currently running session
+ * if no stopped session exists.
  *
- * Throws if `latestSession` is requested but the agent has no completed sessions.
+ * Throws if no session exists at all for the agent.
  */
 export async function resolveScope(
   db: Database,
@@ -25,7 +26,8 @@ export async function resolveScope(
   scope: EvaluationScope,
 ): Promise<ResolvedEvaluationScope> {
   if (scope.type === 'latestSession') {
-    const [session] = await db
+    // Prefer the most recently stopped session...
+    const [stopped] = await db
       .select({ id: agentRuntimeSessions.id })
       .from(agentRuntimeSessions)
       .where(and(
@@ -34,10 +36,25 @@ export async function resolveScope(
       ))
       .orderBy(desc(agentRuntimeSessions.stoppedAt))
       .limit(1);
-    if (!session) {
-      throw new Error(`No completed session found for agent ${agentId}`);
+    if (stopped) {
+      return { type: 'session', sessionId: stopped.id };
     }
-    return { type: 'session', sessionId: session.id };
+
+    // Fall back to the most recent running session
+    const [running] = await db
+      .select({ id: agentRuntimeSessions.id })
+      .from(agentRuntimeSessions)
+      .where(and(
+        eq(agentRuntimeSessions.agentId, agentId),
+        eq(agentRuntimeSessions.status, 'running'),
+      ))
+      .orderBy(desc(agentRuntimeSessions.startedAt))
+      .limit(1);
+    if (running) {
+      return { type: 'session', sessionId: running.id };
+    }
+
+    throw new Error(`No session found for agent ${agentId}. Start the agent to create a session first.`);
   }
   // Pass-through for concrete scopes
   return scope as ResolvedEvaluationScope;

@@ -14,6 +14,10 @@ export interface AdvancedSettingsSectionProps {
   expandSeq?: number;
   /** Tab index to switch to when expandSeq fires (0=AI, 2=Trading). */
   errorTabIdx?: number;
+  /** Form validation errors keyed by field name. Used to highlight error tabs. */
+  formErrors?: Record<string, string>;
+  /** Maps validated field names to the tab index that contains them. */
+  fieldTabMap?: Record<string, number>;
 }
 
 const wrapperStyle: React.CSSProperties = {
@@ -74,6 +78,8 @@ export function AdvancedSettingsSection({
   strategy,
   expandSeq,
   errorTabIdx,
+  formErrors,
+  fieldTabMap,
 }: AdvancedSettingsSectionProps) {
   const intl = useIntl();
   const slots = [aiConfig, skills, tradingSetup, strategy];
@@ -81,6 +87,17 @@ export function AdvancedSettingsSection({
   const visibleTabs = slots
     .map((slot, idx) => ({ slot, idx }))
     .filter(({ slot }) => slot != null && slot !== false);
+
+  // Compute which tabs have errors
+  const errorTabIndices = new Set<number>();
+  if (formErrors && fieldTabMap) {
+    for (const fieldName of Object.keys(formErrors)) {
+      const tabIdx = fieldTabMap[fieldName];
+      if (tabIdx !== undefined && slots[tabIdx] != null && slots[tabIdx] !== false) {
+        errorTabIndices.add(tabIdx);
+      }
+    }
+  }
 
   const [activeIdx, setActiveIdx] = useState(() => visibleTabs.length > 0 ? visibleTabs[0]!.idx : 0);
   const [userOpen, setUserOpen] = useState(false);
@@ -114,18 +131,28 @@ export function AdvancedSettingsSection({
       </summary>
       <div>
         <div style={tabBarStyle} role="tablist">
-          {visibleTabs.map(({ idx }) => (
-            <button
-              key={sectionLabels[idx]}
-              type="button"
-              role="tab"
-              aria-selected={idx === resolvedIdx}
-              style={tabStyle(idx === resolvedIdx)}
-              onClick={() => setActiveIdx(idx)}
-            >
-              {intl.formatMessage({ id: sectionLabels[idx] })}
-            </button>
-          ))}
+          {visibleTabs.map(({ idx }) => {
+            const hasError = errorTabIndices.has(idx);
+            const active = idx === resolvedIdx;
+            return (
+              <button
+                key={sectionLabels[idx]}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                style={{
+                  ...tabStyle(active),
+                  ...(hasError ? { color: 'var(--color-danger)' } : {}),
+                }}
+                onClick={() => setActiveIdx(idx)}
+              >
+                {hasError && (
+                  <span style={{ marginRight: '4px', fontSize: '10px' }}>●</span>
+                )}
+                {intl.formatMessage({ id: sectionLabels[idx] })}
+              </button>
+            );
+          })}
         </div>
         <div role="tabpanel" style={panelStyle}>
           {slots[resolvedIdx]}
