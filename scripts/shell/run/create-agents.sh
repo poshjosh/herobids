@@ -198,16 +198,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2 — Look up trading bindings
+# Step 2 — Look up trading connections
 # ---------------------------------------------------------------------------
 
-log_section "Step 2: Look up trading bindings"
+log_section "Step 2: Look up trading connections"
 
-api_call GET /capabilities/trading/bindings
+api_call GET /capabilities/trading/connections
 
 if [[ "$HTTP_STATUS" -ne 200 ]]; then
-  log_error "Failed to list trading bindings (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
-  die "Binding lookup failed."
+  log_error "Failed to list trading connections (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+  die "Connection lookup failed."
 fi
 
 HYPERLIQUID_CONNECTION_ID="$(echo "$RESPONSE_BODY" | jq -r '.connections[] | select(.label == "Hyperliquid") | .connectionId' | head -1)"
@@ -232,6 +232,7 @@ log_ok "Found 1inch connection: ${ONEINCH_CONNECTION_ID}"
 
 build_agent_payload() {
   local name="$1"
+  local connection_id="$2"
   jq -n \
     --arg name "$name" \
     --arg prompt "$AGENT_PROMPT" \
@@ -243,6 +244,7 @@ build_agent_payload() {
     --arg capital "$AGENT_CAPITAL" \
     --arg dailyLossLimit "$AGENT_DAILY_LOSS_LIMIT" \
     --argjson maxSlippageBps "$AGENT_MAX_SLIPPAGE_BPS" \
+    --arg connectionId "$connection_id" \
     '{
       name: $name,
       prompt: $prompt,
@@ -254,25 +256,26 @@ build_agent_payload() {
       tickIntervalMs: ($tickIntervalMs | tonumber),
       capital: $capital,
       dailyLossLimit: $dailyLossLimit,
-      maxSlippageBps: $maxSlippageBps
+      maxSlippageBps: $maxSlippageBps,
+      connectionIds: [$connectionId]
     }'
 }
 
-bind_trading_capability() {
+grant_trading_capability() {
   local agent_id="$1"
   local connection_id="$2"
   local agent_name="$3"
 
-  log_info "Binding trading capability for ${agent_name} (connectionId=${connection_id})..."
+  log_info "Granting trading capability for ${agent_name} (connectionId=${connection_id})..."
 
-  api_call POST "/agents/${agent_id}/capabilities/trading/actions/bind" \
-    "$(jq -n --arg connectionId "$connection_id" '{ connectionId: $connectionId }')"
+  api_call PATCH "/agents/${agent_id}" \
+    "$(jq -n --arg connectionId "$connection_id" '{ connectionIds: [$connectionId] }')"
 
-  if [[ "$HTTP_STATUS" -eq 201 || "$HTTP_STATUS" -eq 200 ]]; then
-    log_ok "Trading capability bound for ${agent_name}"
+  if [[ "$HTTP_STATUS" -eq 200 ]]; then
+    log_ok "Trading capability granted for ${agent_name}"
     return 0
   else
-    log_error "Failed to bind trading capability for ${agent_name} (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
+    log_error "Failed to grant trading capability for ${agent_name} (HTTP ${HTTP_STATUS}): $RESPONSE_BODY"
     return 1
   fi
 }
@@ -289,29 +292,29 @@ create_and_bind_agent() {
     local existing_id
     existing_id="$(echo "$RESPONSE_BODY" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -1)"
     if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
-      log_info "Agent '${name}' already exists (id=${existing_id}) — binding trading capability"
+      log_info "Agent '${name}' already exists (id=${existing_id}) — granting trading capability"
 
-      # Check if already bound
+      # Check if already granted
       api_call GET "/agents/${existing_id}/capabilities/trading/connections"
       if [[ "$HTTP_STATUS" -eq 200 ]]; then
-        local already_bound
-        already_bound="$(echo "$RESPONSE_BODY" | jq -r --arg cid "$connection_id" '.connections[] | select(.connectionId == $cid and .grantStatus == "active") | .connectionId' | head -1)"
-        if [[ -n "$already_bound" && "$already_bound" != "null" ]]; then
-          log_ok "Trading capability already bound for ${name}"
+        local already_granted
+        already_granted="$(echo "$RESPONSE_BODY" | jq -r --arg cid "$connection_id" '.connections[] | select(.connectionId == $cid and .grantStatus == "active") | .connectionId' | head -1)"
+        if [[ -n "$already_granted" && "$already_granted" != "null" ]]; then
+          log_ok "Trading capability already granted for ${name}"
           echo "$existing_id"
           return 0
         fi
       fi
 
-      bind_trading_capability "$existing_id" "$connection_id" "$name" || die "Failed to bind trading capability"
+      grant_trading_capability "$existing_id" "$connection_id" "$name" || die "Failed to grant trading capability"
       echo "$existing_id"
       return 0
     fi
   fi
 
-  # Create the agent
+  # Create the agent (connectionIds in payload auto-creates the capability grant)
   local payload
-  payload="$(build_agent_payload "$name")"
+  payload="$(build_agent_payload "$name" "$connection_id")"
 
   api_call POST /agents "$payload"
 
@@ -323,9 +326,6 @@ create_and_bind_agent() {
   local agent_id
   agent_id="$(echo "$RESPONSE_BODY" | jq -r '.id')"
   log_ok "Created agent '${name}' (id=${agent_id})"
-
-  # Bind trading capability
-  bind_trading_capability "$agent_id" "$connection_id" "$name" || die "Failed to bind trading capability"
 
   echo "$agent_id"
 }

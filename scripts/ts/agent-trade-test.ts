@@ -438,18 +438,18 @@ async function createAgent(token: string): Promise<string> {
   fatal(`Agent creation failed: ${res.status} ${JSON.stringify(res.body)}`);
 }
 
-async function bindTradingCapability(token: string, agentId: string, connectionId: string): Promise<void> {
+async function grantTradingCapability(token: string, agentId: string, connectionId: string): Promise<void> {
   const res = await apiRequest<{ error?: string }>(
-    'POST', `/agents/${agentId}/capabilities/trading/actions/bind`,
-    { token, body: { connectionId } },
+    'PATCH', `/agents/${agentId}`,
+    { token, body: { connectionIds: [connectionId] } },
   );
 
-  if (res.status === 200 || res.status === 201) {
-    ok(`Trading capability bound — connectionId=${connectionId}`);
+  if (res.status === 200) {
+    ok(`Trading capability granted — connectionId=${connectionId}`);
     return;
   }
 
-  fatal(`Bind failed: ${res.status} ${JSON.stringify(res.body)}`);
+  fatal(`Grant failed: ${res.status} ${JSON.stringify(res.body)}`);
 }
 
 async function startAgent(token: string, agentId: string): Promise<void> {
@@ -1066,7 +1066,7 @@ async function main(): Promise<void> {
   const connectionId = await createProviderLink(token);
   const agentId = await createAgent(token);
   await verifyAgentProvisioned(token, agentId);
-  await bindTradingCapability(token, agentId, connectionId);
+  await grantTradingCapability(token, agentId, connectionId);
   await startAgent(token, agentId);
   ok(`Agent ${agentId} is starting`);
 
