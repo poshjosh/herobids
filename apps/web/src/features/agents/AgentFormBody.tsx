@@ -16,13 +16,13 @@ import { validateCreateAgentForm, type ValidationConstraints } from './form-vali
 /**
  * Maps validated field names to the Advanced Settings tab index that contains them.
  * Update this whenever a field moves between tabs or a new validated field is added.
- *   0 = AI Configuration
+ *   0 = AI
  *   1 = Skills
  *   2 = Trading Setup
  *   3 = Strategy
  */
 export const ADVANCED_FIELD_TAB: Record<string, number> = {
-  // AI Configuration
+  // AI
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
   // Trading Setup
@@ -244,7 +244,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {props.modelSlot}
             {props.connectionSlot}
-            {props.computeBudgetSlot}
             <AgentControlsSection
               value={{
                 costPreset: props.value.costPreset,
@@ -279,6 +278,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
               onClearFieldError={props.onClearFieldError}
               onBlurField={handleFieldBlur}
             />
+            {props.computeBudgetSlot}
           </div>
         }
         skills={

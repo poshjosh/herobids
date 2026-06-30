@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStyleDefaults, STYLE_CONFIG, formatStyleSummary, type AgentStyleValue } from './style-mapping.js';
+import { resolveStyleDefaults, STYLE_CONFIG, formatStyleSummary, resolveModelPricing, type AgentStyleValue } from './style-mapping.js';
 
 describe('resolveStyleDefaults', () => {
   const validCostPresets = ['minimal', 'standard', 'premium'] as const;
@@ -165,23 +165,117 @@ describe('resolveStyleDefaults', () => {
   });
 
   describe('formatStyleSummary', () => {
-    it('produces a summary string for careful', () => {
+    it('produces a fallback summary for careful (no pricing)', () => {
       const summary = formatStyleSummary('careful');
       expect(summary).toContain('10/25 turns');
-      expect(summary).toContain('$3/day');
+      expect(summary).toContain('90 min');
+      expect(summary).toContain('$3/day target');
     });
 
-    it('produces a summary string for balanced', () => {
+    it('produces a fallback summary for balanced (no pricing)', () => {
       const summary = formatStyleSummary('balanced');
       expect(summary).toContain('30/75 turns');
-      expect(summary).toContain('4K tokens');
-      expect(summary).toContain('$10/day');
+      expect(summary).toContain('30 min');
+      expect(summary).toContain('$10/day target');
     });
 
-    it('produces a summary string for bold', () => {
+    it('produces a fallback summary for bold (no pricing)', () => {
       const summary = formatStyleSummary('bold');
       expect(summary).toContain('100/300 turns');
-      expect(summary).toContain('$30/day');
+      expect(summary).toContain('10 min');
+      expect(summary).toContain('$30/day target');
+    });
+
+    it('computes estimated cost when pricing is provided', () => {
+      // economy=$0.15/1M, premium=$2.00/1M → blended ≈ $0.71/1M
+      const summary = formatStyleSummary('careful', {
+        economyOutputUsdPer1M: 0.15,
+        premiumOutputUsdPer1M: 2.00,
+      });
+      expect(summary).toContain('~$');
+      expect(summary).toContain('/day');
+      expect(summary).toContain('90 min');
+      expect(summary).toContain('10/25 turns');
+      // With careful: 90min ticks → 16 ticks/day, very low token budgets, economy-heavy blend
+      // Output should be a very small number (cents)
+      expect(summary).not.toContain('target');
+    });
+
+    it('computes higher cost for bold with same pricing', () => {
+      // bold has 10min ticks → 144 ticks/day, much higher token budgets
+      const boldSummary = formatStyleSummary('bold', {
+        economyOutputUsdPer1M: 0.15,
+        premiumOutputUsdPer1M: 2.00,
+      });
+      const carefulSummary = formatStyleSummary('careful', {
+        economyOutputUsdPer1M: 0.15,
+        premiumOutputUsdPer1M: 2.00,
+      });
+      // Bold should cost more than careful
+      const boldCost = Number(boldSummary.match(/\$([\d.]+)\/day/)![1]);
+      const carefulCost = Number(carefulSummary.match(/\$([\d.]+)\/day/)![1]);
+      expect(boldCost).toBeGreaterThan(carefulCost);
+    });
+
+    it('falls back when economy price is 0', () => {
+      const summary = formatStyleSummary('careful', {
+        economyOutputUsdPer1M: 0,
+        premiumOutputUsdPer1M: 2.00,
+      });
+      expect(summary).toContain('$3/day target');
+    });
+
+    it('falls back when premium price is 0', () => {
+      const summary = formatStyleSummary('careful', {
+        economyOutputUsdPer1M: 0.15,
+        premiumOutputUsdPer1M: 0,
+      });
+      expect(summary).toContain('$3/day target');
+    });
+  });
+
+  describe('resolveModelPricing', () => {
+    const providers = [
+      {
+        provider: 'openrouter',
+        models: [
+          { id: 'economy-1', pricing: { outputUsdPer1M: '0.15' } },
+          { id: 'premium-1', pricing: { outputUsdPer1M: '2.00' } },
+        ],
+      },
+    ];
+
+    it('returns pricing for known models', () => {
+      const pricing = resolveModelPricing(providers, 'openrouter', 'economy-1', 'premium-1');
+      expect(pricing).toEqual({
+        economyOutputUsdPer1M: 0.15,
+        premiumOutputUsdPer1M: 2.00,
+      });
+    });
+
+    it('returns undefined when provider is empty', () => {
+      expect(resolveModelPricing(providers, '', 'economy-1', 'premium-1')).toBeUndefined();
+    });
+
+    it('returns undefined when models not found', () => {
+      expect(resolveModelPricing(providers, 'openrouter', 'unknown', 'premium-1')).toBeUndefined();
+    });
+
+    it('returns undefined when pricing is missing', () => {
+      const noPricing = [
+        {
+          provider: 'openrouter',
+          models: [
+            { id: 'economy-1', pricing: undefined },
+            { id: 'premium-1', pricing: { outputUsdPer1M: '2.00' } },
+          ],
+        },
+      ];
+      expect(resolveModelPricing(noPricing, 'openrouter', 'economy-1', 'premium-1')).toBeUndefined();
+    });
+
+    it('returns undefined when provider not found', () => {
+      expect(resolveModelPricing(providers, 'other', 'economy-1', 'premium-1')).toBeUndefined();
     });
   });
 });

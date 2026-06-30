@@ -7,6 +7,8 @@ interface RuntimePolicySectionProps {
   style: AgentStyleValue;
   overrides: RuntimePolicyOverrides | null;
   onChange: (overrides: RuntimePolicyOverrides | null) => void;
+  /** When true, renders the section fully expanded without a click-to-open link. */
+  alwaysExpanded?: boolean;
 }
 
 type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause'>;
@@ -111,9 +113,9 @@ function HourGrid({
   );
 }
 
-export function RuntimePolicySection({ style, overrides, onChange }: RuntimePolicySectionProps) {
+export function RuntimePolicySection({ style, overrides, onChange, alwaysExpanded }: RuntimePolicySectionProps) {
   const intl = useIntl();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(alwaysExpanded ?? false);
 
   const defaults = resolveStyleDefaults(style);
 
@@ -190,13 +192,15 @@ export function RuntimePolicySection({ style, overrides, onChange }: RuntimePoli
         <div style={{ fontWeight: 600, fontSize: '14px' }}>
           {intl.formatMessage({ id: 'agents.runtimePolicy.title' })}
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--color-text-muted)' }}
-        >
-          ×
-        </button>
+        {!alwaysExpanded && (
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--color-text-muted)' }}
+          >
+            ×
+          </button>
+        )}
       </div>
       <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '16px' }}>
         {intl.formatMessage({ id: 'agents.runtimePolicy.description' })}

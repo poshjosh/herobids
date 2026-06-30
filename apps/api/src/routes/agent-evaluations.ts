@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { Queue } from 'bullmq';
 import type { Database } from '@herobids/db';
 import {
   agents,
+  agentRuntimeSessions,
   resolveScope,
   normalizeScopeKey,
   hasActiveRunForScope,
@@ -259,6 +260,42 @@ export async function agentEvaluationRoutes(
       } as Record<string, unknown>);
 
       return reply.status(202).send({ runId });
+    },
+  );
+
+  // ── GET /agents/:id/evaluations/eligibility — check if agent can be evaluated ─
+
+  app.get<{ Params: { id: string } }>(
+    '/agents/:id/evaluations/eligibility',
+    async (request, reply) => {
+      const { id } = request.params;
+
+      // Ownership check
+      const [agent] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+      if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+      // Check for at least one completed (stopped) session
+      const [stopped] = await db
+        .select({ id: agentRuntimeSessions.id })
+        .from(agentRuntimeSessions)
+        .where(and(
+          eq(agentRuntimeSessions.agentId, id),
+          eq(agentRuntimeSessions.status, 'stopped'),
+        ))
+        .orderBy(desc(agentRuntimeSessions.stoppedAt))
+        .limit(1);
+
+      if (stopped) {
+        return reply.send({ canEvaluate: true });
+      }
+
+      return reply.send({
+        canEvaluate: false,
+        reason: `No completed session found. Stop the agent first, then evaluate its most recent session.`,
+      });
     },
   );
 

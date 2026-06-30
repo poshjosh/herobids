@@ -15,10 +15,11 @@ import type {
 
 /**
  * Resolve `latestSession` to the most recent session for the agent.
- * Prefers stopped sessions; falls back to the currently running session
- * if no stopped session exists.
+ * Resolves to the most recently stopped session. Running sessions are not
+ * evaluated — evaluation requires a completed session with start/end timestamps
+ * for evidence filtering.
  *
- * Throws if no session exists at all for the agent.
+ * Throws if no completed (stopped) session exists for the agent.
  */
 export async function resolveScope(
   db: Database,
@@ -26,7 +27,6 @@ export async function resolveScope(
   scope: EvaluationScope,
 ): Promise<ResolvedEvaluationScope> {
   if (scope.type === 'latestSession') {
-    // Prefer the most recently stopped session...
     const [stopped] = await db
       .select({ id: agentRuntimeSessions.id })
       .from(agentRuntimeSessions)
@@ -40,21 +40,11 @@ export async function resolveScope(
       return { type: 'session', sessionId: stopped.id };
     }
 
-    // Fall back to the most recent running session
-    const [running] = await db
-      .select({ id: agentRuntimeSessions.id })
-      .from(agentRuntimeSessions)
-      .where(and(
-        eq(agentRuntimeSessions.agentId, agentId),
-        eq(agentRuntimeSessions.status, 'running'),
-      ))
-      .orderBy(desc(agentRuntimeSessions.startedAt))
-      .limit(1);
-    if (running) {
-      return { type: 'session', sessionId: running.id };
-    }
-
-    throw new Error(`No session found for agent ${agentId}. Start the agent to create a session first.`);
+    throw new Error(
+      `No completed session found for agent ${agentId}. ` +
+      `Evaluation requires a stopped session with complete start/end timestamps. ` +
+      `If the agent is currently running, stop it first, then evaluate.`,
+    );
   }
   // Pass-through for concrete scopes
   return scope as ResolvedEvaluationScope;

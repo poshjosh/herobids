@@ -401,6 +401,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 style={style}
                 overrides={runtimePolicyOverrides}
                 onChange={setRuntimePolicyOverrides}
+                alwaysExpanded
               />
             }
             connectionSlot={

@@ -413,6 +413,13 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   const runs = listQuery.data ?? [];
   const hasMore = runs.length >= PAGE_SIZE;
 
+  // ── Eligibility query ─────────────────────────────────────────────────
+  const eligibilityQuery = useQuery({
+    queryKey: ['agents', agentId, 'evaluations', 'eligibility'],
+    queryFn: () => agentsApi.evaluations.eligibility(agentId),
+    staleTime: 30_000,
+  });
+
   // ── Detail query (lazy, on row click) ──────────────────────────────────
   const detailQuery = useQuery({
     queryKey: ['agents', agentId, 'evaluations', selectedRunId],
@@ -429,6 +436,9 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
     onSuccess: () => {
       void qc.invalidateQueries({
         queryKey: ['agents', agentId, 'evaluations'],
+      });
+      void qc.invalidateQueries({
+        queryKey: ['agents', agentId, 'evaluations', 'eligibility'],
       });
     },
     onError: (error) => {
@@ -526,34 +536,53 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
         </summary>
 
         <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {/* Trigger button + status */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleTrigger}
-              disabled={triggerMutation.isPending}
-            >
-              {triggerMutation.isPending
-                ? intl.formatMessage({ id: 'agents.evaluations.running' })
-                : intl.formatMessage({ id: 'agents.evaluations.runNow' })}
-            </Button>
+          {/* Trigger button + eligibility hint */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleTrigger}
+                disabled={
+                  triggerMutation.isPending ||
+                  (eligibilityQuery.isSuccess && !eligibilityQuery.data?.canEvaluate)
+                }
+              >
+                {triggerMutation.isPending
+                  ? intl.formatMessage({ id: 'agents.evaluations.running' })
+                  : eligibilityQuery.isLoading
+                    ? `${intl.formatMessage({ id: 'agents.evaluations.runNow' })}…`
+                    : intl.formatMessage({ id: 'agents.evaluations.runNow' })}
+              </Button>
 
-            {triggerMutation.isError && (
-              <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
-                {triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).status === 409
-                  ? intl.formatMessage({ id: 'agents.evaluations.alreadyRunning' })
-                  : (triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).message)
-                    ? (triggerMutation.error as ApiError).message
-                    : intl.formatMessage({ id: 'agents.evaluations.triggerError' })}
-              </span>
-            )}
+              {triggerMutation.isError && (
+                <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>
+                  {triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).status === 409
+                    ? intl.formatMessage({ id: 'agents.evaluations.alreadyRunning' })
+                    : (triggerMutation.error instanceof ApiError && (triggerMutation.error as ApiError).message)
+                      ? (triggerMutation.error as ApiError).message
+                      : intl.formatMessage({ id: 'agents.evaluations.triggerError' })}
+                </span>
+              )}
 
-            {triggerMutation.isSuccess && (
-              <span style={{ fontSize: '12px', color: 'var(--color-success)' }}>
-                {intl.formatMessage({ id: 'agents.evaluations.triggerSuccess' })}
-              </span>
-            )}
+              {triggerMutation.isSuccess && (
+                <span style={{ fontSize: '12px', color: 'var(--color-success)' }}>
+                  {intl.formatMessage({ id: 'agents.evaluations.triggerSuccess' })}
+                </span>
+              )}
+            </div>
+
+            {/* Hint when evaluation is unavailable */}
+            {eligibilityQuery.isSuccess &&
+              !eligibilityQuery.data.canEvaluate && (
+                <span style={{
+                  fontSize: '12px',
+                  color: 'var(--color-text-muted)',
+                }}>
+                  {eligibilityQuery.data.reason ??
+                    intl.formatMessage({ id: 'agents.evaluations.notAvailable' })}
+                </span>
+              )}
           </div>
 
           {/* Error state */}

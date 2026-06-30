@@ -130,12 +130,86 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
   return config;
 }
 
-/** Build a compact summary string for a style, e.g. "30 turns · 4K tokens · $10/day" */
-export function formatStyleSummary(style: AgentStyleValue): string {
+/** Pricing info for the selected economy and premium models. Pass to formatStyleSummary for computed estimates. */
+export interface ModelPricingInfo {
+  /** Output price per 1M tokens for the economy model. */
+  economyOutputUsdPer1M: number;
+  /** Output price per 1M tokens for the premium model. */
+  premiumOutputUsdPer1M: number;
+}
+
+/**
+ * Extract pricing for the selected economy and premium models from a provider catalog.
+ * Returns undefined if pricing cannot be resolved (missing provider, missing models, missing prices).
+ */
+export function resolveModelPricing(
+  providers: ReadonlyArray<{ provider: string; models: ReadonlyArray<{ id: string; pricing?: { outputUsdPer1M?: string } }> }>,
+  selectedProvider: string,
+  economyModelId: string,
+  premiumModelId: string,
+): ModelPricingInfo | undefined {
+  if (!selectedProvider || !economyModelId || !premiumModelId) return undefined;
+
+  const provider = providers.find((p) => p.provider === selectedProvider);
+  if (!provider) return undefined;
+
+  const economyModel = provider.models.find((m) => m.id === economyModelId);
+  const premiumModel = provider.models.find((m) => m.id === premiumModelId);
+
+  const economyPrice = economyModel?.pricing?.outputUsdPer1M;
+  const premiumPrice = premiumModel?.pricing?.outputUsdPer1M;
+
+  if (!economyPrice || !premiumPrice) return undefined;
+
+  const economyNum = Number(economyPrice);
+  const premiumNum = Number(premiumPrice);
+  if (!Number.isFinite(economyNum) || !Number.isFinite(premiumNum)) return undefined;
+
+  return {
+    economyOutputUsdPer1M: economyNum,
+    premiumOutputUsdPer1M: premiumNum,
+  };
+}
+
+/**
+ * Build a compact summary string for a style.
+ *
+ * When `pricing` is provided, the cost is computed from:
+ *   ticksPerDay × estimatedTokensPerTick × blendedPricePerToken
+ * using the style's tick interval, token budgets, and the selected model pricing.
+ * The result is prefixed with "~" to indicate it is an estimate.
+ *
+ * When `pricing` is omitted (or both prices are 0), falls back to the hardcoded
+ * dailySpendBudgetUsd from the style config (the user's budget target, not a cost estimate).
+ */
+export function formatStyleSummary(style: AgentStyleValue, pricing?: ModelPricingInfo): string {
   const d = resolveStyleDefaults(style);
   const turns = `${d.scoutMaxTurns}/${d.judgeMaxTurns} turns`;
-  const tokens = d.judgeMaxTokens >= 1_024
-    ? `${Math.round(d.judgeMaxTokens / 1_024)}K tokens`
-    : `${d.judgeMaxTokens} tokens`;
-  return `${turns} · ${tokens} · $${d.dailySpendBudgetUsd}/day`;
+  const tickMins = `${d.tickIntervalMins} min`;
+
+  // Compute estimated daily cost if we have model pricing
+  if (pricing && pricing.economyOutputUsdPer1M > 0 && pricing.premiumOutputUsdPer1M > 0) {
+    const ticksPerDay = 1440 / Number(d.tickIntervalMins);
+
+    // Estimated output tokens per tick — assume 50% utilization of max budgets
+    const outputTokensPerTick =
+      (d.scoutMaxTurns * d.scoutMaxTokens + d.judgeMaxTurns * d.judgeMaxTokens) * 0.5;
+
+    // Economy model handles ~70% of work, premium ~30%
+    const economyTokens = outputTokensPerTick * 0.7 + d.lightThinkingTokens;
+    const premiumTokens = outputTokensPerTick * 0.3 + d.deepThinkingTokens;
+
+    const blendedPricePer1M =
+      pricing.economyOutputUsdPer1M * 0.7 + pricing.premiumOutputUsdPer1M * 0.3;
+
+    const costPerTick = (economyTokens + premiumTokens) * blendedPricePer1M / 1_000_000;
+    const dailyCost = costPerTick * ticksPerDay;
+
+    // Format: "$1.23/day" with 2 decimal places
+    const costStr = `$${dailyCost.toFixed(2)}/day`;
+    return `~${costStr} · ${tickMins} · ${turns}`;
+  }
+
+  // Fallback: show budget target
+  return `${turns} · ${tickMins} · $${d.dailySpendBudgetUsd}/day target`;
 }

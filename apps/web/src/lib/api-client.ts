@@ -1008,6 +1008,8 @@ export const agents = {
     return request<{ agentId: string; family: 'trading'; items: AgentPosition[]; limit: number; offset: number }>(`/agents/${id}/capabilities/trading/positions${query}`);
   },
   evaluations: {
+    eligibility: (agentId: string) =>
+      request<{ canEvaluate: boolean; reason?: string }>(`/agents/${agentId}/evaluations/eligibility`),
     list: (agentId: string, opts?: { limit?: number; offset?: number }) =>
       request<EvaluationRunRecord[]>(`/agents/${agentId}/evaluations?limit=${opts?.limit ?? 50}&offset=${opts?.offset ?? 0}`),
     get: (agentId: string, runId: string) =>

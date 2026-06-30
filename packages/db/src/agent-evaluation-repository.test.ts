@@ -48,37 +48,40 @@ describe('resolveScope', () => {
     expect(result).toEqual({ type: 'session', sessionId: 'session-stopped-2' });
   });
 
-  it('falls back to the running session when no stopped session exists', async () => {
+  it('throws when no stopped session exists (does not fall back to running)', async () => {
     const db = buildMockDb([
-      [],                               // no stopped sessions
-      [{ id: 'session-running-1' }],    // one running session
+      [], // no stopped sessions — throw, no fallback query
     ]);
 
-    const result = await resolveScope(db, 'agent-2', { type: 'latestSession' });
-    expect(result).toEqual({ type: 'session', sessionId: 'session-running-1' });
+    await expect(
+      resolveScope(db, 'agent-2', { type: 'latestSession' }),
+    ).rejects.toThrow(
+      'No completed session found for agent agent-2.',
+    );
   });
 
-  it('falls back to a running session even if there are multiple running sessions (picks most recent)', async () => {
-    // Only the first row of the running query is used — the most recent.
+  it('throws when no stopped session exists, even if running sessions are present', async () => {
+    // Only one query — for stopped sessions. Running sessions are never checked.
     const db = buildMockDb([
-      [],                                // no stopped sessions
-      [{ id: 'session-running-latest' }], // most recent running
+      [], // no stopped sessions
     ]);
 
-    const result = await resolveScope(db, 'agent-3', { type: 'latestSession' });
-    expect(result).toEqual({ type: 'session', sessionId: 'session-running-latest' });
+    await expect(
+      resolveScope(db, 'agent-3', { type: 'latestSession' }),
+    ).rejects.toThrow(
+      'No completed session found for agent agent-3.',
+    );
   });
 
-  it('throws with the new error message when no session exists at all', async () => {
+  it('throws when no session exists at all', async () => {
     const db = buildMockDb([
-      [], // no stopped
-      [], // no running
+      [], // no stopped sessions
     ]);
 
     await expect(
       resolveScope(db, 'agent-none', { type: 'latestSession' }),
     ).rejects.toThrow(
-      'No session found for agent agent-none. Start the agent to create a session first.',
+      'No completed session found for agent agent-none.',
     );
   });
 
