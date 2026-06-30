@@ -11,8 +11,21 @@ import {
 } from '../schemas.js';
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
-import { validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import { BotConfigSchema, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import type { LifecycleJob } from '../types.js';
+
+function normalizeBotConfig(config: Record<string, unknown>, venue: string, symbol: string): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    ...config,
+    venue,
+    symbol,
+  };
+  const venueType = venueTypeFromProvider(venue);
+  if (venueType !== undefined && normalized['venueType'] === undefined) {
+    normalized['venueType'] = venueType;
+  }
+  return normalized;
+}
 
 export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
   // Create bot
@@ -60,6 +73,13 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       resolvedConfig = parsed.data.config as Record<string, unknown>;
     }
 
+    resolvedConfig = normalizeBotConfig(resolvedConfig, parsed.data.venue, parsed.data.symbol);
+
+    const configCheck = BotConfigSchema.safeParse(resolvedConfig);
+    if (!configCheck.success) {
+      return reply.status(400).send({ error: 'validation_error', details: configCheck.error.issues });
+    }
+
     const id = crypto.randomUUID();
     const now = new Date();
 
@@ -79,10 +99,6 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
         });
       }
     }
-
-    // swapAssets validation for swap-venue bots is deferred to BotConfigSchema at
-    // worker startup — it enforces stricter constraints (int / 0–18 range for
-    // decimals) than an ad-hoc gate here could.
 
     // Live-mode plan gate
     if (plansConfig && botExecutionMode === 'live') {

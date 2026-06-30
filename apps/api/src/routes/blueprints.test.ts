@@ -31,7 +31,7 @@ const stubBlueprint = {
   userId: TEST_USER_ID,
   name: 'My Blueprint',
   description: null,
-  configData: { strategy: { type: 'momentum' }, execution: { mode: 'paper' } },
+  configData: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, execution: { mode: 'paper' } },
   configVersion: 1,
   visibility: 'private',
   strategyPreset: null,
@@ -768,7 +768,7 @@ describe('POST /bots with blueprintId', () => {
         connectionId: 'tb-1',
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
-        config: { strategy: { type: 'momentum' } },
+        config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-PERP' },
       },
     });
 

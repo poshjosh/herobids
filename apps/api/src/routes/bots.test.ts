@@ -79,6 +79,7 @@ function makePlansConfig(overrides: Partial<PlansConfig> = {}): PlansConfig {
 const validConfig = {
   strategy: {
     type: 'momentum',
+    decisionMode: 'mechanical',
     params: { symbol: 'BTC-PERP', intervalMs: 5000, lookbackPeriods: 14 },
   },
   risk: {},
@@ -88,6 +89,39 @@ const validConfig = {
 };
 
 describe('bot routes', () => {
+  it('returns 400 when bot config is invalid before the worker sees it', async () => {
+    const { botRoutes } = await import('./bots.js');
+
+    const mockQueue = { add: vi.fn().mockResolvedValue(undefined) };
+    const db = { transaction: vi.fn() };
+
+    const app = Fastify();
+    decorateWithAuth(app, TEST_USER_ID, 'free');
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/bots',
+      payload: {
+        connectionId: 'binding-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC-PERP',
+        config: {
+          ...validConfig,
+          strategy: {
+            type: 'momentum',
+            params: { symbol: 'BTC-PERP', intervalMs: 5000, lookbackPeriods: 14 },
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    const issues = res.json<{ details: Array<{ path: string[] }> }>().details;
+    expect(issues.some((issue) => issue.path.includes('decisionMode'))).toBe(true);
+  });
+
   it('returns 403 when trading instance limit is reached', async () => {
     const { botRoutes } = await import('./bots.js');
 

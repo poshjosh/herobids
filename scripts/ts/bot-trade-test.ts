@@ -288,7 +288,7 @@ async function main(): Promise<void> {
     venue: VENUE,
     symbol: botSymbol,
     config: {
-      strategy: { type: 'momentum', params: { symbol: botSymbol, intervalMs: TICK_INTERVAL_MS, lookbackPeriods: 14 } },
+      strategy: { type: 'momentum', decisionMode: 'mechanical', params: { symbol: botSymbol, intervalMs: TICK_INTERVAL_MS, lookbackPeriods: 14 } },
       risk: {},
       execution: { mode: EXECUTION_MODE },
       venue: VENUE,
@@ -328,6 +328,9 @@ async function main(): Promise<void> {
     const res = await get<{ status: string; startedAt: string | null; stoppedAt: string | null }>(`/bots/${botId}`, token);
     if (res.status !== 200) return false;
     const bot = res.body;
+    if (bot.status === 'crashed') {
+      fatal(`Bot crashed before reaching running (startedAt=${bot.startedAt ?? 'null'}, stoppedAt=${bot.stoppedAt ?? 'null'})`);
+    }
     return bot.status === 'running';
   });
 
