@@ -1322,6 +1322,22 @@ export async function agentRoutes(
     return reply.send(artifacts);
   });
 
+  // Get single artifact with full detail (including location ref for content retrieval)
+  app.get<{ Params: { id: string; artifactId: string } }>('/agents/:id/artifacts/:artifactId', async (request, reply) => {
+    const { id, artifactId } = request.params;
+
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const [artifact] = await db.select().from(agentArtifacts)
+      .where(and(eq(agentArtifacts.id, artifactId), eq(agentArtifacts.agentId, id)));
+
+    if (!artifact) return reply.status(404).send({ error: 'not_found' });
+
+    return reply.send(artifact);
+  });
+
   // Get agent sessions history
   app.get<{ Params: { id: string } }>('/agents/:id/sessions', async (request, reply) => {
     const { id } = request.params;

@@ -22,6 +22,7 @@ export function AgentDetailPage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [activePromptTab, setActivePromptTab] = useState<'judgeSystem' | 'scoutSystem' | 'userContext' | 'judgeUserContext'>('judgeSystem');
+  const [expandedArtifactId, setExpandedArtifactId] = useState<string | null>(null);
 
   const handleEvent = useCallback((event: UserEvent) => {
     if (event.type === 'agent.status' && event.agentId === id) {
@@ -662,17 +663,114 @@ export function AgentDetailPage() {
           )}
           {artifactsQuery.isSuccess && artifactsQuery.data.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
-              {artifactsQuery.data.map((a: AgentArtifact) => (
-                <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
-                  <span>
-                    <span style={{ fontWeight: '500' }}>{a.artifactType}</span>
-                    {' · '}
-                    <span style={{ color: 'var(--color-text-muted)' }}>{a.contentType}</span>
-                    {a.summary && <span style={{ marginLeft: '8px', color: 'var(--color-text-muted)' }}>{a.summary}</span>}
-                  </span>
-                  <RelativeTime timestamp={a.createdAt} />
-                </div>
-              ))}
+              {artifactsQuery.data.map((a: AgentArtifact) => {
+                const isExpanded = expandedArtifactId === a.id;
+                const hasLocation = a.location?.url;
+                const hasMetadata = a.metadata && Object.keys(a.metadata).length > 0;
+                const hasDetail = a.summary || hasLocation || hasMetadata;
+
+                return (
+                  <div key={a.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      onClick={() => setExpandedArtifactId(isExpanded ? null : a.id)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedArtifactId(isExpanded ? null : a.id); } }}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '6px 0',
+                        borderBottom: '1px solid var(--color-border)',
+                        cursor: 'pointer',
+                        borderRadius: '4px',
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'var(--color-surface-2)'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                        <span>
+                          <span style={{ fontWeight: '500' }}>{a.artifactType}</span>
+                          {' · '}
+                          <span style={{ color: 'var(--color-text-muted)' }}>{a.contentType}</span>
+                          {a.summary && (
+                            <span style={{ marginLeft: '8px', color: 'var(--color-text-secondary)', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', verticalAlign: 'bottom' }}>
+                              {a.summary}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      <RelativeTime timestamp={a.createdAt} />
+                    </div>
+                    {isExpanded && (
+                      <div style={{
+                        margin: '8px 0 12px 18px',
+                        padding: '12px',
+                        borderRadius: '6px',
+                        background: 'var(--color-surface-1)',
+                        border: '1px solid var(--color-border)',
+                        fontSize: '13px',
+                        lineHeight: '1.6',
+                      }}>
+                        {a.summary && (
+                          <div style={{ marginBottom: hasLocation || hasMetadata ? '10px' : '0' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                              {intl.formatMessage({ id: 'agents.detail.artifactSummary', defaultMessage: 'Summary' })}
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-primary)' }}>{a.summary}</div>
+                          </div>
+                        )}
+                        {hasLocation && a.location!.url && (
+                          <div style={{ marginBottom: hasMetadata ? '10px' : '0' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                              {intl.formatMessage({ id: 'agents.detail.artifactContent', defaultMessage: 'Content' })}
+                            </div>
+                            <a
+                              href={a.location!.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: 'var(--color-accent)', textDecoration: 'underline', wordBreak: 'break-all' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {a.location!.url}
+                            </a>
+                          </div>
+                        )}
+                        {hasMetadata && (
+                          <div>
+                            <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                              {intl.formatMessage({ id: 'agents.detail.artifactMetadata', defaultMessage: 'Metadata' })}
+                            </div>
+                            <pre style={{
+                              margin: 0,
+                              padding: '8px',
+                              borderRadius: '4px',
+                              background: 'var(--color-surface-2)',
+                              fontSize: '12px',
+                              fontFamily: 'monospace',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              maxHeight: '200px',
+                              overflow: 'auto',
+                              color: 'var(--color-text-secondary)',
+                            }}>
+                              {JSON.stringify(a.metadata, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        {!hasDetail && (
+                          <div style={{ color: 'var(--color-text-muted)' }}>
+                            {intl.formatMessage({ id: 'agents.detail.artifactNoDetail', defaultMessage: 'No additional details available.' })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </Card>

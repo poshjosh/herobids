@@ -132,9 +132,13 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
 
 /** Pricing info for the selected economy and premium models. Pass to formatStyleSummary for computed estimates. */
 export interface ModelPricingInfo {
-  /** Output price per 1M tokens for the economy model. */
+  /** Input price per 1M tokens for the economy (scout) model. */
+  economyInputUsdPer1M: number;
+  /** Output price per 1M tokens for the economy (scout) model. */
   economyOutputUsdPer1M: number;
-  /** Output price per 1M tokens for the premium model. */
+  /** Input price per 1M tokens for the premium (judge) model. */
+  premiumInputUsdPer1M: number;
+  /** Output price per 1M tokens for the premium (judge) model. */
   premiumOutputUsdPer1M: number;
 }
 
@@ -143,7 +147,7 @@ export interface ModelPricingInfo {
  * Returns undefined if pricing cannot be resolved (missing provider, missing models, missing prices).
  */
 export function resolveModelPricing(
-  providers: ReadonlyArray<{ provider: string; models: ReadonlyArray<{ id: string; pricing?: { outputUsdPer1M?: string } }> }>,
+  providers: ReadonlyArray<{ provider: string; models: ReadonlyArray<{ id: string; pricing?: { inputUsdPer1M?: string; outputUsdPer1M?: string } }> }>,
   selectedProvider: string,
   economyModelId: string,
   premiumModelId: string,
@@ -156,30 +160,56 @@ export function resolveModelPricing(
   const economyModel = provider.models.find((m) => m.id === economyModelId);
   const premiumModel = provider.models.find((m) => m.id === premiumModelId);
 
-  const economyPrice = economyModel?.pricing?.outputUsdPer1M;
-  const premiumPrice = premiumModel?.pricing?.outputUsdPer1M;
+  const economyInputPrice = economyModel?.pricing?.inputUsdPer1M;
+  const economyOutputPrice = economyModel?.pricing?.outputUsdPer1M;
+  const premiumInputPrice = premiumModel?.pricing?.inputUsdPer1M;
+  const premiumOutputPrice = premiumModel?.pricing?.outputUsdPer1M;
 
-  if (!economyPrice || !premiumPrice) return undefined;
+  if (!economyInputPrice || !economyOutputPrice || !premiumInputPrice || !premiumOutputPrice) return undefined;
 
-  const economyNum = Number(economyPrice);
-  const premiumNum = Number(premiumPrice);
-  if (!Number.isFinite(economyNum) || !Number.isFinite(premiumNum)) return undefined;
+  const economyInputNum = Number(economyInputPrice);
+  const economyOutputNum = Number(economyOutputPrice);
+  const premiumInputNum = Number(premiumInputPrice);
+  const premiumOutputNum = Number(premiumOutputPrice);
+  if (!Number.isFinite(economyInputNum) || !Number.isFinite(economyOutputNum) || !Number.isFinite(premiumInputNum) || !Number.isFinite(premiumOutputNum)) return undefined;
 
   return {
-    economyOutputUsdPer1M: economyNum,
-    premiumOutputUsdPer1M: premiumNum,
+    economyInputUsdPer1M: economyInputNum,
+    economyOutputUsdPer1M: economyOutputNum,
+    premiumInputUsdPer1M: premiumInputNum,
+    premiumOutputUsdPer1M: premiumOutputNum,
   };
 }
+
+// Per-tick token counts derived from eval data (.ignore/eval/2026/06/).
+// Based on t1inch + thyper (balanced style, 06/26) using deepseek-v4-flash scout
+// and deepseek-v4-pro judge at near-100% escalation. Input tokens dominate cost
+// (10–25× output), so they must be included for a realistic estimate.
+const SCOUT_OUTPUT_TOKENS_PER_TICK = 33_000;
+const SCOUT_INPUT_TOKENS_PER_TICK = 332_000;
+const JUDGE_OUTPUT_TOKENS_PER_TICK = 42_000;
+const JUDGE_INPUT_TOKENS_PER_TICK = 1_030_000;
+
+// Assumed escalation rates by style, derived from observed agent behaviour:
+// careful: scout holds ~95% of ticks (06/28 careful-agent-1: 4.1% escalation)
+// balanced: scout escalates ~20% of ticks
+// bold: scout escalates ~60% of ticks
+const STYLE_ESCALATION_RATES: Record<AgentStyleValue, number> = {
+  careful: 0.05,
+  balanced: 0.20,
+  bold: 0.60,
+};
 
 /**
  * Build a compact summary string for a style.
  *
- * When `pricing` is provided, the cost is computed from:
- *   ticksPerDay × estimatedTokensPerTick × blendedPricePerToken
- * using the style's tick interval, token budgets, and the selected model pricing.
- * The result is prefixed with "~" to indicate it is an estimate.
+ * When full `pricing` (input + output for both models) is provided, the cost is
+ * computed from real-data per-tick token estimates × model pricing × escalation rate.
+ * Both input and output token costs are included — input tokens are 10–25× larger
+ * than output tokens and dominate the estimate. The result is prefixed with "~" to
+ * indicate it is an estimate.
  *
- * When `pricing` is omitted (or both prices are 0), falls back to the hardcoded
+ * When `pricing` is omitted or incomplete, falls back to the hardcoded
  * dailySpendBudgetUsd from the style config (the user's budget target, not a cost estimate).
  *
  * Both paths produce a consistent format: cost · cadence.
@@ -188,22 +218,25 @@ export function formatStyleSummary(style: AgentStyleValue, pricing?: ModelPricin
   const d = resolveStyleDefaults(style);
   const cadence = `every ${d.tickIntervalMins} min`;
 
-  // Compute estimated daily cost if we have model pricing
-  if (pricing && pricing.economyOutputUsdPer1M > 0 && pricing.premiumOutputUsdPer1M > 0) {
+  // Compute estimated daily cost if we have full model pricing (input + output for both models)
+  if (pricing
+    && pricing.economyInputUsdPer1M > 0 && pricing.economyOutputUsdPer1M > 0
+    && pricing.premiumInputUsdPer1M > 0 && pricing.premiumOutputUsdPer1M > 0
+  ) {
     const ticksPerDay = 1440 / Number(d.tickIntervalMins);
+    const escalationRate = STYLE_ESCALATION_RATES[style];
 
-    // Estimated output tokens per tick — assume 50% utilization of max budgets
-    const outputTokensPerTick =
-      (d.scoutMaxTurns * d.scoutMaxTokens + d.judgeMaxTurns * d.judgeMaxTokens) * 0.5;
+    // Scout runs every tick
+    const scoutCost =
+      (SCOUT_OUTPUT_TOKENS_PER_TICK * pricing.economyOutputUsdPer1M +
+       SCOUT_INPUT_TOKENS_PER_TICK * pricing.economyInputUsdPer1M) / 1_000_000;
 
-    // Economy model handles ~70% of work, premium ~30%
-    const economyTokens = outputTokensPerTick * 0.7 + d.lightThinkingTokens;
-    const premiumTokens = outputTokensPerTick * 0.3 + d.deepThinkingTokens;
+    // Judge runs only on escalated ticks
+    const judgeCost =
+      (JUDGE_OUTPUT_TOKENS_PER_TICK * pricing.premiumOutputUsdPer1M +
+       JUDGE_INPUT_TOKENS_PER_TICK * pricing.premiumInputUsdPer1M) / 1_000_000 * escalationRate;
 
-    const blendedPricePer1M =
-      pricing.economyOutputUsdPer1M * 0.7 + pricing.premiumOutputUsdPer1M * 0.3;
-
-    const costPerTick = (economyTokens + premiumTokens) * blendedPricePer1M / 1_000_000;
+    const costPerTick = scoutCost + judgeCost;
     const dailyCost = costPerTick * ticksPerDay;
 
     return `~$${dailyCost.toFixed(2)}/day · ${cadence}`;

@@ -184,10 +184,12 @@ describe('resolveStyleDefaults', () => {
       expect(summary).toContain('every 10 min');
     });
 
-    it('computes estimated cost when pricing is provided', () => {
-      // economy=$0.15/1M, premium=$2.00/1M → blended ≈ $0.71/1M
+    it('computes estimated cost when full pricing is provided', () => {
+      // economy input=$0.08, output=$0.15; premium input=$1.00, output=$2.00 (per 1M tokens)
       const summary = formatStyleSummary('careful', {
+        economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
       expect(summary).toContain('~$');
@@ -198,32 +200,56 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('computes higher cost for bold with same pricing', () => {
-      // bold has 10min ticks → 144 ticks/day, much higher token budgets
-      const boldSummary = formatStyleSummary('bold', {
+      // bold has 10min ticks → 144 ticks/day + higher escalation rate (60% vs 5%)
+      const pricing = {
+        economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
-      });
-      const carefulSummary = formatStyleSummary('careful', {
-        economyOutputUsdPer1M: 0.15,
-        premiumOutputUsdPer1M: 2.00,
-      });
+      };
+      const boldSummary = formatStyleSummary('bold', pricing);
+      const carefulSummary = formatStyleSummary('careful', pricing);
       // Bold should cost more than careful
       const boldCost = Number(boldSummary.match(/\$([\d.]+)\/day/)![1]);
       const carefulCost = Number(carefulSummary.match(/\$([\d.]+)\/day/)![1]);
       expect(boldCost).toBeGreaterThan(carefulCost);
     });
 
-    it('falls back when economy price is 0', () => {
+    it('falls back when economy input price is 0', () => {
       const summary = formatStyleSummary('careful', {
-        economyOutputUsdPer1M: 0,
+        economyInputUsdPer1M: 0,
+        economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
       expect(summary).toContain('~$3/day target');
     });
 
-    it('falls back when premium price is 0', () => {
+    it('falls back when economy output price is 0', () => {
       const summary = formatStyleSummary('careful', {
+        economyInputUsdPer1M: 0.08,
+        economyOutputUsdPer1M: 0,
+        premiumInputUsdPer1M: 1.00,
+        premiumOutputUsdPer1M: 2.00,
+      });
+      expect(summary).toContain('~$3/day target');
+    });
+
+    it('falls back when premium input price is 0', () => {
+      const summary = formatStyleSummary('careful', {
+        economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 0,
+        premiumOutputUsdPer1M: 2.00,
+      });
+      expect(summary).toContain('~$3/day target');
+    });
+
+    it('falls back when premium output price is 0', () => {
+      const summary = formatStyleSummary('careful', {
+        economyInputUsdPer1M: 0.08,
+        economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 0,
       });
       expect(summary).toContain('~$3/day target');
@@ -235,16 +261,18 @@ describe('resolveStyleDefaults', () => {
       {
         provider: 'openrouter',
         models: [
-          { id: 'economy-1', pricing: { outputUsdPer1M: '0.15' } },
-          { id: 'premium-1', pricing: { outputUsdPer1M: '2.00' } },
+          { id: 'economy-1', pricing: { inputUsdPer1M: '0.08', outputUsdPer1M: '0.15' } },
+          { id: 'premium-1', pricing: { inputUsdPer1M: '1.00', outputUsdPer1M: '2.00' } },
         ],
       },
     ];
 
-    it('returns pricing for known models', () => {
+    it('returns full pricing for known models', () => {
       const pricing = resolveModelPricing(providers, 'openrouter', 'economy-1', 'premium-1');
       expect(pricing).toEqual({
+        economyInputUsdPer1M: 0.08,
         economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 1.00,
         premiumOutputUsdPer1M: 2.00,
       });
     });
@@ -257,17 +285,30 @@ describe('resolveStyleDefaults', () => {
       expect(resolveModelPricing(providers, 'openrouter', 'unknown', 'premium-1')).toBeUndefined();
     });
 
-    it('returns undefined when pricing is missing', () => {
+    it('returns undefined when output pricing is missing', () => {
       const noPricing = [
         {
           provider: 'openrouter',
           models: [
             { id: 'economy-1', pricing: undefined },
-            { id: 'premium-1', pricing: { outputUsdPer1M: '2.00' } },
+            { id: 'premium-1', pricing: { inputUsdPer1M: '1.00', outputUsdPer1M: '2.00' } },
           ],
         },
       ];
       expect(resolveModelPricing(noPricing, 'openrouter', 'economy-1', 'premium-1')).toBeUndefined();
+    });
+
+    it('returns undefined when input pricing is missing', () => {
+      const missingInput = [
+        {
+          provider: 'openrouter',
+          models: [
+            { id: 'economy-1', pricing: { outputUsdPer1M: '0.15' } },
+            { id: 'premium-1', pricing: { inputUsdPer1M: '1.00', outputUsdPer1M: '2.00' } },
+          ],
+        },
+      ];
+      expect(resolveModelPricing(missingInput, 'openrouter', 'economy-1', 'premium-1')).toBeUndefined();
     });
 
     it('returns undefined when provider not found', () => {

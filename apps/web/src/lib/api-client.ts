@@ -857,6 +857,8 @@ export interface AgentArtifact {
   artifactType: string;
   contentType: string;
   summary: string;
+  location?: { bucket?: string; key?: string; url?: string } | null;
+  metadata?: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -988,6 +990,8 @@ export const agents = {
   },
   artifacts: (id: string, limit?: number) =>
     request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
+  getArtifactDetail: (agentId: string, artifactId: string) =>
+    request<AgentArtifact>(`/agents/${agentId}/artifacts/${artifactId}`),
   prompt: (id: string) => request<AgentCompiledPrompt>(`/agents/${id}/prompt`),
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
   decisions: (id: string, limit?: number) =>

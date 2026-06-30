@@ -72,11 +72,13 @@ agentRiskDefaults:
   stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
   maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
 
-# Per-tick LLM cost estimates by usage tier (USD). Reflects avg model costs.
+# Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
+# (.ignore/eval/2026/06/) — includes both input and output token costs for
+# typical flash+pro scout/judge usage at each tier's expected escalation rate.
 agentCostEstimates:
-  minimal: 0.12
-  standard: 0.21
-  premium: 0.31
+  minimal: 0.08
+  standard: 0.10
+  premium: 0.15
 
 reconciliation:
   intervalMs: 30000          # reconciliation loop interval

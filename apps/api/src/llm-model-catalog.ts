@@ -485,6 +485,16 @@ export async function getProviderCatalogEntry(
     };
   }
 
+  // ⚠️ DO NOT add pricing for static providers here.
+  //
+  // Production policy (docs/features/2026/06/27/006-dynamic-llm-pricing/001-plan.md):
+  //   "Production continues to expose only catalogMode: 'dynamic' providers (OpenRouter).
+  //    Static providers remain dev-only."
+  //
+  // Static pricing from providers.yaml goes stale — only DB-snapshot pricing
+  // (refreshed hourly from OpenRouter) is considered reliable for user display.
+  // The UI's resolveModelPricing() already handles the case where pricing is
+  // absent by falling back to a budget-target display.
   return {
     provider,
     models: mapProviderModels(models),

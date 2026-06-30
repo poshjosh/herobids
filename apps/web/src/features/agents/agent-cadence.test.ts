@@ -29,7 +29,7 @@ describe('deriveExpectedCadence', () => {
   });
 
   it('derives custom cadence from the configured daily budget', () => {
-    expect(deriveExpectedCadence(null, 'custom', 0.5)).toBe('every 6h');
+    expect(deriveExpectedCadence(null, 'custom', 0.5)).toBe('every 4h');
   });
 
   it('returns null when neither interval nor known preset is provided', () => {
@@ -56,7 +56,7 @@ describe('estimateDailySpend', () => {
   });
 
   it('uses an explicit tick interval estimate before preset fallback', () => {
-    expect(estimateDailySpend(600_000, 'premium', null)).toBe(44.64);
+    expect(estimateDailySpend(600_000, 'premium', null)).toBe(21.6);
   });
 
   it('estimates from tick interval when no budget is given', () => {

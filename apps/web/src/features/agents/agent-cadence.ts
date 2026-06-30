@@ -28,7 +28,8 @@ function parseNullableNumber(value: number | string | null | undefined): number 
 }
 
 // Cost-per-tick estimates by usage tier (from agentCostEstimates config).
-const COST_PER_TICK = { minimal: 0.12, standard: 0.21, premium: 0.31 };
+// Derived from eval data (.ignore/eval/2026/06/) — includes input+output token costs.
+const COST_PER_TICK = { minimal: 0.08, standard: 0.10, premium: 0.15 };
 
 function deriveCustomTickIntervalMs(dailyBudgetUsd: number): number {
   const estimatedCostPerTick = dailyBudgetUsd <= 3 ? COST_PER_TICK.minimal : dailyBudgetUsd <= 10 ? COST_PER_TICK.standard : COST_PER_TICK.premium;
