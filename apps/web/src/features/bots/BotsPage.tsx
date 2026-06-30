@@ -375,7 +375,10 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const mutation = useMutation({
     mutationFn: () => {
       const preset = STRATEGY_PRESETS.find((p) => p.value === form.strategyPreset)!;
-      const venue = selectedConnection?.provider ?? 'hyperliquid';
+      const venue = selectedConnection?.provider;
+      if (!venue) {
+        throw new Error('Select a platform link before creating a bot');
+      }
       let config: Record<string, unknown> = {
         ...preset.config,
         execution: { mode: form.executionMode },
@@ -508,7 +511,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 strategy: { type: selectedPreset.value, params: {} },
                 risk: {},
                 execution: { mode: form.executionMode },
-                venue: selectedBinding?.provider ?? 'hyperliquid',
+                venue: selectedConnection?.provider ?? 'hyperliquid',
                 symbol: form.symbol || 'BTC-PERP',
               }, null, 2)}
             />

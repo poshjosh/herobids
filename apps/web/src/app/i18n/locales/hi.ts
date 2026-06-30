@@ -594,8 +594,6 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.title': 'डिस्कवरी फ़िल्टर',
   'agents.technical.filters.venue': 'वेन्यू',
   'agents.technical.filters.venue.placeholder': 'वेन्यू चुनें…',
-  'agents.technical.filters.venue.hyperliquid': 'Hyperliquid',
-  'agents.technical.filters.venue.jupiter': 'Jupiter',
   'agents.technical.filters.venueType': 'वेन्यू प्रकार',
   'agents.technical.filters.venueTypeAuto': 'स्वचालित',
   'agents.technical.filters.minVolume': 'न्यूनतम 24घं वॉल्यूम (USD)',

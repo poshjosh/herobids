@@ -718,8 +718,9 @@ function CreateAgentFlow({
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
                       <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
-                      <option value="hyperliquid">{intl.formatMessage({ id: 'agents.technical.filters.venue.hyperliquid' })}</option>
-                      <option value="jupiter">{intl.formatMessage({ id: 'agents.technical.filters.venue.jupiter' })}</option>
+                      {Object.keys(venueTypeMap).sort().map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
                     </select>
                     {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
                     {intent.venueType === 'swap' && intent.executionMode === 'paper' && (

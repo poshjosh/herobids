@@ -634,8 +634,6 @@ export const messages: Record<string, string> = {
   'agents.technical.filters.title': 'Discovery Filters',
   'agents.technical.filters.venue': 'Venue',
   'agents.technical.filters.venue.placeholder': 'Select venue…',
-  'agents.technical.filters.venue.hyperliquid': 'Hyperliquid',
-  'agents.technical.filters.venue.jupiter': 'Jupiter',
   'agents.technical.filters.venueType': 'Venue type',
   'agents.technical.filters.venueTypeAuto': 'auto',
   'agents.technical.filters.minVolume': 'Min 24h volume (USD)',

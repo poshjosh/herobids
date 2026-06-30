@@ -1,20 +1,17 @@
 import { useIntl } from 'react-intl';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { venueAccounts as venueAccountsApi, credentials as credentialsApi, ApiError } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { Modal, FieldLabel, ErrorBanner, inputStyle } from '../portfolios/PortfoliosPage.js';
-
-const SUPPORTED_VENUES = ['hyperliquid', 'bybit', 'jupiter', '1inch'];
-// Source of truth: SWAP_VENUES / ORDERBOOK_VENUES in @herobids/domain — not imported here to keep domain out of the browser bundle
-const JUPITER_VENUES = ['jupiter'];  // resolved via venueAccountRef (wallet address)
-const ONEINCH_VENUES = ['1inch'];    // resolved via DB credential (privateKey + apiKey)
+import { useTradingVenues } from '../agents/useTradingVenues.js';
 
 export function VenueAccountsPage() {
   const intl = useIntl();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const qc = useQueryClient();
+  const { venueTypeMap } = useTradingVenues();
 
   const query = useQuery({
     queryKey: ['venue-accounts'],
@@ -71,7 +68,7 @@ export function VenueAccountsPage() {
                 <div>
                   <div style={{ fontWeight: '500', marginBottom: '2px' }}>{va.label}</div>
                   <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                    {va.venue}{JUPITER_VENUES.includes(va.venue) && va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
+                    {va.venue}{venueTypeMap[va.venue] === 'swap' && va.venueAccountRef ? ` · ${va.venueAccountRef}` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -111,10 +108,21 @@ export function VenueAccountsPage() {
 }
 
 function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [venue, setVenue] = useState(SUPPORTED_VENUES[0]!);
+  const { tradingVenues, tradingProviders } = useTradingVenues();
+  const [venue, setVenue] = useState(tradingVenues[0] ?? '');
   const [label, setLabel] = useState('');
   const [venueAccountRef, setVenueAccountRef] = useState('');
   const [credentialId, setCredentialId] = useState('');
+
+  const selectedProvider = useMemo(
+    () => tradingProviders.find((p) => p.id === venue) ?? null,
+    [tradingProviders, venue],
+  );
+  // Show wallet address for swap venues that don't require a credential (resolved via on-chain account)
+  const needsWalletAddress = selectedProvider?.venueType === 'swap' && !selectedProvider?.connections?.requiresCredential;
+  // Credential is required when the provider's connection schema mandates it
+  const credentialRequired = selectedProvider?.connections?.requiresCredential === true;
+  const credentialLabel = credentialRequired ? ' (required)' : ' (optional)';
 
   const credentialsQuery = useQuery({
     queryKey: ['credentials'],
@@ -139,6 +147,11 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
     mutation.mutate();
   };
 
+  // Sync initial venue when tradingVenues loads
+  if (tradingVenues.length > 0 && !tradingVenues.includes(venue)) {
+    setVenue(tradingVenues[0]!);
+  }
+
   return (
     <Modal title="Add trading account" onClose={onClose}>
       <form onSubmit={handleSubmit}>
@@ -149,7 +162,7 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
             onChange={(e) => { setVenue(e.target.value); setCredentialId(''); setVenueAccountRef(''); }}
             style={{ ...inputStyle, cursor: 'pointer' }}
           >
-            {SUPPORTED_VENUES.map((v) => <option key={v} value={v}>{v}</option>)}
+            {tradingVenues.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
 
@@ -158,15 +171,15 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Main BTC account" style={inputStyle} />
         </div>
 
-        {JUPITER_VENUES.includes(venue) && (
+        {needsWalletAddress && (
           <div style={{ marginBottom: '16px' }}>
-            <FieldLabel>Solana wallet address (required)</FieldLabel>
+            <FieldLabel>Wallet address (required)</FieldLabel>
             <input value={venueAccountRef} onChange={(e) => setVenueAccountRef(e.target.value)} placeholder="e.g. 7EcDhSYGxX…" style={inputStyle} />
           </div>
         )}
 
         <div style={{ marginBottom: '20px' }}>
-          <FieldLabel>Credentials{ONEINCH_VENUES.includes(venue) ? ' (required)' : ' (optional)'}</FieldLabel>
+          <FieldLabel>Credentials{credentialLabel}</FieldLabel>
           <select
             value={credentialId}
             onChange={(e) => setCredentialId(e.target.value)}
@@ -184,8 +197,8 @@ function CreateVenueAccountModal({ onClose, onSuccess }: { onClose: () => void; 
           <Button variant="primary" type="submit" disabled={
             mutation.isPending
             || !label.trim()
-            || (JUPITER_VENUES.includes(venue) && !venueAccountRef.trim())
-            || (ONEINCH_VENUES.includes(venue) && !credentialId)
+            || (needsWalletAddress && !venueAccountRef.trim())
+            || (credentialRequired && !credentialId)
           }>
             {mutation.isPending ? 'Creating…' : 'Create'}
           </Button>

@@ -5,6 +5,7 @@ import {
   agents as agentsApi,
   ApiError,
 } from '../../lib/api-client.js';
+import { getToken } from '../../lib/session.js';
 import {
   Card,
   Button,
@@ -463,14 +464,34 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   }, []);
 
   const handleDownloadArtifact = useCallback(
-    (artifactName: string) => {
+    async (artifactName: string) => {
       if (!selectedRunId) return;
       const url = agentsApi.evaluations.getArtifactUrl(
         agentId,
         selectedRunId,
         artifactName,
       );
-      window.open(url, '_blank');
+
+      try {
+        const token = getToken();
+        const response = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = artifactName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        // Fall back to window.open — will show the raw error if unauthenticated
+        window.open(url, '_blank');
+      }
     },
     [agentId, selectedRunId],
   );
@@ -493,10 +514,9 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
         selectedRunId,
         'REPORT.md',
       );
+      const token = getToken();
       const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('herobids_token') ?? ''}`,
-        },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!response.ok) {
         throw new Error(`Failed to load report: ${response.status}`);
