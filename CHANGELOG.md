@@ -4,9 +4,60 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased] — 2026-06-29
+## [Unreleased]
+
+## v0.0.2 - 2026-06-30
+
+### Added
+- **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers
+  - Added evaluation API methods to `apps/web/src/lib/api-client.ts` (`list`, `get`, `trigger`, `listArtifacts`, `getArtifactUrl`)
+  - Created `AgentEvaluations` component with collapsible `<details>` section, run list with status/scores, inline scorecard, findings table, and artifact downloads
+  - Created `AgentEvaluationReport` component for inline Markdown report rendering using `react-markdown`
+  - Integrated `AgentEvaluations` section into `AgentDetailPage` (after Activity Timeline)
+  - Added i18n keys under `agents.evaluations.*` namespace
+  - Added `@herobids/domain` as a workspace dependency of `@herobids/web`
+- **Agent Evaluation (Level 1)** — Full implementation across 10 phases
+  - Phase 0: Extracted reusable data loaders (`loadAgentFills`, `loadAgentJournalEvents`, `loadAgentRuntimeSessions`, `loadAgentPositions`, `loadAgentBotIds`) from `apps/api/src/routes/exports.ts` into `packages/db/src/agent-evidence-loaders.ts`
+  - Phase 1: Defined core evaluation contracts in `packages/domain/src/agent-evaluation.ts` (`EvaluationScope`, `EvaluationRunRecord`, `EvaluationScorecard`, `EvaluationArtifactStore`, etc.)
+  - Phase 2: Created `agent_evaluations` table (migration 0024), repository (`resolveScope`, `createRun`, `markRunning`, `markSucceeded`, `markFailed`, `markTimedOut`), and shared job contract (`EvaluationJobData`)
+  - Phase 3: Built `EvaluationRuntime` class (BullMQ Worker pattern) with no-op handler, wired into worker startup/shutdown
+  - Phase 4: Implemented `FsEvaluationArtifactStore` in `packages/db/` (shared by API + worker)
+  - Phase 5: Evidence assembler — orchestrates shared loaders and writes artifacts to store
+  - Phase 6: Deterministic analyzers — core (session health, tool failures, cost, persistence), trading (drawdown, expectancy, hold time, rate limits), security (secret leakage, thinking traces)
+  - Phase 7: Report renderer (pure Markdown from scorecard), redaction layer, `runEvaluation()` orchestrator
+  - Phase 8: API routes — `POST /agents/:id/evaluations` (trigger), `GET` (list/status/artifacts/download), scope-aware dedupe (409), `allTime` opt-in gating
+  - Phase 9: Structured pino logging throughout pipeline, dead-run reaper (periodic 60s sweep for stale `running` evaluations)
+- Configuration: `evaluation` section in `config/default.yaml` with `concurrency`, `maxRuntimeMs`, and `thresholds`
+- **Narrative LLM Selection** — Full implementation across 5 phases
+  - Phase 1: Extracted `resolveEffectiveLlmSelection` and `resolveAgentCostProfile` from worker into `packages/domain/src/` (shared by API + worker)
+  - Phase 2: Extended evaluation request and job contracts with `NarrativeLlmRequest` (caller-facing) and `ResolvedNarrativeLlmConfig` (worker-facing) types
+  - Phase 3: Narrative LLM resolution at enqueue time in API — resolves provider/model via agent modelPolicy + user AI defaults + cost profile, validates against providersYaml, derives baseUrl
+  - Phase 4: Worker narrative generator (`generateEvaluationNarrative`) — LLM-powered commentary using scorecard + top findings, best-effort with temperature=0 and toolChoice='none'
+  - Phase 5: Billing (granular input/output token events with idempotency keys) and provenance metadata (`narrative-metadata.json` artifact)
+- **Strategy Presets Expansion & Mechanical Parity** — Full implementation across 6 phases
+  - Phase 0: Expanded `MechanicalParamsSchema` with VWAP, Price Action, Sentiment configs, exit targets (`stopLossPct`, `takeProfitPct`, `trailingStopPct`), and `minCandleCount`
+  - Phase 1: VWAP and price-action scoring in `scoreCandidate()` with 6 unit tests
+  - Phase 2: Removed momentum-to-mechanical translation bridge, simplified both `createStrategy()` factories
+  - Phase 3: 7 strategy presets in web UI (momentum-day, momentum-position, swing, range, contrarian, scalper, dca) with mechanical-format params
+  - Phase 4: Blueprint presets aligned with mechanical-format params (7 presets including momentum-position)
+  - Phase 5: `DcaStrategy` implemented (timer-driven buys with `intervalMs`/`amountPerBuy`)
+  - Phase 6: Sentiment threshold gating with hard-veto and boost logic in `MechanicalStrategy`
+- `VwapParamsSchema`, `PriceActionParamsSchema`, `SentimentConfigSchema` in domain config
+- `DcaStrategy` class with `DcaParamsSchema` in strategy package
+- **Per-agent runtime policy controls**: Agent style presets (Careful/Balanced/Bold) with configurable defaults for tool turns, LLM token limits, context budgets, trading hours, and scout hold duration. Overridable per-agent via `runtime_policy_overrides` JSONB column. Resolved policy flows from API → session manager → agent container. Operator ceilings enforced via Zod validation. Frontend style picker shows derived summary (turns × tokens × daily budget). E2E test script at `scripts/shell/tests/runtime-policy-e2e.sh`. Integration tests in `packages/domain/src/config/runtime-policy-propagation.integration.test.ts`. Full i18n coverage (en/ar/hi). Config `default.yaml` updated with per-agent model documentation.
+
+- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
+
+- Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`
+
+- **Tool autocomplete in skill editor (008-tool-autocomplete-skill-ui)**: `TOOL_CATALOG` in domain with all 46 agent tools mapped to categories and descriptions. `GET /api/v1/agent-tools` discovery endpoint with optional `?category=` filter and category summary. `ToolTagPicker` combobox component in shared UI kit — category-grouped multi-select with search filtering, keyboard navigation (arrow keys + Enter), removable pills, sorted output, and i18n-ready label props. Integrated into skill create composer and SkillCard inline edit form. `requiredTools` now surfaced in the UI for the first time.
+
+- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
+
+- **Broker-side billing notifications**: Telegram and email notification dispatch when agents hit soft-cap (`billing.soft_limit_reached`) or hard-cap (`billing.limit_exceeded`) spending limits. Redis-based deduplication (24h TTL) prevents notification spam — users are notified once per status transition. HTML-escaped message templates include open position context for hard caps. Graceful degradation when Telegram/email/Redis are unavailable.
 
 ### Changed
+
 - **Generalize credentials & agent connection assignment (Phase 1.7)** — Provider-driven venue type and credential field derivation
   - Added `venueType` field to `ProviderDefinition` domain type, derived from provider categories in the catalog
   - `GET /providers/catalog` now returns `venueType` ('orderbook' | 'swap' | null) for each provider
@@ -46,82 +97,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Replaced `CapabilityGrant` domain contract with `AgentConnection`; removed old schema exports
   - Dropped `capability_grant_audit` and `capability_grants` tables (migration `0028_burly_fallen_one` — IRREVERSIBLE)
   - Worker sandbox tool-policy `CapabilityGrant` type intentionally preserved (unrelated concept)
-
-### Added
-- **Agent Evaluation (Level 2 — Frontend)** — User-facing UI for evaluation history and triggers
-  - Added evaluation API methods to `apps/web/src/lib/api-client.ts` (`list`, `get`, `trigger`, `listArtifacts`, `getArtifactUrl`)
-  - Created `AgentEvaluations` component with collapsible `<details>` section, run list with status/scores, inline scorecard, findings table, and artifact downloads
-  - Created `AgentEvaluationReport` component for inline Markdown report rendering using `react-markdown`
-  - Integrated `AgentEvaluations` section into `AgentDetailPage` (after Activity Timeline)
-  - Added i18n keys under `agents.evaluations.*` namespace
-  - Added `@herobids/domain` as a workspace dependency of `@herobids/web`
-
-## [Unreleased] — 2026-06-28
-### Added
-- **Agent Evaluation (Level 1)** — Full implementation across 10 phases
-  - Phase 0: Extracted reusable data loaders (`loadAgentFills`, `loadAgentJournalEvents`, `loadAgentRuntimeSessions`, `loadAgentPositions`, `loadAgentBotIds`) from `apps/api/src/routes/exports.ts` into `packages/db/src/agent-evidence-loaders.ts`
-  - Phase 1: Defined core evaluation contracts in `packages/domain/src/agent-evaluation.ts` (`EvaluationScope`, `EvaluationRunRecord`, `EvaluationScorecard`, `EvaluationArtifactStore`, etc.)
-  - Phase 2: Created `agent_evaluations` table (migration 0024), repository (`resolveScope`, `createRun`, `markRunning`, `markSucceeded`, `markFailed`, `markTimedOut`), and shared job contract (`EvaluationJobData`)
-  - Phase 3: Built `EvaluationRuntime` class (BullMQ Worker pattern) with no-op handler, wired into worker startup/shutdown
-  - Phase 4: Implemented `FsEvaluationArtifactStore` in `packages/db/` (shared by API + worker)
-  - Phase 5: Evidence assembler — orchestrates shared loaders and writes artifacts to store
-  - Phase 6: Deterministic analyzers — core (session health, tool failures, cost, persistence), trading (drawdown, expectancy, hold time, rate limits), security (secret leakage, thinking traces)
-  - Phase 7: Report renderer (pure Markdown from scorecard), redaction layer, `runEvaluation()` orchestrator
-  - Phase 8: API routes — `POST /agents/:id/evaluations` (trigger), `GET` (list/status/artifacts/download), scope-aware dedupe (409), `allTime` opt-in gating
-  - Phase 9: Structured pino logging throughout pipeline, dead-run reaper (periodic 60s sweep for stale `running` evaluations)
-- Configuration: `evaluation` section in `config/default.yaml` with `concurrency`, `maxRuntimeMs`, and `thresholds`
-
-- **Narrative LLM Selection** — Full implementation across 5 phases
-  - Phase 1: Extracted `resolveEffectiveLlmSelection` and `resolveAgentCostProfile` from worker into `packages/domain/src/` (shared by API + worker)
-  - Phase 2: Extended evaluation request and job contracts with `NarrativeLlmRequest` (caller-facing) and `ResolvedNarrativeLlmConfig` (worker-facing) types
-  - Phase 3: Narrative LLM resolution at enqueue time in API — resolves provider/model via agent modelPolicy + user AI defaults + cost profile, validates against providersYaml, derives baseUrl
-  - Phase 4: Worker narrative generator (`generateEvaluationNarrative`) — LLM-powered commentary using scorecard + top findings, best-effort with temperature=0 and toolChoice='none'
-  - Phase 5: Billing (granular input/output token events with idempotency keys) and provenance metadata (`narrative-metadata.json` artifact)
-
-### Changed
 - `apps/api/src/routes/exports.ts`: agent routes refactored to use shared data loaders (reduced duplication)
-
-## [Unreleased] — 2026-06-27
-### Added
-- **Strategy Presets Expansion & Mechanical Parity** — Full implementation across 6 phases
-  - Phase 0: Expanded `MechanicalParamsSchema` with VWAP, Price Action, Sentiment configs, exit targets (`stopLossPct`, `takeProfitPct`, `trailingStopPct`), and `minCandleCount`
-  - Phase 1: VWAP and price-action scoring in `scoreCandidate()` with 6 unit tests
-  - Phase 2: Removed momentum-to-mechanical translation bridge, simplified both `createStrategy()` factories
-  - Phase 3: 7 strategy presets in web UI (momentum-day, momentum-position, swing, range, contrarian, scalper, dca) with mechanical-format params
-  - Phase 4: Blueprint presets aligned with mechanical-format params (7 presets including momentum-position)
-  - Phase 5: `DcaStrategy` implemented (timer-driven buys with `intervalMs`/`amountPerBuy`)
-  - Phase 6: Sentiment threshold gating with hard-veto and boost logic in `MechanicalStrategy`
-- `VwapParamsSchema`, `PriceActionParamsSchema`, `SentimentConfigSchema` in domain config
-- `DcaStrategy` class with `DcaParamsSchema` in strategy package
-
-### Changed
 - `candleLimit` default: 100 → 48
 - `MechanicalParamsSchema`: `stopLossPct` and `takeProfitPct` now required (no defaults)
 - `MechanicalStrategy`: uses `params.minCandleCount` (was hardcoded 20)
-
-### Removed
-- `momentum-to-mechanical.ts` and `.test.ts` — translation bridge deleted
-- `translateMomentumToMechanicalParams` export from strategy package
-This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-
-- **Per-agent runtime policy controls**: Agent style presets (Careful/Balanced/Bold) with configurable defaults for tool turns, LLM token limits, context budgets, trading hours, and scout hold duration. Overridable per-agent via `runtime_policy_overrides` JSONB column. Resolved policy flows from API → session manager → agent container. Operator ceilings enforced via Zod validation. Frontend style picker shows derived summary (turns × tokens × daily budget). E2E test script at `scripts/shell/tests/runtime-policy-e2e.sh`. Integration tests in `packages/domain/src/config/runtime-policy-propagation.integration.test.ts`. Full i18n coverage (en/ar/hi). Config `default.yaml` updated with per-agent model documentation.
-
-- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
-
-- Bot lifecycle API endpoints: `DELETE /bots/:id`, `POST /bots/:id/stop`, `POST /bots/:id/start`
-
-- **Tool autocomplete in skill editor (008-tool-autocomplete-skill-ui)**: `TOOL_CATALOG` in domain with all 46 agent tools mapped to categories and descriptions. `GET /api/v1/agent-tools` discovery endpoint with optional `?category=` filter and category summary. `ToolTagPicker` combobox component in shared UI kit — category-grouped multi-select with search filtering, keyboard navigation (arrow keys + Enter), removable pills, sorted output, and i18n-ready label props. Integrated into skill create composer and SkillCard inline edit form. `requiredTools` now surfaced in the UI for the first time.
-
-- Birdeye market data provider: opt-in Solana-only provider for token discovery (trending), token overview, and OHLCV candles. Config-driven via `config.birdeye.*`; disabled by default; enabled-without-API-key fails fast at startup. HTTP 400 responses are treated as warn-and-skip (rate limits / unsupported tokens). Runtime failures are isolated via `Promise.allSettled` and do not block other providers.
-
-- **Broker-side billing notifications**: Telegram and email notification dispatch when agents hit soft-cap (`billing.soft_limit_reached`) or hard-cap (`billing.limit_exceeded`) spending limits. Redis-based deduplication (24h TTL) prevents notification spam — users are notified once per status transition. HTML-escaped message templates include open position context for hard caps. Graceful degradation when Telegram/email/Redis are unavailable.
-
-### Changed
-
 - Agent export endpoints (`/agents/:id/export/*`) now include agent-native fills, positions, and journal events alongside bot-owned records; added `actorType` discriminator to agent-native and bot journal queries in export bundle for actor-scope correctness.
 
 - **Dynamic LLM Pricing**: Provider pricing sourced from PostgreSQL (`llm_pricing_snapshots`) + `config/providers.yaml`. Hardcoded `PROVIDER_DEFINITIONS` removed. OpenRouter pricing fetched hourly by worker, static providers seeded on startup. API model catalog reads from DB. Rate card seeding uses DB snapshots instead of build-time constants.
@@ -149,6 +128,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - update_own_config tool
 - Cost preset from frontend
+- `momentum-to-mechanical.ts` and `.test.ts` — translation bridge deleted
+- `translateMomentumToMechanicalParams` export from strategy package
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## 0.0.1-2026.06.26-b
 
