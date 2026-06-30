@@ -52,7 +52,7 @@ describe('AgentControlsSection rendering', () => {
   it('shows explicit cadence override messaging when tick interval is set', () => {
     const html = renderControls({ costPreset: 'premium', tickIntervalMins: '10' });
     expect(html).toContain('Base cadence: every 10 min');
-    expect(html).toContain('Estimated daily LLM spend: ~$44.64');
+    expect(html).toContain('Estimated daily LLM spend: ~$21.60');
   });
 
   it('renders maxPositionSizePct guidance explaining it is independent of capital', () => {

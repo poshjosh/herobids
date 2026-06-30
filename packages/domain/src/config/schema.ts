@@ -1177,6 +1177,7 @@ export type AppConfig = z.infer<typeof AppConfigSchema>;
 export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
 export type AgentRuntimePolicy = z.infer<typeof AgentRuntimePolicySchema>;
+export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 export type BacktestingConfig = z.infer<typeof BacktestingConfigSchema>;
 export type EvaluationConfig = z.infer<typeof EvaluationConfigSchema>;
 export type EvaluationThresholds = z.infer<typeof EvaluationThresholdsSchema>;

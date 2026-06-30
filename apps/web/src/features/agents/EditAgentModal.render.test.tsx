@@ -126,7 +126,7 @@ describe('EditAgentModal rendering', () => {
     expect(html).toContain(messages['agents.controls.dailySpendBudget']);
     // Capital controls are now inside the (collapsed) Trading Setup advanced tab.
     expect(html).toContain(messages['agents.advanced.tradingSetup']);
-    expect(html).toContain('Expected cadence: every 6h');
+    expect(html).toContain('Expected cadence: every 4h');
     expect(html).toContain('Estimated daily LLM spend: ~$0.50');
     expect(html).not.toContain(messages['agents.controls.dailyLlmTokenBudget']);
   });

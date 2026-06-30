@@ -65,7 +65,7 @@ async function createBot(token: string, overrides: Record<string, unknown> = {})
       venue: 'hyperliquid',
       symbol: 'BTC-PERP',
       config: {
-        strategy: { type: 'momentum', params: { symbol: 'BTC-PERP', intervalMs: 5000, lookbackPeriods: 14 } },
+        strategy: { type: 'momentum', decisionMode: 'mechanical', params: { symbol: 'BTC-PERP', intervalMs: 5000, lookbackPeriods: 14 } },
         risk: {},
         execution: { mode: 'paper' },
         venue: 'hyperliquid',
@@ -190,11 +190,12 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
         venue: '1inch',
         symbol: 'ETH-USDC',
         config: {
-          strategy: { type: 'swap', params: { symbol: 'ETH-USDC' } },
+          strategy: { type: 'momentum', decisionMode: 'mechanical', params: { symbol: 'ETH-USDC' } },
           risk: {},
           execution: { mode: 'paper' },
           venue: '1inch',
           symbol: 'ETH-USDC',
+          swapAssets: { baseAsset: 'ETH', quoteAsset: 'USDC', baseDecimals: 18, quoteDecimals: 6 },
         },
       },
     });
@@ -223,7 +224,7 @@ describe.skipIf(SKIP)('Bot lifecycle endpoints — functional', () => {
         venue: 'hyperliquid',
         symbol: 'BTC-PERP',
         config: {
-          strategy: { type: 'momentum', params: { symbol: 'BTC-PERP', intervalMs: 5000, lookbackPeriods: 14 } },
+          strategy: { type: 'momentum', decisionMode: 'mechanical', params: { symbol: 'BTC-PERP', intervalMs: 5000, lookbackPeriods: 14 } },
           risk: {},
           execution: { mode: 'live' },
           venue: 'hyperliquid',
