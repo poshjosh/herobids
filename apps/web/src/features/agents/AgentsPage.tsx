@@ -510,28 +510,30 @@ function CreateAgentFlow({
           </div>
 
           {/* 3. Style Selector */}
-          <StyleSelector
-            value={intent.style}
-            onChange={(style) => {
-              const defaults = resolveStyleDefaults(style);
-              setIntent((state) => ({
-                ...state,
-                style,
-                costPreset: defaults.costPreset,
-                tickIntervalMins: defaults.tickIntervalMins,
-                dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
-                ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
-              }));
-            }}
-          />
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-            {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
-            {formatStyleSummary(intent.style, resolveModelPricing(
-              availableModelsQuery.data?.providers ?? [],
-              intent.provider,
-              intent.lightModel,
-              intent.heavyModel,
-            ))}
+          <div>
+            <StyleSelector
+              value={intent.style}
+              onChange={(style) => {
+                const defaults = resolveStyleDefaults(style);
+                setIntent((state) => ({
+                  ...state,
+                  style,
+                  costPreset: defaults.costPreset,
+                  tickIntervalMins: defaults.tickIntervalMins,
+                  dailySpendBudgetUsd: defaults.dailySpendBudgetUsd,
+                  ...(policyManuallySetRef.current ? {} : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
+                }));
+              }}
+            />
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+              {intl.formatMessage({ id: 'agents.style.summaryPrefix' })}{' '}
+              {formatStyleSummary(intent.style, resolveModelPricing(
+                availableModelsQuery.data?.providers ?? [],
+                intent.provider,
+                intent.lightModel,
+                intent.heavyModel,
+              ))}
+            </div>
           </div>
 
           {/* 3. Agent Form Body */}
