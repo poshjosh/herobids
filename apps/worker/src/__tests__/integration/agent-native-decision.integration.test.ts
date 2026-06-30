@@ -173,7 +173,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       updatedAt: now,
     });
 
-    // 3. Seed connection
+    // 3. Seed connection (resolved to the venue account created above)
     connectionId = crypto.randomUUID();
     await db.insert(connections).values({
       id: connectionId,
@@ -181,11 +181,12 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
       provider: 'hyperliquid',
       label: 'Test Connection',
       status: 'active',
+      resolvedVenueAccountId: venueAccountId,
       createdAt: now,
       updatedAt: now,
     });
 
-    // 4. Use connectionId for grants (connection already seeded in step 3)
+    // 4. resolvedVenueAccountId already set on connection in step 3
 
     // 5. Seed agent
     agentId = crypto.randomUUID();
@@ -492,6 +493,7 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
         provider: '1inch',
         label: 'Test 1inch Connection',
         status: 'active',
+        resolvedVenueAccountId: swapVenueAccountId,
         createdAt: now,
         updatedAt: now,
       });

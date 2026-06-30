@@ -1,12 +1,18 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { venueAccounts, bots, connections } from '@herobids/db';
+import { venueAccounts, bots, connections, agentConnections, agents } from '@herobids/db';
 
 export interface CredentialDependents {
   venueAccountIds: string[];
   runningInstanceIds: string[];
   /** Active (non-revoked) connections that reference this credential. */
   activeConnectionIds: string[];
+  /**
+   * Agents with an active agent_connection to any connection (active or revoked)
+   * that references this credential. Blocking these prevents orphaned credential
+   * references in the agent's execution context.
+   */
+  blockingAgentCredentials: Array<{ id: string; label: string | null }>;
 }
 
 /**
@@ -42,8 +48,30 @@ export async function findCredentialDependents(db: Database, credentialId: strin
 
   const venueAccountIds = linkedAccounts.map((a) => a.id);
 
-  if (venueAccountIds.length === 0 && activeConnectionIds.length === 0) {
-    return { venueAccountIds: [], runningInstanceIds: [], activeConnectionIds: [] };
+  // Find agents with active agent_connections to ANY connection (active or revoked)
+  // that references this credential. These agents would lose access to their execution
+  // context if the credential were deleted.
+  const allLinkedConnections = await db
+    .select({ id: connections.id })
+    .from(connections)
+    .where(eq(connections.credentialId, credentialId));
+
+  let blockingAgentCredentials: Array<{ id: string; label: string | null }> = [];
+  if (allLinkedConnections.length > 0) {
+    const connIds = allLinkedConnections.map((c) => c.id);
+    const blockingRows = await db
+      .select({ id: agents.id, label: agents.name })
+      .from(agentConnections)
+      .innerJoin(agents, eq(agentConnections.agentId, agents.id))
+      .where(and(
+        eq(agentConnections.status, 'active'),
+        inArray(agentConnections.connectionId, connIds),
+      ));
+    blockingAgentCredentials = blockingRows.map((r) => ({ id: r.id, label: r.label ?? null }));
+  }
+
+  if (venueAccountIds.length === 0 && activeConnectionIds.length === 0 && blockingAgentCredentials.length === 0) {
+    return { venueAccountIds: [], runningInstanceIds: [], activeConnectionIds: [], blockingAgentCredentials: [] };
   }
 
   let runningInstanceIds: string[] = [];
@@ -58,5 +86,5 @@ export async function findCredentialDependents(db: Database, credentialId: strin
     runningInstanceIds = runningBots.map((b) => b.id);
   }
 
-  return { venueAccountIds, runningInstanceIds, activeConnectionIds };
+  return { venueAccountIds, runningInstanceIds, activeConnectionIds, blockingAgentCredentials };
 }

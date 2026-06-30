@@ -42,6 +42,8 @@ function stubRepo() {
     insert: vi.fn().mockResolvedValue(undefined),
     getLastReconciledAt: vi.fn().mockResolvedValue(null),
     getLastReconciledAtForInstance: vi.fn().mockResolvedValue(null),
+    sumRealizedPnlDelta: vi.fn().mockResolvedValue('0'),
+    sumRealizedPnlDeltaByVenueAccount: vi.fn().mockResolvedValue('0'),
   };
 }
 

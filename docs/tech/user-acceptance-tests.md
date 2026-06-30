@@ -49,7 +49,7 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
-| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Credentials, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots, Trading setup, Exposure, Activity, Outcomes. Click "▸ Advanced" to expand. | — | Updated 2026-06-23: Activity & Outcomes moved to Advanced; Advanced now collapsible (collapsed by default); "New AI Agent" inline action removed. |
+| N-01 | Sidebar renders all links | Log in; inspect left navigation | Primary: Mission Control, AI Agents, Skills. Under "Manage": Connections, Credentials, Billing, Settings. Under "Advanced" (collapsible, collapsed by default): Bots, Trading setup, Exposure, Activity, Outcomes. Click "▸ Advanced" to expand. | ✅ | Verified 2026-06-30: All 12 links present and functional. Advanced section collapsed by default; expanded to reveal Bots, Trading setup, Exposure, Activity, Outcomes. |
 | N-02 | Active link highlighted | Click each nav link | Current page link is visually active | ✅ | Active link shows green background + text (verified on Skills page screenshot) |
 | N-03 | Root redirect | Navigate to `/` | Redirected to `/mission-control` | ✅ | Confirmed |
 | N-04 | Unknown route | Navigate to `/does-not-exist` | React Router error boundary shown (404 Not Found); does not crash | ✅ | Shows branded "Page not found" with "← Back to Mission Control" CTA |
@@ -244,9 +244,9 @@ Route: `/skills` — capability bundles that tell agents what they can do.
 |----|-----------|-------|----------|--------|-------|
 | CN-01 | Connections list renders | Navigate to `/connections` | Page titled "Connections" with subtitle "Platform connections to external providers" | ✅ | Title "Connections"; subtitle differs: "Low-level provider connection management — for advanced use." |
 | CN-02 | Empty state | Open with no connections | Empty state shown with copy about enabling capability families | ✅ | "No connections yet" empty state with explanatory copy |
-| CN-03 | Create connection — happy path | Click "New connection"; fill provider and label; optionally choose a credential; submit | Connection appears in the list with provider and status | ✅ | "Test Connection" (hyperliquid) appeared with "active" status |
+| CN-03 | Create connection — happy path | Click "New connection"; fill provider and label; optionally choose a credential; submit | Connection appears in the list with provider and status | ✅ | Created "UAT Test Connection" (hyperliquid) with "active" status; connection card visible |
 | CN-04 | Create connection — validation | Submit with missing provider or label | Create action disabled or error shown; connection not created | ✅ | "Create" button disabled until both provider and label filled |
-| CN-05 | Revoke active connection | Click "Revoke" on an active connection | Status updates and the revoke button disappears | ✅ | Status changed to "revoked"; Revoke button disappeared |
+| CN-05 | Revoke active connection | Click "Revoke" on an active connection | Status updates and the revoke button disappears | ✅ | Status changed to "revoked"; Revoke button disappeared (verified 2026-06-30) |
 | CN-06 | Connection shows profile/providerRef | Create connection via provider-link setup | Connection card shows provider reference (e.g. wallet address) if present | — | |
 
 ---

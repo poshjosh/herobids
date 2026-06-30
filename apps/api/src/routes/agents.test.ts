@@ -71,6 +71,8 @@ function buildDb(options: {
   sessionRows?: Array<Record<string, unknown>>;
   connectionRows?: Array<Record<string, unknown>>;
   agentConnectionRows?: Array<Record<string, unknown>>;
+  /** @deprecated Use agentConnectionRows. Legacy alias kept for test compatibility. */
+  capabilityGrantRows?: Array<Record<string, unknown>>;
   venueAccountRows?: Array<Record<string, unknown>>;
   userRows?: Array<Record<string, unknown>>;
 } = {}) {
@@ -122,7 +124,7 @@ function buildDb(options: {
   const botRows = options.botRows ?? options.activeLinkRows ?? [];
   const sessionRows = options.sessionRows ?? [];
   const connectionRows = options.connectionRows ?? [];
-  const agentConnectionRows = options.agentConnectionRows ?? [];
+  const agentConnectionRows = options.agentConnectionRows ?? options.capabilityGrantRows ?? [];
   const venueAccountRows = options.venueAccountRows ?? [];
   const userRows = options.userRows ?? [];
 

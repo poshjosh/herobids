@@ -72,10 +72,10 @@ test.describe('Journey 14: Create Agent inline trading setup', () => {
 
     await page.getByRole('checkbox', { name: botSkill.name }).check();
 
-    // Switch to the AI Configuration tab — the trading-setup section
+    // Switch to the AI Config tab — the trading-setup section
     // (no-connections message + "Set up trading now" button) lives there,
     // not in the Skills tab.
-    const aiConfigTab = page.getByRole('tab', { name: 'AI Configuration' });
+    const aiConfigTab = page.getByRole('tab', { name: 'AI Config' });
     if (await aiConfigTab.count() > 0) {
       await aiConfigTab.first().click();
       await page.waitForTimeout(300);

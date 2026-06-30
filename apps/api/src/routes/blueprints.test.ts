@@ -651,7 +651,7 @@ describe('POST /bots with blueprintId', () => {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active' }]),
+              where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]),
             }),
           }),
           insert: vi.fn().mockReturnValue({
@@ -741,7 +741,7 @@ describe('POST /bots with blueprintId', () => {
         const tx = {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active' }]) }),
+            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]) }),
           }),
           insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
         };
@@ -825,7 +825,7 @@ describe('POST /bots with blueprintId', () => {
         const tx = {
           execute: vi.fn().mockResolvedValue({ rows: [] }),
           select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active' }]) }),
+            from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ id: 'tb-1', userId: TEST_USER_ID, provider: 'hyperliquid', label: 'Test', status: 'active', resolvedVenueAccountId: 'va-1' }]) }),
           }),
           insert: vi.fn().mockReturnValue({
             // Simulate the FK violation thrown when blueprint is deleted concurrently.

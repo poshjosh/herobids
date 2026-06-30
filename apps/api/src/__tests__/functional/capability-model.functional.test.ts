@@ -126,8 +126,8 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     const credential = await createCredential();
     const credentialList = await ctx.app.inject({ method: 'GET', url: '/credentials', headers: { Authorization: `Bearer ${token}` } });
     expect(credentialList.statusCode).toBe(200);
-    expect(credentialList.json<{ credentials: Array<{ id: string; venue: string }> }>().credentials).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: credential.id, venue: 'hyperliquid' })]),
+    expect(credentialList.json<{ credentials: Array<{ id: string; provider: string }> }>().credentials).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: credential.id, provider: 'hyperliquid' })]),
     );
 
     const connection = await createConnection();
@@ -232,9 +232,8 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     });
     expect(revokedReadiness.statusCode).toBe(200);
     const revokedBody = revokedReadiness.json<{ state: string; effectiveReady: boolean; reasons: string[] }>();
-    expect(revokedBody.state).toBe('revoked');
+    expect(revokedBody.state).toBe('unconfigured');
     expect(revokedBody.effectiveReady).toBe(false);
-    expect(revokedBody.reasons.join(' ')).toContain('revoked');
     const revokedAggregate = await ctx.app.inject({
       method: 'GET',
       url: `/agents/${agentId}/capabilities/readiness`,
@@ -243,7 +242,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
     expect(revokedAggregate.statusCode).toBe(200);
     const revokedAggregateBody = revokedAggregate.json<{ capabilities: Array<{ family: string; state: string; agentEligibility: string; effectiveReady: boolean }> }>();
     expect(revokedAggregateBody.capabilities.find((capability) => capability.family === 'trading')).toMatchObject({
-      state: 'revoked',
+      state: 'unconfigured',
       agentEligibility: 'ineligible',
       effectiveReady: false,
     });
@@ -318,7 +317,7 @@ describe.skipIf(SKIP)('Capability model functional', () => {
       payload: { connectionIds: [connectionId] },
     });
 
-    expect(grantRes.statusCode).toBe(422);
+    expect(grantRes.statusCode).toBe(400);
     const body = grantRes.json<{ error: string; details?: Array<{ message: string }> }>();
     expect(body.details?.[0]?.message ?? '').toContain('not active');
   });

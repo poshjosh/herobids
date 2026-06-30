@@ -7,6 +7,7 @@ import type { Database } from '@herobids/db';
 import {
   agents,
   agentArtifacts,
+  agentConnectionAudit,
   agentConnections,
   agentMessages,
   agentOutboundMessages,
@@ -23,6 +24,7 @@ import {
   skillUsageEvents,
   skills,
   users,
+  venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
 import { AgentRiskDefaultsSchema, AgentRuntimePolicyOverridesSchema, RUNTIME_POLICY_CEILINGS, normalizePersistedAiModelConfig, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
@@ -965,8 +967,9 @@ export async function agentRoutes(
 
           // Insert rows for newly added connections
           for (const cid of toAdd) {
+            const acId = crypto.randomUUID();
             await tx.insert(agentConnections).values({
-              id: crypto.randomUUID(),
+              id: acId,
               agentId: id,
               connectionId: cid,
               status: 'active',
@@ -974,6 +977,14 @@ export async function agentRoutes(
               grantedAt: now,
               createdAt: now,
               updatedAt: now,
+            });
+            await tx.insert(agentConnectionAudit).values({
+              id: crypto.randomUUID(),
+              agentConnectionId: acId,
+              action: 'granted',
+              actorType: 'user',
+              actorId: request.userId,
+              createdAt: now,
             });
           }
 
@@ -984,6 +995,14 @@ export async function agentRoutes(
               revokedAt: now,
               updatedAt: now,
             }).where(eq(agentConnections.id, row.id));
+            await tx.insert(agentConnectionAudit).values({
+              id: crypto.randomUUID(),
+              agentConnectionId: row.id,
+              action: 'revoked',
+              actorType: 'user',
+              actorId: request.userId,
+              createdAt: now,
+            });
           }
         }
         return { kind: 'ok' as const };
@@ -1049,9 +1068,41 @@ export async function agentRoutes(
     await db.delete(bots).where(
       and(eq(bots.creatorType, 'agent'), eq(bots.creatorId, id)),
     );
-    // 7. NULL venue_accounts.credentialId on venue accounts only used by this agent's
-    //    connections (unblocks credential deletion). Connections are user-owned and
-    //    persist after agent deletion; only clean up the linkage.
+    // 7. Clean up orphaned connections: for each connection linked exclusively to this
+    //    agent (no other agent holds an agent_connection to it), revoke the connection
+    //    and null out the venue account's credentialId so the credential can be deleted.
+    //    Connections are user-owned and persist after agent deletion; only the linkage
+    //    is cleaned up here.
+    const myConnRows = await db
+      .select({ connectionId: agentConnections.connectionId })
+      .from(agentConnections)
+      .where(eq(agentConnections.agentId, id));
+    const uniqueConnectionIds = [...new Set(myConnRows.map((r) => r.connectionId))];
+    for (const connectionId of uniqueConnectionIds) {
+      // Count all agent_connections for this connection across all agents.
+      // If exactly one exists (this agent's row, not yet cascade-deleted), the connection
+      // is orphaned once this agent is gone.
+      const allUsersOfConn = await db
+        .select({ connectionId: agentConnections.connectionId })
+        .from(agentConnections)
+        .where(eq(agentConnections.connectionId, connectionId));
+      if (allUsersOfConn.length === 1) {
+        const [conn] = await db
+          .select({ id: connections.id, resolvedVenueAccountId: connections.resolvedVenueAccountId })
+          .from(connections)
+          .where(eq(connections.id, connectionId));
+        if (conn) {
+          if (conn.resolvedVenueAccountId) {
+            await db.update(venueAccounts)
+              .set({ credentialId: null })
+              .where(eq(venueAccounts.id, conn.resolvedVenueAccountId));
+          }
+          await db.update(connections)
+            .set({ status: 'revoked' })
+            .where(eq(connections.id, connectionId));
+        }
+      }
+    }
     // 8. DELETE agents (cascades: agent_skills, agent_connections, agent_connection_audit)
     await db.delete(agents).where(eq(agents.id, id));
 

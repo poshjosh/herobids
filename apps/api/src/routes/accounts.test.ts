@@ -147,7 +147,7 @@ describe('POST /venue-accounts credential validation', () => {
   });
 
   it('rejects when credential is for a different venue', async () => {
-    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'jupiter' }];
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', provider: 'jupiter' }];
     const app = Fastify();
     const db = buildMockDb();
     decorateWithAuth(app);
@@ -169,7 +169,7 @@ describe('POST /venue-accounts credential validation', () => {
   });
 
   it('succeeds when credential matches user and venue', async () => {
-    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'hyperliquid' }];
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', provider: 'hyperliquid' }];
     const app = Fastify();
     const db = buildMockDb();
     decorateWithAuth(app);
@@ -189,7 +189,7 @@ describe('POST /venue-accounts credential validation', () => {
   });
 
   it('keeps Hyperliquid venueProfile aligned with the unauthenticated probe even when a credential is linked', async () => {
-    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'hyperliquid' }];
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', provider: 'hyperliquid' }];
     const probeSpy = vi.spyOn(HyperliquidAdapter, 'probe').mockResolvedValue({
       venue: 'hyperliquid',
       venueType: 'orderbook',
@@ -330,7 +330,7 @@ describe('POST /venue-accounts credential validation', () => {
   });
 
   it('creates 1inch account with venueProfile set to swap/authenticated when credential is linked', async () => {
-    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: '1inch' }];
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', provider: '1inch' }];
     const app = Fastify();
     const db = buildMockDb();
     decorateWithAuth(app);
@@ -354,7 +354,7 @@ describe('POST /venue-accounts credential validation', () => {
 
   it('returns 400 when credential is deleted between validation and insert (FK race)', async () => {
     // Credential lookup succeeds (not yet deleted)
-    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', venue: 'hyperliquid' }];
+    credentialLookupResult = [{ id: 'cred-1', userId: 'user-1', provider: 'hyperliquid' }];
     const app = Fastify();
     const db = buildMockDb();
     // Override insert to throw FK violation

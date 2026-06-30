@@ -74,10 +74,10 @@ describe.skipIf(SKIP)('GET /agents/:agentId/capabilities/trading/positions — f
 
   async function bindAgent(token: string, agentId: string, connectionId: string): Promise<void> {
     const res = await ctx.app.inject({
-      method: 'POST',
-      url: `/agents/${agentId}/capabilities/trading/actions/bind`,
+      method: 'PATCH',
+      url: `/agents/${agentId}`,
       headers: { Authorization: `Bearer ${token}` },
-      payload: { connectionId },
+      payload: { connectionIds: [connectionId] },
     });
     expect([200, 201]).toContain(res.statusCode);
   }
