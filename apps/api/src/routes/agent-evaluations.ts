@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, and, desc } from 'drizzle-orm';
 import { Queue } from 'bullmq';
+import { ZipArchive } from 'archiver';
+import { PassThrough } from 'node:stream';
 import type { Database } from '@herobids/db';
 import {
   agents,
@@ -367,6 +369,58 @@ export async function agentEvaluationRoutes(
 
       const artifacts = await store.list(runId);
       return reply.send(artifacts);
+    },
+  );
+
+  // ── GET /agents/:id/evaluations/:runId/artifacts/bundle — download all as zip
+
+  app.get<{ Params: { id: string; runId: string } }>(
+    '/agents/:id/evaluations/:runId/artifacts/bundle',
+    async (request, reply) => {
+      const { id, runId } = request.params;
+
+      const [agent] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+      if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+      const run = await getRun(db, runId);
+      if (!run || run.agentId !== id) return reply.status(404).send({ error: 'not_found' });
+
+      const artifacts = await store.list(runId);
+      if (artifacts.length === 0) {
+        return reply.status(404).send({ error: 'not_found', message: 'No artifacts found for this run' });
+      }
+
+      const archive = new ZipArchive({ zlib: { level: 6 } });
+      const buffer = new PassThrough();
+      archive.pipe(buffer);
+
+      // Append each artifact to the zip
+      for (const artifact of artifacts) {
+        const data = await store.read(runId, artifact.name);
+        if (data) {
+          archive.append(Buffer.from(data), { name: artifact.name });
+        }
+      }
+
+      // Finalize the archive (must be called before the stream ends)
+      void archive.finalize();
+
+      void reply.header('Content-Type', 'application/zip');
+      void reply.header(
+        'Content-Disposition',
+        `attachment; filename="evaluation-${runId.slice(0, 8)}.zip"`,
+      );
+
+      // Collect the zip into a buffer and send
+      const chunks: Buffer[] = [];
+      for await (const chunk of buffer) {
+        chunks.push(Buffer.from(chunk));
+      }
+      const zipBuffer = Buffer.concat(chunks);
+      return reply.send(zipBuffer);
     },
   );
 

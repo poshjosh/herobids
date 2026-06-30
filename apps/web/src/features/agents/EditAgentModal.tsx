@@ -143,7 +143,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
     ? (initialData.tickIntervalMs ?? null)
     : null;
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
-  const showTechnical = form.technicalPreFilterEnabled;
   const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   // Short-circuit to false when a non-trading preset (Custom or
   // Personal Assistant) is selected — no trading skills are inferred
@@ -398,7 +397,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               setForm((s) => ({ ...s, ...patch }));
             }}
             showIntelligence={showIntelligence}
-            showTechnical={showTechnical}
             showTradingControls={showTradingControls}
             requiresTradingSetup={requiresTradingSetup}
             isAdmin={isAdmin ?? false}

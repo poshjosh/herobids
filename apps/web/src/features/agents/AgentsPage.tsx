@@ -330,7 +330,6 @@ function CreateAgentFlow({
   );
   const showIntelligence = intent.capabilityMode === 'intelligence' || intent.capabilityMode === 'both';
   const requiresTradingSetup = intent.skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
-  const showTechnical = intent.technicalPreFilterEnabled && requiresTradingSetup;
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
@@ -544,7 +543,6 @@ function CreateAgentFlow({
               setIntent((s) => ({ ...s, ...patch }));
             }}
             showIntelligence={showIntelligence}
-            showTechnical={showTechnical}
             showTradingControls={requiresTradingSetup}
             requiresTradingSetup={requiresTradingSetup}
             isAdmin={meQuery.data?.isAdmin ?? false}
@@ -918,14 +916,14 @@ function CreateAgentFlow({
             )}
             {showIntelligence && <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />}
             {requiresTradingSetup && intent.venue && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.venue} />}
-            {showTechnical && (
+            {intent.technicalPreFilterEnabled && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}
                 value={intl.formatMessage({ id: `agents.technical.scan.signalBias.${intent.technicalConfig.signalBias === 'trend-following' ? 'trendFollowing' : 'meanReverting'}` })}
               />
             )}
-            {showTechnical && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
-            {showTechnical && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
+            {intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
+            {intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
               value={requiresTradingSetup

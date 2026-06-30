@@ -148,10 +148,12 @@ function FindingRow({ finding }: { finding: EvaluationFinding }) {
 function RunDetail({
   run,
   onDownloadArtifact,
+  onDownloadBundle,
   onViewReport,
 }: {
   run: EvaluationRunRecord;
   onDownloadArtifact: (artifactName: string) => void;
+  onDownloadBundle: () => void;
   onViewReport: () => void;
 }) {
   const intl = useIntl();
@@ -266,6 +268,9 @@ function RunDetail({
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <Button variant="secondary" size="sm" onClick={onViewReport}>
           {intl.formatMessage({ id: 'agents.evaluations.viewReport' })}
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onDownloadBundle}>
+          {intl.formatMessage({ id: 'agents.evaluations.downloadBundle' })}
         </Button>
         {run.result.artifactManifest.map((a) => (
           <Button
@@ -496,6 +501,31 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
     [agentId, selectedRunId],
   );
 
+  const handleDownloadBundle = useCallback(async () => {
+    if (!selectedRunId) return;
+    const url = agentsApi.evaluations.getBundleUrl(agentId, selectedRunId);
+
+    try {
+      const token = getToken();
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `evaluation-${selectedRunId.slice(0, 8)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(url, '_blank');
+    }
+  }, [agentId, selectedRunId]);
+
   const handleViewReport = useCallback(async () => {
     if (!selectedRunId) return;
 
@@ -664,6 +694,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                 <RunDetail
                   run={selectedRun}
                   onDownloadArtifact={handleDownloadArtifact}
+                  onDownloadBundle={handleDownloadBundle}
                   onViewReport={handleViewReport}
                 />
               )}

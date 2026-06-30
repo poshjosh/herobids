@@ -49,7 +49,6 @@ export interface AgentFormBodyProps {
 
   // Display flags (computed by caller)
   showIntelligence: boolean;
-  showTechnical: boolean;
   showTradingControls: boolean;
   requiresTradingSetup: boolean;
   isAdmin: boolean;
@@ -199,49 +198,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       {/* Platform link — only when trading setup is required */}
       {props.showTradingControls && props.requiresTradingSetup && props.connectionSlot}
 
-      {/* Technical Pre-Filter Toggle — trading advance feature */}
-      {props.requiresTradingSetup && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-          <div
-            role="switch"
-            aria-checked={props.value.technicalPreFilterEnabled}
-            tabIndex={0}
-            onClick={() => props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled })}
-            onKeyDown={(e) => {
-              if (e.key === ' ' || e.key === 'Enter') {
-                e.preventDefault();
-                props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled });
-              }
-            }}
-            style={{
-              position: 'relative',
-              width: '40px',
-              height: '22px',
-              flexShrink: 0,
-              borderRadius: '11px',
-              background: props.value.technicalPreFilterEnabled ? 'var(--color-brand)' : 'var(--color-border)',
-              cursor: 'pointer',
-              transition: 'background 0.15s',
-            }}
-          >
-            <div style={{
-              position: 'absolute',
-              top: '2px',
-              left: props.value.technicalPreFilterEnabled ? '20px' : '2px',
-              width: '18px',
-              height: '18px',
-              borderRadius: '50%',
-              background: '#fff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-              transition: 'left 0.15s',
-            }} />
-          </div>
-          <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
-            {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
-          </span>
-        </div>
-      )}
-
       {/* Telegram Chat ID — always visible */}
       <div style={fieldGap}>
         <FieldLabel>
@@ -364,25 +320,71 @@ export function AgentFormBody(props: AgentFormBodyProps) {
         }
         tradingSetup={props.tradingSetupSlot}
         strategy={
-          props.showTechnical ? (
+          props.requiresTradingSetup ? (
             <div>
-              <div
-                style={{
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  marginBottom: '12px',
-                }}
-              >
-                {intl.formatMessage({ id: 'agents.technical.title' })}
+              {/* Pre-Filter Toggle — inside Strategy tab */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                <div
+                  role="switch"
+                  aria-checked={props.value.technicalPreFilterEnabled}
+                  tabIndex={0}
+                  onClick={() => props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled })}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      props.onChange({ technicalPreFilterEnabled: !props.value.technicalPreFilterEnabled });
+                    }
+                  }}
+                  style={{
+                    position: 'relative',
+                    width: '40px',
+                    height: '22px',
+                    flexShrink: 0,
+                    borderRadius: '11px',
+                    background: props.value.technicalPreFilterEnabled ? 'var(--color-brand)' : 'var(--color-border)',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: '2px',
+                    left: props.value.technicalPreFilterEnabled ? '20px' : '2px',
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: '#fff',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    transition: 'left 0.15s',
+                  }} />
+                </div>
+                <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
+                  {intl.formatMessage({ id: 'agents.create.technicalPreFilter.help' })}
+                </span>
               </div>
-              <TechnicalConfigSection
-                value={props.value.technicalConfig}
-                onChange={(technicalConfig) =>
-                  props.onChange({ technicalConfig })
-                }
-                showErrors={Object.keys(props.formErrors).length > 0}
-                onClearFieldError={props.onClearFieldError}
-              />
+
+              {/* Technical Config — only visible when pre-filter is ON */}
+              {props.value.technicalPreFilterEnabled && (
+                <>
+                  <div
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    {intl.formatMessage({ id: 'agents.technical.title' })}
+                  </div>
+                  <TechnicalConfigSection
+                    value={props.value.technicalConfig}
+                    onChange={(technicalConfig) =>
+                      props.onChange({ technicalConfig })
+                    }
+                    showErrors={Object.keys(props.formErrors).length > 0}
+                    onClearFieldError={props.onClearFieldError}
+                  />
+                </>
+              )}
             </div>
           ) : null
         }

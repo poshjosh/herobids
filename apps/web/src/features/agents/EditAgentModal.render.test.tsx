@@ -190,11 +190,11 @@ describe('EditAgentModal rendering', () => {
       technical: TECHNICAL_CONFIG,
     });
 
-    // Technical config now lives in the (non-default) "Strategy" advanced tab,
-    // so the static render exposes the tab label rather than the panel content.
+    // The Strategy tab is only visible for trading agents. A technical-only
+    // agent with no trading skills does not get the Strategy tab.
     // The objective field is always visible (pulled out of AgentFormBody) —
     // it drives capability mode derivation, even when empty.
-    expect(html).toContain(messages['agents.advanced.strategy']);
+    expect(html).not.toContain(messages['agents.advanced.strategy']);
     expect(html).toContain(messages['agents.edit.objective']);
     expect(html).not.toContain(messages['agents.create.skills']);
   });

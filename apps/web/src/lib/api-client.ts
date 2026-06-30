@@ -1033,6 +1033,8 @@ export const agents = {
       request<EvaluationArtifactRef[]>(`/agents/${agentId}/evaluations/${runId}/artifacts`),
     getArtifactUrl: (agentId: string, runId: string, artifactName: string) =>
       `${config.apiBaseUrl}/agents/${agentId}/evaluations/${runId}/artifacts/${artifactName}`,
+    getBundleUrl: (agentId: string, runId: string) =>
+      `${config.apiBaseUrl}/agents/${agentId}/evaluations/${runId}/artifacts/bundle`,
   },
 };
 

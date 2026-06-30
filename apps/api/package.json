@@ -18,6 +18,7 @@
     "@herobids/engine": "workspace:*",
     "@herobids/llm": "workspace:*",
     "@herobids/venues": "workspace:*",
+    "archiver": "^8.0.0",
     "bullmq": "^5.77.0",
     "drizzle-orm": "^0.44.7",
     "fastify": "^5.3.0",
@@ -29,6 +30,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/node": "^25.9.1",
     "tsx": "^4.19.0"
   }

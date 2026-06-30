@@ -689,6 +689,7 @@ export const messages: Record<string, string> = {
   'agents.evaluations.completedAt': 'Completed',
   'agents.evaluations.critical': '{count} critical',
   'agents.evaluations.downloadArtifact': 'Download {name}',
+  'agents.evaluations.downloadBundle': 'Download All (.zip)',
   'agents.evaluations.failedMessage': 'Evaluation failed. Check artifacts for more details.',
   'agents.evaluations.fetchError': 'Could not load evaluations',
   'agents.evaluations.findings': '{count} {count, plural, one {finding} other {findings}}',

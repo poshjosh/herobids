@@ -485,6 +485,7 @@ export const messages: Record<string, string> = {
   'agents.evaluations.triggeredAt': 'Requested',
   'agents.evaluations.completedAt': 'Completed',
   'agents.evaluations.downloadArtifact': 'Download {name}',
+  'agents.evaluations.downloadBundle': 'Download All (.zip)',
   'agents.evaluations.viewReport': 'View Report',
   'agents.evaluations.sectionNotApplicable': 'Not applicable for this agent',
   'agents.evaluations.triggerSuccess': 'Evaluation started — refreshing…',
