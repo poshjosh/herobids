@@ -39,7 +39,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.toolResultMaxStaleChars).toBe(1000);
     expect(policy.allowedHoursUtc).toEqual([]);
     expect(policy.weekendPause).toBe(false);
-    expect(policy.maxHoldDurationMs).toBe(1_800_000);
+    expect(policy.maxHoldDurationMs).toBe(600_000);  // bold: 1 × tick interval
   });
 
   it('resolves careful style with no overrides', () => {
@@ -54,7 +54,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.maxHistoryMessages).toBe(10);
     expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
     expect(policy.weekendPause).toBe(true);
-    expect(policy.maxHoldDurationMs).toBe(10_800_000);
+    expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
   });
 
   it('resolves balanced style with no overrides', () => {
@@ -67,7 +67,7 @@ describe('resolveAgentRuntimePolicy', () => {
     expect(policy.maxHistoryMessages).toBe(20);
     expect(policy.allowedHoursUtc).toEqual([]);
     expect(policy.weekendPause).toBe(true);
-    expect(policy.maxHoldDurationMs).toBe(3_600_000);
+    expect(policy.maxHoldDurationMs).toBe(5_400_000);  // balanced: 3 × tick interval
   });
 
   it('falls back to balanced when style is undefined', () => {
@@ -128,7 +128,7 @@ describe('runtime policy override merging', () => {
   it('empty overrides object leaves all style defaults intact', () => {
     const policy = resolveAgentRuntimePolicy('careful', {});
     expect(policy.scoutMaxTurns).toBe(10);
-    expect(policy.maxHoldDurationMs).toBe(10_800_000);
+    expect(policy.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
     expect(policy.allowedHoursUtc).toEqual([14, 15, 16, 17, 18, 19, 20]);
   });
 

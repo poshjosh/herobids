@@ -45,6 +45,7 @@ import {
   resolveNotificationPolicy,
   resolveAgentRiskContractForResponse,
   validateAgentModelPolicy,
+  validateMaxHoldDurationInvariant,
 } from './agent-config-helpers.js';
 import {
   mapProtocolMessage,
@@ -516,6 +517,18 @@ export async function agentRoutes(
       }
     }
 
+    // Validate maxHoldDurationMs >= tickIntervalMs invariant.
+    // maxHoldDurationMs < tickIntervalMs is meaningless — every tick always finds
+    // the hold expired, so the backstop is a permanent no-op.
+    const holdInvariantIssues = validateMaxHoldDurationInvariant({
+      tickIntervalMs: parsed.data.tickIntervalMs,
+      style: parsed.data.style,
+      runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
+    });
+    if (holdInvariantIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
+    }
+
     // Shadow mode is admin-only
     if (parsed.data.executionMode === 'shadow' && !request.isAdmin) {
       return reply.status(403).send(errorPayload('execution_mode.admin_only', 'Shadow execution mode is restricted to admin users.'));
@@ -768,6 +781,23 @@ export async function agentRoutes(
     const modelIssues = await validateAgentModelPolicy(effectiveModelPolicy, llmCatalogDeps);
     if (modelIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: modelIssues });
+    }
+
+    // Validate maxHoldDurationMs >= tickIntervalMs invariant (effective after PATCH merge).
+    // PATCH semantics: use new value if explicitly provided, otherwise keep the existing one.
+    const holdInvariantIssues = validateMaxHoldDurationInvariant({
+      tickIntervalMs: parsed.data.tickIntervalMs !== undefined
+        ? parsed.data.tickIntervalMs
+        : agent.tickIntervalMs,
+      style: parsed.data.style !== undefined
+        ? parsed.data.style
+        : agent.style,
+      runtimePolicyOverrides: parsed.data.runtimePolicyOverrides !== undefined
+        ? (parsed.data.runtimePolicyOverrides as Record<string, unknown> | null)
+        : (agent.runtimePolicyOverrides as Record<string, unknown> | null),
+    });
+    if (holdInvariantIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: holdInvariantIssues });
     }
 
     // Shadow mode is admin-only

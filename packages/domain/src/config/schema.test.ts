@@ -834,6 +834,6 @@ describe('resolveAgentRuntimePolicy', () => {
   it('handles empty overrides object', () => {
     const resolved = resolveAgentRuntimePolicy('careful', {});
     expect(resolved.scoutMaxTurns).toBe(10);
-    expect(resolved.maxHoldDurationMs).toBe(10_800_000);
+    expect(resolved.maxHoldDurationMs).toBe(27_000_000);  // careful: 5 × tick interval
   });
 });

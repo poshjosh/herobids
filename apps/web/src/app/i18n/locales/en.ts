@@ -398,7 +398,7 @@ export const messages: Record<string, string> = {
   'agents.controls.tickInterval.slowdownCaveat': 'Base cadence: {cadence}. Runtime may still slow down when idle or after failures.',
   'agents.controls.capital': 'Capital (USD)',
   'agents.controls.capital.help': 'Amount this agent may trade with — not the full wallet balance.',
-  'agents.create.technicalPreFilter.help': 'Pre-filter trade candidates before LLM makes final decision. (Reduces LLM cost)',
+  'agents.create.technicalPreFilter.help': 'Reduce cost by filtering trade candidates before AI agent sees them',
   'agents.controls.dailyLossLimit': 'Daily loss limit (USD)',
   'agents.controls.dailyLossLimit.help': 'Set this to enforce a hard cap. Leave blank to use the platform default behavior.',
   'agents.controls.maxSlippage': 'Max slippage (bps)',

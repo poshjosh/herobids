@@ -72,7 +72,7 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     maxContextBlockChars: 2_000,
     toolResultFullRetentionTurns: 2,
     toolResultMaxStaleChars: 250,
-    maxHoldDurationMs: 10_800_000,
+    maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
   },
   balanced: {
     costPreset: 'standard',
@@ -95,7 +95,7 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     maxContextBlockChars: 4_000,
     toolResultFullRetentionTurns: 3,
     toolResultMaxStaleChars: 500,
-    maxHoldDurationMs: 3_600_000,
+    maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
   },
   bold:     {
     costPreset: 'premium',
@@ -118,7 +118,7 @@ export const STYLE_CONFIG: Record<AgentStyleValue, StyleDefaults> = {
     maxContextBlockChars: 8_000,
     toolResultFullRetentionTurns: 5,
     toolResultMaxStaleChars: 1_000,
-    maxHoldDurationMs: 1_800_000,
+    maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
   },
 };
 

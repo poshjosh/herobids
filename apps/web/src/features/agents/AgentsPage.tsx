@@ -334,28 +334,30 @@ function CreateAgentFlow({
   const availableConnections = (tradingConnectionsQuery.data?.connections ?? []).filter(
     (connection) => connection.status === 'active',
   );
-  const selectedConnection = availableConnections.find((connection) => connection.connectionId === intent.connectionIds[0]) ?? null;
+  // Connections matching the currently selected venue (used for auto-select logic)
+  const connectionsForVenue = intent.venue
+    ? availableConnections.filter((c) => c.provider === intent.venue)
+    : [];
+  // In non-paper modes only show venues that have at least one active connection;
+  // in paper mode show all venues (no real execution needed).
+  const venuesForMode = intent.executionMode === 'paper'
+    ? Object.keys(venueTypeMap).sort()
+    : Object.keys(venueTypeMap).filter((v) => availableConnections.some((c) => c.provider === v)).sort();
 
-  // Derive venue + venueType from selected connection's provider
+  // When connections finish loading and a venue is already set with no connection chosen,
+  // auto-select if exactly one connection matches the venue.
   useEffect(() => {
-    if (selectedConnection?.provider) {
-      const derivedVenueType = venueTypeMap[selectedConnection.provider] ?? '';
-      setIntent((state) => {
-        if (state.venue !== selectedConnection.provider || state.venueType !== derivedVenueType) {
-          return { ...state, venue: selectedConnection.provider, venueType: derivedVenueType };
-        }
-        return state;
-      });
-    } else if (intent.connectionIds.length === 0) {
-      // Clear derived venue when all connections are deselected
-      setIntent((state) => {
-        if (state.venue !== '' || state.venueType !== '') {
-          return { ...state, venue: '', venueType: '' };
-        }
-        return state;
-      });
-    }
-  }, [selectedConnection?.provider, intent.connectionIds.length]);
+    if (!tradingConnectionsQuery.isSuccess) return;
+    setIntent((state) => {
+      if (!state.venue || state.connectionIds.length > 0) return state;
+      const matching = (tradingConnectionsQuery.data?.connections ?? [])
+        .filter((c) => c.status === 'active' && c.provider === state.venue);
+      if (matching.length === 1) {
+        return { ...state, connectionIds: [matching[0]!.connectionId] };
+      }
+      return state;
+    });
+  }, [tradingConnectionsQuery.isSuccess, tradingConnectionsQuery.data]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -633,12 +635,25 @@ function CreateAgentFlow({
                       onChange={(e) => {
                         const id = e.target.value;
                         if (!id) return;
-                        setIntent((state) => ({
-                          ...state,
-                          connectionIds: state.connectionIds.includes(id)
-                            ? state.connectionIds
-                            : [...state.connectionIds, id],
-                        }));
+                        const conn = availableConnections.find((c) => c.connectionId === id);
+                        const derivedVenue = conn?.provider ?? '';
+                        const derivedVenueType = derivedVenue ? (venueTypeMap[derivedVenue] ?? '') : '';
+                        clearFieldError('venue');
+                        setIntent((state) => {
+                          // Keep only connections of the same provider + the new one
+                          const sameProvider = derivedVenue
+                            ? state.connectionIds.filter((cid) => {
+                                const existing = availableConnections.find((c) => c.connectionId === cid);
+                                return existing?.provider === derivedVenue;
+                              })
+                            : state.connectionIds;
+                          const newIds = sameProvider.includes(id) ? sameProvider : [...sameProvider, id];
+                          return {
+                            ...state,
+                            connectionIds: newIds,
+                            ...(derivedVenue ? { venue: derivedVenue, venueType: derivedVenueType } : {}),
+                          };
+                        });
                       }}
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
@@ -670,10 +685,17 @@ function CreateAgentFlow({
                               {conn?.label ?? id}
                               <button
                                 type="button"
-                                onClick={() => setIntent((state) => ({
-                                  ...state,
-                                  connectionIds: state.connectionIds.filter((cid) => cid !== id),
-                                }))}
+                                onClick={() => setIntent((state) => {
+                                  const newIds = state.connectionIds.filter((cid) => cid !== id);
+                                  // Clear venue when the last connection is removed (trading agents)
+                                  return {
+                                    ...state,
+                                    connectionIds: newIds,
+                                    ...(newIds.length === 0 && requiresTradingSetup
+                                      ? { venue: '', venueType: '' }
+                                      : {}),
+                                  };
+                                })}
                                 style={{
                                   background: 'none',
                                   border: 'none',
@@ -691,44 +713,7 @@ function CreateAgentFlow({
                         })}
                       </div>
                     )}
-                    {intent.venue && intent.venueType && (
-                      <div style={{ display: 'flex', gap: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                        <span>Venue: <strong>{intent.venue}</strong></span>
-                        <span>Type: <strong>{intent.venueType}</strong></span>
-                      </div>
-                    )}
-                    {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
-                      <div style={{ padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
-                        Paper mode is not supported for swap venues. Open <strong>Advanced Settings → Trading Setup</strong> and switch the execution mode to Shadow or Live.
-                      </div>
-                    )}
                   </>
-                )}
-                {intent.executionMode === 'paper' && intent.connectionIds.length === 0 && (
-                  <div data-field="venue">
-                    <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
-                    <select
-                      value={intent.venue}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        const vt = venueTypeMap[v] ?? '';
-                        clearFieldError('venue');
-                        setIntent((state) => ({ ...state, venue: v, venueType: vt }));
-                      }}
-                      style={{ ...inputStyle, cursor: 'pointer' }}
-                    >
-                      <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
-                      {Object.keys(venueTypeMap).sort().map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                    {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
-                    {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
-                      <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
-                        Paper mode is not supported for swap venues. Open <strong>Advanced Settings → Trading Setup</strong> and switch the execution mode to Shadow or Live.
-                      </div>
-                    )}
-                  </div>
                 )}
               </div>
             }
@@ -740,8 +725,20 @@ function CreateAgentFlow({
                     <select
                       value={intent.executionMode}
                       onChange={(e) => {
+                        const newMode = e.target.value as IntentState['executionMode'];
                         clearFieldError('executionMode');
-                        setIntent((state) => ({ ...state, executionMode: e.target.value as IntentState['executionMode'] }));
+                        setIntent((state) => {
+                          // In non-paper modes, venue must have an active connection;
+                          // if the current venue has none, clear it.
+                          const venueStillValid = newMode === 'paper' ||
+                            !state.venue ||
+                            availableConnections.some((c) => c.provider === state.venue);
+                          return {
+                            ...state,
+                            executionMode: newMode,
+                            ...(venueStillValid ? {} : { venue: '', venueType: '', connectionIds: [] }),
+                          };
+                        });
                       }}
                       style={{ ...inputStyle, cursor: 'pointer' }}
                     >
@@ -752,6 +749,43 @@ function CreateAgentFlow({
                     {formErrors.executionMode && (
                       <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>
                         {formErrors.executionMode}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Venue — user picks market first; connection list filters to match */}
+                  <div data-field="venue">
+                    <FieldLabel>{intl.formatMessage({ id: 'agents.technical.filters.venue' })}</FieldLabel>
+                    <select
+                      value={intent.venue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const vt = venueTypeMap[v] ?? '';
+                        clearFieldError('venue');
+                        clearFieldError('executionMode');
+                        setIntent((state) => {
+                          const matching = availableConnections.filter((c) => c.provider === v);
+                          // Auto-select if exactly one match; keep matched existing selections
+                          // if multiple; clear only when no connections match the new venue.
+                          const newConnectionIds = matching.length === 1
+                            ? [matching[0]!.connectionId]
+                            : matching.length === 0
+                              ? []
+                              : state.connectionIds.filter((id) => matching.some((m) => m.connectionId === id));
+                          return { ...state, venue: v, venueType: vt, connectionIds: newConnectionIds };
+                        });
+                      }}
+                      style={{ ...inputStyle, cursor: 'pointer' }}
+                    >
+                      <option value="">{intl.formatMessage({ id: 'agents.technical.filters.venue.placeholder' })}</option>
+                      {venuesForMode.map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                    {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
+                    {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
+                      <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
+                        Paper mode is not supported for swap venues. Switch to Shadow or Live mode.
                       </div>
                     )}
                   </div>

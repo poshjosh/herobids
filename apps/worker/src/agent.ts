@@ -1659,7 +1659,6 @@ let previousContextHash: string | null = null;
 let previousFullUserContext: string | null = null;
 let effectiveTickIntervalMs = costProfile.tickIntervalMs;
 let previousRegimePass: boolean | null = null;
-let scoutHoldDeadlineAtMs = 0;
 // Hoisted so both runTick() and the heartbeat interval can trigger a clean shutdown.
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let tickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1710,9 +1709,9 @@ function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
   // message ingestion, heartbeats, and state reconciliation. The hybrid
   // no-wake guard in runTick() prevents LLM dispatch on these ticks —
   // only wake-triggered ticks reach the LLM (D3: event-driven).
-  const holdLimitedDelayMs = scoutHoldDeadlineAtMs > 0
-    ? Math.max(0, Math.min(delayMs, scoutHoldDeadlineAtMs - Date.now()))
-    : delayMs;
+  // maxHoldDurationMs is evaluated at gate time in runTick(), not by
+  // accelerating the schedule. The tick cadence is owned solely by tickIntervalMs.
+  const holdLimitedDelayMs = delayMs;
 
   const delayDecision = resolveNextTickDelay({
     requestedDelayMs: holdLimitedDelayMs,
@@ -1934,9 +1933,6 @@ async function runTick(): Promise<void> {
         && Date.now() - lastEscalationTimestamp >= maxHoldMs;
 
       if (!holdDurationExceeded) {
-        if (maxHoldMs !== undefined && lastEscalationTimestamp > 0 && Date.now() - lastEscalationTimestamp >= maxHoldMs) {
-          scoutHoldDeadlineAtMs = 0;
-        }
         logger.info({ tickCount, reason: skipDecision.reason, gate: skipDecision.gate }, 'Skipping agent tick before LLM dispatch');
         emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
           tickId,
@@ -2574,13 +2570,11 @@ async function runTick(): Promise<void> {
     });
 
     if (!judgeLoopResult.ok) {
-      scoutHoldDeadlineAtMs = 0;
       await handleRuntimeFailure('llm', judgeLoopResult.error);
       return;
     }
 
     if (judgeLoopResult.terminatedByLimit) {
-      scoutHoldDeadlineAtMs = 0;
       logger.warn({ phase: 'judge' }, 'Judge tool loop reached its turn limit');
       await sendHeartbeat('degraded', 'llm.tool_loop_limit');
       return;
@@ -2588,10 +2582,9 @@ async function runTick(): Promise<void> {
 
     // Only persist context hash after judge ran — prevents context_unchanged gate
     // from locking the agent when the scout held and no work was done.
+    // maxHoldDurationMs is checked at gate-evaluation time in runTick()
+    // (holdDurationExceeded), not by accelerating the next-tick schedule.
     lastEscalationTimestamp = Date.now();
-    scoutHoldDeadlineAtMs = agentRuntimePolicy.llm.scout.maxHoldDurationMs != null
-      ? lastEscalationTimestamp + agentRuntimePolicy.llm.scout.maxHoldDurationMs
-      : 0;
     previousContextHash = tickContextHash;
 
     handleTickSuccess();

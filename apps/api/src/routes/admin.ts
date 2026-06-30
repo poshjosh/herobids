@@ -22,7 +22,7 @@ function parseAppVersion(): string {
   try {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
-    const pkgPath = join(__dirname, '../../package.json');
+    const pkgPath = join(__dirname, '../../../../package.json');
     return JSON.parse(readFileSync(pkgPath, 'utf8')).version;
   } catch {
     return 'parse-failed';

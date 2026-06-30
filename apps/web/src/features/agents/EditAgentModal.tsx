@@ -33,9 +33,13 @@ const ASSISTANT_SKILL_IDS = ['task-management', 'web-access'];
 
 function resolvePresetFromSkillIds(skillIds: string[]): SkillPresetId {
   if (skillIds.length === 0) return 'custom';
-  const set = new Set(skillIds);
-  if (TRADING_SKILL_IDS.every((id) => set.has(id))) return 'trading';
-  if (ASSISTANT_SKILL_IDS.every((id) => set.has(id))) return 'personal-assistant';
+
+  const sorted = [...skillIds].sort();
+  const setsEqual = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((id, i) => id === b[i]);
+
+  if (setsEqual(sorted, [...TRADING_SKILL_IDS].sort())) return 'trading';
+  if (setsEqual(sorted, [...ASSISTANT_SKILL_IDS].sort())) return 'personal-assistant';
   return 'custom';
 }
 

@@ -252,7 +252,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxContextBlockChars: 2_000,
     toolResultFullRetentionTurns: 2,
     toolResultMaxStaleChars: 250,
-    maxHoldDurationMs: 10_800_000, // 180 min
+    maxHoldDurationMs: 27_000_000, // 450 min (5 × tick interval)
   },
   balanced: {
     costPreset: 'standard',
@@ -275,7 +275,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxContextBlockChars: 4_000,
     toolResultFullRetentionTurns: 3,
     toolResultMaxStaleChars: 500,
-    maxHoldDurationMs: 3_600_000, // 60 min
+    maxHoldDurationMs: 5_400_000, // 90 min (3 × tick interval)
   },
   bold: {
     costPreset: 'premium',
@@ -298,7 +298,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     maxContextBlockChars: 8_000,
     toolResultFullRetentionTurns: 5,
     toolResultMaxStaleChars: 1_000,
-    maxHoldDurationMs: 1_800_000, // 30 min
+    maxHoldDurationMs: 600_000, // 10 min (1 × tick interval)
   },
 };
 

@@ -336,6 +336,45 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
 }
 
 /**
+ * Validate the invariant that resolved maxHoldDurationMs >= tickIntervalMs.
+ * maxHoldDurationMs < tickIntervalMs is semantically meaningless — every tick
+ * always finds the hold expired, so the hold backstop is a permanent no-op.
+ *
+ * Returns validation issues (empty array = valid).
+ */
+export function validateMaxHoldDurationInvariant(params: {
+  tickIntervalMs: number | string | null | undefined;
+  style: string | null | undefined;
+  runtimePolicyOverrides: Record<string, unknown> | null | undefined;
+}): Array<{ code: 'custom'; path: string[]; message: string }> {
+  const tickMs = typeof params.tickIntervalMs === 'string'
+    ? Number(params.tickIntervalMs)
+    : (params.tickIntervalMs ?? null);
+  if (tickMs == null || !Number.isFinite(tickMs) || tickMs <= 0) {
+    return [];
+  }
+
+  const resolved = resolveAgentRuntimePolicy(
+    params.style ?? null,
+    (params.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
+  );
+  const maxHoldMs = resolved.maxHoldDurationMs;
+  if (maxHoldMs === undefined) {
+    return [];
+  }
+
+  if (maxHoldMs < tickMs) {
+    return [{
+      code: 'custom',
+      path: ['runtimePolicyOverrides', 'maxHoldDurationMs'],
+      message: `maxHoldDurationMs (${maxHoldMs}ms) must be >= tickIntervalMs (${tickMs}ms). Set maxHoldDurationMs to at least the tick interval, or reduce tickIntervalMs.`,
+    }];
+  }
+
+  return [];
+}
+
+/**
  * Resolve the agent's risk contract for API responses.
  * Shows per-field source, mutability, and effective values.
  */

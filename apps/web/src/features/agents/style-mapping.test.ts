@@ -148,7 +148,7 @@ describe('resolveStyleDefaults', () => {
     });
 
     it('bold has the shortest maxHoldDurationMs (most aggressive hold timeout)', () => {
-      // Careful has 180min hold → highest value (most patient); bold has 30min → lowest (most aggressive)
+      // careful: 450min (5× tick), balanced: 90min (3×), bold: 10min (1×)
       expect(STYLE_CONFIG.bold.maxHoldDurationMs).toBeLessThan(STYLE_CONFIG.careful.maxHoldDurationMs);
     });
 
