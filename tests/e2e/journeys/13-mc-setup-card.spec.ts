@@ -23,13 +23,13 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
 
     // Setup card is visible with title and CTA
-    await expect(page.getByText('Link AI agent')).toBeVisible({ timeout: 5_000 });
-    const ctaButton = page.getByRole('button', { name: 'Link agent to platform' });
+    await expect(page.getByText('Connect AI agent to external platform')).toBeVisible({ timeout: 5_000 });
+    const ctaButton = page.getByRole('button', { name: 'Connect AI agent' });
     await expect(ctaButton).toBeVisible({ timeout: 5_000 });
 
     // Open the setup form
     await ctaButton.click();
-    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Link agent to platform$/ }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').locator('div').filter({ hasText: /^Connect agent to platform$/ }).first()).toBeVisible({ timeout: 5_000 });
 
     // Provider is auto-selected (Hyperliquid) from catalog once form opens
     await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('hyperliquid', { timeout: 5_000 });
@@ -43,7 +43,11 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await page.getByPlaceholder('0x...').last().fill('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 
     // Submit the form
-    await page.getByRole('dialog').getByRole('button', { name: 'Link AI agent' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Connect AI agent' }).click();
+
+    // Assignment step appears — skip since no agents exist yet
+    await expect(page.getByText(/Which agents should use this connection/i)).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('button', { name: 'Skip' }).click();
 
     // Success banner appears with the account label and provider
     await expect(
@@ -56,6 +60,6 @@ test.describe('Journey 13: Mission Control setup card UI flow', () => {
     await expect(page.getByText(/is ready for your AI agents\./).first()).not.toBeVisible({ timeout: 3_000 });
 
     // Setup card is still present after dismissal
-    await expect(page.getByText('Link AI agent').first()).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText('Connect AI agent to external platform').first()).toBeVisible({ timeout: 3_000 });
   });
 });
