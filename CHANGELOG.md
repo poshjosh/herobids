@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.4 - 2026-06-31
+
+### Fixed
+
+- Bug which mis handles min hold duration
+
 ## v0.0.3 - 2026-06-31
 
 ### Changed
