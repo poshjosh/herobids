@@ -157,13 +157,66 @@ export class MechanicalStrategy implements Strategy {
 
     // 6. Entry confirmed → pass signal intent through (go_long or go_short)
     return ok(
-      makeDecision(snapshot, signal.intent, params.positionSize, this.idGen, {
+      makeDecision(snapshot, signal.intent, resolvePositionSize(params, snapshot, this.debug), this.idGen, {
         confidence: adjustedConfidence,
         reasons: signal.reasons,
         indicators: signal.indicators,
       }),
     );
   }
+}
+
+/**
+ * Resolve the dollar-denominated position size from the strategy params.
+ *
+ * When positionSizeMode is 'percent_equity', the positionSize string is
+ * interpreted as a percentage of account equity (e.g. "5" = 5% of equity).
+ * The equity value must be injected into snapshot.data.accountEquity by the
+ * trading actor before calling strategy.evaluate().
+ *
+ * Returns the dollar amount as a fixed-precision string, or '0' to signal
+ * that a trade should be skipped (insufficient or missing equity data).
+ */
+function resolvePositionSize(
+  params: MechanicalParams,
+  snapshot: MarketSnapshot,
+  debug?: (msg: string, ctx?: Record<string, unknown>) => void,
+): string {
+  if (params.positionSizeMode === 'percent_equity') {
+    const equity = snapshot.data?.['accountEquity'];
+    if (typeof equity !== 'number' || equity <= 0) {
+      debug?.('percent_equity: skipping trade — accountEquity missing, zero, or negative', {
+        equityType: typeof equity,
+        equityValue: equity,
+        symbol: snapshot.symbol,
+      });
+      return '0';
+    }
+    const pct = parseFloat(params.positionSize);
+    if (isNaN(pct) || pct <= 0) {
+      debug?.('percent_equity: skipping trade — positionSize is not a valid positive number', {
+        positionSize: params.positionSize,
+        symbol: snapshot.symbol,
+      });
+      return '0';
+    }
+    const amount = (equity * pct) / 100;
+    // Guard against computed amounts that round to zero at 6 decimal places.
+    // $0.01 is a reasonable minimum notional for any venue-supported trade.
+    if (amount < 0.01) {
+      debug?.('percent_equity: skipping trade — computed amount too small', {
+        amount,
+        equity,
+        pct,
+        symbol: snapshot.symbol,
+      });
+      return '0';
+    }
+    // 6 decimal places preserves sub-cent precision for small accounts
+    // while being precise enough for crypto token quantities.
+    return amount.toFixed(6);
+  }
+  return params.positionSize;
 }
 
 function resolveHasOpenPosition(snapshot: MarketSnapshot): boolean {

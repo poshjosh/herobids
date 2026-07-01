@@ -290,4 +290,123 @@ describe('MechanicalStrategy', () => {
 
     expect(debug).toHaveBeenCalledTimes(1);
   });
+
+  // ─── percent_equity position sizing ─────────────────────────────────────────
+
+  it('percent_equity mode computes dollar amount from accountEquity in snapshot.data', async () => {
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen);
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: 10_000 },
+    };
+    const config = {
+      ...BASE_CONFIG,
+      positionSize: '5',
+      positionSizeMode: 'percent_equity' as const,
+    };
+
+    const result = await strat.evaluate(snapshot, config);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.intent).toBe('go_long');
+      // 5% of $10,000 = $500
+      expect(result.data?.targetSize.toString()).toBe('500');
+    }
+  });
+
+  it('percent_equity mode returns zero size when accountEquity is missing', async () => {
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen);
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: {}, // no accountEquity
+    };
+    const config = {
+      ...BASE_CONFIG,
+      positionSize: '5',
+      positionSizeMode: 'percent_equity' as const,
+    };
+
+    const result = await strat.evaluate(snapshot, config);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.intent).toBe('go_long');
+      expect(result.data?.targetSize.toString()).toBe('0');
+    }
+  });
+
+  it('percent_equity mode calls debug when accountEquity is missing', async () => {
+    const debug = vi.fn();
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen, debug);
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: {}, // no accountEquity
+    };
+    const config = {
+      ...BASE_CONFIG,
+      positionSize: '5',
+      positionSizeMode: 'percent_equity' as const,
+    };
+
+    await strat.evaluate(snapshot, config);
+
+    expect(debug).toHaveBeenCalledWith(
+      'percent_equity: skipping trade — accountEquity missing, zero, or negative',
+      expect.objectContaining({ symbol: BASE_SNAPSHOT.symbol }),
+    );
+  });
+
+  it('percent_equity mode calls debug when positionSize is not a valid number', async () => {
+    const debug = vi.fn();
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen, debug);
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: 10_000 },
+    };
+    const config = {
+      ...BASE_CONFIG,
+      positionSize: 'not-a-number',
+      positionSizeMode: 'percent_equity' as const,
+    };
+
+    await strat.evaluate(snapshot, config);
+
+    expect(debug).toHaveBeenCalledWith(
+      'percent_equity: skipping trade — positionSize is not a valid positive number',
+      expect.objectContaining({ symbol: BASE_SNAPSHOT.symbol }),
+    );
+  });
+
+  it('fixed mode passes positionSize string through unchanged', async () => {
+    const strat = new MechanicalStrategy(makeFetcher(), null, idGen);
+    mockScoreCandidate.mockReturnValue(HIGH_CONFIDENCE_SIGNAL);
+
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: 10_000 },
+    };
+    const config = {
+      ...BASE_CONFIG,
+      positionSize: '250',
+      // positionSizeMode defaults to 'fixed'
+    };
+
+    const result = await strat.evaluate(snapshot, config);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.intent).toBe('go_long');
+      // 'fixed' mode ignores accountEquity and passes the string through
+      expect(result.data?.targetSize.toString()).toBe('250');
+    }
+  });
 });

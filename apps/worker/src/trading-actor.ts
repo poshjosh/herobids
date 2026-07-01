@@ -1708,6 +1708,12 @@ export class TradingActor implements InstanceActor, ExecutionActor {
         this.newPositionsToday = 0;
         this.newPositionsDate = today;
       }
+
+      // Compute account equity for percent_equity position sizing
+      const equityValue = this.equityTracker
+        ? this.equityTracker.currentEquity(unrealizedPnl(this.position, price(snapshot.price.toString())))
+        : undefined;
+
       snapshot = {
         ...snapshot,
         playbook: {
@@ -1719,6 +1725,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
           openPositionSize: this.position.size.toString(),
           hasOpenPosition: this.position.side !== 'flat',
           newPositionsToday: this.newPositionsToday,
+          accountEquity: equityValue !== undefined ? equityValue.toNumber() : undefined,
         },
       };
 
