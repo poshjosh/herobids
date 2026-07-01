@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, type SkillMetrics, type AgentToolInfo, type AgentToolCategory } from '../../lib/api-client.js';
+import { skills as skillsApi, agentTools, type CreateSkillRequest, type Skill, type SkillMetrics } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, SectionLabel, Button, ErrorBanner, ToolTagPicker } from '../../lib/ui.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
 
@@ -11,6 +11,14 @@ export function SkillsPage() {
   const intl = useIntl();
   const { user } = useSession();
   const queryClient = useQueryClient();
+  const marketplaceUnavailableMessage = intl.formatMessage({
+    id: 'skills.marketplaceUnavailable',
+    defaultMessage: 'Marketplace access is not available on your current plan.',
+  });
+  const adminUnavailableMessage = intl.formatMessage({
+    id: 'skills.adminUnavailable',
+    defaultMessage: 'Admin scope unavailable for this account.',
+  });
   const skillsEntitlements = user?.planEntitlements?.skills ?? null;
   const canViewMarketplace = skillsEntitlements?.canViewMarketplaceSkills ?? true;
   const privateSkillsDisabled = Boolean(skillsEntitlements && !skillsEntitlements.canCreatePrivateSkills);
@@ -147,14 +155,14 @@ export function SkillsPage() {
       )}
       {!canViewMarketplace && (
         <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-          Marketplace access is not available on your current plan.
+          {marketplaceUnavailableMessage}
         </div>
       )}
       {adminQuery.isLoading && <LoadingRows count={2} />}
       {adminQuery.isError && <ErrorBanner message={(adminQuery.error as Error).message} />}
       {adminAccessDenied && !adminQuery.isLoading && !adminQuery.isError && (
         <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-          Admin scope unavailable for this account.
+          {adminUnavailableMessage}
         </div>
       )}
       {!adminQuery.isLoading && !adminQuery.isError && adminSkills.length > 0 && renderCategorySection(
@@ -196,7 +204,7 @@ export function SkillsPage() {
       if (!canViewMarketplace) {
         return (
           <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-            Marketplace access is not available on your current plan.
+            {marketplaceUnavailableMessage}
           </div>
         );
       }
@@ -221,7 +229,7 @@ export function SkillsPage() {
     if (adminAccessDenied) {
       return (
         <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-          Admin scope unavailable for this account.
+          {adminUnavailableMessage}
         </div>
       );
     }
@@ -248,45 +256,55 @@ export function SkillsPage() {
               setShowCreateComposer((current) => !current);
             }}
           >
-            {showCreateComposer ? 'Cancel' : 'Create skill'}
+            {showCreateComposer
+              ? intl.formatMessage({ id: 'common.cancel', defaultMessage: 'Cancel' })
+              : intl.formatMessage({ id: 'skills.actions.create', defaultMessage: 'Create skill' })}
           </Button>
         )}
       />
 
       {showCreateComposer && (
         <Card style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>Create skill</div>
+          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
+            {intl.formatMessage({ id: 'skills.form.createTitle', defaultMessage: 'Create skill' })}
+          </div>
           <label style={fieldLabelStyle}>
-            Name
+            {intl.formatMessage({ id: 'skills.form.name', defaultMessage: 'Name' })}
             <input
               value={createDraft.name ?? ''}
               onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))}
               style={inputStyle}
-              placeholder="Momentum screener"
+              placeholder={intl.formatMessage({ id: 'skills.form.namePlaceholder', defaultMessage: 'Momentum screener' })}
             />
           </label>
           <label style={fieldLabelStyle}>
-            Description
+            {intl.formatMessage({ id: 'skills.form.description', defaultMessage: 'Description' })}
             <textarea
               value={createDraft.description ?? ''}
               onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))}
               style={textareaStyle}
               rows={3}
-              placeholder="Short summary of what this skill does"
+              placeholder={intl.formatMessage({
+                id: 'skills.form.descriptionPlaceholder',
+                defaultMessage: 'Short summary of what this skill does',
+              })}
             />
           </label>
           <label style={fieldLabelStyle}>
-            Instructions
+            {intl.formatMessage({ id: 'skills.form.instructions', defaultMessage: 'Instructions' })}
             <textarea
               value={createDraft.instructions ?? ''}
               onChange={(event) => setCreateDraft((current) => ({ ...current, instructions: event.target.value }))}
               style={textareaStyle}
               rows={6}
-              placeholder="Detailed instructions used by the agent"
+              placeholder={intl.formatMessage({
+                id: 'skills.form.instructionsPlaceholder',
+                defaultMessage: 'Detailed instructions used by the agent',
+              })}
             />
           </label>
           <label style={fieldLabelStyle}>
-            Tools
+            {intl.formatMessage({ id: 'skills.form.tools', defaultMessage: 'Tools' })}
             <ToolTagPicker
               tools={toolsQuery.data?.tools ?? []}
               categories={toolsQuery.data?.categories ?? []}
@@ -301,7 +319,7 @@ export function SkillsPage() {
             )}
           </label>
           <label style={fieldLabelStyle}>
-            Visibility
+            {intl.formatMessage({ id: 'skills.form.visibility', defaultMessage: 'Visibility' })}
             <select
               value={createDraft.publicationStatus ?? 'draft'}
               onChange={(event) => {
@@ -310,15 +328,25 @@ export function SkillsPage() {
               }}
               style={inputStyle}
             >
-              <option value="draft">Draft</option>
-              <option value="private" disabled={!canCreatePrivateSkills}>Private</option>
-              <option value="published" disabled={!canPublishToMarketplace}>Marketplace (public)</option>
+              <option value="draft">{intl.formatMessage({ id: 'skills.visibility.draft', defaultMessage: 'Draft' })}</option>
+              <option value="private" disabled={!canCreatePrivateSkills}>
+                {intl.formatMessage({ id: 'skills.visibility.private', defaultMessage: 'Private' })}
+              </option>
+              <option value="published" disabled={!canPublishToMarketplace}>
+                {intl.formatMessage({ id: 'skills.visibility.marketplacePublic', defaultMessage: 'Marketplace (public)' })}
+              </option>
             </select>
           </label>
           <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
             {autoPublishesNonDraftSkills
-              ? 'Your current plan auto-publishes any non-draft skill.'
-              : 'Choose private or marketplace visibility according to your plan entitlements.'}
+              ? intl.formatMessage({
+                  id: 'skills.visibility.autoPublishHint',
+                  defaultMessage: 'Your current plan auto-publishes any non-draft skill.',
+                })
+              : intl.formatMessage({
+                  id: 'skills.visibility.planHint',
+                  defaultMessage: 'Choose private or marketplace visibility according to your plan entitlements.',
+                })}
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <Button
@@ -331,7 +359,9 @@ export function SkillsPage() {
                 || !(createDraft.instructions ?? '').trim()
               }
             >
-              {createMutation.isPending ? 'Creating...' : 'Create skill'}
+              {createMutation.isPending
+                ? intl.formatMessage({ id: 'skills.actions.creating', defaultMessage: 'Creating...' })
+                : intl.formatMessage({ id: 'skills.actions.create', defaultMessage: 'Create skill' })}
             </Button>
             <Button
               variant="ghost"
@@ -341,7 +371,7 @@ export function SkillsPage() {
               }}
               disabled={createMutation.isPending}
             >
-              Close
+              {intl.formatMessage({ id: 'skills.actions.close', defaultMessage: 'Close' })}
             </Button>
           </div>
           {createError && <ErrorBanner message={createError} />}
@@ -365,14 +395,17 @@ export function SkillsPage() {
       {!isLoading && !queryError && !hasAnySkills && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <EmptyState
-            title="No skills yet"
-            message="Skills will appear here once built-in or user-authored capability bundles are available."
+            title={intl.formatMessage({ id: 'skills.empty.all.title', defaultMessage: 'No skills yet' })}
+            message={intl.formatMessage({
+              id: 'skills.empty.all.message',
+              defaultMessage: 'Skills will appear here once built-in or user-authored capability bundles are available.',
+            })}
           />
           {adminQuery.isError ? (
             <ErrorBanner message={(adminQuery.error as Error).message} />
           ) : adminAccessDenied ? (
             <div style={{ color: 'var(--color-text-muted)', fontSize: '13px', lineHeight: '1.5' }}>
-              Admin scope unavailable for this account.
+              {adminUnavailableMessage}
             </div>
           ) : null}
         </div>
@@ -402,8 +435,14 @@ export function SkillsPage() {
       {!isLoading && !queryError && privateSkillsDisabled && (
         <div style={{ marginBottom: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>
           {autoPublishesNonDraftSkills
-            ? 'Your current plan auto-publishes non-draft skills and does not allow private skills.'
-            : 'Your current plan does not allow private skills.'}
+            ? intl.formatMessage({
+                id: 'skills.privatePlanUnavailableWithAutoPublish',
+                defaultMessage: 'Your current plan auto-publishes non-draft skills and does not allow private skills.',
+              })
+            : intl.formatMessage({
+                id: 'skills.privatePlanUnavailable',
+                defaultMessage: 'Your current plan does not allow private skills.',
+              })}
         </div>
       )}
     </PageShell>
@@ -436,6 +475,7 @@ function SkillCard({
   toolsLoading?: boolean;
   toolsError?: Error | null;
 }) {
+  const intl = useIntl();
   const [actionError, setActionError] = useState<string | null>(null);
   const [showMetrics, setShowMetrics] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -506,8 +546,15 @@ function SkillCard({
     enabled: showMetrics,
   });
 
-  const statusLabel = skill.sourceKind === 'system' ? 'system' : skill.publicationStatus;
-  const priceLabel = skill.priceCents === 0 ? 'free' : `$${(skill.priceCents / 100).toFixed(2)}`;
+  const statusLabel = formatSkillStatusLabel(intl, skill.sourceKind, skill.publicationStatus);
+  const priceLabel = skill.priceCents === 0
+    ? intl.formatMessage({ id: 'skills.price.free', defaultMessage: 'Free' })
+    : intl.formatNumber(skill.priceCents / 100, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
   const canManage = mode === 'mine' && skill.sourceKind === 'user';
   const canLikeByPlan = skillsEntitlements?.canLikeMarketplaceSkills ?? true;
   const canPublishByPlan = skillsEntitlements?.canPublishToMarketplace ?? true;
@@ -540,28 +587,34 @@ function SkillCard({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {skill.capabilityFamilies.length > 0 ? skill.capabilityFamilies.map((family) => (
           <span key={family} style={pillStyle}>{family}</span>
-        )) : <span style={pillStyle}>base</span>}
+        )) : <span style={pillStyle}>{intl.formatMessage({ id: 'skills.capability.base', defaultMessage: 'Base' })}</span>}
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
         {canPublish && (
           <Button size="sm" variant="primary" onClick={() => publishMutation.mutate()} disabled={isActionPending}>
-            {hasUnpublishedRevision ? 'Publish staged revision' : 'Publish'}
+            {hasUnpublishedRevision
+              ? intl.formatMessage({ id: 'skills.actions.publishUpdate', defaultMessage: 'Publish update' })
+              : intl.formatMessage({ id: 'skills.actions.publish', defaultMessage: 'Publish' })}
           </Button>
         )}
         {canDelist && (
           <Button size="sm" variant="secondary" onClick={() => delistMutation.mutate()} disabled={isActionPending}>
-            Delist
+            {intl.formatMessage({ id: 'skills.actions.delist', defaultMessage: 'Delist' })}
           </Button>
         )}
         {canLike && (
           <Button size="sm" variant="secondary" onClick={() => likeMutation.mutate()} disabled={isActionPending}>
-            {skill.isLikedByViewer ? 'Unlike' : 'Like'} ({skill.likeCount})
+            {skill.isLikedByViewer
+              ? intl.formatMessage({ id: 'skills.actions.unlike', defaultMessage: 'Unlike' })
+              : intl.formatMessage({ id: 'skills.actions.like', defaultMessage: 'Like' })} ({skill.likeCount})
           </Button>
         )}
         {canFork && (
           <Button size="sm" variant="secondary" onClick={() => forkMutation.mutate()} disabled={isActionPending}>
-            {forkMutation.isPending ? 'Copying...' : 'Copy'}
+            {forkMutation.isPending
+              ? intl.formatMessage({ id: 'skills.actions.copying', defaultMessage: 'Copying...' })
+              : intl.formatMessage({ id: 'skills.actions.copy', defaultMessage: 'Copy' })}
           </Button>
         )}
         {canManage && (
@@ -575,18 +628,22 @@ function SkillCard({
             }}
             disabled={isActionPending}
           >
-            {isEditing ? 'Close editor' : 'Edit'}
+              {isEditing
+                ? intl.formatMessage({ id: 'skills.actions.closeEditor', defaultMessage: 'Close editor' })
+                : intl.formatMessage({ id: 'skills.actions.edit', defaultMessage: 'Edit' })}
           </Button>
         )}
         <Button size="sm" variant="ghost" onClick={() => setShowMetrics((previous) => !previous)}>
-          {showMetrics ? 'Hide metrics' : 'Show metrics'}
+            {showMetrics
+              ? intl.formatMessage({ id: 'skills.actions.hideMetrics', defaultMessage: 'Hide metrics' })
+              : intl.formatMessage({ id: 'skills.actions.showMetrics', defaultMessage: 'Show metrics' })}
         </Button>
       </div>
 
       {isEditing && canManage && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
           <label style={fieldLabelStyle}>
-            Name
+            {intl.formatMessage({ id: 'skills.form.name', defaultMessage: 'Name' })}
             <input
               value={editedName}
               onChange={(event) => setEditedName(event.target.value)}
@@ -594,7 +651,7 @@ function SkillCard({
             />
           </label>
           <label style={fieldLabelStyle}>
-            Description
+            {intl.formatMessage({ id: 'skills.form.description', defaultMessage: 'Description' })}
             <textarea
               value={editedDescription}
               onChange={(event) => setEditedDescription(event.target.value)}
@@ -603,7 +660,7 @@ function SkillCard({
             />
           </label>
           <label style={fieldLabelStyle}>
-            Instructions
+            {intl.formatMessage({ id: 'skills.form.instructions', defaultMessage: 'Instructions' })}
             <textarea
               value={editedInstructions}
               onChange={(event) => setEditedInstructions(event.target.value)}
@@ -612,7 +669,7 @@ function SkillCard({
             />
           </label>
           <label style={fieldLabelStyle}>
-            Tools
+            {intl.formatMessage({ id: 'skills.form.tools', defaultMessage: 'Tools' })}
             <ToolTagPicker
               tools={tools}
               categories={categories}
@@ -638,7 +695,9 @@ function SkillCard({
                 || !editedInstructions.trim()
               }
             >
-              {updateMutation.isPending ? 'Saving...' : 'Save update'}
+              {updateMutation.isPending
+                ? intl.formatMessage({ id: 'skills.actions.saving', defaultMessage: 'Saving...' })
+                : intl.formatMessage({ id: 'skills.actions.saveUpdate', defaultMessage: 'Save update' })}
             </Button>
             <Button
               size="sm"
@@ -652,7 +711,7 @@ function SkillCard({
               }}
               disabled={updateMutation.isPending}
             >
-              Cancel
+              {intl.formatMessage({ id: 'common.cancel', defaultMessage: 'Cancel' })}
             </Button>
           </div>
         </div>
@@ -660,37 +719,90 @@ function SkillCard({
 
       {canManage && !canPublishByPlan && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          Your plan does not allow marketplace publishing.
+          {intl.formatMessage({
+            id: 'skills.marketplacePublishingUnavailable',
+            defaultMessage: 'Your plan does not allow marketplace publishing.',
+          })}
         </div>
       )}
 
       {hasUnpublishedRevision && canManage && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          You have an unpublished staged revision ready to publish.
+          {intl.formatMessage({
+            id: 'skills.unpublishedRevisionNotice',
+            defaultMessage: 'You have an update ready to be published.',
+          })}
         </div>
       )}
 
       {canManage && !canCreatePrivateSkills && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          Private skills are unavailable on your current plan.
+          {intl.formatMessage({
+            id: 'skills.privateUnavailable',
+            defaultMessage: 'Private skills are unavailable on your current plan.',
+          })}
         </div>
       )}
 
       {mode === 'marketplace' && skill.sourceKind === 'user' && !canLikeByPlan && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          Liking marketplace skills is unavailable on your current plan.
+          {intl.formatMessage({
+            id: 'skills.likeUnavailable',
+            defaultMessage: 'Liking marketplace skills is unavailable on your current plan.',
+          })}
         </div>
       )}
 
       {showMetrics && (
         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {metricsQuery.isLoading && <div>Loading metrics...</div>}
-          {metricsQuery.isError && <div>Unable to load metrics: {(metricsQuery.error as Error).message}</div>}
+          {metricsQuery.isLoading && (
+            <div>{intl.formatMessage({ id: 'skills.metrics.loading', defaultMessage: 'Loading metrics...' })}</div>
+          )}
+          {metricsQuery.isError && (
+            <div>
+              {intl.formatMessage(
+                { id: 'skills.metrics.loadError', defaultMessage: 'Unable to load metrics: {message}' },
+                { message: (metricsQuery.error as Error).message },
+              )}
+            </div>
+          )}
           {metrics && (
             <>
-              <div>30d usage: {metrics.usage30d} · 30d likes: {metrics.likes30d} · 30d forks: {metrics.forks30d}</div>
-              <div>90d usage: {metrics.usage90d} · 90d likes: {metrics.likes90d} · 90d forks: {metrics.forks90d}</div>
-              <div>Popularity: {metrics.popularityScore.toFixed(3)} · Trending: {metrics.trendingScore.toFixed(3)}</div>
+              <div>
+                {intl.formatMessage(
+                  { id: 'skills.metrics.summary30d', defaultMessage: '30d usage: {usage} · 30d likes: {likes} · 30d forks: {forks}' },
+                  {
+                    usage: intl.formatNumber(metrics.usage30d),
+                    likes: intl.formatNumber(metrics.likes30d),
+                    forks: intl.formatNumber(metrics.forks30d),
+                  },
+                )}
+              </div>
+              <div>
+                {intl.formatMessage(
+                  { id: 'skills.metrics.summary90d', defaultMessage: '90d usage: {usage} · 90d likes: {likes} · 90d forks: {forks}' },
+                  {
+                    usage: intl.formatNumber(metrics.usage90d),
+                    likes: intl.formatNumber(metrics.likes90d),
+                    forks: intl.formatNumber(metrics.forks90d),
+                  },
+                )}
+              </div>
+              <div>
+                {intl.formatMessage(
+                  { id: 'skills.metrics.popularity', defaultMessage: 'Popularity: {popularity} · Trending: {trending}' },
+                  {
+                    popularity: intl.formatNumber(metrics.popularityScore, {
+                      minimumFractionDigits: 3,
+                      maximumFractionDigits: 3,
+                    }),
+                    trending: intl.formatNumber(metrics.trendingScore, {
+                      minimumFractionDigits: 3,
+                      maximumFractionDigits: 3,
+                    }),
+                  },
+                )}
+              </div>
             </>
           )}
         </div>
@@ -734,3 +846,26 @@ const textareaStyle: React.CSSProperties = {
   minHeight: '88px',
   fontFamily: 'inherit',
 };
+
+function formatSkillStatusLabel(
+  intl: ReturnType<typeof useIntl>,
+  sourceKind: Skill['sourceKind'],
+  publicationStatus: Skill['publicationStatus'],
+): string {
+  if (sourceKind === 'system') {
+    return intl.formatMessage({ id: 'skills.status.system', defaultMessage: 'System' });
+  }
+
+  switch (publicationStatus) {
+    case 'draft':
+      return intl.formatMessage({ id: 'skills.status.draft', defaultMessage: 'Draft' });
+    case 'private':
+      return intl.formatMessage({ id: 'skills.status.private', defaultMessage: 'Private' });
+    case 'published':
+      return intl.formatMessage({ id: 'skills.status.published', defaultMessage: 'Published' });
+    case 'archived':
+      return intl.formatMessage({ id: 'skills.status.archived', defaultMessage: 'Archived' });
+    default:
+      return publicationStatus;
+  }
+}

@@ -1,4 +1,5 @@
 import type { CapabilityMode } from './CapabilitySelector.js';
+import { STYLE_CONFIG, type AgentStyleValue } from './style-mapping.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -24,6 +25,8 @@ export interface CreateAgentFormIntent {
   venueType: string;
   executionMode: string;
   requiresTradingSetup: boolean;
+  style?: string;
+  runtimePolicyOverrides?: { maxHoldDurationMs?: number | null } | null;
 }
 
 export function validateCreateAgentForm(
@@ -56,11 +59,23 @@ export function validateCreateAgentForm(
     }
   }
 
-  // tickIntervalMins: if provided, ≥ 1 minute, whole number
+  // tickIntervalMins: if provided, ≥ 1 minute, whole number; and maxHoldDurationMs must be ≥ tickIntervalMs
   if (intent.tickIntervalMins.trim()) {
     const tickNum = Number(intent.tickIntervalMins);
     if (!Number.isFinite(tickNum) || tickNum < 1 || !Number.isInteger(tickNum)) {
       errors.tickIntervalMins = 'Tick interval must be at least 1 minute.';
+    } else {
+      const tickIntervalMs = tickNum * 60_000;
+      const effectiveStyle: AgentStyleValue =
+        intent.style === 'careful' || intent.style === 'balanced' || intent.style === 'bold'
+          ? intent.style
+          : 'balanced';
+      const styleMaxHoldMs = STYLE_CONFIG[effectiveStyle].maxHoldDurationMs;
+      const maxHoldMs = intent.runtimePolicyOverrides?.maxHoldDurationMs ?? styleMaxHoldMs;
+      if (maxHoldMs != null && maxHoldMs !== 0 && maxHoldMs < tickIntervalMs) {
+        const maxHoldMins = Math.round(maxHoldMs / 60_000);
+        errors.tickIntervalMins = `Tick interval (${tickNum} min) exceeds max hold duration (${maxHoldMins} min). Reduce tick interval or increase Max Hold Duration in Advanced Settings.`;
+      }
     }
   }
 

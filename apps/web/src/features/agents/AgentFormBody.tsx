@@ -293,19 +293,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                   style={{
                     fontSize: '14px',
                     fontWeight: '600',
-                    marginBottom: '4px',
                   }}
                 >
                   {intl.formatMessage({ id: 'agents.create.skills' })}
-                </div>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    color: 'var(--color-text-secondary)',
-                    lineHeight: '1.5',
-                  }}
-                >
-                  {intl.formatMessage({ id: 'agents.create.skillsHelp' })}
                 </div>
               </div>
               <SkillPicker

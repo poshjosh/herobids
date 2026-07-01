@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { type AgentStyleValue, type RuntimePolicyOverrides, resolveStyleDefaults } from './style-mapping.js';
+import { MS_PER_MINUTE } from './tick-interval.js';
 
 interface RuntimePolicySectionProps {
   style: AgentStyleValue;
@@ -142,16 +143,26 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
     }
     const n = Number(raw);
     if (!Number.isNaN(n) && Number.isFinite(n) && n >= 0) {
+      if (field === 'maxHoldDurationMs') {
+        setOverride(field, Math.round(n * MS_PER_MINUTE) as RuntimePolicyOverrides[NumericField]);
+        return;
+      }
       setOverride(field, n as RuntimePolicyOverrides[NumericField]);
     }
   }
 
   function getNumericValue(field: NumericField): string {
     const v = overrides?.[field];
+    if (field === 'maxHoldDurationMs') {
+      return v != null ? String(v / MS_PER_MINUTE) : '';
+    }
     return v != null ? String(v) : '';
   }
 
   function getNumericPlaceholder(field: NumericField): string {
+    if (field === 'maxHoldDurationMs') {
+      return String(defaults.maxHoldDurationMs / MS_PER_MINUTE);
+    }
     return String(defaults[field]);
   }
 
@@ -208,11 +219,17 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               id={`rp-${field}`}
               type="number"
               min={0}
+              step={field === 'maxHoldDurationMs' ? 'any' : undefined}
               style={inputStyle}
               value={getNumericValue(field)}
               placeholder={getNumericPlaceholder(field)}
               onChange={(e) => handleNumericChange(field, e.target.value)}
             />
+            {field === 'maxHoldDurationMs' && (
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                {intl.formatMessage({ id: 'agents.runtimePolicy.maxHoldDurationHelp' })}
+              </div>
+            )}
           </div>
         ))}
 

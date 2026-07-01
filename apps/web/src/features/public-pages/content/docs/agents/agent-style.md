@@ -55,7 +55,7 @@ Three built-in styles are available: **Careful**, **Balanced**, and **Bold**. In
 
 | | **Careful** | **Balanced** | **Bold** |
 |---|---|---|---|
-| **Max hold duration** | 180 min | 60 min | 30 min |
+| **Max hold duration** | 450 min | 90 min | 10 min |
 
 ## What each field means
 

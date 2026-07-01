@@ -22,7 +22,7 @@ The following details are optional, their default values are indicated:
 
 - round-trip = yes
 - search-interval = 6 hours
-report-frequency = 48 hours
+- report-frequency = 48 hours
 
 Date flexibility is allowed and encouraged if it reduces total trip cost.
 

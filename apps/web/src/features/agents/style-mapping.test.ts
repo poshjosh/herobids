@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStyleDefaults, STYLE_CONFIG, formatStyleSummary, resolveModelPricing, type AgentStyleValue } from './style-mapping.js';
+import {
+  applyAutoMaxHoldOverride,
+  deriveStyleMaxHoldDurationMs,
+  formatStyleSummary,
+  resolveModelPricing,
+  resolveStyleDefaults,
+  resolveStyleTickIntervalMs,
+  STYLE_CONFIG,
+  type AgentStyleValue,
+} from './style-mapping.js';
 
 describe('resolveStyleDefaults', () => {
   const validCostPresets = ['minimal', 'standard', 'premium'] as const;
@@ -164,6 +173,31 @@ describe('resolveStyleDefaults', () => {
     });
   });
 
+  describe('derived cadence helpers', () => {
+    it('uses the style tick interval when no override is given', () => {
+      expect(resolveStyleTickIntervalMs('balanced')).toBe(1_800_000);
+    });
+
+    it('uses an explicit tick interval override when present', () => {
+      expect(resolveStyleTickIntervalMs('balanced', 900_000)).toBe(900_000);
+    });
+
+    it('derives max hold from the effective tick interval', () => {
+      expect(deriveStyleMaxHoldDurationMs('balanced', 900_000)).toBe(2_700_000);
+    });
+
+    it('clears the max-hold override when the derived value matches the style default', () => {
+      expect(applyAutoMaxHoldOverride('balanced', { scoutMaxTurns: 50 })).toEqual({ scoutMaxTurns: 50 });
+    });
+
+    it('stores an auto max-hold override when cadence differs from the style default', () => {
+      expect(applyAutoMaxHoldOverride('balanced', { scoutMaxTurns: 50 }, 900_000)).toEqual({
+        scoutMaxTurns: 50,
+        maxHoldDurationMs: 2_700_000,
+      });
+    });
+  });
+
   describe('formatStyleSummary', () => {
     it('produces a fallback summary for careful (no pricing)', () => {
       const summary = formatStyleSummary('careful');
@@ -213,6 +247,22 @@ describe('resolveStyleDefaults', () => {
       const boldCost = Number(boldSummary.match(/\$([\d.]+)\/day/)![1]);
       const carefulCost = Number(carefulSummary.match(/\$([\d.]+)\/day/)![1]);
       expect(boldCost).toBeGreaterThan(carefulCost);
+    });
+
+    it('uses an explicit cadence override in the summary text and cost math', () => {
+      const summary = formatStyleSummary('balanced', {
+        economyInputUsdPer1M: 0.08,
+        economyOutputUsdPer1M: 0.15,
+        premiumInputUsdPer1M: 1.00,
+        premiumOutputUsdPer1M: 2.00,
+      }, 900_000);
+      expect(summary).toContain('every 15 min');
+      expect(summary).not.toContain('every 30 min');
+    });
+
+    it('shows legacy non-whole-minute cadence precisely when overridden', () => {
+      const summary = formatStyleSummary('balanced', undefined, 90_000);
+      expect(summary).toContain('every 1.5 min');
     });
 
     it('falls back when economy input price is 0', () => {

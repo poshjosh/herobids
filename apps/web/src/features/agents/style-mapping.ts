@@ -1,5 +1,7 @@
 export type AgentStyleValue = 'careful' | 'balanced' | 'bold';
 
+const MS_PER_MINUTE = 60_000;
+
 export interface StyleDefaults {
   costPreset: 'minimal' | 'standard' | 'premium';
   tickIntervalMins: string;
@@ -130,6 +132,46 @@ export function resolveStyleDefaults(style: AgentStyleValue): StyleDefaults {
   return config;
 }
 
+function isPositiveFiniteNumber(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value) && value > 0;
+}
+
+export function resolveStyleTickIntervalMs(style: AgentStyleValue, tickIntervalMsOverride?: number | null): number {
+  if (isPositiveFiniteNumber(tickIntervalMsOverride)) {
+    return tickIntervalMsOverride;
+  }
+
+  return Number(resolveStyleDefaults(style).tickIntervalMins) * MS_PER_MINUTE;
+}
+
+export function deriveStyleMaxHoldDurationMs(style: AgentStyleValue, tickIntervalMsOverride?: number | null): number {
+  const defaults = resolveStyleDefaults(style);
+  const defaultTickIntervalMs = Number(defaults.tickIntervalMins) * MS_PER_MINUTE;
+  const multiplier = defaultTickIntervalMs > 0
+    ? defaults.maxHoldDurationMs / defaultTickIntervalMs
+    : 1;
+
+  return Math.round(resolveStyleTickIntervalMs(style, tickIntervalMsOverride) * multiplier);
+}
+
+export function applyAutoMaxHoldOverride(
+  style: AgentStyleValue,
+  overrides: RuntimePolicyOverrides | null,
+  tickIntervalMsOverride?: number | null,
+): RuntimePolicyOverrides | null {
+  const defaults = resolveStyleDefaults(style);
+  const derivedMaxHoldDurationMs = deriveStyleMaxHoldDurationMs(style, tickIntervalMsOverride);
+  const next: RuntimePolicyOverrides = { ...(overrides ?? {}) };
+
+  if (derivedMaxHoldDurationMs === defaults.maxHoldDurationMs) {
+    delete next.maxHoldDurationMs;
+  } else {
+    next.maxHoldDurationMs = derivedMaxHoldDurationMs;
+  }
+
+  return Object.keys(next).length > 0 ? next : null;
+}
+
 /** Pricing info for the selected economy and premium models. Pass to formatStyleSummary for computed estimates. */
 export interface ModelPricingInfo {
   /** Input price per 1M tokens for the economy (scout) model. */
@@ -214,16 +256,24 @@ const STYLE_ESCALATION_RATES: Record<AgentStyleValue, number> = {
  *
  * Both paths produce a consistent format: cost · cadence.
  */
-export function formatStyleSummary(style: AgentStyleValue, pricing?: ModelPricingInfo): string {
+export function formatStyleSummary(
+  style: AgentStyleValue,
+  pricing?: ModelPricingInfo,
+  tickIntervalMsOverride?: number | null,
+): string {
   const d = resolveStyleDefaults(style);
-  const cadence = `every ${d.tickIntervalMins} min`;
+  const effectiveTickIntervalMs = resolveStyleTickIntervalMs(style, tickIntervalMsOverride);
+  const effectiveTickIntervalMins = effectiveTickIntervalMs / MS_PER_MINUTE;
+  const cadence = Number.isInteger(effectiveTickIntervalMins)
+    ? `every ${effectiveTickIntervalMins} min`
+    : `every ${effectiveTickIntervalMins.toFixed(1)} min`;
 
   // Compute estimated daily cost if we have full model pricing (input + output for both models)
   if (pricing
     && pricing.economyInputUsdPer1M > 0 && pricing.economyOutputUsdPer1M > 0
     && pricing.premiumInputUsdPer1M > 0 && pricing.premiumOutputUsdPer1M > 0
   ) {
-    const ticksPerDay = 1440 / Number(d.tickIntervalMins);
+    const ticksPerDay = 86_400_000 / effectiveTickIntervalMs;
     const escalationRate = STYLE_ESCALATION_RATES[style];
 
     // Scout runs every tick

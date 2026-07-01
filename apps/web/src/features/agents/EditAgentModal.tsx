@@ -10,10 +10,10 @@ import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/
 import { buildUpdateAgentPayload, normalizeEscalationPolicy } from './agent-payloads.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
 import { TradingGuardrailsFields } from './AgentControlsSection.js';
-import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval } from './tick-interval.js';
+import { getTickIntervalValidationMessageId, isWholeMinuteTickInterval, parseTickIntervalMinutesInput } from './tick-interval.js';
 import { type CapabilityMode } from './CapabilitySelector.js';
 import { StyleSelector } from './StyleSelector.js';
-import { type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
+import { applyAutoMaxHoldOverride, type AgentStyleValue, resolveStyleDefaults, formatStyleSummary, resolveModelPricing, type RuntimePolicyOverrides } from './style-mapping.js';
 import { technicalFormStateToPayload } from './technical-config-helpers.js';
 import { VENUE_TYPE_MAP, buildVenueTypeMap } from './venue-mapping.js';
 import { AgentFormBody } from './AgentFormBody.js';
@@ -65,6 +65,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const initialTickIntervalIsLegacy = initialData.tickIntervalMs != null && !isWholeMinuteTickInterval(initialData.tickIntervalMs);
 
   const policyManuallySetRef = useRef(false);
+  const maxHoldDurationManuallySetRef = useRef(
+    Object.prototype.hasOwnProperty.call((initialData.runtimePolicyOverrides as RuntimePolicyOverrides | null) ?? {}, 'maxHoldDurationMs'),
+  );
   const [form, setForm] = useState<AgentFormState>(() => agentToFormState(initialData));
   const [style, setStyle] = useState<AgentStyleValue>(
     (initialData.style as AgentStyleValue) ?? 'balanced',
@@ -142,6 +145,15 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   const effectiveTickIntervalMs = initialTickIntervalIsLegacy && !tickIntervalTouched
     ? (initialData.tickIntervalMs ?? null)
     : null;
+
+  function resolveEditedTickIntervalMs(tickIntervalMins: string, forceExplicit = false): number | null {
+    if (initialTickIntervalIsLegacy && !tickIntervalTouched && !forceExplicit) {
+      return initialData.tickIntervalMs ?? null;
+    }
+
+    const parsed = parseTickIntervalMinutesInput(tickIntervalMins);
+    return parsed.kind === 'valid' ? parsed.tickIntervalMs : null;
+  }
   const showIntelligence = form.capabilityMode === 'intelligence' || form.capabilityMode === 'both';
   const requiresTradingSetup = skillPreset === 'trading' || hasCapabilityFamily(selectedSkills, 'trading');
   // Short-circuit to false when a non-trading preset (Custom or
@@ -364,6 +376,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               value={style}
               onChange={(nextStyle) => {
                 const defaults = resolveStyleDefaults(nextStyle);
+                setTickIntervalTouched(true);
                 setStyle(nextStyle);
                 setForm((prev) => ({
                   ...prev,
@@ -374,6 +387,22 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     ? {}
                     : { openPositionEscalationToJudgePolicy: defaults.openPositionEscalationToJudgePolicy }),
                 }));
+                if (!maxHoldDurationManuallySetRef.current) {
+                  setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
+                    nextStyle,
+                    current,
+                    Number(defaults.tickIntervalMins) * 60_000,
+                  ));
+                } else {
+                  const newTickMs = Number(defaults.tickIntervalMins) * 60_000;
+                  setRuntimePolicyOverrides((current) => {
+                    const effectiveMaxHold = current?.maxHoldDurationMs
+                      ?? resolveStyleDefaults(nextStyle).maxHoldDurationMs;
+                    return effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs
+                      ? applyAutoMaxHoldOverride(nextStyle, current, newTickMs)
+                      : current;
+                  });
+                }
               }}
             />
             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
@@ -386,6 +415,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   modelOverrideEnabled ? modelForm.lightModel : (inheritedModelSettings?.lightModel ?? ''),
                   modelOverrideEnabled ? modelForm.heavyModel : (inheritedModelSettings?.heavyModel ?? ''),
                 ),
+                resolveEditedTickIntervalMs(form.tickIntervalMins),
               )}
             </div>
           </div>
@@ -393,8 +423,27 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
           <AgentFormBody
             value={form}
             onChange={(patch) => {
-              if (patch.tickIntervalMins !== undefined) setTickIntervalTouched(true);
-              setForm((s) => ({ ...s, ...patch }));
+              const nextForm = { ...form, ...patch };
+              if (patch.tickIntervalMins !== undefined) {
+                setTickIntervalTouched(true);
+                const newTickMs = resolveEditedTickIntervalMs(nextForm.tickIntervalMins, true);
+                if (!maxHoldDurationManuallySetRef.current) {
+                  setRuntimePolicyOverrides((current) => applyAutoMaxHoldOverride(
+                    style,
+                    current,
+                    newTickMs,
+                  ));
+                } else {
+                  setRuntimePolicyOverrides((current) => {
+                    const effectiveMaxHold = current?.maxHoldDurationMs
+                      ?? resolveStyleDefaults(style).maxHoldDurationMs;
+                    return newTickMs != null && effectiveMaxHold !== 0 && effectiveMaxHold < newTickMs
+                      ? applyAutoMaxHoldOverride(style, current, newTickMs)
+                      : current;
+                  });
+                }
+              }
+              setForm(nextForm);
             }}
             showIntelligence={showIntelligence}
             showTradingControls={showTradingControls}
@@ -414,7 +463,19 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               <RuntimePolicySection
                 style={style}
                 overrides={runtimePolicyOverrides}
-                onChange={setRuntimePolicyOverrides}
+                onChange={(overrides) => {
+                  const hasManualMaxHoldOverride = Object.prototype.hasOwnProperty.call(overrides ?? {}, 'maxHoldDurationMs');
+                  maxHoldDurationManuallySetRef.current = hasManualMaxHoldOverride;
+                  setRuntimePolicyOverrides(
+                    hasManualMaxHoldOverride
+                      ? overrides
+                      : applyAutoMaxHoldOverride(
+                          style,
+                          overrides,
+                          resolveEditedTickIntervalMs(form.tickIntervalMins),
+                        ),
+                  );
+                }}
                 alwaysExpanded
               />
             }
@@ -576,7 +637,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             }
             skillsSlot={
               showIntelligence ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
                   <SkillPicker
                     skills={selectableSkills}
                     selectedSkillIds={form.skillIds}
@@ -584,12 +645,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     loading={skillsQuery.isLoading}
                     errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
                   />
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
-                    {intl.formatMessage({ id: 'agents.edit.skillsHelp' })}
-                    {preservedSkillIds.length > 0 && (
-                      <span> {intl.formatMessage({ id: 'agents.edit.skillsHelpPreserved' })}</span>
-                    )}
-                  </div>
                 </div>
               ) : null
             }
@@ -628,7 +683,12 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     fieldErrors={formErrors}
                     onClearFieldError={clearFieldError}
                     onBlurField={validateFieldOnBlur}
-                    onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+                    onChange={(patch) => {
+                      if ('openPositionEscalationToJudgePolicy' in patch) {
+                        policyManuallySetRef.current = true;
+                      }
+                      setForm((prev) => ({ ...prev, ...patch }));
+                    }}
                   />
                 </div>
               ) : null
