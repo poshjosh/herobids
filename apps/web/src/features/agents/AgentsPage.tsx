@@ -790,9 +790,7 @@ function CreateAgentFlow({
                     {intl.formatMessage({ id: 'agents.create.addConnection' })}
                   </button>
                 )}
-                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                  {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
-                </div>
+
               </div>
             }
             tradingSetupSlot={

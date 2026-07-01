@@ -3,7 +3,6 @@ import { callLlmWithRetry } from '../runtime-errors.js';
 import { stripReasoningContent, type LlmProviderConfig, type LlmRequest } from '@herobids/llm';
 import type { EvaluationArtifactStore } from '@herobids/domain';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
-import { redact } from './redaction.js';
 
 const logger = pino({ name: 'generate-narrative' });
 

@@ -148,6 +148,10 @@ Stored in Postgres, loaded by the trading instance at startup:
 
 ---
 
+## See also
+
+- [Configuration Reference](../tech/configuration.md) — practical index of every config file, what it controls, and where to edit it
+
 ## Principles
 
 1. **No magic numbers in business logic.** Any threshold, limit, interval, timeout, or policy that might change belongs in config.

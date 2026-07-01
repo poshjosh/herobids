@@ -196,7 +196,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
       )}
 
       {/* Platform link — only when trading setup is required */}
-      {props.showTradingControls && props.requiresTradingSetup && props.connectionSlot}
+      {props.showTradingControls && props.requiresTradingSetup && (
+        <div style={fieldGap}>{props.connectionSlot}</div>
+      )}
 
       {/* Telegram Chat ID — always visible */}
       <div style={fieldGap}>

@@ -197,9 +197,9 @@ export const messages: Record<string, string> = {
   'missionControl.noActivityYet.title': 'لا نشاط حتى الآن',
   'missionControl.noActivityYet.message': 'ستظهر الأحداث هنا بمجرد أن يبدأ وكلاء الذكاء الاصطناعي في اتخاذ الإجراءات.',
   'missionControl.viewAllActivity': 'عرض جميع الأنشطة →',
-  'missionControl.setup.title': 'توصيل وكيل الذكاء الاصطناعي',
-  'missionControl.setup.message': 'اتصل بمزوّد حتى يتمكن وكلاء الذكاء الاصطناعي من استخدام خدمات مثل Hyperliquid أو Gmail.',
-  'missionControl.setup.cta': 'توصيل الوكيل بالمنصة',
+  'missionControl.setup.title': 'توصيل وكيل الذكاء الاصطناعي بمنصة خارجية',
+  'missionControl.setup.message': 'قم بتوصيل وكلاء الذكاء الاصطناعي بمنصات خارجية مثل Hyperliquid أو Gmail.',
+  'missionControl.setup.cta': 'توصيل وكيل الذكاء الاصطناعي',
   'missionControl.setup.successDismiss': 'تم',
   'missionControl.setup.successMessage': 'أصبح {label} ({provider}) جاهزاً لوكلاء الذكاء الاصطناعي لديك.',
 
@@ -300,7 +300,7 @@ export const messages: Record<string, string> = {
   'connections.usedByNone': 'غير معيّن لأي وكيل',
   'connections.revoke': 'إلغاء',
   'connections.revokeConfirm': 'هل تريد إلغاء هذا الاتصال؟ سيفقد الوكلاء المستخدمون له الوصول.',
-  'connections.assignmentSuccess': 'تم تعيين الاتصال للوكلاء المحددين.',,
+  'connections.assignmentSuccess': 'تم تعيين الاتصال للوكلاء المحددين.',
 
   // Credentials
   'credentials.title': 'بيانات الاعتماد',
@@ -379,8 +379,7 @@ export const messages: Record<string, string> = {
   'agents.create.telegramChatId.placeholder': 'اختياري: معرّف الدردشة للتنبيه',
   'agents.create.telegramChatId.help': 'يُستخدم معرّف الدردشة المحفوظ لديك تلقائياً إن وجد.',
   'agents.create.capabilitySetupTitle': 'إعداد قدرة {capability}',
-  'agents.create.capabilitySetupMessage': 'اختر المنصة التي يمكن لوكيلك استخدامها.',
-  'agents.create.whereToTrade': 'رابط المنصة',
+  'agents.create.whereToTrade': 'ربط الوكيل بمنصة خارجية',
   'agents.create.loadingConnections': 'جارٍ تحميل روابط المنصة…',
   'agents.create.noConnections': 'لا توجد روابط منصة نشطة بعد. أعدّ التداول الآن أو أنشئ وكيل الذكاء الاصطناعي واربطه لاحقاً.',
   'agents.create.setupTradingNow': 'إعداد التداول الآن',

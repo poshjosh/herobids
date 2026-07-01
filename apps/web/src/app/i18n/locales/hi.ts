@@ -197,9 +197,9 @@ export const messages: Record<string, string> = {
   'missionControl.noActivityYet.title': 'अभी तक कोई गतिविधि नहीं',
   'missionControl.noActivityYet.message': 'AI एजेंट कार्रवाई शुरू होने पर इवेंट यहाँ दिखाई देंगे।',
   'missionControl.viewAllActivity': 'सभी गतिविधि देखें →',
-  'missionControl.setup.title': 'AI एजेंट कनेक्ट करें',
-  'missionControl.setup.message': 'एक प्रदाता कनेक्ट करें ताकि आपके AI एजेंट Hyperliquid या Gmail जैसी सेवाओं का उपयोग कर सकें।',
-  'missionControl.setup.cta': 'एजेंट को प्लेटफ़ॉर्म से कनेक्ट करें',
+  'missionControl.setup.title': 'AI एजेंट को बाहरी प्लेटफ़ॉर्म से कनेक्ट करें',
+  'missionControl.setup.message': 'अपने AI एजेंटों को Hyperliquid या Gmail जैसे बाहरी प्लेटफ़ॉर्म से कनेक्ट करें।',
+  'missionControl.setup.cta': 'AI एजेंट कनेक्ट करें',
   'missionControl.setup.successDismiss': 'हो गया',
   'missionControl.setup.successMessage': '{label} ({provider}) आपके AI एजेंटों के लिए तैयार है।',
 
@@ -300,7 +300,7 @@ export const messages: Record<string, string> = {
   'connections.usedByNone': 'किसी भी एजेंट को नहीं सौंपा गया',
   'connections.revoke': 'रद्द करें',
   'connections.revokeConfirm': 'इस कनेक्शन को रद्द करें? इसका उपयोग करने वाले एजेंट की पहुँच समाप्त हो जाएगी।',
-  'connections.assignmentSuccess': 'कनेक्शन चयनित एजेंटों को सौंपा गया।',,
+  'connections.assignmentSuccess': 'कनेक्शन चयनित एजेंटों को सौंपा गया।',
 
   // Credentials
   'credentials.title': 'क्रेडेंशियल',
@@ -381,8 +381,7 @@ export const messages: Record<string, string> = {
   'agents.create.telegramChatId.placeholder': 'वैकल्पिक: सूचनाओं के लिए चैट ID',
   'agents.create.telegramChatId.help': 'यदि आपके पास सहेजी हुई Telegram चैट ID है, तो वह अपने आप उपयोग होगी।',
   'agents.create.capabilitySetupTitle': '{capability} क्षमता सेटअप',
-  'agents.create.capabilitySetupMessage': 'वह प्लेटफ़ॉर्म चुनें जिसे आपका एजेंट उपयोग कर सकता है।',
-  'agents.create.whereToTrade': 'प्लेटफ़ॉर्म लिंक',
+  'agents.create.whereToTrade': 'एजेंट को बाहरी प्लेटफ़ॉर्म से कनेक्ट करें',
   'agents.create.loadingConnections': 'प्लेटफ़ॉर्म लिंक लोड हो रहे हैं…',
   'agents.create.noConnections': 'अभी तक कोई सक्रिय प्लेटफ़ॉर्म लिंक नहीं। अभी सेटअप करें या AI एजेंट बनाकर बाद में लिंक करें।',
   'agents.create.setupTradingNow': 'अभी ट्रेडिंग सेटअप करें',
