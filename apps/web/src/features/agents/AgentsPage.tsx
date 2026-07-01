@@ -673,9 +673,6 @@ function CreateAgentFlow({
             connectionSlot={
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <FieldLabel>{intl.formatMessage({ id: 'agents.create.whereToTrade' })}</FieldLabel>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
-                  {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
-                </div>
                 {tradingConnectionsQuery.isLoading ? (
                   <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: 'agents.create.loadingConnections' })}</div>
                 ) : availableConnections.length === 0 ? (
@@ -776,6 +773,9 @@ function CreateAgentFlow({
                     )}
                   </>
                 )}
+                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                  {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
+                </div>
               </div>
             }
             tradingSetupSlot={

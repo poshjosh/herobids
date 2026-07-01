@@ -1,12 +1,8 @@
 # herobids
 
-An agentic platform which offers AI agents as a service (AaaS). Also uses skills to give agents expertise. Core skill is crypto trading.
+An agentic platform which offers AI agents as a service (AaaS). Also uses skills to give agents expertise. Core expertise are personal assistant and crypto trading. Trading platforms include: Hyperliquid perpetuals, Bybit, Jupiter/1inch DEX swaps
 
 Make using AI-powered agents as simple as describing what you want. No expertise required, no infrastructure to manage — just idea in, success out.
-
-Supports multiple agent types e.g. personal-assistant, trader etc 
-
-Trading platforms include: Hyperliquid perpetuals, Bybit, Jupiter/1inch DEX swaps
 
 ## Prerequisites
 
