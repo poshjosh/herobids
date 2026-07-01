@@ -398,7 +398,9 @@ export class AgentMessageBroker {
       artifactType: payload.artifactType,
       contentType: payload.contentType,
       summary: payload.summary,
-      location: payload.location,
+      location: payload.body
+        ? { ...(payload.location ?? {}), body: payload.body }
+        : payload.location,
       metadata: payload.metadata,
     });
   }

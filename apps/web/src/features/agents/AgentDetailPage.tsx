@@ -12,6 +12,7 @@ import { AgentActivityTimeline } from './AgentActivityTimeline.js';
 import { AgentTradesTable } from './AgentTradesTable.js';
 import { AgentEvaluations } from './AgentEvaluations.js';
 import { useSession } from '../../app/providers/SessionProvider.js';
+import { getToken } from '../../lib/session.js';
 
 export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -157,6 +158,29 @@ export function AgentDetailPage() {
       navigate('/agents');
     },
   });
+
+  const handleDownloadArtifact = useCallback(async (artifactId: string, artifactType: string) => {
+    const url = agentsApi.getArtifactDownloadUrl(id!, artifactId);
+    try {
+      const token = getToken();
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${artifactType}-${artifactId.slice(0, 8)}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(url, '_blank');
+    }
+  }, [id]);
 
   const activityFeedQuery = useQuery({
     queryKey: ['agents', id, 'activity-feed'],
@@ -665,7 +689,7 @@ export function AgentDetailPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' }}>
               {artifactsQuery.data.map((a: AgentArtifact) => {
                 const isExpanded = expandedArtifactId === a.id;
-                const hasLocation = a.location?.url;
+                const hasLocation = a.location?.url || a.location?.body;
                 const hasMetadata = a.metadata && Object.keys(a.metadata).length > 0;
                 const hasDetail = a.summary || hasLocation || hasMetadata;
 
@@ -723,20 +747,39 @@ export function AgentDetailPage() {
                             <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--color-text-primary)' }}>{a.summary}</div>
                           </div>
                         )}
-                        {hasLocation && a.location!.url && (
+                        {hasLocation && (
                           <div style={{ marginBottom: hasMetadata ? '10px' : '0' }}>
                             <div style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-muted)', marginBottom: '4px' }}>
                               {intl.formatMessage({ id: 'agents.detail.artifactContent', defaultMessage: 'Content' })}
                             </div>
-                            <a
-                              href={a.location!.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: 'var(--color-accent)', textDecoration: 'underline', wordBreak: 'break-all' }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {a.location!.url}
-                            </a>
+                            {a.location!.url ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <a
+                                  href={a.location!.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ color: 'var(--color-accent)', textDecoration: 'underline', wordBreak: 'break-all', flex: '1 1 auto' }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {a.location!.url}
+                                </a>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={(e) => { e.stopPropagation(); void handleDownloadArtifact(a.id, a.artifactType); }}
+                                >
+                                  {intl.formatMessage({ id: 'common.download', defaultMessage: 'Download' })}
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); void handleDownloadArtifact(a.id, a.artifactType); }}
+                              >
+                                {intl.formatMessage({ id: 'common.download', defaultMessage: 'Download' })}
+                              </Button>
+                            )}
                           </div>
                         )}
                         {hasMetadata && (

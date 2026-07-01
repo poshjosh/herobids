@@ -1338,6 +1338,55 @@ export async function agentRoutes(
     return reply.send(artifact);
   });
 
+  // Download agent artifact content (serves inline body or proxies from location.url)
+  app.get<{ Params: { id: string; artifactId: string } }>('/agents/:id/artifacts/:artifactId/download', async (request, reply) => {
+    const { id, artifactId } = request.params;
+
+    const [agent] = await db.select({ id: agents.id }).from(agents)
+      .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
+    if (!agent) return reply.status(404).send({ error: 'not_found' });
+
+    const [artifact] = await db.select().from(agentArtifacts)
+      .where(and(eq(agentArtifacts.id, artifactId), eq(agentArtifacts.agentId, id)));
+
+    if (!artifact) return reply.status(404).send({ error: 'not_found' });
+
+    const filename = `${artifact.artifactType}-${artifact.id.slice(0, 8)}`;
+
+    // Serve inline body if present
+    if (artifact.location?.body) {
+      const bodyBuffer = Buffer.from(artifact.location.body, 'utf-8');
+      void reply.header('Content-Type', artifact.contentType);
+      void reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      void reply.header('Content-Length', bodyBuffer.byteLength);
+      return reply.send(bodyBuffer);
+    }
+
+    // Proxy from location.url if present
+    const locationUrl = artifact.location?.url;
+    if (!locationUrl) {
+      return reply.status(404).send({ error: 'no_downloadable_content', message: 'This artifact has no downloadable content.' });
+    }
+
+    try {
+      const response = await fetch(locationUrl);
+      if (!response.ok) {
+        request.log.warn({ status: response.status, locationUrl }, 'Failed to fetch artifact content from location');
+        return reply.status(502).send({ error: 'fetch_failed', message: 'Failed to retrieve artifact content from storage.' });
+      }
+
+      const contentBuffer = await response.arrayBuffer();
+
+      void reply.header('Content-Type', artifact.contentType);
+      void reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      void reply.header('Content-Length', contentBuffer.byteLength);
+      return reply.send(Buffer.from(contentBuffer));
+    } catch (err) {
+      request.log.error({ err, locationUrl }, 'Error fetching artifact content');
+      return reply.status(502).send({ error: 'fetch_failed', message: 'Failed to retrieve artifact content from storage.' });
+    }
+  });
+
   // Get agent sessions history
   app.get<{ Params: { id: string } }>('/agents/:id/sessions', async (request, reply) => {
     const { id } = request.params;

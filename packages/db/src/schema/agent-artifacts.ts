@@ -16,8 +16,8 @@ export const agentArtifacts = pgTable('agent_artifacts', {
   contentType: text('content_type').notNull(),
   /** Human-readable summary */
   summary: text('summary').notNull(),
-  /** Reference to stored large-body content (bucket, key, etc.) */
-  location: jsonb('location').$type<{ bucket?: string; key?: string; url?: string } | null>(),
+  /** Reference to stored large-body content (bucket, key, url, or inline body) */
+  location: jsonb('location').$type<{ bucket?: string; key?: string; url?: string; body?: string } | null>(),
   /** Optional extra metadata */
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   /** Retention class for cleanup policy: ephemeral, standard, permanent */

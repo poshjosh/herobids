@@ -91,6 +91,7 @@ export const ArtifactPublishPayloadSchema = z.object({
   artifactType: z.string().min(1),
   contentType: z.string().min(1),
   summary: z.string().min(1),
+  body: z.string().optional(),
   location: z.object({
     bucket: z.string().optional(),
     key: z.string().optional(),

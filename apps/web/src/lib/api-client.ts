@@ -863,7 +863,7 @@ export interface AgentArtifact {
   artifactType: string;
   contentType: string;
   summary: string;
-  location?: { bucket?: string; key?: string; url?: string } | null;
+  location?: { bucket?: string; key?: string; url?: string; body?: string } | null;
   metadata?: Record<string, unknown> | null;
   createdAt: string;
 }
@@ -998,6 +998,8 @@ export const agents = {
     request<AgentArtifact[]>(`/agents/${id}/artifacts${limit ? `?limit=${limit}` : ''}`),
   getArtifactDetail: (agentId: string, artifactId: string) =>
     request<AgentArtifact>(`/agents/${agentId}/artifacts/${artifactId}`),
+  getArtifactDownloadUrl: (agentId: string, artifactId: string) =>
+    `${config.apiBaseUrl}/agents/${agentId}/artifacts/${artifactId}/download`,
   prompt: (id: string) => request<AgentCompiledPrompt>(`/agents/${id}/prompt`),
   sessions: (id: string) => request<unknown[]>(`/agents/${id}/sessions`),
   decisions: (id: string, limit?: number) =>

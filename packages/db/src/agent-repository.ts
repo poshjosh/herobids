@@ -104,7 +104,7 @@ export interface InsertAgentArtifact {
   artifactType: string;
   contentType: string;
   summary: string;
-  location?: { bucket?: string; key?: string; url?: string } | null;
+  location?: { bucket?: string; key?: string; url?: string; body?: string } | null;
   metadata?: Record<string, unknown>;
   retentionClass?: string;
   expiresAt?: Date;
