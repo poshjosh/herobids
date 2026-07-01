@@ -4,236 +4,8 @@ import { z } from 'zod';
 import { eq, and, or, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { blueprints, bots } from '@herobids/db';
-import { extractStrategyFromConfig } from '@herobids/domain';
+import { extractStrategyFromConfig, listPresets, getPreset, applyPresetToAgent } from '@herobids/domain';
 import { deepMerge } from '../config.js';
-
-// --- Static preset catalogue ---
-
-const PRESET_KEYS = ['momentum', 'momentum-position', 'dca', 'range', 'swing', 'scalper', 'contrarian'] as const;
-type PresetKey = typeof PRESET_KEYS[number];
-
-const PRESETS: Record<PresetKey, { name: string; description: string; configData: Record<string, unknown> }> = {
-  momentum: {
-    name: 'Momentum — Day',
-    description: 'Day-trend following on 15m candles. Tight stop, quick profit targets.',
-    configData: {
-      strategy: {
-        type: 'momentum',
-        decisionMode: 'mechanical',
-        params: {
-          candleInterval: '15m',
-          candleLimit: 48,
-          minCandleCount: 20,
-          stopLossPct: 3,
-          takeProfitPct: 8,
-          signalBias: 'trend-following',
-          positionSize: '1',
-          positionSizeMode: 'fixed',
-          indicators: {
-            rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70 },
-            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
-            volume: { enabled: true, strongRatio: 1.5 },
-            supportResistance: { enabled: false },
-            vwap: { enabled: false },
-            priceAction: { enabled: true, minChange24hPct: 3, maxChange24hPct: 50 },
-            choch: { enabled: false },
-            confidence: { rsiWeight: 0.25, macdCrossoverWeight: 0.30, macdIncreasingWeight: 0.15, volumeWeight: 0.20, breakoutWeight: 0.10, vwapWeight: 0, priceActionWeight: 0.10, chochBullishWeight: 0.15, chochBearishPenalty: 0.10, minConfidence: 0.40, minReasons: 2 },
-          },
-        },
-      },
-      risk: { maxPositionSize: 1000, stopLossPercent: 3, takeProfitPercent: 8 },
-      execution: { mode: 'paper' },
-    },
-  },
-  'momentum-position': {
-    name: 'Momentum — Position',
-    description: 'Longer-term trend following on 4H candles. Wider stops, bigger targets.',
-    configData: {
-      strategy: {
-        type: 'momentum',
-        decisionMode: 'mechanical',
-        params: {
-          candleInterval: '4H',
-          candleLimit: 72,
-          minCandleCount: 30,
-          stopLossPct: 8,
-          takeProfitPct: 25,
-          signalBias: 'trend-following',
-          positionSize: '1',
-          positionSizeMode: 'fixed',
-          indicators: {
-            rsi: { enabled: true, period: 14, healthyMin: 45, healthyMax: 75 },
-            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
-            volume: { enabled: true, strongRatio: 1.8 },
-            supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.01 },
-            vwap: { enabled: false },
-            priceAction: { enabled: true, minChange24hPct: 8, maxChange24hPct: 60 },
-            choch: { enabled: false },
-            confidence: { rsiWeight: 0.20, macdCrossoverWeight: 0.25, macdIncreasingWeight: 0.20, volumeWeight: 0.20, breakoutWeight: 0.15, vwapWeight: 0, priceActionWeight: 0.10, chochBullishWeight: 0.15, chochBearishPenalty: 0.10, minConfidence: 0.45, minReasons: 2 },
-          },
-        },
-      },
-      risk: { maxPositionSize: 1000, stopLossPercent: 8, takeProfitPercent: 25 },
-      execution: { mode: 'paper' },
-    },
-  },
-  dca: {
-    name: 'DCA',
-    description: 'Dollar-cost averaging with periodic buys at a fixed interval.',
-    configData: {
-      strategy: { type: 'dca', params: { intervalMs: 86400000, amountPerBuy: '10' } },
-      risk: { maxTotalPosition: 10000 },
-      execution: { mode: 'paper' },
-    },
-  },
-  range: {
-    name: 'Range Trading',
-    description: 'Mean-reverting within ranges. Uses support/resistance bounces, RSI extremes.',
-    configData: {
-      strategy: {
-        type: 'range',
-        decisionMode: 'mechanical',
-        params: {
-          candleInterval: '1H',
-          candleLimit: 48,
-          minCandleCount: 20,
-          stopLossPct: 4,
-          takeProfitPct: 8,
-          signalBias: 'mean-reverting',
-          positionSize: '1',
-          positionSizeMode: 'fixed',
-          indicators: {
-            rsi: { enabled: true, period: 14, overbought: 75, weakBelow: 25 },
-            macd: { enabled: false },
-            volume: { enabled: true, strongRatio: 1.3 },
-            supportResistance: { enabled: true, lookback: 30, breakoutThreshold: 0.005 },
-            vwap: { enabled: false },
-            priceAction: { enabled: false },
-            choch: { enabled: false },
-            confidence: { rsiWeight: 0.40, macdCrossoverWeight: 0, macdIncreasingWeight: 0, volumeWeight: 0.20, breakoutWeight: 0.40, vwapWeight: 0, priceActionWeight: 0, chochBullishWeight: 0, chochBearishPenalty: 0, minConfidence: 0.35, minReasons: 2 },
-          },
-        },
-      },
-      risk: { maxPositionSize: 1000, stopLossPercent: 4, takeProfitPercent: 8 },
-      execution: { mode: 'paper' },
-    },
-  },
-  swing: {
-    name: 'Swing',
-    description: 'Medium-term swing trading. 4H candles, CHOCH confirmations, moderate risk.',
-    configData: {
-      strategy: {
-        type: 'swing',
-        decisionMode: 'mechanical',
-        params: {
-          candleInterval: '4H',
-          candleLimit: 48,
-          minCandleCount: 20,
-          stopLossPct: 5,
-          takeProfitPct: 15,
-          signalBias: 'trend-following',
-          positionSize: '1',
-          positionSizeMode: 'fixed',
-          indicators: {
-            rsi: { enabled: true, period: 14, healthyMin: 48, healthyMax: 68 },
-            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
-            volume: { enabled: true, strongRatio: 1.5, weakRatio: 0.8 },
-            supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.01 },
-            vwap: { enabled: false },
-            priceAction: { enabled: true, minChange24hPct: 5, maxChange24hPct: 50 },
-            choch: { enabled: true, swingLookback: 3, minSwingPct: 0.015, rejectOnBearish: true },
-            confidence: { rsiWeight: 0.20, macdCrossoverWeight: 0.25, macdIncreasingWeight: 0.15, breakoutWeight: 0.25, volumeWeight: 0.20, vwapWeight: 0, priceActionWeight: 0.10, chochBullishWeight: 0.20, chochBearishPenalty: 0.15, minConfidence: 0.40, minReasons: 2 },
-          },
-        },
-      },
-      risk: { maxPositionSize: 2000, stopLossPercent: 5, takeProfitPercent: 15 },
-      execution: { mode: 'paper' },
-    },
-  },
-  scalper: {
-    name: 'Scalper',
-    description: 'Quick entries on 5m candles. Tight stops, fast exits, volume confirmation.',
-    configData: {
-      strategy: {
-        type: 'scalper',
-        decisionMode: 'mechanical',
-        params: {
-          candleInterval: '5m',
-          candleLimit: 30,
-          minCandleCount: 15,
-          stopLossPct: 2,
-          takeProfitPct: 5,
-          signalBias: 'trend-following',
-          positionSize: '1',
-          positionSizeMode: 'fixed',
-          indicators: {
-            rsi: { enabled: true, period: 7, healthyMin: 45, healthyMax: 65 },
-            macd: { enabled: true, fast: 6, slow: 13, signal: 5 },
-            volume: { enabled: true, strongRatio: 1.8, recentBars: 3, avgBars: 10 },
-            supportResistance: { enabled: false },
-            vwap: { enabled: false },
-            priceAction: { enabled: false },
-            choch: { enabled: false },
-            confidence: { rsiWeight: 0.30, macdCrossoverWeight: 0.35, macdIncreasingWeight: 0.15, volumeWeight: 0.25, breakoutWeight: 0.05, vwapWeight: 0, priceActionWeight: 0, chochBullishWeight: 0.10, chochBearishPenalty: 0.05, minConfidence: 0.35, minReasons: 2 },
-          },
-        },
-      },
-      risk: { maxPositionSize: 500, stopLossPercent: 2, takeProfitPercent: 5 },
-      execution: { mode: 'paper' },
-    },
-  },
-  contrarian: {
-    name: 'Contrarian',
-    description: 'Fades extreme momentum. Mean-reverting against overbought/oversold signals.',
-    configData: {
-      strategy: {
-        type: 'contrarian',
-        decisionMode: 'mechanical',
-        params: {
-          candleInterval: '1H',
-          candleLimit: 48,
-          minCandleCount: 20,
-          stopLossPct: 5,
-          takeProfitPct: 12,
-          signalBias: 'mean-reverting',
-          positionSize: '1',
-          positionSizeMode: 'fixed',
-          indicators: {
-            rsi: { enabled: true, period: 14, overbought: 70, weakBelow: 30 },
-            macd: { enabled: true, fast: 12, slow: 26, signal: 9 },
-            volume: { enabled: true, strongRatio: 1.5 },
-            supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.008 },
-            vwap: { enabled: false },
-            priceAction: { enabled: true, minChange24hPct: 10, maxChange24hPct: 40 },
-            choch: { enabled: true, swingLookback: 3, minSwingPct: 0.01, rejectOnBearish: false },
-            confidence: { rsiWeight: 0.35, macdCrossoverWeight: 0.15, macdIncreasingWeight: 0.10, volumeWeight: 0.20, breakoutWeight: 0.20, vwapWeight: 0, priceActionWeight: 0.10, chochBullishWeight: 0.10, chochBearishPenalty: 0.05, minConfidence: 0.40, minReasons: 2 },
-          },
-        },
-      },
-      risk: { maxPositionSize: 1000, stopLossPercent: 5, takeProfitPercent: 12 },
-      execution: { mode: 'paper' },
-    },
-  },
-};
-
-const DEFAULTS = {
-  strategy: {
-    type: 'momentum',
-    decisionMode: 'mechanical',
-    params: {
-      candleInterval: '15m',
-      candleLimit: 48,
-      minCandleCount: 20,
-      stopLossPct: 3,
-      takeProfitPct: 8,
-      signalBias: 'trend-following',
-      positionSize: '1',
-      positionSizeMode: 'fixed',
-    },
-  },
-  risk: { maxPositionSize: 1000, stopLossPercent: 3, takeProfitPercent: 8 },
-  execution: { mode: 'paper' },
-};
 
 // --- Request schemas ---
 
@@ -250,9 +22,20 @@ const UpdateBlueprintSchema = z.object({
 });
 
 const FromPresetSchema = z.object({
-  preset: z.enum(PRESET_KEYS),
+  preset: z.string().min(1),
+  style: z.enum(['economy', 'standard', 'premium']).default('standard'),
   name: z.string().min(1).max(120).optional(),
   overrides: z.record(z.unknown()).optional(),
+});
+
+const StyleQuerySchema = z.object({
+  style: z.enum(['economy', 'standard', 'premium']).default('standard'),
+});
+
+const ForAgentQuerySchema = z.object({
+  strategy: z.string().min(1),
+  style: z.enum(['economy', 'standard', 'premium']).default('standard'),
+  mode: z.enum(['llm', 'hybrid']).default('llm'),
 });
 
 // --- Helper ---
@@ -285,34 +68,54 @@ async function resolveBlueprintForWrite(
 // --- Route module ---
 
 export async function blueprintRoutes(app: FastifyInstance, db: Database): Promise<void> {
-  // GET /blueprints/presets — static list of available strategy presets
+  // GET /blueprints/presets — list available strategy presets for a style
   // Registered before /:id so Fastify doesn't swallow it as a param.
-  app.get('/blueprints/presets', async (_request, reply) => {
-    const presets = PRESET_KEYS.map((key) => ({
-      key,
-      name: PRESETS[key].name,
-      description: PRESETS[key].description,
-    }));
+  app.get('/blueprints/presets', async (req, reply) => {
+    const parsed = StyleQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+    const presets = listPresets(parsed.data.style);
     return reply.send({ presets });
   });
 
-  // GET /blueprints/defaults — default strategy/risk/execution values
+  // GET /blueprints/defaults — default strategy/risk/execution from the standard momentum preset
   app.get('/blueprints/defaults', async (_request, reply) => {
-    return reply.send({ defaults: DEFAULTS });
+    const defaultPreset = getPreset('momentum', 'standard');
+    if (!defaultPreset) {
+      return reply.status(500).send({ error: 'internal_error', message: 'Default preset not found' });
+    }
+    const defaults = {
+      strategy: defaultPreset.strategy,
+      risk: defaultPreset.risk ?? {},
+      execution: defaultPreset.execution ?? { mode: 'paper' },
+    };
+    return reply.send({ defaults });
   });
 
-  // POST /blueprints/from-preset — create a blueprint pre-populated from a preset
+  // POST /blueprints/from-preset — create a blueprint pre-populated from a YAML preset
   app.post<{ Body: unknown }>('/blueprints/from-preset', async (request, reply) => {
     const parsed = FromPresetSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
 
-    const preset = PRESETS[parsed.data.preset];
-    // Deep-merge overrides into the preset config so that partial nested
-    // overrides (e.g. strategy.params.candleLimit) add/override only the
-    // specified leaf without discarding sibling keys.
-    const base = preset.configData as Record<string, unknown>;
+    const preset = getPreset(parsed.data.preset, parsed.data.style);
+    if (!preset) {
+      return reply.status(404).send({
+        error: 'preset_not_found',
+        message: `Preset "${parsed.data.preset}" not found for style "${parsed.data.style}"`,
+      });
+    }
+
+    // Convert PresetEntry to the configData format expected by blueprints
+    const presetConfig = {
+      strategy: preset.strategy,
+      risk: preset.risk ?? {},
+      execution: preset.execution ?? { mode: 'paper' },
+    };
+
+    const base = presetConfig as Record<string, unknown>;
     const rawOverrides = (parsed.data.overrides ?? {}) as Record<string, unknown>;
     const configData = Object.keys(rawOverrides).length > 0
       ? deepMerge(base, rawOverrides)
@@ -334,6 +137,24 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
 
     const [bp] = await db.select().from(blueprints).where(eq(blueprints.id, id));
     return reply.status(201).send(bp);
+  });
+
+  // GET /presets/for-agent — return preset split into agent-consumable sections
+  // Registered before /:id so Fastify doesn't swallow it as a param.
+  app.get('/presets/for-agent', async (req, reply) => {
+    const parsed = ForAgentQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
+    }
+    const preset = getPreset(parsed.data.strategy, parsed.data.style);
+    if (!preset) {
+      return reply.status(404).send({
+        error: 'preset_not_found',
+        message: `Preset "${parsed.data.strategy}" not found for style "${parsed.data.style}"`,
+      });
+    }
+    const split = applyPresetToAgent(preset, parsed.data.mode);
+    return reply.send(split);
   });
 
   // GET /blueprints — list user's own blueprints

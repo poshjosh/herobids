@@ -120,7 +120,7 @@ describe('POST /blueprints/from-preset', () => {
     expect(body.id).toBe(BLUEPRINT_ID);
   });
 
-  it('returns 400 for unknown preset', async () => {
+  it('returns 404 for nonexistent preset', async () => {
     const db = buildDb();
     const app = Fastify();
     decorateWithAuth(app);
@@ -131,8 +131,8 @@ describe('POST /blueprints/from-preset', () => {
       url: '/blueprints/from-preset',
       payload: { preset: 'nonexistent' },
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('validation_error');
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe('preset_not_found');
   });
 
   it('merges overrides on top of preset configData', async () => {
