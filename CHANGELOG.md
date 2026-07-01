@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Style-Based Strategy Presets** — YAML-driven presets with `percent_equity` sizing, backend loader + API (`?style=`), frontend style selector, and DB migration (0029). Economy/Standard/Premium tiers replace hardcoded STRATEGY_PRESETS.
+
 ## v0.0.5 - 2026-07-01
 
 ### Added
