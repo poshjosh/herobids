@@ -1,6 +1,19 @@
 export { loadProvidersConfig } from './load-providers.js';
 
 export {
+  loadPresets,
+  resetPresetCache,
+  getPreset,
+  listPresets,
+  agentStyleToPresetStyle,
+  applyPresetToAgent,
+  PresetEntrySchema,
+  type PresetEntry,
+  type StyleKey,
+  type AgentPresetMapping,
+} from './presets.js';
+
+export {
   SWAP_VENUES,
   ORDERBOOK_VENUES,
   SUPPORTED_TOKEN_SAFETY_NETWORKS,
