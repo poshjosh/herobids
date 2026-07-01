@@ -46,6 +46,7 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
           return (
             <label
               key={style.id}
+              title={intl.formatMessage({ id: style.descriptionKey })}
               style={{
                 flex: 1,
                 padding: '10px 12px',
@@ -66,7 +67,7 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
                 onChange={() => onChange(style.id)}
                 style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '14px' }}>{style.icon}</span>
                 <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
                   {intl.formatMessage({ id: style.labelKey })}
@@ -74,9 +75,6 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
                 {active && (
                   <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--color-brand)' }}>✓</span>
                 )}
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                {intl.formatMessage({ id: style.descriptionKey })}
               </div>
             </label>
           );

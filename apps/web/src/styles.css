@@ -13,8 +13,8 @@
   --color-surface-4: oklch(32% 0.015 260);
 
   --color-text-primary: oklch(95% 0.005 260);
-  --color-text-secondary: oklch(65% 0.01 260);
-  --color-text-muted: oklch(45% 0.01 260);
+  --color-text-secondary: oklch(80% 0.01 260);
+  --color-text-muted: oklch(65% 0.01 260);
 
   --color-danger: oklch(62% 0.22 25);
   --color-danger-subtle: oklch(25% 0.1 25);

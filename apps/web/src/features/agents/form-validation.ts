@@ -111,7 +111,7 @@ export function validateCreateAgentForm(
 
   // paper mode is not supported for swap venues (e.g. Jupiter)
   if (intent.executionMode === 'paper' && intent.venueType === 'swap') {
-    errors.executionMode = 'Paper mode is not supported for swap venues — use shadow or live.';
+    errors.executionMode = 'Paper mode is not supported for swap venues — use live mode.';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };

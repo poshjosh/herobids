@@ -415,6 +415,11 @@ export function AgentDetailPage() {
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatCapabilityFamily(tradingCapability.family, intl)}</div>
                     <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{formatCapabilityState(tradingCapability.state, intl)}</div>
+                    {tradingCapability.state === 'unconfigured' && (
+                      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
+                        {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
+                      </div>
+                    )}
                   </div>
                   <Button
                     variant="secondary"

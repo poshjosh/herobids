@@ -299,6 +299,7 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
           <option value="uncovered_or_triggered">{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy.uncovered_or_triggered' })}</option>
           <option value="always">{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy.always' })}</option>
         </select>
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.openPositionEscalationPolicy.help' })}</div>
       </div>
     </div>
   );

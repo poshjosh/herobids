@@ -861,7 +861,7 @@ function CreateAgentFlow({
                     {formErrors.venue && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.venue}</div>}
                     {intent.venueType === 'swap' && intent.executionMode === 'paper' && (
                       <div style={{ marginTop: '6px', padding: '8px 10px', borderRadius: '6px', background: 'var(--color-warning-subtle, rgba(234,179,8,0.1))', border: '1px solid var(--color-warning, #ca8a04)', fontSize: '12px', color: 'var(--color-warning-text, #92400e)', lineHeight: '1.5' }}>
-                        Paper mode is not supported for swap venues. Switch to Shadow or Live mode.
+                        Paper mode is not supported for swap venues. Switch to Live mode.
                       </div>
                     )}
                   </div>

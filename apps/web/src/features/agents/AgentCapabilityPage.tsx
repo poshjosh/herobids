@@ -120,6 +120,11 @@ export function AgentCapabilityPage() {
             <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.readiness' })}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <KV label={intl.formatMessage({ id: 'common.state' })} value={formatCapabilityState(readiness.state, intl)} />
+              {readiness.state === 'unconfigured' && (
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '-8px', lineHeight: '1.4' }}>
+                  {intl.formatMessage({ id: 'agents.capabilityState.unconfigured.tradingNote' })}
+                </div>
+              )}
               <KV label={intl.formatMessage({ id: 'agents.detail.connectionReadiness' })} value={formatCapabilityState(readiness.connectionReadiness, intl)} />
               <KV label={intl.formatMessage({ id: 'agents.detail.agentEligibility' })} value={intl.formatMessage({ id: `agents.eligibility.${readiness.agentEligibility}` })} />
               <KV label={intl.formatMessage({ id: 'agents.detail.effectiveReady' })} value={readiness.effectiveReady ? intl.formatMessage({ id: 'common.yes' }) : intl.formatMessage({ id: 'common.no' })} />
