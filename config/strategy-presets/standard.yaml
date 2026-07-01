@@ -1,5 +1,6 @@
-# Strategy presets — fallback when agent has no style or style is unrecognized.
-# Identical to standard.yaml.
+# Strategy presets — standard (balanced) style.
+# Balanced: moderate position sizes (5% equity), moderate stops, reasonable confidence bars.
+# Sizing: percent_equity mode — positionSize values are percentage of account equity.
 
 presets:
   momentum:
@@ -15,8 +16,8 @@ presets:
         stopLossPct: 3
         takeProfitPct: 8
         signalBias: trend-following
-        positionSize: "1"
-        positionSizeMode: fixed
+        positionSize: "5"
+        positionSizeMode: percent_equity
         indicators:
           rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 70 }
           macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
@@ -38,9 +39,7 @@ presets:
             minConfidence: 0.40
             minReasons: 2
     risk:
-      maxPositionSize: 1000
-      stopLossPercent: 3
-      takeProfitPercent: 8
+      maxPositionSizePct: 20
     execution:
       mode: paper
 
@@ -57,8 +56,8 @@ presets:
         stopLossPct: 8
         takeProfitPct: 25
         signalBias: trend-following
-        positionSize: "1"
-        positionSizeMode: fixed
+        positionSize: "5"
+        positionSizeMode: percent_equity
         indicators:
           rsi: { enabled: true, period: 14, healthyMin: 45, healthyMax: 75 }
           macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
@@ -80,9 +79,7 @@ presets:
             minConfidence: 0.45
             minReasons: 2
     risk:
-      maxPositionSize: 1000
-      stopLossPercent: 8
-      takeProfitPercent: 25
+      maxPositionSizePct: 20
     execution:
       mode: paper
 
@@ -93,9 +90,10 @@ presets:
       type: dca
       params:
         intervalMs: 86400000  # 1 day
-        amountPerBuy: "10"
+        amountPerBuy: "2"
+        amountPerBuyMode: percent_equity
     risk:
-      maxTotalPosition: 10000
+      maxPositionSizePct: 20
     execution:
       mode: paper
 
@@ -112,8 +110,8 @@ presets:
         stopLossPct: 4
         takeProfitPct: 8
         signalBias: mean-reverting
-        positionSize: "1"
-        positionSizeMode: fixed
+        positionSize: "5"
+        positionSizeMode: percent_equity
         indicators:
           rsi: { enabled: true, period: 14, overbought: 75, weakBelow: 25 }
           macd: { enabled: false }
@@ -135,9 +133,7 @@ presets:
             minConfidence: 0.35
             minReasons: 2
     risk:
-      maxPositionSize: 1000
-      stopLossPercent: 4
-      takeProfitPercent: 8
+      maxPositionSizePct: 20
     execution:
       mode: paper
 
@@ -154,8 +150,8 @@ presets:
         stopLossPct: 5
         takeProfitPct: 15
         signalBias: trend-following
-        positionSize: "1"
-        positionSizeMode: fixed
+        positionSize: "5"
+        positionSizeMode: percent_equity
         indicators:
           rsi: { enabled: true, period: 14, healthyMin: 48, healthyMax: 68 }
           macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
@@ -177,9 +173,7 @@ presets:
             minConfidence: 0.40
             minReasons: 2
     risk:
-      maxPositionSize: 2000
-      stopLossPercent: 5
-      takeProfitPercent: 15
+      maxPositionSizePct: 20
     execution:
       mode: paper
 
@@ -196,8 +190,8 @@ presets:
         stopLossPct: 2
         takeProfitPct: 5
         signalBias: trend-following
-        positionSize: "1"
-        positionSizeMode: fixed
+        positionSize: "5"
+        positionSizeMode: percent_equity
         indicators:
           rsi: { enabled: true, period: 7, healthyMin: 45, healthyMax: 65 }
           macd: { enabled: true, fast: 6, slow: 13, signal: 5 }
@@ -219,9 +213,7 @@ presets:
             minConfidence: 0.35
             minReasons: 2
     risk:
-      maxPositionSize: 500
-      stopLossPercent: 2
-      takeProfitPercent: 5
+      maxPositionSizePct: 20
     execution:
       mode: paper
 
@@ -238,8 +230,8 @@ presets:
         stopLossPct: 5
         takeProfitPct: 12
         signalBias: mean-reverting
-        positionSize: "1"
-        positionSizeMode: fixed
+        positionSize: "5"
+        positionSizeMode: percent_equity
         indicators:
           rsi: { enabled: true, period: 14, overbought: 70, weakBelow: 30 }
           macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
@@ -261,8 +253,6 @@ presets:
             minConfidence: 0.40
             minReasons: 2
     risk:
-      maxPositionSize: 1000
-      stopLossPercent: 5
-      takeProfitPercent: 12
+      maxPositionSizePct: 20
     execution:
       mode: paper
