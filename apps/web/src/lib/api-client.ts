@@ -1026,10 +1026,14 @@ export const agents = {
       request<EvaluationRunRecord[]>(`/agents/${agentId}/evaluations?limit=${opts?.limit ?? 50}&offset=${opts?.offset ?? 0}`),
     get: (agentId: string, runId: string) =>
       request<EvaluationRunRecord>(`/agents/${agentId}/evaluations/${runId}`),
-    trigger: (agentId: string, scope?: EvaluationScope) =>
+    trigger: (agentId: string, opts?: { scope?: EvaluationScope; includeNarrative?: boolean; narrativeLlm?: { provider?: string; model: string } }) =>
       request<{ runId: string }>(`/agents/${agentId}/evaluations`, {
         method: 'POST',
-        body: JSON.stringify({ scope: scope ?? { type: 'latestSession' } }),
+        body: JSON.stringify({
+          scope: opts?.scope ?? { type: 'latestSession' },
+          includeNarrative: opts?.includeNarrative ?? false,
+          ...(opts?.narrativeLlm ? { narrativeLlm: opts.narrativeLlm } : {}),
+        }),
       }),
     listArtifacts: (agentId: string, runId: string) =>
       request<EvaluationArtifactRef[]>(`/agents/${agentId}/evaluations/${runId}/artifacts`),

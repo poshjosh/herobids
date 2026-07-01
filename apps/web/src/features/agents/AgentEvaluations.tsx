@@ -400,6 +400,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [includeNarrative, setIncludeNarrative] = useState(false);
 
   // ── List query ─────────────────────────────────────────────────────────
   const listQuery = useQuery({
@@ -437,8 +438,8 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
   // ── Trigger mutation ───────────────────────────────────────────────────
   const triggerMutation = useMutation({
-    mutationFn: (scope?: EvaluationScope) =>
-      agentsApi.evaluations.trigger(agentId, scope),
+    mutationFn: (opts?: { scope?: EvaluationScope; includeNarrative?: boolean }) =>
+      agentsApi.evaluations.trigger(agentId, { scope: opts?.scope, includeNarrative: opts?.includeNarrative }),
     onSuccess: () => {
       void qc.invalidateQueries({
         queryKey: ['agents', agentId, 'evaluations'],
@@ -458,8 +459,8 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
 
   // ── Handlers ───────────────────────────────────────────────────────────
   const handleTrigger = useCallback(() => {
-    triggerMutation.mutate(undefined);
-  }, [triggerMutation]);
+    triggerMutation.mutate({ includeNarrative });
+  }, [triggerMutation, includeNarrative]);
 
   const handleSelectRun = useCallback((runId: string) => {
     setSelectedRunId((prev) => (prev === runId ? null : runId));
@@ -604,6 +605,16 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
                     ? `${intl.formatMessage({ id: 'agents.evaluations.runNow' })}…`
                     : intl.formatMessage({ id: 'agents.evaluations.runNow' })}
               </Button>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={includeNarrative}
+                  onChange={(e) => setIncludeNarrative(e.target.checked)}
+                  disabled={triggerMutation.isPending}
+                />
+                {intl.formatMessage({ id: 'agents.evaluations.includeNarrative' })}
+              </label>
 
               {triggerMutation.isError && (
                 <span style={{ fontSize: '12px', color: 'var(--color-danger)' }}>

@@ -538,6 +538,7 @@ export const messages: Record<string, string> = {
   'agents.evaluations.fetchError': 'Could not load evaluations',
   'agents.evaluations.alreadyRunning': 'An evaluation is already running for this agent.',
   'agents.evaluations.noFindings': 'No issues found — all checks passed.',
+  'agents.evaluations.includeNarrative': 'AI commentary',
   'agents.evaluations.retry': 'Retry',
   'agents.evaluations.timedOutMessage': 'Evaluation timed out. You can retry or check back later.',
   'agents.evaluations.failedMessage': 'Evaluation failed. Check artifacts for more details.',
