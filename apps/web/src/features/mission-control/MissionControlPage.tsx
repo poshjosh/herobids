@@ -10,7 +10,10 @@ import { ActivityItem } from '../activity/ActivityItem.js';
 import { AgentActivityItem } from '../activity/AgentActivityItem.js';
 import { mergeActivityFeedItems } from '../activity/activity-feed-items.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
+import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
 import { useEventStream, type UserEvent } from '../../lib/useEventStream.js';
+
+type SetupStep = 'form' | 'assign';
 
 export function MissionControlSetupForm({
   onClose,
@@ -33,6 +36,8 @@ export function MissionControlPage() {
   const intl = useIntl();
   const qc = useQueryClient();
   const [showSetup, setShowSetup] = useState(false);
+  const [setupStep, setSetupStep] = useState<SetupStep>('form');
+  const [setupResult, setSetupResult] = useState<ProviderSetupResult | null>(null);
   const [setupSuccess, setSetupSuccess] = useState<{ label: string; provider: string } | null>(null);
 
   const handleEvent = useCallback((event: UserEvent) => {
@@ -213,13 +218,31 @@ export function MissionControlPage() {
         </section>
       </div>
 
-      {showSetup && (
+      {showSetup && setupStep === 'form' && (
         <MissionControlSetupForm
-          onClose={() => setShowSetup(false)}
-          onSuccess={(result) => {
+          onClose={() => {
             setShowSetup(false);
+            setSetupStep('form');
+          }}
+          onSuccess={(result) => {
             void qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'bindings'] });
-            setSetupSuccess({ label: result.connection.label, provider: result.connection.provider });
+            void qc.invalidateQueries({ queryKey: ['connections'] });
+            setSetupResult(result);
+            setSetupStep('assign');
+          }}
+        />
+      )}
+
+      {showSetup && setupStep === 'assign' && setupResult && (
+        <AgentAssignmentStep
+          connectionId={setupResult.connection.id}
+          connectionLabel={setupResult.connection.label}
+          connectionProvider={setupResult.connection.provider}
+          onDone={() => {
+            setShowSetup(false);
+            setSetupStep('form');
+            setSetupResult(null);
+            setSetupSuccess({ label: setupResult.connection.label, provider: setupResult.connection.provider });
           }}
         />
       )}

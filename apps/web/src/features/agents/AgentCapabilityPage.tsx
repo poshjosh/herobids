@@ -1,17 +1,20 @@
 import { useNavigate, useParams } from 'react-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, type CapabilityReadiness } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button, StatusBadge, KV } from '../../lib/ui.js';
 import { formatCapabilityFamily, formatCapabilityState, formatExecutionMode } from './agent-display.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
+import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 
 export function AgentCapabilityPage() {
   const { agentId, family } = useParams<{ agentId: string; family: string }>();
   const intl = useIntl();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [showAddConnection, setShowAddConnection] = useState(false);
+  const [bindError, setBindError] = useState<string | null>(null);
 
   const agentQuery = useQuery({
     queryKey: ['agents', agentId],
@@ -153,7 +156,22 @@ export function AgentCapabilityPage() {
 
         {family === 'trading' && (
           <Card>
-            <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.availableConnections' })}</div>
+            {bindError && (
+              <div style={{ padding: '8px 12px', background: 'var(--color-surface-error, rgba(239,68,68,0.08))', borderRadius: '6px', fontSize: '13px', color: 'var(--color-text-error, #ef4444)', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{bindError}</span>
+                <button type="button" onClick={() => setBindError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>{intl.formatMessage({ id: 'agents.capabilityPage.availableConnections' })}</div>
+              <button
+                type="button"
+                onClick={() => { setShowAddConnection(true); setBindError(null); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--color-brand)', padding: '2px 4px' }}
+              >
+                {intl.formatMessage({ id: 'agents.capabilityPage.addConnection' })}
+              </button>
+            </div>
             {availableConnectionsQuery.isLoading || agentConnectionsQuery.isLoading ? (
               <LoadingRows count={2} />
             ) : availableConnectionsQuery.isError || agentConnectionsQuery.isError ? (
@@ -180,7 +198,7 @@ export function AgentCapabilityPage() {
                         <div>
                           <div style={{ fontSize: '14px', fontWeight: '600' }}>{connection.label}</div>
                           <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
-                            {intl.formatMessage({ id: 'agents.capabilityPage.connectionMeta' }, { provider: connection.provider, connectionStatus: connection.status, grantStatus: connection.status ?? 'active' })}
+                            {intl.formatMessage({ id: 'agents.capabilityPage.connectionMeta' }, { provider: connection.provider, connectionStatus: connection.status, grantStatus: isBound ? connection.grantStatus ?? 'active' : '—' })}
                           </div>
                           {connection.providerRef && (
                             <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '6px' }}>{intl.formatMessage({ id: 'agents.capabilityPage.reference' }, { reference: connection.providerRef })}</div>
@@ -209,6 +227,36 @@ export function AgentCapabilityPage() {
           </Card>
         )}
       </div>
+
+      {showAddConnection && (
+        <ProviderSetupForm
+          defaultCapability="trading"
+          onClose={() => setShowAddConnection(false)}
+          onSuccess={(result) => {
+            setShowAddConnection(false);
+            void Promise.all([
+              qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] }),
+              qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'] }),
+            ]).then(async () => {
+              // Auto-assign the new connection to this agent
+              const currentIds = [...boundConnectionIds];
+              if (!currentIds.includes(result.connection.id)) {
+                try {
+                  await agentsApi.update(agentId!, { connectionIds: [...currentIds, result.connection.id] });
+                } catch (err) {
+                  setBindError(intl.formatMessage({ id: 'agents.capabilityPage.bindFailed' }, { label: result.connection.label, error: (err as Error).message ?? 'Unknown error' }));
+                }
+                await Promise.all([
+                  qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', family] }),
+                  qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'] }),
+                  qc.invalidateQueries({ queryKey: ['agents', agentId] }),
+                  qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] }),
+                ]);
+              }
+            });
+          }}
+        />
+      )}
     </PageShell>
   );
 }

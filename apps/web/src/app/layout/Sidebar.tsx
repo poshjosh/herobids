@@ -20,7 +20,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
 
   const MANAGE_ITEMS = useMemo(() => [
     { path: '/connections', label: intl.formatMessage({ id: 'nav.connections' }), icon: '⊟' },
-    { path: '/credentials', label: intl.formatMessage({ id: 'nav.credentials' }), icon: '⊛' },
     { path: '/billing', label: intl.formatMessage({ id: 'nav.billing' }), icon: '⊘' },
     { path: '/settings', label: intl.formatMessage({ id: 'nav.settings' }), icon: '⊙' },
   // eslint-disable-next-line react-hooks/exhaustive-deps

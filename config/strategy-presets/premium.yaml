@@ -1,0 +1,269 @@
+# Strategy presets — premium (bold) style.
+# Aggressive: larger positions, wider stops (more room), lower confidence bars,
+# fewer confirmations needed. More trades, captures more moves.
+
+presets:
+  momentum:
+    name: "Momentum — Day"
+    description: "Day-trend following on 15m candles. Aggressive entries, wider targets."
+    strategy:
+      type: momentum
+      decisionMode: mechanical
+      params:
+        candleInterval: "15m"
+        candleLimit: 48
+        minCandleCount: 20
+        stopLossPct: 5
+        takeProfitPct: 12
+        signalBias: trend-following
+        positionSize: "2"
+        positionSizeMode: fixed
+        indicators:
+          rsi: { enabled: true, period: 14, healthyMin: 35, healthyMax: 75 }
+          macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
+          volume: { enabled: true, strongRatio: 1.3 }
+          supportResistance: { enabled: false }
+          vwap: { enabled: false }
+          priceAction: { enabled: true, minChange24hPct: 2, maxChange24hPct: 60 }
+          choch: { enabled: false }
+          confidence:
+            rsiWeight: 0.25
+            macdCrossoverWeight: 0.30
+            macdIncreasingWeight: 0.15
+            volumeWeight: 0.20
+            breakoutWeight: 0.10
+            vwapWeight: 0
+            priceActionWeight: 0.10
+            chochBullishWeight: 0.15
+            chochBearishPenalty: 0.10
+            minConfidence: 0.30
+            minReasons: 2
+    risk:
+      maxPositionSize: 2500
+      stopLossPercent: 5
+      takeProfitPercent: 12
+    execution:
+      mode: paper
+
+  momentum-position:
+    name: "Momentum — Position"
+    description: "Longer-term trend following on 4H candles. Large positions, big targets."
+    strategy:
+      type: momentum
+      decisionMode: mechanical
+      params:
+        candleInterval: "4H"
+        candleLimit: 72
+        minCandleCount: 30
+        stopLossPct: 12
+        takeProfitPct: 40
+        signalBias: trend-following
+        positionSize: "2"
+        positionSizeMode: fixed
+        indicators:
+          rsi: { enabled: true, period: 14, healthyMin: 40, healthyMax: 80 }
+          macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
+          volume: { enabled: true, strongRatio: 1.5 }
+          supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.01 }
+          vwap: { enabled: false }
+          priceAction: { enabled: true, minChange24hPct: 5, maxChange24hPct: 70 }
+          choch: { enabled: false }
+          confidence:
+            rsiWeight: 0.20
+            macdCrossoverWeight: 0.25
+            macdIncreasingWeight: 0.20
+            volumeWeight: 0.20
+            breakoutWeight: 0.15
+            vwapWeight: 0
+            priceActionWeight: 0.10
+            chochBullishWeight: 0.15
+            chochBearishPenalty: 0.10
+            minConfidence: 0.35
+            minReasons: 2
+    risk:
+      maxPositionSize: 3000
+      stopLossPercent: 12
+      takeProfitPercent: 40
+    execution:
+      mode: paper
+
+  dca:
+    name: "DCA"
+    description: "Dollar-cost averaging with frequent buys every 12 hours."
+    strategy:
+      type: dca
+      params:
+        intervalMs: 43200000  # 12 hours
+        amountPerBuy: "25"
+    risk:
+      maxTotalPosition: 25000
+    execution:
+      mode: paper
+
+  range:
+    name: "Range Trading"
+    description: "Mean-reverting within ranges. Relaxed entries, larger positions."
+    strategy:
+      type: range
+      decisionMode: mechanical
+      params:
+        candleInterval: "1H"
+        candleLimit: 48
+        minCandleCount: 20
+        stopLossPct: 6
+        takeProfitPct: 12
+        signalBias: mean-reverting
+        positionSize: "2"
+        positionSizeMode: fixed
+        indicators:
+          rsi: { enabled: true, period: 14, overbought: 70, weakBelow: 30 }
+          macd: { enabled: false }
+          volume: { enabled: true, strongRatio: 1.1 }
+          supportResistance: { enabled: true, lookback: 30, breakoutThreshold: 0.005 }
+          vwap: { enabled: false }
+          priceAction: { enabled: false }
+          choch: { enabled: false }
+          confidence:
+            rsiWeight: 0.40
+            macdCrossoverWeight: 0
+            macdIncreasingWeight: 0
+            volumeWeight: 0.20
+            breakoutWeight: 0.40
+            vwapWeight: 0
+            priceActionWeight: 0
+            chochBullishWeight: 0
+            chochBearishPenalty: 0
+            minConfidence: 0.25
+            minReasons: 2
+    risk:
+      maxPositionSize: 2500
+      stopLossPercent: 6
+      takeProfitPercent: 12
+    execution:
+      mode: paper
+
+  swing:
+    name: "Swing"
+    description: "Medium-term swing trading. Relaxed entries, larger targets."
+    strategy:
+      type: swing
+      decisionMode: mechanical
+      params:
+        candleInterval: "4H"
+        candleLimit: 48
+        minCandleCount: 20
+        stopLossPct: 7
+        takeProfitPct: 22
+        signalBias: trend-following
+        positionSize: "2"
+        positionSizeMode: fixed
+        indicators:
+          rsi: { enabled: true, period: 14, healthyMin: 42, healthyMax: 72 }
+          macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
+          volume: { enabled: true, strongRatio: 1.3, weakRatio: 0.8 }
+          supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.01 }
+          vwap: { enabled: false }
+          priceAction: { enabled: true, minChange24hPct: 3, maxChange24hPct: 60 }
+          choch: { enabled: true, swingLookback: 3, minSwingPct: 0.015, rejectOnBearish: false }
+          confidence:
+            rsiWeight: 0.20
+            macdCrossoverWeight: 0.25
+            macdIncreasingWeight: 0.15
+            volumeWeight: 0.20
+            breakoutWeight: 0.25
+            vwapWeight: 0
+            priceActionWeight: 0.10
+            chochBullishWeight: 0.20
+            chochBearishPenalty: 0.15
+            minConfidence: 0.30
+            minReasons: 2
+    risk:
+      maxPositionSize: 4000
+      stopLossPercent: 7
+      takeProfitPercent: 22
+    execution:
+      mode: paper
+
+  scalper:
+    name: "Scalper"
+    description: "Quick entries on 5m candles. More room to breathe, larger positions."
+    strategy:
+      type: scalper
+      decisionMode: mechanical
+      params:
+        candleInterval: "5m"
+        candleLimit: 30
+        minCandleCount: 15
+        stopLossPct: 3
+        takeProfitPct: 8
+        signalBias: trend-following
+        positionSize: "2"
+        positionSizeMode: fixed
+        indicators:
+          rsi: { enabled: true, period: 7, healthyMin: 40, healthyMax: 70 }
+          macd: { enabled: true, fast: 6, slow: 13, signal: 5 }
+          volume: { enabled: true, strongRatio: 1.5, recentBars: 3, avgBars: 10 }
+          supportResistance: { enabled: false }
+          vwap: { enabled: false }
+          priceAction: { enabled: false }
+          choch: { enabled: false }
+          confidence:
+            rsiWeight: 0.30
+            macdCrossoverWeight: 0.35
+            macdIncreasingWeight: 0.15
+            volumeWeight: 0.25
+            breakoutWeight: 0.05
+            vwapWeight: 0
+            priceActionWeight: 0
+            chochBullishWeight: 0.10
+            chochBearishPenalty: 0.05
+            minConfidence: 0.25
+            minReasons: 2
+    risk:
+      maxPositionSize: 1200
+      stopLossPercent: 3
+      takeProfitPercent: 8
+    execution:
+      mode: paper
+
+  contrarian:
+    name: "Contrarian"
+    description: "Fades momentum at less extreme levels. Larger positions, wider targets."
+    strategy:
+      type: contrarian
+      decisionMode: mechanical
+      params:
+        candleInterval: "1H"
+        candleLimit: 48
+        minCandleCount: 20
+        stopLossPct: 7
+        takeProfitPct: 18
+        signalBias: mean-reverting
+        positionSize: "2"
+        positionSizeMode: fixed
+        indicators:
+          rsi: { enabled: true, period: 14, overbought: 65, weakBelow: 35 }
+          macd: { enabled: true, fast: 12, slow: 26, signal: 9 }
+          volume: { enabled: true, strongRatio: 1.3 }
+          supportResistance: { enabled: true, lookback: 24, breakoutThreshold: 0.008 }
+          vwap: { enabled: false }
+          priceAction: { enabled: true, minChange24hPct: 7, maxChange24hPct: 50 }
+          choch: { enabled: true, swingLookback: 3, minSwingPct: 0.01, rejectOnBearish: false }
+          confidence:
+            rsiWeight: 0.35
+            macdCrossoverWeight: 0.15
+            macdIncreasingWeight: 0.10
+            volumeWeight: 0.20
+            breakoutWeight: 0.20
+            vwapWeight: 0
+            priceActionWeight: 0.10
+            chochBullishWeight: 0.10
+            chochBearishPenalty: 0.05
+            minConfidence: 0.30
+            minReasons: 2
+    risk:
+      maxPositionSize: 2500
+      stopLossPercent: 7
+      takeProfitPercent: 18
+    execution:
+      mode: paper

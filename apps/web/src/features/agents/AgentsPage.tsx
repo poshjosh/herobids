@@ -682,7 +682,7 @@ function CreateAgentFlow({
                     </div>
                     <div>
                       <Button variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
-                        {intl.formatMessage({ id: 'agents.create.setupTradingNow' })}
+                        {intl.formatMessage({ id: 'agents.create.addConnection' })}
                       </Button>
                     </div>
                   </div>
@@ -772,6 +772,23 @@ function CreateAgentFlow({
                       </div>
                     )}
                   </>
+                )}
+                {availableConnections.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSetup(true)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '4px 0',
+                      fontSize: '12px',
+                      color: 'var(--color-brand)',
+                      textAlign: 'left',
+                    }}
+                  >
+                    {intl.formatMessage({ id: 'agents.create.addConnection' })}
+                  </button>
                 )}
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
                   {intl.formatMessage({ id: 'agents.create.capabilitySetupMessage' })}
