@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { EvaluationScorecard, EvaluationFinding } from '@herobids/domain';
+import type { EvaluationArtifactStore } from '@herobids/domain';
 import type { ResolvedNarrativeLlmConfig } from '@herobids/db';
 
-// The function under test uses callLlmWithRetry which depends on the LLM
-// provider module. We mock at the module boundary to avoid real LLM calls.
 const mockCallLlmWithRetry = vi.fn();
 vi.mock('../runtime-errors.js', () => ({
   callLlmWithRetry: mockCallLlmWithRetry,
@@ -26,66 +24,36 @@ function mockNarrativeConfig(overrides: Partial<ResolvedNarrativeLlmConfig> = {}
   };
 }
 
-function mockScorecard(overrides: Partial<EvaluationScorecard> = {}): EvaluationScorecard {
+function mockArtifactStore(artifacts: Record<string, unknown> = {}): EvaluationArtifactStore {
+  const encoder = new TextEncoder();
+  const store = new Map<string, Uint8Array>();
+  for (const [name, value] of Object.entries(artifacts)) {
+    const content = typeof value === 'string' ? value : JSON.stringify(value);
+    store.set(name, encoder.encode(content));
+  }
   return {
-    overallScore: 75,
-    sections: [
-      {
-        section: 'session_health',
-        score: 80,
-        applicable: true,
-        findings: [
-          {
-            section: 'session_health',
-            severity: 'medium',
-            code: 'session.short_duration',
-            title: 'Short session duration',
-            detail: 'Session lasted only 2 minutes.',
-          },
-        ],
-      },
-      {
-        section: 'trading_performance',
-        score: 60,
-        applicable: true,
-        findings: [
-          {
-            section: 'trading_performance',
-            severity: 'high',
-            code: 'trading.high_drawdown',
-            title: 'High drawdown detected',
-            detail: 'Drawdown exceeded 15% threshold.',
-          },
-        ],
-      },
-      {
-        section: 'cost',
-        score: 90,
-        applicable: true,
-        findings: [],
-      },
-    ],
-    ...overrides,
+    write: async () => ({ name: '', mimeType: '', sizeBytes: 0 }),
+    read: async (_runId: string, name: string) => store.get(name) ?? null,
+    list: async () => [],
   };
 }
 
-function mockFindings(): EvaluationFinding[] {
-  return [
-    {
-      section: 'trading_performance',
-      severity: 'high',
-      code: 'trading.high_drawdown',
-      title: 'High drawdown detected',
-      detail: 'Drawdown exceeded 15% threshold.',
-    },
-    {
-      section: 'session_health',
-      severity: 'medium',
-      code: 'session.short_duration',
-      title: 'Short session duration',
-      detail: 'Session lasted only 2 minutes.',
-    },
-  ];
+function defaultArtifacts(): Record<string, unknown> {
+  return {
+    'agent-metadata.json': { executionMode: 'paper', dailyLossLimit: 500 },
+    'sessions.json': [{ id: 's1', status: 'stopped', startedAt: '2026-07-01T08:00:00Z', stoppedAt: '2026-07-01T08:30:00Z' }],
+    'fills.json': [],
+    'positions.json': [],
+    'costs.json': [],
+    'journal.json': [
+      { type: 'agent.tick.started', msg: 'Tick 1' },
+      { type: 'agent.tick.skipped', msg: 'Outside trading hours' },
+      { type: 'agent.tick.started', msg: 'Tick 2' },
+      { type: 'agent.tick.skipped', msg: 'Outside trading hours' },
+    ],
+    'container-logs.txt': 'Agent runtime starting\nTick 1 skipped: outside_trading_hours\nTick 2 skipped: outside_trading_hours',
+    'redis-snapshot.json': { 'agent:inbound:test': 'active', 'rate-limit:bybit': '5/10' },
+  };
 }
 
 describe('generateEvaluationNarrative', () => {
@@ -98,9 +66,8 @@ describe('generateEvaluationNarrative', () => {
 
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      '# Report\n\nDeterministic report content.',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
     expect(result.text).toBeNull();
@@ -117,9 +84,8 @@ describe('generateEvaluationNarrative', () => {
 
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      '# Report',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
     expect(result.text).toBeNull();
@@ -143,9 +109,8 @@ describe('generateEvaluationNarrative', () => {
 
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      '# Report',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
     expect(result.text).toBeNull();
@@ -158,7 +123,7 @@ describe('generateEvaluationNarrative', () => {
       result: {
         ok: true,
         data: {
-          content: 'The agent showed strong cost efficiency but had elevated drawdown risk.',
+          content: 'The agent session was healthy but all ticks were skipped due to trading hours restrictions. No trades were executed.',
           provider: 'openai',
           model: 'gpt-4o',
           tokensUsed: 250,
@@ -171,12 +136,11 @@ describe('generateEvaluationNarrative', () => {
 
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      '# Report\n\nSome report text.',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
-    expect(result.text).toBe('The agent showed strong cost efficiency but had elevated drawdown risk.');
+    expect(result.text).toBe('The agent session was healthy but all ticks were skipped due to trading hours restrictions. No trades were executed.');
     expect(result.metadata.generated).toBe(true);
     expect(result.metadata.provider).toBe('openai');
     expect(result.metadata.model).toBe('gpt-4o');
@@ -187,7 +151,7 @@ describe('generateEvaluationNarrative', () => {
     expect(result.metadata.enabled).toBe(true);
   });
 
-  it('includes the redacted report text in the LLM prompt', async () => {
+  it('includes raw evidence in the LLM prompt, not scorecard', async () => {
     const capturedRequests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
     mockCallLlmWithRetry.mockImplementation(async (_config: unknown, request: { messages: Array<{ role: string; content: string }> }) => {
       capturedRequests.push(request);
@@ -207,52 +171,24 @@ describe('generateEvaluationNarrative', () => {
 
     await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      '# Evaluation Report\n\n## Section: Trading\n\nDrawdown was elevated.',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
     expect(capturedRequests.length).toBe(1);
     const promptContent = capturedRequests[0]!.messages[0]!.content;
-    expect(promptContent).toContain('Overall Score: 75');
-    expect(promptContent).toContain('session health: 80/100');
-    expect(promptContent).toContain('trading performance: 60/100');
-    expect(promptContent).toContain('[HIGH] trading.high_drawdown');
-    expect(promptContent).toContain('Deterministic Report:');
-    expect(promptContent).toContain('# Evaluation Report');
-    expect(promptContent).toContain('Drawdown was elevated');
-  });
-
-  it('truncates long report text to avoid token bloat', async () => {
-    const capturedRequests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
-    mockCallLlmWithRetry.mockImplementation(async (_config: unknown, request: { messages: Array<{ role: string; content: string }> }) => {
-      capturedRequests.push(request);
-      return {
-        result: {
-          ok: true,
-          data: {
-            content: 'Ok.',
-            provider: 'openai',
-            model: 'gpt-4o',
-            tokensUsed: 50,
-            latencyMs: 300,
-          },
-        },
-      };
-    });
-
-    const longReport = 'x'.repeat(10_000);
-
-    await generateEvaluationNarrative(
-      mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      longReport,
-    );
-
-    const promptContent = capturedRequests[0]!.messages[0]!.content;
-    expect(promptContent).toContain('truncated for length');
-    expect(promptContent.length).toBeLessThan(longReport.length + 500);
+    // Should contain evidence, NOT scorecard
+    expect(promptContent).toContain('Agent Metadata');
+    expect(promptContent).toContain('Trading Activity');
+    expect(promptContent).toContain('Journal Summary');
+    expect(promptContent).toContain('Container Logs');
+    expect(promptContent).toContain('Redis Snapshot');
+    // Should contain the journal data
+    expect(promptContent).toContain('agent.tick.skipped');
+    // Should NOT contain old scorecard fields
+    expect(promptContent).not.toContain('Overall Score');
+    expect(promptContent).not.toContain('Section Scores');
+    expect(promptContent).not.toContain('Deterministic Report');
   });
 
   it('includes baseUrlUsed in metadata when configured', async () => {
@@ -271,9 +207,8 @@ describe('generateEvaluationNarrative', () => {
 
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig({ baseUrl: 'https://custom.openai.com/v1' }),
-      mockScorecard(),
-      mockFindings(),
-      '# Report',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
     expect(result.metadata.baseUrlUsed).toBe('https://custom.openai.com/v1');
@@ -284,9 +219,8 @@ describe('generateEvaluationNarrative', () => {
 
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard(),
-      mockFindings(),
-      '# Report',
+      mockArtifactStore(defaultArtifacts()),
+      'run-1',
     );
 
     expect(result.text).toBeNull();
@@ -297,12 +231,12 @@ describe('generateEvaluationNarrative', () => {
     expect(result.metadata.tokensUsed).toBe(0);
   });
 
-  it('handles findings list with no findings gracefully', async () => {
+  it('handles empty journal gracefully', async () => {
     mockCallLlmWithRetry.mockResolvedValueOnce({
       result: {
         ok: true,
         data: {
-          content: 'All clear.',
+          content: 'No activity detected.',
           provider: 'openai',
           model: 'gpt-4o',
           tokensUsed: 30,
@@ -311,14 +245,62 @@ describe('generateEvaluationNarrative', () => {
       },
     });
 
+    const emptyArtifacts = { ...defaultArtifacts(), 'journal.json': [] };
+
     const result = await generateEvaluationNarrative(
       mockNarrativeConfig(),
-      mockScorecard({ sections: [], overallScore: 100 }),
-      [],
-      '# Report',
+      mockArtifactStore(emptyArtifacts),
+      'run-1',
     );
 
-    expect(result.text).toBe('All clear.');
+    expect(result.text).toBe('No activity detected.');
     expect(result.metadata.generated).toBe(true);
+  });
+
+  it('handles missing artifacts gracefully', async () => {
+    mockCallLlmWithRetry.mockResolvedValueOnce({
+      result: {
+        ok: true,
+        data: {
+          content: 'Insufficient data for commentary.',
+          provider: 'openai',
+          model: 'gpt-4o',
+          tokensUsed: 20,
+          latencyMs: 100,
+        },
+      },
+    });
+
+    // Only provide agent-metadata, nothing else
+    const minimalArtifacts = {
+      'agent-metadata.json': { executionMode: 'paper' },
+    };
+
+    const result = await generateEvaluationNarrative(
+      mockNarrativeConfig(),
+      mockArtifactStore(minimalArtifacts),
+      'run-1',
+    );
+
+    expect(result.text).toBe('Insufficient data for commentary.');
+    expect(result.metadata.generated).toBe(true);
+  });
+
+  it('returns error when artifact store throws', async () => {
+    const brokenStore: EvaluationArtifactStore = {
+      write: async () => ({ name: '', mimeType: '', sizeBytes: 0 }),
+      read: async () => { throw new Error('Disk full'); },
+      list: async () => [],
+    };
+
+    const result = await generateEvaluationNarrative(
+      mockNarrativeConfig(),
+      brokenStore,
+      'run-1',
+    );
+
+    expect(result.text).toBeNull();
+    expect(result.metadata.generated).toBe(false);
+    expect(result.metadata.error).toContain('Disk full');
   });
 });

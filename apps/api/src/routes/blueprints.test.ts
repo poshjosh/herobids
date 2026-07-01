@@ -192,6 +192,17 @@ describe('POST /blueprints/from-preset', () => {
     // But must NOT drop sibling fields from the strategy level
     expect(strategy?.['type']).toBe('momentum');
     expect(strategy?.['decisionMode']).toBeDefined();
+    // And must NOT drop sibling fields within params
+    expect(params?.['candleInterval']).toBeDefined();
+    expect(params?.['stopLossPct']).toBeDefined();
+    expect(params?.['takeProfitPct']).toBeDefined();
+    expect(params?.['signalBias']).toBeDefined();
+    // Nested indicators object must be preserved entirely
+    const indicators = params?.['indicators'] as Record<string, unknown> | undefined;
+    expect(indicators).toBeDefined();
+    const rsi = indicators?.['rsi'] as Record<string, unknown> | undefined;
+    expect(rsi?.['enabled']).toBe(true);
+    expect(rsi?.['period']).toBe(14);
   });
 });
 
@@ -360,9 +371,10 @@ describe('PUT /blueprints/:id', () => {
     expect(capturedSet?.['name']).toBe('Renamed');
   });
 
-  it('PUT configData merges sections rather than replacing the entire document', async () => {
-    // stubBlueprint.configData has both 'strategy' and 'execution' sections.
-    // Sending only a partial strategy update must preserve the 'execution' section.
+  it('PUT configData deep-merges nested params without dropping siblings', async () => {
+    // stubBlueprint.configData has strategy with type + decisionMode.
+    // Override only strategy.type; existing strategy.decisionMode and
+    // untouched sections (execution) must survive.
     let capturedSet: Record<string, unknown> | null = null;
     let selectCallCount = 0;
     const tx = {
@@ -398,6 +410,9 @@ describe('PUT /blueprints/:id', () => {
     expect((merged?.['strategy'] as Record<string, unknown> | undefined)?.['type']).toBe('scalper');
     // The untouched 'execution' section from stubBlueprint.configData must be preserved.
     expect(merged?.['execution']).toBeDefined();
+    // Sibling keys within the strategy section must be preserved.
+    expect((merged?.['strategy'] as Record<string, unknown> | undefined)?.['decisionMode']).toBe('mechanical');
+    // Execution section mode must be preserved.
     expect((merged?.['execution'] as Record<string, unknown> | undefined)?.['mode']).toBe('paper');
   });
 

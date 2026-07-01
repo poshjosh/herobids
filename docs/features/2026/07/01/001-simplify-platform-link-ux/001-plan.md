@@ -98,11 +98,11 @@ The backend already supports everything needed:
 
 Remove `{ path: '/credentials', label: 'Credentials', icon: '⊛' }` from `MANAGE_ITEMS`.
 
-Rename `{ path: '/connections', ... }` to `{ path: '/links', label: 'Links', icon: '⊟' }` (or keep path `/connections` with a redirect — see router note below).
+Keep `{ path: '/connections', label: 'Connections', icon: '⊟' }` — no rename needed. The nav item already says "Connections".
 
 **i18n:**
-- `'nav.connections'` → `'nav.links'` with value `'Links'`
-- `'nav.credentials'` — remove from nav (keep key in file in case it's referenced elsewhere)
+- `'nav.connections'` — value stays `'Connections'`, no change
+- `'nav.credentials'` — remove from the `MANAGE_ITEMS` array (keep the key in the locale file)
 
 ---
 
@@ -110,30 +110,28 @@ Rename `{ path: '/connections', ... }` to `{ path: '/links', label: 'Links', ico
 
 **File:** `apps/web/src/app/router.tsx`
 
-Add route `{ path: 'links', element: <LinksPage /> }`.
-
-Keep `{ path: 'connections', element: <Navigate to="/links" replace /> }` as a redirect so existing bookmarks and any in-app deep links continue to work.
+No new routes or redirects needed. `/connections` stays as-is.
 
 Keep `{ path: 'credentials', element: <CredentialsPage /> }` — the page stays, just removed from nav.
 
 ---
 
-### 3. LinksPage (new, replaces ConnectionsPage as primary surface)
+### 3. ConnectionsPage (redesign in place)
 
-**File:** `apps/web/src/features/links/LinksPage.tsx` (new file)
+**File:** `apps/web/src/features/connections/ConnectionsPage.tsx` (edit existing)
 
-This is the user-facing page. It replaces what `ConnectionsPage.tsx` was doing, but uses `ProviderSetupForm` instead of the low-level `CreateConnectionModal`.
+Replace the current low-level `CreateConnectionModal` flow with `ProviderSetupForm`. Remove the "advanced use" subtitle. Add "Used by" agent display per connection card. On successful connection creation, proceed to the **Agent Assignment Step** (see section 6).
 
 **Layout:**
 ```
-Links
+Connections
 ─────────────────────────────────────────────
-[+ Add link]                         (button, top right)
+[+ Add connection]                   (button, top right)
 
 ┌─────────────────────────────────────────┐
 │ My Hyperliquid Account                  │
 │ hyperliquid · active                    │
-│ Used by: Alpha Bot, Scout Agent         │  ← agents using this link
+│ Used by: Alpha Bot, Scout Agent         │  ← agents using this connection
 │                                  [Revoke]│
 └─────────────────────────────────────────┘
 
@@ -144,38 +142,40 @@ Links
 │                                  [Revoke]│
 └─────────────────────────────────────────┘
 
-Empty state (no links):
-  "No platform links yet."
-  "Link a platform so your AI agents can start working."
-  [Link a platform]
+Empty state (no connections):
+  "No platform connections yet."
+  "Connect a platform so your AI agents can start working."
+  [Connect a platform]
 ```
 
-**"Add link" / "Link a platform" button:**
-Opens `ProviderSetupForm` in a modal. On success, proceeds to the **Agent Assignment Step** (see section 6 below).
+**"Add connection" / "Connect a platform" button:**
+Opens `ProviderSetupForm` in a modal. On success, proceeds to the **Agent Assignment Step**.
 
 **"Used by" agents:**
-Query `GET /agents` and cross-reference `agent_connections` to display which agents are using each link. This is read-only display. The API already supports querying agent connections.
+Query `GET /agents` and cross-reference `agent_connections` to display which agents are using each connection. Read-only display.
 
 **Revoke:**
 Calls `connectionsApi.revoke(id)` — same as today.
 
 **i18n keys to add:**
 ```ts
-'links.title': 'Links'
-'links.subtitle': 'Platform accounts your AI agents can use.'
-'links.addLink': 'Add link'
-'links.linkPlatform': 'Link a platform'
-'links.empty': 'No platform links yet.'
-'links.emptyMessage': 'Link a platform so your AI agents can start working.'
-'links.usedBy': 'Used by: {agents}'
-'links.usedByNone': 'Not assigned to any agents'
-'links.revoke': 'Revoke'
-'links.revokeConfirm': 'Revoke this link? Agents using it will lose access.'
+'connections.addConnection': 'Add connection'
+'connections.connectPlatform': 'Connect a platform'
+'connections.emptyMessage': 'Connect a platform so your AI agents can start working.'
+'connections.usedBy': 'Used by: {agents}'
+'connections.usedByNone': 'Not assigned to any agents'
+'connections.revokeConfirm': 'Revoke this connection? Agents using it will lose access.'
+```
+
+**i18n keys to update:**
+```ts
+// Remove the "advanced use" subtitle copy
+'connections.subtitle': 'Platform accounts your AI agents can use.'
 ```
 
 ---
 
-### 4. Agent Creation — Inline "Add New Link"
+### 4. Agent Creation — Inline "Add Connection"
 
 **File:** `apps/web/src/features/agents/AgentsPage.tsx`
 
@@ -185,8 +185,8 @@ Calls `connectionsApi.revoke(id)` — same as today.
 
 **New behaviour:**
 - Always show the connection picker (dropdown or list)
-- At the bottom of the picker (or as a footer action), always show **"+ Add new link"** regardless of whether connections exist
-- Clicking "Add new link" opens `ProviderSetupForm` in a modal
+- Always show **"+ Add connection"** regardless of whether connections exist
+- Clicking opens `ProviderSetupForm` in a modal
 - On success: the new connection is added to `availableConnections` via query invalidation AND auto-selected in the picker
 - Skip the agent assignment step here — the user is already creating an agent that will own it
 
@@ -196,9 +196,9 @@ Calls `connectionsApi.revoke(id)` — same as today.
 // Before: shown only when availableConnections.length === 0
 <Button onClick={() => setShowSetup(true)}>Set up trading now</Button>
 
-// After: shown always, either as part of the picker footer or as a standalone link
-<button onClick={() => setShowSetup(true)} className="add-link-inline">
-  + Add new link
+// After: shown always, as a footer action on the picker
+<button onClick={() => setShowSetup(true)} className="add-connection-inline">
+  + Add connection
 </button>
 ```
 
@@ -207,35 +207,33 @@ This button appears:
 - When `availableConnections.length > 0`: as a secondary action below/beside the dropdown
 
 **i18n:**
-- `'agents.create.addNewLink'`: `'+ Add new link'`
-- Remove or repurpose `'agents.create.setupTradingNow'` → keep for backwards compat but no longer rendered
+- `'agents.create.addConnection'`: `'+ Add connection'`
+- `'agents.create.setupTradingNow'` — keep key for backwards compat but stop rendering it
 
 ---
 
-### 5. AgentCapabilityPage — Add "Add Link" CTA
+### 5. AgentCapabilityPage — Add "Add Connection" CTA
 
 **File:** `apps/web/src/features/agents/AgentCapabilityPage.tsx`
 
-In the "Available links" section (renamed from "Available connections"), add a `[+ Add link]` button at the top of the section header, alongside the section title.
+In the "Available connections" section, add a `[+ Add connection]` button at the top of the section header, alongside the section title.
 
-Clicking opens `ProviderSetupForm` in a modal (same as agent creation). On success:
+Clicking opens `ProviderSetupForm` in a modal. On success:
 - Invalidate the `availableConnectionsQuery`
-- The new link appears in the list
-- Auto-bind it to this agent: call `agentsApi.update(agentId, { connectionIds: [...currentConnectionIds, newConnectionId] })`
+- The new connection appears in the list
+- Auto-assign it to this agent: call `agentsApi.update(agentId, { connectionIds: [...currentConnectionIds, newConnectionId] })`
 
 **i18n changes in this file:**
 ```ts
-'agents.capabilityPage.availableConnections' → 'agents.capabilityPage.availableLinks': 'Available links'
-'agents.capabilityPage.noConnections' → 'agents.capabilityPage.noLinks':
-  'No platform links yet. Add one here or from the Links page.'
-'agents.capabilityPage.failedConnections' → 'agents.capabilityPage.failedLinks': 'Failed to load platform links'
-'agents.capabilityPage.bind' → keep as 'agents.capabilityPage.bind': 'Assign to agent'  (rename label)
-'agents.capabilityPage.unbind' → keep as 'agents.capabilityPage.unbind': 'Remove'
+'agents.capabilityPage.noConnections':
+  'No platform connections yet. Add one here or from the Connections page.'
+'agents.capabilityPage.bind': 'Assign to agent'   // rename display label
+'agents.capabilityPage.unbind': 'Remove'           // rename display label
 ```
 
 Add:
 ```ts
-'agents.capabilityPage.addLink': '+ Add link'
+'agents.capabilityPage.addConnection': '+ Add connection'
 ```
 
 ---
@@ -244,7 +242,7 @@ Add:
 
 **File:** `apps/web/src/features/setup/AgentAssignmentStep.tsx` (new)
 
-This component is rendered AFTER `ProviderSetupForm` succeeds, in any context where agent assignment makes sense (Links page, Mission Control).
+This component is rendered AFTER `ProviderSetupForm` succeeds, in any context where agent assignment makes sense (Connections page, Mission Control).
 
 It is NOT shown in the agent creation flow (the user is already creating the agent).
 
@@ -259,9 +257,9 @@ interface AgentAssignmentStepProps {
 
 **UI:**
 ```
-Link created! ✓ My Hyperliquid Account (hyperliquid)
+Connection created! ✓ My Hyperliquid Account (hyperliquid)
 
-Which agents should use this link?
+Which agents should use this connection?
 
   ☑ Alpha Bot          (trading · running)
   ☐ Scout Agent        (trading · stopped)
@@ -274,7 +272,7 @@ Which agents should use this link?
 
 **Logic:**
 - `GET /agents` to populate the list
-- Filter to agents that have a trading skill (or simply show all — assignment to non-trading agents is harmless, the agent just won't use it unless it has the skill)
+- Show all agents — assignment to non-trading agents is harmless
 - On "Assign": call `PATCH /agents/:id { connectionIds: [...existing, connectionId] }` for each checked agent
   - Parallel calls, one per selected agent
   - Show loading state
@@ -283,17 +281,17 @@ Which agents should use this link?
 
 **i18n:**
 ```ts
-'setup.agentAssignment.title': 'Which agents should use this link?'
+'setup.agentAssignment.title': 'Which agents should use this connection?'
 'setup.agentAssignment.subtitle': 'You can change this later from any agent\'s settings.'
 'setup.agentAssignment.skip': 'Skip'
 'setup.agentAssignment.assign': 'Assign'
 'setup.agentAssignment.noAgents': 'No agents yet. Create an agent and it will appear here.'
-'setup.agentAssignment.linkCreated': '{label} ({provider}) linked successfully.'
+'setup.agentAssignment.connectionCreated': '{label} ({provider}) connected successfully.'
 ```
 
 ---
 
-### 7. Mission Control — Add Agent Assignment After Setup
+### 7. Mission Control — Update Copy + Add Agent Assignment After Setup
 
 **File:** `apps/web/src/features/mission-control/MissionControlPage.tsx`
 
@@ -303,7 +301,7 @@ Which agents should use this link?
 3. On success: success banner shown, modal closes
 
 **New flow:**
-1. User clicks "Link agent to platform"
+1. User clicks "Connect agent to platform"
 2. `ProviderSetupForm` opens
 3. On success: transition to `AgentAssignmentStep` within the same modal
 4. User selects agents (or skips)
@@ -319,7 +317,7 @@ const handleSetupSuccess = (result: ProviderSetupResult) => {
 
 // After: onSuccess transitions to assignment step
 const handleSetupSuccess = (result: ProviderSetupResult) => {
-  setSetupResult(result);  // new state
+  setSetupResult(result);
   setSetupStep('assign'); // new state: 'setup' | 'assign'
 };
 
@@ -332,43 +330,59 @@ const handleAssignmentDone = () => {
 
 The modal renders either `ProviderSetupForm` or `AgentAssignmentStep` based on `setupStep`.
 
+**i18n keys to update:**
+```ts
+'missionControl.setup.title': 'Connect AI agent'          // was: 'Link AI agent'
+'missionControl.setup.cta': 'Connect agent to platform'    // was: 'Link agent to platform'
+'missionControl.setup.successMessage': '{label} ({provider}) is ready for your AI agents.'  // keep
+```
+
 ---
 
 ### 8. i18n — Full Key Inventory
 
 **File:** `apps/web/src/app/i18n/locales/en.ts` (and hi.ts, ar.ts)
 
-| Old key | New key | New value |
-|---|---|---|
-| `nav.connections` | `nav.links` | `'Links'` |
-| *(remove from nav)* | `nav.credentials` | *(keep key, value `'Credentials'`, just not in sidebar array)* |
-| `agents.capabilityPage.availableConnections` | `agents.capabilityPage.availableLinks` | `'Available links'` |
-| `agents.capabilityPage.noConnections` | `agents.capabilityPage.noLinks` | `'No platform links yet. Add one here or from the Links page.'` |
-| `agents.capabilityPage.failedConnections` | `agents.capabilityPage.failedLinks` | `'Failed to load platform links'` |
-| *(add)* | `agents.capabilityPage.addLink` | `'+ Add link'` |
-| *(add)* | `agents.capabilityPage.bind` (rename display) | `'Assign to agent'` |
-| *(add)* | `agents.create.addNewLink` | `'+ Add new link'` |
-| *(add)* | `links.title` | `'Links'` |
-| *(add)* | `links.subtitle` | `'Platform accounts your AI agents can use.'` |
-| *(add)* | `links.addLink` | `'Add link'` |
-| *(add)* | `links.linkPlatform` | `'Link a platform'` |
-| *(add)* | `links.empty` | `'No platform links yet.'` |
-| *(add)* | `links.emptyMessage` | `'Link a platform so your AI agents can start working.'` |
-| *(add)* | `links.usedByNone` | `'Not assigned to any agents'` |
-| *(add)* | `setup.agentAssignment.title` | `'Which agents should use this link?'` |
-| *(add)* | `setup.agentAssignment.subtitle` | `'You can change this later from any agent\'s settings.'` |
-| *(add)* | `setup.agentAssignment.skip` | `'Skip'` |
-| *(add)* | `setup.agentAssignment.assign` | `'Assign'` |
-| *(add)* | `setup.agentAssignment.noAgents` | `'No agents yet. Create an agent and assign links from there.'` |
-| *(add)* | `setup.agentAssignment.linkCreated` | `'{label} ({provider}) linked successfully.'` |
+**Update existing keys:**
 
-**Keep unchanged (already correct):**
-- `missionControl.setup.title`: `'Link AI agent'` ✅
-- `missionControl.setup.cta`: `'Link agent to platform'` ✅
+| Key | Old value | New value |
+|---|---|---|
+| `missionControl.setup.title` | `'Link AI agent'` | `'Connect AI agent'` |
+| `missionControl.setup.cta` | `'Link agent to platform'` | `'Connect agent to platform'` |
+| `setup.form.title` | `'Link agent to platform'` | `'Connect agent to platform'` |
+| `setup.form.tradingTitle` | `'Link agent to platform'` | `'Connect agent to platform'` |
+| `setup.form.tradingSubmit` | `'Link AI agent'` | `'Connect AI agent'` |
+| `connections.subtitle` | `'Low-level provider connection management — for advanced use...'` | `'Platform accounts your AI agents can use.'` |
+| `agents.capabilityPage.noConnections` | `'No platform links yet...'` | `'No platform connections yet. Add one here or from the Connections page.'` |
+| `agents.capabilityPage.bind` | `'Bind to agent'` | `'Assign to agent'` |
+| `agents.capabilityPage.unbind` | `'Unbind'` | `'Remove'` |
+
+**Add new keys:**
+
+| Key | Value |
+|---|---|
+| `connections.addConnection` | `'Add connection'` |
+| `connections.connectPlatform` | `'Connect a platform'` |
+| `connections.emptyMessage` | `'Connect a platform so your AI agents can start working.'` |
+| `connections.usedBy` | `'Used by: {agents}'` |
+| `connections.usedByNone` | `'Not assigned to any agents'` |
+| `connections.revokeConfirm` | `'Revoke this connection? Agents using it will lose access.'` |
+| `agents.capabilityPage.addConnection` | `'+ Add connection'` |
+| `agents.create.addConnection` | `'+ Add connection'` |
+| `setup.agentAssignment.title` | `'Which agents should use this connection?'` |
+| `setup.agentAssignment.subtitle` | `'You can change this later from any agent\'s settings.'` |
+| `setup.agentAssignment.skip` | `'Skip'` |
+| `setup.agentAssignment.assign` | `'Assign'` |
+| `setup.agentAssignment.noAgents` | `'No agents yet. Create an agent and it will appear here.'` |
+| `setup.agentAssignment.connectionCreated` | `'{label} ({provider}) connected successfully.'` |
+
+**Keep unchanged:**
 - `missionControl.setup.message`: `'Connect a provider so your AI agents can use services like Hyperliquid or Gmail.'` ✅
-- `setup.form.title`: `'Link agent to platform'` ✅
-- `setup.form.tradingSubmit`: `'Link AI agent'` ✅
+- `missionControl.setup.successMessage`: `'{label} ({provider}) is ready for your AI agents.'` ✅
 - `agents.create.whereToTrade`: `'Platform link'` ✅ (field label, keep)
+- `agents.capabilityPage.availableConnections`: `'Available connections'` ✅
+- `agents.capabilityPage.failedConnections`: `'Failed to load platform links'` → update to `'Failed to load platform connections'`
+- `nav.connections`: `'Connections'` ✅
 
 ---
 
@@ -376,14 +390,14 @@ The modal renders either `ProviderSetupForm` or `AgentAssignmentStep` based on `
 
 | File | Action | What |
 |---|---|---|
-| `apps/web/src/app/layout/Sidebar.tsx` | Edit | Remove Credentials from nav; rename Connections → Links at `/links` |
-| `apps/web/src/app/router.tsx` | Edit | Add `/links` route; redirect `/connections` → `/links`; keep `/credentials` |
-| `apps/web/src/features/links/LinksPage.tsx` | **New** | User-facing Links page using ProviderSetupForm |
+| `apps/web/src/app/layout/Sidebar.tsx` | Edit | Remove Credentials from nav; Connections stays |
+| `apps/web/src/app/router.tsx` | Edit | Keep `/connections`; keep `/credentials`; no redirects needed |
+| `apps/web/src/features/connections/ConnectionsPage.tsx` | Edit | Replace CreateConnectionModal with ProviderSetupForm; add "Used by" agents; remove "advanced" subtitle |
 | `apps/web/src/features/setup/AgentAssignmentStep.tsx` | **New** | Post-setup agent selection component |
-| `apps/web/src/features/mission-control/MissionControlPage.tsx` | Edit | Add agent assignment step after setup success |
-| `apps/web/src/features/agents/AgentsPage.tsx` | Edit | Add persistent "+ Add new link" in connection picker |
-| `apps/web/src/features/agents/AgentCapabilityPage.tsx` | Edit | Add "+ Add link" CTA; rename "connections" → "links" labels |
-| `apps/web/src/app/i18n/locales/en.ts` | Edit | Add/rename keys per table above |
+| `apps/web/src/features/mission-control/MissionControlPage.tsx` | Edit | Update copy ("Connect" not "Link"); add agent assignment step after setup success |
+| `apps/web/src/features/agents/AgentsPage.tsx` | Edit | Add persistent "+ Add connection" in connection picker |
+| `apps/web/src/features/agents/AgentCapabilityPage.tsx` | Edit | Add "+ Add connection" CTA; update "bind/unbind" labels; update empty state copy |
+| `apps/web/src/app/i18n/locales/en.ts` | Edit | Update and add keys per table above |
 | `apps/web/src/app/i18n/locales/hi.ts` | Edit | Matching updates |
 | `apps/web/src/app/i18n/locales/ar.ts` | Edit | Matching updates |
 
@@ -392,8 +406,8 @@ The modal renders either `ProviderSetupForm` or `AgentAssignmentStep` based on `
 ## Out of Scope
 
 - Backend changes — not needed
-- Renaming the DB table `connections` — keep as-is; this is a UI/UX rename only
-- Credential key rotation UI — keep `/credentials` page functional, just deprioritise from nav
+- Renaming the DB table `connections` — keep as-is; this is a UI/UX change only
+- Credential key rotation UI — keep `/credentials` page functional, just deprioritised from nav
 - Non-trading providers (Gmail, Telegram) — the flows are identical; the provider catalog drives available options
 - Merging `user_credentials` into `connections` at the DB level — separate decision, separate plan
 
@@ -401,10 +415,10 @@ The modal renders either `ProviderSetupForm` or `AgentAssignmentStep` based on `
 
 ## Execution Order
 
-1. Add i18n keys (en.ts, hi.ts, ar.ts) — no visual change, safe first step
+1. Update i18n keys (en.ts, hi.ts, ar.ts) — no visual change, safe first step
 2. New: `AgentAssignmentStep.tsx` component
-3. New: `LinksPage.tsx`
-4. Sidebar + Router changes (switches nav to new page)
-5. Mission Control — add assignment step after setup
-6. AgentsPage — add inline "+ Add new link"
-7. AgentCapabilityPage — add "+ Add link" CTA and rename labels
+3. Edit: `ConnectionsPage.tsx` — replace create modal with ProviderSetupForm + agent assignment step
+4. Sidebar — remove Credentials from nav
+5. Mission Control — update copy + add assignment step after setup
+6. AgentsPage — add inline "+ Add connection"
+7. AgentCapabilityPage — add "+ Add connection" CTA and update labels

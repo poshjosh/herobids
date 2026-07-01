@@ -5,6 +5,7 @@ import { eq, and, or, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { blueprints, bots } from '@herobids/db';
 import { extractStrategyFromConfig } from '@herobids/domain';
+import { deepMerge } from '../config.js';
 
 // --- Static preset catalogue ---
 
@@ -308,19 +309,14 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
     }
 
     const preset = PRESETS[parsed.data.preset];
-    // Section-level merge: for each top-level key, if both sides are plain objects,
-    // merge them one level deep so that e.g. { strategy: { lookbackPeriod: 21 } }
-    // adds/overrides that one field without discarding sibling fields like type.
-    const base = preset.configData;
-    const rawOverrides = parsed.data.overrides ?? {};
-    const configData: Record<string, unknown> = { ...base };
-    for (const [k, v] of Object.entries(rawOverrides)) {
-      const existing = configData[k];
-      configData[k] = (
-        existing !== null && typeof existing === 'object' && !Array.isArray(existing) &&
-        v !== null && typeof v === 'object' && !Array.isArray(v)
-      ) ? { ...(existing as Record<string, unknown>), ...(v as Record<string, unknown>) } : v;
-    }
+    // Deep-merge overrides into the preset config so that partial nested
+    // overrides (e.g. strategy.params.candleLimit) add/override only the
+    // specified leaf without discarding sibling keys.
+    const base = preset.configData as Record<string, unknown>;
+    const rawOverrides = (parsed.data.overrides ?? {}) as Record<string, unknown>;
+    const configData = Object.keys(rawOverrides).length > 0
+      ? deepMerge(base, rawOverrides)
+      : { ...base };
     const name = parsed.data.name ?? `${preset.name} Blueprint`;
 
     const id = crypto.randomUUID();
@@ -410,20 +406,12 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
       if (parsed.data.name !== undefined) updateFields.name = parsed.data.name;
       if (parsed.data.description !== undefined) updateFields.description = parsed.data.description ?? null;
       if (parsed.data.configData !== undefined) {
-        // Section-level merge with existing configData: treat each top-level key
-        // as a section and shallow-merge plain object values one level deep.
-        // This keeps untouched sections (e.g. 'risk', 'execution') intact when
-        // the caller only wants to update a single section.
+        // Deep-merge with existing configData so that partial nested
+        // overrides (e.g. strategy.params.candleLimit) add/override only
+        // the specified leaf without discarding sibling keys.
         const existingConfig = bp.configData as Record<string, unknown>;
-        const merged: Record<string, unknown> = { ...existingConfig };
-        for (const [k, v] of Object.entries(parsed.data.configData)) {
-          const existing = merged[k];
-          merged[k] = (
-            existing !== null && typeof existing === 'object' && !Array.isArray(existing) &&
-            v !== null && typeof v === 'object' && !Array.isArray(v)
-          ) ? { ...(existing as Record<string, unknown>), ...(v as Record<string, unknown>) } : v;
-        }
-        updateFields.configData = merged;
+        const incoming = parsed.data.configData as Record<string, unknown>;
+        updateFields.configData = deepMerge(existingConfig, incoming);
       }
 
       await tx.update(blueprints).set(updateFields).where(eq(blueprints.id, request.params.id));

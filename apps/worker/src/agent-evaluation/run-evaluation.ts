@@ -25,8 +25,6 @@ import { redact, redactJson } from './redaction.js';
 
 const logger = pino({ name: 'run-evaluation' });
 
-const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const;
-
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface RunEvaluationContext {
@@ -166,24 +164,10 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     // ── Step 5b: Generate LLM narrative commentary (best-effort) ────────
     let narrativeText: string | null = null;
     if (includeNarrative && ctx.narrativeLlm) {
-      // Top findings sorted by severity for the prompt
-      const topFindings = [...allFindings]
-        .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
-        .slice(0, 10);
-
-      // Redact finding details before sending to the LLM (defense-in-depth)
-      const safeFindings = topFindings.map((f) => ({
-        ...f,
-        title: redact(f.title),
-        detail: redact(f.detail),
-        evidence: f.evidence ? redact(f.evidence) : undefined,
-      }));
-
       const narrativeResult = await generateEvaluationNarrative(
         ctx.narrativeLlm,
-        scorecard,
-        safeFindings,
-        redactedReport,
+        store,
+        runId,
       );
 
       // Write narrative metadata artifact (always, even on failure)

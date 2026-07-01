@@ -45,7 +45,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
 
 };
 
-function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+export function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
   const result = { ...target };
   for (const key of Object.keys(source)) {
     const srcVal = source[key];
