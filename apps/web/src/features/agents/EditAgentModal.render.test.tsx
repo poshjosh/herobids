@@ -97,6 +97,7 @@ function renderModal(options: {
             stopLossCooldownMs: options.stopLossCooldownMs === undefined ? 300000 : options.stopLossCooldownMs,
             tickIntervalMs: options.tickIntervalMs ?? null,
             technical: options.technical ?? null,
+            strategyPreset: null,
             capital: options.capital ?? '1500',
             style: null,
             openPositionEscalationToJudgePolicy: null,

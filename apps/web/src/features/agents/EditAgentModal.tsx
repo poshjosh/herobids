@@ -451,6 +451,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
             showTradingControls={showTradingControls}
             requiresTradingSetup={requiresTradingSetup}
             isAdmin={isAdmin ?? false}
+            agentStyle={style}
             selectableSkills={selectableSkills}
             skillsLoading={skillsQuery.isLoading}
             skillsError={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}

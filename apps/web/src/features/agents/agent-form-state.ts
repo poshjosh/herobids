@@ -120,7 +120,11 @@ export function agentToFormState(agent: Agent): AgentFormState {
         ? String(agent.stopLossCooldownMs / 1000)
         : '',
     openPositionEscalationToJudgePolicy,
-    strategyPreset: '',
+    // Hydrate the preset selection from the persisted metadata so preset-managed
+    // agents reopen with the matching preset card selected. Agents with no preset
+    // metadata but with a technical config fall back to 'custom'; agents with
+    // neither fall back to '' (no selection yet).
+    strategyPreset: agent.strategyPreset ?? (agent.technical != null ? 'custom' : ''),
   };
 }
 

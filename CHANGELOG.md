@@ -16,7 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Agent Preset Contract** — `applyPresetToAgent()` now uses `fixedPositionSize` (matching `UnifiedAgentConfigSchema`) instead of `positionSize`. DCA presets are rejected for agent application.
 - **DCA Runtime Parity** — DCA strategy supports `amountPerBuyMode: 'percent_equity'` with equity-aware sizing at runtime, matching preset YAML semantics.
-- **Web Agent Form** — Strategy preset selector replaces old hardcoded `TECHNICAL_PRESETS` as the primary happy path. Custom mode preserves detailed technical editor.
+- **Web Agent Form** — Backend-driven strategy preset selector is now the single preset surface. The legacy frontend-only `TECHNICAL_PRESETS` system (`technical-presets.ts`) has been removed; `TechnicalConfigSection` is now a pure raw-parameter editor for custom mode. Preset-managed agents round-trip correctly in edit (preset provenance is hydrated from `unifiedConfig.metadata`), the preset tier label reflects the agent's actual style, manual edits flip the form to `custom`, and `PATCH strategyPreset: null` cleanly strips preset-managed `metadata`/`execution` while preserving technical config.
 
 ## v0.0.5 - 2026-07-01
 

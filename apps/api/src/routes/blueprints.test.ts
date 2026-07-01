@@ -76,6 +76,37 @@ describe('GET /blueprints/presets', () => {
   });
 });
 
+// ─── GET /presets/for-agent ───────────────────────────────────────────────
+
+describe('GET /presets/for-agent', () => {
+  it('returns an agent-consumable split for a technical strategy', async () => {
+    const db = buildDb();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/presets/for-agent?strategy=momentum&style=standard' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toHaveProperty('technical');
+    expect(body).toHaveProperty('risk');
+    expect(body).toHaveProperty('execution');
+    // Execution uses the unified agent field name
+    expect(body.execution).not.toHaveProperty('positionSize');
+  });
+
+  it('rejects dca for agent preset application with preset_not_supported_for_agent', async () => {
+    const db = buildDb();
+    const app = Fastify();
+    decorateWithAuth(app);
+    await blueprintRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/presets/for-agent?strategy=dca&style=standard' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('preset_not_supported_for_agent');
+  });
+});
+
 // ─── GET /blueprints/defaults ─────────────────────────────────────────────
 
 describe('GET /blueprints/defaults', () => {

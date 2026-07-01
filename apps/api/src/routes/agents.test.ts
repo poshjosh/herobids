@@ -1248,6 +1248,161 @@ describe('agent routes config update (PATCH /agents/:id)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Style-based strategy preset writes (create + update)
+// ---------------------------------------------------------------------------
+describe('agent routes strategy preset resolution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('resolves a strategyPreset on create and persists translated config into unifiedConfig', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'preset agent',
+        prompt: 'trade momentum',
+        style: 'careful',
+        strategyPreset: 'momentum',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const insertedAgent = insertedValues.find((v) => v['name'] === 'preset agent');
+    expect(insertedAgent).toBeDefined();
+    const unifiedConfig = insertedAgent!['unifiedConfig'] as Record<string, unknown>;
+    expect(unifiedConfig).toBeDefined();
+    expect(unifiedConfig['technical']).toBeDefined();
+    expect(unifiedConfig['metadata']).toMatchObject({
+      strategyPreset: 'momentum',
+      strategyPresetStyle: 'economy', // careful → economy tier
+      strategyPresetSource: 'agent-style',
+    });
+  });
+
+  it('lets an explicit stopLossPct override the preset default on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const createdAgent = { id: 'agent-1', userId: TEST_USER_ID, status: 'stopped', skillIds: [], modelPolicy: null };
+    const { db, insertedValues } = buildDb({
+      agentRows: [createdAgent],
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'preset override',
+        prompt: 'trade momentum',
+        style: 'balanced',
+        strategyPreset: 'momentum',
+        stopLossPct: 7,
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const insertedAgent = insertedValues.find((v) => v['name'] === 'preset override');
+    expect(insertedAgent!['stopLossPct']).toBe('7');
+  });
+
+  it('clears preset-managed config (metadata + execution) on PATCH strategyPreset: null while keeping technical', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const existingUnifiedConfig = {
+      technical: { signalBias: 'trend-following' },
+      execution: { positionSizeMode: 'percent_equity', fixedPositionSize: '2' },
+      metadata: { strategyPreset: 'momentum', strategyPresetStyle: 'standard', strategyPresetSource: 'agent-style' },
+    };
+    const { db, updateSets } = buildDb({
+      agentRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], modelPolicy: null, unifiedConfig: existingUnifiedConfig, style: 'balanced' }],
+      activeLinkRows: [{ id: 'agent-1', status: 'stopped', userId: TEST_USER_ID, skillIds: [], modelPolicy: null }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/agents/agent-1',
+      payload: { strategyPreset: null },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const configUpdate = updateSets.find((s) => 'unifiedConfig' in s);
+    expect(configUpdate).toBeDefined();
+    const patched = configUpdate!['unifiedConfig'] as Record<string, unknown> | null;
+    // technical is preserved; preset-managed metadata + execution are removed
+    expect(patched).toMatchObject({ technical: { signalBias: 'trend-following' } });
+    expect(patched).not.toHaveProperty('metadata');
+    expect(patched).not.toHaveProperty('execution');
+  });
+
+  it('exposes strategyPreset from unifiedConfig.metadata on GET', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      agentRows: [{
+        id: 'agent-1',
+        userId: TEST_USER_ID,
+        status: 'stopped',
+        skillIds: [],
+        unifiedConfig: {
+          technical: { signalBias: 'trend-following' },
+          metadata: { strategyPreset: 'swing', strategyPresetStyle: 'standard', strategyPresetSource: 'agent-style' },
+        },
+      }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/agents/agent-1' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ strategyPreset: 'swing' });
+  });
+
+  it('rejects an unsupported strategyPreset value on create', async () => {
+    const { agentRoutes } = await import('./agents.js');
+    const { db } = buildDb({
+      userRows: [{ aiModelConfig: { provider: 'openai', lightModel: 'gpt-4o-mini', heavyModel: 'gpt-4o' } }],
+    });
+
+    const app = Fastify();
+    decorateWithAuth(app);
+    await agentRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/agents',
+      payload: {
+        name: 'bad preset',
+        prompt: 'trade',
+        strategyPreset: 'dca', // not a valid agent preset
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /agents/:id/start — model selection validation
 // ---------------------------------------------------------------------------
 describe('POST /agents/:id/start — model selection validation', () => {

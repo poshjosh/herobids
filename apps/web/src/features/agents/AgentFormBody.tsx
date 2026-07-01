@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
-import type { Skill } from '../../lib/api-client.js';
+import { bots as botsApi, type Skill } from '../../lib/api-client.js';
 import type { AgentFormState } from './agent-form-state.js';
 import { SkillPicker } from './SkillPicker.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
@@ -39,6 +40,22 @@ export const ADVANCED_FIELD_TAB: Record<string, number> = {
   // Strategy
 };
 
+/**
+ * Map an agent personality style to the strategy preset tier the backend uses.
+ * Mirrors `agentStyleToPresetStyle()` in @herobids/domain — kept in sync so the
+ * UI fetches the same tier the API will resolve on write.
+ */
+function agentStyleToPresetTier(style: string | null | undefined): 'economy' | 'standard' | 'premium' {
+  switch (style) {
+    case 'careful':
+      return 'economy';
+    case 'bold':
+      return 'premium';
+    default:
+      return 'standard';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // AgentFormBodyProps
 // ---------------------------------------------------------------------------
@@ -53,6 +70,9 @@ export interface AgentFormBodyProps {
   showTradingControls: boolean;
   requiresTradingSetup: boolean;
   isAdmin: boolean;
+
+  /** Agent personality style — drives the derived preset tier (economy/standard/premium). */
+  agentStyle?: string | null;
 
   // Skills
   selectableSkills: Skill[];
@@ -89,6 +109,17 @@ export function AgentFormBody(props: AgentFormBodyProps) {
   const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(2);
 
   const hasBotManagementSkill = props.value.skillIds.includes('bot-management');
+
+  // Fetch style-based strategy presets from the backend (single source of truth
+  // for preset identity, labels, and descriptions). The tier is derived from the
+  // agent's style so the UI previews exactly what the API will resolve on write.
+  const presetTier = agentStyleToPresetTier(props.agentStyle);
+  const presetsQuery = useQuery({
+    queryKey: ['strategy-presets', presetTier],
+    queryFn: () => botsApi.getPresets(presetTier),
+    enabled: props.value.technicalPreFilterEnabled,
+    staleTime: 5 * 60 * 1000,
+  });
 
   // ---- internal helpers ----
 
@@ -361,10 +392,14 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 <StrategyPresetSelector
                   value={props.value.strategyPreset}
                   onChange={(key) => props.onChange({ strategyPreset: key })}
-                  style={props.value.capabilityMode !== 'technical' ? 'balanced' : undefined}
+                  style={props.agentStyle ?? undefined}
+                  presets={presetsQuery.data?.presets ?? []}
+                  loading={presetsQuery.isLoading}
                 />
 
-                {/* Detailed technical editor — only shown in custom mode */}
+                {/* Detailed technical editor — only shown in custom mode.
+                    Manual edits keep the preset marked 'custom' (custom-on-divergence:
+                    once the user is in the raw editor, the config is no longer preset-managed). */}
                 {(!props.value.strategyPreset || props.value.strategyPreset === 'custom') && (
                   <>
                     <div
@@ -380,7 +415,9 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                     <TechnicalConfigSection
                       value={props.value.technicalConfig}
                       onChange={(technicalConfig) =>
-                        props.onChange({ technicalConfig })
+                        // Any manual edit to raw technical config marks the config as custom,
+                        // ensuring we never silently submit a stale preset alongside diverged params.
+                        props.onChange({ technicalConfig, strategyPreset: 'custom' })
                       }
                       showErrors={Object.keys(props.formErrors).length > 0}
                       onClearFieldError={props.onClearFieldError}

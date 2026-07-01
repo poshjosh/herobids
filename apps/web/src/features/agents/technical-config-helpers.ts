@@ -1,7 +1,6 @@
-import type { TechnicalPresetId, TechnicalConfigFormState, IndicatorFormState } from './technical-types.js';
-import { TECHNICAL_PRESETS } from './technical-presets.js';
+import type { TechnicalConfigFormState, IndicatorFormState } from './technical-types.js';
 
-export type { TechnicalConfigFormState, IndicatorFormState, TechnicalPresetId } from './technical-types.js';
+export type { TechnicalConfigFormState, IndicatorFormState } from './technical-types.js';
 
 // ---- Local type mirroring the domain TechnicalConfig ----
 // The web app doesn't depend on @herobids/domain — these interfaces match schema.ts.
@@ -82,7 +81,6 @@ function parseIntOrFallback(value: string, fallback: number): number {
 
 export function defaultTechnicalConfigFormState(): TechnicalConfigFormState {
   return {
-    preset: 'momentum-breakout',
     filters: { venue: '', venueType: '', minVolume24hUsd: '', minLiquidityUsd: '', networks: [], symbols: [], excludeSymbols: [] },
     candles: { interval: '15m', limit: '100' },
     signalBias: 'trend-following',
@@ -90,31 +88,6 @@ export function defaultTechnicalConfigFormState(): TechnicalConfigFormState {
     scanBatchSize: '5',
     indicators: DEFAULT_INDICATORS,
     confidence: DEFAULT_CONFIDENCE,
-  };
-}
-
-export function applyPreset(presetId: TechnicalPresetId, current: TechnicalConfigFormState): TechnicalConfigFormState {
-  const preset = TECHNICAL_PRESETS.find((p) => p.id === presetId);
-  if (!preset || preset.patch === null) {
-    // 'custom' — preserve current values, only update preset label
-    return { ...current, preset: presetId };
-  }
-  return {
-    ...current,
-    ...preset.patch,
-    preset: presetId,
-    filters: current.filters,
-    indicators: {
-      ...current.indicators,
-      ...(preset.patch?.indicators && Object.fromEntries(
-        Object.entries(preset.patch.indicators).map(([key, val]) => [
-          key,
-          { ...current.indicators[key as keyof typeof current.indicators], ...val }
-        ])
-      )),
-    },
-    confidence: { ...current.confidence, ...preset.patch?.confidence },
-    candles: preset.patch?.candles ?? current.candles,
   };
 }
 
@@ -214,7 +187,6 @@ export function technicalConfigToFormState(config: Record<string, unknown>): Tec
   const scanIntervalMs = (config['scanIntervalMs'] as number | undefined) ?? 60_000;
 
   return {
-    preset: 'custom',
     filters: {
       venue: String(filters['venue'] ?? ''),
       venueType: (filters['venueType'] as 'orderbook' | 'swap' | '') ?? '',

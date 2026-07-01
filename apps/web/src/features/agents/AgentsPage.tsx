@@ -601,6 +601,7 @@ function CreateAgentFlow({
             showTradingControls={requiresTradingSetup}
             requiresTradingSetup={requiresTradingSetup}
             isAdmin={meQuery.data?.isAdmin ?? false}
+            agentStyle={intent.style}
             selectableSkills={skills}
             skillsLoading={skillsLoading}
             skillsError={skillsError}

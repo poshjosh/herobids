@@ -1,9 +1,6 @@
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
-import { TECHNICAL_PRESETS } from './technical-presets.js';
-import type { TechnicalPresetId } from './technical-presets.js';
 import type { TechnicalConfigFormState, IndicatorFormState } from './technical-config-helpers.js';
-import { applyPreset } from './technical-config-helpers.js';
 
 interface TechnicalConfigSectionProps {
   value: TechnicalConfigFormState;
@@ -12,6 +9,15 @@ interface TechnicalConfigSectionProps {
   onClearFieldError?: (field: string) => void;
 }
 
+/**
+ * Raw technical parameter editor for agents in "custom" strategy mode.
+ *
+ * This component intentionally has NO preset selection — strategy identity is
+ * chosen once, in `StrategyPresetSelector` (backend-driven). Here the user only
+ * edits raw parameters: discovery filters, scan settings, indicators, and
+ * confidence weights. This removes the second, competing frontend-only preset
+ * system that previously lived here.
+ */
 export function TechnicalConfigSection({ value, onChange, showErrors, onClearFieldError }: TechnicalConfigSectionProps) {
   const intl = useIntl();
 
@@ -23,18 +29,6 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
   const setConfidence = (patch: Partial<TechnicalConfigFormState['confidence']>) =>
     set({ confidence: { ...value.confidence, ...patch } });
 
-  const handlePreset = (id: TechnicalPresetId) => onChange(applyPreset(id, value));
-
-  const cardStyle = (active: boolean): React.CSSProperties => ({
-    flex: '1',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    border: `1px solid ${active ? 'var(--color-brand)' : 'var(--color-border)'}`,
-    background: active ? 'var(--color-brand-subtle, rgba(99,102,241,0.06))' : 'var(--color-surface-1)',
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-  });
-
   const sectionTitleStyle: React.CSSProperties = {
     fontSize: '13px',
     fontWeight: '600',
@@ -44,29 +38,6 @@ export function TechnicalConfigSection({ value, onChange, showErrors, onClearFie
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Preset selector */}
-      <div>
-        <FieldLabel>{intl.formatMessage({ id: 'agents.technical.preset.label' })}</FieldLabel>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {TECHNICAL_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              style={cardStyle(value.preset === preset.id)}
-              onClick={() => handlePreset(preset.id)}
-              aria-pressed={value.preset === preset.id}
-            >
-              <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '2px' }}>
-                {intl.formatMessage({ id: preset.labelKey })}
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                {intl.formatMessage({ id: preset.descriptionKey })}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Discovery filters */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
         <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-primary)' }}>

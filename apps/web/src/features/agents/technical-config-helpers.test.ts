@@ -54,7 +54,6 @@ describe('technical config helpers', () => {
       scanBatchSize: 0,
     });
 
-    expect(formState.preset).toBe('custom');
     expect(formState.filters.minVolume24hUsd).toBe('0');
     expect(formState.filters.minLiquidityUsd).toBe('0');
     expect(formState.filters.networks).toEqual(['arbitrum']);

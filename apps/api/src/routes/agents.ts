@@ -1098,13 +1098,21 @@ export async function agentRoutes(
       const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
 
       if (presetUnifiedConfigUpdate === null) {
-        // Explicit clear — remove all preset-managed keys
+        // Explicit clear (strategyPreset: null) — strip preset-managed keys
+        // (metadata + execution) while preserving unrelated keys and any
+        // technical config. Manual config stays; the agent becomes 'custom'.
+        const { metadata: _meta, execution: _exec, ...rest } = current;
+        void _meta;
+        void _exec;
         if (technicalUpdate === null) {
-          unifiedConfigPatch = null;
+          // Also clear technical when explicitly nulled.
+          const { technical: _t, ...withoutTechnical } = rest;
+          void _t;
+          unifiedConfigPatch = Object.keys(withoutTechnical).length > 0 ? withoutTechnical : null;
         } else if (technicalUpdate !== undefined) {
-          unifiedConfigPatch = { technical: technicalUpdate };
+          unifiedConfigPatch = { ...rest, technical: technicalUpdate };
         } else {
-          unifiedConfigPatch = Object.keys(current).length > 0 ? current : null;
+          unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
         }
       } else if (presetUnifiedConfigUpdate) {
         // Preset provided — merge with current, explicit technical wins

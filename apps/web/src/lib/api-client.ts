@@ -865,6 +865,8 @@ export interface Agent {
   resolvedRuntimePolicy: Record<string, unknown> | null;
   openPositionEscalationToJudgePolicy: string | null;
   technical: Record<string, unknown> | null;
+  /** Style-based strategy preset key persisted in unifiedConfig.metadata, or null for custom/none. */
+  strategyPreset: string | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

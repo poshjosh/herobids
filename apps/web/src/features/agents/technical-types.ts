@@ -1,5 +1,3 @@
-export type TechnicalPresetId = 'momentum-breakout' | 'mean-reversion' | 'conservative' | 'custom';
-
 export interface IndicatorFormState {
   rsi: { enabled: boolean; period: string; healthyMin: string; healthyMax: string; overbought: string; weakBelow: string };
   macd: { enabled: boolean; fast: string; slow: string; signal: string };
@@ -9,7 +7,6 @@ export interface IndicatorFormState {
 }
 
 export interface TechnicalConfigFormState {
-  preset: TechnicalPresetId;
   filters: {
     venue: string;
     venueType: 'orderbook' | 'swap' | '';
