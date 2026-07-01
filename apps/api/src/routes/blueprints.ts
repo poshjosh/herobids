@@ -146,6 +146,14 @@ export async function blueprintRoutes(app: FastifyInstance, db: Database): Promi
     if (!parsed.success) {
       return reply.status(400).send({ error: 'validation_error', details: parsed.error.issues });
     }
+    // Reject DCA at the API boundary — DCA is bot-only.
+    if (parsed.data.strategy === 'dca') {
+      return reply.status(400).send({
+        error: 'preset_not_supported_for_agent',
+        message: 'DCA is a bot-only strategy and cannot be applied to agents.',
+      });
+    }
+
     const preset = getPreset(parsed.data.strategy, parsed.data.style);
     if (!preset) {
       return reply.status(404).send({

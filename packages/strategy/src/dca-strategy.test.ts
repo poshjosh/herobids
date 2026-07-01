@@ -113,4 +113,126 @@ describe('DcaStrategy', () => {
       expect(result.data?.intent).toBe('go_long');
     }
   });
+
+  // ─── percent_equity mode ───────────────────────────────────────────────────
+
+  it('computes correct buy amount from percent-equity with valid equity', async () => {
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: 10_000 },
+    };
+
+    const result = await strategy.evaluate(snapshot, {
+      amountPerBuy: '5',
+      amountPerBuyMode: 'percent_equity',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.intent).toBe('go_long');
+      // 5% of $10,000 = $500.00 (quantity normalizes trailing zeros)
+      expect(result.data?.targetSize.toString()).toBe('500');
+    }
+  });
+
+  it('returns null when accountEquity is missing in percent-equity mode', async () => {
+    const result = await strategy.evaluate(BASE_SNAPSHOT, {
+      amountPerBuy: '5',
+      amountPerBuyMode: 'percent_equity',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toBeNull();
+    }
+  });
+
+  it('returns null when accountEquity is zero in percent-equity mode', async () => {
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: 0 },
+    };
+
+    const result = await strategy.evaluate(snapshot, {
+      amountPerBuy: '5',
+      amountPerBuyMode: 'percent_equity',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toBeNull();
+    }
+  });
+
+  it('returns null when accountEquity is negative in percent-equity mode', async () => {
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: -100 },
+    };
+
+    const result = await strategy.evaluate(snapshot, {
+      amountPerBuy: '5',
+      amountPerBuyMode: 'percent_equity',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toBeNull();
+    }
+  });
+
+  it('returns null when computed percent-equity amount is too small', async () => {
+    const snapshot: MarketSnapshot = {
+      ...BASE_SNAPSHOT,
+      data: { accountEquity: 1 }, // 5% of $1 = $0.05, still >= 0.01 threshold
+    };
+
+    // Use a tiny percentage so computed amount falls below 0.01 threshold
+    const result = await strategy.evaluate(snapshot, {
+      amountPerBuy: '0.5',
+      amountPerBuyMode: 'percent_equity',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // 0.5% of $1 = $0.005 < 0.01 threshold
+      expect(result.data).toBeNull();
+    }
+  });
+
+  it('fixed mode still works as before', async () => {
+    const result = await strategy.evaluate(BASE_SNAPSHOT, {
+      amountPerBuy: '50',
+      amountPerBuyMode: 'fixed',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.intent).toBe('go_long');
+      expect(result.data?.targetSize.toString()).toBe('50');
+    }
+  });
+
+  it('defaults amountPerBuyMode to fixed when not provided', async () => {
+    const result = await strategy.evaluate(BASE_SNAPSHOT, { amountPerBuy: '50' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data?.intent).toBe('go_long');
+      // fixed mode — uses amountPerBuy directly
+      expect(result.data?.targetSize.toString()).toBe('50');
+    }
+  });
+
+  it('rejects invalid amountPerBuyMode', async () => {
+    const result = await strategy.evaluate(BASE_SNAPSHOT, {
+      amountPerBuy: '50',
+      amountPerBuyMode: 'invalid',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('strategy.config_invalid');
+    }
+  });
 });

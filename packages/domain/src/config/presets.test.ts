@@ -238,8 +238,8 @@ describe('applyPresetToAgent', () => {
     expect(result.risk.stopLossPct).toBe(5);
     expect(result.risk.maxPositionSizePct).toBe(15);
 
-    // Execution
-    expect(result.execution.positionSize).toBe('3');
+    // Execution — maps to unified agent config field names
+    expect(result.execution.fixedPositionSize).toBe('3');
     expect(result.execution.positionSizeMode).toBe('percent_equity');
   });
 
@@ -261,7 +261,7 @@ describe('applyPresetToAgent', () => {
     expect(result.technical.signalBias).toBe('trend-following');
     expect(result.risk.stopLossPct).toBeUndefined();
     expect(result.risk.maxPositionSizePct).toBeUndefined();
-    expect(result.execution.positionSize).toBeUndefined();
+    expect(result.execution.fixedPositionSize).toBeUndefined();
     expect(result.execution.positionSizeMode).toBeUndefined();
   });
 
@@ -286,6 +286,37 @@ describe('applyPresetToAgent', () => {
     const result = apply(preset, 'llm');
     // stopLossPct is only included when it's a number
     expect(result.risk.stopLossPct).toBeUndefined();
+  });
+
+  it('rejects DCA preset for agent application', async () => {
+    const { applyPresetToAgent: apply } = await freshPresets();
+    const dcaPreset: PresetEntry = {
+      name: 'DCA',
+      description: 'Dollar-cost averaging',
+      strategy: {
+        type: 'dca',
+        decisionMode: 'mechanical',
+        params: { intervalMs: 86_400_000, amountPerBuy: '100' },
+      },
+    };
+    expect(() => apply(dcaPreset, 'llm')).toThrow(/dca.*not supported/i);
+  });
+
+  it('accepts all supported agent technical strategy types', async () => {
+    const { applyPresetToAgent: apply, AGENT_TECHNICAL_STRATEGY_TYPES: types } = await freshPresets();
+    for (const type of types) {
+      const preset: PresetEntry = {
+        name: `Test ${type}`,
+        description: `Test preset for ${type}`,
+        strategy: {
+          type,
+          decisionMode: 'mechanical',
+          params: { candleInterval: '1H', candleLimit: 24, positionSize: '5' },
+        },
+      };
+      const result = apply(preset, 'llm');
+      expect(result.execution.fixedPositionSize).toBe('5');
+    }
   });
 });
 

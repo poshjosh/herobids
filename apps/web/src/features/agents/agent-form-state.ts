@@ -46,6 +46,9 @@ export interface AgentFormState {
   stopLossPct: string;
   stopLossCooldownSecs: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
+
+  // Style-based strategy preset
+  strategyPreset: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +120,7 @@ export function agentToFormState(agent: Agent): AgentFormState {
         ? String(agent.stopLossCooldownMs / 1000)
         : '',
     openPositionEscalationToJudgePolicy,
+    strategyPreset: '',
   };
 }
 
@@ -150,6 +154,7 @@ export function intentToFormState(intent: {
   stopLossPct: string;
   stopLossCooldownSecs: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
+  strategyPreset: string;
 }): AgentFormState {
   const {
     name,
@@ -172,6 +177,7 @@ export function intentToFormState(intent: {
     stopLossPct,
     stopLossCooldownSecs,
     openPositionEscalationToJudgePolicy,
+    strategyPreset,
   } = intent;
   return {
     name,
@@ -194,5 +200,6 @@ export function intentToFormState(intent: {
     stopLossPct,
     stopLossCooldownSecs,
     openPositionEscalationToJudgePolicy,
+    strategyPreset,
   };
 }

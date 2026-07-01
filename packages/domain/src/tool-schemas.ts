@@ -177,7 +177,8 @@ const SCHEMA_REGISTRY: Record<string, SchemaEntry> = {
           description: 'DCA strategy params',
           properties: {
             intervalMs: { type: 'integer', minimum: 60000, description: 'Time between DCA buys in milliseconds' },
-            amountPerBuy: { type: 'string', description: 'Fixed amount per DCA buy as decimal string' },
+            amountPerBuy: { type: 'string', description: 'Buy amount as decimal string. In fixed mode this is a dollar amount. In percent_equity mode this is a percentage of account equity.' },
+            amountPerBuyMode: { type: 'string', enum: ['fixed', 'percent_equity'], default: 'fixed', description: 'How to interpret amountPerBuy.' },
           },
         },
         {

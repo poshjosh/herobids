@@ -9,6 +9,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **Style-Based Strategy Presets** — YAML-driven presets with `percent_equity` sizing, backend loader + API (`?style=`), frontend style selector, and DB migration (0029). Economy/Standard/Premium tiers replace hardcoded STRATEGY_PRESETS.
+- **Strategy Preset Agent API** — Agent create/update endpoints accept `strategyPreset` to resolve and persist style-based preset config (technical, execution, risk). Explicit user overrides take precedence over preset defaults.
+- **Agent Response Metadata** — Agent GET responses now include `strategyPreset` provenance from `unifiedConfig.metadata` for round-trip editing.
+
+### Changed
+
+- **Agent Preset Contract** — `applyPresetToAgent()` now uses `fixedPositionSize` (matching `UnifiedAgentConfigSchema`) instead of `positionSize`. DCA presets are rejected for agent application.
+- **DCA Runtime Parity** — DCA strategy supports `amountPerBuyMode: 'percent_equity'` with equity-aware sizing at runtime, matching preset YAML semantics.
+- **Web Agent Form** — Strategy preset selector replaces old hardcoded `TECHNICAL_PRESETS` as the primary happy path. Custom mode preserves detailed technical editor.
 
 ## v0.0.5 - 2026-07-01
 

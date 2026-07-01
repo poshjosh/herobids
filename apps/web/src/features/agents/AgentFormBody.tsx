@@ -5,6 +5,7 @@ import type { Skill } from '../../lib/api-client.js';
 import type { AgentFormState } from './agent-form-state.js';
 import { SkillPicker } from './SkillPicker.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
+import { StrategyPresetSelector } from './StrategyPresetSelector.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { AgentControlsSection } from './AgentControlsSection.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
@@ -357,23 +358,35 @@ export function AgentFormBody(props: AgentFormBodyProps) {
 
               {/* Technical Config — hidden with CSS (not unmounted) to avoid layout jump on toggle */}
               <div style={{ display: props.value.technicalPreFilterEnabled ? 'block' : 'none' }}>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    marginBottom: '12px',
-                  }}
-                >
-                  {intl.formatMessage({ id: 'agents.technical.title' })}
-                </div>
-                <TechnicalConfigSection
-                  value={props.value.technicalConfig}
-                  onChange={(technicalConfig) =>
-                    props.onChange({ technicalConfig })
-                  }
-                  showErrors={Object.keys(props.formErrors).length > 0}
-                  onClearFieldError={props.onClearFieldError}
+                <StrategyPresetSelector
+                  value={props.value.strategyPreset}
+                  onChange={(key) => props.onChange({ strategyPreset: key })}
+                  style={props.value.capabilityMode !== 'technical' ? 'balanced' : undefined}
                 />
+
+                {/* Detailed technical editor — only shown in custom mode */}
+                {(!props.value.strategyPreset || props.value.strategyPreset === 'custom') && (
+                  <>
+                    <div
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        marginBottom: '12px',
+                        marginTop: '16px',
+                      }}
+                    >
+                      {intl.formatMessage({ id: 'agents.technical.title' })}
+                    </div>
+                    <TechnicalConfigSection
+                      value={props.value.technicalConfig}
+                      onChange={(technicalConfig) =>
+                        props.onChange({ technicalConfig })
+                      }
+                      showErrors={Object.keys(props.formErrors).length > 0}
+                      onClearFieldError={props.onClearFieldError}
+                    />
+                  </>
+                )}
               </div>
             </div>
           ) : null

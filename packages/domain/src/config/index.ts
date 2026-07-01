@@ -8,9 +8,11 @@ export {
   agentStyleToPresetStyle,
   applyPresetToAgent,
   PresetEntrySchema,
+  AGENT_TECHNICAL_STRATEGY_TYPES,
   type PresetEntry,
   type StyleKey,
   type AgentPresetMapping,
+  type AgentTechnicalStrategyType,
 } from './presets.js';
 
 export {

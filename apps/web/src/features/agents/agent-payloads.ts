@@ -64,6 +64,7 @@ export interface CreateAgentIntentPayloadInput {
   stopLossPct: string;
   stopLossCooldownSecs: string;
   style?: string;
+  strategyPreset?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides?: RuntimePolicyOverrides;
 }
@@ -100,6 +101,7 @@ export interface UpdateAgentPayloadInput {
   preserveOriginalTickIntervalMs?: boolean;
   originalTickIntervalMs?: number | null;
   style?: string;
+  strategyPreset?: string;
   runtimePolicyOverrides?: RuntimePolicyOverrides;
 }
 
@@ -124,6 +126,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   tickIntervalMs?: number;
   capital?: string;
   technical?: TechnicalConfig;
+  strategyPreset?: string;
   style?: string;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
@@ -155,6 +158,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
     ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
     ...(input.style ? { style: input.style } : {}),
+    ...(input.strategyPreset ? { strategyPreset: input.strategyPreset } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
@@ -186,6 +190,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   lightModel: string | null;
   heavyModel: string | null;
   technical?: TechnicalConfig | null;
+  strategyPreset?: string | null;
   openPositionEscalationToJudgePolicy?: 'never' | 'uncovered_or_triggered' | 'always' | null;
   style?: string | null;
   runtimePolicyOverrides?: RuntimePolicyOverrides | null;
@@ -224,6 +229,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     // Send technical: null to explicitly remove it when switching away from technical mode
     ...(includeTechnical ? { technical: input.technical } : { technical: null }),
     ...(input.style ? { style: input.style } : {}),
+    ...(input.strategyPreset ? { strategyPreset: input.strategyPreset } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
   };
 }

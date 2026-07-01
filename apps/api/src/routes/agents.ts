@@ -27,7 +27,20 @@ import {
   venueAccounts,
 } from '@herobids/db';
 import type { PlansConfig } from '@herobids/domain';
-import { AgentRiskDefaultsSchema, AgentRuntimePolicyOverridesSchema, RUNTIME_POLICY_CEILINGS, normalizePersistedAiModelConfig, TechnicalConfigSchema, validateExecutionCapability, venueTypeFromProvider, type AgentRiskDefaultsConfig, type AgentCostEstimatesConfig } from '@herobids/domain';
+import {
+  AgentRiskDefaultsSchema,
+  AgentRuntimePolicyOverridesSchema,
+  RUNTIME_POLICY_CEILINGS,
+  normalizePersistedAiModelConfig,
+  TechnicalConfigSchema,
+  validateExecutionCapability,
+  venueTypeFromProvider,
+  type AgentRiskDefaultsConfig,
+  type AgentCostEstimatesConfig,
+  agentStyleToPresetStyle,
+  applyPresetToAgent,
+  getPreset,
+} from '@herobids/domain';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
@@ -98,6 +111,14 @@ const CreateAgentSchema = z.object({
   tickIntervalMs: optionalPositiveIntegerSchema(1000),
   capital: optionalPositiveDecimalStringSchema,
   style: z.enum(['careful', 'balanced', 'bold']).optional(),
+  strategyPreset: z.enum([
+    'momentum',
+    'momentum-position',
+    'range',
+    'swing',
+    'scalper',
+    'contrarian',
+  ]).optional(),
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
@@ -145,6 +166,14 @@ const UpdateAgentSchema = z.object({
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
   capital: nullablePositiveDecimalStringSchema,
   technical: TechnicalConfigSchema.nullable().optional(),
+  strategyPreset: z.enum([
+    'momentum',
+    'momentum-position',
+    'range',
+    'swing',
+    'scalper',
+    'contrarian',
+  ]).nullable().optional(),
   runtimePolicyOverrides: AgentRuntimePolicyOverridesSchema.nullable().optional(),
   openPositionEscalationToJudgePolicy: z.enum(['never', 'uncovered_or_triggered', 'always']).optional(),
   connectionIds: z.array(z.string().min(1)).max(20).optional(),
@@ -153,6 +182,93 @@ const UpdateAgentSchema = z.object({
 const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500),
 });
+
+/** Extract the strategyPreset from unifiedConfig.metadata, if present. */
+function extractStrategyPreset(unifiedConfig: unknown): string | null {
+  const uc = unifiedConfig as Record<string, unknown> | null;
+  const meta = uc?.['metadata'] as Record<string, unknown> | undefined;
+  const sp = meta?.['strategyPreset'];
+  return typeof sp === 'string' && sp.length > 0 ? sp : null;
+}
+
+/** Build the extra response fields derived from unifiedConfig. */
+function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: string[] }): {
+  technical: unknown;
+  strategyPreset: string | null;
+} {
+  return {
+    technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null,
+    strategyPreset: extractStrategyPreset(agent.unifiedConfig),
+  };
+}
+
+/**
+ * Resolve a style-based strategy preset into agent config fields.
+ *
+ * Returns the unifiedConfig patch and risk column overrides to persist.
+ * Explicit user-supplied risk values take precedence over preset defaults.
+ */
+function resolveAgentStrategyPreset(params: {
+  strategyPreset: string;
+  style: string | null | undefined;
+  explicitStopLossPct?: number | null;
+  explicitMaxPositionSizePct?: number | null;
+}): {
+  unifiedConfigPatch: Record<string, unknown>;
+  riskOverrides: { stopLossPct?: string | null; maxPositionSizePct?: string | null };
+} | null {
+  const { strategyPreset, style, explicitStopLossPct, explicitMaxPositionSizePct } = params;
+
+  const presetStyle = agentStyleToPresetStyle(style ?? 'balanced');
+  const preset = getPreset(strategyPreset, presetStyle);
+  if (!preset) {
+    return null;
+  }
+
+  const split = applyPresetToAgent(preset, 'llm');
+
+  // Build unifiedConfig with technical, execution, and metadata
+  const unifiedConfigPatch: Record<string, unknown> = {
+    technical: split.technical,
+    execution: {
+      mode: split.execution.positionSizeMode === 'percent_equity' ? undefined : undefined,
+      positionSizeMode: (split.execution.positionSizeMode as 'fixed' | 'percent_equity' | undefined) ?? undefined,
+      fixedPositionSize: split.execution.fixedPositionSize,
+    },
+    metadata: {
+      strategyPreset,
+      strategyPresetStyle: presetStyle,
+      strategyPresetSource: 'agent-style',
+    },
+  };
+
+  // Remove undefined keys from execution to keep config clean
+  const exec = unifiedConfigPatch['execution'] as Record<string, unknown>;
+  if (exec['positionSizeMode'] === undefined && exec['fixedPositionSize'] === undefined) {
+    delete unifiedConfigPatch['execution'];
+  } else {
+    // Clean individual undefined values
+    for (const key of Object.keys(exec)) {
+      if (exec[key] === undefined) delete exec[key];
+    }
+  }
+
+  // Risk overrides: explicit user values win, otherwise use preset defaults
+  const stopLossPct =
+    explicitStopLossPct !== undefined
+      ? (explicitStopLossPct != null ? String(explicitStopLossPct) : null)
+      : (split.risk.stopLossPct != null ? String(split.risk.stopLossPct) : undefined);
+
+  const maxPositionSizePct =
+    explicitMaxPositionSizePct !== undefined
+      ? (explicitMaxPositionSizePct != null ? String(explicitMaxPositionSizePct) : null)
+      : (split.risk.maxPositionSizePct != null ? String(split.risk.maxPositionSizePct) : undefined);
+
+  return {
+    unifiedConfigPatch,
+    riskOverrides: { stopLossPct, maxPositionSizePct },
+  };
+}
 
 type SkillAssignmentResolution = {
   skillId: string;
@@ -558,6 +674,54 @@ export async function agentRoutes(
 
     const connectionIds = parsed.data.connectionIds ?? [];
 
+    // Resolve style-based strategy preset into agent config
+    let presetUnifiedConfig: Record<string, unknown> | null = null;
+    let presetRiskStopLossPct: string | null | undefined = undefined;
+    let presetRiskMaxPositionSizePct: string | null | undefined = undefined;
+
+    if (parsed.data.strategyPreset) {
+      const resolution = resolveAgentStrategyPreset({
+        strategyPreset: parsed.data.strategyPreset,
+        style: parsed.data.style,
+        explicitStopLossPct: parsed.data.stopLossPct,
+        explicitMaxPositionSizePct: parsed.data.maxPositionSizePct,
+      });
+
+      if (!resolution) {
+        return reply.status(400).send({
+          error: 'preset_not_found',
+          message: `Preset "${parsed.data.strategyPreset}" not found for the resolved style tier.`,
+        });
+      }
+
+      presetUnifiedConfig = resolution.unifiedConfigPatch;
+      presetRiskStopLossPct = resolution.riskOverrides.stopLossPct;
+      presetRiskMaxPositionSizePct = resolution.riskOverrides.maxPositionSizePct;
+    }
+
+    // Build final unifiedConfig: explicit technical wins over preset technical
+    let finalUnifiedConfig: Record<string, unknown> | null = null;
+    if (parsed.data.technical) {
+      // Explicit technical provided — use it, but preserve preset metadata if present
+      finalUnifiedConfig = {
+        ...(presetUnifiedConfig ?? {}),
+        technical: parsed.data.technical,
+      };
+    } else if (presetUnifiedConfig) {
+      finalUnifiedConfig = presetUnifiedConfig;
+    }
+
+    // Resolve final risk fields: explicit values win, then preset values, then null
+    const finalStopLossPct: string | null =
+      parsed.data.stopLossPct != null
+        ? String(parsed.data.stopLossPct)
+        : (presetRiskStopLossPct !== undefined ? presetRiskStopLossPct : null);
+
+    const finalMaxPositionSizePct: string | null =
+      parsed.data.maxPositionSizePct != null
+        ? String(parsed.data.maxPositionSizePct)
+        : (presetRiskMaxPositionSizePct !== undefined ? presetRiskMaxPositionSizePct : null);
+
     const createTxResult = await db.transaction(async (tx): Promise<
       | { kind: 'ok' }
       | { kind: 'conn_error'; status: number; body: Record<string, unknown> }
@@ -579,15 +743,15 @@ export async function agentRoutes(
           maxBots: resolvedMaxBots,
           maxSlippageBps: parsed.data.maxSlippageBps ?? null,
           maxOpenPositions: parsed.data.maxOpenPositions ?? null,
-          maxPositionSizePct: parsed.data.maxPositionSizePct != null ? String(parsed.data.maxPositionSizePct) : null,
-          stopLossPct: parsed.data.stopLossPct != null ? String(parsed.data.stopLossPct) : null,
+          maxPositionSizePct: finalMaxPositionSizePct,
+          stopLossPct: finalStopLossPct,
           stopLossCooldownMs: parsed.data.stopLossCooldownMs ?? null,
           tickIntervalMs: parsed.data.tickIntervalMs ?? null,
           capital: parsed.data.capital ?? null,
           style: parsed.data.style ?? null,
           runtimePolicyOverrides: parsed.data.runtimePolicyOverrides ?? null,
           openPositionEscalationToJudgePolicy: parsed.data.openPositionEscalationToJudgePolicy ?? undefined,
-          ...(parsed.data.technical ? { unifiedConfig: { technical: parsed.data.technical } } : {}),
+          ...(finalUnifiedConfig ? { unifiedConfig: finalUnifiedConfig } : {}),
           createdAt: now,
           updatedAt: now,
         });
@@ -660,7 +824,7 @@ export async function agentRoutes(
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     const skillIds = await listSkillIdsForAgent(db, agentId);
     const riskContract = resolveAgentRiskContractForResponse(agent!, agentRiskDefaults);
-    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), technical: (agent!.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null, riskContract });
+    return reply.status(201).send({ ...decorateAgentResponse({ ...agent!, skillIds }), ...enrichAgentResponse(agent!), riskContract });
   });
 
   // List user's agents
@@ -674,7 +838,7 @@ export async function agentRoutes(
         ...agent,
         skillIds: skillIdsByAgentId.get(agent.id) ?? [],
       }),
-      technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null,
+      ...enrichAgentResponse(agent),
     })));
   });
 
@@ -699,7 +863,7 @@ export async function agentRoutes(
 
     const skillIds = await listSkillIdsForAgent(db, id);
     const riskContract = resolveAgentRiskContractForResponse(agent, agentRiskDefaults);
-    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null, riskContract, activeSession: session ?? null });
+    return reply.send({ ...decorateAgentResponse({ ...agent, skillIds }), ...enrichAgentResponse(agent), riskContract, activeSession: session ?? null });
   });
 
   // Update agent
@@ -872,6 +1036,7 @@ export async function agentRoutes(
       stopLossPct: rawStopLossPct,
       maxBots: rawMaxBots,
       technical: technicalUpdate,
+      strategyPreset: strategyPresetUpdate,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
@@ -894,18 +1059,87 @@ export async function agentRoutes(
     }
     // If not provided, leave existing value unchanged (no-op for PATCH)
 
+    // Resolve style-based strategy preset for update
+    // - omitted: leave existing preset-managed config unchanged
+    // - provided with value: re-apply preset using effective style after merge
+    // - null: clear preset-managed config
+    let presetUnifiedConfigUpdate: Record<string, unknown> | null | undefined = undefined;
+    let presetRiskStopLossPctUpdate: string | null | undefined = undefined;
+    let presetRiskMaxPositionSizePctUpdate: string | null | undefined = undefined;
+
+    if (strategyPresetUpdate !== undefined && strategyPresetUpdate !== null) {
+      // Re-apply preset using the effective style after merge
+      const effectiveStyle = parsed.data.style !== undefined ? parsed.data.style : agent.style;
+      const resolution = resolveAgentStrategyPreset({
+        strategyPreset: strategyPresetUpdate,
+        style: effectiveStyle,
+        explicitStopLossPct: rawStopLossPct,
+        explicitMaxPositionSizePct: rawMaxPositionSizePct,
+      });
+
+      if (!resolution) {
+        return reply.status(400).send({
+          error: 'preset_not_found',
+          message: `Preset "${strategyPresetUpdate}" not found for the resolved style tier.`,
+        });
+      }
+
+      presetUnifiedConfigUpdate = resolution.unifiedConfigPatch;
+      presetRiskStopLossPctUpdate = resolution.riskOverrides.stopLossPct;
+      presetRiskMaxPositionSizePctUpdate = resolution.riskOverrides.maxPositionSizePct;
+    } else if (strategyPresetUpdate === null) {
+      // Clear preset-managed config — remove metadata and execution blocks
+      presetUnifiedConfigUpdate = null;
+    }
+
     // Merge technical into unifiedConfig — only touch the 'technical' key, preserve other keys
     let unifiedConfigPatch: Record<string, unknown> | null | undefined = undefined;
-    if (technicalUpdate !== undefined) {
+    if (technicalUpdate !== undefined || presetUnifiedConfigUpdate !== undefined) {
       const current = (agent.unifiedConfig as Record<string, unknown> | null) ?? {};
-      if (technicalUpdate === null) {
-        const { technical: _t, ...rest } = current;
-        void _t;
-        unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
+
+      if (presetUnifiedConfigUpdate === null) {
+        // Explicit clear — remove all preset-managed keys
+        if (technicalUpdate === null) {
+          unifiedConfigPatch = null;
+        } else if (technicalUpdate !== undefined) {
+          unifiedConfigPatch = { technical: technicalUpdate };
+        } else {
+          unifiedConfigPatch = Object.keys(current).length > 0 ? current : null;
+        }
+      } else if (presetUnifiedConfigUpdate) {
+        // Preset provided — merge with current, explicit technical wins
+        const merged = { ...current, ...presetUnifiedConfigUpdate };
+        if (technicalUpdate !== undefined) {
+          if (technicalUpdate === null) {
+            delete merged['technical'];
+          } else {
+            merged['technical'] = technicalUpdate;
+          }
+        }
+        unifiedConfigPatch = Object.keys(merged).length > 0 ? merged : null;
       } else {
-        unifiedConfigPatch = { ...current, technical: technicalUpdate };
+        // No preset change — handle technical update as before
+        if (technicalUpdate === null) {
+          const { technical: _t, ...rest } = current;
+          void _t;
+          unifiedConfigPatch = Object.keys(rest).length > 0 ? rest : null;
+        } else if (technicalUpdate !== undefined) {
+          unifiedConfigPatch = { ...current, technical: technicalUpdate };
+        }
+        // else: neither preset nor technical changed → undefined (don't update)
       }
     }
+
+    // Resolve final risk fields for update: explicit values win, then preset, then existing
+    const finalStopLossPctUpdate: string | null | undefined =
+      rawStopLossPct !== undefined
+        ? (rawStopLossPct != null ? String(rawStopLossPct) : null)
+        : presetRiskStopLossPctUpdate;
+
+    const finalMaxPositionSizePctUpdate: string | null | undefined =
+      rawMaxPositionSizePct !== undefined
+        ? (rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null)
+        : presetRiskMaxPositionSizePctUpdate;
 
     const effectiveNotificationPolicy = notificationPolicyInput !== undefined
       ? (notificationPolicyInput === null ? null : resolveNotificationPolicy(notificationPolicyInput, agent.notificationPolicy as Parameters<typeof resolveNotificationPolicy>[1]))
@@ -918,8 +1152,8 @@ export async function agentRoutes(
         await tx.update(agents).set({
           ...agentUpdates,
           ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
-          ...(rawMaxPositionSizePct !== undefined ? { maxPositionSizePct: rawMaxPositionSizePct != null ? String(rawMaxPositionSizePct) : null } : {}),
-          ...(rawStopLossPct !== undefined ? { stopLossPct: rawStopLossPct != null ? String(rawStopLossPct) : null } : {}),
+          ...(finalMaxPositionSizePctUpdate !== undefined ? { maxPositionSizePct: finalMaxPositionSizePctUpdate } : {}),
+          ...(finalStopLossPctUpdate !== undefined ? { stopLossPct: finalStopLossPctUpdate } : {}),
           ...resolvedMaxBotsPatch,
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),
@@ -1047,7 +1281,7 @@ export async function agentRoutes(
     const [updated] = await db.select().from(agents).where(eq(agents.id, id));
     const skillIds = await listSkillIdsForAgent(db, id);
     const riskContract = resolveAgentRiskContractForResponse(updated!, agentRiskDefaults);
-    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), technical: (updated!.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null, riskContract });
+    return reply.send({ ...decorateAgentResponse({ ...updated!, skillIds }), ...enrichAgentResponse(updated!), riskContract });
   });
 
   // Delete agent

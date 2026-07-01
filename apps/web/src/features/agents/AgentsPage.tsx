@@ -62,6 +62,7 @@ interface IntentState {
   stopLossCooldownSecs: string;
   openPositionEscalationToJudgePolicy: 'never' | 'uncovered_or_triggered' | 'always';
   runtimePolicyOverrides: RuntimePolicyOverrides | null;
+  strategyPreset: string;
 }
 
 export function AgentsPage() {
@@ -193,6 +194,7 @@ function CreateAgentFlow({
     stopLossCooldownSecs: '',
     openPositionEscalationToJudgePolicy: styleDefaults.openPositionEscalationToJudgePolicy,
     runtimePolicyOverrides: null,
+    strategyPreset: '',
     };
   });
   const [modelTouched, setModelTouched] = useState(false);
@@ -366,7 +368,9 @@ function CreateAgentFlow({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const technicalPayload = intent.technicalPreFilterEnabled && requiresTradingSetup
+      // When a strategy preset is selected, don't send raw technical config
+      const hasStrategyPreset = intent.strategyPreset && intent.strategyPreset !== 'custom';
+      const technicalPayload = (!hasStrategyPreset && intent.technicalPreFilterEnabled && requiresTradingSetup)
         ? technicalFormStateToPayload(intent.technicalConfig, intent.venue, intent.venueType as 'orderbook' | 'swap')
         : null;
       const agent = await agentsApi.create(buildCreateAgentPayload({
@@ -393,6 +397,7 @@ function CreateAgentFlow({
         stopLossPct: intent.stopLossPct,
         stopLossCooldownSecs: intent.stopLossCooldownSecs,
         style: intent.style,
+        strategyPreset: intent.strategyPreset || undefined,
         openPositionEscalationToJudgePolicy: intent.openPositionEscalationToJudgePolicy,
         runtimePolicyOverrides: intent.runtimePolicyOverrides ?? undefined,
       }));

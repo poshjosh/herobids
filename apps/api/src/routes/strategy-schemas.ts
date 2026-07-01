@@ -117,7 +117,8 @@ const STRATEGY_PARAM_SCHEMAS: Record<string, {
       type: 'object',
       properties: {
         intervalMs: { type: 'integer', minimum: 60000, default: 3600000, description: 'Time between DCA buys in milliseconds (default: 1 hour)' },
-        amountPerBuy: { type: 'string', default: '100', description: 'Fixed amount per DCA buy as decimal string (e.g. "100" = $100 USD equivalent)' },
+        amountPerBuy: { type: 'string', default: '100', description: 'Buy amount as decimal string. When amountPerBuyMode is "fixed", this is a dollar amount (e.g. "100" = $100). When "percent_equity", this is a percentage of account equity (e.g. "5" = 5%).' },
+        amountPerBuyMode: { type: 'string', enum: ['fixed', 'percent_equity'], default: 'fixed', description: 'How to interpret amountPerBuy — as a fixed dollar amount or a percentage of account equity.' },
         maxTotalAllocation: { type: 'string', description: 'Maximum total allocation as decimal string. Stops DCA when reached.' },
       },
       additionalProperties: false,
@@ -125,8 +126,9 @@ const STRATEGY_PARAM_SCHEMAS: Record<string, {
     preset: {
       intervalMs: 3600000,
       amountPerBuy: '100',
+      amountPerBuyMode: 'fixed',
     },
-    description: 'DCA (Dollar-Cost Averaging) strategy — buys at fixed intervals regardless of price. No signal required. Good for long-term accumulation.',
+    description: 'DCA (Dollar-Cost Averaging) strategy — buys at fixed intervals regardless of price. Supports fixed-amount and percent-of-equity sizing. No signal required. Good for long-term accumulation.',
   },
 };
 

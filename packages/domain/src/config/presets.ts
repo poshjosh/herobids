@@ -131,6 +131,17 @@ export function agentStyleToPresetStyle(agentStyle: string): StyleKey {
 // Preset → agent config split
 // ---------------------------------------------------------------------------
 
+export const AGENT_TECHNICAL_STRATEGY_TYPES = [
+  'momentum',
+  'momentum-position',
+  'range',
+  'swing',
+  'scalper',
+  'contrarian',
+] as const;
+
+export type AgentTechnicalStrategyType = (typeof AGENT_TECHNICAL_STRATEGY_TYPES)[number];
+
 export interface AgentPresetMapping {
   technical: {
     indicators: Record<string, unknown>;
@@ -143,7 +154,8 @@ export interface AgentPresetMapping {
     maxPositionSizePct?: number;
   };
   execution: {
-    positionSize?: string;
+    /** Maps to UnifiedAgentConfigSchema.execution.fixedPositionSize */
+    fixedPositionSize?: string;
     positionSizeMode?: string;
   };
 }
@@ -155,15 +167,22 @@ export interface AgentPresetMapping {
  * The `mode` parameter is reserved for future use (llm vs hybrid selection)
  * but does not currently alter the output.
  *
- * NOTE: DCA presets (strategy.type === 'dca') have no candle/signal
- * parameters and will receive meaningless defaults. This function is
- * intended for technical strategy presets only (momentum, range, swing,
- * scalper, contrarian). Use bots for DCA automation.
+ * DCA presets (strategy.type === 'dca') are rejected with an error since
+ * DCA is bot-only for this preset system. Only technical strategy presets
+ * (momentum, range, swing, scalper, contrarian) are supported for agents.
  */
 export function applyPresetToAgent(
   preset: PresetEntry,
   _mode: 'llm' | 'hybrid',
 ): AgentPresetMapping {
+  const type = preset.strategy.type;
+  if (type === 'dca') {
+    throw new Error(
+      `Preset type "dca" is not supported for agents. ` +
+      `DCA is a bot-only strategy. Supported agent strategies: ${AGENT_TECHNICAL_STRATEGY_TYPES.join(', ')}.`,
+    );
+  }
+
   const p = preset.strategy.params as Record<string, unknown>;
   return {
     technical: {
@@ -184,7 +203,7 @@ export function applyPresetToAgent(
       maxPositionSizePct: preset.risk?.maxPositionSizePct,
     },
     execution: {
-      positionSize:
+      fixedPositionSize:
         typeof p['positionSize'] === 'string' ? (p['positionSize'] as string) : undefined,
       positionSizeMode:
         typeof p['positionSizeMode'] === 'string'

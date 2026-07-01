@@ -252,7 +252,8 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         ?.find(c => c.grantStatus === 'active' && c.connectionStatus === 'active');
       const connectionVenue = activeConnection?.provider ?? '';
       const connectionVenueType = (venueTypeMap[connectionVenue] ?? '') as '' | 'orderbook' | 'swap';
-      const technicalPayload = form.technicalPreFilterEnabled
+      const hasStrategyPreset = form.strategyPreset && form.strategyPreset !== 'custom';
+      const technicalPayload = (!hasStrategyPreset && form.technicalPreFilterEnabled)
         ? technicalFormStateToPayload(form.technicalConfig, connectionVenue || undefined, connectionVenueType || undefined)
         : null;
       return agentsApi.update(agentId, buildUpdateAgentPayload({
@@ -261,6 +262,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         capabilityMode: form.capabilityMode,
         technicalPreFilterEnabled: form.technicalPreFilterEnabled,
         technical: technicalPayload,
+        strategyPreset: hasStrategyPreset ? form.strategyPreset : undefined,
         skillIds,
         hasBotManagementSkill,
         executionMode: form.executionMode,
