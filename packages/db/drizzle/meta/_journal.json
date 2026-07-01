@@ -204,6 +204,13 @@
       "when": 1782760628915,
       "tag": "0028_burly_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1782800000000,
+      "tag": "0029_migrate_blueprint_config_pct",
+      "breakpoints": true
     }
   ]
 }
