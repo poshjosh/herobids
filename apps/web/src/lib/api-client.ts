@@ -572,6 +572,15 @@ export interface BotSummary {
   createdAt: string;
 }
 
+export interface PresetFromApi {
+  key: string;
+  name: string;
+  description: string;
+  strategy: { type: string; decisionMode: 'mechanical' | 'llm' | 'hybrid'; params: Record<string, unknown> };
+  risk?: { maxPositionSizePct?: number };
+  execution?: { mode: 'paper' | 'shadow' | 'live' };
+}
+
 export const bots = {
   list: () => request<{ bots: Bot[] }>('/bots'),
   get: (id: string) => request<Bot>(`/bots/${id}`),
@@ -591,6 +600,11 @@ export const bots = {
     request<{ status: string; botId: string }>(`/bots/${id}/start`, { method: 'POST' }),
   delete: (id: string) =>
     request<void>(`/bots/${id}`, { method: 'DELETE' }),
+  /** Fetch strategy presets for a given style tier */
+  getPresets: (style?: string) =>
+    request<{ presets: PresetFromApi[] }>(
+      `/blueprints/presets${style ? `?style=${encodeURIComponent(style)}` : ''}`,
+    ),
 };
 
 // ---------------------------------------------------------------------------
