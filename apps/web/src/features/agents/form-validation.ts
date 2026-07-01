@@ -1,5 +1,4 @@
 import type { CapabilityMode } from './CapabilitySelector.js';
-import { STYLE_CONFIG, type AgentStyleValue } from './style-mapping.js';
 
 export interface ValidationResult {
   valid: boolean;
@@ -66,12 +65,7 @@ export function validateCreateAgentForm(
       errors.tickIntervalMins = 'Tick interval must be at least 1 minute.';
     } else {
       const tickIntervalMs = tickNum * 60_000;
-      const effectiveStyle: AgentStyleValue =
-        intent.style === 'careful' || intent.style === 'balanced' || intent.style === 'bold'
-          ? intent.style
-          : 'balanced';
-      const styleMaxHoldMs = STYLE_CONFIG[effectiveStyle].maxHoldDurationMs;
-      const maxHoldMs = intent.runtimePolicyOverrides?.maxHoldDurationMs ?? styleMaxHoldMs;
+      const maxHoldMs = intent.runtimePolicyOverrides?.maxHoldDurationMs;
       if (maxHoldMs != null && maxHoldMs !== 0 && maxHoldMs < tickIntervalMs) {
         const maxHoldMins = Math.round(maxHoldMs / 60_000);
         errors.tickIntervalMins = `Tick interval (${tickNum} min) exceeds max hold duration (${maxHoldMins} min). Reduce tick interval or increase Max Hold Duration in Advanced Settings.`;

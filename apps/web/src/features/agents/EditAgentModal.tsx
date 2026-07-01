@@ -466,6 +466,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 onChange={(overrides) => {
                   const hasManualMaxHoldOverride = Object.prototype.hasOwnProperty.call(overrides ?? {}, 'maxHoldDurationMs');
                   maxHoldDurationManuallySetRef.current = hasManualMaxHoldOverride;
+                  if (hasManualMaxHoldOverride) {
+                    clearFieldError('tickIntervalMins');
+                  }
                   setRuntimePolicyOverrides(
                     hasManualMaxHoldOverride
                       ? overrides

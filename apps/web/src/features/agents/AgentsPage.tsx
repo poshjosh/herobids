@@ -455,8 +455,7 @@ function CreateAgentFlow({
     const tickNum = Number(intent.tickIntervalMins);
     if (!Number.isFinite(tickNum) || tickNum < 1 || !Number.isInteger(tickNum)) return false;
     const tickMs = tickNum * 60_000;
-    const styleMaxHoldMs = resolveStyleDefaults(intent.style).maxHoldDurationMs;
-    const maxHoldMs = intent.runtimePolicyOverrides?.maxHoldDurationMs ?? styleMaxHoldMs;
+    const maxHoldMs = intent.runtimePolicyOverrides?.maxHoldDurationMs;
     return maxHoldMs != null && maxHoldMs !== 0 && maxHoldMs < tickMs;
   })();
 
@@ -612,6 +611,9 @@ function CreateAgentFlow({
                 onChange={(overrides) => {
                   const hasManualMaxHoldOverride = Object.prototype.hasOwnProperty.call(overrides ?? {}, 'maxHoldDurationMs');
                   maxHoldDurationManuallySetRef.current = hasManualMaxHoldOverride;
+                  if (hasManualMaxHoldOverride) {
+                    clearFieldError('tickIntervalMins');
+                  }
                   setIntent((state) => ({
                     ...state,
                     runtimePolicyOverrides: hasManualMaxHoldOverride
