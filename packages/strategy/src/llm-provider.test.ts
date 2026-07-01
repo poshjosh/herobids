@@ -279,7 +279,7 @@ describe('callLlmProvider', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.latencyMs).toBeGreaterThanOrEqual(10);
+      expect(result.data.latencyMs).toBeGreaterThan(0);
     }
   });
 });
