@@ -1,6 +1,6 @@
 /**
  * Journey 8: Mission Control reflects an enabled capability and opens the
- * agent-scoped capability page from the summary card.
+ * agent-scoped capability page from the agent detail page.
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -57,9 +57,18 @@ test.describe('Journey 8: Mission Control reflects enabled capability', () => {
 
     await page.goto('/mission-control');
     await expect(page.getByRole('heading', { name: /Mission Control/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByRole('button', { name: /Open trading capability/i })).toBeVisible({ timeout: 5_000 });
 
-    await page.getByRole('button', { name: /Open trading capability/i }).click();
+    // The summary card now navigates to agent detail on click (no explicit
+    // "Open trading capability" button — capability config moved to detail page).
+    await page.getByText('Trading agent').click();
+    await expect(page).toHaveURL(new RegExp(`/agents/${agentId}$`), { timeout: 5_000 });
+
+    // Open the capabilities section on the detail page and click the button there.
+    await page.getByText(/Capabilities/i).click();
+    const configureBtn = page.getByRole('region', { name: /Capability readiness/i }).getByRole('button');
+    await expect(configureBtn).toBeVisible({ timeout: 5_000 });
+    await configureBtn.click();
+
     await expect(page).toHaveURL(new RegExp(`/agents/${agentId}/capabilities/trading$`));
     await expect(page.getByRole('heading', { name: /Trading capability/i })).toBeVisible({ timeout: 5_000 });
     const card = readinessCard(page);

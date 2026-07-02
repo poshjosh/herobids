@@ -63,12 +63,12 @@ Update the Status column and add Notes as you go. Keep this file up to date when
 |----|-----------|-------|----------|--------|-------|
 | MC-01 | Summary metrics render | Open Mission Control | Shows agent-state metric cards for Active, Paused, Unhealthy, and Stopped | ✅ | Shows Active 0/1, Paused 0, Unhealthy 0, Stopped 1 |
 | MC-02 | Header CTA renders | Open Mission Control | "Create agent" button shown in the page header | ✅ | "Create AI agent" button shown |
-| MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, capability readiness, and actions | ✅ | Card shows stopped status, objective text, capability readiness, "Open AI agent" action; execution mode not shown (non-trading agent) |
+| MC-03 | Agent overview cards | Open Mission Control with agents | One card per agent under "Your agents"; shows status, execution mode, objective, and capability readiness; clicking the card navigates to the agent detail page | ✅ | Card shows stopped status, objective text, capability readiness; execution mode not shown (non-trading agent); card is clickable |
 | MC-04 | Recent activity feed | Open Mission Control | "Recent Activity" section on right; empty state if no events | ✅ | Shows tick events with relative timestamps; earlier showed "No activity yet" on fresh account |
 | MC-05 | Empty state — no agents | Open Mission Control with fresh account | "No agents yet" empty state with "Create agent" CTA; metrics show zeros | ✅ | "No AI agents yet" empty state; all metrics 0 on fresh account |
 | MC-06 | "Create agent" button navigates | Click "Create agent" | Navigates to `/agents?create=1` or opens the create flow from the agents page | ✅ | Navigated to /agents?create=1 with create form open |
-| MC-07 | Clicking an agent action navigates | Click "Open agent" on an agent card | Navigates to `/agents/:id` | ✅ | "Open AI agent" navigated to /agents/49d6f6e0-... |
-| MC-08 | Capability CTA opens agent capability page | Click "Open trading" or "Configure trading" on an agent card | Navigates to `/agents/:id/capabilities/trading` | — | "Configure trading capability" CTA visible on agent card |
+| MC-07 | Clicking an agent card navigates | Click anywhere on an agent card | Navigates to `/agents/:id` | ✅ | Card click navigated to /agents/49d6f6e0-... |
+| MC-08 | Capability CTA opens agent capability page | Open agent detail, expand Capabilities section, click capability button | Navigates to `/agents/:id/capabilities/trading` | — | Capability CTA moved from summary card to agent detail page |
 | MC-09 | Data staleness | Leave page for >30 s; return | Data refetches and reflects current agent state | — | |
 | MC-10 | Loading state | Open page on slow connection (throttle in DevTools) | Loading skeleton shown while fetching | — | |
 | MC-11 | API error state | Kill API; open page | Error state shown with retry; no crash | — | |
