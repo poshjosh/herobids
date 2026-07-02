@@ -223,6 +223,9 @@ run_tier "API smoke (runtime-policy)" \
 run_tier "API smoke (agent-evaluation)" \
   bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/agent-evaluation-test.sh"
 
+run_tier "API smoke (strategy-presets)" \
+  bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/test-presets.sh"
+
 log "Stopping API + worker …"
 docker compose -f "${ROOT}/docker-compose.yaml" stop api worker 2>/dev/null || true
 docker compose -f "${ROOT}/docker-compose.yaml" rm -f api worker 2>/dev/null || true

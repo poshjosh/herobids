@@ -25,10 +25,10 @@ RUN echo "inject-workspace-packages=true" >> .npmrc && \
     pnpm --filter @herobids/api deploy --prod /deploy/api
     
 # ── runtime image ─────────────────────────────────────────────────────────────
-# WORKDIR mirrors apps/api depth so that the config loader resolves
-# ../../../config from dist/ → /app/config correctly.
 FROM node:22-alpine AS runtime
 WORKDIR /app/apps/api
+# Point the preset loader to the project root where config/ lives.
+ENV HEROBIDS_CONFIG_DIR=/app
 COPY --from=build /app/config /app/config
 COPY --from=deploy /deploy/api ./
 EXPOSE 3000
