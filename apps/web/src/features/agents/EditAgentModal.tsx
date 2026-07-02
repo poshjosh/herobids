@@ -262,7 +262,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         capabilityMode: form.capabilityMode,
         technicalPreFilterEnabled: form.technicalPreFilterEnabled,
         technical: technicalPayload,
-        strategyPreset: hasStrategyPreset ? form.strategyPreset : undefined,
+        strategyPreset: hasStrategyPreset
+          ? form.strategyPreset
+          : (initialData.strategyPreset ? null : undefined),
         skillIds,
         hasBotManagementSkill,
         executionMode: form.executionMode,

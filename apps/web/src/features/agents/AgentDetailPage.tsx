@@ -319,6 +319,9 @@ export function AgentDetailPage() {
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             <KV label={intl.formatMessage({ id: 'common.status' })} value={<StatusBadge status={agent.status} />} />
             {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
+            {agent.strategyPresetName && (
+              <KV label="Strategy" value={agent.strategyPresetName} />
+            )}
             <KV label={intl.formatMessage({ id: 'common.created' })} value={<RelativeTime timestamp={agent.createdAt} />} />
             <KV label={intl.formatMessage({ id: 'common.updated' })} value={<RelativeTime timestamp={agent.updatedAt} />} />
           </div>

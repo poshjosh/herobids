@@ -867,6 +867,8 @@ export interface Agent {
   technical: Record<string, unknown> | null;
   /** Style-based strategy preset key persisted in unifiedConfig.metadata, or null for custom/none. */
   strategyPreset: string | null;
+  /** Human-readable preset name (e.g. "Momentum — Day"), stored alongside the key in metadata. */
+  strategyPresetName: string | null;
   createdAt: string;
   updatedAt: string;
   activeSession?: { id: string; status: string; lastHeartbeatAt: string; startedAt: string } | null;

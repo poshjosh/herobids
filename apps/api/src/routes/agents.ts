@@ -183,22 +183,29 @@ const PauseAgentSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
-/** Extract the strategyPreset from unifiedConfig.metadata, if present. */
-function extractStrategyPreset(unifiedConfig: unknown): string | null {
+/** Extract preset fields from unifiedConfig.metadata, if present. */
+function extractPresetMeta(unifiedConfig: unknown): { strategyPreset: string | null; strategyPresetName: string | null } {
   const uc = unifiedConfig as Record<string, unknown> | null;
   const meta = uc?.['metadata'] as Record<string, unknown> | undefined;
-  const sp = meta?.['strategyPreset'];
-  return typeof sp === 'string' && sp.length > 0 ? sp : null;
+  const preset = meta?.['strategyPreset'];
+  const name = meta?.['strategyPresetName'];
+  return {
+    strategyPreset: typeof preset === 'string' && preset.length > 0 ? preset : null,
+    strategyPresetName: typeof name === 'string' && name.length > 0 ? name : null,
+  };
 }
 
 /** Build the extra response fields derived from unifiedConfig. */
 function enrichAgentResponse(agent: typeof agents.$inferSelect & { skillIds?: string[] }): {
   technical: unknown;
   strategyPreset: string | null;
+  strategyPresetName: string | null;
 } {
+  const { strategyPreset, strategyPresetName } = extractPresetMeta(agent.unifiedConfig);
   return {
     technical: (agent.unifiedConfig as Record<string, unknown> | null)?.['technical'] ?? null,
-    strategyPreset: extractStrategyPreset(agent.unifiedConfig),
+    strategyPreset,
+    strategyPresetName,
   };
 }
 
@@ -237,6 +244,7 @@ function resolveAgentStrategyPreset(params: {
     },
     metadata: {
       strategyPreset,
+      strategyPresetName: preset.name,
       strategyPresetStyle: presetStyle,
       strategyPresetSource: 'agent-style',
     },

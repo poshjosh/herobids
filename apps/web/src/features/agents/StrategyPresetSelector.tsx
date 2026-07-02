@@ -20,8 +20,6 @@ export type AgentStrategyPresetKey = (typeof AGENT_STRATEGY_PRESET_KEYS)[number]
 interface StrategyPresetSelectorProps {
   value: string;
   onChange: (key: string) => void;
-  /** Agent personality style — drives the displayed tier label (economy/standard/premium). */
-  style: string | null | undefined;
   /** Backend-provided presets for the resolved style tier. The single source of truth for
    *  preset identity, labels, and descriptions — no duplicated frontend constants. */
   presets: PresetFromApi[];
@@ -35,7 +33,7 @@ interface StrategyPresetSelectorProps {
  * not by duplicated frontend constants. "Custom" mode exposes the detailed
  * technical editor for manual overrides.
  */
-export function StrategyPresetSelector({ value, onChange, style, presets, loading }: StrategyPresetSelectorProps) {
+export function StrategyPresetSelector({ value, onChange, presets, loading }: StrategyPresetSelectorProps) {
   const cardStyle = (active: boolean): React.CSSProperties => ({
     flex: '1 1 140px',
     maxWidth: '200px',
@@ -48,8 +46,6 @@ export function StrategyPresetSelector({ value, onChange, style, presets, loadin
     transition: 'border-color 0.15s, background 0.15s',
   });
 
-  const styleLabel = style === 'careful' ? 'Economy' : style === 'bold' ? 'Premium' : 'Standard';
-
   // Only surface presets that are meaningful for agents (exclude DCA and any
   // future bot-only strategies). Backend remains the source of truth for the
   // preset content; this filter is purely about agent applicability.
@@ -60,10 +56,6 @@ export function StrategyPresetSelector({ value, onChange, style, presets, loadin
   return (
     <div>
       <FieldLabel>Strategy preset</FieldLabel>
-      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '4px 0 8px' }}>
-        Style tier <strong>{styleLabel}</strong> is derived from your agent style.
-        Technical parameters are scaled automatically.
-      </p>
       {loading ? (
         <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', padding: '8px 0' }}>
           Loading presets…

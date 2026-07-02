@@ -158,7 +158,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.stopLossPct ? { stopLossPct: parseFloat(input.stopLossPct) } : {}),
     ...(input.stopLossCooldownSecs ? { stopLossCooldownMs: parseCooldownMsOrNull(input.stopLossCooldownSecs) ?? undefined } : {}),
     ...(input.style ? { style: input.style } : {}),
-    ...(input.strategyPreset ? { strategyPreset: input.strategyPreset } : {}),
+    ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) ? { openPositionEscalationToJudgePolicy: normalizeEscalationPolicy(input.openPositionEscalationToJudgePolicy) } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
     ...(includeTechnical && input.technical ? { technical: input.technical } : {}),
@@ -229,7 +229,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     // Send technical: null to explicitly remove it when switching away from technical mode
     ...(includeTechnical ? { technical: input.technical } : { technical: null }),
     ...(input.style ? { style: input.style } : {}),
-    ...(input.strategyPreset ? { strategyPreset: input.strategyPreset } : {}),
+    ...(input.strategyPreset !== undefined ? { strategyPreset: input.strategyPreset } : {}),
     ...(input.runtimePolicyOverrides ? { runtimePolicyOverrides: input.runtimePolicyOverrides } : {}),
   };
 }

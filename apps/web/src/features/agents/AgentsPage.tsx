@@ -998,14 +998,17 @@ function CreateAgentFlow({
             )}
             {showIntelligence && <ReviewRow label={intl.formatMessage({ id: 'agents.create.skills' })} value={formatSkillSelection(selectedSkills, intl)} />}
             {requiresTradingSetup && intent.venue && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.filters.venue' })} value={intent.venue} />}
-            {intent.technicalPreFilterEnabled && (
+            {intent.strategyPreset && intent.strategyPreset !== 'custom' && (
+              <ReviewRow label="Strategy preset" value={intent.strategyPreset} />
+            )}
+            {!intent.strategyPreset && intent.technicalPreFilterEnabled && (
               <ReviewRow
                 label={intl.formatMessage({ id: 'agents.technical.scan.signalBias' })}
                 value={intl.formatMessage({ id: `agents.technical.scan.signalBias.${intent.technicalConfig.signalBias === 'trend-following' ? 'trendFollowing' : 'meanReverting'}` })}
               />
             )}
-            {intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
-            {intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
+            {!intent.strategyPreset && intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.candleInterval' })} value={`${intent.technicalConfig.candles.interval} / ${intent.technicalConfig.candles.limit}`} />}
+            {!intent.strategyPreset && intent.technicalPreFilterEnabled && <ReviewRow label={intl.formatMessage({ id: 'agents.technical.scan.interval' })} value={intent.technicalConfig.scanIntervalMins} />}
             <ReviewRow
               label={intl.formatMessage({ id: 'agents.review.capabilitySetup' })}
               value={requiresTradingSetup

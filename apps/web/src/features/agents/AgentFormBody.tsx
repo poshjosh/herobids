@@ -392,7 +392,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 <StrategyPresetSelector
                   value={props.value.strategyPreset}
                   onChange={(key) => props.onChange({ strategyPreset: key })}
-                  style={props.agentStyle ?? undefined}
                   presets={presetsQuery.data?.presets ?? []}
                   loading={presetsQuery.isLoading}
                 />
