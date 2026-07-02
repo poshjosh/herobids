@@ -124,7 +124,7 @@ export function AgentsPage() {
       {query.isSuccess && items.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {items.map((agent) => (
-            <AgentSummaryCard key={agent.id} agent={agent} onOpen={() => navigate(`/agents/${agent.id}`)} />
+            <AgentSummaryCard key={agent.id} agent={agent} />
           ))}
         </div>
       )}

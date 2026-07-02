@@ -2,16 +2,15 @@ import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, skills as skillsApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
-import { Card, Button, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
+import { Card, StatusBadge, RelativeTime, KV } from '../../lib/ui.js';
 import { extractAgentObjective, formatExecutionMode, formatCapabilityFamily, formatCapabilityState, formatObjectivePreview, hasCapabilityFamily, resolveSelectedSkills } from './agent-display.js';
 
 interface AgentSummaryCardProps {
   agent: Agent;
   onOpen?: () => void;
-  onOpenCapability?: (family: string) => void;
 }
 
-export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSummaryCardProps) {
+export function AgentSummaryCard({ agent, onOpen }: AgentSummaryCardProps) {
   const navigate = useNavigate();
   const intl = useIntl();
   const objective = extractAgentObjective(agent.prompt);
@@ -29,17 +28,9 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
 
   const primaryCapability = readinessQuery.data;
   const openAgent = onOpen ?? (() => navigate(`/agents/${agent.id}`));
-  const openCapability = (family: string) => {
-    if (onOpenCapability) {
-      onOpenCapability(family);
-      return;
-    }
-
-    navigate(`/agents/${agent.id}/capabilities/${family}`);
-  };
 
   return (
-    <Card style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: '14px' }} onClick={openAgent}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
@@ -116,19 +107,6 @@ export function AgentSummaryCard({ agent, onOpen, onOpenCapability }: AgentSumma
         {hasTradingCapability && <KV label={intl.formatMessage({ id: 'agents.executionMode.label' })} value={formatExecutionMode(agent.executionMode, intl)} />}
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-        <Button variant="secondary" onClick={openAgent}>{intl.formatMessage({ id: 'agents.summary.openAgent' })}</Button>
-        {primaryCapability && (
-          <Button
-            variant={primaryCapability.effectiveReady ? 'secondary' : 'primary'}
-            onClick={() => openCapability(primaryCapability.family)}
-          >
-            {primaryCapability.effectiveReady
-              ? intl.formatMessage({ id: 'agents.summary.openCapability' }, { capability: formatCapabilityFamily(primaryCapability.family, intl) })
-              : intl.formatMessage({ id: 'agents.summary.configureCapability' }, { capability: formatCapabilityFamily(primaryCapability.family, intl) })}
-          </Button>
-        )}
-      </div>
     </Card>
   );
 }

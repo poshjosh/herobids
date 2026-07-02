@@ -400,7 +400,7 @@ export function AgentEvaluations({ agentId }: { agentId: string }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
-  const [includeNarrative, setIncludeNarrative] = useState(false);
+  const [includeNarrative, setIncludeNarrative] = useState(true);
 
   // ── List query ─────────────────────────────────────────────────────────
   const listQuery = useQuery({
