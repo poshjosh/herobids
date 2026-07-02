@@ -7,6 +7,7 @@ import {
   PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState,
   Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle,
 } from '../../lib/ui.js';
+import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 
 const STYLE_OPTIONS = [
   { value: 'economy', label: 'Economy', description: 'Fewer indicators, lower confidence thresholds' },
@@ -231,48 +232,13 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         </div>
 
         {/* Strategy preset */}
-        <div>
-          <FieldLabel>Strategy</FieldLabel>
-          {presetsQuery.isLoading && <LoadingRows count={3} />}
-          {presetsQuery.isError && (
-            <ErrorState message={(presetsQuery.error as Error).message} onRetry={() => void presetsQuery.refetch()} />
-          )}
-          {presetsQuery.isSuccess && fetchedPresets.length === 0 && (
-            <div style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No presets available for this style.</div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {fetchedPresets.map((p) => (
-              <label
-                key={p.key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '10px',
-                  padding: '10px 12px',
-                  border: `1px solid ${form.strategyPreset === p.key ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  background: form.strategyPreset === p.key ? 'var(--color-accent-subtle, rgba(99,102,241,0.08))' : 'transparent',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="strategyPreset"
-                  value={p.key}
-                  checked={form.strategyPreset === p.key}
-                  onChange={() => setForm((s) => ({ ...s, strategyPreset: p.key }))}
-                  style={{ marginTop: '2px', flexShrink: 0 }}
-                />
-                <div>
-                  <div style={{ fontWeight: '500', fontSize: '14px' }}>{p.name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                    {p.description}
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
+        <StrategyPresetSelector
+          value={form.strategyPreset}
+          onChange={(key) => setForm((s) => ({ ...s, strategyPreset: key }))}
+          presets={fetchedPresets}
+          loading={presetsQuery.isLoading}
+          showCustom={false}
+        />
 
         {/* Execution mode */}
         <div>

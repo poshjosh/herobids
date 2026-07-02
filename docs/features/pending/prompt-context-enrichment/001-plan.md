@@ -23,6 +23,9 @@ herobids hybrid/tick decision flow.
 ### Both
 - Make all new knobs configurable via `AgentRuntimeConfigSchema` (operator config)
 - Fix the existing hardcoded `slice(-10)` judge history limit
+- Surface a **chronological activity timeline** that interleaves user messages, agent memory
+  writes, and agent responses into one ordered stream, giving the agent a narrative causal
+  view of recent events without jumping between separate sections
 
 ---
 
@@ -55,7 +58,20 @@ promptEnrichment: z.object({
   wakeEmphasis: z.object({
     enabled: z.boolean().default(true),
   }).default({}),
+  activityTimeline: z.object({
+    enabled: z.boolean().default(true),
+    /**
+     * Max events shown in the timeline. Older events are dropped.
+     * Events are ordered oldest → newest so the most recent event is at the bottom.
+     */
+    maxEvents: z.number().int().min(3).max(30).default(10),
+  }).default({}),
 }).default({}),
+
+> **Event types** included in the timeline:
+> - `[USER_MSG]` — messages sent by the creator/user via conversation
+> - `[AGNT_MEM]` — agent memory writes (`save_memory` / `delete_memory` tool calls)
+> - `[AGNT_RES]` — final judge responses (no-tool-call assistant turns)
 ```
 
 Add corresponding defaults to `config/default.yaml` under `agentRuntime.promptEnrichment`.
@@ -310,6 +326,97 @@ Add to `RUNTIME_CONTEXT_PROVIDERS`:
 
 ---
 
+### Phase 7 — Chronological activity timeline
+
+**Files:** `apps/worker/src/agent.ts`, `apps/worker/src/runtime-composition.ts`
+
+The goal is a single chronologically-ordered stream that interleaves user messages, agent
+memory writes, and judge responses. The agent gets a narrative view of recent events
+without needing to cross-reference separate context sections.
+
+Example rendered output:
+```
+## Activity Timeline
+17:01 [AGNT_MEM] regime: neutral for WIF
+17:02 [AGNT_RES] Skipped BONK — volume below threshold. Exited JUP at $0.83 (+4.1%).
+17:33 [AGNT_MEM] sentiment: bullish signal for RAY
+18:01 [AGNT_RES] Opened WIF long at $3.01. Regime pass. Passing on RAY (low ADX).
+18:04 [USER_MSG] Revisit the earlier direction we agreed on.
+```
+
+**Relationship to other sections**: the timeline is a *summary* view — it does not
+replace `## Agent Memory` (which shows full current memory state) or `## Recent Agent
+Decisions` in the hybrid prompt. They are complementary: the timeline gives narrative
+causality; the typed sections give queryable detail.
+
+#### 7a — Event type
+
+Add a discriminated union to `runtime-composition.ts`:
+
+```typescript
+export type ActivityTimelineEvent =
+  | { kind: 'user_msg';  text: string; timestamp: number }
+  | { kind: 'agnt_mem';  key: string; value: string; timestamp: number }
+  | { kind: 'agnt_res';  text: string; timestamp: number };
+```
+
+Add `activityTimeline: ActivityTimelineEvent[]` to `RuntimeSessionMetrics`.
+
+#### 7b — Capture events
+
+Three capture points in `agent.ts`:
+
+1. **User messages** — when a conversation message with `role: 'user'` arrives at tick
+   start, push `{ kind: 'user_msg', text, timestamp: Date.now() }` before processing.
+2. **Memory writes** — after a successful `save_memory` or `delete_memory` tool call
+   resolves, push `{ kind: 'agnt_mem', key, value, timestamp: Date.now() }`.
+3. **Judge responses** — after the no-tool-call assistant turn is confirmed (the same
+   point `judgeResponseHistory` is updated in Phase 3), push
+   `{ kind: 'agnt_res', text: assistantResponse, timestamp: Date.now() }`.
+
+After each push, trim the buffer:
+```typescript
+while (state.metrics.activityTimeline.length > agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents) {
+  state.metrics.activityTimeline.shift();
+}
+```
+
+#### 7c — Dynamic context provider
+
+Add to `RUNTIME_CONTEXT_PROVIDERS`:
+
+```typescript
+{
+  id: 'activity-timeline',
+  costTier: 'cheap',
+  section: 'dynamic',
+  requiredFamilies: [],
+  trimOrder: 2,
+  preserveWhenTrimmed: false,
+  build: (state) => {
+    const events = state.metrics.activityTimeline;
+    if (!events || events.length === 0) return null;
+    const lines = events.map((e) => {
+      const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
+      if (e.kind === 'user_msg')  return `${ts} [USER_MSG] ${e.text}`;
+      if (e.kind === 'agnt_mem')  return `${ts} [AGNT_MEM] ${e.key}: ${e.value}`;
+      /* agnt_res */               return `${ts} [AGNT_RES] ${e.text}`;
+    });
+    return {
+      id: 'activityTimeline',
+      title: 'Activity Timeline',
+      provider: 'activity-timeline',
+      content: lines.join('\n'),
+    };
+  },
+},
+```
+
+`trimOrder: 2` and `preserveWhenTrimmed: false` means this section is trimmed before
+wake-trigger and queued-signals providers, which carry higher priority context.
+
+---
+
 ### Phase 6 — Wake trigger emphasis
 
 **Files:** `apps/worker/src/runtime-composition.ts`
@@ -343,8 +450,8 @@ build: (state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy) => Runt
 | `packages/domain/src/config/schema.ts` | Add `promptEnrichment` to `AgentRuntimeConfigSchema` |
 | `packages/domain/src/config/schema.test.ts` | Schema parse tests |
 | `config/default.yaml` | Add `agentRuntime.promptEnrichment` defaults |
-| `apps/worker/src/runtime-composition.ts` | New context providers, new metrics fields, `recordAgentMemory` helper |
-| `apps/worker/src/agent.ts` | Load memory at tick start, judge response ring buffer, queued signal buffer, fix `slice(-10)` hardcode |
+| `apps/worker/src/runtime-composition.ts` | New context providers, new metrics fields, `recordAgentMemory` helper, `ActivityTimelineEvent` type, `activityTimeline` in metrics, `activity-timeline` provider |
+| `apps/worker/src/agent.ts` | Load memory at tick start, judge response ring buffer, queued signal buffer, fix `slice(-10)` hardcode, capture timeline events (user messages, memory writes, judge responses) |
 | `apps/worker/src/hybrid-agent-evaluator.ts` | Extend `HybridEvaluatorInput` with memory + judge responses |
 | `apps/worker/src/hybrid-agent-prompt.ts` | Render `## Agent Memory` and `## Recent Agent Decisions` sections |
 
@@ -392,6 +499,19 @@ build: (state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy) => Runt
 - [ ] Append `→ Prioritize...` to wake provider content when `wakeEmphasis.enabled`
 - [ ] Policy threading into `build` function signature (or equivalent)
 - [ ] Unit test: emphasis line present/absent based on policy flag
+
+### Phase 7 — Activity timeline
+- [ ] `ActivityTimelineEvent` discriminated union in `runtime-composition.ts`
+- [ ] `activityTimeline: ActivityTimelineEvent[]` in `RuntimeSessionMetrics`
+- [ ] `activityTimeline` knob in `AgentRuntimeConfigSchema` and `config/default.yaml`
+- [ ] Capture user messages at tick start in `agent.ts`
+- [ ] Capture memory writes after `save_memory` / `delete_memory` resolves in `agent.ts`
+- [ ] Capture judge responses after no-tool-call turn in `agent.ts`
+- [ ] Trim buffer to `maxEvents` after each push
+- [ ] `activity-timeline` dynamic context provider in `runtime-composition.ts`
+- [ ] Unit test: events appear in timestamp order (oldest → newest)
+- [ ] Unit test: buffer trims to `maxEvents`; oldest event is dropped
+- [ ] Unit test: provider returns `null` when timeline is empty
 
 ### Final
 - [ ] `pnpm lint` passes

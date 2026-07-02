@@ -6,10 +6,28 @@ import { bots as botsApi, type Skill } from '../../lib/api-client.js';
 import type { AgentFormState } from './agent-form-state.js';
 import { SkillPicker } from './SkillPicker.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
-import { StrategyPresetSelector } from './StrategyPresetSelector.js';
+import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
 import { AgentControlsSection } from './AgentControlsSection.js';
 import { validateCreateAgentForm, type ValidationConstraints } from './form-validation.js';
+
+// ---------------------------------------------------------------------------
+// ADVANCED_FIELD_TAB — maps validated field names to Advanced Settings tab index
+// ---------------------------------------------------------------------------
+
+/**
+ * Strategy preset keys that are valid for agents.
+ * DCA is intentionally excluded — it is a bot-only strategy and the API
+ * rejects it for agent preset application (preset_not_supported_for_agent).
+ */
+const AGENT_STRATEGY_PRESET_KEYS = [
+  'momentum',
+  'momentum-position',
+  'range',
+  'swing',
+  'scalper',
+  'contrarian',
+] as const;
 
 // ---------------------------------------------------------------------------
 // ADVANCED_FIELD_TAB — maps validated field names to Advanced Settings tab index
@@ -120,6 +138,11 @@ export function AgentFormBody(props: AgentFormBodyProps) {
     enabled: props.value.technicalPreFilterEnabled,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Filter to agent-compatible presets (excludes DCA and any future bot-only strategies)
+  const agentPresets = (presetsQuery.data?.presets ?? []).filter((p) =>
+    (AGENT_STRATEGY_PRESET_KEYS as readonly string[]).includes(p.key),
+  );
 
   // ---- internal helpers ----
 
@@ -392,7 +415,7 @@ export function AgentFormBody(props: AgentFormBodyProps) {
                 <StrategyPresetSelector
                   value={props.value.strategyPreset}
                   onChange={(key) => props.onChange({ strategyPreset: key })}
-                  presets={presetsQuery.data?.presets ?? []}
+                  presets={agentPresets}
                   loading={presetsQuery.isLoading}
                 />
 
