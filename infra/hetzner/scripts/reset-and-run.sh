@@ -157,8 +157,24 @@ echo "  4. Create security-auditor agent"
 echo ""
 echo "ALL data on the server will be lost."
 echo ""
-read -rp "Are you sure? Type 'reset-and-run' to confirm: " CONFIRM
+
+# Prompt 1 — acknowledge you understand what this does
+read -rp "Are you sure? Type 'reset-and-run' to continue: " CONFIRM
 if [[ "${CONFIRM}" != "reset-and-run" ]]; then
+  echo "Aborted."
+  exit 0
+fi
+
+# Prompt 2 — simple confirmation
+read -rp "This will destroy all data. Continue? [y/N] " CONFIRM
+if [[ "${CONFIRM}" != "y" && "${CONFIRM}" != "Y" ]]; then
+  echo "Aborted."
+  exit 0
+fi
+
+# Prompt 3 — explicit production deletion acknowledgement
+read -rp "Type 'I agree to delete production' to proceed: " CONFIRM
+if [[ "${CONFIRM}" != "I agree to delete production" ]]; then
   echo "Aborted."
   exit 0
 fi
