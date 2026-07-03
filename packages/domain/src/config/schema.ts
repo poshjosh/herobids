@@ -892,6 +892,31 @@ export const AgentRuntimeConfigSchema = z.object({
     maxTrackedDexTargets: z.number().int().min(1).default(3),
     maxRefreshedDexTargetsPerTick: z.number().int().min(1).default(2),
   }).default({}),
+  promptStyle: z.enum(['classic', 'enriched']).default('enriched'),
+  promptEnrichment: z.object({
+    memory: z.object({
+      enabled: z.boolean().default(true),
+      maxInlineKeys: z.number().int().min(1).max(50).default(12),
+    }).default({}),
+    judgeHistory: z.object({
+      hybridMaxResponses: z.number().int().min(0).max(10).default(3),
+      tickMaxDisplayed: z.number().int().min(1).max(30).default(10),
+    }).default({}),
+    configReference: z.object({
+      enabled: z.boolean().default(true),
+    }).default({}),
+    queuedSignals: z.object({
+      enabled: z.boolean().default(true),
+      max: z.number().int().min(1).max(10).default(5),
+    }).default({}),
+    wakeEmphasis: z.object({
+      enabled: z.boolean().default(true),
+    }).default({}),
+    activityTimeline: z.object({
+      enabled: z.boolean().default(true),
+      maxEvents: z.number().int().min(3).max(30).default(10),
+    }).default({}),
+  }).default({}),
   contextDiff: z.object({
     fullContextEveryTicks: z.number().int().min(1).default(10),
     maxDiffTokens: z.number().int().min(1).default(200),

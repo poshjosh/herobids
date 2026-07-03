@@ -117,6 +117,17 @@ export interface RuntimePerformanceInputs {
   peakEquityUsd: number | null;
 }
 
+export interface RuntimeQueuedWakeSignal {
+  source: string;
+  reason: string;
+  receivedAt: number;
+}
+
+export type ActivityTimelineEvent =
+  | { kind: 'USER'; text: string; timestamp: number }
+  | { kind: 'MEMORY'; key: string; value: string; timestamp: number }
+  | { kind: 'DECISION'; text: string; timestamp: number };
+
 export interface RuntimeSessionMetrics {
   decisionsSubmitted: number;
   decisionsAccepted: number;
@@ -141,6 +152,12 @@ export interface RuntimeSessionMetrics {
   sessionCosts: RuntimeSessionCosts;
   performance: RuntimePerformanceInputs;
   lastTechnicalScan?: TechnicalScanState;
+  /** Agent memory snapshot loaded at tick start. Null until first load. */
+  agentMemory: Record<string, { value: unknown; updatedAt?: string }> | null;
+  /** Queued wake signals received between ticks. Drained at tick start. */
+  queuedWakeSignals: RuntimeQueuedWakeSignal[];
+  /** Chronological activity timeline interleaving user messages, memory writes, and decisions. */
+  activityTimeline: ActivityTimelineEvent[];
 }
 
 export interface RuntimeCompositionState {
@@ -162,6 +179,15 @@ export interface RuntimeContextBlock {
   provider: string;
 }
 
+export interface PromptEnrichmentPolicy {
+  memory: { enabled: boolean; maxInlineKeys: number };
+  judgeHistory: { hybridMaxResponses: number; tickMaxDisplayed: number };
+  configReference: { enabled: boolean };
+  queuedSignals: { enabled: boolean; max: number };
+  wakeEmphasis: { enabled: boolean };
+  activityTimeline: { enabled: boolean; maxEvents: number };
+}
+
 export interface RuntimeContextProvider {
   id: string;
   costTier: 'free' | 'cheap' | 'expensive';
@@ -169,7 +195,7 @@ export interface RuntimeContextProvider {
   requiredFamilies: string[];
   trimOrder: number;
   preserveWhenTrimmed?: boolean;
-  build: (state: RuntimeCompositionState) => RuntimeContextBlock | null;
+  build: (state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy) => RuntimeContextBlock | null;
 }
 
 const DEFAULT_SERVER_COST_PER_HOUR_USD = 0.02;
@@ -665,6 +691,81 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     },
   },
   {
+    id: 'agent-memory',
+    costTier: 'cheap',
+    section: 'static',
+    requiredFamilies: [],
+    trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state, policy) => {
+      if (!policy?.memory.enabled) return null;
+      const mem = state.metrics.agentMemory;
+      if (!mem || Object.keys(mem).length === 0) return null;
+
+      const entries = Object.entries(mem);
+      // Sort by updatedAt desc (most recent first), unset/parseable go last
+      entries.sort(([, a], [, b]) => {
+        const aTs = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+        const bTs = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+        if (Number.isFinite(aTs) && Number.isFinite(bTs)) return bTs - aTs;
+        if (Number.isFinite(aTs)) return -1;
+        if (Number.isFinite(bTs)) return 1;
+        return 0;
+      });
+
+      const maxInline = policy.memory.maxInlineKeys;
+      const inline = entries.slice(0, maxInline);
+      const overflow = entries.slice(maxInline);
+
+      const lines = inline.map(([key, entry]) => {
+        const ts = entry.updatedAt ? ` (${new Date(entry.updatedAt).toISOString().substring(0, 19)})` : '';
+        const val = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value);
+        return `**${key}**${ts}: ${val}`;
+      });
+
+      if (overflow.length > 0) {
+        const overflowKeys = overflow.map(([k]) => k).join(', ');
+        lines.push(`Older keys: ${overflowKeys} (+${overflow.length} more — use list_memory_keys tool)`);
+      }
+
+      return {
+        id: 'agentMemory',
+        title: 'Agent Memory',
+        provider: 'agent-memory',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
+    id: 'trading-config-reference',
+    costTier: 'cheap',
+    section: 'static',
+    requiredFamilies: ['trading'],
+    trimOrder: 99,
+    preserveWhenTrimmed: false,
+    build: (state, policy) => {
+      if (!policy?.configReference.enabled) return null;
+
+      const desc = state.runtimeDescriptor;
+      const lines: string[] = [];
+      lines.push(`Execution mode: ${desc.executionMode}`);
+      if (desc.guardrails.dailyLossLimit) lines.push(`Daily loss limit: ${desc.guardrails.dailyLossLimit}`);
+      if (desc.guardrails.maxBots !== undefined && desc.guardrails.maxBots !== null) lines.push(`Max bots: ${desc.guardrails.maxBots}`);
+      // Surface decision mode if available in the descriptor
+      const decisionMode = (desc as unknown as Record<string, unknown>)['decisionMode'];
+      if (typeof decisionMode === 'string' && decisionMode.length > 0) {
+        lines.push(`Decision mode: ${decisionMode}`);
+      }
+
+      return {
+        id: 'tradingConfigReference',
+        title: 'Trading Config Reference',
+        provider: 'trading-config-reference',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
     id: 'readiness-summary',
     costTier: 'free',
     section: 'dynamic',
@@ -710,18 +811,80 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     },
   },
   {
+    id: 'queued-signals',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 1,
+    preserveWhenTrimmed: true,
+    build: (state, policy) => {
+      if (!policy?.queuedSignals.enabled) return null;
+      const signals = state.metrics.queuedWakeSignals;
+      if (signals.length === 0) return null;
+
+      const max = policy.queuedSignals.max;
+      const shown = signals.slice(0, max);
+      const now = Date.now();
+
+      const lines = shown.map((s) => {
+        const ageSec = Math.round((now - s.receivedAt) / 1000);
+        const ageLabel = ageSec < 60 ? `${ageSec}s ago` : `${Math.round(ageSec / 60)}m ago`;
+        return `${s.source}: ${s.reason} (${ageLabel})`;
+      });
+
+      if (signals.length > max) {
+        lines.push(`+ ${signals.length - max} more queued signals not shown`);
+      }
+
+      return {
+        id: 'queuedSignals',
+        title: 'Queued Wake Signals',
+        provider: 'queued-signals',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
+    id: 'activity-timeline',
+    costTier: 'cheap',
+    section: 'dynamic',
+    requiredFamilies: [],
+    trimOrder: 2,
+    preserveWhenTrimmed: false,
+    build: (state, policy) => {
+      if (!policy?.activityTimeline.enabled) return null;
+      const events = state.metrics.activityTimeline;
+      if (!events || events.length === 0) return null;
+
+      const lines = events.map((e) => {
+        const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
+        if (e.kind === 'USER') return `${ts} [USER] ${e.text}`;
+        if (e.kind === 'MEMORY') return `${ts} [MEMORY] ${e.key}: ${e.value}`;
+        /* DECISION */ return `${ts} [DECISION] ${e.text}`;
+      });
+
+      return {
+        id: 'activityTimeline',
+        title: 'Activity Timeline',
+        provider: 'activity-timeline',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
     id: 'watch-trigger-context',
     costTier: 'free',
     section: 'dynamic',
     requiredFamilies: [],
     trimOrder: 1,
     preserveWhenTrimmed: true,
-    build: (state) => {
+    build: (state, policy) => {
       const wake = state.metrics.currentMarketWake;
       if (!wake || wake.source !== 'watch_threshold') {
         return null;
       }
       const ctx = wake.context as WatchThresholdWakeContext;
+      const emphasis = policy?.wakeEmphasis.enabled ? '\n→ Prioritize evaluating and acting on this signal.' : '';
       return {
         id: 'watchTriggerContext',
         title: 'Watch Trigger Context',
@@ -734,7 +897,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
           `Current price: ${ctx.currentPrice}`,
           `Stale: ${String(ctx.stale)}`,
           `Triggered at: ${ctx.triggeredAt}`,
-        ].join('\n'),
+        ].join('\n') + emphasis,
       };
     },
   },
@@ -745,7 +908,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     requiredFamilies: [],
     trimOrder: 1,
     preserveWhenTrimmed: true,
-    build: (state) => {
+    build: (state, policy) => {
       const wake = state.metrics.currentMarketWake;
       if (!wake || wake.source !== 'discovery_delta') {
         return null;
@@ -754,6 +917,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       const rank = ctx.rank !== undefined ? String(ctx.rank) : 'unavailable';
       const liquidity = fmtUsd(ctx.liquidityUsd);
       const volume = fmtUsd(ctx.volume24hUsd);
+      const emphasis = policy?.wakeEmphasis.enabled ? '\n→ Prioritize evaluating and acting on this signal.' : '';
       return {
         id: 'discoveryTriggerContext',
         title: 'Discovery Trigger Context',
@@ -766,7 +930,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
           `Liquidity: ${liquidity}`,
           `Volume 24h: ${volume}`,
           `Detected at: ${ctx.detectedAt}`,
-        ].join('\n'),
+        ].join('\n') + emphasis,
       };
     },
   },
@@ -777,12 +941,13 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     requiredFamilies: [],
     trimOrder: 1,
     preserveWhenTrimmed: true,
-    build: (state) => {
+    build: (state, policy) => {
       const wake = state.metrics.currentMarketWake;
       if (!wake || wake.source !== 'regime_change') {
         return null;
       }
       const ctx = wake.context as RegimeChangeWakeContext;
+      const emphasis = policy?.wakeEmphasis.enabled ? '\n→ Prioritize evaluating and acting on this signal.' : '';
       return {
         id: 'regimeChangeContext',
         title: 'Regime Change Context',
@@ -793,7 +958,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
           `Previous state: ${ctx.previousState}`,
           `Current state: ${ctx.currentState}`,
           `Changed at: ${ctx.changedAt}`,
-        ].join('\n'),
+        ].join('\n') + emphasis,
       };
     },
   },
@@ -992,11 +1157,11 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
   },
 ];
 
-function buildBlockList(state: RuntimeCompositionState, section: 'static' | 'dynamic'): Array<{ provider: RuntimeContextProvider; block: RuntimeContextBlock }> {
+function buildBlockList(state: RuntimeCompositionState, section: 'static' | 'dynamic', policy?: PromptEnrichmentPolicy): Array<{ provider: RuntimeContextProvider; block: RuntimeContextBlock }> {
   return RUNTIME_CONTEXT_PROVIDERS
     .filter((provider) => provider.section === section)
     .filter((provider) => provider.requiredFamilies.every((family) => Boolean(state.runtimeDescriptor.readinessByFamily[family] || state.runtimeDescriptor.grantedConnectionsByFamily[family])))
-    .map((provider) => ({ provider, block: provider.build(state) }))
+    .map((provider) => ({ provider, block: provider.build(state, policy) }))
     .filter((entry): entry is { provider: RuntimeContextProvider; block: RuntimeContextBlock } => entry.block !== null);
 }
 
@@ -1031,10 +1196,10 @@ function trimDynamicBlocks(
   return current.filter((block) => block.id !== 'venueIntelligence');
 }
 
-function buildContextSection(state: RuntimeCompositionState, section: 'static' | 'dynamic'): string {
+function buildContextSection(state: RuntimeCompositionState, section: 'static' | 'dynamic', policy?: PromptEnrichmentPolicy): string {
   const blocks = section === 'static'
-    ? buildBlockList(state, 'static').map(({ block }) => ({ ...block, content: trimText(block.content, state.runtimeDescriptor.budgets.maxContextBlockChars) }))
-    : trimDynamicBlocks(state, buildBlockList(state, 'dynamic'));
+    ? buildBlockList(state, 'static', policy).map(({ block }) => ({ ...block, content: trimText(block.content, state.runtimeDescriptor.budgets.maxContextBlockChars) }))
+    : trimDynamicBlocks(state, buildBlockList(state, 'dynamic', policy));
   return blocks.map((block) => `## ${block.title}\n${block.content}`).join('\n\n');
 }
 
@@ -1096,6 +1261,9 @@ export function createRuntimeCompositionState(
         netPnlUsd: null,
         peakEquityUsd: null,
       },
+      agentMemory: null,
+      queuedWakeSignals: [],
+      activityTimeline: [],
     },
   };
 }
@@ -1108,6 +1276,21 @@ export function updateRuntimeDescriptor(
     ...runtimeDescriptor,
     name: runtimeDescriptor.name ?? state.runtimeDescriptor.name ?? runtimeDescriptor.agentId,
   };
+}
+
+export function recordAgentMemory(
+  state: RuntimeCompositionState,
+  raw: Record<string, string>,
+): void {
+  const mem: Record<string, { value: unknown; updatedAt?: string }> = {};
+  for (const [key, rawVal] of Object.entries(raw)) {
+    try {
+      mem[key] = JSON.parse(rawVal) as { value: unknown; updatedAt?: string };
+    } catch {
+      mem[key] = { value: rawVal };
+    }
+  }
+  state.metrics.agentMemory = mem;
 }
 
 export function recordRuntimeEvent(state: RuntimeCompositionState, type: string, summary: string): void {
@@ -1560,10 +1743,10 @@ export function applyRuntimeMessage(
   return summary;
 }
 
-export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, toolGuidanceByName?: Record<string, string>): string {
+export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => skill.instructions).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
-  const staticContext = buildContextSection(state, 'static');
+  const staticContext = buildContextSection(state, 'static', policy);
   const tradingAgent = hasTradingCapability(state.runtimeDescriptor);
   const guardRailLines = [
     ...(tradingAgent
@@ -1606,12 +1789,12 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     .join('\n\n');
 }
 
-export function buildTickUserContext(state: RuntimeCompositionState, incomingMessages: Array<Record<string, unknown>>): string {
+export function buildTickUserContext(state: RuntimeCompositionState, incomingMessages: Array<Record<string, unknown>>, policy?: PromptEnrichmentPolicy): string {
   for (const message of incomingMessages) {
     applyRuntimeMessage(state, message);
   }
 
-  const dynamicContext = buildContextSection(state, 'dynamic');
+  const dynamicContext = buildContextSection(state, 'dynamic', policy);
   const progressSummary = computePerformanceSummary(state);
   const output = [dynamicContext, progressSummary].filter(Boolean).join('\n\n');
 

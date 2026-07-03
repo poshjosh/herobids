@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Prompt Context Enrichment** — Operator-configurable prompt enrichment system (`promptStyle: 'enriched'`) that injects additional context into agent LLM prompts:
+  - Auto-injected agent memory in both tick and hybrid evaluator prompts (configurable inline key limit)
+  - Judge response history displayed in hybrid evaluator prompts for decision continuity
+  - Trading config reference block (execution mode, risk limits) in tick prompts
+  - Queued wake signals surfaced between ticks
+  - Wake trigger emphasis instruction appended to watch/discovery/regime change contexts
+  - Chronological activity timeline interleaving user messages, memory writes, and judge decisions
+  - All knobs configurable via `agentRuntime.promptEnrichment.*` in operator config; `promptStyle: 'classic'` bypasses all enrichments for side-by-side regression testing
+  - Fixed hardcoded `slice(-10)` judge history limit → configurable `tickMaxDisplayed`
+
 - **LLM Token Optimization** — Three targeted changes to reduce LLM input/output token waste:
   - **Compact number formatting** (`fmtNum`/`fmtUsd`): K/M/B/T suffixes replace verbose `toLocaleString()`/`toFixed()` for USD values ≥10K in agent prompts (~30–40% token reduction in market-data sections).
   - **Output `maxLength` constraints**: `rationaleSummary` capped at 400 chars (schema-level); LLM `reasoning` field truncated to 80 chars with prompt instruction.

@@ -57,6 +57,12 @@ export interface HybridEvaluatorInput {
   state: RuntimeCompositionState;
   llmConfig: LlmProviderConfig;
   maxPositions: number;
+  /** Agent memory snapshot for hybrid prompt enrichment. */
+  agentMemory?: Record<string, { value: unknown; updatedAt?: string }> | null;
+  /** Max inline memory keys rendered in the hybrid prompt. */
+  maxInlineMemoryKeys?: number;
+  /** Recent judge responses (newest last) for context in the hybrid prompt. */
+  recentJudgeResponses?: string[];
   /** Publish a decision to the inbound stream for engine processing */
   submitDecision: (instrumentId: string, intent: string, sizeUsd?: number) => Promise<void>;
   logger: {
@@ -119,6 +125,9 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     portfolio: state.metrics.portfolio,
     openPositions: state.metrics.openPositions,
     maxPositions,
+    agentMemory: input.agentMemory,
+    maxInlineMemoryKeys: input.maxInlineMemoryKeys,
+    recentJudgeResponses: input.recentJudgeResponses,
   };
   const prompt = buildHybridPrompt(promptInput);
 

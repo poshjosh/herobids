@@ -426,6 +426,115 @@ describe('AgentRuntimePolicySchema', () => {
     expect(agentRuntimePolicy.wake.pollMs).toBe(2_000);
     expect(agentRuntimePolicy.wake.minIntervalMs).toBe(30_000);
   });
+
+  // ── promptStyle ─────────────────────────────────────────────────────────
+
+  it('promptStyle defaults to "enriched"', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.promptStyle).toBe('enriched');
+    }
+  });
+
+  it('promptStyle accepts "classic"', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      promptStyle: 'classic',
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.promptStyle).toBe('classic');
+    }
+  });
+
+  it('promptStyle rejects invalid values', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      promptStyle: 'legacy',
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // ── promptEnrichment ─────────────────────────────────────────────────────
+
+  it('promptEnrichment applies all defaults', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const pe = result.data.promptEnrichment;
+      expect(pe.memory.enabled).toBe(true);
+      expect(pe.memory.maxInlineKeys).toBe(12);
+      expect(pe.judgeHistory.hybridMaxResponses).toBe(3);
+      expect(pe.judgeHistory.tickMaxDisplayed).toBe(10);
+      expect(pe.configReference.enabled).toBe(true);
+      expect(pe.queuedSignals.enabled).toBe(true);
+      expect(pe.queuedSignals.max).toBe(5);
+      expect(pe.wakeEmphasis.enabled).toBe(true);
+      expect(pe.activityTimeline.enabled).toBe(true);
+      expect(pe.activityTimeline.maxEvents).toBe(10);
+    }
+  });
+
+  it('promptEnrichment memory maxInlineKeys rejects 0 (min 1)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { memory: { maxInlineKeys: 0 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment memory maxInlineKeys rejects 51 (max 50)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { memory: { maxInlineKeys: 51 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment judgeHistory tickMaxDisplayed rejects 0 (min 1)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { judgeHistory: { tickMaxDisplayed: 0 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment judgeHistory tickMaxDisplayed rejects 31 (max 30)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { judgeHistory: { tickMaxDisplayed: 31 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment queuedSignals max rejects 0 (min 1)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { queuedSignals: { max: 0 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment activityTimeline maxEvents rejects 2 (min 3)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { activityTimeline: { maxEvents: 2 } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('promptEnrichment activityTimeline maxEvents rejects 31 (max 30)', () => {
+    const result = AgentRuntimePolicySchema.safeParse({
+      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
+      promptEnrichment: { activityTimeline: { maxEvents: 31 } },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('StrategySchema', () => {

@@ -6,6 +6,12 @@ export interface HybridPromptInput {
   portfolio: RuntimePortfolioSummary;
   openPositions: RuntimePositionSnapshot[];
   maxPositions: number;
+  /** Agent memory snapshot for hybrid prompt enrichment. */
+  agentMemory?: Record<string, { value: unknown; updatedAt?: string }> | null;
+  /** Max inline memory keys rendered. */
+  maxInlineMemoryKeys?: number;
+  /** Recent judge responses (newest last). */
+  recentJudgeResponses?: string[];
 }
 
 /**
@@ -14,7 +20,7 @@ export interface HybridPromptInput {
  * the LLM to emit structured JSON decisions — no tool calling.
  */
 export function buildHybridPrompt(input: HybridPromptInput): string {
-  const { scan, portfolio, openPositions, maxPositions } = input;
+  const { scan, portfolio, openPositions, maxPositions, agentMemory, maxInlineMemoryKeys, recentJudgeResponses } = input;
 
   const lines: string[] = [];
 
@@ -42,6 +48,49 @@ export function buildHybridPrompt(input: HybridPromptInput): string {
     }
   } else {
     lines.push('Open positions: none');
+  }
+
+  // ── Recent Agent Decisions (Phase 3) ─────────────────────────────────────
+  if (recentJudgeResponses && recentJudgeResponses.length > 0) {
+    lines.push('');
+    lines.push('## Recent Agent Decisions');
+    const count = recentJudgeResponses.length;
+    for (let i = 0; i < count; i++) {
+      const label = `[Tick -${count - i}]`;
+      const summary = recentJudgeResponses[i]!.length > 120
+        ? recentJudgeResponses[i]!.slice(0, 120) + '…'
+        : recentJudgeResponses[i]!;
+      lines.push(`${label}: ${summary}`);
+    }
+  }
+
+  // ── Agent Memory (Phase 2) ───────────────────────────────────────────────
+  if (agentMemory && Object.keys(agentMemory).length > 0) {
+    const entries = Object.entries(agentMemory);
+    entries.sort(([, a], [, b]) => {
+      const aTs = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+      const bTs = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+      if (Number.isFinite(aTs) && Number.isFinite(bTs)) return bTs - aTs;
+      if (Number.isFinite(aTs)) return -1;
+      if (Number.isFinite(bTs)) return 1;
+      return 0;
+    });
+
+    const maxInline = maxInlineMemoryKeys ?? 12;
+    const inline = entries.slice(0, maxInline);
+    const overflow = entries.slice(maxInline);
+
+    lines.push('');
+    lines.push('## Agent Memory');
+    for (const [key, entry] of inline) {
+      const ts = entry.updatedAt ? ` (${new Date(entry.updatedAt).toISOString().substring(0, 19)})` : '';
+      const val = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value);
+      lines.push(`**${key}**${ts}: ${val}`);
+    }
+    if (overflow.length > 0) {
+      const overflowKeys = overflow.map(([k]) => k).join(', ');
+      lines.push(`Older keys: ${overflowKeys} (+${overflow.length} more — use list_memory_keys tool)`);
+    }
   }
 
   // Signal table from technical scan

@@ -41,6 +41,7 @@ import {
   buildVenueLines,
   createRuntimeCompositionState,
   getVisibleToolNames,
+  recordAgentMemory,
   recordPerformanceInputs,
   recordRegimeEvaluation,
   recordSessionCost,
@@ -1254,6 +1255,9 @@ async function pollWakeSignals(): Promise<void> {
           try {
             const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
             if (envelope['type'] === 'agent.wake') {
+              const source = String(envelope['source'] ?? 'unknown');
+              const reason = String(envelope['reason'] ?? 'wake signal received');
+              pendingWakeSignalBuffer.push({ source, reason, receivedAt: Date.now() });
               requestWakeDrivenTick('Received market wake signal between ticks');
             }
           } catch {
@@ -1642,6 +1646,16 @@ interface ConversationMessage {
 
 const conversationHistory: ConversationMessage[] = [];
 
+/** Final no-tool-call assistant responses from past judge ticks, newest last. */
+const judgeResponseHistory: string[] = [];
+
+/** Wake signals received between ticks. Drained into metrics at tick start. */
+const pendingWakeSignalBuffer: Array<{
+  source: string;
+  reason: string;
+  receivedAt: number;
+}> = [];
+
 function addToHistory(role: 'user' | 'assistant', content: string, options?: { truncateToToolBudget?: boolean }): void {
   const normalizedContent = options?.truncateToToolBudget
     ? content.slice(0, runtimeState.runtimeDescriptor.budgets.maxToolResultChars)
@@ -1857,6 +1871,39 @@ async function runTick(): Promise<void> {
       applyRuntimeMessage(runtimeState, message);
     }
 
+    // ── Prompt context enrichment: drain queued wake signals ──────────────
+    if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
+      const max = agentRuntimePolicy.promptEnrichment.queuedSignals.max;
+      // Exclude the signal that triggered the current tick (already in currentMarketWake)
+      const baseSignals = pendingWakeSignalBuffer.splice(0, pendingWakeSignalBuffer.length);
+      const filtered = baseSignals.slice(-max);
+      runtimeState.metrics.queuedWakeSignals = filtered;
+    }
+
+    // ── Prompt context enrichment: load agent memory once per tick ───────
+    if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.memory.enabled) {
+      try {
+        const raw = await redis.hgetall(`agent:memory:${AGENT_ID}`);
+        recordAgentMemory(runtimeState, raw ?? {});
+      } catch (err) {
+        logger.warn({ err }, 'Failed to load agent memory for context enrichment');
+      }
+    }
+
+    // ── Activity timeline: capture user messages ──────────────────────────
+    if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+      const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
+      for (const message of incomingMessages) {
+        if (message['type'] === 'agent.user.message' || message['type'] === 'user.message') {
+          const text = typeof message['content'] === 'string' ? message['content'] : JSON.stringify(message['content'] ?? '');
+          runtimeState.metrics.activityTimeline.push({ kind: 'USER', text, timestamp: Date.now() });
+        }
+      }
+      while (runtimeState.metrics.activityTimeline.length > maxEvents) {
+        runtimeState.metrics.activityTimeline.shift();
+      }
+    }
+
     if (incomingMessages.some((message) => message['type'] === 'agent.runtime.config_update')) {
       toolVisibility.snapshotToolBaselines();
       applyToolVisibility();
@@ -2067,6 +2114,15 @@ async function runTick(): Promise<void> {
             providersBaseUrlMap,
           },
           maxPositions,
+          agentMemory: agentRuntimePolicy.promptStyle === 'enriched'
+            ? runtimeState.metrics.agentMemory
+            : null,
+          maxInlineMemoryKeys: agentRuntimePolicy.promptStyle === 'enriched'
+            ? agentRuntimePolicy.promptEnrichment.memory.maxInlineKeys
+            : undefined,
+          recentJudgeResponses: agentRuntimePolicy.promptStyle === 'enriched'
+            ? judgeResponseHistory.slice(-agentRuntimePolicy.promptEnrichment.judgeHistory.hybridMaxResponses)
+            : undefined,
           submitDecision: async (symbol, intent, sizeUsd) => {
             await publishToInbound(AGENT_MESSAGE_TYPES.DECISION_SUBMIT, {
               decisionId: crypto.randomUUID(),
@@ -2154,8 +2210,13 @@ async function runTick(): Promise<void> {
       recordActiveWatchSummary(runtimeState, null);
     }
 
+    // ── Prompt enrichment policy (only when promptStyle is 'enriched') ─────
+    const enrichmentPolicy = agentRuntimePolicy.promptStyle === 'enriched'
+      ? agentRuntimePolicy.promptEnrichment
+      : undefined;
+
     // Build context for this tick.
-    const fullUserContext = buildTickUserContext(runtimeState, []);
+    const fullUserContext = buildTickUserContext(runtimeState, [], enrichmentPolicy);
     const incrementalContext = buildIncrementalContext({
       previousContext: previousFullUserContext,
       currentContext: fullUserContext,
@@ -2187,11 +2248,12 @@ async function runTick(): Promise<void> {
         toolGuidanceByName[def.name] = def.promptGuidance;
       }
     }
+
     const judgeSystemPromptKey = `agent:prompt:${AGENT_ID}`;
     const scoutSystemPromptKey = `agent:prompt:scout:${AGENT_ID}`;
     const scoutUserContextPromptKey = `agent:prompt:user-context:${AGENT_ID}`;
     const judgeUserContextPromptKey = `agent:prompt:judge-user-context:${AGENT_ID}`;
-    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, toolGuidanceByName);
+    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, toolGuidanceByName, enrichmentPolicy);
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(judgeSystemPromptKey, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');
@@ -2494,7 +2556,9 @@ async function runTick(): Promise<void> {
     });
 
     addToHistory('user', userContext);
-    const recentHistory = conversationHistory.slice(-10);
+    const recentHistory = conversationHistory.slice(
+      -agentRuntimePolicy.promptEnrichment.judgeHistory.tickMaxDisplayed,
+    );
     const judgeToolDefinitions: LlmToolDefinition[] = toolRegistry.getDefinitions([...allowedTools()]).map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -2570,6 +2634,26 @@ async function runTick(): Promise<void> {
         logger.debug({ response: assistantResponse.slice(0, 500) }, 'LLM response preview');
         if (toolCalls.length === 0) {
           addToHistory('assistant', assistantResponse);
+          // ── Prompt enrichment: judge response history ────────────────────
+          if (agentRuntimePolicy.promptStyle === 'enriched') {
+            judgeResponseHistory.push(assistantResponse);
+            const tickMax = agentRuntimePolicy.promptEnrichment.judgeHistory.tickMaxDisplayed;
+            while (judgeResponseHistory.length > tickMax) {
+              judgeResponseHistory.shift();
+            }
+            // ── Activity timeline: capture judge decisions ─────────────────
+            if (agentRuntimePolicy.promptEnrichment.activityTimeline.enabled) {
+              const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
+              // Truncate to a brief summary — first 200 chars
+              const summary = assistantResponse.length > 200
+                ? assistantResponse.slice(0, 200) + '…'
+                : assistantResponse;
+              runtimeState.metrics.activityTimeline.push({ kind: 'DECISION', text: summary, timestamp: Date.now() });
+              while (runtimeState.metrics.activityTimeline.length > maxEvents) {
+                runtimeState.metrics.activityTimeline.shift();
+              }
+            }
+          }
         }
       },
       onToolResult: ({ toolCall, toolResult }) => {
@@ -2579,6 +2663,25 @@ async function runTick(): Promise<void> {
             recordToolFailure(toolCall.name);
           } else {
             recordToolSuccess(toolCall.name);
+          }
+          // ── Activity timeline: capture memory writes ────────────────────
+          if (
+            agentRuntimePolicy.promptStyle === 'enriched'
+            && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled
+            && (toolCall.name === 'save_memory' || toolCall.name === 'delete_memory')
+            && !toolResultIndicatesFailure(toolResult)
+          ) {
+            const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;
+            const key = typeof toolCall.args['key'] === 'string' ? toolCall.args['key'] : 'unknown';
+            const value = toolCall.name === 'delete_memory'
+              ? '(deleted)'
+              : typeof toolCall.args['value'] === 'string'
+                ? toolCall.args['value'].slice(0, 100)
+                : JSON.stringify(toolCall.args['value'] ?? '').slice(0, 100);
+            runtimeState.metrics.activityTimeline.push({ kind: 'MEMORY', key, value, timestamp: Date.now() });
+            while (runtimeState.metrics.activityTimeline.length > maxEvents) {
+              runtimeState.metrics.activityTimeline.shift();
+            }
           }
         }
       },
