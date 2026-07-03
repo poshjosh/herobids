@@ -26,6 +26,9 @@ herobids hybrid/tick decision flow.
 - Surface a **chronological activity timeline** that interleaves user messages, agent memory
   writes, and agent responses into one ordered stream, giving the agent a narrative causal
   view of recent events without jumping between separate sections
+- Add an **operator-controlled `promptStyle` toggle** (`'classic'` | `'enriched'`) so the
+  current prompt composition can be kept running alongside the new one for side-by-side
+  comparison and regression testing
 
 ---
 
@@ -35,6 +38,14 @@ Add a `promptEnrichment` section to `AgentRuntimeConfigSchema` in
 `packages/domain/src/config/schema.ts`, alongside `contextDiff` and `defaultBudgets`.
 
 ```typescript
+/**
+ * Controls which prompt composition strategy the agent uses.
+ * - 'classic'  — current behaviour, no enrichments from this plan.
+ * - 'enriched' — all Phase 2-7 enrichments active (default).
+ * Switch to 'classic' to run a baseline agent for side-by-side comparison.
+ */
+promptStyle: z.enum(['classic', 'enriched']).default('enriched'),
+
 promptEnrichment: z.object({
   memory: z.object({
     enabled: z.boolean().default(true),
@@ -69,9 +80,9 @@ promptEnrichment: z.object({
 }).default({}),
 
 > **Event types** included in the timeline:
-> - `[USER_MSG]` — messages sent by the creator/user via conversation
-> - `[AGNT_MEM]` — agent memory writes (`save_memory` / `delete_memory` tool calls)
-> - `[AGNT_RES]` — final judge responses (no-tool-call assistant turns)
+> - `[USER]` — messages sent by the creator/user via conversation
+> - `[MEMORY]` — agent memory writes (`save_memory` / `delete_memory` tool calls)
+> - `[DECISION]` — final judge responses (no-tool-call assistant turns)
 ```
 
 Add corresponding defaults to `config/default.yaml` under `agentRuntime.promptEnrichment`.
@@ -85,9 +96,18 @@ Add corresponding defaults to `config/default.yaml` under `agentRuntime.promptEn
 **Files:** `packages/domain/src/config/schema.ts`, `config/default.yaml`,
 `packages/domain/src/config/schema.test.ts`
 
-- Add `promptEnrichment` sub-schema to `AgentRuntimeConfigSchema` as above.
-- Add defaults to `config/default.yaml`.
+- Add `promptStyle` enum and `promptEnrichment` sub-schema to `AgentRuntimeConfigSchema` as above.
+- Add defaults to `config/default.yaml` (`promptStyle: enriched`).
 - Add schema parse tests covering defaults and boundary validation.
+
+> **Cross-cutting gate**: every enrichment added in Phases 2–7 must be skipped when
+> `agentRuntimePolicy.promptStyle === 'classic'`. The cleanest enforcement is a single
+> guard at the top of each enrichment call site:
+> ```typescript
+> if (agentRuntimePolicy.promptStyle !== 'enriched') return; // or return null
+> ```
+> This keeps `'classic'` as a strict no-op path — no new providers registered, no new
+> buffers populated, no extra Redis calls.
 
 ---
 
@@ -337,11 +357,11 @@ without needing to cross-reference separate context sections.
 Example rendered output:
 ```
 ## Activity Timeline
-17:01 [AGNT_MEM] regime: neutral for WIF
-17:02 [AGNT_RES] Skipped BONK — volume below threshold. Exited JUP at $0.83 (+4.1%).
-17:33 [AGNT_MEM] sentiment: bullish signal for RAY
-18:01 [AGNT_RES] Opened WIF long at $3.01. Regime pass. Passing on RAY (low ADX).
-18:04 [USER_MSG] Revisit the earlier direction we agreed on.
+17:01 [MEMORY] regime: neutral for WIF
+17:02 [DECISION] Skipped BONK — volume below threshold. Exited JUP at $0.83 (+4.1%).
+17:33 [MEMORY] sentiment: bullish signal for RAY
+18:01 [DECISION] Opened WIF long at $3.01. Regime pass. Passing on RAY (low ADX).
+18:04 [USER] Revisit the earlier direction we agreed on.
 ```
 
 **Relationship to other sections**: the timeline is a *summary* view — it does not
@@ -355,9 +375,9 @@ Add a discriminated union to `runtime-composition.ts`:
 
 ```typescript
 export type ActivityTimelineEvent =
-  | { kind: 'user_msg';  text: string; timestamp: number }
-  | { kind: 'agnt_mem';  key: string; value: string; timestamp: number }
-  | { kind: 'agnt_res';  text: string; timestamp: number };
+  | { kind: 'USER';  text: string; timestamp: number }
+  | { kind: 'MEMORY';  key: string; value: string; timestamp: number }
+  | { kind: 'DECISION';  text: string; timestamp: number };
 ```
 
 Add `activityTimeline: ActivityTimelineEvent[]` to `RuntimeSessionMetrics`.
@@ -367,12 +387,12 @@ Add `activityTimeline: ActivityTimelineEvent[]` to `RuntimeSessionMetrics`.
 Three capture points in `agent.ts`:
 
 1. **User messages** — when a conversation message with `role: 'user'` arrives at tick
-   start, push `{ kind: 'user_msg', text, timestamp: Date.now() }` before processing.
+   start, push `{ kind: 'USER', text, timestamp: Date.now() }` before processing.
 2. **Memory writes** — after a successful `save_memory` or `delete_memory` tool call
-   resolves, push `{ kind: 'agnt_mem', key, value, timestamp: Date.now() }`.
+   resolves, push `{ kind: 'MEMORY', key, value, timestamp: Date.now() }`.
 3. **Judge responses** — after the no-tool-call assistant turn is confirmed (the same
    point `judgeResponseHistory` is updated in Phase 3), push
-   `{ kind: 'agnt_res', text: assistantResponse, timestamp: Date.now() }`.
+   `{ kind: 'DECISION', text: assistantResponse, timestamp: Date.now() }`.
 
 After each push, trim the buffer:
 ```typescript
@@ -398,9 +418,9 @@ Add to `RUNTIME_CONTEXT_PROVIDERS`:
     if (!events || events.length === 0) return null;
     const lines = events.map((e) => {
       const ts = new Date(e.timestamp).toISOString().substring(11, 16); // HH:MM
-      if (e.kind === 'user_msg')  return `${ts} [USER_MSG] ${e.text}`;
-      if (e.kind === 'agnt_mem')  return `${ts} [AGNT_MEM] ${e.key}: ${e.value}`;
-      /* agnt_res */               return `${ts} [AGNT_RES] ${e.text}`;
+      if (e.kind === 'USER')  return `${ts} [USER] ${e.text}`;
+      if (e.kind === 'MEMORY')  return `${ts} [MEMORY] ${e.key}: ${e.value}`;
+      /* DECISION */               return `${ts} [DECISION] ${e.text}`;
     });
     return {
       id: 'activityTimeline',
@@ -450,6 +470,7 @@ build: (state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy) => Runt
 | `packages/domain/src/config/schema.ts` | Add `promptEnrichment` to `AgentRuntimeConfigSchema` |
 | `packages/domain/src/config/schema.test.ts` | Schema parse tests |
 | `config/default.yaml` | Add `agentRuntime.promptEnrichment` defaults |
+| `packages/domain/src/config/schema.ts` (promptStyle) | Add `promptStyle` enum to `AgentRuntimeConfigSchema` |
 | `apps/worker/src/runtime-composition.ts` | New context providers, new metrics fields, `recordAgentMemory` helper, `ActivityTimelineEvent` type, `activityTimeline` in metrics, `activity-timeline` provider |
 | `apps/worker/src/agent.ts` | Load memory at tick start, judge response ring buffer, queued signal buffer, fix `slice(-10)` hardcode, capture timeline events (user messages, memory writes, judge responses) |
 | `apps/worker/src/hybrid-agent-evaluator.ts` | Extend `HybridEvaluatorInput` with memory + judge responses |
@@ -460,9 +481,11 @@ build: (state: RuntimeCompositionState, policy?: PromptEnrichmentPolicy) => Runt
 ## Checklist
 
 ### Phase 1 — Config schema
+- [ ] Add `promptStyle` enum to `AgentRuntimeConfigSchema`
 - [ ] Add `promptEnrichment` schema to `AgentRuntimeConfigSchema`
-- [ ] Add defaults to `config/default.yaml`
+- [ ] Add defaults to `config/default.yaml` (`promptStyle: enriched`)
 - [ ] Schema parse tests for defaults and boundaries
+- [ ] Unit test: `promptStyle: 'classic'` bypasses all enrichments (no providers, no buffers, no Redis calls)
 
 ### Phase 2 — Memory auto-injection
 - [ ] `agentMemory` field in `RuntimeSessionMetrics`
