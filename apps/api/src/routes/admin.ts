@@ -19,14 +19,23 @@ const PROVIDER_COUNTERS_HASH_KEY = 'market-intel:provider-counters:v2';
 const LEGACY_PROVIDER_COUNTERS_KEY = 'market-intel:provider-counters';
 
 function parseAppVersion(): string {
-  try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const pkgPath = join(__dirname, '../../../../package.json');
-    return JSON.parse(readFileSync(pkgPath, 'utf8')).version;
-  } catch {
-    return 'parse-failed';
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  // Try monorepo root package.json first (../ from apps/api/src/routes or dist/routes).
+  // In production Docker images the root package.json is copied into the runtime image
+  // for this purpose. Fall back to the API's own package.json if the root is missing.
+  const candidates = [
+    join(__dirname, '../../../../package.json'),  // monorepo root (works in dev + Docker with COPY)
+    join(__dirname, '../../package.json'),          // API package (pnpm deploy output)
+  ];
+  for (const pkgPath of candidates) {
+    try {
+      return JSON.parse(readFileSync(pkgPath, 'utf8')).version;
+    } catch {
+      // try next candidate
+    }
   }
+  return 'parse-failed';
 }
 
 const VERSION = parseAppVersion();

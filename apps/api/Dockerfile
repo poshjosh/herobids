@@ -30,6 +30,8 @@ WORKDIR /app/apps/api
 # Point the preset loader to the project root where config/ lives.
 ENV HEROBIDS_CONFIG_DIR=/app
 COPY --from=build /app/config /app/config
+# Root package.json is needed for admin /stats version display.
+COPY --from=build /app/package.json /app/package.json
 COPY --from=deploy /deploy/api ./
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
