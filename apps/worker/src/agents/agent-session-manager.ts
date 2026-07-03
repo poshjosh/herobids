@@ -8,7 +8,7 @@ import type {
   UsageBillingConfig,
   ProvidersYaml,
 } from '@herobids/domain';
-import { resolveAgentRuntimePolicy } from '@herobids/domain';
+import { resolveAgentRuntimePolicy, toGuardrailNumber } from '@herobids/domain';
 import { buildRuntimeDescriptor } from '@herobids/db';
 import type { AgentRepository, UsageBillingRepository } from '@herobids/db';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
@@ -285,7 +285,10 @@ export class AgentSessionManager {
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
           dailyLossLimit: agent.dailyLossLimit,
           maxBots: agent.maxBots,
-          maxSlippageBps: agent.maxSlippageBps,
+          maxOpenPositions: toGuardrailNumber(agent.maxOpenPositions),
+          maxPositionSizePct: toGuardrailNumber(agent.maxPositionSizePct),
+          stopLossPct: toGuardrailNumber(agent.stopLossPct),
+          capital: agent.capital ?? null,
           budgets: this.config.budgets,
           capabilityDescriptor,
         });

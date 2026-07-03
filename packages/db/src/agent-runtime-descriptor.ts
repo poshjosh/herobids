@@ -293,9 +293,13 @@ export function buildRuntimeDescriptor(input: {
   goal: string;
   executionMode?: string | null;
   toolPolicy?: Record<string, unknown> | null;
+  dailyTokenBudget?: string | null;
   dailyLossLimit?: string | null;
   maxBots?: number | null;
-  maxSlippageBps?: number | null;
+  maxOpenPositions?: number | null;
+  maxPositionSizePct?: number | null;
+  stopLossPct?: number | null;
+  capital?: string | null;
   budgets: RuntimeBudgetPolicy;
   capabilityDescriptor: RuntimeCapabilityDescriptor;
 }): RuntimeDescriptor {
@@ -311,9 +315,13 @@ export function buildRuntimeDescriptor(input: {
     readinessByFamily: input.capabilityDescriptor.readinessByFamily,
     toolPolicy: input.toolPolicy ?? {},
     guardrails: {
+      dailyTokenBudget: input.dailyTokenBudget ?? 'unlimited tokens',
       dailyLossLimit: input.dailyLossLimit ?? null,
       maxBots: input.maxBots ?? null,
-      maxSlippageBps: input.maxSlippageBps ?? null,
+      maxOpenPositions: input.maxOpenPositions ?? null,
+      maxPositionSizePct: input.maxPositionSizePct ?? null,
+      stopLossPct: input.stopLossPct ?? null,
+      capital: input.capital ?? null,
     },
     budgets: { ...input.budgets },
   };

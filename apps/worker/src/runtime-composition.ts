@@ -409,6 +409,13 @@ function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`;
 }
 
+function formatUsdAmount(raw: string | null | undefined): string {
+  if (!raw) return '$0.00';
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return `$${raw}`;
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function formatFreshness(freshness: RuntimeFreshness): string {
   if (freshness.state === 'unavailable') {
     return freshness.note ? `unavailable (${freshness.note})` : 'unavailable';
@@ -748,25 +755,16 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
 
       const desc = state.runtimeDescriptor;
       const lines: string[] = [];
-      lines.push(`Execution mode: ${desc.executionMode}`);
-      if (desc.guardrails.dailyLossLimit) lines.push(`Daily loss limit: ${desc.guardrails.dailyLossLimit}`);
-      if (desc.guardrails.maxSlippageBps != null) lines.push(`Max slippage: ${desc.guardrails.maxSlippageBps} bps`);
-      if (desc.guardrails.maxBots != null) lines.push(`Max bots: ${desc.guardrails.maxBots}`);
-      // Surface decision mode if available in the descriptor
-      const decisionMode = (desc as unknown as Record<string, unknown>)['decisionMode'];
-      if (typeof decisionMode === 'string' && decisionMode.length > 0) {
-        lines.push(`Decision mode: ${decisionMode}`);
-      }
-      // Surface risk guardrails from the descriptor
-      const riskExt = (desc as unknown as Record<string, unknown>);
-      if (typeof riskExt['maxOpenPositions'] === 'number') lines.push(`Max open positions: ${riskExt['maxOpenPositions']}`);
-      if (typeof riskExt['maxPositionSizePct'] === 'number') lines.push(`Max position size: ${riskExt['maxPositionSizePct']}%`);
-      if (typeof riskExt['stopLossPct'] === 'number') lines.push(`Stop-loss: ${riskExt['stopLossPct']}%`);
-      if (typeof riskExt['capital'] === 'string') lines.push(`Capital: ${riskExt['capital']}`);
+      if (desc.guardrails.dailyLossLimit) lines.push(`Daily loss limit: ${formatUsdAmount(desc.guardrails.dailyLossLimit)}`);
+      if (desc.guardrails.maxBots != null) lines.push(`Max concurrent bots: ${desc.guardrails.maxBots}`);
+      if (desc.guardrails.maxOpenPositions != null) lines.push(`Max open positions: ${desc.guardrails.maxOpenPositions}`);
+      if (desc.guardrails.maxPositionSizePct != null) lines.push(`Max position size: ${desc.guardrails.maxPositionSizePct}%`);
+      if (desc.guardrails.stopLossPct != null) lines.push(`Stop-loss: ${desc.guardrails.stopLossPct}%`);
+      if (desc.guardrails.capital) lines.push(`Capital: ${formatUsdAmount(desc.guardrails.capital)}`);
 
       return {
-        id: 'tradingConfigReference',
-        title: 'Trading Config Reference',
+        id: 'tradingGuardrails',
+        title: 'Trading Guardrails',
         provider: 'trading-config-reference',
         content: lines.join('\n'),
       };
@@ -1747,31 +1745,17 @@ export function applyRuntimeMessage(
   return summary;
 }
 
-export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
+export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
   const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => skill.instructions).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
   const staticContext = buildContextSection(state, 'static', policy);
-  const tradingAgent = hasTradingCapability(state.runtimeDescriptor);
-  const guardRailLines = [
-    ...(tradingAgent
-      ? [
-          `- Daily loss limit: ${state.runtimeDescriptor.guardrails.dailyLossLimit ?? 'none'}`,
-          `- Max concurrent bots: ${state.runtimeDescriptor.guardrails.maxBots ?? 'unlimited'}`,
-        ]
-      : []),
-  ];
+  const tokenBudget = state.runtimeDescriptor.guardrails.dailyTokenBudget;
+  const guardRailLines: string[] = [];
+  if (tokenBudget && tokenBudget !== 'unlimited tokens') {
+    guardRailLines.push(`- Daily token budget: ${tokenBudget}`);
+  }
 
-  const visibleToolNames = getVisibleToolNames(state);
-
-  const toolGuidanceLines = toolGuidanceByName
-    ? visibleToolNames
-        .filter((name) => toolGuidanceByName[name])
-        .map((name) => `- ${name}: ${toolGuidanceByName[name]}`)
-    : [];
-
-  const toolsBlock = toolGuidanceLines.length > 0
-    ? `You can call the following tools: ${allowedTools}.\n${toolGuidanceLines.join('\n')}`
-    : `You can call the following tools: ${allowedTools}.`;
+  const toolsBlock = `You can call the following tools: ${allowedTools}.`;
 
   return [
     `You are an autonomous agent named "${state.runtimeDescriptor.name ?? state.runtimeDescriptor.agentId}". Use the available tools to accomplish your goal.`,
@@ -1782,8 +1766,7 @@ export function buildSystemPrompt(state: RuntimeCompositionState, timing: Prompt
     ...formatPromptTimingContextLines(timing),
     '## Available Tools',
     toolsBlock,
-    '## Guard Rails',
-    ...guardRailLines,
+    ...(guardRailLines.length > 0 ? ['## Guardrails', ...guardRailLines] : []),
     staticContext ? `## Runtime Context\n\n${staticContext}` : '',
     '## Instructions',
     'Take the next concrete step toward your goal.',

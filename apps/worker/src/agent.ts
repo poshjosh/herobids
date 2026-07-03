@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import Redis from 'ioredis';
 import crypto from 'node:crypto';
 import pino from 'pino';
-import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, AgentRuntimePolicySchema, BASE_SKILL, BOT_MANAGEMENT_SKILL, FILE_MANAGEMENT_SKILL, PROGRAMMING_SKILL, RISK_MONITORING_SKILL, TASK_MANAGEMENT_SKILL, TRADING_SKILL, WEB_ACCESS_SKILL, type ToolContext, AGENT_RUNTIME_ACTIVITY_TYPES, type AgentRiskDefaultsConfig, type AgentRiskOverrides, resolveAgentRiskContract, validateRiskOverride, type ResolvedAgentRiskContract, toGuardrailNumber } from '@herobids/domain';
 import { createDatabase, BotRepository, AgentRepository, InstrumentRepository, PgJournal } from '@herobids/db';
 import { createUsageBillingService } from './usage-billing-service.js';
 import type { AgentRuntimePolicy, RuntimeDescriptor, SkillDefinition, ProvidersYaml } from '@herobids/domain';
@@ -439,9 +439,13 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
     readinessByFamily: {},
     toolPolicy: initialToolPolicy,
     guardrails: {
+      dailyTokenBudget: 'unlimited tokens',
       dailyLossLimit: agentConfig.dailyLossLimit ?? null,
       maxBots: agentConfig.maxBots ?? null,
-      maxSlippageBps: agentConfig.maxSlippageBps ?? null,
+      maxOpenPositions: toGuardrailNumber(agentConfig.maxOpenPositions),
+      maxPositionSizePct: toGuardrailNumber(agentConfig.maxPositionSizePct),
+      stopLossPct: toGuardrailNumber(agentConfig.stopLossPct),
+      capital: agentConfig.capital ?? null,
     },
     budgets: { ...agentRuntimePolicy.defaultBudgets },
   };
@@ -2249,19 +2253,12 @@ async function runTick(): Promise<void> {
       nominalTickIntervalMs: costProfile.tickIntervalMs,
       expectedNextTickAtMs: nextTickDueAt > 0 ? nextTickDueAt : promptNowMs + effectiveTickIntervalMs,
     });
-    const visibleToolDefs = toolRegistry.getDefinitions([...allowedTools()]);
-    const toolGuidanceByName: Record<string, string> = {};
-    for (const def of visibleToolDefs) {
-      if (def.promptGuidance) {
-        toolGuidanceByName[def.name] = def.promptGuidance;
-      }
-    }
-
+    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, undefined, enrichmentPolicy);
+    // Redis keys for prompt surfaces (served by GET /agents/:id/prompt)
     const judgeSystemPromptKey = `agent:prompt:${AGENT_ID}`;
+    const judgeUserContextPromptKey = `agent:prompt:judge-user-context:${AGENT_ID}`;
     const scoutSystemPromptKey = `agent:prompt:scout:${AGENT_ID}`;
     const scoutUserContextPromptKey = `agent:prompt:user-context:${AGENT_ID}`;
-    const judgeUserContextPromptKey = `agent:prompt:judge-user-context:${AGENT_ID}`;
-    const systemPrompt = composeSystemPrompt(runtimeState, promptTiming, toolGuidanceByName, enrichmentPolicy);
     // Persist the compiled prompt so the API can serve GET /agents/:id/prompt
     redis.set(judgeSystemPromptKey, systemPrompt, 'EX', 3600).catch((err: unknown) => {
       logger.warn({ err }, 'Failed to persist system prompt to Redis');

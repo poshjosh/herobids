@@ -36,7 +36,6 @@ export async function connectionRoutes(
         executionMode: agents.executionMode,
         dailyLossLimit: agents.dailyLossLimit,
         maxBots: agents.maxBots,
-        maxSlippageBps: agents.maxSlippageBps,
       })
       .from(agents)
       .where(eq(agents.id, agentId));
@@ -54,7 +53,6 @@ export async function connectionRoutes(
       toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
       dailyLossLimit: agentRow.dailyLossLimit,
       maxBots: agentRow.maxBots,
-      maxSlippageBps: agentRow.maxSlippageBps,
       budgets,
       capabilityDescriptor,
     });

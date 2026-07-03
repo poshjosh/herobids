@@ -95,10 +95,9 @@ const baseDescriptor = {
   },
   toolPolicy: {},
   guardrails: {
-    dailyTokenBudget: 1000,
+    dailyTokenBudget: 'unlimited tokens',
     dailyLossLimit: '10',
     maxBots: 2,
-    maxSlippageBps: 25,
   },
   budgets: {
     maxHistoryMessages: 20,
@@ -147,8 +146,6 @@ describe('runtime composition helpers', () => {
     expect(prompt).toContain('Trading Venue');
     expect(prompt).toContain('hyperliquid (perpetuals)');
     expect(prompt).toContain('trade instruments use base tickers');
-    expect(prompt).toContain('Daily loss limit: 10');
-    expect(prompt).toContain('Max concurrent bots: 2');
     expect(prompt).toContain('Take the next concrete step toward your goal.');
     expect(prompt).toContain('Core Platform');
     expect(prompt).not.toContain('To call a tool, output a JSON object');
@@ -1186,7 +1183,7 @@ describe('runtime composition helpers', () => {
   });
 
   describe('tool guidance', () => {
-    it('renders tool guidance lines in ## Available Tools when provided', () => {
+    it('does not render per-tool guidance lines (skill instructions describe tools)', () => {
       const state = createRuntimeCompositionState(baseDescriptor);
       const prompt = buildSystemPrompt(state, createPromptTimingContext({
         currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
@@ -1194,10 +1191,11 @@ describe('runtime composition helpers', () => {
         expectedNextTickAtMs: Date.parse('2026-06-11T06:57:39.174Z'),
       }), { send_message: 'Set messageClass to "alert" for urgent notifications.' });
 
-      expect(prompt).toContain('- send_message: Set messageClass to "alert" for urgent notifications.');
+      expect(prompt).toContain('You can call the following tools:');
+      expect(prompt).not.toContain('- send_message: Set messageClass');
     });
 
-    it('omits tool guidance section when not provided', () => {
+    it('renders flat tool list without guidance when none provided', () => {
       const state = createRuntimeCompositionState(baseDescriptor);
       const prompt = buildSystemPrompt(state, createPromptTimingContext({
         currentTimeMs: Date.parse('2026-06-11T06:42:39.174Z'),
@@ -1567,7 +1565,7 @@ describe('runtime composition helpers', () => {
   });
 
   describe('trading-config-reference provider', () => {
-    it('renders execution mode and guardrail values', () => {
+    it('renders trading guardrail values', () => {
       const state = createRuntimeCompositionState(baseDescriptor);
 
       const prompt = buildSystemPrompt(state, createPromptTimingContext({
@@ -1576,14 +1574,12 @@ describe('runtime composition helpers', () => {
         expectedNextTickAtMs: Date.now() + 900_000,
       }), undefined, enrichmentPolicy);
 
-      expect(prompt).toContain('Trading Config Reference');
-      expect(prompt).toContain('Execution mode: paper');
-      expect(prompt).toContain('Daily loss limit: 10');
-      expect(prompt).toContain('Max slippage: 25 bps');
-      expect(prompt).toContain('Max bots: 2');
+      expect(prompt).toContain('Trading Guardrails');
+      expect(prompt).toContain('Daily loss limit: $10.00');
+      expect(prompt).toContain('Max concurrent bots: 2');
     });
 
-    it('omits Trading Config Reference when configReference is disabled', () => {
+    it('omits Trading Guardrails when configReference is disabled', () => {
       const state = createRuntimeCompositionState(baseDescriptor);
       const disabledPolicy: PromptEnrichmentPolicy = {
         ...enrichmentPolicy,
@@ -1596,7 +1592,7 @@ describe('runtime composition helpers', () => {
         expectedNextTickAtMs: Date.now() + 900_000,
       }), undefined, disabledPolicy);
 
-      expect(prompt).not.toContain('Trading Config Reference');
+      expect(prompt).not.toContain('Trading Guardrails');
     });
   });
 
@@ -1808,7 +1804,7 @@ describe('runtime composition helpers', () => {
       expect(prompt).toContain('Trading Venue');
       // Enrichment sections NOT present
       expect(prompt).not.toContain('Agent Memory');
-      expect(prompt).not.toContain('Trading Config Reference');
+      expect(prompt).not.toContain('Trading Guardrails');
 
       // Dynamic context with no policy
       const userContext = buildTickUserContext(state, [], undefined);

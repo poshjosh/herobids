@@ -24,9 +24,13 @@ export interface RuntimeBudgetPolicy {
 }
 
 export interface RuntimeGuardrailDescriptor {
+  dailyTokenBudget?: string | null;
   dailyLossLimit?: string | null;
   maxBots?: number | null;
-  maxSlippageBps?: number | null;
+  maxOpenPositions?: number | null;
+  maxPositionSizePct?: number | null;
+  stopLossPct?: number | null;
+  capital?: string | null;
 }
 
 export interface RuntimeDescriptor {
@@ -47,4 +51,14 @@ export interface RuntimeDescriptor {
 export interface RuntimeDescriptorUpdatePayload {
   runtimeDescriptor: RuntimeDescriptor;
   reason: 'grant_changed' | 'binding_changed' | 'readiness_changed' | 'session_start';
+}
+
+/** Normalize a guardrail value that may be a number or numeric string to a finite number, or null. */
+export function toGuardrailNumber(value: number | string | undefined | null): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }

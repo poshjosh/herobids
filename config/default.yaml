@@ -335,7 +335,7 @@ agentRuntime:
       hybridMaxResponses: 3      # judge responses injected into hybrid evaluator prompt
       tickMaxDisplayed: 10       # judge history messages passed to the judge itself
     configReference:
-      enabled: true              # show trading config reference block in tick prompt
+      enabled: true              # show trading guardrails block in tick prompt
     queuedSignals:
       enabled: true
       max: 5                     # max queued signals shown (newest first)

@@ -35,7 +35,6 @@ function buildRuntimeDescriptor(): RuntimeDescriptor {
       dailyTokenBudget: null,
       dailyLossLimit: null,
       maxBots: null,
-      maxSlippageBps: null,
     },
     budgets: {
       maxHistoryMessages: 20,
