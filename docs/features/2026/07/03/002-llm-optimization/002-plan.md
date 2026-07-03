@@ -261,10 +261,10 @@ All three phases are independent — do them in any order or in parallel.
 
 ## Outstanding Issues
 
-### [Phase 1 — fmtNum formatting] (2026-07-03)
+### [Phase 2 — Output maxLength Constraints] (2026-07-03)
 
 | # | Priority | File | Detail |
 |---|----------|------|--------|
-| 1 | LOW | `fmt.ts:44` | `fmtNum` emits exponential for very small numbers (e.g. `1e-7`). Not triggered by realistic trading values — domain-irrelevant. |
-| 2 | LOW | `fmt.ts:30` | T-tier rollover has no next tier. `fmtNum(999_500_000_000_000)` → `"1.00T"` (actual ≈ 1 quadrillion). Irrelevant for trading LLM context. |
-| 3 | LOW | `fmt.ts:13` | `fmtScaled` produces `"100.0"` when `scaled=99.95` rounds up at `toFixed(1)` tier. No behavioral issue — code path unreachable for rollover case, just an asymmetry worth noting. |
+| 1 | MEDIUM | `apps/worker/src/tools/trading.test.ts` | Tool-layer `.max(400)` boundary tests missing (defense-in-depth — protocol-layer tests cover it). |
+| 2 | LOW | `apps/worker/src/agents/agent-protocol.test.ts` | `'x'.repeat(1)` is stylistically odd — just use `'x'`. |
+| 3 | LOW | `packages/strategy/src/llm.ts` | Silent truncation of reasoning — LLM has no feedback when its reasoning is cut. Design trade-off, not a defect. |

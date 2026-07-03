@@ -209,7 +209,7 @@ export class LlmStrategy implements Strategy {
       `Respond with a JSON object containing:`,
       `- "intent": one of "go_long", "go_short", "go_flat", "hold"`,
       `- "confidence": a number between 0 and 1`,
-      `- "reasoning": a brief explanation`,
+      `- "reasoning": a brief explanation, max 80 characters`,
       ``,
       `Example: {"intent": "go_long", "confidence": 0.8, "reasoning": "Upward momentum detected"}`,
     ].filter(Boolean).join('\n');
@@ -235,7 +235,9 @@ export class LlmStrategy implements Strategy {
         data: {
           intent: intent as ParsedLlmDecision['intent'],
           confidence: typeof parsed['confidence'] === 'number' ? parsed['confidence'] : undefined,
-          reasoning: typeof parsed['reasoning'] === 'string' ? parsed['reasoning'] : undefined,
+          reasoning: typeof parsed['reasoning'] === 'string' && parsed['reasoning'].length > 0
+            ? parsed['reasoning'].slice(0, 80)
+            : undefined,
         },
       };
     } catch (e) {

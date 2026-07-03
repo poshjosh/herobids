@@ -371,4 +371,56 @@ describe('LlmStrategy', () => {
     expect(artifacts[0]!.cached).toBe(false);
     expect(artifacts[1]!.cached).toBe(true);
   });
+
+  it('truncates reasoning longer than 80 chars to exactly 80 chars', async () => {
+    const reasoning120 = 'B'.repeat(120);
+    const content = JSON.stringify({ intent: 'go_long', confidence: 0.85, reasoning: reasoning120 });
+    globalThis.fetch = mockFetch({
+      choices: [{ message: { content } }],
+      usage: { total_tokens: 50 },
+    }) as unknown as typeof fetch;
+
+    const strategy = new LlmStrategy(() => 'truncate-test-id');
+    const result = await strategy.evaluate(baseSnapshot, baseConfig);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data!.metadata?.reasoning).toHaveLength(80);
+      expect(result.data!.metadata?.reasoning).toBe(reasoning120.slice(0, 80));
+    }
+  });
+
+  it('passes through reasoning of exactly 80 chars unchanged', async () => {
+    const reasoning80 = 'B'.repeat(80);
+    const content = JSON.stringify({ intent: 'go_long', confidence: 0.85, reasoning: reasoning80 });
+    globalThis.fetch = mockFetch({
+      choices: [{ message: { content } }],
+      usage: { total_tokens: 50 },
+    }) as unknown as typeof fetch;
+
+    const strategy = new LlmStrategy(() => 'exact-80-test-id');
+    const result = await strategy.evaluate(baseSnapshot, baseConfig);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data!.metadata?.reasoning).toBe(reasoning80);
+      expect(result.data!.metadata?.reasoning).toHaveLength(80);
+    }
+  });
+
+  it('treats empty string reasoning as undefined', async () => {
+    const content = JSON.stringify({ intent: 'go_long', confidence: 0.85, reasoning: '' });
+    globalThis.fetch = mockFetch({
+      choices: [{ message: { content } }],
+      usage: { total_tokens: 50 },
+    }) as unknown as typeof fetch;
+
+    const strategy = new LlmStrategy(() => 'empty-reasoning-test-id');
+    const result = await strategy.evaluate(baseSnapshot, baseConfig);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data!.metadata?.reasoning).toBeUndefined();
+    }
+  });
 });

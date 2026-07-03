@@ -41,7 +41,7 @@ export const DecisionSubmitPayloadSchema = z.object({
   targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string'),
   limitPrice: z.string().regex(/^\d+(\.\d+)?$/).optional(),
   contextHash: z.string().optional(),
-  rationaleSummary: z.string().min(1),
+  rationaleSummary: z.string().min(1).max(400),
   confidence: z.number().min(0).max(1).optional(),
   artifacts: z.array(z.record(z.unknown())).optional(),
   metadata: z.record(z.unknown()).optional(),

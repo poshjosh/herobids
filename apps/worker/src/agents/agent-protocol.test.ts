@@ -120,6 +120,21 @@ describe('agent-protocol schema validation', () => {
         expect(result.success).toBe(true);
       }
     });
+
+    it('rejects rationaleSummary over max(400) chars', () => {
+      const result = DecisionSubmitPayloadSchema.safeParse({ ...validPayload, rationaleSummary: 'x'.repeat(401) });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts rationaleSummary at exactly max(400) chars', () => {
+      const result = DecisionSubmitPayloadSchema.safeParse({ ...validPayload, rationaleSummary: 'x'.repeat(400) });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts rationaleSummary at min(1) char boundary', () => {
+      const result = DecisionSubmitPayloadSchema.safeParse({ ...validPayload, rationaleSummary: 'x'.repeat(1) });
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('HeartbeatPayloadSchema', () => {
