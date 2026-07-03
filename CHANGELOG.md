@@ -10,8 +10,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Infra
 
-- Docker: shared `build-shared` stage compiles 7 packages once for both `api` and `worker`, halving build time and peak memory on the Hetzner server; removed post-deploy `docker builder prune -af` that was destroying build cache after every deploy
+- Worker: wire `DockerAgentManager.reconcile()` into a 60 s timer so orphaned agent containers are cleaned up automatically
 
+- Docker: shared `build-shared` stage compiles 7 packages once for both `api` and `worker`, halving build time and peak memory on the Hetzner server; removed post-deploy `docker builder prune -af` that was destroying build cache after every deploy
 
 ### Fix
 

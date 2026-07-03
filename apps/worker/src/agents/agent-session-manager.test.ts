@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentSessionManager } from './agent-session-manager.js';
 
 const TEST_RUNTIME_BUDGETS = {
@@ -74,6 +74,7 @@ describe('AgentSessionManager', () => {
       stopAll: vi.fn().mockResolvedValue(undefined),
       hasRuntime: vi.fn().mockReturnValue(false),
       registerRecoveredRuntime: vi.fn(),
+      reconcile: vi.fn().mockResolvedValue(undefined),
     };
 
     const reconnectHandler = {
@@ -1568,6 +1569,59 @@ describe('AgentSessionManager', () => {
         null,
         null,
       );
+    });
+  });
+
+  describe('containerReconcileIntervalMs — Docker container reconciliation timer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function buildReconcileManager(intervalOverride?: number) {
+      const { agentRepo, runtimeLauncher } = buildManager();
+      const reconcile = vi.fn().mockResolvedValue(undefined);
+      const manager = new AgentSessionManager(
+        agentRepo as any,
+        {} as any,
+        { ...runtimeLauncher, reconcile } as any,
+        { budgets: TEST_RUNTIME_BUDGETS, ...(intervalOverride !== undefined ? { containerReconcileIntervalMs: intervalOverride } : {}) },
+      );
+      return { manager, reconcile };
+    }
+
+    it('does not call reconcile() immediately on start()', () => {
+      const { manager, reconcile } = buildReconcileManager();
+      manager.start();
+      expect(reconcile).not.toHaveBeenCalled();
+    });
+
+    it('calls reconcile() once after the default 60 s interval', async () => {
+      const { manager, reconcile } = buildReconcileManager();
+      manager.start();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(reconcile).toHaveBeenCalledOnce();
+    });
+
+    it('respects a custom containerReconcileIntervalMs override', async () => {
+      const { manager, reconcile } = buildReconcileManager(5_000);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reconcile).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reconcile).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops calling reconcile() after stop()', async () => {
+      const { manager, reconcile } = buildReconcileManager(5_000);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reconcile).toHaveBeenCalledOnce();
+      await manager.stop();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(reconcile).toHaveBeenCalledTimes(1);
     });
   });
 });

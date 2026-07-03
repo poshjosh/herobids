@@ -29,6 +29,8 @@ export interface AgentSessionManagerConfig {
   heartbeatTimeoutMs: number;
   /** Interval in ms to check for stale sessions. Default: 10000 */
   healthCheckIntervalMs: number;
+  /** Interval in ms to reconcile Docker containers against the DB. Default: 60000 */
+  containerReconcileIntervalMs?: number;
   /** Resolved runtime budget policy from operator config. */
   budgets: RuntimeBudgetPolicy;
   /** Operator-configured agent risk defaults — forwarded to agent containers for contract resolution. */
@@ -80,6 +82,7 @@ export interface AgentSessionManagerConfig {
  */
 export class AgentSessionManager {
   private reconcileTimer?: ReturnType<typeof setInterval>;
+  private containerReconcileTimer?: ReturnType<typeof setInterval>;
   private stopping = false;
   private readonly config: AgentSessionManagerConfig;
   /** Sessions whose trading actor has been bootstrapped on this worker. Prevents
@@ -117,6 +120,14 @@ export class AgentSessionManager {
     this.reconcileTimer = setInterval(() => {
       void this.reconcileStartingSessions().catch((err: unknown) => logger.error({ err }, 'Failed to reconcile starting sessions'));
     }, this.config.healthCheckIntervalMs);
+    // Docker container reconciliation runs on a separate, longer interval.
+    // Not called immediately — registerSurvivedSessions() must complete first
+    // so survived containers are not mistaken for orphans on startup.
+    this.containerReconcileTimer = setInterval(() => {
+      void this.runtimeLauncher.reconcile().catch((err: unknown) =>
+        logger.error({ err }, 'Docker container reconciliation failed'),
+      );
+    }, this.config.containerReconcileIntervalMs ?? 60_000);
   }
 
   /**
@@ -195,6 +206,10 @@ export class AgentSessionManager {
     if (this.reconcileTimer) {
       clearInterval(this.reconcileTimer);
       this.reconcileTimer = undefined;
+    }
+    if (this.containerReconcileTimer) {
+      clearInterval(this.containerReconcileTimer);
+      this.containerReconcileTimer = undefined;
     }
     // Deliberately NOT calling runtimeLauncher.stopAll() — containers outlive the worker.
   }
