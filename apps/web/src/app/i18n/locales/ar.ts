@@ -378,7 +378,6 @@ export const messages: Record<string, string> = {
   'agents.create.models.title': 'نماذج الذكاء الاصطناعي',
   'agents.create.telegramChatId': 'معرّف دردشة التنبيه في تيليغرام',
   'agents.create.telegramChatId.placeholder': 'اختياري: معرّف الدردشة للتنبيه',
-  'agents.create.telegramChatId.help': 'يُستخدم معرّف الدردشة المحفوظ لديك تلقائياً إن وجد.',
   'agents.create.capabilitySetupTitle': 'إعداد قدرة {capability}',
   'agents.create.whereToTrade': 'ربط الوكيل بمنصة خارجية',
   'agents.create.loadingConnections': 'جارٍ تحميل روابط المنصة…',

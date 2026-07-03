@@ -380,7 +380,6 @@ export const messages: Record<string, string> = {
   'agents.create.models.title': 'AI मॉडल',
   'agents.create.telegramChatId': 'Telegram नोटिफिकेशन चैट ID',
   'agents.create.telegramChatId.placeholder': 'वैकल्पिक: सूचनाओं के लिए चैट ID',
-  'agents.create.telegramChatId.help': 'यदि आपके पास सहेजी हुई Telegram चैट ID है, तो वह अपने आप उपयोग होगी।',
   'agents.create.capabilitySetupTitle': '{capability} क्षमता सेटअप',
   'agents.create.whereToTrade': 'एजेंट को बाहरी प्लेटफ़ॉर्म से कनेक्ट करें',
   'agents.create.loadingConnections': 'प्लेटफ़ॉर्म लिंक लोड हो रहे हैं…',

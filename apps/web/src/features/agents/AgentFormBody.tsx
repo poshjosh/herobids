@@ -266,9 +266,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
           onChange={(e) => props.onChange({ telegramChatId: e.target.value })}
           placeholder={intl.formatMessage({ id: 'agents.create.telegramChatId.placeholder' })}
         />
-        <div style={helperStyle}>
-          {intl.formatMessage({ id: 'agents.create.telegramChatId.help' })}
-        </div>
       </div>
 
       {/* Name + auto-hint */}
