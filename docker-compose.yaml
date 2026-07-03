@@ -39,7 +39,8 @@ services:
   api:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: Dockerfile
+      target: api
     ports:
       - '3000:3000'
     volumes:
@@ -94,7 +95,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: Dockerfile
+      target: worker
     volumes:
       - evaldata:/app/app-data
     env_file:

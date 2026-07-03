@@ -8,6 +8,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## v0.0.7 - 2026-07-03
 
+### Infra
+
+- Docker: shared `build-shared` stage compiles 7 packages once for both `api` and `worker`, halving build time and peak memory on the Hetzner server; removed post-deploy `docker builder prune -af` that was destroying build cache after every deploy
+
+
 ### Fix
 
 - Admin display of app version

@@ -11,8 +11,8 @@ services:
     image: herobids-api-dev
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
-      target: build          # reuse the build stage; no pnpm deploy needed
+      dockerfile: Dockerfile
+      target: build-shared   # shared packages compiled; tsx handles app source
     working_dir: /app/apps/api
     volumes:
       - ./apps/api/src:/app/apps/api/src:ro
@@ -27,8 +27,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: apps/worker/Dockerfile
-      target: build
+      dockerfile: Dockerfile
+      target: build-shared
     working_dir: /app/apps/worker
     volumes:
       - ./apps/worker/src:/app/apps/worker/src:ro
