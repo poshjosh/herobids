@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callLlmProvider } from '@herobids/llm';
 import { runHybridEvaluator } from './hybrid-agent-evaluator.js';
 import { createRuntimeCompositionState, type TechnicalScanState } from './runtime-composition.js';
+import { buildHybridPrompt } from './hybrid-agent-prompt.js';
 
 vi.mock('@herobids/llm', () => ({
   callLlmProvider: vi.fn(),
@@ -243,5 +244,133 @@ describe('runHybridEvaluator', () => {
     expect(mockedCallLlmProvider).not.toHaveBeenCalled();
     expect(submitDecision).not.toHaveBeenCalled();
     expect(result.errors).toContain('stale_scan');
+  });
+});
+
+// ── Hybrid Prompt Enrichment ─────────────────────────────────────────────────
+
+describe('buildHybridPrompt enrichments', () => {
+  const scan = makeScan();
+  const portfolio = {
+    exposureUsd: 0,
+    realizedPnlUsd: 0,
+    unrealizedPnlUsd: 0,
+    drawdownPct: 0,
+    availableCapitalUsd: 10_000,
+    netDelta: 0,
+    freshness: { state: 'fresh' as const },
+  };
+  const openPositions: Array<{
+    instrumentId: string; side: string; size: string; entryPrice: string | null;
+    unrealizedPnlUsd: number | null; openedAt: string | null;
+    holdDurationMinutes: number | null; venueType: 'perps' | 'dex' | 'unknown';
+    freshness: { state: 'fresh' };
+  }> = [];
+
+  describe('## Agent Memory', () => {
+    it('renders inline memory keys with values', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        agentMemory: {
+          regime: { value: 'neutral' },
+          sentiment: { value: { direction: 'bullish', score: 0.8 } },
+        },
+        maxInlineMemoryKeys: 12,
+      });
+
+      expect(prompt).toContain('## Agent Memory');
+      expect(prompt).toContain('**regime**: neutral');
+      expect(prompt).toContain('**sentiment**: {"direction":"bullish","score":0.8}');
+    });
+
+    it('renders overflow indicator when keys exceed maxInlineMemoryKeys', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        agentMemory: {
+          key1: { value: 'v1' },
+          key2: { value: 'v2' },
+          key3: { value: 'v3' },
+        },
+        maxInlineMemoryKeys: 2,
+      });
+
+      expect(prompt).toContain('## Agent Memory');
+      expect(prompt).toContain('Older keys:');
+      expect(prompt).toContain('+1 more');
+      expect(prompt).toContain('use list_memory_keys tool');
+    });
+
+    it('omits ## Agent Memory when agentMemory is null', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        agentMemory: null,
+      });
+
+      expect(prompt).not.toContain('## Agent Memory');
+    });
+
+    it('omits ## Agent Memory when agentMemory is empty object', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        agentMemory: {},
+      });
+
+      expect(prompt).not.toContain('## Agent Memory');
+    });
+
+    it('omits ## Agent Memory when agentMemory is undefined', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+      });
+
+      expect(prompt).not.toContain('## Agent Memory');
+    });
+  });
+
+  describe('## Recent Agent Decisions', () => {
+    it('renders judge response history with [Tick -N] labels', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        recentJudgeResponses: [
+          'Skipped BONK — volume ratio below threshold. Exited JUP at $0.83 (+4.1%).',
+          'Opened WIF long at $3.01. Regime pass. Passing on RAY (low ADX).',
+        ],
+      });
+
+      expect(prompt).toContain('## Recent Agent Decisions');
+      expect(prompt).toContain('[Tick -2]');
+      expect(prompt).toContain('[Tick -1]');
+      expect(prompt).toContain('Skipped BONK');
+      expect(prompt).toContain('Opened WIF long');
+    });
+
+    it('truncates long responses to 120 chars', () => {
+      const longResponse = 'A'.repeat(200);
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        recentJudgeResponses: [longResponse],
+      });
+
+      expect(prompt).toContain('## Recent Agent Decisions');
+      expect(prompt).toContain('…');
+      expect(prompt).not.toContain('A'.repeat(150));
+    });
+
+    it('omits ## Recent Agent Decisions when history is empty', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+        recentJudgeResponses: [],
+      });
+
+      expect(prompt).not.toContain('## Recent Agent Decisions');
+    });
+
+    it('omits ## Recent Agent Decisions when undefined', () => {
+      const prompt = buildHybridPrompt({
+        scan, portfolio, openPositions, maxPositions: 5,
+      });
+
+      expect(prompt).not.toContain('## Recent Agent Decisions');
+    });
   });
 });

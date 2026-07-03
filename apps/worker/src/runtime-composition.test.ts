@@ -1771,4 +1771,53 @@ describe('runtime composition helpers', () => {
       expect(userContext).not.toContain('Activity Timeline');
     });
   });
+
+  describe('classic-mode no-op (policy undefined)', () => {
+    it('omits all enrichment sections from system prompt when policy is undefined', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      // Populate all enrichment data
+      recordAgentMemory(state, { key1: JSON.stringify('val1') });
+      state.metrics.queuedWakeSignals = [
+        { source: 'price:ratchet', reason: 'WIF crossed', receivedAt: Date.now() },
+      ];
+      state.metrics.activityTimeline = [
+        { kind: 'USER', text: 'Hello', timestamp: Date.now() },
+      ];
+      state.metrics.currentMarketWake = {
+        wakeId: 'wake-1',
+        source: 'watch_threshold',
+        reason: 'WIF crossed above $3.00',
+        requestedAt: new Date().toISOString(),
+        context: {
+          watchId: 'watch-123', symbol: 'WIF', chain: 'solana',
+          condition: 'above', thresholdPrice: 3.00, currentPrice: 3.02,
+          stale: false, triggeredAt: new Date().toISOString(),
+        },
+      };
+
+      // No policy = classic mode
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      }), undefined, undefined);
+
+      // Classical core content still present
+      expect(prompt).toContain('Core Platform');
+      expect(prompt).toContain('Trading Venue');
+      // Enrichment sections NOT present
+      expect(prompt).not.toContain('Agent Memory');
+      expect(prompt).not.toContain('Trading Config Reference');
+
+      // Dynamic context with no policy
+      const userContext = buildTickUserContext(state, [], undefined);
+      expect(userContext).not.toContain('Queued Wake Signals');
+      expect(userContext).not.toContain('Activity Timeline');
+      // Wake trigger context still renders (it uses state, not enrichment policy)
+      expect(userContext).toContain('Watch Trigger Context');
+      // But no emphasis line
+      expect(userContext).not.toContain('→ Prioritize evaluating and acting on this signal.');
+    });
+  });
 });
