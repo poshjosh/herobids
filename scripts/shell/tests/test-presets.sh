@@ -6,8 +6,8 @@
 #
 # Environment:
 #   API_BASE_URL   Base URL of the API (default: http://localhost:3000)
-#   ADMIN_EMAIL    Admin login email     (loaded from .env.local if not set)
-#   ADMIN_PASSWORD Admin login password  (loaded from .env.local if not set)
+#   TEST_EMAIL     Test user email     (default: preset-test@local.test)
+#   TEST_PASSWORD  Test user password  (default: TestPreset123!)
 #
 # Usage:
 #   scripts/shell/tests/test-presets.sh
@@ -19,9 +19,6 @@ set -euo pipefail
 # Paths
 # ---------------------------------------------------------------------------
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env.local"
 API_BASE="${API_BASE_URL:-http://localhost:3000}"
 
 # ---------------------------------------------------------------------------
@@ -35,32 +32,34 @@ log_error() { echo "[ERROR] $*" >&2; }
 die() { log_error "$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
-# Load .env.local (only for credentials not already in the environment)
+# Test user credentials (defaults work for local dev; override via env or .env.local)
 # ---------------------------------------------------------------------------
 
-if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
-  if [[ ! -f "$ENV_FILE" ]]; then
-    die "$ENV_FILE not found and ADMIN_EMAIL/ADMIN_PASSWORD not set.
-  Copy the example and fill in your values:
-    cp .env.local.example .env.local"
-  fi
-  set -a
-  # shellcheck source=/dev/null
-  source "$ENV_FILE"
-  set +a
-  log_info "Loaded: $ENV_FILE"
-fi
+TEST_EMAIL="${TEST_EMAIL:-preset-test@local.test}"
+TEST_PASSWORD="${TEST_PASSWORD:-TestPreset123!}"
 
 # ---------------------------------------------------------------------------
-# Authenticate
+# Authenticate (login first, register on first run)
 # ---------------------------------------------------------------------------
 
-TOKEN=$(curl -s -X POST "$API_BASE/auth/login" \
+log_info "Authenticating as $TEST_EMAIL ..."
+
+login_resp=$(curl -s -X POST "$API_BASE/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" \
-  | jq -r '.token // empty')
+  -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}")
+TOKEN=$(echo "$login_resp" | jq -r '.token // empty')
 
-[[ -n "$TOKEN" ]] || die "Login failed — could not obtain a token from $API_BASE"
+if [[ -z "$TOKEN" ]]; then
+  log_info "Login failed — registering new test user ..."
+  register_resp=$(curl -s -X POST "$API_BASE/auth/register" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\",\"displayName\":\"Preset Test\"}")
+  TOKEN=$(echo "$register_resp" | jq -r '.token // empty')
+  [[ -n "$TOKEN" ]] || die "Registration failed: $(echo "$register_resp" | jq -c '.')"
+  log_ok "Test user registered"
+else
+  log_ok "Authenticated"
+fi
 
 # ---------------------------------------------------------------------------
 # Assertions
