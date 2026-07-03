@@ -1,5 +1,5 @@
 import type { CapabilityReadiness, RuntimeDescriptor, RuntimeDescriptorUpdatePayload, ReminderWakeContext, WatchThresholdWakeContext, DiscoveryDeltaWakeContext, RegimeChangeWakeContext, ScannerWakeContext } from '@herobids/domain';
-import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema } from '@herobids/domain';
+import { formatAgentGoalLiteralBlock, AgentWakePayloadSchema, INSTANCE_MESSAGE_TYPES } from '@herobids/domain';
 import type { RegimeResult } from '@herobids/market-data';
 import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
@@ -1541,6 +1541,16 @@ export function applyRuntimeMessage(
       return summary;
     }
     const summary = 'Technical scan completed';
+    pushRecentEvent(state, type, summary);
+    return summary;
+  }
+
+  if (type === INSTANCE_MESSAGE_TYPES.BOT_CONFIG_CHANGED) {
+    const botId = typeof payload['botId'] === 'string' ? payload['botId'] : 'unknown';
+    const changedBy = typeof payload['changedBy'] === 'string' ? payload['changedBy'] : 'system';
+    const prevMode = typeof payload['previousExecutionMode'] === 'string' ? payload['previousExecutionMode'] : 'unknown';
+    const newMode = typeof payload['newExecutionMode'] === 'string' ? payload['newExecutionMode'] : 'unknown';
+    const summary = `Bot ${botId} config changed by ${changedBy}: execution mode ${prevMode} → ${newMode}`;
     pushRecentEvent(state, type, summary);
     return summary;
   }
