@@ -5,6 +5,7 @@ import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate } from './technical-phase.js';
+import { fmtUsd } from './fmt.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
 
@@ -370,6 +371,8 @@ function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return 'unavailable';
   }
+  // Use compact format for values >= 10,000 to save tokens
+  if (Math.abs(value) >= 10_000) return fmtUsd(value);
   return `$${value.toFixed(2)}`;
 }
 
@@ -749,8 +752,8 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       }
       const ctx = wake.context as DiscoveryDeltaWakeContext;
       const rank = ctx.rank !== undefined ? String(ctx.rank) : 'unavailable';
-      const liquidity = ctx.liquidityUsd !== undefined ? `$${ctx.liquidityUsd.toLocaleString()}` : 'unavailable';
-      const volume = ctx.volume24hUsd !== undefined ? `$${ctx.volume24hUsd.toLocaleString()}` : 'unavailable';
+      const liquidity = fmtUsd(ctx.liquidityUsd);
+      const volume = fmtUsd(ctx.volume24hUsd);
       return {
         id: 'discoveryTriggerContext',
         title: 'Discovery Trigger Context',

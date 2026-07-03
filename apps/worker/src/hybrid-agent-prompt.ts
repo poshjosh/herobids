@@ -1,4 +1,5 @@
 import type { TechnicalScanState, RuntimePortfolioSummary, RuntimePositionSnapshot } from './runtime-composition.js';
+import { fmtUsd } from './fmt.js';
 
 export interface HybridPromptInput {
   scan: TechnicalScanState;
@@ -22,9 +23,8 @@ export function buildHybridPrompt(input: HybridPromptInput): string {
   lines.push('');
 
   // Capital and position context
-  const capitalStr = portfolio.availableCapitalUsd !== null && portfolio.availableCapitalUsd !== undefined
-    ? `$${portfolio.availableCapitalUsd.toFixed(2)}`
-    : 'unknown';
+  const formattedCapital = fmtUsd(portfolio.availableCapitalUsd);
+  const capitalStr = formattedCapital === 'unavailable' ? 'unknown' : formattedCapital;
   lines.push(`Available capital: ${capitalStr}`);
   lines.push(`Max positions: ${maxPositions}`);
 
@@ -37,7 +37,7 @@ export function buildHybridPrompt(input: HybridPromptInput): string {
     for (const pos of activePositions) {
       const entryStr = pos.entryPrice ?? '—';
       const sizeStr = pos.size;
-      const pnlStr = pos.unrealizedPnlUsd !== null ? `$${pos.unrealizedPnlUsd.toFixed(2)}` : '—';
+      const pnlStr = pos.unrealizedPnlUsd !== null ? fmtUsd(pos.unrealizedPnlUsd) : '—';
       lines.push(`| ${pos.instrumentId} | ${pos.side} | ${entryStr} | ${sizeStr} | ${pnlStr} |`);
     }
   } else {
@@ -109,7 +109,7 @@ export function buildHybridPrompt(input: HybridPromptInput): string {
   lines.push(`- Max ${maxPositions} positions total, ${activePositions.length} currently open`);
   if (portfolio.availableCapitalUsd !== null && portfolio.availableCapitalUsd !== undefined && portfolio.availableCapitalUsd > 0) {
     const perPositionCap = portfolio.availableCapitalUsd / Math.max(1, maxPositions);
-    lines.push(`- Suggested max ${maxPositions} positions, ~$${perPositionCap.toFixed(0)} each`);
+    lines.push(`- Suggested max ${maxPositions} positions, ~${fmtUsd(perPositionCap)} each`);
   }
   lines.push('');
   lines.push('Respond ONLY with a JSON array:');
