@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.7 - 2026-07-03
+
+### Fix
+
+- Admin display of app version
+- Admin display of container stats
+
 ## v0.0.6 - 2026-07-03
 
 ### Added
