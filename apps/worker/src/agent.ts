@@ -1141,12 +1141,45 @@ function emitToolResultEvent(params: {
   });
 }
 
+// Track previous CPU usage for computing CPU% between heartbeats.
+let lastCpuUsage: ReturnType<typeof process.cpuUsage> | null = null;
+let lastCpuTime: [number, number] | null = null; // [seconds, nanoseconds]
+
+function getResourceUsage(): { cpuPct: number | undefined; memoryBytes: number | undefined } {
+  try {
+    const mem = process.memoryUsage();
+    const memoryBytes = mem.rss; // Node process RSS only — excludes subprocess memory (e.g. sandbox_exec child)
+
+    // Compute CPU% from the delta since the last measurement.
+    const now = process.hrtime();
+    const currentCpu = process.cpuUsage();
+    let cpuPct: number | undefined;
+    if (lastCpuUsage && lastCpuTime) {
+      const cpuDeltaUs = (currentCpu.user - lastCpuUsage.user) + (currentCpu.system - lastCpuUsage.system);
+      const elapsedSec = (now[0] - lastCpuTime[0]) + (now[1] - lastCpuTime[1]) / 1e9;
+      if (elapsedSec > 0) {
+        // cpuDeltaUs is in microseconds, elapsed is in seconds.
+        // CPU% = (cpuDeltaUs / 1_000_000) / elapsedSec * 100
+        cpuPct = (cpuDeltaUs / 1_000_000 / elapsedSec) * 100;
+      }
+    }
+    lastCpuUsage = currentCpu;
+    lastCpuTime = now;
+    return { cpuPct, memoryBytes };
+  } catch {
+    return { cpuPct: undefined, memoryBytes: undefined };
+  }
+}
+
 async function sendHeartbeat(status: 'starting' | 'ready' | 'busy' | 'degraded', reasonCode?: string): Promise<void> {
   try {
+    const resources = getResourceUsage();
     await publishToInbound(AGENT_MESSAGE_TYPES.RUNTIME_HEARTBEAT, {
       sessionId: SESSION_ID!,
       status,
       ...(reasonCode ? { reasonCode } : {}),
+      ...(resources.cpuPct !== undefined ? { cpuPct: Math.round(resources.cpuPct) } : {}),
+      ...(resources.memoryBytes !== undefined ? { memoryBytes: resources.memoryBytes } : {}),
     });
   } catch (err) {
     logger.warn({ err }, 'Failed to send heartbeat');

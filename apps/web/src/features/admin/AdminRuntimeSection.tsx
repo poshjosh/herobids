@@ -7,6 +7,23 @@ interface Props {
   dockerError?: string;
 }
 
+function fmtBytes(bytes: number): string {
+  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function sessionStatusColor(status: string): string {
+  switch (status) {
+    case 'running': return 'var(--color-success)';
+    case 'starting':
+    case 'launching': return 'var(--color-warning)';
+    case 'unhealthy': return 'var(--color-danger)';
+    default: return 'var(--color-text-muted)';
+  }
+}
+
 export function AdminRuntimeSection({ containers, sessions, dockerError }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -24,7 +41,7 @@ export function AdminRuntimeSection({ containers, sessions, dockerError }: Props
         {dockerError === 'docker_unavailable' ? (
           <EmptyState
             title="Docker unavailable"
-            message="The Docker socket is not accessible. Container data is unavailable in this environment."
+            message="The Docker socket is not accessible. Container data is unavailable in this environment. Mount /var/run/docker.sock in the API container to enable this view."
           />
         ) : containers == null || containers.length === 0 ? (
           <EmptyState title="No containers" message="No running containers found." />
@@ -37,6 +54,7 @@ export function AdminRuntimeSection({ containers, sessions, dockerError }: Props
                   <Th>Image</Th>
                   <Th>State</Th>
                   <Th>Status</Th>
+                  <Th>Writable Layer</Th>
                 </tr>
               </thead>
               <tbody>
@@ -61,6 +79,11 @@ export function AdminRuntimeSection({ containers, sessions, dockerError }: Props
                     <Td>
                       <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{c.Status}</span>
                     </Td>
+                    <Td>
+                      {c.SizeRw != null
+                        ? <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{fmtBytes(c.SizeRw)}</span>
+                        : <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>—</span>}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -73,7 +96,7 @@ export function AdminRuntimeSection({ containers, sessions, dockerError }: Props
       <Card style={{ padding: 0 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border-subtle)', display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' }}>
-            Running Agent Sessions
+            Active Agent Sessions
           </span>
           <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', background: 'var(--color-surface-3)', color: 'var(--color-text-muted)' }}>
             {sessions.length}
@@ -81,39 +104,46 @@ export function AdminRuntimeSection({ containers, sessions, dockerError }: Props
         </div>
 
         {sessions.length === 0 ? (
-          <EmptyState title="No active sessions" message="No agent runtime sessions are currently running." />
+          <EmptyState
+            title="No active sessions"
+            message={dockerError === 'docker_unavailable'
+              ? "No agent runtime sessions found. If agents are running, check that the worker is processing heartbeats and sessions are transitioning to 'running' status."
+              : "No agent runtime sessions are currently running. Sessions may be starting up — they will appear here once the agent sends its first heartbeat."}
+          />
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ background: 'var(--color-surface-2)' }}>
+                  <Th>Agent</Th>
                   <Th>Session ID</Th>
-                  <Th>Agent ID</Th>
                   <Th>Status</Th>
                   <Th>CPU %</Th>
-                  <Th>Memory (MB)</Th>
+                  <Th>Memory</Th>
                 </tr>
               </thead>
               <tbody>
                 {sessions.map((s) => (
                   <tr key={s.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                     <Td>
+                      <span style={{ fontWeight: '500' }}>
+                        {s.agentName ?? s.agentId.slice(0, 8) + '…'}
+                      </span>
+                    </Td>
+                    <Td>
                       <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-muted)' }}>
                         {s.id.slice(0, 8)}…
                       </span>
                     </Td>
                     <Td>
-                      <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                        {s.agentId.slice(0, 8)}…
+                      <span style={{ color: sessionStatusColor(s.status), fontWeight: '500', textTransform: 'capitalize' }}>
+                        {s.status}
                       </span>
-                    </Td>
-                    <Td>
-                      <span style={{ color: 'var(--color-success)', fontWeight: '500' }}>{s.status}</span>
                     </Td>
                     <Td>{s.cpuPct != null ? `${s.cpuPct.toFixed(1)}%` : '—'}</Td>
                     <Td>
                       {s.memoryBytes != null
-                        ? `${(s.memoryBytes / 1_048_576).toFixed(1)} MB`
+                        ? fmtBytes(s.memoryBytes)
                         : '—'}
                     </Td>
                   </tr>

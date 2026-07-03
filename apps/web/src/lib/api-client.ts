@@ -1212,11 +1212,17 @@ export interface AdminContainer {
   Status: string;
   State: string;
   Created: number;
+  /** Writable layer size in bytes (only populated when Docker socket is accessible). */
+  SizeRw?: number;
+  /** Total container filesystem size in bytes (only populated when Docker socket is accessible). */
+  SizeRootFs?: number;
 }
 
 export interface AdminSession {
   id: string;
   agentId: string;
+  /** Human-readable agent name for dashboard display. */
+  agentName?: string | null;
   cpuPct: number | null;
   memoryBytes: number | null;
   status: string;

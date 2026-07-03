@@ -43,7 +43,7 @@ export function AdminOverviewSection({ stats }: { stats: AdminStatsResponse }) {
         <StatCard label="Total Users" value={fmt(stats.counts.users)} />
         <StatCard label="Total Agents" value={fmt(stats.counts.agents)} />
         <StatCard label="Total Bots" value={fmt(stats.counts.bots)} />
-        <StatCard label="Running Sessions" value={fmt(stats.counts.runningSessions)} />
+        <StatCard label="Active Sessions" value={fmt(stats.counts.runningSessions)} />
         <StatCard label="Running Containers" value={stats.counts.runningContainers == null ? '—' : fmt(stats.counts.runningContainers)} />
         <StatCard label="Failed Webhooks" value={fmt(stats.counts.failedWebhooks)} alert={stats.counts.failedWebhooks > 0} />
         <StatCard label="New Users (24h)" value={fmt(stats.counts.newUsersLast24h)} />

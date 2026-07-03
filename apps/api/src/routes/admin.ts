@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { eq, count, sql, gte } from 'drizzle-orm';
+import { eq, count, sql, gte, inArray } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { users, bots, agents, agentRuntimeSessions, billingWebhookEvents } from '@herobids/db';
 import type { MarketDataConfig } from '@herobids/domain';
@@ -31,11 +31,47 @@ function parseAppVersion(): string {
 
 const VERSION = parseAppVersion();
 
-// Docker socket path — standard on Linux; customisable via env.
+// Unix socket path — used as local-dev fallback when DOCKER_HOST is not set.
 const DOCKER_SOCKET = process.env['DOCKER_SOCKET_PATH'] ?? '/var/run/docker.sock';
 
-/** Send a single HTTP GET over a Unix socket and return the raw response body. */
+// Parse DOCKER_HOST for TCP connections (e.g. tcp://docker-proxy:2375).
+// When set, requests go through the restricted TCP proxy instead of the raw Unix socket.
+function parseDockerTcpHost(): { hostname: string; port: number } | null {
+  const host = process.env['DOCKER_HOST'];
+  if (!host?.startsWith('tcp://')) return null;
+  const parts = host.slice(6).split(':');
+  const hostname = parts[0];
+  if (!hostname) return null;
+  return { hostname, port: parseInt(parts[1] ?? '2375', 10) };
+}
+
+const DOCKER_TCP_HOST = parseDockerTcpHost();
+
+/** Send a single HTTP GET and return the parsed JSON body.
+ * Uses TCP (docker-proxy) when DOCKER_HOST=tcp://... is set; falls back to Unix socket. */
 async function dockerSocketGet(path: string): Promise<unknown> {
+  if (DOCKER_TCP_HOST) {
+    // TCP path — goes through the restricted docker-proxy service.
+    const { default: http } = await import('node:http');
+    return new Promise((resolve, reject) => {
+      const req = http.get(
+        { hostname: DOCKER_TCP_HOST.hostname, port: DOCKER_TCP_HOST.port, path, timeout: 3000 },
+        (res) => {
+          let rawData = '';
+          res.on('data', (chunk: Buffer) => { rawData += chunk.toString(); });
+          res.on('end', () => {
+            try { resolve(JSON.parse(rawData)); }
+            catch { reject(new Error('Non-JSON response from Docker TCP')); }
+          });
+          res.on('error', reject);
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(new Error('Docker TCP timeout')); });
+    });
+  }
+
+  // Unix socket fallback — local dev or explicit DOCKER_SOCKET_PATH override.
   const { default: net } = await import('node:net');
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(DOCKER_SOCKET);
@@ -64,7 +100,9 @@ async function dockerSocketGet(path: string): Promise<unknown> {
 }
 
 async function dockerSocketGetAgentContainers(): Promise<unknown[]> {
-  const result = await dockerSocketGet(`/containers/json?all=false&filters=${AGENT_CONTAINER_FILTER}`);
+  // size=1 adds SizeRw (writable layer bytes, i.e. agent-specific writes) and SizeRootFs
+  // per container. The dashboard shows SizeRw as the per-agent disk figure.
+  const result = await dockerSocketGet(`/containers/json?all=false&size=1&filters=${AGENT_CONTAINER_FILTER}`);
   return Array.isArray(result) ? result : [];
 }
 
@@ -186,7 +224,7 @@ export async function adminRoutes(
       db
         .select({ n: count(agentRuntimeSessions.id) })
         .from(agentRuntimeSessions)
-        .where(eq(agentRuntimeSessions.status, 'running'))
+        .where(inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']))
         .then((r) => r[0]?.n ?? 0),
       db
         .select({ n: count(billingWebhookEvents.id) })
@@ -290,40 +328,54 @@ export async function adminRoutes(
 
   // GET /admin/containers — running agent containers (requires Docker socket)
   app.get('/admin/containers', { preHandler: adminPreHandler }, async (_request, reply) => {
-    let containerData: unknown;
+    let containerData: unknown[] | null = null;
+    let dockerError: string | undefined;
     try {
-      containerData = await dockerSocketGetAgentContainers();
+      containerData = await dockerSocketGetAgentContainers() as unknown[];
     } catch {
-      return reply.send({ error: 'docker_unavailable' });
+      dockerError = 'docker_unavailable';
+      // Don't return early — still try to return session data from DB
     }
 
-    // Augment with agent runtime session data for CPU/memory
-    let sessions: { id: string; agentId: string; cpuPct: number | null; memoryBytes: number | null; status: string }[] = [];
+    // Query all non-terminal sessions (starting, launching, running, unhealthy)
+    // so the admin can see sessions that are in-flight or recovering.
+    // Include agent name for easier identification.
+    let sessions: { id: string; agentId: string; agentName: string | null; cpuPct: number | null; memoryBytes: number | null; status: string }[] = [];
     try {
       const rows = await db
         .select({
           id: agentRuntimeSessions.id,
           agentId: agentRuntimeSessions.agentId,
+          agentName: agents.name,
           cpuPct: agentRuntimeSessions.cpuPct,
           memoryBytes: agentRuntimeSessions.memoryBytes,
           status: agentRuntimeSessions.status,
         })
         .from(agentRuntimeSessions)
+        .innerJoin(agents, eq(agentRuntimeSessions.agentId, agents.id))
         .where(
-          eq(agentRuntimeSessions.status, 'running'),
+          inArray(agentRuntimeSessions.status, ['starting', 'launching', 'running', 'unhealthy']),
         );
       sessions = rows.map((r) => ({
         id: r.id,
         agentId: r.agentId,
+        agentName: r.agentName,
         cpuPct: r.cpuPct,
         memoryBytes: r.memoryBytes,
         status: r.status,
       }));
     } catch {
-      // Sessions query is best-effort; still return container data
+      // Sessions query is best-effort; still return whatever data we have
     }
 
-    return reply.send({ containers: containerData, sessions });
+    const response: { containers: unknown[] | null; sessions: typeof sessions; error?: string } = {
+      containers: containerData,
+      sessions,
+    };
+    if (dockerError) {
+      response['error'] = dockerError;
+    }
+    return reply.send(response);
   });
 
   // POST /admin/users/:id/promote — grant admin to a user

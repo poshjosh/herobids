@@ -51,6 +51,8 @@ services:
       DATABASE_URL: postgres://herobids:herobids@postgres:5432/herobids
       REDIS_URL: redis://redis:6379
       EVALUATION_STORAGE_ROOT: /app/app-data/evaluation-output
+      # Route Docker API calls through the restricted TCP proxy instead of raw Unix socket.
+      DOCKER_HOST: tcp://docker-proxy:2375
       # PORT must stay in sync with the healthcheck below and app.port in config/default.yaml.
       # Changing app.port without updating PORT here will leave the container permanently unhealthy.
       PORT: '3000'
@@ -69,6 +71,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      docker-proxy:
+        condition: service_started
     restart: unless-stopped
 
   docker-proxy:

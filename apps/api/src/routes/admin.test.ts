@@ -35,7 +35,7 @@ function buildDb(options: { selectSequence?: unknown[][]; updateSequence?: unkno
   let j = 0;
   const makeChain = (value: unknown[]) => {
     const self: Record<string, unknown> = {};
-    for (const m of ['from', 'where', 'orderBy', 'limit', 'offset']) {
+    for (const m of ['from', 'where', 'orderBy', 'limit', 'offset', 'innerJoin', 'leftJoin', 'groupBy']) {
       self[m] = vi.fn(() => self);
     }
     (self as { then: unknown }).then = (
