@@ -183,7 +183,7 @@ export async function buildApp() {
   await agentRoutes(app, db);
   await connectionRoutes(app, db, TEST_BUDGETS, redisClient, testPlansConfig as any);
   await capabilityRoutes(app, db, testPlansConfig as any, TEST_BUDGETS, redisClient);
-  await botRoutes(app, lifecycleQueue, db, testPlansConfig as any);
+  await botRoutes(app, lifecycleQueue, db, redisClient, testPlansConfig as any);
 
   // Telegram webhook (unauthenticated, no token in test → returns 501)
   await telegramWebhookHandler(app, db, redisClient);

@@ -562,7 +562,7 @@ describe('runtime composition helpers', () => {
       },
     });
 
-    expect(summary).toBe('Account summary: available capital $15000.00');
+    expect(summary).toBe('Account summary: available capital $15.0K');
     expect(state.metrics.portfolio.availableCapitalUsd).toBe(15000);
   });
 

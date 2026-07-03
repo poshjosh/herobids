@@ -4,9 +4,13 @@ import { runHybridEvaluator } from './hybrid-agent-evaluator.js';
 import { createRuntimeCompositionState, type TechnicalScanState } from './runtime-composition.js';
 import { buildHybridPrompt } from './hybrid-agent-prompt.js';
 
-vi.mock('@herobids/llm', () => ({
-  callLlmProvider: vi.fn(),
-}));
+vi.mock('@herobids/llm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@herobids/llm')>();
+  return {
+    ...actual,
+    callLlmProvider: vi.fn(),
+  };
+});
 
 const mockedCallLlmProvider = vi.mocked(callLlmProvider);
 
@@ -122,7 +126,7 @@ describe('runHybridEvaluator', () => {
     expect(submitDecision).toHaveBeenCalledWith('BTC-PERP', 'go_long', 250);
 
     const prompt = mockedCallLlmProvider.mock.calls[0]?.[1].messages[0]?.content;
-    expect(prompt).toContain('Available capital: $10000.00');
+    expect(prompt).toContain('Available capital: $10.0K');
     expect(prompt).toContain('| BTC-PERP | BTC | 0.92 |');
   });
 
