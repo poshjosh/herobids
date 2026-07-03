@@ -1,6 +1,6 @@
 # Plan: Agent Bot Mode Escalation Guard
 
-**Status:** draft  
+**Status:** implemented  
 **Created:** 2026-07-03  
 **Feature ID:** agent-bot-mode-escalation-guard
 

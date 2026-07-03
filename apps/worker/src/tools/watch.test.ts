@@ -70,6 +70,8 @@ function makeCtx(overrides: {
   return {
     agentId: 'agent-test-1',
     sessionId: 'session-test-1',
+    phase: 'scout',
+    executionMode: 'paper',
     redis,
     publishToInbound: vi.fn().mockResolvedValue(undefined),
     priceService: overrides.priceService,

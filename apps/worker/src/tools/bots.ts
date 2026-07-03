@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { AGENT_MESSAGE_TYPES, deriveStrategyPreset, extractStrategyFromConfig } from '@herobids/domain';
+import { AGENT_MESSAGE_TYPES, checkModeEscalation, deriveStrategyPreset, extractStrategyFromConfig } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import pino from 'pino';
 
@@ -327,6 +327,15 @@ const adjustBotConfigTool: AgentTool = {
     const configTarget = await ctx.botRepo.getBotById(botId);
     if (!configTarget || configTarget.creatorType !== 'agent' || configTarget.creatorId !== ctx.agentId) {
       return { success: false, error: `bot ${botId} not found or not owned by this agent`, fault: false };
+    }
+
+    // Enforce mode-rank: agent must not escalate a bot's execution mode beyond its own.
+    const requestedMode = config.execution?.mode;
+    if (requestedMode) {
+      const check = checkModeEscalation(requestedMode, ctx.executionMode);
+      if (!check.allowed) {
+        return { success: false, error: check.error, fault: false };
+      }
     }
 
     const merged = deepMergeConfig(configTarget.config, config);

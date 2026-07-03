@@ -101,6 +101,8 @@ export interface ToolContext {
   sessionId: string;
   /** Which decision phase is executing this tool call */
   phase: 'scout' | 'judge';
+  /** The agent's own execution mode. Used by tools that enforce mode-rank constraints. */
+  executionMode: 'paper' | 'shadow' | 'live';
   /** Redis client for agent memory, watches, and pub/sub */
   redis: {
     hset: (key: string, field: string, value: string) => Promise<number>;

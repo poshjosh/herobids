@@ -19,6 +19,7 @@ function makeCtx(agentId = 'test-agent'): ToolContext {
     agentId,
     sessionId: 'session-1',
     phase: 'judge',
+    executionMode: 'paper',
     redis: {
       hset: vi.fn(async () => 1),
       hget: vi.fn(async () => null),

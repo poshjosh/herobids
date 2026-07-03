@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
+import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
@@ -11,7 +12,7 @@ import {
 } from '../schemas.js';
 import { checkBotLimit, checkLiveEnabled } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
-import { BotConfigSchema, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
+import { BotConfigSchema, INSTANCE_MESSAGE_TYPES, validateExecutionCapability, venueTypeFromProvider } from '@herobids/domain';
 import type { LifecycleJob } from '../types.js';
 
 function normalizeBotConfig(config: Record<string, unknown>, venue: string, symbol: string): Record<string, unknown> {
@@ -27,7 +28,7 @@ function normalizeBotConfig(config: Record<string, unknown>, venue: string, symb
   return normalized;
 }
 
-export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, plansConfig?: PlansConfig): Promise<void> {
+export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig): Promise<void> {
   // Create bot
   app.post('/bots', async (request, reply) => {
     const parsed = CreateInstanceSchema.safeParse(request.body);
@@ -253,6 +254,35 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
     await db.update(bots)
       .set({ config: parsed.data.config, updatedAt: new Date() })
       .where(eq(bots.id, id));
+
+    // Notify the agent when a user changes an agent-created bot's execution mode.
+    if (existing.creatorType === 'agent' && existing.creatorId && newExecutionMode) {
+      const previousMode = (existing.config as Record<string, unknown>)?.['execution'] as Record<string, unknown> | undefined;
+      const prevMode = typeof previousMode?.['mode'] === 'string' ? previousMode['mode'] : null;
+      if (prevMode !== newExecutionMode) {
+        const streamKey = `agent:inbound:${existing.creatorId}`;
+        const envelope = {
+          schemaVersion: 'v1',
+          messageId: crypto.randomUUID(),
+          correlationId: crypto.randomUUID(),
+          initiatorType: 'system',
+          initiatorId: 'api',
+          agentId: existing.creatorId,
+          type: INSTANCE_MESSAGE_TYPES.BOT_CONFIG_CHANGED,
+          createdAt: new Date().toISOString(),
+          payload: {
+            botId: id,
+            changedBy: 'user',
+            previousExecutionMode: prevMode,
+            newExecutionMode,
+            changedAt: new Date().toISOString(),
+          },
+        };
+        redis.xadd(streamKey, '*', 'envelope', JSON.stringify(envelope)).catch(() => {
+          // Fire-and-forget — don't block the API response on notification delivery.
+        });
+      }
+    }
 
     // Restart if running to pick up new config
     if (existing.status === 'running') {

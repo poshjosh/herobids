@@ -20,6 +20,7 @@ import {
   venueTypeFromProvider,
   deriveStrategyPreset,
   extractStrategyFromConfig,
+  checkModeEscalation,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
@@ -656,13 +657,9 @@ export class AgentMessageBroker {
       // live agents can create any mode.
       const agentMode = agent.executionMode ?? 'paper';
       const botMode = validatedConfig.execution.mode ?? 'paper';
-      const MODE_RANK: Record<string, number> = { paper: 0, shadow: 1, live: 2 };
-      if ((MODE_RANK[botMode] ?? 0) > (MODE_RANK[agentMode] ?? 0)) {
-        const permitted = Object.keys(MODE_RANK).filter((m) => (MODE_RANK[m] ?? 0) <= (MODE_RANK[agentMode] ?? 0));
-        throw new Error(
-          `Cannot create a bot with execution mode "${botMode}". ` +
-          `Permitted execution modes: ${permitted.join(', ')}.`,
-        );
+      const modeCheck = checkModeEscalation(botMode, agentMode, 'create');
+      if (!modeCheck.allowed) {
+        throw new Error(modeCheck.error);
       }
 
       // Safety gate: plan-level live execution eligibility.
@@ -843,13 +840,9 @@ export class AgentMessageBroker {
       // Mirrors the create_and_start guard — prevents escalation via adjust_config.
       const adjustedBotMode = validation.data.execution.mode ?? 'paper';
       const agentModeForAdjust = agent.executionMode ?? 'paper';
-      const MODE_RANK_ADJUST: Record<string, number> = { paper: 0, shadow: 1, live: 2 };
-      if ((MODE_RANK_ADJUST[adjustedBotMode] ?? 0) > (MODE_RANK_ADJUST[agentModeForAdjust] ?? 0)) {
-        const permitted = Object.keys(MODE_RANK_ADJUST).filter((m) => (MODE_RANK_ADJUST[m] ?? 0) <= (MODE_RANK_ADJUST[agentModeForAdjust] ?? 0));
-        throw new Error(
-          `Cannot adjust a bot to execution mode "${adjustedBotMode}". ` +
-          `Permitted execution modes: ${permitted.join(', ')}.`,
-        );
+      const modeCheck = checkModeEscalation(adjustedBotMode, agentModeForAdjust, 'adjust');
+      if (!modeCheck.allowed) {
+        throw new Error(modeCheck.error);
       }
 
       // Consistency model: we persist the merged config then enqueue a restart.

@@ -10,6 +10,8 @@ function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     agentId: 'agent-market-data-test',
     sessionId: 'session-market-data-test',
+    phase: 'scout',
+    executionMode: 'paper',
     redis: {
       hset: vi.fn(async () => 1),
       hget: vi.fn(async () => null),

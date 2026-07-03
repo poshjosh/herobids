@@ -14,6 +14,8 @@ function createToolContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     agentId: 'agent-1',
     sessionId: 'session-1',
+    phase: 'scout',
+    executionMode: 'paper',
     redis: {
       hset: vi.fn(async () => 1),
       hget: vi.fn(async () => null),

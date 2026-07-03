@@ -19,6 +19,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     agentId: 'agent-test',
     sessionId: 'session-test',
     phase: 'scout',
+    executionMode: 'paper',
     redis,
     publishToInbound: vi.fn().mockResolvedValue(undefined),
     ...overrides,

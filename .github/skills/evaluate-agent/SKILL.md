@@ -71,9 +71,20 @@ Inspect relevant Redis keys (reminders, rate-limit buckets, session state) and s
 - What was the trade sequence — entries, position management, `go_flat`?
 
 #### Anomalies
+
+##### Policy anomalies (HIGH severity by default)
+These map to bugs, security issues, or policy violations.
+
+- **Execution-mode coherence:** For each agent under evaluation, query all bots where `creator_id = <agent-id>` and verify `config->'execution'->>'mode'` rank ≤ agent's `execution_mode`. Flag any bot where the bot mode outranks the agent mode as a HIGH anomaly. Include the bot's `created_at` and `updated_at` to determine whether the escalation happened at creation or via a config update.
+- **Bot config escalation audit:** Query `agent_messages` for all `agent.tool.call` records where `payload->>'toolName' = 'adjust_bot_config'`. For each such call, if `args` are stored (Step 7 of agent-bot-mode-escalation-guard), inspect the `execution.mode` in the stored args and flag any escalation attempt above the agent's `execution_mode`. If args are not stored, join to the `bots` table and compare the bot's current `config->'execution'->>'mode'` against the agent's `execution_mode`; if the bot mode outranks the agent mode and the bot's `updated_at` is close to the tool call's `created_at`, flag this as a HIGH security anomaly: "agent escalated bot execution mode via adjust_bot_config".
+- Are restrictions enforced? (e.g. if `15m` candle is unsupported, could the agent create a bot using it?)
+- Unauthorised access attempts, risk-limit bypass attempts.
+
+##### Operational anomalies
+These map to degraded-but-expected behaviour.
+
 - Are watches functioning as expected?
 - Are rate limits working correctly? (Note: Birdeye may return 400 instead of 429 for rate-limit errors — treat 400s on Birdeye as potential rate-limit hits.)
-- Are restrictions enforced? (e.g. if `15m` candle is unsupported, could the agent create a bot using it?)
 - Is the wake signal system behaving as designed?
 - Coordinator pricing anomalies?
 - Trade lifecycle anomalies (stuck in pending/executing, missing `closedAt`, etc.)?

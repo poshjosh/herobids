@@ -1099,6 +1099,15 @@ async function publishToInbound(type: string, payload: Record<string, unknown>):
 }
 
 /**
+ * Sanitise tool-call arguments for persistent storage.
+ * JSON-serialises and truncates at 2,048 characters.
+ */
+function sanitiseToolArgs(args: Record<string, unknown>): string {
+  const serialized = JSON.stringify(args);
+  return serialized.length <= 2048 ? serialized : serialized.slice(0, 2047) + '…';
+}
+
+/**
  * Publish a typed runtime activity audit event into the inbound stream.
  * Fire-and-forget — errors are swallowed so instrumentation never disrupts the tick.
  */
@@ -1406,6 +1415,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       phase,
       toolName: call.tool,
       correlationId: toolCorrelationId,
+      args: sanitiseToolArgs(call.args),
     });
     emitToolResultEvent({
       phase,
@@ -1483,6 +1493,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     agentId: AGENT_ID!,
     sessionId: SESSION_ID!,
     phase,
+    executionMode: (agentConfig.executionMode ?? 'paper') as 'paper' | 'shadow' | 'live',
     redis: {
       hset: redis.hset.bind(redis),
       hget: redis.hget.bind(redis),
@@ -1531,6 +1542,7 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       phase,
       toolName: call.tool,
       correlationId: toolCorrelationId,
+      args: sanitiseToolArgs(call.args),
     });
 
     if (!validation.success) {
@@ -2338,6 +2350,7 @@ async function runTick(): Promise<void> {
               phase: 'scout',
               toolName: toolCall.name,
               correlationId: rejectedToolCorrelationId,
+              args: sanitiseToolArgs(toolCall.args as Record<string, unknown>),
             });
             emitToolResultEvent({
               phase: 'scout',

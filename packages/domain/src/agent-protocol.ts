@@ -436,6 +436,7 @@ export const INSTANCE_MESSAGE_TYPES = {
   RECONCILIATION_NOTICE: 'instance.reconciliation.notice',
   STATUS: 'instance.status',
   TOOL_RESULT: 'instance.tool.result',
+  BOT_CONFIG_CHANGED: 'instance.bot.config_changed',
 } as const;
 
 export const MARKET_MONITOR_MESSAGE_TYPES = {
@@ -520,6 +521,8 @@ export const RuntimeToolCallPayloadSchema = z.object({
   phase: z.enum(['scout', 'judge']),
   toolName: z.string().min(1),
   correlationId: z.string().min(1),
+  /** Sanitised JSON-serialised tool-call arguments, truncated at 2048 chars. */
+  args: z.string().max(2048).optional(),
 });
 export type RuntimeToolCallPayload = z.infer<typeof RuntimeToolCallPayloadSchema>;
 
@@ -538,6 +541,16 @@ export const ConfigUpdatePayloadSchema = z.object({
   config: z.record(z.unknown()).nullable(),
 });
 export type ConfigUpdatePayload = z.infer<typeof ConfigUpdatePayloadSchema>;
+
+/** Emitted when a user patches an agent-created bot's config via the HTTP API. */
+export const BotConfigChangedPayloadSchema = z.object({
+  botId: z.string().min(1),
+  changedBy: z.literal('user'),
+  previousExecutionMode: z.string().nullable(),
+  newExecutionMode: z.string(),
+  changedAt: z.string().datetime(),
+});
+export type BotConfigChangedPayload = z.infer<typeof BotConfigChangedPayloadSchema>;
 
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
@@ -560,6 +573,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [INSTANCE_MESSAGE_TYPES.RECONCILIATION_NOTICE]: ReconciliationNoticePayloadSchema,
   [INSTANCE_MESSAGE_TYPES.STATUS]: InstanceStatusPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: ToolResultPayloadSchema,
+  [INSTANCE_MESSAGE_TYPES.BOT_CONFIG_CHANGED]: BotConfigChangedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED]: MarketWatchTriggeredPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED]: MarketDiscoveryDetectedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED]: MarketRegimeChangedPayloadSchema,

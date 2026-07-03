@@ -89,6 +89,10 @@ const validConfig = {
 };
 
 describe('bot routes', () => {
+  const mockRedis = {
+    xadd: vi.fn().mockResolvedValue(undefined),
+  } as unknown as import('ioredis').Redis;
+
   it('returns 400 when bot config is invalid before the worker sees it', async () => {
     const { botRoutes } = await import('./bots.js');
 
@@ -97,7 +101,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -151,7 +155,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -209,7 +213,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free', true);
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -274,7 +278,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -304,7 +308,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -351,7 +355,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -428,7 +432,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -470,7 +474,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -498,7 +502,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',
@@ -579,7 +583,7 @@ describe('bot routes', () => {
 
     const app = Fastify();
     decorateWithAuth(app, TEST_USER_ID, 'free');
-    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, makePlansConfig());
+    await botRoutes(app, mockQueue as unknown as import('bullmq').Queue, db as unknown as import('@herobids/db').Database, mockRedis, makePlansConfig());
 
     const res = await app.inject({
       method: 'POST',

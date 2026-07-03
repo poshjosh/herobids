@@ -6,6 +6,8 @@ function makeCtx(store: Record<string, Record<string, string>> = {}): Parameters
   return {
     agentId: 'agent-1',
     sessionId: 'session-1',
+    phase: 'scout',
+    executionMode: 'paper',
     redis: {
       hset: vi.fn(async (key: string, field: string, value: string) => {
         store[key] ??= {};
