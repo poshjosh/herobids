@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **LLM Token Optimization** — Three targeted changes to reduce LLM input/output token waste:
+  - **Compact number formatting** (`fmtNum`/`fmtUsd`): K/M/B/T suffixes replace verbose `toLocaleString()`/`toFixed()` for USD values ≥10K in agent prompts (~30–40% token reduction in market-data sections).
+  - **Output `maxLength` constraints**: `rationaleSummary` capped at 400 chars (schema-level); LLM `reasoning` field truncated to 80 chars with prompt instruction.
+  - **`stripEmptyValues()` utility**: Removes `null`/`undefined`/`""` keys from LLM output objects before Zod validation, preventing parse failures when LLMs emit empty optional fields.
 - **Agent Bot Mode Escalation Guard** — Shared `checkModeEscalation` helper prevents agents from creating or adjusting bots to an execution mode that outranks the agent's own. Enforced in both the broker (`manage_bot` path) and the direct `adjust_bot_config` tool. Adds `executionMode` to `ToolContext`, stores sanitised tool-call arguments in `agent_messages` for retrospective audits, and notifies agents when a user patches their bot's config via the API. The evaluate-agent skill now includes execution-mode coherence checks and separates policy anomalies (HIGH) from operational anomalies.
 - **Style-Based Strategy Presets** — YAML-driven presets with `percent_equity` sizing, backend loader + API (`?style=`), frontend style selector, and DB migration (0029). Economy/Standard/Premium tiers replace hardcoded STRATEGY_PRESETS.
 - **Strategy Preset Agent API** — Agent create/update endpoints accept `strategyPreset` to resolve and persist style-based preset config (technical, execution, risk). Explicit user overrides take precedence over preset defaults.

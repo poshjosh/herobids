@@ -242,20 +242,20 @@ All three phases are independent — do them in any order or in parallel.
 
 ## Checklist
 
-- [ ] `apps/worker/src/fmt.ts` — `fmtNum`, `fmtUsd`
-- [ ] `apps/worker/src/fmt.test.ts` — unit tests
-- [ ] `apps/worker/src/runtime-composition.ts` — apply `fmtUsd`/`fmtNum` to discovery trigger, venue intelligence, `formatCurrency`
-- [ ] `apps/worker/src/hybrid-agent-prompt.ts` — apply `fmtUsd` to capital/PnL lines
-- [ ] `packages/domain/src/agent-protocol.ts` — `rationaleSummary: z.string().min(1).max(400)`
-- [ ] `packages/strategy/src/llm.ts` — prompt instruction + 80-char truncation on `reasoning`
-- [ ] Update tests that assert on `rationaleSummary` length
-- [ ] `packages/llm/src/strip.ts` — `stripEmptyValues`
-- [ ] Export from `packages/llm/src/index.ts`
-- [ ] `packages/strategy/src/llm.ts` — apply `stripEmptyValues` in `parseResponse`
-- [ ] `apps/worker/src/hybrid-agent-evaluator.ts` — apply `stripEmptyValues` per element
-- [ ] `packages/llm/src/strip.test.ts` — unit tests
-- [ ] `pnpm lint` passes
-- [ ] `pnpm test` passes
+- [x] `apps/worker/src/fmt.ts` — `fmtNum`, `fmtUsd`
+- [x] `apps/worker/src/fmt.test.ts` — unit tests
+- [x] `apps/worker/src/runtime-composition.ts` — apply `fmtUsd`/`fmtNum` to discovery trigger, venue intelligence, `formatCurrency`
+- [x] `apps/worker/src/hybrid-agent-prompt.ts` — apply `fmtUsd` to capital/PnL lines
+- [x] `packages/domain/src/agent-protocol.ts` — `rationaleSummary: z.string().min(1).max(400)`
+- [x] `packages/strategy/src/llm.ts` — prompt instruction + 80-char truncation on `reasoning`
+- [x] Update tests that assert on `rationaleSummary` length
+- [x] `packages/llm/src/strip.ts` — `stripEmptyValues`
+- [x] Export from `packages/llm/src/index.ts`
+- [x] `packages/strategy/src/llm.ts` — apply `stripEmptyValues` in `parseResponse`
+- [x] `apps/worker/src/hybrid-agent-evaluator.ts` — apply `stripEmptyValues` per element
+- [x] `packages/llm/src/strip.test.ts` — unit tests
+- [x] `pnpm lint` passes
+- [x] `pnpm test` passes (all changed-package tests pass; 7 pre-existing failures in blueprints.test.ts unrelated)
 
 ---
 
