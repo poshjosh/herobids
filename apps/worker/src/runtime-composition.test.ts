@@ -6,6 +6,7 @@ import {
   buildTickUserContext,
   createRuntimeCompositionState,
   getVisibleToolNames,
+  recordAgentMemory,
   recordRegimeEvaluation,
   recordSessionCost,
   setCapabilityDegradation,
@@ -13,6 +14,8 @@ import {
   recordVenueSignals,
   recordActiveWatches,
   recordActiveWatchSummary,
+  type PromptEnrichmentPolicy,
+  type ActivityTimelineEvent,
 } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
 
@@ -1460,6 +1463,312 @@ describe('runtime composition helpers', () => {
       expect(eth?.unrealizedPnlUsd).toBe(-20);
       // Portfolio aggregates all unrealized PnL across instruments
       expect(state.metrics.portfolio.unrealizedPnlUsd).toBe(80);
+    });
+  });
+
+  // ── Prompt Context Enrichment ──────────────────────────────────────────────
+
+  const enrichmentPolicy: PromptEnrichmentPolicy = {
+    memory: { enabled: true, maxInlineKeys: 12 },
+    judgeHistory: { hybridMaxResponses: 3, tickMaxDisplayed: 10 },
+    configReference: { enabled: true },
+    queuedSignals: { enabled: true, max: 5 },
+    wakeEmphasis: { enabled: true },
+    activityTimeline: { enabled: true, maxEvents: 10 },
+  };
+
+  describe('recordAgentMemory', () => {
+    it('wraps plain JSON values so renderers always have entry.value', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      recordAgentMemory(state, {
+        sentiment: JSON.stringify('bullish'),
+        count: JSON.stringify(42),
+        nested: JSON.stringify({ foo: 'bar' }),
+      });
+
+      const mem = state.metrics.agentMemory;
+      expect(mem).not.toBeNull();
+      expect(mem!['sentiment']?.value).toBe('bullish');
+      expect(mem!['count']?.value).toBe(42);
+      expect(mem!['nested']?.value).toEqual({ foo: 'bar' });
+    });
+
+    it('falls back to raw string when value is not valid JSON', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      recordAgentMemory(state, {
+        broken: 'not-json{{{',
+      });
+
+      const mem = state.metrics.agentMemory;
+      expect(mem!['broken']?.value).toBe('not-json{{{');
+    });
+  });
+
+  describe('agent-memory provider', () => {
+    it('renders inline keys up to maxInlineKeys with overflow indicator', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const smallPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        memory: { enabled: true, maxInlineKeys: 2 },
+      };
+
+      // Populate 3 memory keys
+      recordAgentMemory(state, {
+        key1: JSON.stringify('val1'),
+        key2: JSON.stringify('val2'),
+        key3: JSON.stringify('val3'),
+      });
+
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      }), undefined, smallPolicy);
+
+      expect(prompt).toContain('Agent Memory');
+      expect(prompt).toContain('**key1**');
+      expect(prompt).toContain('**key2**');
+      expect(prompt).toContain('Older keys:');
+      expect(prompt).toContain('+1 more');
+      expect(prompt).toContain('use list_memory_keys tool');
+    });
+
+    it('omits Agent Memory section when memory is empty', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      }), undefined, enrichmentPolicy);
+
+      expect(prompt).not.toContain('Agent Memory');
+    });
+
+    it('omits Agent Memory section when policy is disabled', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      recordAgentMemory(state, { key1: JSON.stringify('val1') });
+
+      const disabledPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        memory: { enabled: false, maxInlineKeys: 12 },
+      };
+
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      }), undefined, disabledPolicy);
+
+      expect(prompt).not.toContain('Agent Memory');
+    });
+  });
+
+  describe('trading-config-reference provider', () => {
+    it('renders execution mode and guardrail values', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      }), undefined, enrichmentPolicy);
+
+      expect(prompt).toContain('Trading Config Reference');
+      expect(prompt).toContain('Execution mode: paper');
+      expect(prompt).toContain('Daily loss limit: 10');
+      expect(prompt).toContain('Max slippage: 25 bps');
+      expect(prompt).toContain('Max bots: 2');
+    });
+
+    it('omits Trading Config Reference when configReference is disabled', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const disabledPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        configReference: { enabled: false },
+      };
+
+      const prompt = buildSystemPrompt(state, createPromptTimingContext({
+        currentTimeMs: Date.now(),
+        nominalTickIntervalMs: 900_000,
+        expectedNextTickAtMs: Date.now() + 900_000,
+      }), undefined, disabledPolicy);
+
+      expect(prompt).not.toContain('Trading Config Reference');
+    });
+  });
+
+  describe('queued-signals provider', () => {
+    it('renders queued signals with age labels', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const now = Date.now();
+      state.metrics.queuedWakeSignals = [
+        { source: 'price:ratchet', reason: 'WIF crossed ratchet-up', receivedAt: now - 23_000 },
+        { source: 'discovery', reason: 'New BONK pool detected', receivedAt: now - 60_000 },
+      ];
+
+      const userContext = buildTickUserContext(state, [], enrichmentPolicy);
+
+      expect(userContext).toContain('Queued Wake Signals');
+      expect(userContext).toContain('price:ratchet: WIF crossed ratchet-up (23s ago)');
+      expect(userContext).toContain('discovery: New BONK pool detected (1m ago)');
+    });
+
+    it('omits Queued Wake Signals when buffer is empty', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.queuedWakeSignals = [];
+
+      const userContext = buildTickUserContext(state, [], enrichmentPolicy);
+
+      expect(userContext).not.toContain('Queued Wake Signals');
+    });
+
+    it('omits Queued Wake Signals when policy is disabled', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.queuedWakeSignals = [
+        { source: 'price:ratchet', reason: 'WIF crossed ratchet-up', receivedAt: Date.now() },
+      ];
+
+      const disabledPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        queuedSignals: { enabled: false, max: 5 },
+      };
+
+      const userContext = buildTickUserContext(state, [], disabledPolicy);
+
+      expect(userContext).not.toContain('Queued Wake Signals');
+    });
+  });
+
+  describe('wake-emphasis toggling', () => {
+    it('appends prioritization instruction when wakeEmphasis is enabled', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.currentMarketWake = {
+        wakeId: 'wake-1',
+        source: 'watch_threshold',
+        reason: 'WIF crossed above $3.00',
+        requestedAt: new Date().toISOString(),
+        context: {
+          watchId: 'watch-123',
+          symbol: 'WIF',
+          chain: 'solana',
+          condition: 'above',
+          thresholdPrice: 3.00,
+          currentPrice: 3.02,
+          stale: false,
+          triggeredAt: new Date().toISOString(),
+        },
+      };
+
+      const userContext = buildTickUserContext(state, [], enrichmentPolicy);
+
+      expect(userContext).toContain('Watch Trigger Context');
+      expect(userContext).toContain('→ Prioritize evaluating and acting on this signal.');
+    });
+
+    it('omits prioritization instruction when wakeEmphasis is disabled', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.currentMarketWake = {
+        wakeId: 'wake-1',
+        source: 'watch_threshold',
+        reason: 'WIF crossed above $3.00',
+        requestedAt: new Date().toISOString(),
+        context: {
+          watchId: 'watch-123',
+          symbol: 'WIF',
+          chain: 'solana',
+          condition: 'above',
+          thresholdPrice: 3.00,
+          currentPrice: 3.02,
+          stale: false,
+          triggeredAt: new Date().toISOString(),
+        },
+      };
+
+      const disabledPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        wakeEmphasis: { enabled: false },
+      };
+
+      const userContext = buildTickUserContext(state, [], disabledPolicy);
+
+      expect(userContext).toContain('Watch Trigger Context');
+      expect(userContext).not.toContain('→ Prioritize evaluating and acting on this signal.');
+    });
+  });
+
+  describe('activity-timeline provider', () => {
+    const baseTime = Date.now();
+
+    it('renders events in chronological order (oldest → newest)', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.activityTimeline = [
+        { kind: 'USER', text: 'Hello', timestamp: baseTime - 120_000 },
+        { kind: 'MEMORY', key: 'regime', value: 'neutral', timestamp: baseTime - 60_000 },
+        { kind: 'DECISION', text: 'Skipped BONK', timestamp: baseTime - 30_000 },
+      ];
+
+      const userContext = buildTickUserContext(state, [], enrichmentPolicy);
+
+      expect(userContext).toContain('Activity Timeline');
+      // Events should appear in order: USER first, then MEMORY, then DECISION
+      const userIdx = userContext.indexOf('[USER]');
+      const memIdx = userContext.indexOf('[MEMORY]');
+      const decIdx = userContext.indexOf('[DECISION]');
+      expect(userIdx).toBeLessThan(memIdx);
+      expect(memIdx).toBeLessThan(decIdx);
+    });
+
+    it('trims buffer to maxEvents (oldest dropped)', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      const smallPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        activityTimeline: { enabled: true, maxEvents: 3 },
+      };
+
+      // Push 5 events — oldest 2 should be dropped
+      state.metrics.activityTimeline = [
+        { kind: 'USER', text: 'Event1', timestamp: baseTime - 400_000 },
+        { kind: 'USER', text: 'Event2', timestamp: baseTime - 300_000 },
+        { kind: 'USER', text: 'Event3', timestamp: baseTime - 200_000 },
+        { kind: 'USER', text: 'Event4', timestamp: baseTime - 100_000 },
+        { kind: 'USER', text: 'Event5', timestamp: baseTime },
+      ];
+      // Simulate trimming
+      while (state.metrics.activityTimeline.length > smallPolicy.activityTimeline.maxEvents) {
+        state.metrics.activityTimeline.shift();
+      }
+
+      expect(state.metrics.activityTimeline.length).toBe(3);
+      expect(state.metrics.activityTimeline[0]!.text).toBe('Event3');
+      expect(state.metrics.activityTimeline[2]!.text).toBe('Event5');
+    });
+
+    it('returns null when timeline is empty', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.activityTimeline = [];
+
+      const userContext = buildTickUserContext(state, [], enrichmentPolicy);
+
+      expect(userContext).not.toContain('Activity Timeline');
+    });
+
+    it('omits Activity Timeline when policy is disabled', () => {
+      const state = createRuntimeCompositionState(baseDescriptor);
+      state.metrics.activityTimeline = [
+        { kind: 'USER', text: 'Hello', timestamp: baseTime },
+      ];
+
+      const disabledPolicy: PromptEnrichmentPolicy = {
+        ...enrichmentPolicy,
+        activityTimeline: { enabled: false, maxEvents: 10 },
+      };
+
+      const userContext = buildTickUserContext(state, [], disabledPolicy);
+
+      expect(userContext).not.toContain('Activity Timeline');
     });
   });
 });

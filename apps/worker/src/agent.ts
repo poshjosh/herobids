@@ -1255,9 +1255,12 @@ async function pollWakeSignals(): Promise<void> {
           try {
             const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
             if (envelope['type'] === 'agent.wake') {
-              const source = String(envelope['source'] ?? 'unknown');
-              const reason = String(envelope['reason'] ?? 'wake signal received');
-              pendingWakeSignalBuffer.push({ source, reason, receivedAt: Date.now() });
+              // Phase 5: only buffer when prompt enrichment is active; classic mode is strict no-op.
+              if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
+                const source = String(envelope['source'] ?? 'unknown');
+                const reason = String(envelope['reason'] ?? 'wake signal received');
+                pendingWakeSignalBuffer.push({ source, reason, receivedAt: Date.now() });
+              }
               requestWakeDrivenTick('Received market wake signal between ticks');
             }
           } catch {
@@ -1875,9 +1878,14 @@ async function runTick(): Promise<void> {
     if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
       const max = agentRuntimePolicy.promptEnrichment.queuedSignals.max;
       // Exclude the signal that triggered the current tick (already in currentMarketWake)
+      const currentWake = runtimeState.metrics.currentMarketWake;
       const baseSignals = pendingWakeSignalBuffer.splice(0, pendingWakeSignalBuffer.length);
-      const filtered = baseSignals.slice(-max);
-      runtimeState.metrics.queuedWakeSignals = filtered;
+      const filtered = currentWake
+        ? baseSignals.filter((s) => s.source !== currentWake.source || s.reason !== currentWake.reason)
+        : baseSignals;
+      // Newest first (plan specifies newest signals shown first)
+      filtered.sort((a, b) => b.receivedAt - a.receivedAt);
+      runtimeState.metrics.queuedWakeSignals = filtered.slice(0, max);
     }
 
     // ── Prompt context enrichment: load agent memory once per tick ───────
@@ -2557,7 +2565,9 @@ async function runTick(): Promise<void> {
 
     addToHistory('user', userContext);
     const recentHistory = conversationHistory.slice(
-      -agentRuntimePolicy.promptEnrichment.judgeHistory.tickMaxDisplayed,
+      -(agentRuntimePolicy.promptStyle === 'enriched'
+        ? agentRuntimePolicy.promptEnrichment.judgeHistory.tickMaxDisplayed
+        : 10),
     );
     const judgeToolDefinitions: LlmToolDefinition[] = toolRegistry.getDefinitions([...allowedTools()]).map((tool) => ({
       name: tool.name,
@@ -2668,7 +2678,7 @@ async function runTick(): Promise<void> {
           if (
             agentRuntimePolicy.promptStyle === 'enriched'
             && agentRuntimePolicy.promptEnrichment.activityTimeline.enabled
-            && (toolCall.name === 'save_memory' || toolCall.name === 'delete_memory')
+            && (toolCall.name === 'set_memory' || toolCall.name === 'delete_memory')
             && !toolResultIndicatesFailure(toolResult)
           ) {
             const maxEvents = agentRuntimePolicy.promptEnrichment.activityTimeline.maxEvents;

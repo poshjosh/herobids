@@ -750,12 +750,19 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       const lines: string[] = [];
       lines.push(`Execution mode: ${desc.executionMode}`);
       if (desc.guardrails.dailyLossLimit) lines.push(`Daily loss limit: ${desc.guardrails.dailyLossLimit}`);
-      if (desc.guardrails.maxBots !== undefined && desc.guardrails.maxBots !== null) lines.push(`Max bots: ${desc.guardrails.maxBots}`);
+      if (desc.guardrails.maxSlippageBps != null) lines.push(`Max slippage: ${desc.guardrails.maxSlippageBps} bps`);
+      if (desc.guardrails.maxBots != null) lines.push(`Max bots: ${desc.guardrails.maxBots}`);
       // Surface decision mode if available in the descriptor
       const decisionMode = (desc as unknown as Record<string, unknown>)['decisionMode'];
       if (typeof decisionMode === 'string' && decisionMode.length > 0) {
         lines.push(`Decision mode: ${decisionMode}`);
       }
+      // Surface risk guardrails from the descriptor
+      const riskExt = (desc as unknown as Record<string, unknown>);
+      if (typeof riskExt['maxOpenPositions'] === 'number') lines.push(`Max open positions: ${riskExt['maxOpenPositions']}`);
+      if (typeof riskExt['maxPositionSizePct'] === 'number') lines.push(`Max position size: ${riskExt['maxPositionSizePct']}%`);
+      if (typeof riskExt['stopLossPct'] === 'number') lines.push(`Stop-loss: ${riskExt['stopLossPct']}%`);
+      if (typeof riskExt['capital'] === 'string') lines.push(`Capital: ${riskExt['capital']}`);
 
       return {
         id: 'tradingConfigReference',
@@ -822,19 +829,12 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       const signals = state.metrics.queuedWakeSignals;
       if (signals.length === 0) return null;
 
-      const max = policy.queuedSignals.max;
-      const shown = signals.slice(0, max);
       const now = Date.now();
-
-      const lines = shown.map((s) => {
+      const lines = signals.map((s) => {
         const ageSec = Math.round((now - s.receivedAt) / 1000);
         const ageLabel = ageSec < 60 ? `${ageSec}s ago` : `${Math.round(ageSec / 60)}m ago`;
         return `${s.source}: ${s.reason} (${ageLabel})`;
       });
-
-      if (signals.length > max) {
-        lines.push(`+ ${signals.length - max} more queued signals not shown`);
-      }
 
       return {
         id: 'queuedSignals',
@@ -1285,8 +1285,12 @@ export function recordAgentMemory(
   const mem: Record<string, { value: unknown; updatedAt?: string }> = {};
   for (const [key, rawVal] of Object.entries(raw)) {
     try {
-      mem[key] = JSON.parse(rawVal) as { value: unknown; updatedAt?: string };
+      const parsed = JSON.parse(rawVal) as unknown;
+      // The stored value is always a plain JSON value (string, number, object, array).
+      // Wrap it so renderers always have entry.value.
+      mem[key] = { value: parsed };
     } catch {
+      // Raw value is not valid JSON — store as-is.
       mem[key] = { value: rawVal };
     }
   }
