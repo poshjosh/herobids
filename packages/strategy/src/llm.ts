@@ -3,6 +3,7 @@ import type { Result } from '@herobids/domain';
 import { ok, err, quantity } from '@herobids/domain';
 import { callLlmProvider } from './llm-provider.js';
 import type { LlmProviderConfig, LlmResponse } from './llm-provider.js';
+import { stripEmptyValues } from '@herobids/llm';
 import crypto from 'node:crypto';
 
 /**
@@ -224,7 +225,8 @@ export class LlmStrategy implements Strategy {
       }
 
       const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      const intent = parsed['intent'] as string;
+      const cleaned = stripEmptyValues(parsed);
+      const intent = cleaned['intent'] as string;
 
       if (!['go_long', 'go_short', 'go_flat', 'hold'].includes(intent)) {
         return { ok: false, error: `Invalid intent "${intent}" — expected go_long, go_short, go_flat, or hold` };
@@ -234,9 +236,9 @@ export class LlmStrategy implements Strategy {
         ok: true,
         data: {
           intent: intent as ParsedLlmDecision['intent'],
-          confidence: typeof parsed['confidence'] === 'number' ? parsed['confidence'] : undefined,
-          reasoning: typeof parsed['reasoning'] === 'string' && parsed['reasoning'].length > 0
-            ? parsed['reasoning'].slice(0, 80)
+          confidence: typeof cleaned['confidence'] === 'number' ? cleaned['confidence'] : undefined,
+          reasoning: typeof cleaned['reasoning'] === 'string' && cleaned['reasoning'].length > 0
+            ? cleaned['reasoning'].slice(0, 80)
             : undefined,
         },
       };

@@ -261,10 +261,10 @@ All three phases are independent — do them in any order or in parallel.
 
 ## Outstanding Issues
 
-### [Phase 2 — Output maxLength Constraints] (2026-07-03)
+### [Phase 3 — stripEmptyValues Utility] (2026-07-03)
 
 | # | Priority | File | Detail |
 |---|----------|------|--------|
-| 1 | MEDIUM | `apps/worker/src/tools/trading.test.ts` | Tool-layer `.max(400)` boundary tests missing (defense-in-depth — protocol-layer tests cover it). |
-| 2 | LOW | `apps/worker/src/agents/agent-protocol.test.ts` | `'x'.repeat(1)` is stylistically odd — just use `'x'`. |
-| 3 | LOW | `packages/strategy/src/llm.ts` | Silent truncation of reasoning — LLM has no feedback when its reasoning is cut. Design trade-off, not a defect. |
+| 1 | MEDIUM | `packages/llm/src/strip.ts` | Whitespace-only strings (e.g. `"   "`, `"\t"`) are not stripped. LLM could emit whitespace-only values that survive the strip. Add `.trim()` check. |
+| 2 | MEDIUM | `packages/llm/src/strip.test.ts` | Missing test case: all fields stripped → empty object `{}`. |
+| 3 | LOW | `packages/llm/src/strip.ts` | JSDoc could clarify "flat only" more prominently — nested objects/arrays not recursed into. |

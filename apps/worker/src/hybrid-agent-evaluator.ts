@@ -1,5 +1,5 @@
 import type { LlmProviderConfig, LlmResult } from '@herobids/llm';
-import { callLlmProvider } from '@herobids/llm';
+import { callLlmProvider, stripEmptyValues } from '@herobids/llm';
 import { z } from 'zod';
 import { HybridAgentDecisionSchema, type HybridAgentDecision } from '@herobids/domain';
 import type { RuntimeCompositionState, TechnicalScanState } from './runtime-composition.js';
@@ -172,7 +172,10 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
   let decisions: HybridAgentDecision[];
   try {
     const parsed = JSON.parse(jsonStr) as unknown;
-    const validated = HybridAgentResponseSchema.safeParse(parsed);
+    const cleaned = Array.isArray(parsed)
+      ? parsed.map((item) => (typeof item === 'object' && item !== null ? stripEmptyValues(item as Record<string, unknown>) : item))
+      : parsed;
+    const validated = HybridAgentResponseSchema.safeParse(cleaned);
     if (!validated.success) {
       logger.warn({ errors: validated.error.flatten(), rawResponse: content.slice(0, 500) },
         'Hybrid evaluator: LLM returned malformed JSON — skipping tick');
