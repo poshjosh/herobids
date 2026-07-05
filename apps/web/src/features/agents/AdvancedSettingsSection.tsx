@@ -3,7 +3,6 @@ import { useIntl } from 'react-intl';
 
 export interface AdvancedSettingsSectionProps {
   aiConfig: ReactNode;
-  skills: ReactNode;
   tradingSetup: ReactNode;
   strategy: ReactNode;
   /**
@@ -12,7 +11,7 @@ export interface AdvancedSettingsSectionProps {
    * section was already open or errors pre-existed from a prior onBlur.
    */
   expandSeq?: number;
-  /** Tab index to switch to when expandSeq fires (0=AI, 2=Trading). */
+  /** Tab index to switch to when expandSeq fires (0=AI, 1=Trading). */
   errorTabIdx?: number;
   /** Form validation errors keyed by field name. Used to highlight error tabs. */
   formErrors?: Record<string, string>;
@@ -66,14 +65,12 @@ const panelStyle: React.CSSProperties = {
 
 const sectionLabels = [
   'agents.advanced.aiConfig',
-  'agents.advanced.skills',
   'agents.advanced.tradingSetup',
   'agents.advanced.strategy',
 ] as const;
 
 export function AdvancedSettingsSection({
   aiConfig,
-  skills,
   tradingSetup,
   strategy,
   expandSeq,
@@ -82,7 +79,7 @@ export function AdvancedSettingsSection({
   fieldTabMap,
 }: AdvancedSettingsSectionProps) {
   const intl = useIntl();
-  const slots = [aiConfig, skills, tradingSetup, strategy];
+  const slots = [aiConfig, tradingSetup, strategy];
 
   const visibleTabs = slots
     .map((slot, idx) => ({ slot, idx }))

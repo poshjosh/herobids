@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Move skills section from advanced section to main section of create/edit agent form
+
+### Added
+
+- Optional prompt hint for skills
+
 ## v0.0.8 - 2026-07-05
 
 ### Fixed

@@ -12,11 +12,11 @@ You have access to airfare research, monitoring, history, scheduling, and alerti
 
 The following details are required. If the user has not provided them, ask for them.
 
-- travellers = 
-- start = 
-- end = 
-- departure = 
-- destination = 
+- number-of-travellers = 
+- start-date = 
+- end-date = 
+- departure-city = 
+- destination-city = 
 
 The following details are optional, their default values are indicated:
 
@@ -40,7 +40,7 @@ Flight Search Engines
 
 Airline Websites
 
-Any airline operating relevant routes between <departure> and <destination>.
+Any airline operating relevant routes between <departure-city> and <destination-city>.
 
 Any other source
 
@@ -73,7 +73,7 @@ Maintain historical data/records containing:
 - Airline
 - Route
 - Dates
-- Total cost for <travellers>
+- Total cost for <number-of-travellers>
 - Cost per passenger
 - Fare class
 - Baggage inclusion
@@ -116,7 +116,7 @@ Rank flights using actual expected trip cost.
 
 Prioritize:
 
-1. Lowest total cost for <travellers>
+1. Lowest total cost for <number-of-travellers>
 2. Short overall travel time
 3. Direct flights
 4. Reliable carriers
@@ -205,7 +205,7 @@ Summary report contents:
 
 **Instruction**
 
-Continuously search, compare, analyze, and monitor flight prices for <travellers> traveling from <departure> to <destination>. Identify the lowest total travel cost while balancing convenience, travel time and baggage requirements.
+Continuously search, compare, analyze, and monitor flight prices for <number-of-travellers> traveling from <departure-city> to <destination-city> from start date: <start-date> to end-date: <end-date>. Identify the lowest total travel cost while balancing convenience, travel time and baggage requirements.
 
 Maintain a historical record of all observed fares and continuously analyze price trends to improve booking recommendations.
 

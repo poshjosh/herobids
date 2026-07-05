@@ -11,6 +11,9 @@ export interface SkillDefinition {
   name: string;
   description: string;
   instructions: string;
+  /** Optional hint shown to the creator near the agent goal/prompt field —
+   *  describes what kind of goal works well with this skill. */
+  promptHint?: string;
   requiredTools: string[];
   capabilityFamilies: string[];
   bindingRequirements: Record<string, {
@@ -90,6 +93,7 @@ export const BOT_MANAGEMENT_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget', 'daily-loss', 'bot-limit'],
   suggestedTickIntervalMs: 900_000, // 15 minutes
   visibility: 'public',
+  promptHint: 'Describe what trading bots to create and how to configure them (e.g., "Create a momentum bot for SOL with $500 capital and 5% stop-loss")',
 };
 
 /**
@@ -134,6 +138,7 @@ To decide, you can:
   requiredGuardrails: ['token-budget', 'daily-loss'],
   suggestedTickIntervalMs: 300_000,
   visibility: 'public',
+  promptHint: 'Describe your trading strategy, which assets to focus on, and your risk tolerance (e.g., "Trade SOL and BTC using momentum signals, keep positions under $500 each")',
 };
 
 /**
@@ -167,6 +172,7 @@ export const RISK_MONITORING_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget', 'daily-loss'],
   suggestedTickIntervalMs: 300_000, // 5 minutes
   visibility: 'public',
+  promptHint: 'Describe which positions or risk thresholds to monitor (e.g., "Watch all open positions and alert me if any drop 5% from entry")',
 };
 
 /**
@@ -191,6 +197,7 @@ export const PROGRAMMING_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000,
   visibility: 'public',
+  promptHint: 'Describe what automation or data processing the agent should perform (e.g., "Fetch token prices hourly and log them to a workspace file")',
 };
 
 /**
@@ -222,6 +229,7 @@ Workspace rules:
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000,
   visibility: 'public',
+  promptHint: 'Describe what files or outputs the agent should maintain (e.g., "Keep a daily trading journal in workspace/journal/")',
 };
 
 /**
@@ -247,6 +255,7 @@ export const WEB_ACCESS_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000,
   visibility: 'public',
+  promptHint: 'Describe what topics to research and how to report findings (e.g., "Monitor crypto news for regulatory changes and send me daily summaries")',
 };
 
 /**
@@ -272,6 +281,7 @@ export const TASK_MANAGEMENT_SKILL: SkillDefinition = {
   requiredGuardrails: ['token-budget'],
   suggestedTickIntervalMs: 900_000,
   visibility: 'public',
+  promptHint: 'Describe what tasks and reminders the agent should track (e.g., "Remind me to review positions every 4 hours and track all action items")',
 };
 
 /**

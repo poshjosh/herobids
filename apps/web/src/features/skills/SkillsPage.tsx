@@ -304,6 +304,19 @@ export function SkillsPage() {
             />
           </label>
           <label style={fieldLabelStyle}>
+            {intl.formatMessage({ id: 'skills.form.promptHint', defaultMessage: 'Prompt hint (optional)' })}
+            <textarea
+              value={createDraft.promptHint ?? ''}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, promptHint: event.target.value || undefined }))}
+              style={textareaStyle}
+              rows={2}
+              placeholder={intl.formatMessage({
+                id: 'skills.form.promptHintPlaceholder',
+                defaultMessage: 'Shown to creators near the goal field — describes what kind of goal works well with this skill',
+              })}
+            />
+          </label>
+          <label style={fieldLabelStyle}>
             {intl.formatMessage({ id: 'skills.form.tools', defaultMessage: 'Tools' })}
             <ToolTagPicker
               tools={toolsQuery.data?.tools ?? []}
@@ -483,6 +496,7 @@ function SkillCard({
   const [editedName, setEditedName] = useState(skill.name);
   const [editedDescription, setEditedDescription] = useState(skill.description);
   const [editedInstructions, setEditedInstructions] = useState(skill.instructions);
+  const [editedPromptHint, setEditedPromptHint] = useState(skill.promptHint ?? '');
   const [editedRequiredTools, setEditedRequiredTools] = useState<string[]>(skill.requiredTools ?? []);
   const hasUnpublishedRevision = stagedRevisionId !== null || skill.hasStagedRevision;
 
@@ -528,6 +542,7 @@ function SkillCard({
       name: editedName.trim(),
       description: editedDescription.trim(),
       instructions: editedInstructions.trim(),
+      promptHint: editedPromptHint.trim() || null,
       requiredTools: editedRequiredTools,
       changeSummary: 'Updated from web editor',
     }),
@@ -623,6 +638,7 @@ function SkillCard({
             variant="secondary"
             onClick={() => {
               setActionError(null);
+              setEditedPromptHint(skill.promptHint ?? '');
               setEditedRequiredTools(skill.requiredTools ?? []);
               setIsEditing((current) => !current);
             }}
@@ -669,6 +685,19 @@ function SkillCard({
             />
           </label>
           <label style={fieldLabelStyle}>
+            {intl.formatMessage({ id: 'skills.form.promptHint', defaultMessage: 'Prompt hint (optional)' })}
+            <textarea
+              value={editedPromptHint}
+              onChange={(event) => setEditedPromptHint(event.target.value)}
+              rows={2}
+              style={textareaStyle}
+              placeholder={intl.formatMessage({
+                id: 'skills.form.promptHintPlaceholder',
+                defaultMessage: 'Shown to creators near the goal field — describes what kind of goal works well with this skill',
+              })}
+            />
+          </label>
+          <label style={fieldLabelStyle}>
             {intl.formatMessage({ id: 'skills.form.tools', defaultMessage: 'Tools' })}
             <ToolTagPicker
               tools={tools}
@@ -706,6 +735,7 @@ function SkillCard({
                 setEditedName(skill.name);
                 setEditedDescription(skill.description);
                 setEditedInstructions(skill.instructions);
+                setEditedPromptHint(skill.promptHint ?? '');
                 setEditedRequiredTools(skill.requiredTools ?? []);
                 setIsEditing(false);
               }}

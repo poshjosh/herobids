@@ -4,7 +4,6 @@ import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 import { bots as botsApi, type Skill } from '../../lib/api-client.js';
 import type { AgentFormState } from './agent-form-state.js';
-import { SkillPicker } from './SkillPicker.js';
 import { TechnicalConfigSection } from './TechnicalConfigSection.js';
 import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
 import { AdvancedSettingsSection } from './AdvancedSettingsSection.js';
@@ -37,24 +36,23 @@ const AGENT_STRATEGY_PRESET_KEYS = [
  * Maps validated field names to the Advanced Settings tab index that contains them.
  * Update this whenever a field moves between tabs or a new validated field is added.
  *   0 = AI
- *   1 = Skills
- *   2 = Trading Setup
- *   3 = Strategy
+ *   1 = Trading Setup
+ *   2 = Strategy
  */
 export const ADVANCED_FIELD_TAB: Record<string, number> = {
   // AI
   tickIntervalMins: 0,
   dailySpendBudgetUsd: 0,
   // Trading Setup
-  executionMode: 2,
-  venue: 2,
-  dailyLossLimit: 2,
-  maxSlippageBps: 2,
-  maxOpenPositions: 2,
-  maxPositionSizePct: 2,
-  stopLossPct: 2,
-  stopLossCooldownSecs: 2,
-  openPositionEscalationToJudgePolicy: 2,
+  executionMode: 1,
+  venue: 1,
+  dailyLossLimit: 1,
+  maxSlippageBps: 1,
+  maxOpenPositions: 1,
+  maxPositionSizePct: 1,
+  stopLossPct: 1,
+  stopLossCooldownSecs: 1,
+  openPositionEscalationToJudgePolicy: 1,
   // Strategy
 };
 
@@ -110,7 +108,6 @@ export interface AgentFormBodyProps {
 
   // Slots (caller injects shell-specific chrome)
   modelSlot: React.ReactNode;
-  skillsSlot?: React.ReactNode;
   connectionSlot?: React.ReactNode;
   tradingSetupSlot?: React.ReactNode;
   computeBudgetSlot?: React.ReactNode;
@@ -124,7 +121,7 @@ export interface AgentFormBodyProps {
 export function AgentFormBody(props: AgentFormBodyProps) {
   const intl = useIntl();
   const [advancedExpandSeq, setAdvancedExpandSeq] = useState(0);
-  const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(2);
+  const [advancedErrorTabIdx, setAdvancedErrorTabIdx] = useState(1);
 
   const hasBotManagementSkill = props.value.skillIds.includes('bot-management');
 
@@ -337,30 +334,6 @@ export function AgentFormBody(props: AgentFormBodyProps) {
             />
             {props.computeBudgetSlot}
           </div>
-        }
-        skills={
-          props.skillsSlot ??
-          (props.showIntelligence ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <div
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                  }}
-                >
-                  {intl.formatMessage({ id: 'agents.create.skills' })}
-                </div>
-              </div>
-              <SkillPicker
-                skills={props.selectableSkills}
-                selectedSkillIds={props.value.skillIds}
-                onChange={(skillIds) => props.onChange({ skillIds })}
-                loading={props.skillsLoading}
-                errorMessage={props.skillsError}
-              />
-            </div>
-          ) : null)
         }
         tradingSetup={props.tradingSetupSlot}
         strategy={

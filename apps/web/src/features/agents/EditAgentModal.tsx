@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, buildSkillPromptHints, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -355,7 +355,25 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
+            {skillPreset !== 'custom' && selectedSkills.length > 0 && (
+              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                {selectedSkills.map((s) => s.name).join(', ')}
+              </div>
+            )}
           </div>
+
+          {/* Custom skill picker — shown inline when custom preset is selected */}
+          {skillPreset === 'custom' && (
+            <div style={{ marginBottom: '14px' }}>
+              <SkillPicker
+                skills={selectableSkills}
+                selectedSkillIds={form.skillIds}
+                onChange={(skillIds) => setForm((prev) => ({ ...prev, skillIds }))}
+                loading={skillsQuery.isLoading}
+                errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
+              />
+            </div>
+          )}
 
           {/* Goal */}
           <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '14px' }}>
@@ -368,7 +386,13 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setForm((prev) => ({ ...prev, goal: e.target.value }));
               }}
               onBlur={() => validateFieldOnBlur('goal')}
-              placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
+              placeholder={(() => {
+                if (!skillsQuery.data) return intl.formatMessage({ id: 'agents.create.goalPlaceholder' });
+                const hints = buildSkillPromptHints(form.skillIds, skillsQuery.data.skills);
+                return hints.length > 0
+                  ? hints.map((h) => h.hint).join('\n\n')
+                  : intl.formatMessage({ id: 'agents.create.goalPlaceholder' });
+              })()}
               required
             />
             {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
@@ -640,19 +664,6 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                       </div>
                     </>
                   )}
-                </div>
-              ) : null
-            }
-            skillsSlot={
-              showIntelligence ? (
-                <div>
-                  <SkillPicker
-                    skills={selectableSkills}
-                    selectedSkillIds={form.skillIds}
-                    onChange={(skillIds) => setForm((prev) => ({ ...prev, skillIds }))}
-                    loading={skillsQuery.isLoading}
-                    errorMessage={skillsQuery.error instanceof Error ? skillsQuery.error.message : null}
-                  />
                 </div>
               ) : null
             }

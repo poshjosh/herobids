@@ -105,6 +105,20 @@ export function resolveSelectedSkills(skillIds: string[], skills: Skill[]): Skil
     .filter((skill): skill is Skill => skill !== undefined);
 }
 
+/**
+ * Build a list of prompt hints from the selected skills.
+ * Each entry pairs the skill name with its hint for display near the goal field.
+ */
+export function buildSkillPromptHints(
+  skillIds: string[],
+  skills: Skill[],
+): Array<{ skillName: string; hint: string }> {
+  const selected = resolveSelectedSkills(skillIds, skills);
+  return selected
+    .filter((skill) => skill.promptHint)
+    .map((skill) => ({ skillName: skill.name, hint: skill.promptHint! }));
+}
+
 export function formatExecutionMode(executionMode: string | null | undefined, intl?: IntlShape): string {
   if (!executionMode) {
     return formatMessageOrFallback(intl, 'agents.executionMode.not_set', 'Not set');

@@ -106,13 +106,8 @@ export async function createAgent(
     }
   }
 
-  // Expand the Skills accordion section so checkboxes become visible.
-  // The AdvancedSettingsSection wraps each section in a <details> element;
-  // only the first non-empty section is open by default, and Skills is
-  // typically the second section (after AI Configuration).
-  if (needsCustomPreset) {
-    await expandSkillsAccordion(page);
-  }
+  // The SkillPicker is rendered inline (not inside Advanced Settings tabs)
+  // when the custom preset is selected, so checkboxes are directly accessible.
 
   if (needsCustomPreset && (options.skillIds ?? []).length === 0) {
     // Uncheck any skills that were pre-selected by the previous preset (e.g. trading).
@@ -172,35 +167,6 @@ export async function createAgent(
   }
 
   return match[1];
-}
-
-/**
- * Expand the "Skills" accordion section inside the Advanced Settings area.
- *
- * The Advanced Settings section is a single <details> element with summary
- * "Advanced Settings".  Inside, sections are arranged as tabs: AI Configuration,
- * Skills, Trading Setup, Strategy.  We must open the <details> (if closed) and
- * then click the "Skills" tab so that skill checkboxes become visible.
- */
-async function expandSkillsAccordion(page: Page): Promise<void> {
-  // 1. Open the Advanced Settings <details> if it's closed
-  const advancedDetails = page.locator('details').filter({ hasText: 'Advanced Settings' }).first();
-  const detailsCount = await advancedDetails.count();
-  if (detailsCount === 0) return; // Advanced Settings not rendered
-
-  const isOpen = await advancedDetails.evaluate((el) => el.hasAttribute('open'));
-  if (!isOpen) {
-    await advancedDetails.locator('summary').first().click();
-    await page.waitForTimeout(300);
-  }
-
-  // 2. Click the "Skills" tab so the SkillPicker checkboxes are in the DOM
-  const skillsTab = page.getByRole('tab', { name: 'Skills' });
-  const tabCount = await skillsTab.count();
-  if (tabCount > 0) {
-    await skillsTab.first().click();
-    await page.waitForTimeout(300);
-  }
 }
 
 /** Open the agent detail page directly. */

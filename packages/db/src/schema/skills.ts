@@ -30,6 +30,8 @@ export const skills = pgTable('skills', {
   description: text('description').notNull(),
   /** Instructions injected into the agent prompt when this skill is active */
   instructions: text('instructions').notNull(),
+  /** Optional hint for the creator describing what to write in the agent goal/prompt field */
+  promptHint: text('prompt_hint'),
   /** Tools this skill exposes to the agent */
   requiredTools: text('required_tools').array().notNull().default(sql`'{}'::text[]`),
   /** Context sections required in the agent prompt: positions, analytics, bot_statuses, etc. */

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, auth as authApi, ai as aiApi, providerCatalog as providerCatalogApi, type Skill } from '../../lib/api-client.js';
 import { PageShell, PageHeader, LoadingRows, ErrorState, EmptyState, Button, Modal, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, formatSkillSelection, hasCapabilityFamily, listSelectableSkills, resolveSkillPresetSkillIds, buildSkillPromptHints, type SkillPresetId } from './agent-display.js';
 import { AgentSummaryCard } from './AgentSummaryCard.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
@@ -512,7 +512,28 @@ function CreateAgentFlow({
               <option value="personal-assistant">{intl.formatMessage({ id: 'agents.create.skillPreset.personalAssistant' })}</option>
               <option value="custom">{intl.formatMessage({ id: 'agents.create.skillPreset.custom' })}</option>
             </select>
+            {intent.skillPreset !== 'custom' && selectedSkills.length > 0 && (
+              <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
+                {selectedSkills.map((s) => s.name).join(', ')}
+              </div>
+            )}
           </div>
+
+          {/* Custom skill picker — shown inline when custom preset is selected */}
+          {intent.skillPreset === 'custom' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                {intl.formatMessage({ id: 'agents.create.skills' })}
+              </div>
+              <SkillPicker
+                skills={skills}
+                selectedSkillIds={intent.skillIds}
+                onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
+                loading={skillsLoading}
+                errorMessage={skillsError}
+              />
+            </div>
+          )}
 
           {/* 2. Goal */}
           <div data-field="goal" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -525,7 +546,12 @@ function CreateAgentFlow({
                 setIntent((state) => ({ ...state, goal: e.target.value }));
               }}
               onBlur={() => validateFieldOnBlur('goal')}
-              placeholder={intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
+              placeholder={(() => {
+                const hints = buildSkillPromptHints(intent.skillIds, skills);
+                return hints.length > 0
+                  ? hints.map((h) => h.hint).join('\n\n')
+                  : intl.formatMessage({ id: 'agents.create.goalPlaceholder' });
+              })()}
               required
             />
             {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}
@@ -656,22 +682,6 @@ function CreateAgentFlow({
                       setModelTouched(true);
                       setIntent((state) => ({ ...state, ...value }));
                     }}
-                  />
-                </div>
-              ) : null
-            }
-            skillsSlot={
-              intent.skillPreset === 'custom' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>
-                    {intl.formatMessage({ id: 'agents.create.skills' })}
-                  </div>
-                  <SkillPicker
-                    skills={skills}
-                    selectedSkillIds={intent.skillIds}
-                    onChange={(skillIds) => setIntent((state) => ({ ...state, skillPreset: 'custom', skillIds }))}
-                    loading={skillsLoading}
-                    errorMessage={skillsError}
                   />
                 </div>
               ) : null

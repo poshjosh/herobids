@@ -320,6 +320,7 @@ export interface Skill {
   name: string;
   description: string;
   instructions: string;
+  promptHint: string | null;
   requiredTools: string[];
   contextRequirements: string[];
   requiredGuardrails: string[];
@@ -349,6 +350,7 @@ export interface CreateSkillRequest {
   name: string;
   description: string;
   instructions: string;
+  promptHint?: string;
   requiredTools?: string[];
   contextRequirements?: string[];
   requiredGuardrails?: string[];
@@ -364,6 +366,7 @@ export interface UpdateSkillRequest {
   name?: string;
   description?: string;
   instructions?: string;
+  promptHint?: string | null;
   requiredTools?: string[];
   contextRequirements?: string[];
   requiredGuardrails?: string[];
