@@ -989,7 +989,7 @@ export class UsageBillingRepository {
     id: string;
     provider: string;
     fetchedAt: Date | null;
-    models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number }>;
+    models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }>;
   }): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx
@@ -1055,21 +1055,42 @@ function computeCharge(
   event: InsertUsageEvent,
   rateCardItems: typeof billingRateCardItems.$inferSelect[],
 ): number {
-  // Find the most specific matching rate card item
-  const matching = rateCardItems.filter((item) => {
-    if (item.meterKey !== event.meterKey) return false;
-    if (item.provider != null && item.provider !== event.provider) return false;
-    if (item.modelPattern != null && event.model != null) {
-      // Simple glob: trailing * wildcard only
-      const pattern = item.modelPattern;
-      if (pattern.endsWith('*')) {
-        if (!event.model.startsWith(pattern.slice(0, -1))) return false;
-      } else if (pattern !== event.model) {
-        return false;
+  const findMatching = (modelId: string | null | undefined) =>
+    rateCardItems.filter((item) => {
+      if (item.meterKey !== event.meterKey) return false;
+      if (item.provider != null && item.provider !== event.provider) return false;
+      if (item.modelPattern != null) {
+        // A model-specific item requires the event to carry a model ID.
+        if (modelId == null) return false;
+        // Simple glob: trailing * wildcard only
+        const pattern = item.modelPattern;
+        if (pattern.endsWith('*')) {
+          if (!modelId.startsWith(pattern.slice(0, -1))) return false;
+        } else if (pattern !== modelId) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+  // First try the exact model ID from the event.
+  // If the exact pass yields no model-specific winner and the model looks like
+  // a provider-pinned dated variant (e.g. "deepseek/deepseek-v4-flash-20260423"),
+  // retry after stripping the trailing date suffix so a catch-all item does not
+  // shadow a more-specific undated rate card entry.
+  // We only promote the stripped result when it contains at least one
+  // model-specific item, preserving precedence of genuine exact matches.
+  let matching = findMatching(event.model);
+  const hasModelSpecificMatch = matching.some((item) => item.modelPattern != null);
+  if (!hasModelSpecificMatch && event.model != null) {
+    const stripped = event.model.replace(/-\d{8}$/, '');
+    if (stripped !== event.model) {
+      const strippedMatching = findMatching(stripped);
+      if (strippedMatching.some((item) => item.modelPattern != null)) {
+        matching = strippedMatching;
       }
     }
-    return true;
-  });
+  }
 
   if (matching.length === 0) return 0;
 

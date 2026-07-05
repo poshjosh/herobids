@@ -183,4 +183,43 @@ describe('fetchOpenRouterPricing', () => {
     expect(result.models).toEqual({});
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('includes cacheReadUsdPerM when cache_read pricing is present', async () => {
+    fetchSpy.mockResolvedValue(
+      makeFetchResponse({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet-4-5',
+            pricing: {
+              prompt: '0.000003',    // $3/M
+              completion: '0.000015', // $15/M
+              cache_read: '0.0000003', // $0.3/M (10% of input)
+            },
+          },
+          {
+            id: 'openai/gpt-4o',
+            pricing: {
+              prompt: '0.0000025', // $2.5/M
+              completion: '0.00001', // $10/M
+              // no cache_read field
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchOpenRouterPricing({
+      apiKey: 'test-key',
+      fetchUrl: 'https://openrouter.ai/api/v1',
+      timeoutMs: 5_000,
+    });
+
+    expect(result.models['anthropic/claude-sonnet-4-5']).toMatchObject({
+      inputUsdPerM: 3,
+      outputUsdPerM: 15,
+      cacheReadUsdPerM: 0.3,
+    });
+    // model without cache_read should not have the field at all
+    expect(result.models['openai/gpt-4o']).not.toHaveProperty('cacheReadUsdPerM');
+  });
 });

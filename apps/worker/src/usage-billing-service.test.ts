@@ -172,4 +172,118 @@ describe('UsageBillingService', () => {
     await expect(service.isHardLimited()).resolves.toBe(false);
     expect(service).toBeDefined();
   });
+
+  // ── LLM usage event splitting: cached vs non-cached tokens ───────────────
+  // These tests lock in the recording semantics introduced with cached-token
+  // billing.  inputTokens is always the non-cached count (normalised in
+  // llm-provider.ts); cachedInputTokens is reported separately and must
+  // produce its own llm.cached_input_tokens event.
+
+  function setupRecordingMocks() {
+    const account = makeAccount();
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateBillingAccountForUser').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'ensureActiveRateCard').mockResolvedValue({ id: 'rc_default_v1' });
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(account);
+    vi.spyOn(UsageBillingRepository.prototype, 'getOrCreateOpenPeriod').mockResolvedValue({ id: 'period_1' } as never);
+    vi.spyOn(UsageBillingRepository.prototype, 'getRateCardItems').mockResolvedValue([]);
+    const recordSpy = vi.spyOn(UsageBillingRepository.prototype, 'recordAndRateUsageBatch').mockResolvedValue(0);
+    return { recordSpy };
+  }
+
+  it('records only llm.input_tokens when there are no cache hits', async () => {
+    const { recordSpy } = setupRecordingMocks();
+    const service = createService();
+
+    service.recordLlmUsage({
+      provider: 'openrouter',
+      model: 'deepseek/deepseek-v4-flash',
+      inputTokens: 300,
+      outputTokens: 80,
+      phase: 'judge',
+      turnIndex: 0,
+    });
+
+    await vi.waitFor(() => expect(recordSpy).toHaveBeenCalled());
+    const events: Array<{ meterKey: string; quantity: number }> = recordSpy.mock.calls[0]![0] as never;
+    const meterKeys = events.map((e) => e.meterKey);
+
+    expect(meterKeys).toContain('llm.input_tokens');
+    expect(meterKeys).not.toContain('llm.cached_input_tokens');
+    expect(events.find((e) => e.meterKey === 'llm.input_tokens')!.quantity).toBe(300);
+  });
+
+  it('splits into llm.input_tokens and llm.cached_input_tokens when cache hits are present', async () => {
+    // This mirrors the normalised contract: inputTokens is already non-cached
+    // (the provider layer subtracted cached reads for the OpenAI path;
+    // Anthropic already separates them).
+    const { recordSpy } = setupRecordingMocks();
+    const service = createService();
+
+    service.recordLlmUsage({
+      provider: 'openrouter',
+      model: 'deepseek/deepseek-v4-flash',
+      inputTokens: 200,       // non-cached, as normalised by llm-provider.ts
+      cachedInputTokens: 100, // prompt-cache reads, billed at a different rate
+      outputTokens: 80,
+      phase: 'judge',
+      turnIndex: 0,
+    });
+
+    await vi.waitFor(() => expect(recordSpy).toHaveBeenCalled());
+    const events: Array<{ meterKey: string; quantity: number }> = recordSpy.mock.calls[0]![0] as never;
+
+    const inputEvent = events.find((e) => e.meterKey === 'llm.input_tokens');
+    const cachedEvent = events.find((e) => e.meterKey === 'llm.cached_input_tokens');
+
+    expect(inputEvent).toBeDefined();
+    expect(inputEvent!.quantity).toBe(200); // not 200 - 100 = 100; no double-subtraction
+    expect(cachedEvent).toBeDefined();
+    expect(cachedEvent!.quantity).toBe(100);
+  });
+
+  it('records only llm.cached_input_tokens when all input was served from cache', async () => {
+    const { recordSpy } = setupRecordingMocks();
+    const service = createService();
+
+    service.recordLlmUsage({
+      provider: 'anthropic',
+      model: 'anthropic/claude-sonnet-4-5',
+      inputTokens: 0,         // Anthropic: input_tokens is the non-cached count
+      cachedInputTokens: 150, // all prompt tokens were cache reads
+      outputTokens: 60,
+      phase: 'scout',
+      turnIndex: 1,
+    });
+
+    await vi.waitFor(() => expect(recordSpy).toHaveBeenCalled());
+    const events: Array<{ meterKey: string; quantity: number }> = recordSpy.mock.calls[0]![0] as never;
+    const meterKeys = events.map((e) => e.meterKey);
+
+    expect(meterKeys).not.toContain('llm.input_tokens');
+    expect(meterKeys).toContain('llm.cached_input_tokens');
+    expect(events.find((e) => e.meterKey === 'llm.cached_input_tokens')!.quantity).toBe(150);
+  });
+
+  it('preserves the original (dated) model ID in every event', async () => {
+    const { recordSpy } = setupRecordingMocks();
+    const service = createService();
+
+    service.recordLlmUsage({
+      provider: 'openrouter',
+      model: 'deepseek/deepseek-v4-flash-20260423',
+      inputTokens: 100,
+      cachedInputTokens: 50,
+      outputTokens: 40,
+      phase: 'judge',
+      turnIndex: 0,
+    });
+
+    await vi.waitFor(() => expect(recordSpy).toHaveBeenCalled());
+    const events: Array<{ meterKey: string; model: string }> = recordSpy.mock.calls[0]![0] as never;
+
+    // The service stores the raw model ID; computeCharge handles the fallback match
+    for (const event of events) {
+      expect(event.model).toBe('deepseek/deepseek-v4-flash-20260423');
+    }
+  });
 });

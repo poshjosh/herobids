@@ -69,6 +69,8 @@ export interface LlmResponse {
   inputTokens?: number;
   /** Output (completion) tokens, when reported separately by the provider */
   outputTokens?: number;
+  /** Prompt-cache read tokens (charged at a fraction of the normal input rate) */
+  cachedInputTokens?: number;
 }
 
 export interface LlmProviderError {
@@ -216,8 +218,15 @@ async function callOpenAiCompatibleProvider(
         latencyMs: Date.now() - startMs,
         cached: (data.usage?.prompt_tokens_details?.cached_tokens ?? 0) > 0,
         thinkingTokens: data.usage?.output_tokens_details?.reasoning_tokens ?? 0,
-        inputTokens: data.usage?.prompt_tokens,
+        // Normalise to non-cached count so the billing contract is unambiguous:
+        // inputTokens always means prompt tokens that were NOT served from cache.
+        // For the Anthropic path, input_tokens is already non-cached; the OpenAI
+        // path reports prompt_tokens as the inclusive total, so we subtract here.
+        inputTokens: data.usage?.prompt_tokens != null
+          ? data.usage.prompt_tokens - (data.usage.prompt_tokens_details?.cached_tokens ?? 0)
+          : undefined,
         outputTokens: data.usage?.completion_tokens,
+        cachedInputTokens: data.usage?.prompt_tokens_details?.cached_tokens,
       },
     };
   } catch (err) {
@@ -353,6 +362,7 @@ async function callAnthropicProvider(
         thinkingTokens: data.usage?.thinking_tokens ?? 0,
         inputTokens,
         outputTokens,
+        cachedInputTokens: data.usage?.cache_read_input_tokens,
       },
     };
   } catch (err) {

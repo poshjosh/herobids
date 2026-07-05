@@ -960,6 +960,7 @@ export async function billingRoutes(
 
 const BILLABLE_METER_KEYS = new Set([
   'llm.input_tokens',
+  'llm.cached_input_tokens',
   'llm.output_tokens',
   'llm.reasoning_tokens',
   'agent.runtime_ms',

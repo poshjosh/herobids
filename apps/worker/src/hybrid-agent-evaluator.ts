@@ -85,6 +85,7 @@ export interface HybridEvaluatorResult {
     responseId?: string;
     inputTokens?: number;
     outputTokens?: number;
+    cachedInputTokens?: number;
   };
 }
 
@@ -171,6 +172,7 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
     responseId: llmResult.data.responseId,
     inputTokens: llmResult.data.inputTokens,
     outputTokens: llmResult.data.outputTokens,
+    cachedInputTokens: llmResult.data.cachedInputTokens,
   };
 
   // Extract JSON array from response (may be wrapped in markdown code fences)

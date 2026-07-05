@@ -81,6 +81,20 @@ describe('ProvidersYamlSchema', () => {
     expect(result.providers.test.catalogMode).toBe('static');
   });
 
+  it('accepts static provider with cacheReadUsdPerM and preserves the value', () => {
+    const result = ProvidersYamlSchema.parse({
+      providers: {
+        test: {
+          catalogMode: 'static',
+          models: {
+            'model-a': { inputUsdPerM: 1, outputUsdPerM: 5, cacheReadUsdPerM: 0.1 },
+          },
+        },
+      },
+    });
+    expect(result.providers.test.models['model-a']?.cacheReadUsdPerM).toBe(0.1);
+  });
+
   it('rejects static provider with missing pricing', () => {
     expect(() =>
       ProvidersYamlSchema.parse({
@@ -222,6 +236,35 @@ describe('getLlmModelRateCardItems', () => {
     const modelIds = [...new Set(items.map((i) => i.modelPattern))];
     expect(modelIds).not.toContain('incomplete');
     expect(modelIds).toContain('complete');
+  });
+
+  it('seeds llm.cached_input_tokens when cacheReadUsdPerM is present', () => {
+    const items = getLlmModelRateCardItems('test', {
+      'model-a': { inputUsdPerM: 1, outputUsdPerM: 5, cacheReadUsdPerM: 0.1 },
+    });
+    const cachedItem = items.find((i) => i.meterKey === 'llm.cached_input_tokens');
+    expect(cachedItem).toBeDefined();
+    // $0.1/M → 100 µUSD/1K
+    expect(cachedItem!.priceMicrousd).toBe(100);
+    expect(cachedItem!.perUnit).toBe(1000);
+    expect(cachedItem!.provider).toBe('test');
+    expect(cachedItem!.modelPattern).toBe('model-a');
+  });
+
+  it('does not seed llm.cached_input_tokens when cacheReadUsdPerM is absent', () => {
+    const items = getLlmModelRateCardItems('test', {
+      'model-a': { inputUsdPerM: 1, outputUsdPerM: 5 },
+    });
+    expect(items.find((i) => i.meterKey === 'llm.cached_input_tokens')).toBeUndefined();
+  });
+
+  it('seeds cacheReadUsdPerM: 0 as a zero-cost cached-input item', () => {
+    const items = getLlmModelRateCardItems('test', {
+      'free-cache': { inputUsdPerM: 1, outputUsdPerM: 2, cacheReadUsdPerM: 0 },
+    });
+    const cachedItem = items.find((i) => i.meterKey === 'llm.cached_input_tokens');
+    expect(cachedItem).toBeDefined();
+    expect(cachedItem!.priceMicrousd).toBe(0);
   });
 });
 

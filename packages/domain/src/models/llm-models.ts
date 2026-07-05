@@ -13,12 +13,19 @@ export interface ModelPricing {
    * Defaults to `outputUsdPerM` when absent.
    */
   reasoningUsdPerM?: number;
+  /**
+   * USD per 1 million prompt-cache read tokens.
+   * When absent, `llm.cached_input_tokens` rate card items are not seeded
+   * and cache reads are not charged until explicit pricing is available.
+   */
+  cacheReadUsdPerM?: number;
 }
 
 export const ModelPricingSchema = z.object({
   inputUsdPerM: z.number().positive(),
   outputUsdPerM: z.number().positive(),
   reasoningUsdPerM: z.number().positive().optional(),
+  cacheReadUsdPerM: z.number().nonnegative().optional(),
 });
 
 const RawProviderConfigSchema = z.object({
@@ -31,6 +38,7 @@ const RawProviderConfigSchema = z.object({
     inputUsdPerM: z.number().positive().optional(),
     outputUsdPerM: z.number().positive().optional(),
     reasoningUsdPerM: z.number().positive().optional(),
+    cacheReadUsdPerM: z.number().nonnegative().optional(),
   })),
 });
 
@@ -142,6 +150,18 @@ export function getLlmModelRateCardItems(
         perUnit,
       },
     );
+    // Only seed a cached-input rate card item when the snapshot carries an
+    // explicit cache-read price.  Without it we record the event but charge
+    // nothing — approximating with a fixed discount in a money path is unsafe.
+    if (m.cacheReadUsdPerM !== undefined) {
+      items.push({
+        meterKey: 'llm.cached_input_tokens',
+        provider: providerId,
+        modelPattern: modelId,
+        priceMicrousd: Math.round(m.cacheReadUsdPerM * perUnit),
+        perUnit,
+      });
+    }
   }
 
   return items;

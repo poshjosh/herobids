@@ -42,6 +42,7 @@ export interface LlmUsageInput {
   inputTokens?: number | null;
   outputTokens?: number | null;
   thinkingTokens?: number | null;
+  cachedInputTokens?: number | null;
   tokensUsed?: number;
   phase: string;
   turnIndex?: number;
@@ -166,7 +167,13 @@ export class UsageBillingService {
       input.responseId ?? 'no_response_id',
     ].join('_');
 
-    if (input.inputTokens != null && input.inputTokens > 0) {
+    const cachedTokens = input.cachedInputTokens ?? 0;
+    // inputTokens is already normalised to non-cached by the provider layer
+    // (llm-provider.ts subtracts cached_tokens from prompt_tokens for the
+    // OpenAI-compatible path; Anthropic already separates them).
+    const nonCachedInputTokens = input.inputTokens ?? null;
+
+    if (nonCachedInputTokens != null && nonCachedInputTokens > 0) {
       events.push({
         id: `ue_${crypto.randomUUID().replace(/-/g, '')}`,
         accountId: this.accountId,
@@ -178,9 +185,28 @@ export class UsageBillingService {
         meterKey: 'llm.input_tokens',
         provider: input.provider,
         model: input.model,
-        quantity: input.inputTokens,
+        quantity: nonCachedInputTokens,
         unit: 'tokens',
         idempotencyKey: `llm_in_${idScope}`,
+        occurredAt: now,
+      });
+    }
+
+    if (cachedTokens > 0) {
+      events.push({
+        id: `ue_${crypto.randomUUID().replace(/-/g, '')}`,
+        accountId: this.accountId,
+        userId: this.config.userId,
+        agentId: this.config.agentId,
+        sessionId: this.config.sessionId,
+        skillId: this.config.skillId ?? null,
+        sourceType: 'llm_call',
+        meterKey: 'llm.cached_input_tokens',
+        provider: input.provider,
+        model: input.model,
+        quantity: cachedTokens,
+        unit: 'tokens',
+        idempotencyKey: `llm_cached_${idScope}`,
         occurredAt: now,
       });
     }

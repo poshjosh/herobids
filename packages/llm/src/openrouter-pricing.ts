@@ -3,7 +3,7 @@ import { z } from 'zod';
 // ---- Types ----
 
 export interface OpenRouterPricingResult {
-  models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number }>;
+  models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }>;
 }
 
 // ---- Zod Schemas ----
@@ -12,6 +12,7 @@ const OpenRouterPricingSchema = z.object({
   prompt: z.string().optional(),
   completion: z.string().optional(),
   request: z.string().optional(),
+  cache_read: z.string().optional(),
 });
 
 const OpenRouterModelSchema = z.object({
@@ -62,7 +63,7 @@ export async function fetchOpenRouterPricing(params: {
     const payload = OpenRouterModelsResponseSchema.parse(await response.json());
     const modelRecords = payload.data ?? [];
 
-    const models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number }> = {};
+    const models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }> = {};
 
     for (const record of modelRecords) {
       if (!record.pricing) continue;
@@ -78,7 +79,16 @@ export async function fetchOpenRouterPricing(params: {
 
       if (!Number.isFinite(inputUsdPerM) || !Number.isFinite(outputUsdPerM)) continue;
 
-      models[record.id] = { inputUsdPerM, outputUsdPerM };
+      const cacheReadUsd = parseUsdDecimal(record.pricing.cache_read);
+      const cacheReadUsdPerM = cacheReadUsd !== null && Number.isFinite(cacheReadUsd * 1_000_000)
+        ? cacheReadUsd * 1_000_000
+        : undefined;
+
+      models[record.id] = {
+        inputUsdPerM,
+        outputUsdPerM,
+        ...(cacheReadUsdPerM !== undefined ? { cacheReadUsdPerM } : {}),
+      };
     }
 
     return { models };

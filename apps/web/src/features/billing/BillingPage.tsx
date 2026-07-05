@@ -529,6 +529,7 @@ export function BillingPage() {
               >
                 <option value="">All meters</option>
                 <option value="llm.input_tokens">llm.input_tokens</option>
+                <option value="llm.cached_input_tokens">llm.cached_input_tokens</option>
                 <option value="llm.output_tokens">llm.output_tokens</option>
                 <option value="llm.reasoning_tokens">llm.reasoning_tokens</option>
                 <option value="agent.runtime_ms">agent.runtime_ms</option>
