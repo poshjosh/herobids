@@ -375,36 +375,54 @@ export function validateMaxHoldDurationInvariant(params: {
 }
 
 /**
- * Validate that dailyLossLimit requires capital.
+ * Validate that dailyLossLimit and maxDrawdownPct require capital.
  *
- * The risk gate enforces daily loss as a percentage of equity (dailyMaxLossPct).
- * Without capital there is no equity baseline, so a configured dailyLossLimit
+ * The risk gate enforces daily loss as a percentage of equity (dailyMaxLossPct)
+ * and drawdown as a percentage of peak equity (maxDrawdownPct).
+ * Without capital there is no equity baseline, so a configured limit
  * is silently ignored by the engine. Reject early to prevent that silent no-op.
  *
  * Returns validation issues (empty array = valid).
  */
 export function validateDailyLossRequiresCapital(input: {
   dailyLossLimit?: string | null;
+  maxDrawdownPct?: number | null;
   capital?: string | null;
 }): Array<{ code: 'custom'; path: string[]; message: string }> {
+  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
+
   if (
     input.dailyLossLimit != null &&
     input.dailyLossLimit !== '' &&
     (!input.capital || input.capital === '')
   ) {
-    return [{
+    issues.push({
       code: 'custom',
       path: ['dailyLossLimit'],
       message: 'Capital must be set when dailyLossLimit is configured. Daily loss enforcement requires an equity baseline.',
-    }];
+    });
   }
-  return [];
+
+  if (
+    input.maxDrawdownPct != null &&
+    input.maxDrawdownPct > 0 &&
+    (!input.capital || input.capital === '')
+  ) {
+    issues.push({
+      code: 'custom',
+      path: ['maxDrawdownPct'],
+      message: 'Capital must be set when maxDrawdownPct is configured. Drawdown enforcement requires an equity baseline.',
+    });
+  }
+
+  return issues;
 }
 
 /**
  * Validate agent risk bounds against operator ceilings.
  * maxDrawdown is accepted as a string because it flows through the positiveDecimalStringSchema
  * which transforms the value to a string representation.
+ * maxDrawdownPct is a numeric percentage (0–100).
  */
 export function validateAgentRiskBounds(
   input: {
@@ -413,6 +431,7 @@ export function validateAgentRiskBounds(
     stopLossPct?: number | null;
     stopLossCooldownMs?: number | null;
     maxDrawdown?: string | null;
+    maxDrawdownPct?: number | null;
   },
   defaults: AgentRiskDefaultsConfig,
 ): Array<{ code: 'custom'; path: string[]; message: string }> {
@@ -461,6 +480,14 @@ export function validateAgentRiskBounds(
     }
   }
 
+  if (input.maxDrawdownPct != null && input.maxDrawdownPct > defaults.maxDrawdownPct) {
+    issues.push({
+      code: 'custom',
+      path: ['maxDrawdownPct'],
+      message: `maxDrawdownPct cannot exceed the platform limit of ${defaults.maxDrawdownPct}%`,
+    });
+  }
+
   return issues;
 }
 
@@ -475,6 +502,7 @@ export function resolveAgentRiskContractForResponse(
     maxPositionSizePct?: string | number | null;
     stopLossPct?: string | number | null;
     stopLossCooldownMs?: number | null;
+    maxDrawdownPct?: string | number | null;
     riskOverrides?: AgentRiskOverrides | null;
   },
   agentRiskDefaults: AgentRiskDefaultsConfig,
@@ -484,6 +512,7 @@ export function resolveAgentRiskContractForResponse(
     maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
     stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
     stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
+    maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
   };
 
   const creatorInput: AgentRiskCreatorInput = {
@@ -491,6 +520,7 @@ export function resolveAgentRiskContractForResponse(
     maxPositionSizePct: agent.maxPositionSizePct != null ? Number(agent.maxPositionSizePct) : null,
     stopLossPct: agent.stopLossPct != null ? Number(agent.stopLossPct) : null,
     stopLossCooldownMs: agent.stopLossCooldownMs ?? null,
+    maxDrawdownPct: agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null,
   };
 
   return resolveAgentRiskContract(creatorInput, ceilings, agent.riskOverrides ?? {}, {

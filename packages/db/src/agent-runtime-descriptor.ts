@@ -301,6 +301,7 @@ export function buildRuntimeDescriptor(input: {
   toolPolicy?: Record<string, unknown> | null;
   dailyTokenBudget?: string | null;
   dailyLossLimit?: string | null;
+  maxDrawdownPct?: number | null;
   maxBots?: number | null;
   maxOpenPositions?: number | null;
   maxPositionSizePct?: number | null;
@@ -323,6 +324,7 @@ export function buildRuntimeDescriptor(input: {
     guardrails: {
       dailyTokenBudget: input.dailyTokenBudget ?? 'unlimited tokens',
       dailyLossLimit: input.dailyLossLimit ?? null,
+      maxDrawdownPct: input.maxDrawdownPct ?? null,
       maxBots: input.maxBots ?? null,
       maxOpenPositions: input.maxOpenPositions ?? null,
       maxPositionSizePct: input.maxPositionSizePct ?? null,

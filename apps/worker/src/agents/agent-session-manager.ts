@@ -299,6 +299,7 @@ export class AgentSessionManager {
           executionMode: agent.executionMode,
           toolPolicy: (agent.toolPolicy as Record<string, unknown> | null) ?? {},
           dailyLossLimit: agent.dailyLossLimit,
+          maxDrawdownPct: agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null,
           maxBots: agent.maxBots,
           maxOpenPositions: toGuardrailNumber(agent.maxOpenPositions),
           maxPositionSizePct: toGuardrailNumber(agent.maxPositionSizePct),

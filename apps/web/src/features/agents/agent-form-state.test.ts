@@ -22,6 +22,8 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     telegramChatId: null,
     executionMode: 'paper',
     dailyLossLimit: null,
+    maxDrawdown: null,
+    maxDrawdownPct: null,
     maxBots: null,
     maxSlippageBps: null,
     maxOpenPositions: null,
@@ -41,6 +43,20 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     ...overrides,
   } as Agent;
 }
+
+describe('agentToFormState — maxDrawdownPct hydration', () => {
+  it('hydrates a numeric maxDrawdownPct into a string form field', () => {
+    const agent = makeAgent({ maxDrawdownPct: 15 });
+    const form = agentToFormState(agent);
+    expect(form.maxDrawdownPct).toBe('15');
+  });
+
+  it('defaults maxDrawdownPct to empty string when null', () => {
+    const agent = makeAgent({ maxDrawdownPct: null });
+    const form = agentToFormState(agent);
+    expect(form.maxDrawdownPct).toBe('');
+  });
+});
 
 describe('agentToFormState — strategyPreset hydration', () => {
   it('hydrates the persisted preset key so a preset-managed agent reopens selected', () => {

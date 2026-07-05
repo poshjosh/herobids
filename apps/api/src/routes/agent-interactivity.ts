@@ -61,6 +61,7 @@ const UpdateAgentSchema = z.object({
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxDrawdown: nullablePositiveDecimalStringSchema,
+  maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
@@ -294,12 +295,14 @@ export async function agentInteractivityRoutes(
       return reply.status(400).send({ error: 'validation_error', details: riskIssues });
     }
 
-    // Validate dailyLossLimit requires capital (effective after this update).
+    // Validate dailyLossLimit and maxDrawdownPct require capital (effective after this update).
     // Use the post-merge effective values: new if explicitly provided, else existing.
     const effectiveDailyLossLimit = parsed.data.dailyLossLimit !== undefined ? parsed.data.dailyLossLimit : agent.dailyLossLimit;
+    const effectiveMaxDrawdownPct = parsed.data.maxDrawdownPct !== undefined ? parsed.data.maxDrawdownPct : (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null);
     const effectiveCapital = parsed.data.capital !== undefined ? parsed.data.capital : agent.capital;
     const capitalIssues = validateDailyLossRequiresCapital({
       dailyLossLimit: effectiveDailyLossLimit,
+      maxDrawdownPct: effectiveMaxDrawdownPct,
       capital: effectiveCapital,
     });
     if (capitalIssues.length > 0) {

@@ -39,6 +39,7 @@ export interface ResolvedAgentRiskContract {
   maxPositionSizePct: AgentRiskField<number>;
   stopLossPct: AgentRiskField<number>;
   stopLossCooldownMs: AgentRiskField<number>;
+  maxDrawdownPct: AgentRiskField<number>;
 }
 
 /** Persisted runtime overrides — only fields the agent has actively changed. */
@@ -47,6 +48,7 @@ export interface AgentRiskOverrides {
   maxPositionSizePct?: number;
   stopLossPct?: number;
   stopLossCooldownMs?: number;
+  maxDrawdownPct?: number;
 }
 
 /** Input shape for resolving the contract (raw creator-configured nullable values). */
@@ -55,6 +57,7 @@ export interface AgentRiskCreatorInput {
   maxPositionSizePct: number | null;
   stopLossPct: number | null;
   stopLossCooldownMs: number | null;
+  maxDrawdownPct: number | null;
 }
 
 /** Operator ceiling values derived from AgentRiskDefaultsConfig. */
@@ -63,6 +66,7 @@ export interface AgentRiskCeilings {
   maxPositionSizePct: number;
   stopLossPct: number;
   stopLossCooldownMs: number;
+  maxDrawdownPct: number;
 }
 
 /**
@@ -136,6 +140,7 @@ export function resolveAgentRiskContract(
     maxPositionSizePct,
     stopLossPct: resolveRiskField(creator.stopLossPct, ceilings.stopLossPct, overrides.stopLossPct),
     stopLossCooldownMs: resolveRiskField(creator.stopLossCooldownMs, ceilings.stopLossCooldownMs, overrides.stopLossCooldownMs),
+    maxDrawdownPct: resolveRiskField(creator.maxDrawdownPct, ceilings.maxDrawdownPct, overrides.maxDrawdownPct),
   };
 }
 
@@ -160,12 +165,13 @@ export function validateRiskOverride(
   }
 
   // Field-specific lower bounds: maxOpenPositions must be >= 1 (cannot disable),
-  // while stopLossPct, stopLossCooldownMs, and maxPositionSizePct allow 0 (disabled).
+  // while stopLossPct, stopLossCooldownMs, maxPositionSizePct, and maxDrawdownPct allow 0 (disabled).
   const minByField: Record<keyof ResolvedAgentRiskContract, number> = {
     maxOpenPositions: 1,
     maxPositionSizePct: 0,
     stopLossPct: 0,
     stopLossCooldownMs: 0,
+    maxDrawdownPct: 0,
   };
   const min = minByField[field];
   if (proposedValue < min) {

@@ -35,6 +35,7 @@ export async function connectionRoutes(
         toolPolicy: agents.toolPolicy,
         executionMode: agents.executionMode,
         dailyLossLimit: agents.dailyLossLimit,
+        maxDrawdownPct: agents.maxDrawdownPct,
         maxBots: agents.maxBots,
       })
       .from(agents)
@@ -52,6 +53,7 @@ export async function connectionRoutes(
       executionMode: agentRow.executionMode,
       toolPolicy: (agentRow.toolPolicy as Record<string, unknown> | null) ?? {},
       dailyLossLimit: agentRow.dailyLossLimit,
+      maxDrawdownPct: agentRow.maxDrawdownPct != null ? Number(agentRow.maxDrawdownPct) : null,
       maxBots: agentRow.maxBots,
       budgets,
       capabilityDescriptor,

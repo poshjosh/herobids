@@ -59,6 +59,7 @@ export interface CreateAgentIntentPayloadInput {
   capital: string;
   dailyLossLimit: string;
   maxDrawdown: string;
+  maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -86,6 +87,7 @@ export interface UpdateAgentPayloadInput {
   dailySpendBudgetUsd: string;
   dailyLossLimit: string;
   maxDrawdown: string;
+  maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -129,6 +131,7 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   capital?: string;
   dailyLossLimit?: string;
   maxDrawdown?: string;
+  maxDrawdownPct?: number;
   technical?: TechnicalConfig;
   strategyPreset?: string;
   style?: string;
@@ -155,8 +158,9 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(input.telegramChatId.trim() ? { telegramChatId: input.telegramChatId.trim() } : {}),
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
-    ...(input.dailyLossLimit.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
-    ...(input.maxDrawdown.trim() ? { maxDrawdown: input.maxDrawdown.trim() } : {}),
+    ...(input.dailyLossLimit?.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
+    ...(input.maxDrawdown?.trim() ? { maxDrawdown: input.maxDrawdown.trim() } : {}),
+    ...(input.maxDrawdownPct?.trim() ? { maxDrawdownPct: parseFloat(input.maxDrawdownPct) } : {}),
     ...(input.maxSlippageBps ? { maxSlippageBps: parseInt(input.maxSlippageBps, 10) } : {}),
     ...(input.maxOpenPositions ? { maxOpenPositions: parseInt(input.maxOpenPositions, 10) } : {}),
     ...(input.maxPositionSizePct ? { maxPositionSizePct: parseFloat(input.maxPositionSizePct) } : {}),
@@ -185,6 +189,7 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   dailySpendBudgetUsd: number | null;
   dailyLossLimit: string | null;
   maxDrawdown: string | null;
+  maxDrawdownPct: number | null;
   maxSlippageBps: number | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: number | null;
@@ -220,8 +225,9 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     telegramChatId: input.telegramChatId.trim() || null,
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
-    dailyLossLimit: input.dailyLossLimit.trim() || null,
-    maxDrawdown: input.maxDrawdown.trim() || null,
+    dailyLossLimit: input.dailyLossLimit?.trim() || null,
+    maxDrawdown: input.maxDrawdown?.trim() || null,
+    maxDrawdownPct: input.maxDrawdownPct?.trim() ? parseFloat(input.maxDrawdownPct) : null,
     maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
     maxOpenPositions: input.maxOpenPositions ? parseInt(input.maxOpenPositions, 10) : null,
     maxPositionSizePct: input.maxPositionSizePct ? parseFloat(input.maxPositionSizePct) : null,

@@ -5,6 +5,7 @@ export interface AgentRiskLimitSource {
   capital: string | null;
   dailyLossLimit: string | null;
   maxDrawdown: string | null;
+  maxDrawdownPct: string | number | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: string | number | null;
   stopLossPct: string | number | null;
@@ -29,6 +30,7 @@ export function extractCeilings(defaults: AgentRiskDefaultsConfig): AgentRiskCei
     maxPositionSizePct: defaults.maxPositionSizePct,
     stopLossPct: defaults.stopLossMaxUnrealizedLossPct,
     stopLossCooldownMs: defaults.stopLossCooldownMs,
+    maxDrawdownPct: defaults.maxDrawdownPct,
   };
 }
 
@@ -41,6 +43,7 @@ export function extractCreatorInput(source: AgentRiskLimitSource): AgentRiskCrea
     maxPositionSizePct: parseOptionalNumber(source.maxPositionSizePct) ?? null,
     stopLossPct: parseOptionalNumber(source.stopLossPct) ?? null,
     stopLossCooldownMs: source.stopLossCooldownMs,
+    maxDrawdownPct: parseOptionalNumber(source.maxDrawdownPct) ?? null,
   };
 }
 
@@ -71,16 +74,15 @@ export function buildRiskLimitsFromContract(
   const capital = source.capital;
   const dailyLossLimit = source.dailyLossLimit;
 
-  // maxDrawdown is a separate field from dailyLossLimit.
-  // dailyLossLimit = rolling realised P&L cap (daily reset).
-  // maxDrawdown = peak-to-trough equity drawdown including unrealized P&L (session high-water mark).
-  // Each has independent enforcement in the risk gate (risk.max_drawdown_exceeded vs risk.daily_max_loss_exceeded).
+  // maxDrawdown (absolute USD) is a separate DB column, preserved for non-agent flows.
+  // Agents use maxDrawdownPct (percentage) from the risk contract for drawdown enforcement.
   const maxDrawdown = source.maxDrawdown ?? String(defaults.maxDrawdown);
 
   return {
     maxPositionSize: quantity(String(defaults.maxPositionSize)),
     maxOpenPositions: contract.maxOpenPositions.effectiveValue,
     maxDrawdown: price(maxDrawdown),
+    maxDrawdownPct: contract.maxDrawdownPct.effectiveValue,
     stopLossMaxUnrealizedLossPct: contract.stopLossPct.effectiveValue,
     stopLossCooldownMs: contract.stopLossCooldownMs.effectiveValue,
     // maxPositionSizePct is included when capital is present or when the field has an effective value from creator/override

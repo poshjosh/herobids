@@ -216,4 +216,49 @@ describe('buildRuntimeDescriptor', () => {
     expect(descriptor.budgets.maxVisibleToolSchemas).toBe(37);
     expect(descriptor.budgets).not.toBe(budgets);
   });
+
+  it('carries maxDrawdownPct through to guardrails', () => {
+    const descriptor = buildRuntimeDescriptor({
+      agentId: 'agent-1',
+      goal: 'Test agent',
+      maxDrawdownPct: 15,
+      budgets: {
+        maxHistoryMessages: 20,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4000,
+        maxVisibleToolSchemas: 37,
+        maxContextBlockChars: 4000,
+      },
+      capabilityDescriptor: {
+        resolvedSkills: [],
+        grantedConnectionsByFamily: {},
+        readinessByFamily: {},
+        defaultConnectionByFamily: {},
+      },
+    });
+
+    expect(descriptor.guardrails.maxDrawdownPct).toBe(15);
+  });
+
+  it('defaults maxDrawdownPct to null when not provided', () => {
+    const descriptor = buildRuntimeDescriptor({
+      agentId: 'agent-1',
+      goal: 'Test agent',
+      budgets: {
+        maxHistoryMessages: 20,
+        maxRecentToolMessages: 6,
+        maxToolResultChars: 4000,
+        maxVisibleToolSchemas: 37,
+        maxContextBlockChars: 4000,
+      },
+      capabilityDescriptor: {
+        resolvedSkills: [],
+        grantedConnectionsByFamily: {},
+        readinessByFamily: {},
+        defaultConnectionByFamily: {},
+      },
+    });
+
+    expect(descriptor.guardrails.maxDrawdownPct).toBeNull();
+  });
 });

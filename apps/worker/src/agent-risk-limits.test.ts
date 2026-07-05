@@ -11,14 +11,17 @@ const DEFAULTS: AgentRiskDefaultsConfig = {
   stopLossCooldownMs: 300_000,
   maxOrderNotionalMultiplier: 1,
   maxDrawdown: 1_000_000_000,
+  maxDrawdownPct: 20,
   botConfigInvalidHaltThreshold: 1,
   botExecutionErrorHaltThreshold: 5,
+  dailyLossLimitDefaultRatio: 0.05,
 };
 
 const EMPTY_SOURCE: AgentRiskLimitSource = {
   capital: null,
   dailyLossLimit: null,
   maxDrawdown: null,
+  maxDrawdownPct: null,
   maxOpenPositions: null,
   maxPositionSizePct: null,
   stopLossPct: null,
@@ -161,6 +164,7 @@ describe('extractCeilings()', () => {
     expect(ceilings.maxPositionSizePct).toBe(100);
     expect(ceilings.stopLossPct).toBe(10);
     expect(ceilings.stopLossCooldownMs).toBe(300_000);
+    expect(ceilings.maxDrawdownPct).toBe(20);
   });
 });
 
@@ -169,6 +173,8 @@ describe('extractCreatorInput()', () => {
     const input = extractCreatorInput({
       capital: '1000',
       dailyLossLimit: '100',
+      maxDrawdown: null,
+      maxDrawdownPct: 15,
       maxOpenPositions: 5,
       maxPositionSizePct: '25',
       stopLossPct: null,
@@ -178,5 +184,6 @@ describe('extractCreatorInput()', () => {
     expect(input.maxPositionSizePct).toBe(25);
     expect(input.stopLossPct).toBeNull();
     expect(input.stopLossCooldownMs).toBeNull();
+    expect(input.maxDrawdownPct).toBe(15);
   });
 });

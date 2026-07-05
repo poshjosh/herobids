@@ -232,6 +232,13 @@
       "when": 1783270017579,
       "tag": "0032_opposite_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783285789000,
+      "tag": "0033_dazzling_luminals",
+      "breakpoints": true
     }
   ]
 }

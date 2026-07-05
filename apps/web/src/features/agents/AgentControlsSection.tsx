@@ -32,6 +32,7 @@ interface AgentControlsSectionProps {
 export interface TradingGuardrailsFormValue {
   dailyLossLimit: string;
   maxDrawdown: string;
+  maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -47,6 +48,8 @@ export interface AgentRiskDefaultsView {
   stopLossPct: number;
   stopLossCooldownMs: number;
   maxDrawdown: number;
+  dailyMaxLossPct: number;
+  maxDrawdownPct: number;
 }
 
 interface TradingGuardrailsFieldsProps {
@@ -211,6 +214,26 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
           placeholder={defaults ? String(defaults.maxDrawdown) : intl.formatMessage({ id: 'common.unlimited' })}
         />
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxDrawdown.help' })}</div>
+      </div>
+
+      <div data-field="maxDrawdownPct">
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxDrawdownPct' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          type="number"
+          min={0}
+          max={100}
+          step="0.01"
+          value={value.maxDrawdownPct}
+          onBlur={() => onBlurField?.('maxDrawdownPct')}
+          onChange={(event) => {
+            onClearFieldError?.('maxDrawdownPct');
+            onChange({ maxDrawdownPct: event.target.value });
+          }}
+          placeholder={defaults ? String(defaults.maxDrawdownPct) : intl.formatMessage({ id: 'common.default' })}
+        />
+        {fieldErrors?.maxDrawdownPct && <div style={errorTextStyle}>{fieldErrors.maxDrawdownPct}</div>}
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxDrawdownPct.help' })}</div>
       </div>
 
       <div>

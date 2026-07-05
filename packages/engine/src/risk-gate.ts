@@ -15,7 +15,8 @@ export interface RiskLimits {
   maxPositionSize: Quantity;
   /** Maximum number of open (non-flat) positions across all instruments */
   maxOpenPositions: number;
-  /** Maximum allowed drawdown from peak equity (as a positive value, e.g. 1000 = $1000) */
+  /** Maximum allowed drawdown from peak equity (as a positive value, e.g. 1000 = $1000).
+   *  Preserved for non-agent trading flows. Agents should use maxDrawdownPct instead. */
   maxDrawdown: Price;
   /** Maximum notional per single order */
   maxOrderNotional?: Price;
@@ -27,6 +28,9 @@ export interface RiskLimits {
   stopLossCooldownMs?: number;
   /** Maximum unrealized loss per position as % of equity (0–100) before stop-loss fires. 0 = disabled. */
   stopLossMaxUnrealizedLossPct?: number;
+  /** Maximum allowed peak-to-current equity drawdown as % of peak equity (0–100).
+   *  Agent-facing drawdown control. Separate from maxDrawdown (absolute USD). */
+  maxDrawdownPct?: number;
 }
 
 /** Snapshot of current risk state passed to the gate */
@@ -39,6 +43,8 @@ export interface RiskSnapshot {
   currentDrawdown: Price;
   /** Current equity (needed for %-based checks) */
   equity?: Price;
+  /** Peak equity (needed for maxDrawdownPct % check). When absent, falls back to equity. */
+  peakEquity?: Price;
   /** Loss realised in the rolling 24h window (positive value) */
   dailyLoss?: Price;
   /** Timestamp (ms) of the last stop-loss exit for this instrument (undefined = no recent SL) */
@@ -63,7 +69,7 @@ export function checkRisk(
 ): RiskCheckResult {
   const isRiskReducing = plan.action === 'close' || plan.action === 'reduce';
 
-  // 1. Max drawdown breach
+  // 1. Max drawdown breach (absolute USD — preserved for non-agent flows)
   if (!isRiskReducing && snapshot.currentDrawdown.gte(limits.maxDrawdown)) {
     return err({
       code: 'risk.max_drawdown_exceeded',
@@ -73,6 +79,31 @@ export function checkRisk(
         maxDrawdown: limits.maxDrawdown.toString(),
       },
     });
+  }
+
+  // 1a. Max drawdown percentage breach (peak-to-current equity) — agent-facing drawdown control
+  if (
+    !isRiskReducing &&
+    limits.maxDrawdownPct != null &&
+    limits.maxDrawdownPct > 0 &&
+    snapshot.equity != null
+  ) {
+    const peak = snapshot.peakEquity ?? snapshot.equity;
+    if (snapshot.equity.lt(peak)) {
+      const drawdownPct = peak.minus(snapshot.equity).div(peak).mul(new Decimal(100));
+      if (drawdownPct.gte(new Decimal(limits.maxDrawdownPct))) {
+        return err({
+          code: 'risk.max_drawdown_pct_exceeded',
+          message: `Current drawdown ${drawdownPct.toString()}% exceeds limit ${limits.maxDrawdownPct}%`,
+          context: {
+            currentDrawdownPct: drawdownPct.toString(),
+            maxDrawdownPct: limits.maxDrawdownPct,
+            peakEquity: peak.toString(),
+            currentEquity: snapshot.equity.toString(),
+          },
+        });
+      }
+    }
   }
 
   // 1b. Daily max loss (rolling 24h) — checked when both limit and snapshot data present

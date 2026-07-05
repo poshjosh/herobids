@@ -170,7 +170,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
   // values synchronously, so this naturally becomes false without needing a
   // skillPreset gate.
   const showTradingControls = requiresTradingSetup || hasTradingCapability
-    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxDrawdown.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
+    || Boolean(form.capital.trim() || form.dailyLossLimit.trim() || form.maxDrawdown.trim() || form.maxDrawdownPct.trim() || form.maxSlippageBps.trim() || form.maxOpenPositions.trim() || form.maxPositionSizePct.trim() || form.stopLossPct.trim() || form.stopLossCooldownSecs.trim());
   const validationConstraints: ValidationConstraints = {
     maxOpenPositions: riskDefaultsQuery.data?.maxOpenPositions ?? 10,
     maxPositionSizePct: riskDefaultsQuery.data?.maxPositionSizePct ?? 100,
@@ -285,6 +285,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
         dailySpendBudgetUsd: form.dailySpendBudgetUsd,
         dailyLossLimit: form.dailyLossLimit,
         maxDrawdown: form.maxDrawdown,
+        maxDrawdownPct: form.maxDrawdownPct,
         maxSlippageBps: form.maxSlippageBps,
         maxOpenPositions: form.maxOpenPositions,
         maxPositionSizePct: form.maxPositionSizePct,
@@ -353,6 +354,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     capital: '',
                     dailyLossLimit: '',
                     maxDrawdown: '',
+                    maxDrawdownPct: '',
                     maxSlippageBps: '',
                     maxOpenPositions: '',
                     maxPositionSizePct: '',
@@ -700,6 +702,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     value={{
                       dailyLossLimit: form.dailyLossLimit,
                       maxDrawdown: form.maxDrawdown,
+                      maxDrawdownPct: form.maxDrawdownPct,
                       maxSlippageBps: form.maxSlippageBps,
                       maxOpenPositions: form.maxOpenPositions,
                       maxPositionSizePct: form.maxPositionSizePct,

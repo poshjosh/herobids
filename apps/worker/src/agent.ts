@@ -221,6 +221,8 @@ interface AgentConfig {
   dailySpendBudgetUsd?: number;
   dexWatchlistSymbols?: string[];
   dailyLossLimit?: string;
+  maxDrawdown?: string;
+  maxDrawdownPct?: number | string;
   maxBots?: number;
   maxSlippageBps?: number;
   maxOpenPositions?: number;
@@ -247,6 +249,7 @@ interface AgentConfig {
     maxOrderNotionalMultiplier: number;
     dailyMaxLossPct: number;
     maxDrawdown: number;
+    maxDrawdownPct: number;
     botConfigInvalidHaltThreshold: number;
     botExecutionErrorHaltThreshold: number;
   };
@@ -1351,12 +1354,16 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       const creatorInput = extractCreatorInput({
         capital: agentConfig.capital ?? null,
         dailyLossLimit: agentConfig.dailyLossLimit ?? null,
+        maxDrawdown: agentConfig.maxDrawdown ?? null,
+        maxDrawdownPct: agentConfig.maxDrawdownPct ?? null,
         maxOpenPositions: agentConfig.maxOpenPositions ?? null,
         maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
         stopLossPct: agentConfig.stopLossPct ?? null,
         stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
       });
-      return resolveAgentRiskContract(creatorInput, ceilings, overrides);
+      return resolveAgentRiskContract(creatorInput, ceilings, overrides, {
+        hasCapital: agentConfig.capital != null,
+      });
     },
 
     async adjustOverrides(proposedChanges: Record<string, number | null>): Promise<{ ok: boolean; error?: string; contract?: ResolvedAgentRiskContract }> {
@@ -1364,12 +1371,16 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       const creatorInput = extractCreatorInput({
         capital: agentConfig.capital ?? null,
         dailyLossLimit: agentConfig.dailyLossLimit ?? null,
+        maxDrawdown: agentConfig.maxDrawdown ?? null,
+        maxDrawdownPct: agentConfig.maxDrawdownPct ?? null,
         maxOpenPositions: agentConfig.maxOpenPositions ?? null,
         maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
         stopLossPct: agentConfig.stopLossPct ?? null,
         stopLossCooldownMs: agentConfig.stopLossCooldownMs ?? null,
       });
-      const currentContract = resolveAgentRiskContract(creatorInput, ceilings, currentOverrides);
+      const currentContract = resolveAgentRiskContract(creatorInput, ceilings, currentOverrides, {
+        hasCapital: agentConfig.capital != null,
+      });
 
       // Validate all proposed changes
       const errors: string[] = [];
@@ -1406,7 +1417,9 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       await agentRepo!.setRiskOverrides(AGENT_ID!, newOverrides);
 
       // Return updated contract
-      const updatedContract = resolveAgentRiskContract(creatorInput, ceilings, newOverrides);
+      const updatedContract = resolveAgentRiskContract(creatorInput, ceilings, newOverrides, {
+        hasCapital: agentConfig.capital != null,
+      });
       return { ok: true, contract: updatedContract };
     },
   };
@@ -1579,14 +1592,16 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
               capital: row.capital,
               dailyLossLimit: row.dailyLossLimit,
               maxDrawdown: row.maxDrawdown,
+              maxDrawdownPct: row.maxDrawdownPct,
             };
           },
         }
       : undefined,
     operatorDefaults: {
-      // agentRiskDefaults.maxDrawdown is guaranteed by schema validation (Zod .default(1_000_000_000)).
-      // No cast or fallback needed — the config is always parsed before the worker starts.
-      maxDrawdown: agentConfig.agentRiskDefaults.maxDrawdown,
+      // agentRiskDefaults is guaranteed by Zod schema validation at worker startup.
+      // Every field has a .default() — these are never undefined at runtime.
+      maxDrawdown: agentConfig.agentRiskDefaults!.maxDrawdown,
+      maxDrawdownPct: agentConfig.agentRiskDefaults!.maxDrawdownPct,
     },
   };
 

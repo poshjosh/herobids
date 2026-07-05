@@ -206,11 +206,12 @@ export interface ToolContext {
   };
   /** Agent repository for get_account_summary (capital, etc.). */
   agentRepo?: {
-    getAgent(agentId: string): Promise<{ capital: string | null; dailyLossLimit: string | null; maxDrawdown: string | null } | null>;
+    getAgent(agentId: string): Promise<{ capital: string | null; dailyLossLimit: string | null; maxDrawdown: string | null; maxDrawdownPct: string | null } | null>;
   };
   /** Operator-configured risk defaults for the running agent (from agentRiskDefaults config). */
   operatorDefaults?: {
     maxDrawdown: number;
+    maxDrawdownPct: number;
   };
 }
 

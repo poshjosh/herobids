@@ -239,6 +239,74 @@ describe('Risk Gate', () => {
     expect(result.ok).toBe(true);
   });
 
+  // --- maxDrawdownPct ---
+
+  it('rejects when peak-to-current drawdown exceeds maxDrawdownPct', () => {
+    const result = checkRisk(makePlan(), {
+      ...baseLimits,
+      maxDrawdownPct: 10,
+    }, {
+      ...baseSnapshot,
+      equity: price('9000'),
+      peakEquity: price('10000'), // 10% drawdown
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('risk.max_drawdown_pct_exceeded');
+    }
+  });
+
+  it('passes when drawdown is below maxDrawdownPct', () => {
+    const result = checkRisk(makePlan(), {
+      ...baseLimits,
+      maxDrawdownPct: 10,
+    }, {
+      ...baseSnapshot,
+      equity: price('9500'),
+      peakEquity: price('10000'), // 5% drawdown
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('allows close when maxDrawdownPct has been breached', () => {
+    const result = checkRisk(
+      makePlan({ action: 'close', orders: [{ side: 'sell', type: 'market', quantity: quantity('2') }] }),
+      { ...baseLimits, maxDrawdownPct: 10 },
+      {
+        ...baseSnapshot,
+        currentPosition: { venue: 'hyperliquid', symbol: 'BTC/USD:USD', side: 'long', size: quantity('2'), entryPrice: price('30000'), realizedPnl: price('0') },
+        equity: price('8900'),
+        peakEquity: price('10000'), // 11% drawdown
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('uses equity as peakEquity fallback when no peak is provided', () => {
+    // When peakEquity is absent, falls back to equity → drawdown = 0%
+    const result = checkRisk(makePlan(), {
+      ...baseLimits,
+      maxDrawdownPct: 10,
+    }, {
+      ...baseSnapshot,
+      equity: price('10000'),
+      // peakEquity not set
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('skips maxDrawdownPct check when limit is 0 (disabled)', () => {
+    const result = checkRisk(makePlan(), {
+      ...baseLimits,
+      maxDrawdownPct: 0,
+    }, {
+      ...baseSnapshot,
+      equity: price('9000'),
+      peakEquity: price('10000'),
+    });
+    expect(result.ok).toBe(true);
+  });
+
   // --- maxPositionSizePct ---
 
   it('rejects when resulting position notional exceeds maxPositionSizePct of equity', () => {

@@ -8,7 +8,7 @@ const GetRiskLimitsParamsSchema = z.object({});
 
 const getRiskLimitsTool: AgentTool = {
   name: 'get_risk_limits',
-  description: 'Get the effective risk limits for this agent, including which limits are mutable (adjustable) and which are locked by the creator. Also shows current runtime state against those limits (open position count, daily P&L vs loss limit). Shows effective values, sources, operator ceilings, and mutability for each risk field.',
+  description: 'Get the effective risk limits for this agent, including which limits are mutable (adjustable) and which are locked by the creator. Also shows current runtime state against those limits (open position count, daily P&L vs loss limit, drawdown). Shows effective values, sources, operator ceilings, and mutability for each risk field.',
   parametersSchema: GetRiskLimitsParamsSchema,
   parameters: convertZodToJsonSchema(GetRiskLimitsParamsSchema),
   category: 'read-database',
@@ -20,11 +20,6 @@ const getRiskLimitsTool: AgentTool = {
     const contract = await ctx.riskContractOps.getContract();
     const runtime = await buildRuntime(ctx, contract);
 
-    // Resolve maxDrawdown limit from agent config (or operator default).
-    // Not in the risk contract — maxDrawdown is a separate limit with independent
-    // enforcement from dailyLossLimit (see Issue 2b).
-    const maxDrawdownLimit = await resolveMaxDrawdownLimit(ctx);
-
     return {
       success: true,
       data: {
@@ -34,7 +29,7 @@ const getRiskLimitsTool: AgentTool = {
           maxPositionSizePct: formatField(contract.maxPositionSizePct),
           stopLossPct: formatField(contract.stopLossPct),
           stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
-          maxDrawdown: maxDrawdownLimit,
+          maxDrawdownPct: formatField(contract.maxDrawdownPct),
         },
         runtime,
       },
@@ -49,11 +44,12 @@ const AdjustRiskLimitsParamsSchema = z.object({
   maxPositionSizePct: z.number().min(0).max(100).optional().nullable().describe('Max position size as % of equity (0-100). Set null to reset to operator default.'),
   stopLossPct: z.number().min(0).max(100).optional().nullable().describe('Unrealized loss % threshold for stop-loss (0-100). Set null to reset to operator default.'),
   stopLossCooldownMs: z.number().int().min(0).optional().nullable().describe('Cooldown in ms after stop-loss exit before re-entry. Set null to reset to operator default.'),
+  maxDrawdownPct: z.number().min(0).max(100).optional().nullable().describe('Max peak-to-current equity drawdown % (0-100). Set null to reset to operator default.'),
 });
 
 const adjustRiskLimitsTool: AgentTool = {
   name: 'adjust_risk_limits',
-  description: 'Adjust mutable risk limits for this agent. Only limits derived from operator defaults (not creator-configured) can be changed. Values cannot exceed operator ceilings. Set a field to null to reset it to the operator default.',
+  description: 'Adjust mutable risk limits for this agent. Only limits derived from operator defaults (not creator-configured) can be changed. Values cannot exceed operator ceilings. Set a field to null to reset it to the operator default. maxDrawdownPct controls peak-to-current equity drawdown (separate from dailyLossLimit which controls rolling 24h realized loss).',
   parametersSchema: AdjustRiskLimitsParamsSchema,
   parameters: convertZodToJsonSchema(AdjustRiskLimitsParamsSchema),
   category: 'write-database',
@@ -70,6 +66,7 @@ const adjustRiskLimitsTool: AgentTool = {
     if (p.maxPositionSizePct !== undefined) overrides.maxPositionSizePct = p.maxPositionSizePct ?? null;
     if (p.stopLossPct !== undefined) overrides.stopLossPct = p.stopLossPct ?? null;
     if (p.stopLossCooldownMs !== undefined) overrides.stopLossCooldownMs = p.stopLossCooldownMs ?? null;
+    if (p.maxDrawdownPct !== undefined) overrides.maxDrawdownPct = p.maxDrawdownPct ?? null;
 
     if (Object.keys(overrides).length === 0) {
       return { success: false, error: 'No fields provided to adjust', fault: false };
@@ -91,6 +88,7 @@ const adjustRiskLimitsTool: AgentTool = {
           maxPositionSizePct: formatField(result.contract.maxPositionSizePct),
           stopLossPct: formatField(result.contract.stopLossPct),
           stopLossCooldownMs: formatField(result.contract.stopLossCooldownMs),
+          maxDrawdownPct: formatField(result.contract.maxDrawdownPct),
         } : undefined,
       },
     };
@@ -180,8 +178,9 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
     }
   }
 
-  // Resolve maxDrawdown limit for the drawdown section
-  const drawdownLimit = await resolveMaxDrawdownLimit(ctx);
+  // Resolve maxDrawdownPct from the risk contract (same provenance as other adjustable limits).
+  // The contract handles creator→default→override resolution with mutability metadata.
+  const drawdownPctField = contract.maxDrawdownPct;
 
   return {
     dailyLoss: {
@@ -194,12 +193,15 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
       remainingMs: null,
     },
     drawdown: {
-      // Current drawdown is engine-only state — now populated from Redis cache
+      // Current drawdown is engine-only state — populated from Redis cache
       // (equity:{actorId}) written by the worker after each decision.
-      // Falls back to null when cache is unavailable (e.g. first decision).
       current: await resolveDrawdownCurrent(ctx),
-      limit: drawdownLimit?.value != null ? String(drawdownLimit.value) : null,
-      source: drawdownLimit?.source ?? 'operator_default',
+      limit: drawdownPctField.effectiveValue > 0 ? String(drawdownPctField.effectiveValue) : null,
+      limitPct: drawdownPctField.effectiveValue,
+      source: drawdownPctField.source === 'user' ? 'user_configured' :
+              drawdownPctField.source === 'agent_override' ? 'agent_override' : 'operator_default',
+      mutable: drawdownPctField.mutable,
+      ceiling: drawdownPctField.operatorCeiling,
       approaching: false,
     },
     openPositions: {
@@ -218,41 +220,6 @@ function formatField(field: { effectiveValue: number; source: string; mutable: b
     ceiling: field.operatorCeiling,
     ...(field.enforced === false ? { enforced: false } : {}),
   };
-}
-
-/**
- * Resolve the maxDrawdown limit from the agent's config, falling back to
- * the operator default. Returns a formatField-compatible object or null.
- */
-async function resolveMaxDrawdownLimit(ctx: ToolContext): Promise<ReturnType<typeof formatField> | null> {
-  // Try agent config first (user-configured limit)
-  if (ctx.agentConfigOps) {
-    try {
-      const config = await ctx.agentConfigOps.getCurrentConfig();
-      const maxDrawdown = (config as Record<string, unknown> | null)?.['maxDrawdown'] as number | undefined;
-      if (maxDrawdown != null) {
-        return { value: maxDrawdown, source: 'user_configured', mutable: false, ceiling: maxDrawdown };
-      }
-    } catch { /* fall through */ }
-  }
-  // Fallback: read agent's DB column
-  if (ctx.agentRepo) {
-    try {
-      const agent = await ctx.agentRepo.getAgent(ctx.agentId);
-      if (agent?.maxDrawdown != null) {
-        const val = Number(agent.maxDrawdown);
-        if (!Number.isNaN(val)) {
-          return { value: val, source: 'user_configured', mutable: false, ceiling: val };
-        }
-      }
-    } catch { /* fall through */ }
-  }
-  // Operator default — read from operator config, never hard-coded.
-  // Marked mutable: false because adjust_risk_limits does not yet expose
-  // maxDrawdown as an adjustable field (it is a separate DB column, not
-  // part of the risk contract overrides).
-  const operatorDefault = ctx.operatorDefaults?.maxDrawdown ?? 1_000_000_000;
-  return { value: operatorDefault, source: 'operator_default', mutable: false, ceiling: operatorDefault };
 }
 
 /**

@@ -97,6 +97,7 @@ const baseDescriptor = {
   guardrails: {
     dailyTokenBudget: 'unlimited tokens',
     dailyLossLimit: '10',
+    maxDrawdownPct: 15,
     maxBots: 2,
   },
   budgets: {
@@ -180,6 +181,7 @@ describe('runtime composition helpers', () => {
     expect(prompt).not.toContain('Execution mode:');
     expect(prompt).not.toContain('Trading Venue');
     expect(prompt).not.toContain('Daily loss limit:');
+    expect(prompt).not.toContain('Max drawdown:');
     expect(prompt).not.toContain('Max concurrent bots:');
   });
 
@@ -1575,7 +1577,8 @@ describe('runtime composition helpers', () => {
       }), undefined, enrichmentPolicy);
 
       expect(prompt).toContain('Trading Guardrails');
-      expect(prompt).toContain('Daily loss limit: $10.00');
+      expect(prompt).toContain('Daily loss limit (rolling 24h realized loss): $10.00');
+      expect(prompt).toContain('Max drawdown: 15% of peak equity');
       expect(prompt).toContain('Max concurrent bots: 2');
     });
 

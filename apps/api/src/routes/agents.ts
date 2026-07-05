@@ -104,6 +104,7 @@ const CreateAgentSchema = z.object({
   executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
   dailyLossLimit: optionalPositiveDecimalStringSchema,
   maxDrawdown: optionalPositiveDecimalStringSchema,
+  maxDrawdownPct: z.number().min(0).max(100).optional(),
   maxBots: optionalPositiveIntegerSchema(),
   maxSlippageBps: optionalPositiveIntegerSchema(0),
   maxOpenPositions: optionalPositiveIntegerSchema(),
@@ -160,6 +161,7 @@ const UpdateAgentSchema = z.object({
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
   maxDrawdown: nullablePositiveDecimalStringSchema,
+  maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
   maxOpenPositions: nullablePositiveIntegerSchema(),
@@ -506,6 +508,8 @@ export async function agentRoutes(
       stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
       stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
       maxDrawdown: agentRiskDefaults.maxDrawdown,
+      dailyMaxLossPct: agentRiskDefaults.dailyMaxLossPct,
+      maxDrawdownPct: agentRiskDefaults.maxDrawdownPct,
       costPerTickEstimates: agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 },
       runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,
     });
@@ -523,6 +527,15 @@ export async function agentRoutes(
     const riskIssues = validateAgentRiskBounds(parsed.data, agentRiskDefaults);
     if (riskIssues.length > 0) {
       return reply.status(400).send({ error: 'validation_error', details: riskIssues });
+    }
+
+    const capitalIssues = validateDailyLossRequiresCapital({
+      dailyLossLimit: parsed.data.dailyLossLimit,
+      maxDrawdownPct: parsed.data.maxDrawdownPct,
+      capital: parsed.data.capital,
+    });
+    if (capitalIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: capitalIssues });
     }
 
     if (hasModelFieldsWithoutProvider(parsed.data)) {
@@ -707,6 +720,7 @@ export async function agentRoutes(
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           dailyLossLimit: parsed.data.dailyLossLimit ?? null,
           maxDrawdown: parsed.data.maxDrawdown ?? null,
+          maxDrawdownPct: parsed.data.maxDrawdownPct ?? null,
           maxBots: resolvedMaxBots,
           maxSlippageBps: parsed.data.maxSlippageBps ?? null,
           maxOpenPositions: parsed.data.maxOpenPositions ?? null,
@@ -859,10 +873,11 @@ export async function agentRoutes(
       return reply.status(404).send({ error: 'not_found' });
     }
 
-    // Validate dailyLossLimit requires capital (effective after PATCH merge)
+    // Validate dailyLossLimit and maxDrawdownPct require capital (effective after PATCH merge)
     const effectiveCapitalForCheck = parsed.data.capital !== undefined ? parsed.data.capital : agent.capital;
     const capitalIssues = validateDailyLossRequiresCapital({
       dailyLossLimit: parsed.data.dailyLossLimit !== undefined ? parsed.data.dailyLossLimit : agent.dailyLossLimit,
+      maxDrawdownPct: parsed.data.maxDrawdownPct !== undefined ? parsed.data.maxDrawdownPct : (agent.maxDrawdownPct != null ? Number(agent.maxDrawdownPct) : null),
       capital: effectiveCapitalForCheck,
     });
     if (capitalIssues.length > 0) {

@@ -859,6 +859,7 @@ export interface Agent {
   executionMode: string | null;
   dailyLossLimit: string | null;
   maxDrawdown: string | null;
+  maxDrawdownPct: number | null;
   maxBots: number | null;
   maxSlippageBps: number | null;
   maxOpenPositions: number | null;
@@ -944,7 +945,7 @@ export interface AgentPosition {
 export const agents = {
   list: () => request<Agent[]>('/agents'),
   get: (id: string) => request<Agent>(`/agents/${id}`),
-  riskDefaults: () => request<{ dailyLossLimitDefaultRatio: number; maxOpenPositions: number; maxPositionSizePct: number; stopLossPct: number; stopLossCooldownMs: number; maxDrawdown: number }>('/agents/risk-defaults'),
+  riskDefaults: () => request<{ dailyLossLimitDefaultRatio: number; maxOpenPositions: number; maxPositionSizePct: number; stopLossPct: number; stopLossCooldownMs: number; maxDrawdown: number; dailyMaxLossPct: number; maxDrawdownPct: number }>('/agents/risk-defaults'),
   create: (data: {
     name: string;
     prompt: string;
@@ -961,6 +962,7 @@ export const agents = {
     telegramChatId?: string | null;
     dailyLossLimit?: string | null;
     maxDrawdown?: string | null;
+    maxDrawdownPct?: number | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
     maxOpenPositions?: number | null;
@@ -990,6 +992,7 @@ export const agents = {
     executionMode?: string | null;
     dailyLossLimit?: string | null;
     maxDrawdown?: string | null;
+    maxDrawdownPct?: number | null;
     maxBots?: number | null;
     maxSlippageBps?: number | null;
     maxOpenPositions?: number | null;

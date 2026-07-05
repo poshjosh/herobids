@@ -56,6 +56,7 @@ interface IntentState {
   capital: string;
   dailyLossLimit: string;
   maxDrawdown: string;
+  maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -189,6 +190,7 @@ function CreateAgentFlow({
     capital: '',
     dailyLossLimit: '',
     maxDrawdown: '',
+    maxDrawdownPct: '',
     maxSlippageBps: '',
     maxOpenPositions: '',
     maxPositionSizePct: '',
@@ -403,6 +405,7 @@ function CreateAgentFlow({
         capital: intent.capital,
         dailyLossLimit: intent.dailyLossLimit,
         maxDrawdown: intent.maxDrawdown,
+        maxDrawdownPct: intent.maxDrawdownPct,
         maxSlippageBps: intent.maxSlippageBps,
         maxOpenPositions: intent.maxOpenPositions,
         maxPositionSizePct: intent.maxPositionSizePct,
@@ -897,6 +900,7 @@ function CreateAgentFlow({
                       value={{
                         dailyLossLimit: intent.dailyLossLimit,
                         maxDrawdown: intent.maxDrawdown,
+                        maxDrawdownPct: intent.maxDrawdownPct,
                         maxSlippageBps: intent.maxSlippageBps,
                         maxOpenPositions: intent.maxOpenPositions,
                         maxPositionSizePct: intent.maxPositionSizePct,

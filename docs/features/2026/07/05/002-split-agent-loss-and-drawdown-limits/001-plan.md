@@ -2,8 +2,9 @@
 
 ## Status
 
-- Draft
+- Implemented
 - Date: 2026-06-15
+- Implemented: 2026-07-05
 
 ## Problem
 

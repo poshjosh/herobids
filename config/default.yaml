@@ -68,13 +68,17 @@ agentRiskDefaults:
   maxPositionSizePct: 100                # max position notional as % of capital (100 = full capital)
   maxPositionSize: 1000000               # max absolute position size in base units (operator ceiling)
   stopLossMaxUnrealizedLossPct: 10       # max unrealized loss per position as % of equity before forced exit
-  dailyMaxLossPct: 20                    # rolling 24h max loss as % of equity
+  dailyMaxLossPct: 20                    # fallback/ceiling for rolling 24h realized-loss when creator did not set dailyLossLimit.
+                                         # Applied as % of equity. Agent may adjust downward at runtime.
   stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
   maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
-  botConfigInvalidHaltThreshold: 1     # consecutive strategy.config_invalid errors before auto-stop
-  botExecutionErrorHaltThreshold: 5    # consecutive strategy.execution_error errors before auto-stop
-  maxDrawdown: 1000000000              # max equity drawdown from session peak (USD). Default is effectively unlimited.
-                                       # Agents configure their own limit; this is the operator ceiling.
+  botConfigInvalidHaltThreshold: 1       # consecutive strategy.config_invalid errors before auto-stop
+  botExecutionErrorHaltThreshold: 5      # consecutive strategy.execution_error errors before auto-stop
+  maxDrawdown: 1000000000                # max absolute equity drawdown from session peak (USD). Default is effectively unlimited.
+                                         # This is the operator ceiling for non-agent trading flows.
+                                         # Agents use maxDrawdownPct below for drawdown enforcement.
+  maxDrawdownPct: 20                     # fallback/ceiling for peak-to-current equity drawdown when creator did not set maxDrawdownPct.
+                                         # Applied as % of peak equity for agent direct trading. Agent may adjust downward at runtime.
 
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for

@@ -409,6 +409,9 @@ export const AgentRiskDefaultsSchema = z.object({
   botConfigInvalidHaltThreshold: z.number().int().min(1).default(1),
   botExecutionErrorHaltThreshold: z.number().int().min(1).default(5),
   maxDrawdown: z.number().min(0).default(1_000_000_000),
+  /** Operator default and ceiling for peak-to-current equity drawdown (percent).
+   *  Used when the creator did not set maxDrawdownPct. Agent may adjust downward at runtime. */
+  maxDrawdownPct: z.number().min(0).max(100).default(20),
 }).default({});
 
 export const StreamConfigSchema = z.object({

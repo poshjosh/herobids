@@ -40,7 +40,11 @@ export const agents = pgTable('agents', {
   /** Execution mode for bots this agent creates: paper | shadow | live */
   executionMode: text('execution_mode').notNull().default('paper'),
   /** Guard rails — broker-enforced, user-configured */
-  dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD)
+  dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD) — rolling 24h realized-loss hard cap
+  /** Peak-to-current equity drawdown hard cap (percentage 0–100).
+   *  This is the canonical agent drawdown control. The legacy max_drawdown column
+   *  (absolute USD) is preserved for non-agent trading flows. */
+  maxDrawdownPct: numeric('max_drawdown_pct', { precision: 5, scale: 2 }),
   /** Max equity drawdown from session peak (USD). Separate from dailyLossLimit — independent enforcement. Default: effectively unlimited. */
   maxDrawdown: numeric('max_drawdown', { precision: 20, scale: 8 }),
   maxBots: integer('max_bots'),                              // max concurrent bots (agent-level override)

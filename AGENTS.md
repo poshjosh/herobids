@@ -123,7 +123,7 @@ Every risk limit applied to an agent follows one of two paths:
 
 | Path | Source | Mutability | Example |
 |------|--------|------------|---------|
-| **User-configured** | Explicitly set by the creator in the agent's config (UI or API) | Immutable at runtime — the agent cannot override it | User sets `dailyLossLimit: 500` → engine enforces a hard $500/day cap |
+| **User-configured** | Explicitly set by the creator in the agent's config (UI or API) | Immutable at runtime — the agent cannot override it | User sets `dailyLossLimit: 500` → engine enforces a hard $500/day rolling realized-loss cap. User sets `maxDrawdownPct: 15` → engine enforces a 15% peak-to-current equity drawdown cap. |
 | **Operator default** | Read from `config.agentRiskDefaults.*` because the user did not specify a value | Agent-mutable — exposed to the agent as an adjustable parameter via tools | Default `maxOpenPositions: 10` from config → agent may raise or lower it within operator bounds |
 
 Key invariants:
