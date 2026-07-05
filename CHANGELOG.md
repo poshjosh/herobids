@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.8 - 2026-07-05
+
+### Fixed
+
 - Billing: fix LLM usage pricing for cached input tokens and dated OpenRouter model IDs, including rate-card matching and cache-read pricing ingestion
 
 ## v0.0.7 - 2026-07-03
