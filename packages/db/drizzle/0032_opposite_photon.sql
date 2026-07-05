@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "max_drawdown" numeric(20, 8);

@@ -94,7 +94,7 @@ export class AgentIntakeResolver {
       riskLimits: buildAgentRiskLimits({
         capital: capitalStr,
         dailyLossLimit: agent.dailyLossLimit ?? null,
-        maxDrawdown: (agent as Record<string, unknown>).maxDrawdown as string ?? null,
+        maxDrawdown: agent.maxDrawdown ?? null,
         maxOpenPositions: agent.maxOpenPositions ?? null,
         maxPositionSizePct: agent.maxPositionSizePct ?? null,
         stopLossPct: agent.stopLossPct ?? null,

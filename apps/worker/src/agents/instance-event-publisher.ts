@@ -99,6 +99,37 @@ export class InstanceEventPublisher {
   }
 
   /**
+   * Write the actor's current equity snapshot to a Redis hash so the agent's
+   * get_risk_limits tool can read live drawdown data. Written after every
+   * decision (accepted or rejected). The value is at most one decision stale.
+   * Key: equity:{actorId}
+   */
+  async publishEquitySnapshot(actorId: string, snapshot: {
+    startingCapital?: string;
+    realizedPnl: string;
+    unrealizedPnl: string;
+    peakEquity?: string;
+    currentDrawdown: string;
+    equity: string;
+    timestamp: string;
+  }): Promise<void> {
+    try {
+      const key = `equity:${actorId}`;
+      await this.redis.hset(key, 'startingCapital', snapshot.startingCapital ?? '0');
+      await this.redis.hset(key, 'realizedPnl', snapshot.realizedPnl);
+      await this.redis.hset(key, 'unrealizedPnl', snapshot.unrealizedPnl);
+      if (snapshot.peakEquity) await this.redis.hset(key, 'peakEquity', snapshot.peakEquity);
+      await this.redis.hset(key, 'currentDrawdown', snapshot.currentDrawdown);
+      await this.redis.hset(key, 'equity', snapshot.equity);
+      await this.redis.hset(key, 'timestamp', snapshot.timestamp);
+      // Expire after 1 hour — if the agent stops, stale equity data should not persist
+      await this.redis.expire(key, 3600);
+    } catch (err) {
+      logger.warn({ actorId, err }, 'Failed to publish equity snapshot — agent drawdown visibility may be stale');
+    }
+  }
+
+  /**
    * Publish a protocol message to the instance's outbound Redis Stream.
    * Stream key: `agent:outbound:{agentId}`
    */

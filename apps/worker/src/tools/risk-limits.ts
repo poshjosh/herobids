@@ -20,6 +20,11 @@ const getRiskLimitsTool: AgentTool = {
     const contract = await ctx.riskContractOps.getContract();
     const runtime = await buildRuntime(ctx, contract);
 
+    // Resolve maxDrawdown limit from agent config (or operator default).
+    // Not in the risk contract — maxDrawdown is a separate limit with independent
+    // enforcement from dailyLossLimit (see Issue 2b).
+    const maxDrawdownLimit = await resolveMaxDrawdownLimit(ctx);
+
     return {
       success: true,
       data: {
@@ -29,6 +34,7 @@ const getRiskLimitsTool: AgentTool = {
           maxPositionSizePct: formatField(contract.maxPositionSizePct),
           stopLossPct: formatField(contract.stopLossPct),
           stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
+          maxDrawdown: maxDrawdownLimit,
         },
         runtime,
       },
@@ -164,23 +170,26 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
     }
   }
 
+  // Resolve maxDrawdown limit for the drawdown section
+  const drawdownLimit = await resolveMaxDrawdownLimit(ctx);
+
   return {
     dailyLoss: {
       current: dailyLossCurrent,
       limit: dailyLossLimit,
       limitPct: dailyLossLimitPct,
       blocked: dailyLossBlocked,
+      source: dailyLossLimit != null ? 'user_configured' : 'operator_default',
       oldestFillAgesOutAt: null,
       remainingMs: null,
     },
     drawdown: {
-      // Engine-only state — populated by the risk gate during decision execution.
-      // Not available from the agent container tool context.
-      // The maxDrawdown limit is set per-agent (falls back to operator default).
-      // Current drawdown requires Redis cache (Issue 2a — deferred).
-      current: null,
-      limit: null,
-      source: null,
+      // Current drawdown is engine-only state — now populated from Redis cache
+      // (equity:{actorId}) written by the worker after each decision.
+      // Falls back to null when cache is unavailable (e.g. first decision).
+      current: await resolveDrawdownCurrent(ctx),
+      limit: drawdownLimit?.value != null ? String(drawdownLimit.value) : null,
+      source: drawdownLimit?.source ?? 'operator_default',
       approaching: false,
     },
     openPositions: {
@@ -199,6 +208,52 @@ function formatField(field: { effectiveValue: number; source: string; mutable: b
     ceiling: field.operatorCeiling,
     ...(field.enforced === false ? { enforced: false } : {}),
   };
+}
+
+/**
+ * Resolve the maxDrawdown limit from the agent's config, falling back to
+ * the operator default. Returns a formatField-compatible object or null.
+ */
+async function resolveMaxDrawdownLimit(ctx: ToolContext): Promise<ReturnType<typeof formatField> | null> {
+  // Try agent config first (user-configured limit)
+  if (ctx.agentConfigOps) {
+    try {
+      const config = await ctx.agentConfigOps.getCurrentConfig();
+      const maxDrawdown = (config as Record<string, unknown> | null)?.['maxDrawdown'] as number | undefined;
+      if (maxDrawdown != null) {
+        return { value: maxDrawdown, source: 'user_configured', mutable: false, ceiling: maxDrawdown };
+      }
+    } catch { /* fall through */ }
+  }
+  // Fallback: read agent's DB column (when the migration is applied)
+  if (ctx.agentRepo) {
+    try {
+      const agent = await ctx.agentRepo.getAgent(ctx.agentId);
+      const maxDrawdown = (agent as Record<string, unknown> | null)?.['maxDrawdown'] as string | null;
+      if (maxDrawdown != null) {
+        const val = Number(maxDrawdown);
+        if (!Number.isNaN(val)) {
+          return { value: val, source: 'user_configured', mutable: false, ceiling: val };
+        }
+      }
+    } catch { /* fall through */ }
+  }
+  // Operator default — effectively unlimited (1B USD ceiling)
+  return { value: 1_000_000_000, source: 'operator_default', mutable: true, ceiling: 1_000_000_000 };
+}
+
+/**
+ * Read the current drawdown from the Redis equity cache.
+ * The worker writes equity:{actorId} after each decision (see decision-intake.ts).
+ */
+async function resolveDrawdownCurrent(ctx: ToolContext): Promise<string | null> {
+  try {
+    const snapshot = await ctx.redis.hgetall(`equity:${ctx.agentId}`);
+    if (snapshot && snapshot['currentDrawdown'] != null) {
+      return snapshot['currentDrawdown'];
+    }
+  } catch { /* Redis unavailable — return null */ }
+  return null;
 }
 
 export const riskLimitsTools: AgentTool[] = [

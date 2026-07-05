@@ -326,7 +326,7 @@ const intakeResolver: DecisionIntakeResolver = {
           const freshLimits = buildAgentRiskLimits({
             capital: agent.capital ?? null,
             dailyLossLimit: agent.dailyLossLimit ?? null,
-            maxDrawdown: (agent as Record<string, unknown>).maxDrawdown as string ?? null,
+            maxDrawdown: agent.maxDrawdown ?? null,
             maxOpenPositions: agent.maxOpenPositions ?? null,
             maxPositionSizePct: agent.maxPositionSizePct ?? null,
             stopLossPct: agent.stopLossPct ?? null,
@@ -577,7 +577,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           riskLimits: buildAgentRiskLimits({
             capital: agent?.capital ?? null,
             dailyLossLimit: agent?.dailyLossLimit ?? null,
-            maxDrawdown: (agent as Record<string, unknown> | null)?.maxDrawdown as string ?? null,
+            maxDrawdown: agent?.maxDrawdown ?? null,
             maxOpenPositions: agent?.maxOpenPositions ?? null,
             maxPositionSizePct: agent?.maxPositionSizePct ?? null,
             stopLossPct: agent?.stopLossPct ?? null,

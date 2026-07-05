@@ -41,6 +41,8 @@ export const agents = pgTable('agents', {
   executionMode: text('execution_mode').notNull().default('paper'),
   /** Guard rails — broker-enforced, user-configured */
   dailyLossLimit: numeric('daily_loss_limit', { precision: 20, scale: 8 }), // max P&L loss/day (USD)
+  /** Max equity drawdown from session peak (USD). Separate from dailyLossLimit — independent enforcement. Default: effectively unlimited. */
+  maxDrawdown: numeric('max_drawdown', { precision: 20, scale: 8 }),
   maxBots: integer('max_bots'),                              // max concurrent bots (agent-level override)
   maxSlippageBps: integer('max_slippage_bps'),               // max slippage in basis points
   maxOpenPositions: integer('max_open_positions'),

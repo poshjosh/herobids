@@ -225,6 +225,13 @@
       "when": 1783266840815,
       "tag": "0031_peaceful_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783270017579,
+      "tag": "0032_opposite_photon",
+      "breakpoints": true
     }
   ]
 }

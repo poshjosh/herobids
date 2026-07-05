@@ -233,6 +233,28 @@ export class AgentDecisionHandler {
         this.intakeResolver.recordExecutionOutcome?.(resolveId, true);
       }
 
+      // Write equity snapshot to Redis so the agent's get_risk_limits tool
+      // can read live drawdown data (Issue 2a). Written after every decision —
+      // accepted or rejected — so the drawdown is at most one decision stale.
+      if (intakeDeps.equityTracker) {
+        const unrealized = intakeDeps.precomputedUnrealizedPnl ?? (result.position.side !== 'flat'
+          ? new Decimal(0) // snapshot-derived below would be more accurate; this is a fallback
+          : new Decimal(0));
+        // Use a minimal snapshot — full unrealized P&L computation requires
+        // per-instrument mark prices which aren't available here. The zero
+        // unrealizedPnl is a known limitation for multi-position actors.
+        this.eventPublisher.publishEquitySnapshot(effectiveAgentId, {
+          realizedPnl: result.position.realizedPnl.toString(),
+          unrealizedPnl: unrealized.toString(),
+          currentDrawdown: intakeDeps.equityTracker.currentDrawdown(unrealized).toString(),
+          equity: intakeDeps.equityTracker.currentEquity(unrealized).toString(),
+          peakEquity: intakeDeps.equityTracker.peakEquity?.toString(),
+          timestamp: new Date().toISOString(),
+        }).catch((err: unknown) => {
+          logger.warn({ actorId: effectiveAgentId, err }, 'Failed to persist equity snapshot');
+        });
+      }
+
       // Handle pre-execution rejection (e.g. swap token safety)
       if (result.preExecutionRejection) {
         setSyncReply('rejected', { code: result.preExecutionRejection.code, message: result.preExecutionRejection.message });
@@ -263,8 +285,10 @@ export class AgentDecisionHandler {
           return;
         }
 
-        // 6. Emit accepted — deferred until hash and risk checks pass.
-        setSyncReply('accepted', { planId: result.plan?.id });
+        // 6. Emit accepted — deferred until hash, risk, AND execution checks all pass.
+        // Previously this was emitted before the execution result check, which meant
+        // the agent could receive "accepted" for a decision that subsequently failed
+        // during execution (e.g. executor timeout in shadow mode).
         await this.eventPublisher.emitDecisionAccepted(effectiveBotId, {
           decisionId: payload.decisionId,
           acceptedAt: new Date().toISOString(),
@@ -292,8 +316,9 @@ export class AgentDecisionHandler {
           });
         }
 
-        // 8. Emit execution result
+        // 8. Emit execution result AND set sync reply based on actual outcome
         if (result.executionFailed) {
+          setSyncReply('error', { code: 'execution_error', message: 'Decision accepted by risk gate but execution failed' });
           await this.eventPublisher.emitExecutionResult(effectiveBotId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
@@ -308,6 +333,7 @@ export class AgentDecisionHandler {
             completedAt: new Date().toISOString(),
           });
         } else if (result.executionResult) {
+          setSyncReply('accepted', { planId: result.plan?.id });
           await this.eventPublisher.emitExecutionResult(effectiveBotId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
@@ -331,6 +357,9 @@ export class AgentDecisionHandler {
             executionFailed: false,
             completedAt: new Date().toISOString(),
           });
+        } else {
+          // Execution produced no result and didn't fail — e.g. no-op plan
+          setSyncReply('accepted', { planId: result.plan?.id });
         }
       } catch (publishErr) {
         logger.error({ decisionId: payload.decisionId, err: publishErr }, 'Failed to publish decision outcome');
