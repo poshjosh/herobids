@@ -19,6 +19,14 @@ That ambiguity is now a product and implementation risk:
 - documentation, tests, and runtime prompts drift because they are describing different semantics
 - future risk work will keep reintroducing confusion unless the contract is split first
 
+A narrower review finding exposed the same problem from another angle:
+
+- `get_risk_limits` currently reports operator-default drawdown as read-only
+- `adjust_risk_limits` cannot accept any drawdown field
+- runtime-boundary docs say operator-default drawdown should be agent-mutable
+
+That inconsistency is real, but it should not be fixed by bolting runtime mutability onto the legacy absolute `maxDrawdown` path in isolation. The architecturally sound fix is to solve drawdown as part of the same end-to-end contract split described in this plan.
+
 ## Product Decision Assumed By This Plan
 
 This plan assumes the platform adopts two separate agent risk controls:
@@ -32,6 +40,24 @@ This plan assumes the platform adopts two separate agent risk controls:
    Units: percentage of peak equity, stored as a numeric percentage.
 
 This plan intentionally keeps `dailyLossLimit` as the daily-loss field and stops using it for drawdown.
+
+## Architectural Decision
+
+This plan is the canonical fix for the current drawdown-mutability inconsistency.
+
+Decision:
+
+1. Do not add a standalone runtime override path for the legacy absolute `maxDrawdown` field.
+2. Fold drawdown into the same two-path risk contract as the other agent-adjustable risk controls.
+3. Implement drawdown mutability only for the canonical split field, `maxDrawdownPct`, not for the legacy overloaded path.
+4. Keep the repo in a consistent state at every intermediate step: until the write path, persistence path, and enforcement path all exist together, the runtime must not advertise drawdown as mutable.
+
+Why this is the clean version:
+
+- adding mutability to the current absolute `maxDrawdown` field would entrench a model this plan is already replacing
+- it would create duplicate adjustment semantics that would need to be removed once `maxDrawdownPct` ships
+- it would force migration logic between two different drawdown representations instead of one canonical contract
+- it increases the chance of another half-state where tool metadata, persistence, and enforcement drift again
 
 ## Goals
 
@@ -129,7 +155,25 @@ Validation policy:
 - Require `capital` whenever `maxDrawdownPct` is set, because drawdown is meaningless without an equity baseline.
 - If product wants a stricter rule, promote this to: any trading-capable agent must define `capital`.
 
-### 4. Engine risk model
+### 4. Runtime risk contract and tooling
+
+The current mutability bug exists because drawdown is handled outside the typed runtime risk contract. That split must be removed.
+
+Required work:
+
+- Extend `ResolvedAgentRiskContract` and `AgentRiskOverrides` in `packages/domain/src/agent-risk-contract.ts` to include the canonical drawdown field.
+- Extend `AgentRiskCreatorInput` and `AgentRiskCeilings` so drawdown participates in the same resolution path as the existing four adjustable risk fields.
+- Update helper code such as `extractCeilings()`, `extractCreatorInput()`, and `buildRiskContractOps()` so drawdown resolution, mutability, and ceiling validation all come from one source of truth.
+- Extend `validateRiskOverride()` and any related contract tests so operator-default drawdown can be adjusted, reset, and capped with the same semantics as the other default-derived fields.
+- Extend `adjust_risk_limits` in `apps/worker/src/tools/risk-limits.ts` so its schema, write path, and returned limits include drawdown.
+- Update `get_risk_limits` so it no longer resolves drawdown through a bespoke side path with ad hoc mutability metadata; it should format the contract field the same way as the other adjustable limits.
+- Remove or collapse the current split between contract-backed risk fields and the standalone `resolveMaxDrawdownLimit()` path once the new contract is wired end to end.
+
+Safety rule:
+
+- Do not flip drawdown to `mutable: true` in tool output until the corresponding adjust path, persistence path, and enforcement path are all live.
+
+### 5. Engine risk model
 
 The engine already models daily loss and drawdown as different checks, but drawdown is currently absolute while daily loss is percentage-based.
 
@@ -146,7 +190,7 @@ Expected end state:
 - rolling daily loss breach produces a daily-loss-specific rejection
 - no agent path derives both from the same user field
 
-### 5. Worker risk wiring
+### 6. Worker risk wiring
 
 Replace the current overloaded risk-limit builder with a split mapping.
 
@@ -163,7 +207,7 @@ Required work:
   - any direct `agentRepo.getAgent()` consumers that construct risk inputs
 - Update tests that currently expect `dailyLossLimit` to populate `riskLimits.maxDrawdown`.
 
-### 6. Runtime descriptor and prompt visibility
+### 7. Runtime descriptor and prompt visibility
 
 The agent must be able to see both limits with the same meaning the engine enforces.
 
@@ -180,7 +224,7 @@ Optional but recommended:
 
 - If the runtime currently only shows creator-configured guardrails, consider adding resolved default values to the prompt context so the agent can see the effective limits it is trading under.
 
-### 7. Frontend changes
+### 8. Frontend changes
 
 The UI must let users set the new field and must stop implying that daily loss and drawdown are the same thing.
 
@@ -201,7 +245,7 @@ Localization work:
 - Update `en.ts` and the other supported locale files so the new field has labels and help text everywhere the existing daily-loss label appears.
 - Tighten the existing daily-loss help text so it explicitly says rolling 24h realized loss.
 
-### 8. Documentation updates
+### 9. Documentation updates
 
 The split must be reflected in the live source-of-truth docs, not only in code comments.
 
@@ -220,7 +264,7 @@ Historical docs policy:
 - Do not silently rewrite closed historical plans as if the old design never existed.
 - Prefer a short superseded note when a historical file is still likely to be read during future work.
 
-### 9. Tests and validation
+### 10. Tests and validation
 
 Update the test suite to enforce the new semantics across all layers.
 
@@ -244,22 +288,24 @@ Repo validation:
 
 ## Suggested Implementation Order
 
-1. Finalize the field contract and comments for `config/default.yaml`.
+1. Finalize the canonical split contract and comments for `config/default.yaml`.
 2. Add DB column + repository + API types.
-3. Extend worker/API schemas and frontend payloads.
-4. Refactor engine and worker risk wiring to stop mapping `dailyLossLimit` to drawdown.
-5. Expose the new drawdown field in UI and runtime prompt text.
-6. Update docs and tests.
-7. Audit existing agent rows with `daily_loss_limit` before enabling the new UI in production.
+3. Extend runtime risk contract types and risk-override persistence to include drawdown.
+4. Extend worker/API schemas and tool surfaces so drawdown mutability is expressed through the contract, not a special case.
+5. Refactor engine and worker risk wiring to stop mapping `dailyLossLimit` to drawdown.
+6. Expose the new drawdown field in UI and runtime prompt text.
+7. Update docs and tests.
+8. Audit existing agent rows with `daily_loss_limit` before enabling the new UI in production.
 
 ## Rollout Notes
 
 - This is a semantic correction, not just a UI tweak.
 - Existing agents with `dailyLossLimit` set may behave differently after the change because that value will no longer implicitly protect against total drawdown.
 - The rollout therefore needs an operator review step for existing agents before or immediately after deploy.
+- Do not ship an intermediate state where docs or tool metadata say drawdown is mutable before the adjustment path is actually available.
 - If a low-risk rollout is preferred, ship in two deploys:
   1. additive schema/API/UI support for `maxDrawdownPct`
-  2. worker switch that removes the old `dailyLossLimit -> maxDrawdown` mapping after existing agents have been reviewed
+  2. contract/tool/enforcement switch that removes the old `dailyLossLimit -> maxDrawdown` mapping after existing agents have been reviewed
 
 ## Done Criteria
 
@@ -267,5 +313,6 @@ Repo validation:
 - `maxDrawdownPct` exists as a separate agent risk control end to end
 - `config/default.yaml` comments clearly document the meaning of `dailyMaxLossPct` and `maxDrawdownPct`
 - worker risk wiring no longer maps `dailyLossLimit` onto `maxDrawdown`
+- `get_risk_limits` and `adjust_risk_limits` expose the same drawdown field, provenance, ceiling, and mutability semantics
 - runtime prompt and frontend copy show daily loss and drawdown as separate controls
 - tests cover the split semantics across engine, worker, API, and web

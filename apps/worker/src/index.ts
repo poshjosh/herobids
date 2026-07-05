@@ -252,6 +252,7 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
         dockerNetwork: process.env['DOCKER_NETWORK'] ?? 'herobids_default',
         agentImage: process.env['AGENT_IMAGE'] ?? 'herobids-agent:latest',
         redisUrl: appConfig.redis.url,
+        databaseUrl: appConfig.database.url,
         llmProvider: appConfig.llm.provider,
         llmModel: appConfig.llm.model,
         llmBaseUrl: appConfig.llm.baseUrl,

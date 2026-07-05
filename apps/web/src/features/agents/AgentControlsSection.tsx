@@ -31,6 +31,7 @@ interface AgentControlsSectionProps {
 
 export interface TradingGuardrailsFormValue {
   dailyLossLimit: string;
+  maxDrawdown: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -45,6 +46,7 @@ export interface AgentRiskDefaultsView {
   maxPositionSizePct: number;
   stopLossPct: number;
   stopLossCooldownMs: number;
+  maxDrawdown: number;
 }
 
 interface TradingGuardrailsFieldsProps {
@@ -198,6 +200,17 @@ export function TradingGuardrailsFields({ value, onChange, defaults = null, fiel
           placeholder={intl.formatMessage({ id: 'common.unlimited' })}
         />
         <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.dailyLossLimit.help' })}</div>
+      </div>
+
+      <div>
+        <FieldLabel>{intl.formatMessage({ id: 'agents.controls.maxDrawdown' })}</FieldLabel>
+        <input
+          style={inputStyle}
+          value={value.maxDrawdown}
+          onChange={(event) => onChange({ maxDrawdown: event.target.value })}
+          placeholder={defaults ? String(defaults.maxDrawdown) : intl.formatMessage({ id: 'common.unlimited' })}
+        />
+        <div style={helperTextStyle}>{intl.formatMessage({ id: 'agents.controls.maxDrawdown.help' })}</div>
       </div>
 
       <div>

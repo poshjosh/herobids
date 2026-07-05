@@ -59,6 +59,7 @@ import {
   resolveAgentRiskContractForResponse,
   validateAgentModelPolicy,
   validateMaxHoldDurationInvariant,
+  validateAgentRiskBounds,
 } from './agent-config-helpers.js';
 import {
   mapProtocolMessage,
@@ -102,6 +103,7 @@ const CreateAgentSchema = z.object({
   }).nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).optional(),
   dailyLossLimit: optionalPositiveDecimalStringSchema,
+  maxDrawdown: optionalPositiveDecimalStringSchema,
   maxBots: optionalPositiveIntegerSchema(),
   maxSlippageBps: optionalPositiveIntegerSchema(0),
   maxOpenPositions: optionalPositiveIntegerSchema(),
@@ -157,6 +159,7 @@ const UpdateAgentSchema = z.object({
   // nullable allows clearing a previously set value; undefined (omitted) leaves the field unchanged
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
+  maxDrawdown: nullablePositiveDecimalStringSchema,
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
   maxOpenPositions: nullablePositiveIntegerSchema(),
@@ -284,52 +287,6 @@ type SkillAssignmentResolution = {
 };
 
 const DEFAULT_AGENT_RISK_DEFAULTS: AgentRiskDefaultsConfig = AgentRiskDefaultsSchema.parse({});
-
-function validateAgentRiskBounds(
-  input: {
-    maxOpenPositions?: number | null;
-    maxPositionSizePct?: number | null;
-    stopLossPct?: number | null;
-    stopLossCooldownMs?: number | null;
-  },
-  defaults: AgentRiskDefaultsConfig,
-): Array<{ code: 'custom'; path: string[]; message: string }> {
-  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
-
-  if (input.maxOpenPositions != null && input.maxOpenPositions > defaults.maxOpenPositions) {
-    issues.push({
-      code: 'custom',
-      path: ['maxOpenPositions'],
-      message: `maxOpenPositions cannot exceed the platform limit of ${defaults.maxOpenPositions}`,
-    });
-  }
-
-  if (input.maxPositionSizePct != null && input.maxPositionSizePct > defaults.maxPositionSizePct) {
-    issues.push({
-      code: 'custom',
-      path: ['maxPositionSizePct'],
-      message: `maxPositionSizePct cannot exceed the platform limit of ${defaults.maxPositionSizePct}%`,
-    });
-  }
-
-  if (input.stopLossPct != null && input.stopLossPct > defaults.stopLossMaxUnrealizedLossPct) {
-    issues.push({
-      code: 'custom',
-      path: ['stopLossPct'],
-      message: `stopLossPct cannot exceed the platform limit of ${defaults.stopLossMaxUnrealizedLossPct}%`,
-    });
-  }
-
-  if (input.stopLossCooldownMs != null && input.stopLossCooldownMs > defaults.stopLossCooldownMs) {
-    issues.push({
-      code: 'custom',
-      path: ['stopLossCooldownMs'],
-      message: `stopLossCooldownMs cannot exceed the platform limit of ${defaults.stopLossCooldownMs}ms`,
-    });
-  }
-
-  return issues;
-}
 
 function isSkillSelectableForUser(input: {
   skill: typeof skills.$inferSelect;
@@ -548,6 +505,7 @@ export async function agentRoutes(
       maxPositionSizePct: agentRiskDefaults.maxPositionSizePct,
       stopLossPct: agentRiskDefaults.stopLossMaxUnrealizedLossPct,
       stopLossCooldownMs: agentRiskDefaults.stopLossCooldownMs,
+      maxDrawdown: agentRiskDefaults.maxDrawdown,
       costPerTickEstimates: agentCostEstimates ?? { minimal: 0.12, standard: 0.21, premium: 0.31 },
       runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,
     });
@@ -748,6 +706,7 @@ export async function agentRoutes(
             : null,
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           dailyLossLimit: parsed.data.dailyLossLimit ?? null,
+          maxDrawdown: parsed.data.maxDrawdown ?? null,
           maxBots: resolvedMaxBots,
           maxSlippageBps: parsed.data.maxSlippageBps ?? null,
           maxOpenPositions: parsed.data.maxOpenPositions ?? null,
@@ -898,6 +857,16 @@ export async function agentRoutes(
       .where(and(eq(agents.id, id), eq(agents.userId, request.userId)));
     if (!agent) {
       return reply.status(404).send({ error: 'not_found' });
+    }
+
+    // Validate dailyLossLimit requires capital (effective after PATCH merge)
+    const effectiveCapitalForCheck = parsed.data.capital !== undefined ? parsed.data.capital : agent.capital;
+    const capitalIssues = validateDailyLossRequiresCapital({
+      dailyLossLimit: parsed.data.dailyLossLimit !== undefined ? parsed.data.dailyLossLimit : agent.dailyLossLimit,
+      capital: effectiveCapitalForCheck,
+    });
+    if (capitalIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: capitalIssues });
     }
 
     // Config changes are only safe when the agent is not running.

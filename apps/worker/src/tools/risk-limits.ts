@@ -133,26 +133,36 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
 
   const openPositionsBlocked = openPositionsCurrent >= openPositionsLimit;
 
-  // Derive the daily loss limit: prefer explicit dollar limit from agent config,
-  // otherwise compute from capital × dailyMaxLossPct.
-  if (ctx.agentConfigOps) {
-    try {
-      const config = await ctx.agentConfigOps.getCurrentConfig();
-      if (config?.risk?.dailyMaxLossPct != null) {
-        dailyLossLimitPct = config.risk.dailyMaxLossPct;
-      }
-    } catch {
-      // Non-critical
-    }
-  }
-
-  if (dailyLossLimitPct != null && ctx.agentRepo) {
+  // Derive the daily loss limit: prefer explicit dollar limit from agent DB column first,
+  // then fall back to capital × dailyMaxLossPct percentage calculation.
+  let dailyLossLimitFromUser = false;
+  if (ctx.agentRepo) {
     try {
       const agent = await ctx.agentRepo.getAgent(ctx.agentId);
-      if (agent?.capital) {
-        const capital = Number(agent.capital);
-        if (!Number.isNaN(capital) && capital > 0) {
-          dailyLossLimit = String(capital * dailyLossLimitPct / 100);
+      if (agent?.dailyLossLimit != null) {
+        // Explicit dollar cap — takes priority over percentage calculation
+        const val = Number(agent.dailyLossLimit);
+        if (!Number.isNaN(val) && val > 0) {
+          dailyLossLimit = agent.dailyLossLimit;
+          dailyLossLimitFromUser = true;
+        }
+      } else if (agent?.capital) {
+        // Fallback: compute from capital × dailyMaxLossPct
+        if (ctx.agentConfigOps) {
+          try {
+            const config = await ctx.agentConfigOps.getCurrentConfig();
+            if (config?.risk?.dailyMaxLossPct != null) {
+              dailyLossLimitPct = config.risk.dailyMaxLossPct;
+            }
+          } catch {
+            // Non-critical
+          }
+        }
+        if (dailyLossLimitPct != null) {
+          const capital = Number(agent.capital);
+          if (!Number.isNaN(capital) && capital > 0) {
+            dailyLossLimit = String(capital * dailyLossLimitPct / 100);
+          }
         }
       }
     } catch {
@@ -179,7 +189,7 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
       limit: dailyLossLimit,
       limitPct: dailyLossLimitPct,
       blocked: dailyLossBlocked,
-      source: dailyLossLimit != null ? 'user_configured' : 'operator_default',
+      source: dailyLossLimitFromUser ? 'user_configured' : 'operator_default',
       oldestFillAgesOutAt: null,
       remainingMs: null,
     },
@@ -225,21 +235,24 @@ async function resolveMaxDrawdownLimit(ctx: ToolContext): Promise<ReturnType<typ
       }
     } catch { /* fall through */ }
   }
-  // Fallback: read agent's DB column (when the migration is applied)
+  // Fallback: read agent's DB column
   if (ctx.agentRepo) {
     try {
       const agent = await ctx.agentRepo.getAgent(ctx.agentId);
-      const maxDrawdown = (agent as Record<string, unknown> | null)?.['maxDrawdown'] as string | null;
-      if (maxDrawdown != null) {
-        const val = Number(maxDrawdown);
+      if (agent?.maxDrawdown != null) {
+        const val = Number(agent.maxDrawdown);
         if (!Number.isNaN(val)) {
           return { value: val, source: 'user_configured', mutable: false, ceiling: val };
         }
       }
     } catch { /* fall through */ }
   }
-  // Operator default — effectively unlimited (1B USD ceiling)
-  return { value: 1_000_000_000, source: 'operator_default', mutable: true, ceiling: 1_000_000_000 };
+  // Operator default — read from operator config, never hard-coded.
+  // Marked mutable: false because adjust_risk_limits does not yet expose
+  // maxDrawdown as an adjustable field (it is a separate DB column, not
+  // part of the risk contract overrides).
+  const operatorDefault = ctx.operatorDefaults?.maxDrawdown ?? 1_000_000_000;
+  return { value: operatorDefault, source: 'operator_default', mutable: false, ceiling: operatorDefault };
 }
 
 /**

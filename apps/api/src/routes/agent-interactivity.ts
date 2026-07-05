@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { eq, and, or, inArray, notInArray, sql, asc } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { AgentRepository, agents, agentSkills, bots, fills, skillEntitlements, skillRevisions, skillUsageEvents, skills, users } from '@herobids/db';
-import type { AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
-import { AgentRuntimePolicyOverridesSchema } from '@herobids/domain';
+import type { AgentRiskDefaultsConfig, AlertsConfig, PlanAgentsEntitlements, PlansConfig } from '@herobids/domain';
+import { AgentRuntimePolicyOverridesSchema, AgentRiskDefaultsSchema } from '@herobids/domain';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';
 import { resolvePlanAgentEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { parseTelegramCommand } from './telegram-command-parser.js';
@@ -19,6 +19,8 @@ import {
   nullablePositiveIntegerSchema,
   resolveExecutionModeForSkills,
   validateAgentModelPolicy,
+  validateAgentRiskBounds,
+  validateDailyLossRequiresCapital,
 } from './agent-config-helpers.js';
 
 // --- Schemas ---
@@ -58,6 +60,7 @@ const UpdateAgentSchema = z.object({
   telegramChatId: z.string().nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
+  maxDrawdown: nullablePositiveDecimalStringSchema,
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),
   tickIntervalMs: nullablePositiveIntegerSchema(1000),
@@ -80,6 +83,7 @@ export async function agentInteractivityRoutes(
   alertsConfig?: AlertsConfig,
   llmCatalogDeps?: LlmCatalogDeps,
   plansConfig?: PlansConfig,
+  agentRiskDefaults?: AgentRiskDefaultsConfig,
 ): Promise<void> {
   function resolveAgentPlanPolicy(planId: string, isAdmin: boolean): PlanAgentsEntitlements {
     if (!plansConfig) {
@@ -281,6 +285,25 @@ export async function agentInteractivityRoutes(
         error: 'agent_not_editable',
         message: `Agent config can only be updated when stopped (current status: ${agent.status}).`,
       });
+    }
+
+    // Validate risk bounds against operator ceilings (resolved config, not schema defaults)
+    const riskDefaults = agentRiskDefaults ?? AgentRiskDefaultsSchema.parse({});
+    const riskIssues = validateAgentRiskBounds(parsed.data, riskDefaults);
+    if (riskIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: riskIssues });
+    }
+
+    // Validate dailyLossLimit requires capital (effective after this update).
+    // Use the post-merge effective values: new if explicitly provided, else existing.
+    const effectiveDailyLossLimit = parsed.data.dailyLossLimit !== undefined ? parsed.data.dailyLossLimit : agent.dailyLossLimit;
+    const effectiveCapital = parsed.data.capital !== undefined ? parsed.data.capital : agent.capital;
+    const capitalIssues = validateDailyLossRequiresCapital({
+      dailyLossLimit: effectiveDailyLossLimit,
+      capital: effectiveCapital,
+    });
+    if (capitalIssues.length > 0) {
+      return reply.status(400).send({ error: 'validation_error', details: capitalIssues });
     }
 
     const existingSkillIds = await listSkillIdsForAgent(id);

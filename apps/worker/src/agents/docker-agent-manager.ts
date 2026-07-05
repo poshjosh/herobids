@@ -47,6 +47,8 @@ export interface DockerAgentManagerConfig {
   marketDataBinanceRpm?: number;
   /** Market data: request timeout ms */
   marketDataTimeoutMs?: number;
+  /** Database URL forwarded to the agent container for direct DB access (list_bots, etc.). */
+  databaseUrl?: string;
   /** Memory limit per agent container in MB. Default: 512 */
   memoryLimitMb?: number;
   /** CPU shares per agent container. Default: 512 */
@@ -95,6 +97,7 @@ export class DockerAgentManager {
   private readonly marketDataBinanceBaseUrl: string | undefined;
   private readonly marketDataBinanceRpm: number | undefined;
   private readonly marketDataTimeoutMs: number | undefined;
+  private readonly databaseUrl: string | undefined;
   private readonly memoryBytes: number;
   private readonly cpuShares: number;
   private readonly tempStorageMb: number;
@@ -132,6 +135,7 @@ export class DockerAgentManager {
     this.marketDataBinanceBaseUrl = _config.marketDataBinanceBaseUrl;
     this.marketDataBinanceRpm = _config.marketDataBinanceRpm;
     this.marketDataTimeoutMs = _config.marketDataTimeoutMs;
+    this.databaseUrl = _config.databaseUrl;
     this.memoryBytes = (_config.memoryLimitMb ?? 512) * 1024 * 1024;
     this.cpuShares = _config.cpuShares ?? 512;
     this.tempStorageMb = _config.tempStorageMb ?? 100;
@@ -185,19 +189,17 @@ export class DockerAgentManager {
       ...(this.marketDataTimeoutMs != null ? [`MARKET_DATA_TIMEOUT_MS=${this.marketDataTimeoutMs}`] : []),
       // Database URL forwarded so the agent container can make direct DB calls.
       // Required for correct agent tool behaviour (list_bots, get_bot_status, etc.).
-      // Log a prominent warning when absent — tools that need DB access will return
-      // structured errors rather than silently producing incorrect results.
-      ...(process.env['DATABASE_URL']
-        ? [`DATABASE_URL=${process.env['DATABASE_URL']}`]
-        : (() => {
-            logger.warn(
-              { agentId: spec.agentId },
-              'DATABASE_URL not set in worker environment — agent container will lack direct DB access. ' +
-              'Tools requiring DB (list_bots, get_bot_status, etc.) will return errors.',
-            );
-            return [];
-          })()
-      ),
+      // Prefer the resolved config URL; fall back to the raw env var, then fail fast.
+      ...((() => {
+        const dbUrl = this.databaseUrl ?? process.env['DATABASE_URL'];
+        if (!dbUrl) {
+          throw new Error(
+            `DATABASE_URL not available — agent container ${spec.agentId} cannot launch. ` +
+            'Direct DB access is required for list_bots, get_bot_status, and other agent tools.',
+          );
+        }
+        return [`DATABASE_URL=${dbUrl}`];
+      })()),
       // LLM API keys must be in the worker's environment and forwarded explicitly
       ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
       ...(process.env['LLM_API_KEY_DEEPSEEK'] ? [`LLM_API_KEY_DEEPSEEK=${process.env['LLM_API_KEY_DEEPSEEK']}`] : []),

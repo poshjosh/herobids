@@ -55,6 +55,7 @@ interface IntentState {
   tickIntervalMins: string;
   capital: string;
   dailyLossLimit: string;
+  maxDrawdown: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
   maxPositionSizePct: string;
@@ -187,6 +188,7 @@ function CreateAgentFlow({
     tickIntervalMins: styleDefaults.tickIntervalMins,
     capital: '',
     dailyLossLimit: '',
+    maxDrawdown: '',
     maxSlippageBps: '',
     maxOpenPositions: '',
     maxPositionSizePct: '',
@@ -400,6 +402,7 @@ function CreateAgentFlow({
         tickIntervalMins: intent.tickIntervalMins,
         capital: intent.capital,
         dailyLossLimit: intent.dailyLossLimit,
+        maxDrawdown: intent.maxDrawdown,
         maxSlippageBps: intent.maxSlippageBps,
         maxOpenPositions: intent.maxOpenPositions,
         maxPositionSizePct: intent.maxPositionSizePct,
@@ -893,6 +896,7 @@ function CreateAgentFlow({
                     <TradingGuardrailsFields
                       value={{
                         dailyLossLimit: intent.dailyLossLimit,
+                        maxDrawdown: intent.maxDrawdown,
                         maxSlippageBps: intent.maxSlippageBps,
                         maxOpenPositions: intent.maxOpenPositions,
                         maxPositionSizePct: intent.maxPositionSizePct,

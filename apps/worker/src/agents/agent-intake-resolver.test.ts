@@ -107,6 +107,9 @@ describe('AgentIntakeResolver', () => {
           dailyMaxLossPct: 20,
           stopLossCooldownMs: 300000,
           maxOrderNotionalMultiplier: 1,
+          maxDrawdown: 1_000_000_000,
+          botConfigInvalidHaltThreshold: 1,
+          botExecutionErrorHaltThreshold: 5,
         },
         ...overrides,
       },
@@ -173,7 +176,9 @@ describe('AgentIntakeResolver', () => {
 
       expect(result?.riskLimits.maxPositionSize.toString()).toBe('1000000000');
       expect(result?.riskLimits.maxOpenPositions).toBe(10);
-      expect(result?.riskLimits.maxDrawdown.toString()).toBe('75');
+      // maxDrawdown is separate from dailyLossLimit — when agent row has no maxDrawdown,
+      // it falls back to the operator default (1B).
+      expect(result?.riskLimits.maxDrawdown.toString()).toBe('1000000000');
       expect(result?.riskLimits.maxOrderNotional?.toString()).toBe('250');
       expect(result?.riskLimits.maxPositionSizePct).toBe(100);
       expect(result?.riskLimits.stopLossMaxUnrealizedLossPct).toBe(10);

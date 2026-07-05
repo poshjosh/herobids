@@ -375,6 +375,96 @@ export function validateMaxHoldDurationInvariant(params: {
 }
 
 /**
+ * Validate that dailyLossLimit requires capital.
+ *
+ * The risk gate enforces daily loss as a percentage of equity (dailyMaxLossPct).
+ * Without capital there is no equity baseline, so a configured dailyLossLimit
+ * is silently ignored by the engine. Reject early to prevent that silent no-op.
+ *
+ * Returns validation issues (empty array = valid).
+ */
+export function validateDailyLossRequiresCapital(input: {
+  dailyLossLimit?: string | null;
+  capital?: string | null;
+}): Array<{ code: 'custom'; path: string[]; message: string }> {
+  if (
+    input.dailyLossLimit != null &&
+    input.dailyLossLimit !== '' &&
+    (!input.capital || input.capital === '')
+  ) {
+    return [{
+      code: 'custom',
+      path: ['dailyLossLimit'],
+      message: 'Capital must be set when dailyLossLimit is configured. Daily loss enforcement requires an equity baseline.',
+    }];
+  }
+  return [];
+}
+
+/**
+ * Validate agent risk bounds against operator ceilings.
+ * maxDrawdown is accepted as a string because it flows through the positiveDecimalStringSchema
+ * which transforms the value to a string representation.
+ */
+export function validateAgentRiskBounds(
+  input: {
+    maxOpenPositions?: number | null;
+    maxPositionSizePct?: number | null;
+    stopLossPct?: number | null;
+    stopLossCooldownMs?: number | null;
+    maxDrawdown?: string | null;
+  },
+  defaults: AgentRiskDefaultsConfig,
+): Array<{ code: 'custom'; path: string[]; message: string }> {
+  const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
+
+  if (input.maxOpenPositions != null && input.maxOpenPositions > defaults.maxOpenPositions) {
+    issues.push({
+      code: 'custom',
+      path: ['maxOpenPositions'],
+      message: `maxOpenPositions cannot exceed the platform limit of ${defaults.maxOpenPositions}`,
+    });
+  }
+
+  if (input.maxPositionSizePct != null && input.maxPositionSizePct > defaults.maxPositionSizePct) {
+    issues.push({
+      code: 'custom',
+      path: ['maxPositionSizePct'],
+      message: `maxPositionSizePct cannot exceed the platform limit of ${defaults.maxPositionSizePct}%`,
+    });
+  }
+
+  if (input.stopLossPct != null && input.stopLossPct > defaults.stopLossMaxUnrealizedLossPct) {
+    issues.push({
+      code: 'custom',
+      path: ['stopLossPct'],
+      message: `stopLossPct cannot exceed the platform limit of ${defaults.stopLossMaxUnrealizedLossPct}%`,
+    });
+  }
+
+  if (input.stopLossCooldownMs != null && input.stopLossCooldownMs > defaults.stopLossCooldownMs) {
+    issues.push({
+      code: 'custom',
+      path: ['stopLossCooldownMs'],
+      message: `stopLossCooldownMs cannot exceed the platform limit of ${defaults.stopLossCooldownMs}ms`,
+    });
+  }
+
+  if (input.maxDrawdown != null) {
+    const val = Number(input.maxDrawdown);
+    if (!Number.isNaN(val) && val > defaults.maxDrawdown) {
+      issues.push({
+        code: 'custom',
+        path: ['maxDrawdown'],
+        message: `maxDrawdown cannot exceed the platform limit of ${defaults.maxDrawdown}`,
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
  * Resolve the agent's risk contract for API responses.
  * Shows per-field source, mutability, and effective values.
  */

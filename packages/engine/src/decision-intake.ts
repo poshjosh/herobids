@@ -117,6 +117,8 @@ export interface DecisionIntakeResult {
   executionResult?: ExecutionResult;
   position: PositionState;
   executionFailed: boolean;
+  /** When executionFailed is true, carries the execution failure code and message (e.g. execution.timeout). */
+  executionError?: { code: string; message: string };
   preExecutionRejection?: PreExecutionRejection;
 }
 
@@ -320,7 +322,7 @@ export async function submitDecisionForExecution(
   if (!execResult.ok) {
     await deps.persistence.markPlanFailed(plan.id);
     await deps.journal.append(planEvent(plan, 'plan.failed'));
-    return { decision: resolvedDecision, plan, riskRejected: false, position, executionFailed: true };
+    return { decision: resolvedDecision, plan, riskRejected: false, position, executionFailed: true, executionError: execResult.error };
   }
 
   // 8. Record fills + update position

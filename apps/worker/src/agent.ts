@@ -246,6 +246,9 @@ interface AgentConfig {
     maxPositionSize: number;
     maxOrderNotionalMultiplier: number;
     dailyMaxLossPct: number;
+    maxDrawdown: number;
+    botConfigInvalidHaltThreshold: number;
+    botExecutionErrorHaltThreshold: number;
   };
   /** Provider pricing registry forwarded by the worker (config/providers.yaml) */
   providersYaml?: ProvidersYaml;
@@ -1571,10 +1574,20 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
       ? {
           getAgent: async (agentId: string) => {
             const row = await agentRepo.getAgent(agentId);
-            return row ? { capital: row.capital } : null;
+            if (!row) return null;
+            return {
+              capital: row.capital,
+              dailyLossLimit: row.dailyLossLimit,
+              maxDrawdown: row.maxDrawdown,
+            };
           },
         }
       : undefined,
+    operatorDefaults: {
+      // agentRiskDefaults.maxDrawdown is guaranteed by schema validation (Zod .default(1_000_000_000)).
+      // No cast or fallback needed — the config is always parsed before the worker starts.
+      maxDrawdown: agentConfig.agentRiskDefaults.maxDrawdown,
+    },
   };
 
   try {

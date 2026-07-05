@@ -318,7 +318,9 @@ export class AgentDecisionHandler {
 
         // 8. Emit execution result AND set sync reply based on actual outcome
         if (result.executionFailed) {
-          setSyncReply('error', { code: 'execution_error', message: 'Decision accepted by risk gate but execution failed' });
+          const errCode = result.executionError?.code ?? 'execution.failed';
+          const errMsg = result.executionError?.message ?? 'Decision accepted by risk gate but execution failed';
+          setSyncReply('error', { code: errCode, message: errMsg });
           await this.eventPublisher.emitExecutionResult(effectiveBotId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',

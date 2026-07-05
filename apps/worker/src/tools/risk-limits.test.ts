@@ -67,7 +67,8 @@ describe('get_risk_limits tool', () => {
     expect(dailyLoss.remainingMs).toBeNull();
     const drawdown = runtime.drawdown as Record<string, unknown>;
     expect(drawdown.current).toBeNull();
-    expect(drawdown.limit).toBeNull();
+    // drawdown.limit defaults to the operator default (1B) when no user/agent config is present
+    expect(drawdown.limit).toBe('1000000000');
     expect(drawdown.approaching).toBe(false);
   });
 

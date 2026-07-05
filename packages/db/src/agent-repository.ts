@@ -30,6 +30,7 @@ export interface InsertAgent {
   } | null;
   executionMode?: string;
   dailyLossLimit?: string;
+  maxDrawdown?: string;
   maxBots?: number;
   maxSlippageBps?: number;
   openPositionEscalationToJudgePolicy?: string;
@@ -50,6 +51,7 @@ export interface UpdateAgent {
   } | null;
   executionMode?: string;
   dailyLossLimit?: string;
+  maxDrawdown?: string;
   maxBots?: number;
   maxSlippageBps?: number;
   openPositionEscalationToJudgePolicy?: string;
@@ -153,6 +155,7 @@ export class AgentRepository {
       notificationPolicy: input.notificationPolicy ?? null,
       executionMode: input.executionMode ?? 'paper',
       dailyLossLimit: input.dailyLossLimit ?? null,
+      maxDrawdown: input.maxDrawdown ?? null,
       maxBots: input.maxBots ?? null,
       maxSlippageBps: input.maxSlippageBps ?? null,
       openPositionEscalationToJudgePolicy: input.openPositionEscalationToJudgePolicy ?? undefined,
