@@ -1,4 +1,4 @@
-Provide the following:
+Required details:
 
 - number-of-travellers = 
 - start-date = 

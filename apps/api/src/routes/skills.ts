@@ -16,6 +16,7 @@ const CreateSkillSchema = z.object({
   description: z.string().min(1).max(1000),
   instructions: z.string().min(1).max(8000),
   promptHint: z.string().max(500).optional(),
+  promptTemplate: z.string().max(4000).optional(),
   requiredTools: z.array(z.string()).optional().default([]),
   contextRequirements: z.array(z.string()).optional().default([]),
   requiredGuardrails: z.array(z.string()).optional().default([]),
@@ -31,6 +32,7 @@ const UpdateSkillSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(1000).optional(),
   instructions: z.string().min(1).max(8000).optional(),
+  promptTemplate: z.string().max(4000).nullable().optional(),
   promptHint: z.string().max(500).nullable().optional(),
   requiredTools: z.array(z.string()).optional(),
   contextRequirements: z.array(z.string()).optional(),
@@ -106,6 +108,7 @@ type SkillView = {
   currentRevisionVersion: number | null;
   name: string;
   description: string;
+  promptTemplate: string | null;
   instructions: string;
   promptHint: string | null;
   requiredTools: string[];
@@ -342,6 +345,7 @@ async function buildSkillViews(
       description: currentRevision?.description ?? row.description,
       instructions: currentRevision?.instructions ?? row.instructions,
       promptHint: currentRevision?.promptHint ?? row.promptHint ?? null,
+      promptTemplate: currentRevision?.promptTemplate ?? row.promptTemplate ?? null,
       requiredTools: currentRevision?.requiredTools ?? row.requiredTools,
       contextRequirements: currentRevision?.contextRequirements ?? row.contextRequirements,
       requiredGuardrails: currentRevision?.requiredGuardrails ?? row.requiredGuardrails,
@@ -460,6 +464,7 @@ function hasContentChange(
     || updates.description !== undefined
     || updates.instructions !== undefined
     || updates.promptHint !== undefined
+    || updates.promptTemplate !== undefined
     || updates.requiredTools !== undefined
     || updates.contextRequirements !== undefined
     || updates.requiredGuardrails !== undefined
@@ -470,6 +475,7 @@ function hasContentChange(
     || currentRevision.description !== (updates.description ?? currentRevision.description)
     || currentRevision.instructions !== (updates.instructions ?? currentRevision.instructions)
     || (currentRevision.promptHint ?? null) !== ((updates.promptHint === undefined ? currentRevision.promptHint : updates.promptHint) ?? null)
+    || (currentRevision.promptTemplate ?? null) !== ((updates.promptTemplate === undefined ? currentRevision.promptTemplate : updates.promptTemplate) ?? null)
     || JSON.stringify(currentRevision.requiredTools) !== JSON.stringify(updates.requiredTools ?? currentRevision.requiredTools)
     || JSON.stringify(currentRevision.contextRequirements) !== JSON.stringify(updates.contextRequirements ?? currentRevision.contextRequirements)
     || JSON.stringify(currentRevision.requiredGuardrails) !== JSON.stringify(updates.requiredGuardrails ?? currentRevision.requiredGuardrails)
@@ -636,6 +642,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         description: parsed.data.description,
         instructions: parsed.data.instructions,
         promptHint: parsed.data.promptHint ?? null,
+        promptTemplate: parsed.data.promptTemplate ?? null,
         requiredTools: parsed.data.requiredTools,
         contextRequirements: parsed.data.contextRequirements,
         requiredGuardrails: parsed.data.requiredGuardrails,
@@ -654,6 +661,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         description: parsed.data.description,
         instructions: parsed.data.instructions,
         promptHint: parsed.data.promptHint ?? null,
+        promptTemplate: parsed.data.promptTemplate ?? null,
         requiredTools: parsed.data.requiredTools,
         contextRequirements: parsed.data.contextRequirements,
         requiredGuardrails: parsed.data.requiredGuardrails,
@@ -757,6 +765,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
           description: parsed.data.description ?? currentRevision.description,
           instructions: parsed.data.instructions ?? currentRevision.instructions,
           promptHint: parsed.data.promptHint === undefined ? currentRevision.promptHint : parsed.data.promptHint,
+          promptTemplate: parsed.data.promptTemplate === undefined ? currentRevision.promptTemplate : parsed.data.promptTemplate,
           requiredTools: parsed.data.requiredTools ?? currentRevision.requiredTools,
           contextRequirements: parsed.data.contextRequirements ?? currentRevision.contextRequirements,
           requiredGuardrails: parsed.data.requiredGuardrails ?? currentRevision.requiredGuardrails,
@@ -790,6 +799,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         updatePayload['description'] = promoted.description;
         updatePayload['instructions'] = promoted.instructions;
         updatePayload['promptHint'] = promoted.promptHint;
+        updatePayload['promptTemplate'] = promoted.promptTemplate;
         updatePayload['requiredTools'] = promoted.requiredTools;
         updatePayload['contextRequirements'] = promoted.contextRequirements;
         updatePayload['requiredGuardrails'] = promoted.requiredGuardrails;
@@ -856,6 +866,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
       description: targetRevision.description,
       instructions: targetRevision.instructions,
       promptHint: targetRevision.promptHint,
+      promptTemplate: targetRevision.promptTemplate,
       requiredTools: targetRevision.requiredTools,
       contextRequirements: targetRevision.contextRequirements,
       requiredGuardrails: targetRevision.requiredGuardrails,
@@ -986,6 +997,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         description: sourceRevision.description,
         instructions: sourceRevision.instructions,
         promptHint: sourceRevision.promptHint ?? null,
+        promptTemplate: sourceRevision.promptTemplate ?? null,
         requiredTools: sourceRevision.requiredTools,
         contextRequirements: sourceRevision.contextRequirements,
         requiredGuardrails: sourceRevision.requiredGuardrails,
@@ -1005,6 +1017,7 @@ export async function skillsRoutes(app: FastifyInstance, db: Database, plansConf
         description: sourceRevision.description,
         instructions: sourceRevision.instructions,
         promptHint: sourceRevision.promptHint ?? null,
+        promptTemplate: sourceRevision.promptTemplate ?? null,
         requiredTools: sourceRevision.requiredTools,
         contextRequirements: sourceRevision.contextRequirements,
         requiredGuardrails: sourceRevision.requiredGuardrails,

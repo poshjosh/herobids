@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import { agents as agentsApi, capabilities as capabilitiesApi, skills as skillsApi, ai as aiApi, providerCatalog as providerCatalogApi, type Agent, type CapabilityReadiness } from '../../lib/api-client.js';
 import { Modal, Button, FieldLabel, ErrorBanner, inputStyle } from '../../lib/ui.js';
-import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, buildSkillPromptHints, type SkillPresetId } from './agent-display.js';
+import { formatExecutionMode, hasCapabilityFamily, listSelectableSkills, resolveSelectedSkills, resolveSkillPresetSkillIds, resolvePromptTemplate, resolveGoalPlaceholder, type SkillPresetId } from './agent-display.js';
 import { SkillPicker } from './SkillPicker.js';
 import { localizeApiError } from '../../lib/localize-api-error.js';
 import { ModelSelectionFields, resolveDefaultModelSelection } from '../settings/ModelSelectionFields.js';
@@ -193,6 +193,16 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
       return state;
     });
   }, [form.skillIds, form.technicalPreFilterEnabled, selectableSkills, skillPreset]);
+
+  // Pre-fill goal from promptTemplate when skills change and goal is empty
+  useEffect(() => {
+    if (form.goal.trim()) return;
+    if (!skillsQuery.data) return;
+    const template = resolvePromptTemplate(form.skillIds, skillsQuery.data.skills);
+    if (template) {
+      setForm((prev) => ({ ...prev, goal: template }));
+    }
+  }, [form.skillIds, skillsQuery.data]);
 
   useEffect(() => {
     if (!modelOverrideEnabled || modelForm.provider || inheritedModelSettings) {
@@ -386,13 +396,9 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                 setForm((prev) => ({ ...prev, goal: e.target.value }));
               }}
               onBlur={() => validateFieldOnBlur('goal')}
-              placeholder={(() => {
-                if (!skillsQuery.data) return intl.formatMessage({ id: 'agents.create.goalPlaceholder' });
-                const hints = buildSkillPromptHints(form.skillIds, skillsQuery.data.skills);
-                return hints.length > 0
-                  ? hints.map((h) => h.hint).join('\n\n')
-                  : intl.formatMessage({ id: 'agents.create.goalPlaceholder' });
-              })()}
+              placeholder={skillsQuery.data
+                ? (resolveGoalPlaceholder(form.skillIds, skillsQuery.data.skills) ?? intl.formatMessage({ id: 'agents.create.goalPlaceholder' }))
+                : intl.formatMessage({ id: 'agents.create.goalPlaceholder' })}
               required
             />
             {formErrors.goal && <div style={{ color: 'var(--color-danger)', fontSize: '12px', marginTop: '4px' }}>{formErrors.goal}</div>}

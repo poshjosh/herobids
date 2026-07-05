@@ -32,6 +32,8 @@ export const skills = pgTable('skills', {
   instructions: text('instructions').notNull(),
   /** Optional hint for the creator describing what to write in the agent goal/prompt field */
   promptHint: text('prompt_hint'),
+  /** Optional starter text pre-populated in the agent goal field */
+  promptTemplate: text('prompt_template'),
   /** Tools this skill exposes to the agent */
   requiredTools: text('required_tools').array().notNull().default(sql`'{}'::text[]`),
   /** Context sections required in the agent prompt: positions, analytics, bot_statuses, etc. */

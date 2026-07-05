@@ -119,6 +119,30 @@ export function buildSkillPromptHints(
     .map((skill) => ({ skillName: skill.name, hint: skill.promptHint! }));
 }
 
+/**
+ * Return the best promptTemplate from the selected skills, if any.
+ * Uses the first non-empty template found (priority: first selected skill wins).
+ */
+export function resolvePromptTemplate(skillIds: string[], skills: Skill[]): string | null {
+  const selected = resolveSelectedSkills(skillIds, skills);
+  for (const skill of selected) {
+    if (skill.promptTemplate) return skill.promptTemplate;
+  }
+  return null;
+}
+
+/**
+ * Return the best placeholder text for the goal field.
+ * Uses promptHint from the first skill that has one, falling back to a generic placeholder key.
+ */
+export function resolveGoalPlaceholder(skillIds: string[], skills: Skill[]): string | null {
+  const selected = resolveSelectedSkills(skillIds, skills);
+  for (const skill of selected) {
+    if (skill.promptHint) return skill.promptHint;
+  }
+  return null;
+}
+
 export function formatExecutionMode(executionMode: string | null | undefined, intl?: IntlShape): string {
   if (!executionMode) {
     return formatMessageOrFallback(intl, 'agents.executionMode.not_set', 'Not set');

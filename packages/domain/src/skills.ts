@@ -14,6 +14,9 @@ export interface SkillDefinition {
   /** Optional hint shown to the creator near the agent goal/prompt field —
    *  describes what kind of goal works well with this skill. */
   promptHint?: string;
+  /** Optional starter text pre-populated in the agent goal field.
+   *  Takes priority over promptHint for in-field display. */
+  promptTemplate?: string;
   requiredTools: string[];
   capabilityFamilies: string[];
   bindingRequirements: Record<string, {

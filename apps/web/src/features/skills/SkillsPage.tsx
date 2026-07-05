@@ -317,6 +317,19 @@ export function SkillsPage() {
             />
           </label>
           <label style={fieldLabelStyle}>
+            {intl.formatMessage({ id: 'skills.form.promptTemplate', defaultMessage: 'Prompt template (optional)' })}
+            <textarea
+              value={createDraft.promptTemplate ?? ''}
+              onChange={(event) => setCreateDraft((current) => ({ ...current, promptTemplate: event.target.value || undefined }))}
+              style={textareaStyle}
+              rows={4}
+              placeholder={intl.formatMessage({
+                id: 'skills.form.promptTemplatePlaceholder',
+                defaultMessage: 'Pre-populated starter text for the agent goal field — gives creators a concrete starting point',
+              })}
+            />
+          </label>
+          <label style={fieldLabelStyle}>
             {intl.formatMessage({ id: 'skills.form.tools', defaultMessage: 'Tools' })}
             <ToolTagPicker
               tools={toolsQuery.data?.tools ?? []}
@@ -497,6 +510,7 @@ function SkillCard({
   const [editedDescription, setEditedDescription] = useState(skill.description);
   const [editedInstructions, setEditedInstructions] = useState(skill.instructions);
   const [editedPromptHint, setEditedPromptHint] = useState(skill.promptHint ?? '');
+  const [editedPromptTemplate, setEditedPromptTemplate] = useState(skill.promptTemplate ?? '');
   const [editedRequiredTools, setEditedRequiredTools] = useState<string[]>(skill.requiredTools ?? []);
   const hasUnpublishedRevision = stagedRevisionId !== null || skill.hasStagedRevision;
 
@@ -543,6 +557,7 @@ function SkillCard({
       description: editedDescription.trim(),
       instructions: editedInstructions.trim(),
       promptHint: editedPromptHint.trim() || null,
+      promptTemplate: editedPromptTemplate.trim() || null,
       requiredTools: editedRequiredTools,
       changeSummary: 'Updated from web editor',
     }),
@@ -639,6 +654,7 @@ function SkillCard({
             onClick={() => {
               setActionError(null);
               setEditedPromptHint(skill.promptHint ?? '');
+              setEditedPromptTemplate(skill.promptTemplate ?? '');
               setEditedRequiredTools(skill.requiredTools ?? []);
               setIsEditing((current) => !current);
             }}
@@ -698,6 +714,19 @@ function SkillCard({
             />
           </label>
           <label style={fieldLabelStyle}>
+            {intl.formatMessage({ id: 'skills.form.promptTemplate', defaultMessage: 'Prompt template (optional)' })}
+            <textarea
+              value={editedPromptTemplate}
+              onChange={(event) => setEditedPromptTemplate(event.target.value)}
+              rows={4}
+              style={textareaStyle}
+              placeholder={intl.formatMessage({
+                id: 'skills.form.promptTemplatePlaceholder',
+                defaultMessage: 'Pre-populated starter text for the agent goal field — gives creators a concrete starting point',
+              })}
+            />
+          </label>
+          <label style={fieldLabelStyle}>
             {intl.formatMessage({ id: 'skills.form.tools', defaultMessage: 'Tools' })}
             <ToolTagPicker
               tools={tools}
@@ -736,6 +765,7 @@ function SkillCard({
                 setEditedDescription(skill.description);
                 setEditedInstructions(skill.instructions);
                 setEditedPromptHint(skill.promptHint ?? '');
+                setEditedPromptTemplate(skill.promptTemplate ?? '');
                 setEditedRequiredTools(skill.requiredTools ?? []);
                 setIsEditing(false);
               }}

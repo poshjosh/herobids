@@ -123,6 +123,7 @@ function inferSkillFromRevisionRow(row: {
   description: string;
   instructions: string;
   promptHint: string | null;
+  promptTemplate: string | null;
   requiredTools: string[];
   contextRequirements: string[];
   requiredGuardrails: string[];
@@ -156,6 +157,7 @@ function inferSkillFromRevisionRow(row: {
     description: row.description,
     instructions: row.instructions,
     promptHint: row.promptHint ?? undefined,
+    promptTemplate: row.promptTemplate ?? undefined,
     requiredTools,
     capabilityFamilies,
     bindingRequirements: (hasTrading
@@ -188,6 +190,7 @@ export async function resolveRuntimeCapabilityDescriptor(
       description: skillRevisions.description,
       instructions: skillRevisions.instructions,
       promptHint: skillRevisions.promptHint,
+      promptTemplate: skillRevisions.promptTemplate,
       requiredTools: skillRevisions.requiredTools,
       contextRequirements: skillRevisions.contextRequirements,
       requiredGuardrails: skillRevisions.requiredGuardrails,

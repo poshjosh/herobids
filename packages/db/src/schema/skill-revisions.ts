@@ -15,6 +15,7 @@ export const skillRevisions = pgTable('skill_revisions', {
   description: text('description').notNull(),
   instructions: text('instructions').notNull(),
   promptHint: text('prompt_hint'),
+  promptTemplate: text('prompt_template'),
   requiredTools: text('required_tools').array().notNull().default(sql`'{}'::text[]`),
   contextRequirements: text('context_requirements').array().notNull().default(sql`'{}'::text[]`),
   requiredGuardrails: text('required_guardrails').array().notNull().default(sql`'{}'::text[]`),

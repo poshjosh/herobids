@@ -56,6 +56,7 @@ FLIGHT_DEAL_SKILL_NAME="Flight Deal Monitoring"
 FLIGHT_DEAL_SKILL_DESCRIPTION="Continuously search, compare, analyze, and monitor flight prices for <travellers> traveling from <departure> to <destination>. Identify the lowest total travel cost while balancing convenience, travel time and baggage requirements."
 FLIGHT_DEAL_SKILL_TAG="flight-deal-monitoring"
 FLIGHT_DEAL_SKILL_SOURCE_FILE="$REPO_ROOT/docs/skills/flight-deal-monitoring-skill.md"
+FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE="$REPO_ROOT/docs/skills/flight-deal-monitoring-skill-prompt-template.md"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -470,17 +471,27 @@ build_provider_secrets_json() {
 
 build_flight_deal_skill_payload() {
   local instructions
+  local promptTemplate
   [[ -f "$FLIGHT_DEAL_SKILL_SOURCE_FILE" ]] || die "Skill source file not found: $FLIGHT_DEAL_SKILL_SOURCE_FILE"
   instructions="$(tail -n +3 "$FLIGHT_DEAL_SKILL_SOURCE_FILE")"
+
+  if [[ -f "$FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE" ]]; then
+    promptTemplate="$(< "$FLIGHT_DEAL_SKILL_PROMPT_TEMPLATE_FILE")"
+  else
+    promptTemplate=""
+  fi
+
   jq -n \
     --arg name "$FLIGHT_DEAL_SKILL_NAME" \
     --arg description "$FLIGHT_DEAL_SKILL_DESCRIPTION" \
     --arg instructions "$instructions" \
+    --arg promptTemplate "$promptTemplate" \
     --arg tag "$FLIGHT_DEAL_SKILL_TAG" \
     '{
       name: $name,
       description: $description,
       instructions: $instructions,
+      promptTemplate: (if $promptTemplate == "" then null else $promptTemplate end),
       requiredTools: ["search_web", "browse_url", "read_document", "set_memory", "get_memory", "list_memory_keys", "delete_memory", "schedule_reminder", "send_message", "publish_artifact"],
       publicationStatus: "draft",
       tags: [$tag],
