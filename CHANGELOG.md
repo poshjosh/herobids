@@ -6,7 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Bot strategy error circuit breaker: consecutive `strategy.config_invalid` (1 failure) or `strategy.execution_error` (5 failures) auto-halts bot, emits `strategy.fatal`, notifies agent.
+- `agentRiskDefaults.maxDrawdown` operator config field, split from `dailyLossLimit`.
+- `agentRiskDefaults.botConfigInvalidHaltThreshold` and `botExecutionErrorHaltThreshold` config fields.
+- `strategy.fatal` journal event type.
+- `executionTimeoutMs` on `DecisionIntakeDeps` — executor calls now have a configurable timeout guard (default 30s).
+
+### Fixed
+- Shadow/paper reconciliation: reconciler is no longer started for non-live execution modes, eliminating false-positive `reconciliation.drift_detected` events.
+- `list_bots` data shape: broker path now emits `{ ok, bots: [] }` (matching the direct tool path), fixing empty "Managed Bots" in agent context.
+- `DATABASE_URL` forwarding: logs a prominent warning when absent from worker env instead of silently skipping.
+- Risk limit transparency: `maxDrawdown` is no longer silently aliased from `dailyLossLimit` — each has independent enforcement with separate config fields.
+- Evaluator tool failure attribution: split by `actorType` — agent tool failures and bot strategy errors are now tracked independently.
+
 ### Changed
+
 
 - Move skills section from advanced section to main section of create/edit agent form
 
