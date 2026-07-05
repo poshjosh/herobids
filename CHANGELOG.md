@@ -12,6 +12,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `agentRiskDefaults.botConfigInvalidHaltThreshold` and `botExecutionErrorHaltThreshold` config fields.
 - `strategy.fatal` journal event type.
 - `executionTimeoutMs` on `DecisionIntakeDeps` — executor calls now have a configurable timeout guard (default 30s).
+- Redis equity cache (`equity:{actorId}` hash) — worker writes equity snapshot after each decision; `get_risk_limits` reads live drawdown from Redis.
+- `get_risk_limits`: added `maxDrawdown` to limits response and `source` field to `dailyLoss` and `drawdown` runtime sections.
+- DB migration `0032_opposite_photon.sql` — adds `max_drawdown` column to `agents` table.
 
 ### Fixed
 - Shadow/paper reconciliation: reconciler is no longer started for non-live execution modes, eliminating false-positive `reconciliation.drift_detected` events.
@@ -19,6 +22,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `DATABASE_URL` forwarding: logs a prominent warning when absent from worker env instead of silently skipping.
 - Risk limit transparency: `maxDrawdown` is no longer silently aliased from `dailyLossLimit` — each has independent enforcement with separate config fields.
 - Evaluator tool failure attribution: split by `actorType` — agent tool failures and bot strategy errors are now tracked independently.
+- `submit_decision` sync reply: `accepted` is now emitted only after execution completes successfully, preventing false-positive acceptances when execution fails.
 
 ### Changed
 

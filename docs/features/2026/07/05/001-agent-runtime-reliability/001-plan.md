@@ -354,25 +354,23 @@ layer to accept both shapes — see Issue 4 fix above.
 
 ## Outstanding Issues
 
-### Issue 2a — Redis cache for live EquityTracker state (DEFERRED)
+### Issue 2a — Redis cache for live EquityTracker state ✅ RESOLVED (2026-07-05)
 
-The field split (Issue 2b) is complete: `maxDrawdown` and `dailyLossLimit` are now separate
-fields with independent enforcement in the risk gate. However, `get_risk_limits` still returns
-`current: null` for drawdown because the `EquityTracker` lives in the worker process memory
-and is not accessible from the agent container.
+The equity snapshot is now written to Redis key `equity:{actorId}` after every decision
+(via `InstanceEventPublisher.publishEquitySnapshot()`). The `get_risk_limits` tool reads
+`currentDrawdown` from this Redis hash (via `resolveDrawdownCurrent()`). The value is at
+most one decision stale. Falls back to `null` when Redis is unavailable.
 
-**What's needed:**
-- After every decision in the worker, write the actor's current equity snapshot to a Redis key
-  `equity:{actorId}` → `{ startingCapital, realizedPnl, unrealizedPnl, peakEquity, currentDrawdown }`
-- Have `get_risk_limits` read from this Redis key to populate the drawdown `current` field.
+**What was implemented:**
+- `InstanceEventPublisher.publishEquitySnapshot()` — writes `startingCapital`, `realizedPnl`,
+  `unrealizedPnl`, `peakEquity`, `currentDrawdown`, `equity`, `timestamp` to Redis hash
+  with 1-hour TTL.
+- `AgentDecisionHandler` calls it after every decision (accepted or rejected).
+- `get_risk_limits` tool reads `currentDrawdown` via `resolveDrawdownCurrent()` helper.
 
-**Impact:** Without this, agents still cannot see their live drawdown number in `get_risk_limits`.
-The limit is now correctly configured (no longer aliased from `dailyLossLimit`), but the current
-value is unavailable. This is acceptable for a tool call — at most one decision stale.
+### DB migration for `maxDrawdown` column ✅ RESOLVED (2026-07-05)
 
-### DB migration for `maxDrawdown` column
-
-The `maxDrawdown` field was added to `AgentRiskLimitSource` and the operator config, but there
-is no corresponding column in the `agents` DB table yet. Call sites use `(agent as Record<string, unknown>).maxDrawdown as string ?? null`
-as a forward-compatible access pattern. When the column is added, update the agent type and remove the casts.
+Migration `0032_opposite_photon.sql` adds `max_drawdown numeric(20, 8)` to the `agents` table.
+`Record<string, unknown>` casts removed from `index.ts` and `agent-intake-resolver.ts` —
+`agent.maxDrawdown` is now accessed via proper typed Drizzle access.
 
