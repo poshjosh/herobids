@@ -34,6 +34,8 @@ COMPOSE_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
 
 DO_DEPLOY=false
 INCLUDE_LIVE=false
+DEPLOY_DONE=false
+PREV_GIT_SHA=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -48,6 +50,22 @@ done
 
 cd "$ROOT"
 
+# ─── Pre-flight: memory check (deploy only) ─────────────────────────────────
+# Building images and running docker compose --build is memory-intensive.
+# A plain agent restart does not need this guard.
+
+if [[ "${DO_DEPLOY}" == "true" ]]; then
+  MIN_FREE_MEM_MB=1024
+  log_pre() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PRE  $*"; }
+  log_pre "Checking available memory (build requires >= ${MIN_FREE_MEM_MB} MB)..."
+  FREE_MEM_MB=$(awk '/MemAvailable/ { printf "%d", $2/1024 }' /proc/meminfo)
+  if [[ ${FREE_MEM_MB} -lt ${MIN_FREE_MEM_MB} ]]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] FAIL Insufficient memory: ${FREE_MEM_MB} MB free, need at least ${MIN_FREE_MEM_MB} MB." >&2
+    exit 1
+  fi
+  log_pre "Memory OK: ${FREE_MEM_MB} MB free (minimum: ${MIN_FREE_MEM_MB} MB)."
+fi
+
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
 ts()   { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -57,6 +75,60 @@ warn() { echo "[$(ts)] WARN $*" >&2; }
 die()  { echo "[$(ts)] FAIL $*" >&2; exit 1; }
 
 PG() { docker exec -T herobids-postgres-1 psql -U herobids -d herobids -t -q "$@"; }
+
+# ─── Rollback ────────────────────────────────────────────────────────────────
+# Called when a post-deploy health check fails. Agents are still in 'stopped'
+# state at this point (Step 5 has not run), so only the image/services need
+# to be restored.
+
+rollback_on_failure() {
+  trap - ERR  # prevent recursive trap if rollback steps themselves fail
+  local reason="$1"
+  local rollback_ok=true
+  warn "=== ROLLBACK TRIGGERED: ${reason} ==="
+  if [[ "${DEPLOY_DONE}" == "true" ]] || [[ -n "${PREV_GIT_SHA}" ]]; then
+    # Restore the previous agent image tag (covers broken agent builds)
+    if docker image inspect herobids-agent:rollback > /dev/null 2>&1; then
+      warn "Restoring previous agent image (herobids-agent:rollback → herobids-agent:latest)..."
+      docker tag herobids-agent:rollback herobids-agent:latest \
+        || { warn "Agent image retag failed."; rollback_ok=false; }
+    fi
+    # Restore the previous git revision and rebuild all services from it.
+    # This is the only way to reliably revert api/worker/web to their prior images.
+    if [[ -n "${PREV_GIT_SHA}" ]]; then
+      warn "Restoring previous git revision (${PREV_GIT_SHA})..."
+      git reset --hard "${PREV_GIT_SHA}" \
+        || { warn "Git restore failed — manual intervention required."; die "${reason}"; }
+      warn "Rebuilding services on previous revision..."
+      # shellcheck disable=SC2086
+      docker compose ${COMPOSE_FILES} up -d --build --remove-orphans 2>&1 | tail -6 \
+        || { warn "Service rebuild on previous revision failed — manual intervention required."; rollback_ok=false; }
+
+      # Verify the restored revision is actually healthy before declaring success.
+      if [[ "${rollback_ok}" == "true" ]]; then
+        warn "Probing API health on restored revision (up to 60 s)..."
+        rollback_ok=false
+        for j in $(seq 1 20); do
+          if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+            rollback_ok=true
+            break
+          fi
+          [[ $j -lt 20 ]] && sleep 3
+        done
+        [[ "${rollback_ok}" == "false" ]] \
+          && warn "API did not recover on restored revision — manual intervention required."
+      fi
+    fi
+    if [[ "${rollback_ok}" == "true" ]]; then
+      warn "Rollback complete and API healthy. Agents remain stopped — restart them manually when safe."
+    else
+      warn "Rollback INCOMPLETE — services may be in an inconsistent state. Manual intervention required."
+    fi
+  else
+    warn "No rollback state available — agents remain stopped. Manual intervention required."
+  fi
+  die "${reason}"
+}
 
 # ─── Step 1: Discover running agents ─────────────────────────────────────────
 
@@ -133,13 +205,29 @@ if [[ $AGENT_COUNT -gt 0 ]]; then
   ok "Containers stopped."
 fi
 
+# If deploying, install an ERR trap so any unexpected failure during the build
+# or startup phase triggers rollback rather than leaving the system stranded.
+# Not installed for plain restarts — there is no prior state to restore.
+if [[ "${DO_DEPLOY}" == "true" ]]; then
+  trap 'rollback_on_failure "Unexpected failure during deploy"' ERR
+fi
+
 # ─── Step 3: Deploy (optional) ───────────────────────────────────────────────
 
 if [[ "${DO_DEPLOY}" == "true" ]]; then
   log "Step 3 — Deploying latest code..."
 
-  git fetch --all && git reset --hard origin/main
-  ok "Code updated to $(git rev-parse --short HEAD)."
+  PREV_GIT_SHA=$(git rev-parse HEAD)
+  git fetch --all
+  git reset --hard origin/main
+  ok "Code updated to $(git rev-parse --short HEAD) (was ${PREV_GIT_SHA:0:7})."
+
+  # Snapshot the current agent image before rebuilding so we can roll back if
+  # the new image causes the API health check to fail.
+  if docker image inspect herobids-agent:latest > /dev/null 2>&1; then
+    docker tag herobids-agent:latest herobids-agent:rollback
+    ok "Previous agent image saved as herobids-agent:rollback."
+  fi
 
   log "  Building agent image..."
   docker build --pull -f docker/Dockerfile.agent -t herobids-agent:latest . 2>&1 | tail -3
@@ -149,6 +237,7 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   # shellcheck disable=SC2086
   docker compose ${COMPOSE_FILES} up -d --build --remove-orphans 2>&1 | tail -6
   ok "Services restarted."
+  DEPLOY_DONE=true
 else
   log "Step 3 — Skipping deploy (no --deploy flag)."
 fi
@@ -159,9 +248,10 @@ log "Step 4 — Waiting for API to be healthy..."
 for i in $(seq 1 40); do
   if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
     ok "API is healthy."
+    trap - ERR  # health confirmed — clear rollback trap before restarting agents
     break
   fi
-  [[ $i -eq 40 ]] && die "API did not become healthy after 40 attempts (120 s)."
+  [[ $i -eq 40 ]] && rollback_on_failure "API did not become healthy after 40 attempts (120 s)."
   log "  Waiting... (${i}/40)"
   sleep 3
 done
