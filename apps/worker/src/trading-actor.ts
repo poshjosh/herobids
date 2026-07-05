@@ -147,6 +147,12 @@ export interface TradingActorDeps {
   candleFetcher?: CandleFetcher;
   /** Risk-config values forwarded to strategy via snapshot.data (mechanical/hybrid playbook guards) */
   riskPlaybook?: { maxNewPositionsPerDay?: number; avoidParabolicMovePct?: number };
+  /** Consecutive strategy.config_invalid errors before auto-stop (from operator config) */
+  botConfigInvalidHaltThreshold?: number;
+  /** Consecutive strategy.execution_error errors before auto-stop (from operator config) */
+  botExecutionErrorHaltThreshold?: number;
+  /** Callback invoked when bot is halted due to exceeding strategy error thresholds */
+  onHalted?: (botId: string) => Promise<void>;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -214,6 +220,9 @@ export class TradingActor implements InstanceActor, ExecutionActor {
   /** In-memory counter of new positions opened today (resets on date change) */
   private newPositionsToday = 0;
   private newPositionsDate = '';
+  /** Consecutive strategy error counter — reset on successful tick */
+  private consecutiveStrategyErrors = 0;
+  private lastStrategyErrorCode: string | null = null;
 
   constructor(
     botId: string,
@@ -1203,6 +1212,12 @@ export class TradingActor implements InstanceActor, ExecutionActor {
    */
   private async startReconciler(): Promise<void> {
     if (!this.running) return;
+
+    // Shadow/paper mode — positions are synthetic and never sent to the venue.
+    // There is nothing to reconcile against real venue state. Skipping avoids
+    // 4,600+ false-positive reconciliation.drift_detected events per session.
+    if (this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper') return;
+
     const { venuePort, reconciliationConfig, swapVenue } = this.deps;
     if ((!venuePort && !swapVenue) || !reconciliationConfig) return;
 
@@ -1734,14 +1749,63 @@ export class TradingActor implements InstanceActor, ExecutionActor {
       // Evaluate strategy to produce a decision
       const evalResult = await this.deps.strategy.evaluate(snapshot, this.strategyConfig);
       if (!evalResult.ok) {
+        const errorCode = evalResult.error.code;
+
+        // Circuit breaker: track consecutive errors by error code
+        if (this.lastStrategyErrorCode === errorCode) {
+          this.consecutiveStrategyErrors++;
+        } else {
+          this.consecutiveStrategyErrors = 1;
+          this.lastStrategyErrorCode = errorCode;
+        }
+
+        // Determine the halt threshold for this error code
+        const threshold = errorCode === 'strategy.config_invalid'
+          ? (this.deps.botConfigInvalidHaltThreshold ?? 1)
+          : errorCode === 'strategy.execution_error'
+            ? (this.deps.botExecutionErrorHaltThreshold ?? 5)
+            : undefined;
+
+        if (threshold !== undefined && this.consecutiveStrategyErrors >= threshold) {
+          // Halt: emit strategy.fatal, stop the bot, and notify via callback
+          void this.deps.journal.append({
+            actorType: 'bot',
+            actorId: this.botId,
+            type: 'strategy.fatal',
+            payload: {
+              code: errorCode,
+              message: evalResult.error.message,
+              consecutiveErrors: this.consecutiveStrategyErrors,
+              threshold,
+            },
+          }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append strategy.fatal journal event'));
+
+          this.logger.error(
+            { errorCode, consecutiveErrors: this.consecutiveStrategyErrors, threshold },
+            'Strategy fatal error — halting bot',
+          );
+
+          await this.stop();
+          if (this.deps.onHalted) {
+            await this.deps.onHalted(this.botId);
+          }
+          return;
+        }
+
+        // Below threshold — emit warning and continue
         void this.deps.journal.append({
           actorType: 'bot',
           actorId: this.botId,
           type: 'strategy.error' as JournalEventType,
-          payload: { code: evalResult.error.code, message: evalResult.error.message },
+          payload: { code: errorCode, message: evalResult.error.message },
         }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append strategy.error journal event'));
         return;
       }
+
+      // Successful evaluation — reset error counter
+      this.consecutiveStrategyErrors = 0;
+      this.lastStrategyErrorCode = null;
+
       const strategyDecision = evalResult.data;
       if (!strategyDecision) return; // hold — strategy chose not to act
 

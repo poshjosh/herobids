@@ -183,8 +183,21 @@ export class DockerAgentManager {
       ...(this.marketDataBinanceBaseUrl ? [`BINANCE_BASE_URL=${this.marketDataBinanceBaseUrl}`] : []),
       ...(this.marketDataBinanceRpm != null ? [`BINANCE_RPM=${this.marketDataBinanceRpm}`] : []),
       ...(this.marketDataTimeoutMs != null ? [`MARKET_DATA_TIMEOUT_MS=${this.marketDataTimeoutMs}`] : []),
-      // Database URL forwarded so the agent container can make direct DB calls
-      ...(process.env['DATABASE_URL'] ? [`DATABASE_URL=${process.env['DATABASE_URL']}`] : []),
+      // Database URL forwarded so the agent container can make direct DB calls.
+      // Required for correct agent tool behaviour (list_bots, get_bot_status, etc.).
+      // Log a prominent warning when absent — tools that need DB access will return
+      // structured errors rather than silently producing incorrect results.
+      ...(process.env['DATABASE_URL']
+        ? [`DATABASE_URL=${process.env['DATABASE_URL']}`]
+        : (() => {
+            logger.warn(
+              { agentId: spec.agentId },
+              'DATABASE_URL not set in worker environment — agent container will lack direct DB access. ' +
+              'Tools requiring DB (list_bots, get_bot_status, etc.) will return errors.',
+            );
+            return [];
+          })()
+      ),
       // LLM API keys must be in the worker's environment and forwarded explicitly
       ...(process.env['LLM_API_KEY'] ? [`LLM_API_KEY=${process.env['LLM_API_KEY']}`] : []),
       ...(process.env['LLM_API_KEY_DEEPSEEK'] ? [`LLM_API_KEY_DEEPSEEK=${process.env['LLM_API_KEY_DEEPSEEK']}`] : []),

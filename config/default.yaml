@@ -71,6 +71,10 @@ agentRiskDefaults:
   dailyMaxLossPct: 20                    # rolling 24h max loss as % of equity
   stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
   maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
+  botConfigInvalidHaltThreshold: 1     # consecutive strategy.config_invalid errors before auto-stop
+  botExecutionErrorHaltThreshold: 5    # consecutive strategy.execution_error errors before auto-stop
+  maxDrawdown: 1000000000              # max equity drawdown from session peak (USD). Default is effectively unlimited.
+                                       # Agents configure their own limit; this is the operator ceiling.
 
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for

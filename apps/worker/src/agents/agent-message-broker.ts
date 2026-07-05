@@ -899,12 +899,15 @@ export class AgentMessageBroker {
         tool: 'list_bots',
         status: 'ok',
         message: `Found ${bots.length} bot(s)`,
-        data: bots.map((bot) => ({
-          id: bot.id,
-          status: bot.status,
-          strategyPreset: this.deriveStrategyPresetFromBotConfig(bot.config as Record<string, unknown>),
-          symbol: (bot.config as Record<string, unknown>)?.['symbol'] as string | undefined,
-        })),
+        data: {
+          ok: true,
+          bots: bots.map((bot) => ({
+            id: bot.id,
+            status: bot.status,
+            strategyPreset: this.deriveStrategyPresetFromBotConfig(bot.config as Record<string, unknown>),
+            symbol: (bot.config as Record<string, unknown>)?.['symbol'] as string | undefined,
+          })),
+        },
       });
       return;
     }

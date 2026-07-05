@@ -48,6 +48,7 @@ export type JournalEventType =
   | 'credential.decrypted'
   | 'credential.used'
   | 'strategy.error'
+  | 'strategy.fatal'
   | 'guardrail.rejected';
 
 export interface JournalEntry {

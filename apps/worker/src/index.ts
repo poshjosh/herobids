@@ -326,6 +326,7 @@ const intakeResolver: DecisionIntakeResolver = {
           const freshLimits = buildAgentRiskLimits({
             capital: agent.capital ?? null,
             dailyLossLimit: agent.dailyLossLimit ?? null,
+            maxDrawdown: (agent as Record<string, unknown>).maxDrawdown as string ?? null,
             maxOpenPositions: agent.maxOpenPositions ?? null,
             maxPositionSizePct: agent.maxPositionSizePct ?? null,
             stopLossPct: agent.stopLossPct ?? null,
@@ -576,6 +577,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           riskLimits: buildAgentRiskLimits({
             capital: agent?.capital ?? null,
             dailyLossLimit: agent?.dailyLossLimit ?? null,
+            maxDrawdown: (agent as Record<string, unknown> | null)?.maxDrawdown as string ?? null,
             maxOpenPositions: agent?.maxOpenPositions ?? null,
             maxPositionSizePct: agent?.maxPositionSizePct ?? null,
             stopLossPct: agent?.stopLossPct ?? null,
@@ -1158,6 +1160,8 @@ const runtime = new WorkerRuntime(
       maxConsecutiveVenueErrors: appConfig.liveRollout.maxConsecutiveVenueErrors,
       slippageAlertBps: appConfig.liveRollout.slippageAlertBps,
       crashPolicy: appConfig.liveRollout.crashPolicy,
+      botConfigInvalidHaltThreshold: appConfig.agentRiskDefaults.botConfigInvalidHaltThreshold,
+      botExecutionErrorHaltThreshold: appConfig.agentRiskDefaults.botExecutionErrorHaltThreshold,
       liveOrderTimeoutPolicy: {
         limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
         marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
@@ -1195,6 +1199,58 @@ const runtime = new WorkerRuntime(
           });
           instanceExecutionModes.delete(instanceId);
         },
+      onHalted: async (instanceId: string) => {
+        // Persist stopped state to DB
+        try {
+          await botRepo.markBotStopped(instanceId);
+        } catch (err) {
+          logger.error({ err, instanceId }, 'Failed to persist halted state to DB');
+        }
+
+        actorRegistry.delete(instanceId);
+        agentStreamConsumer.unsubscribe(instanceId);
+
+        // Notify owning agent via instance.status push (best-effort)
+        try {
+          const [bot] = await db
+            .select({ creatorType: bots.creatorType, creatorId: bots.creatorId })
+            .from(bots)
+            .where(eq(bots.id, instanceId))
+            .limit(1);
+          if (bot?.creatorType === 'agent' && bot.creatorId) {
+            const agentBots = await botRepo.getBotsByCreator('agent', bot.creatorId);
+            await eventPublisher.emitInstanceStatus(bot.creatorId, {
+              status: 'stopped',
+              reason: 'bot_halted_error_limit',
+              updatedAt: new Date().toISOString(),
+              managedBots: agentBots.map((b) => ({
+                id: b.id,
+                status: b.status,
+              })),
+            });
+          }
+        } catch { /* best-effort */ }
+
+        // Publish real-time user event (best-effort)
+        try {
+          const userId = instanceUserIds.get(instanceId)
+            ?? (await db.select({ userId: bots.userId }).from(bots).where(eq(bots.id, instanceId)).limit(1))[0]?.userId;
+          if (userId) {
+            await userEventPublisher.publishBotStatus(userId, instanceId, 'stopped');
+          }
+        } catch { /* best-effort */ }
+
+        void actorHealthPublisher.publish({
+          actorType: 'bot',
+          actorId: instanceId,
+          status: 'stopped',
+          reasons: ['bot_halted_error_limit'],
+          executionMode: instanceExecutionModes.get(instanceId) ?? 'paper',
+          updatedAt: new Date().toISOString(),
+        });
+        instanceUserIds.delete(instanceId);
+        instanceExecutionModes.delete(instanceId);
+      },
     };
     const actor = new TradingActor(botId, config.strategy.params as Record<string, unknown>, deps);
     actorRegistry.set(botId, actor);

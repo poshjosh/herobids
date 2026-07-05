@@ -4,6 +4,7 @@ import type { RiskLimits } from '@herobids/engine';
 export interface AgentRiskLimitSource {
   capital: string | null;
   dailyLossLimit: string | null;
+  maxDrawdown: string | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: string | number | null;
   stopLossPct: string | number | null;
@@ -70,10 +71,16 @@ export function buildRiskLimitsFromContract(
   const capital = source.capital;
   const dailyLossLimit = source.dailyLossLimit;
 
+  // maxDrawdown is a separate field from dailyLossLimit.
+  // dailyLossLimit = rolling realised P&L cap (daily reset).
+  // maxDrawdown = peak-to-trough equity drawdown including unrealized P&L (session high-water mark).
+  // Each has independent enforcement in the risk gate (risk.max_drawdown_exceeded vs risk.daily_max_loss_exceeded).
+  const maxDrawdown = source.maxDrawdown ?? String(defaults.maxDrawdown);
+
   return {
     maxPositionSize: quantity(String(defaults.maxPositionSize)),
     maxOpenPositions: contract.maxOpenPositions.effectiveValue,
-    maxDrawdown: price(dailyLossLimit ?? '1000000000'),
+    maxDrawdown: price(maxDrawdown),
     stopLossMaxUnrealizedLossPct: contract.stopLossPct.effectiveValue,
     stopLossCooldownMs: contract.stopLossCooldownMs.effectiveValue,
     // maxPositionSizePct is included when capital is present or when the field has an effective value from creator/override

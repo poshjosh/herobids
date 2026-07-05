@@ -10,11 +10,15 @@ const DEFAULTS: AgentRiskDefaultsConfig = {
   dailyMaxLossPct: 20,
   stopLossCooldownMs: 300_000,
   maxOrderNotionalMultiplier: 1,
+  maxDrawdown: 1_000_000_000,
+  botConfigInvalidHaltThreshold: 1,
+  botExecutionErrorHaltThreshold: 5,
 };
 
 const EMPTY_SOURCE: AgentRiskLimitSource = {
   capital: null,
   dailyLossLimit: null,
+  maxDrawdown: null,
   maxOpenPositions: null,
   maxPositionSizePct: null,
   stopLossPct: null,

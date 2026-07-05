@@ -65,6 +65,10 @@ export interface DecisionIntakeDeps {
   precomputedUnrealizedPnl?: Price;
   /** Swap fill projection tracker for actor-local swap accounting (swap venues only) */
   swapPositionTracker?: SwapPositionTracker;
+  /** Execution timeout in ms for the executor call. Default 30_000 (30s).
+   *  Prevents the decision intake from hanging indefinitely when the executor
+   *  (e.g. shadow mode's market data feed) is unresponsive. */
+  executionTimeoutMs?: number;
 }
 
 /**
@@ -297,10 +301,22 @@ export async function submitDecisionForExecution(
     return { decision: resolvedDecision, plan, riskRejected: true, riskError: riskResult.error, position, executionFailed: false };
   }
 
-  // 7. Execute
+  // 7. Execute (with timeout guard to prevent indefinite hangs)
   await deps.persistence.markPlanExecuting(plan.id);
   const snapshotPrice = price(context.snapshot.price);
-  const execResult = await deps.executor.execute(plan, snapshotPrice);
+  const execTimeoutMs = deps.executionTimeoutMs ?? 30_000;
+  const timeoutToken = Symbol('execution_timeout');
+  const execResult = await Promise.race([
+    deps.executor.execute(plan, snapshotPrice),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(timeoutToken), execTimeoutMs),
+    ),
+  ]).catch((err: unknown) => {
+    if (err === timeoutToken) {
+      return { ok: false as const, error: { code: 'execution.timeout', message: `Executor timed out after ${execTimeoutMs}ms for plan ${plan.id}` } };
+    }
+    throw err;
+  });
   if (!execResult.ok) {
     await deps.persistence.markPlanFailed(plan.id);
     await deps.journal.append(planEvent(plan, 'plan.failed'));

@@ -78,14 +78,42 @@ export async function analyzeCore(
   const journal = await readJsonArtifact(store, runId, 'journal.json') as Array<Record<string, unknown>> | null;
 
   if (journal && journal.length > 0) {
-    const toolEvents = journal.filter((e) => {
-      const type = e['type'] as string;
-      return type?.startsWith('tool.') || type?.includes('failure') || type?.includes('error');
-    });
     const totalEvents = journal.length;
-    const failureRate = totalEvents > 0 ? toolEvents.length / totalEvents : 0;
-    if (failureRate * 100 > thresholds.toolFailureRatePct) {
-      toolFindings.push(finding('tool_usage', 'medium', 'core.high_tool_failure_rate', 'High tool failure rate', `${(failureRate * 100).toFixed(1)}% of journal events are tool failures (threshold: ${thresholds.toolFailureRatePct}%).`, `journal.json → ${toolEvents.length} tool failures out of ${totalEvents} events`));
+
+    // Agent tool failures: events emitted by the agent actor that indicate
+    // a tool call failure. This is distinct from bot-level strategy errors.
+    const agentFailureEvents = journal.filter((e) => {
+      const type = e['type'] as string;
+      const actorType = e['actorType'] as string | undefined;
+      return (
+        actorType === 'agent' &&
+        (type?.startsWith('tool.') || type?.includes('failure') || type?.includes('error'))
+      );
+    });
+    const agentFailureRate = totalEvents > 0 ? agentFailureEvents.length / totalEvents : 0;
+    if (agentFailureRate * 100 > thresholds.toolFailureRatePct) {
+      toolFindings.push(finding('tool_usage', 'medium', 'core.high_tool_failure_rate',
+        'High agent tool failure rate',
+        `${(agentFailureRate * 100).toFixed(1)}% of journal events are agent tool failures (threshold: ${thresholds.toolFailureRatePct}%).`,
+        `journal.json → ${agentFailureEvents.length} agent tool failures out of ${totalEvents} events`));
+    }
+
+    // Bot strategy errors: events emitted by bot actors (strategy.error, etc.).
+    // These are NOT agent tool failures — the agent is not in control of bot
+    // strategy execution. A high bot error rate typically indicates a runaway
+    // error loop (e.g. broken config) that needs the circuit breaker (Issue 1).
+    const botErrorEvents = journal.filter((e) => {
+      const type = e['type'] as string;
+      const actorType = e['actorType'] as string | undefined;
+      return actorType === 'bot' && type?.includes('error');
+    });
+    if (botErrorEvents.length > 0) {
+      const botErrorRate = totalEvents > 0 ? botErrorEvents.length / totalEvents : 0;
+      const severity: EvaluationSeverity = botErrorRate > 0.5 ? 'high' : botErrorRate > 0.2 ? 'medium' : 'low';
+      toolFindings.push(finding('tool_usage', severity, 'core.high_bot_error_rate',
+        'High bot strategy error rate',
+        `${(botErrorRate * 100).toFixed(1)}% of journal events are bot strategy errors (${botErrorEvents.length} events). These are NOT agent tool failures — they indicate a bot-level problem (e.g. broken config, venue outage). Check for strategy.error or strategy.fatal events.`,
+        `journal.json → ${botErrorEvents.length} bot errors out of ${totalEvents} events`));
     }
   }
   sections.push(sectionScore('tool_usage', toolFindings));

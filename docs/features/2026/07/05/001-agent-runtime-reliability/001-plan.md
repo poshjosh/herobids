@@ -349,3 +349,30 @@ layer to accept both shapes — see Issue 4 fix above.
 - Do not add new risk limits or alter existing user-configured limits.
 - Do not change how shadow fills are simulated — only whether reconciliation runs against them.
 - Do not change the evaluator's overall scoring model — only the tool failure attribution.
+
+---
+
+## Outstanding Issues
+
+### Issue 2a — Redis cache for live EquityTracker state (DEFERRED)
+
+The field split (Issue 2b) is complete: `maxDrawdown` and `dailyLossLimit` are now separate
+fields with independent enforcement in the risk gate. However, `get_risk_limits` still returns
+`current: null` for drawdown because the `EquityTracker` lives in the worker process memory
+and is not accessible from the agent container.
+
+**What's needed:**
+- After every decision in the worker, write the actor's current equity snapshot to a Redis key
+  `equity:{actorId}` → `{ startingCapital, realizedPnl, unrealizedPnl, peakEquity, currentDrawdown }`
+- Have `get_risk_limits` read from this Redis key to populate the drawdown `current` field.
+
+**Impact:** Without this, agents still cannot see their live drawdown number in `get_risk_limits`.
+The limit is now correctly configured (no longer aliased from `dailyLossLimit`), but the current
+value is unavailable. This is acceptable for a tool call — at most one decision stale.
+
+### DB migration for `maxDrawdown` column
+
+The `maxDrawdown` field was added to `AgentRiskLimitSource` and the operator config, but there
+is no corresponding column in the `agents` DB table yet. Call sites use `(agent as Record<string, unknown>).maxDrawdown as string ?? null`
+as a forward-compatible access pattern. When the column is added, update the agent type and remove the casts.
+

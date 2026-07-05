@@ -176,8 +176,11 @@ async function buildRuntime(ctx: ToolContext, contract: ResolvedAgentRiskContrac
     drawdown: {
       // Engine-only state — populated by the risk gate during decision execution.
       // Not available from the agent container tool context.
+      // The maxDrawdown limit is set per-agent (falls back to operator default).
+      // Current drawdown requires Redis cache (Issue 2a — deferred).
       current: null,
       limit: null,
+      source: null,
       approaching: false,
     },
     openPositions: {

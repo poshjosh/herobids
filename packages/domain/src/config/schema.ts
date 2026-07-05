@@ -406,6 +406,9 @@ export const AgentRiskDefaultsSchema = z.object({
   dailyMaxLossPct: z.number().min(0).max(100).default(20),
   stopLossCooldownMs: z.number().min(0).default(300_000),
   maxOrderNotionalMultiplier: z.number().min(0).default(1),
+  botConfigInvalidHaltThreshold: z.number().int().min(1).default(1),
+  botExecutionErrorHaltThreshold: z.number().int().min(1).default(5),
+  maxDrawdown: z.number().min(0).default(1_000_000_000),
 }).default({});
 
 export const StreamConfigSchema = z.object({

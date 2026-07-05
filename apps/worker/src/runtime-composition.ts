@@ -1627,14 +1627,15 @@ export function applyRuntimeMessage(
     const tool = typeof payload['tool'] === 'string' ? payload['tool'] : 'tool';
     const data = payload['data'] as Record<string, unknown> | Array<Record<string, unknown>> | undefined;
 
-    if (tool === 'list_bots' && Array.isArray(data)) {
-      state.metrics.managedBots = data.map((bot) => ({
+    if (tool === 'list_bots' && data && !Array.isArray(data) && Array.isArray(data['bots'])) {
+      const bots = data['bots'] as Array<Record<string, unknown>>;
+      state.metrics.managedBots = bots.map((bot) => ({
         id: String(bot['id'] ?? 'unknown'),
         status: String(bot['status'] ?? 'unknown'),
         strategyPreset: typeof bot['strategyPreset'] === 'string' ? bot['strategyPreset'] : undefined,
         symbol: typeof bot['symbol'] === 'string' ? bot['symbol'] : undefined,
       }));
-      const summary = `Bot list updated: ${data.length} bot(s)`;
+      const summary = `Bot list updated: ${bots.length} bot(s)`;
       pushRecentEvent(state, type, summary);
       return summary;
     }
