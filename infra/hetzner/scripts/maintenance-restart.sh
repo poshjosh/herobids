@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-ROOT="/opt/herobids"
+ROOT="${HEROBIDS_ROOT:-/opt/herobids}"
 COMPOSE_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
 
 # ─── Parse args ──────────────────────────────────────────────────────────────
