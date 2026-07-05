@@ -5,25 +5,26 @@
 # when agent.ts or something in Dockerfile.agent changed. The 2am window is intentional: no 
 # one is watching, no active decisions expected.
 #
-# Stops all running agent containers, optionally deploys the latest code, then
+# Stops all running agent containers, deploys the latest code by default, then
 # restarts the agents so they pick up the current herobids-agent image.
 #
 # Runs ON the server. Suitable for cron at 2am or ad-hoc remote invocation.
 #
 # Usage:
-#   maintenance-restart.sh [--deploy] [--include-live]
+#   maintenance-restart.sh [--skip-deploy] [--include-live]
 #
 # Options:
-#   --deploy        Pull latest code and rebuild all images before restarting.
+#   --skip-deploy   Skip code pull and image rebuild — restart agents on the
+#                   current herobids-agent image without touching the deployment.
 #   --include-live  Also restart agents with execution_mode='live'.
 #                   Skipped by default — live agents may hold open positions.
 #
 # Cron (server-side, 2am every Sunday — edit /etc/cron.d/herobids or crontab):
-#   0 2 * * 0 root /opt/herobids/infra/hetzner/scripts/maintenance-restart.sh --deploy \
+#   0 2 * * 0 root /opt/herobids/infra/hetzner/scripts/maintenance-restart.sh \
 #               >> /var/log/herobids-maintenance.log 2>&1
 #
 # Remote one-shot:
-#   ssh root@<ip> 'bash /opt/herobids/infra/hetzner/scripts/maintenance-restart.sh --deploy'
+#   ssh root@<ip> 'bash /opt/herobids/infra/hetzner/scripts/maintenance-restart.sh'
 
 set -euo pipefail
 
@@ -32,14 +33,14 @@ COMPOSE_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
 
 # ─── Parse args ──────────────────────────────────────────────────────────────
 
-DO_DEPLOY=false
+DO_DEPLOY=true
 INCLUDE_LIVE=false
 DEPLOY_DONE=false
 PREV_GIT_SHA=""
 
 for arg in "$@"; do
   case "$arg" in
-    --deploy)       DO_DEPLOY=true ;;
+    --skip-deploy)  DO_DEPLOY=false ;;
     --include-live) INCLUDE_LIVE=true ;;
     --help|-h)
       sed -n '2,/^set /p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \{0,1\}//'
@@ -239,7 +240,7 @@ if [[ "${DO_DEPLOY}" == "true" ]]; then
   ok "Services restarted."
   DEPLOY_DONE=true
 else
-  log "Step 3 — Skipping deploy (no --deploy flag)."
+  log "Step 3 — Skipping deploy (--skip-deploy flag)."
 fi
 
 # ─── Step 4: Wait for API ────────────────────────────────────────────────────
