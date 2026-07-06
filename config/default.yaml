@@ -316,6 +316,7 @@ worker:
   concurrency: 10              # WorkerRuntime max concurrent trading actors
   agents:
     healthCheckIntervalMs: 2000  # AgentSessionManager health poll cadence in ms
+    botOrphanSweepIntervalMs: 60000  # Bot orphan sweep cadence in ms
 
 # Agent runtime — behavior policy for agent containers.
 #

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { eq, and, isNull, desc, or, gte, inArray, notInArray, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
-import { fills, positions, bots, connections, executionPlans, orders, balanceSnapshots, decisions, venueAccounts } from './schema/index.js';
+import { fills, positions, bots, connections, executionPlans, orders, balanceSnapshots, decisions, venueAccounts, agents } from './schema/index.js';
 
 export interface InsertFill {
   orderId: string;
@@ -766,6 +766,24 @@ export class BotRepository {
       .from(bots)
       .where(and(...conditions))
       .orderBy(desc(bots.createdAt));
+  }
+
+  /**
+   * Returns running bots created by agents that are now stopped or crashed.
+   * Used by the bot orphan reconcile sweep.
+   */
+  async listRunningBotsForInactiveAgents(): Promise<{ id: string; creatorId: string }[]> {
+    return this.db
+      .select({ id: bots.id, creatorId: bots.creatorId })
+      .from(bots)
+      .innerJoin(agents, eq(bots.creatorId, agents.id))
+      .where(
+        and(
+          eq(bots.creatorType, 'agent'),
+          eq(bots.status, 'running'),
+          inArray(agents.status, ['stopped', 'crashed']),
+        ),
+      );
   }
 
   /** Count running bots for an actor — used by broker to enforce maxBotsPerAgent limit */

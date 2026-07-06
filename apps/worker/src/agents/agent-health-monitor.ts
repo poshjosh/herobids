@@ -12,6 +12,17 @@ export interface HealthMonitorConfig {
   checkIntervalMs: number;
   /** Heartbeat timeout — mark unhealthy after this (ms). Default: 30000 */
   heartbeatTimeoutMs: number;
+  /**
+   * Called when the health monitor finds a terminal session in DB that still has
+   * an in-memory runtime handle. This is the controlling path for user-initiated
+   * agent stops (the API stop endpoint flips DB state; the health monitor then
+   * notices and cleans up the runtime). Fires before runtimeLauncher.stop().
+   */
+  onTerminalSessionCleanup?: (
+    agentId: string,
+    sessionId: string,
+    status: 'stopped' | 'crashed',
+  ) => Promise<void>;
 }
 
 const DEFAULT_CONFIG: HealthMonitorConfig = {
@@ -86,7 +97,11 @@ export class AgentHealthMonitor {
         const activeHandles = this.runtimeLauncher.getActiveRuntimes();
         if (activeHandles.length > 0) {
           const handleSessionIds = activeHandles.map((h) => h.sessionId);
-          const stoppedSessions = await this.db.select({ id: agentRuntimeSessions.id })
+          const stoppedSessions = await this.db.select({
+              id: agentRuntimeSessions.id,
+              agentId: agentRuntimeSessions.agentId,
+              status: agentRuntimeSessions.status,
+            })
             .from(agentRuntimeSessions)
             .where(and(
               inArray(agentRuntimeSessions.id, handleSessionIds),
@@ -94,6 +109,20 @@ export class AgentHealthMonitor {
             ));
           for (const session of stoppedSessions) {
             logger.info({ sessionId: session.id }, 'Cleaning up runtime handle for stopped session');
+            // Run the cascade callback before stopping the runtime so that
+            // agent-created bots are stopped while the agent is still being
+            // torn down. This is the controlling path for user-initiated stops
+            // because the API stop endpoint only flips DB state.
+            try {
+              await this.config.onTerminalSessionCleanup?.(
+                session.agentId,
+                session.id,
+                session.status as 'stopped' | 'crashed',
+              );
+            } catch (err) {
+              logger.error({ err, sessionId: session.id, agentId: session.agentId }, 'Terminal session cleanup callback failed');
+            }
+
             // Call stop() so that if the container is still running (e.g. Docker
             // daemon hasn't reported the die event yet, or the in-memory handle
             // was already dropped), it gets killed now. stop() handles the case

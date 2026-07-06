@@ -866,6 +866,7 @@ export const WorkerConfigSchema = z.object({
   concurrency: z.number().int().min(1).default(10),
   agents: z.object({
     healthCheckIntervalMs: z.number().int().min(100).default(2_000),
+    botOrphanSweepIntervalMs: z.number().int().min(1000).default(60_000),
   }).default({}),
 });
 
