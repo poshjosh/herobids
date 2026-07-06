@@ -208,6 +208,10 @@ export class PositionRepository {
       // direction so reversal closes are recorded in analytics.
       const existingRow = existing[0]!;
       if (existingRow.side !== pos.side) {
+        // Reversal: close old direction, open new direction.
+        // The old row gets the cumulative realized P&L up to this close.
+        // The new row starts fresh with zero realized P&L — otherwise analytics
+        // would double-count the pre-reversal P&L when the new row later closes.
         await this.db
           .update(positions)
           .set({
@@ -220,7 +224,7 @@ export class PositionRepository {
           })
           .where(eq(positions.id, existingRow.id));
 
-        // Insert new row for the new direction
+        // Insert new row for the new direction with zero realized P&L
         await this.db.insert(positions).values({
           id: crypto.randomUUID(),
           venueAccountId: pos.venueAccountId,
@@ -231,7 +235,7 @@ export class PositionRepository {
           side: pos.side,
           size: pos.size,
           entryPrice: pos.entryPrice,
-          realizedPnl: pos.realizedPnl,
+          realizedPnl: '0',
           markSource: pos.markSource ?? null,
           openedAt: new Date(),
         });

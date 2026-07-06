@@ -45,11 +45,13 @@ Add `'symbol'` to the `groupBy` enum. The `groupKey` function returns `position.
 aggregation).
 
 Note: journal events do not have a `symbol` column — only positions do. For
-`groupBy='symbol'`, event counts (`eventCount`, `decisionCount`, `fillCount`) should
-be derived from fills joined to positions via `positionId`, or omitted and replaced
-with fill count from the positions side. The simplest correct approach: when
-`groupBy='symbol'`, aggregate only from `posRows` (P&L and fill count) and skip
-the journal event loop.
+`groupBy='symbol'`, event counts (`eventCount`, `decisionCount`, `fillCount`) cannot
+be derived from journal events. Positions rows are aggregates, not fill records, so
+counting "one position = one fill" would undercount multi-fill entries/exits and
+partial closes. The implemented approach: when `groupBy='symbol'`, skip the journal
+event loop and leave `eventCount`, `decisionCount`, and `fillCount` at 0. Only
+`realizedPnl` is aggregated from positions. A future enhancement could join fills to
+positions to derive accurate fill counts per symbol.
 
 ### Checklist
 
@@ -60,8 +62,9 @@ the journal event loop.
 - [x] Filter `posRows` by `p.symbol` when `query.symbols` is set
 - [x] Add `'symbol'` to the `groupBy` enum in both schemas
 - [x] Add `symbol` case to `groupKey()` function — returns `p.symbol`
-- [x] When `groupBy='symbol'`, skip the journal events loop (events lack symbol) or
-  populate fill counts from `posRows` only
+- [x] When `groupBy='symbol'`, skip the journal events loop (events lack symbol).
+  fillCount stays at 0 — positions are aggregates, not fill records. Real fill
+  counts per symbol would require a fill join (future enhancement).
 - [x] Add unit tests: filter by single symbol, filter by multiple symbols,
   groupBy='symbol' returns one group per symbol
 - [x] `pnpm lint` passes
@@ -141,11 +144,21 @@ Recommended order: **1 → 2**
 
 ## Outstanding Issues
 
-### [Step 1 — symbols] No outstanding issues.
+### [Step 1 — symbols] fillCount omitted for symbol/exitReason modes.
+
+`fillCount` is left at 0 (same as `eventCount`/`decisionCount`) when the journal
+event loop is skipped. This happens for `groupBy='symbol'`, `groupBy='exitReason'`,
+and any query with `symbols` or `exitReasons` filters. A positions row is an
+aggregate, not a fill record — counting "one position = one fill" would undercount.
+Real fill counts per symbol/exitReason would require a join from positions to fills
+(future enhancement).
 
 ### [Step 2 — exitReasons] No outstanding issues.
 
-- All checklist items completed. `pnpm lint` and 26 unit tests pass.
-- Migration `0034_elite_la_nuit` (`ALTER TABLE positions ADD COLUMN exit_reason text`) is generated and registered in the Drizzle journal.
-- `exitReason` is stamped from `decision.metadata.reason` in `decision-intake.ts` and threaded through `PersistPositionParams` → `UpsertPosition` → `PositionRepository.upsert`.
-- Backward compatible: the column is nullable and defaults to null for existing rows.
+- Reversal closes (e.g. long→short) now correctly stamp `exitReason` on the closed
+  row and open a fresh row with `realizedPnl: '0'`, preventing P&L double-counting
+  in analytics.
+- All checklist items completed. `pnpm lint` and 29 unit tests pass.
+- Migration `0034_elite_la_nuit` is generated and registered.
+- `exitReason` is stamped from `decision.metadata.reason` in `decision-intake.ts`
+  and threaded through `PersistPositionParams` → `UpsertPosition` → `PositionRepository.upsert`.
