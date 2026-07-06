@@ -70,55 +70,62 @@ export interface PriceService {
 }
 
 // ---------------------------------------------------------------------------
-// Hyperliquid execution-price source (perps)
+// Helpers
 // ---------------------------------------------------------------------------
 
-async function fetchHyperliquidPrice(
-  registry: ProviderRegistry,
-  symbol: string,
-): Promise<PriceResult> {
-  try {
-    const result = await registry.hyperliquid.assetContexts();
-    const normalized = symbol.toUpperCase().replace(/-PERP$/i, '').replace(/USDT$/i, '');
-    const asset = result.data.find(
-      (a) => a.asset.toUpperCase() === normalized,
-    );
-    if (!asset || asset.markPrice === null) {
-      return {
-        ok: false,
-        error: { code: 'price.not_found', message: `${symbol} not found on Hyperliquid` },
-      };
-    }
-    return {
-      ok: true,
-      data: {
-        priceUsd: asset.markPrice,
-        source: 'execution',
-        fetchedAt: result.meta.freshness.fetchedAt,
-        stale: result.meta.freshness.isStale,
-      },
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: {
-        code: 'price.source_failed',
-        message: err instanceof Error ? err.message : 'Hyperliquid fetch failed',
-      },
-    };
+/** Maximum age (ms) of a cached price entry before it is considered expired. */
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface CachedPriceEntry {
+  priceUsd: number;
+  fetchedAt: string;
+  cachedAtMs: number;
+  /** Resolved identity so stale fallback can return the correct asset, not the requested query. */
+  symbol: string;
+  chain: string;
+  address?: string;
+}
+
+/**
+ * In-memory last-known-price cache.
+ * Keyed by `${chain}:${identity}`.
+ */
+const priceCache = new Map<string, CachedPriceEntry>();
+
+function normalizeAssetIdentity(identity: string, chain: string): string {
+  const chainLower = chain.toLowerCase();
+  if (EVM_ADDRESS_REGEX.test(identity)) {
+    return identity.toLowerCase();
   }
+  if (chainLower === 'solana' && SOLANA_ADDRESS_REGEX.test(identity)) {
+    return identity;
+  }
+  return identity.toUpperCase();
+}
+
+function cacheKey(symbol: string, chain: string, address?: string): string {
+  const chainLower = chain.toLowerCase();
+  const identity = address
+    ? `address:${normalizeAssetIdentity(address, chainLower)}`
+    : `symbol:${normalizeAssetIdentity(symbol, chainLower)}`;
+  return `${chainLower}:${identity}`;
 }
 
 // ---------------------------------------------------------------------------
-// DexScreener oracle-price source (spot / DEX tokens)
+// Resolution helpers — identity-aware candidate selection
 // ---------------------------------------------------------------------------
 
-async function fetchDexScreenerPrice(
+/**
+ * Searches DexScreener for a token, filters by chain and optional address,
+ * selects the highest-liquidity candidate, and returns the full resolved
+ * identity plus price.
+ */
+async function resolveDexScreenerTarget(
   registry: ProviderRegistry,
   symbol: string,
   chain: string,
   address?: string,
-): Promise<PriceResult> {
+): Promise<ResolvePriceTargetResult> {
   try {
     const result = await registry.dexscreener.search(symbol);
     const chainLower = chain.toLowerCase();
@@ -150,12 +157,20 @@ async function fetchDexScreenerPrice(
     if (!best || best.priceUsd === 0) {
       return {
         ok: false,
-        error: { code: 'price.not_found', message: `${symbol} not found via DexScreener${chainLower !== 'any' ? ` on ${chain}` : ''}` },
+        error: {
+          code: 'price.not_found',
+          message: `${symbol} not found via DexScreener${chainLower !== 'any' ? ` on ${chain}` : ''}`,
+        },
       };
     }
+
     return {
       ok: true,
       data: {
+        symbol: best.symbol,
+        chain: best.network,
+        address: best.address,
+        name: best.name,
         priceUsd: best.priceUsd,
         source: 'oracle',
         fetchedAt: result.meta.freshness.fetchedAt,
@@ -173,37 +188,52 @@ async function fetchDexScreenerPrice(
   }
 }
 
+/**
+ * Resolves a token identity on Hyperliquid by matching the symbol against
+ * available asset contexts.  Returns the resolved identity with chain fixed
+ * to `hyperliquid` and source `execution`.
+ */
+async function resolveHyperliquidTarget(
+  registry: ProviderRegistry,
+  symbol: string,
+): Promise<ResolvePriceTargetResult> {
+  try {
+    const result = await registry.hyperliquid.assetContexts();
+    const normalized = symbol.toUpperCase().replace(/-PERP$/i, '').replace(/USDT$/i, '');
+    const asset = result.data.find(
+      (a) => a.asset.toUpperCase() === normalized,
+    );
+    if (!asset || asset.markPrice === null) {
+      return {
+        ok: false,
+        error: { code: 'price.not_found', message: `${symbol} not found on Hyperliquid` },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        symbol: asset.asset,
+        chain: 'hyperliquid',
+        priceUsd: asset.markPrice,
+        source: 'execution',
+        fetchedAt: result.meta.freshness.fetchedAt,
+        stale: result.meta.freshness.isStale,
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'price.source_failed',
+        message: err instanceof Error ? err.message : 'Hyperliquid fetch failed',
+      },
+    };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Composite price service — source selection + stale-cache fallback
 // ---------------------------------------------------------------------------
-
-/** Maximum age (ms) of a cached price entry before it is considered expired. */
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-/**
- * In-memory last-known-price cache.
- * Keyed by `${chain}:${symbol.toUpperCase()}`.
- */
-const priceCache = new Map<string, { priceUsd: number; fetchedAt: string; cachedAtMs: number }>();
-
-function normalizeAssetIdentity(identity: string, chain: string): string {
-  const chainLower = chain.toLowerCase();
-  if (EVM_ADDRESS_REGEX.test(identity)) {
-    return identity.toLowerCase();
-  }
-  if (chainLower === 'solana' && SOLANA_ADDRESS_REGEX.test(identity)) {
-    return identity;
-  }
-  return identity.toUpperCase();
-}
-
-function cacheKey(symbol: string, chain: string, address?: string): string {
-  const chainLower = chain.toLowerCase();
-  const identity = address
-    ? `address:${normalizeAssetIdentity(address, chainLower)}`
-    : `symbol:${normalizeAssetIdentity(symbol, chainLower)}`;
-  return `${chainLower}:${identity}`;
-}
 
 /**
  * CompositePriceService selects sources by chain:
@@ -213,37 +243,62 @@ function cacheKey(symbol: string, chain: string, address?: string): string {
  * Results are cached in memory so failed live lookups can fall back to stale data.
  */
 export function createPriceService(registry: ProviderRegistry): PriceService {
-  async function getPrice(symbol: string, chain: string, address?: string): Promise<PriceResult> {
+
+  /**
+   * Resolves a full identity + price for the requested symbol.
+   *
+   * Follows the same source → cache fallback priority as `getPrice` but
+   * returns the chosen candidate's identity (chain, address, symbol, name)
+   * alongside the price so callers can pin subsequent lookups to the exact
+   * asset that was resolved.
+   */
+  async function resolvePriceTarget(
+    symbol: string,
+    chain: string,
+    address?: string,
+  ): Promise<ResolvePriceTargetResult> {
     const key = cacheKey(symbol, chain, address);
     const chainLower = chain.toLowerCase();
     let lastError: PriceLookupError | null = null;
 
     // Source order: execution (perps only) → oracle → cached
-    const sources: Array<() => Promise<PriceResult>> = [];
+    const sources: Array<() => Promise<ResolvePriceTargetResult>> = [];
 
     if (chainLower === 'hyperliquid') {
-      sources.push(() => fetchHyperliquidPrice(registry, symbol));
+      sources.push(() => resolveHyperliquidTarget(registry, symbol));
       // DexScreener has no 'hyperliquid' network — use 'any' as the oracle fallback.
-      sources.push(() => fetchDexScreenerPrice(registry, symbol, 'any', address));
+      sources.push(() => resolveDexScreenerTarget(registry, symbol, 'any', address));
     } else {
-      sources.push(() => fetchDexScreenerPrice(registry, symbol, chain, address));
+      sources.push(() => resolveDexScreenerTarget(registry, symbol, chain, address));
     }
 
     for (const source of sources) {
       const result = await source();
       if (result.ok) {
-        priceCache.set(key, { priceUsd: result.data.priceUsd, fetchedAt: result.data.fetchedAt, cachedAtMs: Date.now() });
+        priceCache.set(key, {
+          priceUsd: result.data.priceUsd,
+          fetchedAt: result.data.fetchedAt,
+          cachedAtMs: Date.now(),
+          symbol: result.data.symbol,
+          chain: result.data.chain,
+          address: result.data.address,
+        });
         return result;
       }
       lastError = result.error;
     }
 
     // Stale cache fallback — last resort (bounded by TTL)
+    // Returns the resolved identity from when the entry was originally cached,
+    // not the requested query, so stale results still carry a concrete identity.
     const cached = priceCache.get(key);
     if (cached && (Date.now() - cached.cachedAtMs) < CACHE_TTL_MS) {
       return {
         ok: true,
         data: {
+          symbol: cached.symbol,
+          chain: cached.chain,
+          address: cached.address,
           priceUsd: cached.priceUsd,
           source: 'cached',
           fetchedAt: cached.fetchedAt,
@@ -268,11 +323,25 @@ export function createPriceService(registry: ProviderRegistry): PriceService {
         };
   }
 
-  async function resolvePriceTarget(_symbol: string, _chain: string, _address?: string): Promise<ResolvePriceTargetResult> {
-    console.warn('resolvePriceTarget called before implementation is complete — returning not_implemented');
+  /**
+   * Returns a price snapshot for the requested symbol.
+   *
+   * Delegates to `resolvePriceTarget` and projects the full identity down
+   * to only the price fields, preserving the original behaviour.
+   */
+  async function getPrice(
+    symbol: string,
+    chain: string,
+    address?: string,
+  ): Promise<PriceResult> {
+    const result = await resolvePriceTarget(symbol, chain, address);
+    if (!result.ok) {
+      return result;
+    }
+    const { priceUsd, source, fetchedAt, stale } = result.data;
     return {
-      ok: false,
-      error: { code: 'price.not_implemented', message: 'resolvePriceTarget not yet implemented' },
+      ok: true,
+      data: { priceUsd, source, fetchedAt, stale },
     };
   }
 
