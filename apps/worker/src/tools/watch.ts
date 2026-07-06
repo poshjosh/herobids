@@ -152,7 +152,7 @@ async function ensurePinnedWatchIdentity(
   | { ok: false; reason: string }
 > {
   // Already pinned — nothing to do.
-  if (watch.resolvedChain) {
+  if (watch.resolvedChain && watch.resolvedSymbol) {
     return { ok: true, watch };
   }
 
@@ -172,7 +172,7 @@ async function ensurePinnedWatchIdentity(
   const { symbol: resolvedSymbol, chain: resolvedChain, address: resolvedAddress } = resolution.data;
 
   // Validate the resolved chain is supported for watch tracking.
-  if (resolvedChain && !EXPLICIT_SUPPORTED_CHAIN_SET.has(resolvedChain) && resolvedChain !== 'hyperliquid') {
+  if (resolvedChain && !EXPLICIT_SUPPORTED_CHAIN_SET.has(resolvedChain)) {
     return {
       ok: false,
       reason: `resolved chain "${resolvedChain}" is not a supported watch chain`,
@@ -279,9 +279,9 @@ const watchTokenTool: AgentTool = {
       };
     }
 
-    // Validate resolved chain is in the supported watch chain set (Issue 5).
+    // Validate resolved chain is in the supported watch chain set.
     // Prevents creating a watch pinned to an unsupported chain (e.g. 'fantom' from DexScreener).
-    if (resolvedChain && !EXPLICIT_SUPPORTED_CHAIN_SET.has(resolvedChain) && resolvedChain !== 'hyperliquid') {
+    if (resolvedChain && !EXPLICIT_SUPPORTED_CHAIN_SET.has(resolvedChain)) {
       return {
         success: false,
         error: `resolved chain "${resolvedChain}" is not a supported watch chain`,
