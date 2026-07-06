@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Watch token discovery and pinning:** `watch_token` now accepts `chain: "any"` for cross-chain discovery. The system resolves the asset once at creation time and pins the watch to a concrete identity (chain + address). Future price checks use the pinned identity, preventing silent drift when market liquidity shifts between chains. Legacy watches are lazily repaired on first `check_watches` evaluation. `get_price` behavior remains unchanged for one-shot discovery.
 - Glossary
 - Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time
 - **Agent stop cascades to bots:** When an agent is stopped, all running agent-created bots are cascade-stopped via `AgentHealthMonitor` (primary UI/API path), `onSessionStopped` callback (supplemental), and `DockerAgentManager.onAgentCrashed` (crash path). Periodic `botOrphanSweepInterval` reconciliation sweep catches missed orphans. Configurable via `worker.agents.botOrphanSweepIntervalMs`.
