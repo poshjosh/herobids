@@ -64,11 +64,13 @@ function HourGrid({
   onChange,
   defaultHours,
   isPreview,
+  previewNote,
 }: {
   selected: number[] | null | undefined;
   onChange: (hours: number[] | null) => void;
   defaultHours: number[];
   isPreview?: boolean;
+  previewNote?: string;
 }) {
   const active = selected ?? defaultHours;
   const isCustom = selected != null;
@@ -146,9 +148,9 @@ function HourGrid({
           )}
         </div>
       )}
-      {isPreview && (
+      {isPreview && previewNote && (
         <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
-          Session preview (UTC)
+          {previewNote}
         </div>
       )}
     </div>
@@ -298,19 +300,19 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
         {showTradingSessionPresets && (
           <div style={{ gridColumn: '1 / -1' }}>
             <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '6px' }}>
-              Trading Sessions
+              {intl.formatMessage({ id: 'agents.runtimePolicy.tradingSessionsLabel' })}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
-              Shortcuts for common market windows (Eastern Time). Selecting one or more replaces the manual hour grid; hours adjust automatically for daylight saving time.
+              {intl.formatMessage({ id: 'agents.runtimePolicy.tradingSessionsHelp' })}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
               {([
-                { key: 'asia', label: 'Asia', sub: '8 pm – 12 am ET' } as const,
-                { key: 'london', label: 'London', sub: '1 am – 5 am ET' } as const,
-                { key: 'ny-morning', label: 'New York Morning', sub: '7 am – 10 am ET' } as const,
-                { key: 'ny-mid', label: 'New York Mid', sub: '10 am – 12 pm ET' } as const,
-                { key: 'ny-afternoon', label: 'New York Afternoon', sub: '12 pm – 4 pm ET' } as const,
-              ]).map(({ key, label, sub }) => {
+                { key: 'asia', labelId: 'agents.runtimePolicy.session.asia', subId: 'agents.runtimePolicy.session.asia.subtitle' } as const,
+                { key: 'london', labelId: 'agents.runtimePolicy.session.london', subId: 'agents.runtimePolicy.session.london.subtitle' } as const,
+                { key: 'ny-morning', labelId: 'agents.runtimePolicy.session.nyMorning', subId: 'agents.runtimePolicy.session.nyMorning.subtitle' } as const,
+                { key: 'ny-mid', labelId: 'agents.runtimePolicy.session.nyMid', subId: 'agents.runtimePolicy.session.nyMid.subtitle' } as const,
+                { key: 'ny-afternoon', labelId: 'agents.runtimePolicy.session.nyAfternoon', subId: 'agents.runtimePolicy.session.nyAfternoon.subtitle' } as const,
+              ]).map(({ key, labelId, subId }) => {
                 const sessions = overrides?.tradingSessions ?? [];
                 const checked = sessions.includes(key as TradingSessionName);
                 return (
@@ -351,8 +353,8 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
                       }}
                       style={{ accentColor: 'var(--color-brand)' }}
                     />
-                    <span style={{ fontWeight: checked ? 600 : 400 }}>{label}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sub}</span>
+                    <span style={{ fontWeight: checked ? 600 : 400 }}>{intl.formatMessage({ id: labelId })}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{intl.formatMessage({ id: subId })}</span>
                   </label>
                 );
               })}
@@ -367,7 +369,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
             {(() => {
               const activeSessions = overrides?.tradingSessions;
               if (activeSessions && activeSessions.length > 0) {
-                return ' (Session preview)';
+                return ` ${intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}`;
               }
               return null;
             })()}
@@ -392,6 +394,7 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               const activeSessions = overrides?.tradingSessions;
               return activeSessions != null && activeSessions.length > 0;
             })()}
+            previewNote={intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}
           />
           <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
