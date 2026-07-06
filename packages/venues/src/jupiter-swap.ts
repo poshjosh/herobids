@@ -16,6 +16,8 @@ import type { SolanaSignerPort } from './solana-signer.js';
 export interface JupiterSwapConfig {
   /** Jupiter API base URL. Default: https://api.jup.ag/swap/v1 */
   apiUrl?: string;
+  /** Token list URL for fetchAvailableSymbols(). Default: https://token.jup.ag/strict */
+  tokenListUrl?: string;
   /** RPC URL for on-chain balance lookups */
   rpcUrl?: string;
   /** Wallet public key for balance/transaction queries */
@@ -42,6 +44,7 @@ export interface JupiterSwapConfig {
  */
 export class JupiterSwapAdapter implements SwapVenuePort {
   private readonly apiUrl: string;
+  private readonly tokenListUrl: string;
   private readonly rpcUrl: string;
   private readonly walletAddress: string;
   private readonly timeoutMs: number;
@@ -50,6 +53,7 @@ export class JupiterSwapAdapter implements SwapVenuePort {
 
   constructor(config: JupiterSwapConfig) {
     this.apiUrl = config.apiUrl ?? 'https://api.jup.ag/swap/v1';
+    this.tokenListUrl = config.tokenListUrl ?? 'https://token.jup.ag/strict';
     this.rpcUrl = config.rpcUrl ?? 'https://api.mainnet-beta.solana.com';
     this.walletAddress = config.walletAddress;
     this.timeoutMs = config.timeoutMs ?? 10_000;
@@ -326,6 +330,35 @@ export class JupiterSwapAdapter implements SwapVenuePort {
       return ok(txs);
     } catch (error) {
       return err({ code: 'TX_ERROR', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  async fetchAvailableSymbols(): Promise<Result<string[], SwapVenueError>> {
+    try {
+      const resp = await fetch(this.tokenListUrl, {
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (!resp.ok) {
+        return err({
+          code: 'venue.exchange_error',
+          message: `Jupiter token list fetch failed: ${resp.status}`,
+        });
+      }
+      const raw = await resp.json();
+      if (!Array.isArray(raw) || !raw.every((t: unknown) => typeof t === 'object' && t !== null && 'address' in t && typeof (t as { address: unknown }).address === 'string')) {
+        return err({
+          code: 'venue.exchange_error',
+          message: 'Jupiter token list response shape mismatch: expected array of { address: string }',
+        });
+      }
+      const tokens = raw as Array<{ address: string }>;
+      const symbols = tokens.map((t) => t.address);
+      return ok(symbols);
+    } catch (e) {
+      return err({
+        code: 'venue.network_error',
+        message: `Failed to fetch Jupiter token list: ${e instanceof Error ? e.message : String(e)}`,
+      });
     }
   }
 

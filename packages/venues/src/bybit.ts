@@ -303,6 +303,18 @@ export class BybitAdapter implements OrderbookVenuePort {
     });
   }
 
+  async fetchAvailableSymbols(): Promise<Result<string[], VenueError>> {
+    return this.withRateLimit(async () => {
+      const markets = await this.exchange.loadMarkets();
+      // Filter to linear perpetuals — the adapter primarily trades derivatives.
+      // ccxt caches loadMarkets() results in memory after the first call.
+      const symbols = Object.values(markets)
+        .filter((m: { type?: string; linear?: boolean }) => m.type === 'swap' && m.linear === true)
+        .map((m: { symbol: string }) => m.symbol);
+      return ok(symbols);
+    });
+  }
+
   async subscribePrivate(handlers: PrivateStreamHandlers): Promise<Result<Subscription, VenueError>> {
     const { credentials, wsUrl, streamConfig } = this.adapterConfig;
     const defaultWsUrl = credentials.testnet

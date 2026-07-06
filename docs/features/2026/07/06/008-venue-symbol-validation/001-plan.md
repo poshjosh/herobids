@@ -64,7 +64,7 @@ Different venues use different symbol formats. We need to normalize both the cac
 
 ## Implementation Plan
 
-### Step 1: Extend venue ports (`packages/domain`) — **PENDING**
+### Step 1: Extend venue ports (`packages/domain`) — **DONE**
 
 Add to `OrderbookVenuePort`:
 ```typescript

@@ -643,6 +643,59 @@ export class OneInchSwapAdapter implements SwapVenuePort {
     }
   }
 
+  async fetchAvailableSymbols(): Promise<Result<string[], SwapVenueError>> {
+    // 1inch operates on token addresses (0x...), not ticker symbols.
+    // Return curated token addresses per chain for symbol validation.
+    // NATIVE_TOKEN_ADDRESS (0xeeee...eeee) represents the native gas token on all EVM chains.
+    const chains: Record<string, string[]> = {
+      '1': [
+        NATIVE_TOKEN_ADDRESS,
+        '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+        '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+        '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
+        '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC
+        '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+      ],
+      '137': [
+        NATIVE_TOKEN_ADDRESS,
+        '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', // USDC
+        '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', // USDT
+        '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH
+        '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', // WBTC
+      ],
+      '42161': [
+        NATIVE_TOKEN_ADDRESS,
+        '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // USDC
+        '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', // USDT
+        '0x912CE59144191C1204E64559FE8253a0e49E6548', // ARB
+        '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', // WETH
+      ],
+      '10': [
+        NATIVE_TOKEN_ADDRESS,
+        '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', // USDC
+        '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', // USDT
+        '0x4200000000000000000000000000000000000042', // OP
+        '0x4200000000000000000000000000000000000006', // WETH
+      ],
+      '8453': [
+        NATIVE_TOKEN_ADDRESS,
+        '0x833589fCD6eDb6C08f4c7C32D4f71b54bdA02913', // USDC
+        '0x4200000000000000000000000000000000000006', // WETH
+      ],
+    };
+    // Parse chain ID from API URL (e.g., https://api.1inch.dev/swap/v6.0/8453)
+    const urlParts = this.apiUrl.split('/');
+    const chainId = urlParts[urlParts.length - 1] ?? '1';
+    const symbols = chains[chainId];
+    if (!symbols) {
+      return err({
+        code: 'venue.misconfigured',
+        message: `Unknown chain ID ${chainId} for 1inch. Cannot provide available symbols.`,
+      });
+    }
+    return ok(symbols);
+  }
+
   /**
    * Probe 1inch to return a static VenueProfile.
    * Authenticated is determined by whether a linked credential is present;
