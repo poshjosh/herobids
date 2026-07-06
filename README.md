@@ -99,6 +99,14 @@ LLM_API_KEY_OPENROUTER=sk-or-...  # key for the chosen provider
 
 The worker reads these from `.env` and forwards them to each spawned agent container. If `LLM_PROVIDER` or its key are missing, the worker (in docker mode) and the agent container both exit immediately with a fatal log rather than failing silently on the first reasoning tick.
 
+---
+
+## 📚 Documentation
+
+- [Glossary](docs/tech/glossary.md) — alphabetic reference of all platform terms
+- [Domain Language](docs/tech/domain-language.md) — narrative walkthrough of core concepts
+- [Configuration Guide](docs/best-practices/configuration.md) — operator vs instance config layers
+
 ### Agent controls and cadence
 
 Agent cost presets, cadence, and capital limits are related but separate controls:

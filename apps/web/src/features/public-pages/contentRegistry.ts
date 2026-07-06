@@ -77,6 +77,12 @@ export const PUBLIC_PAGE_REGISTRY: Record<string, SectionMeta> = {
           'messaging/telegram/slash-commands': { title: 'Telegram Slash Commands' },
         },
       },
+      reference: {
+        title: 'Reference',
+        pages: {
+          'reference/glossary': { title: 'Glossary' },
+        },
+      },
     },
   },
   legal: {

@@ -62,23 +62,24 @@ risk:
 
 # Default risk limits for agents when the user has NOT explicitly configured them.
 # These are the initial values AND the operator ceiling — agents can adjust downward at runtime.
+# See docs/tech/glossary.md for precise definitions of each term.
 agentRiskDefaults:
-  dailyLossLimitDefaultRatio: 0.05       # default daily loss limit as fraction of capital (5%)
+  dailyLossLimitDefaultRatio: 0.05       # ratio of agent capital → default dailyLossLimit (USD). See glossary.
   maxOpenPositions: 10                   # max concurrent non-flat positions
   maxPositionSizePct: 100                # max position notional as % of capital (100 = full capital)
   maxPositionSize: 1000000               # max absolute position size in base units (operator ceiling)
   stopLossMaxUnrealizedLossPct: 10       # max unrealized loss per position as % of equity before forced exit
-  dailyMaxLossPct: 20                    # fallback/ceiling for rolling 24h realized-loss when creator did not set dailyLossLimit.
-                                         # Applied as % of equity. Agent may adjust downward at runtime.
+  dailyMaxLossPct: 20                    # operator ceiling: max rolling 24h realized loss as % of equity.
+                                         # Fallback when user did not configure dailyLossLimit. See glossary.
   stopLossCooldownMs: 300000             # 5 min cooldown after a stop-loss exit before re-entry
   maxOrderNotionalMultiplier: 1          # max single order notional as multiple of capital (1 = full capital)
   botConfigInvalidHaltThreshold: 1       # consecutive strategy.config_invalid errors before auto-stop
   botExecutionErrorHaltThreshold: 5      # consecutive strategy.execution_error errors before auto-stop
-  maxDrawdown: 1000000000                # max absolute equity drawdown from session peak (USD). Default is effectively unlimited.
-                                         # This is the operator ceiling for non-agent trading flows.
-                                         # Agents use maxDrawdownPct below for drawdown enforcement.
-  maxDrawdownPct: 20                     # fallback/ceiling for peak-to-current equity drawdown when creator did not set maxDrawdownPct.
-                                         # Applied as % of peak equity for agent direct trading. Agent may adjust downward at runtime.
+  maxDrawdown: 1000000000                # operator absolute ceiling on equity drawdown (USD).
+                                         # Non-agent flows use this directly. Agents use maxDrawdownPct below.
+  maxDrawdownPct: 20                     # operator ceiling: max peak-to-current drawdown as % of peak equity.
+                                         # Fallback when user did not configure maxDrawdownPct at instance level.
+                                         # Agent may adjust downward at runtime. See glossary.
 
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for

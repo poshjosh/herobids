@@ -4,6 +4,8 @@ This document defines the canonical terms used across herobids — in code, docu
 
 When a term appears in a schema, API, UI, or document, it must match the definition here. If a term needs to change, update this document first.
 
+> 📖 For alphabetic lookup of all terms, see the [Glossary](./glossary.md).
+
 ---
 
 ## Agent
