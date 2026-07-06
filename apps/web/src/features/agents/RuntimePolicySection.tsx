@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
-import { type AgentStyleValue, type RuntimePolicyOverrides, resolveStyleDefaults } from './style-mapping.js';
+import { type AgentStyleValue, type RuntimePolicyOverrides, resolveStyleDefaults, type TradingSessionName } from './style-mapping.js';
 import { MS_PER_MINUTE } from './tick-interval.js';
 
 interface RuntimePolicySectionProps {
@@ -10,9 +10,11 @@ interface RuntimePolicySectionProps {
   onChange: (overrides: RuntimePolicyOverrides | null) => void;
   /** When true, renders the section fully expanded without a click-to-open link. */
   alwaysExpanded?: boolean;
+  /** When true, shows trading-session preset shortcuts above the hour grid. */
+  showTradingSessionPresets?: boolean;
 }
 
-type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause'>;
+type NumericField = Exclude<keyof RuntimePolicyOverrides, 'allowedHoursUtc' | 'weekendPause' | 'tradingSessions'>;
 
 const NUMERIC_FIELDS: NumericField[] = [
   'scoutMaxTurns',
@@ -32,15 +34,41 @@ const NUMERIC_FIELDS: NumericField[] = [
   'maxHoldDurationMs',
 ];
 
+const SESSION_LOCAL_HOURS: Record<TradingSessionName, number[]> = {
+  'asia':         [20, 21, 22, 23],
+  'london':       [1, 2, 3, 4],
+  'ny-morning':   [7, 8, 9],
+  'ny-mid':       [10, 11],
+  'ny-afternoon': [12, 13, 14, 15],
+};
+
+function previewHoursForSessions(sessions: TradingSessionName[]): number[] {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', hour12: false,
+  }).formatToParts(now);
+  const hourPart = parts.find(p => p.type === 'hour');
+  if (!hourPart) return [];
+  const nyHour = parseInt(hourPart.value, 10);
+  const offset = (now.getUTCHours() - nyHour + 24) % 24;
+  const set = new Set<number>();
+  for (const s of sessions) {
+    for (const h of SESSION_LOCAL_HOURS[s]!) set.add((h + offset) % 24);
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
 /** 24-hour checkbox grid for selecting active hours */
 function HourGrid({
   selected,
   onChange,
   defaultHours,
+  isPreview,
 }: {
   selected: number[] | null | undefined;
   onChange: (hours: number[] | null) => void;
   defaultHours: number[];
+  isPreview?: boolean;
 }) {
   const active = selected ?? defaultHours;
   const isCustom = selected != null;
@@ -61,18 +89,24 @@ function HourGrid({
                 height: '28px',
                 borderRadius: '4px',
                 fontSize: '11px',
-                cursor: 'pointer',
+                cursor: isPreview ? 'default' : 'pointer',
                 background: checked ? 'var(--color-brand)' : 'var(--color-surface-2)',
-                color: checked ? '#fff' : 'var(--color-text-secondary)',
+                color: checked
+                  ? '#fff'
+                  : isPreview && !checked
+                    ? 'var(--color-text-disabled)'
+                    : 'var(--color-text-secondary)',
                 border: `1px solid ${checked ? 'var(--color-brand)' : 'var(--color-border)'}`,
                 transition: 'background 0.1s, color 0.1s',
                 userSelect: 'none',
+                pointerEvents: isPreview ? 'none' : undefined,
+                opacity: isPreview ? 0.7 : undefined,
               }}
             >
               <input
                 type="checkbox"
                 checked={checked}
-                onChange={() => {
+                onChange={isPreview ? undefined : () => {
                   const next = checked
                     ? active.filter((v) => v !== h)
                     : [...active, h].sort((a, b) => a - b);
@@ -90,31 +124,38 @@ function HourGrid({
           );
         })}
       </div>
-      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
-        <span>{isCustom ? 'Custom hours' : 'Style default'}</span>
-        {isCustom && (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '0',
-              cursor: 'pointer',
-              color: 'var(--color-accent)',
-              fontSize: '11px',
-              textDecoration: 'underline',
-            }}
-          >
-            Reset to default
-          </button>
-        )}
-      </div>
+      {!isPreview && (
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+          <span>{isCustom ? 'Custom hours' : 'Style default'}</span>
+          {isCustom && (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '0',
+                cursor: 'pointer',
+                color: 'var(--color-accent)',
+                fontSize: '11px',
+                textDecoration: 'underline',
+              }}
+            >
+              Reset to default
+            </button>
+          )}
+        </div>
+      )}
+      {isPreview && (
+        <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+          Session preview (UTC)
+        </div>
+      )}
     </div>
   );
 }
 
-export function RuntimePolicySection({ style, overrides, onChange, alwaysExpanded }: RuntimePolicySectionProps) {
+export function RuntimePolicySection({ style, overrides, onChange, alwaysExpanded, showTradingSessionPresets }: RuntimePolicySectionProps) {
   const intl = useIntl();
   const [open, setOpen] = useState(alwaysExpanded ?? false);
 
@@ -253,13 +294,92 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           </label>
         </div>
 
+        {/* Trading Session Presets */}
+        {showTradingSessionPresets && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '6px' }}>
+              Trading Sessions
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '8px' }}>
+              Shortcuts for common market windows (Eastern Time). Selecting one or more replaces the manual hour grid; hours adjust automatically for daylight saving time.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+              {([
+                { key: 'asia', label: 'Asia', sub: '8 pm – 12 am ET' } as const,
+                { key: 'london', label: 'London', sub: '1 am – 5 am ET' } as const,
+                { key: 'ny-morning', label: 'New York Morning', sub: '7 am – 10 am ET' } as const,
+                { key: 'ny-mid', label: 'New York Mid', sub: '10 am – 12 pm ET' } as const,
+                { key: 'ny-afternoon', label: 'New York Afternoon', sub: '12 pm – 4 pm ET' } as const,
+              ]).map(({ key, label, sub }) => {
+                const sessions = overrides?.tradingSessions ?? [];
+                const checked = sessions.includes(key as TradingSessionName);
+                return (
+                  <label
+                    key={key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 10px',
+                      border: `1px solid ${checked ? 'var(--color-brand)' : 'var(--color-border)'}`,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      background: checked ? 'var(--color-brand-soft, rgba(59,130,246,0.08))' : 'var(--color-surface-2)',
+                      fontSize: '13px',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const next = checked
+                          ? sessions.filter(s => s !== key)
+                          : [...sessions, key as TradingSessionName];
+                        if (next.length === 0) {
+                          clearOverride('tradingSessions');
+                        } else {
+                          const patch: Partial<RuntimePolicyOverrides> = { tradingSessions: next };
+                          if (overrides?.allowedHoursUtc != null) {
+                            patch.allowedHoursUtc = null;
+                          }
+                          const current = overrides ?? {};
+                          const merged: RuntimePolicyOverrides = { ...current, ...patch };
+                          if (patch.allowedHoursUtc === null) delete merged.allowedHoursUtc;
+                          onChange(Object.keys(merged).length > 0 ? merged : null);
+                        }
+                      }}
+                      style={{ accentColor: 'var(--color-brand)' }}
+                    />
+                    <span style={{ fontWeight: checked ? 600 : 400 }}>{label}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sub}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* allowedHoursUtc */}
         <div style={{ gridColumn: '1 / -1' }}>
           <FieldLabel htmlFor="rp-allowedHoursUtc">
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtc' })}
+            {(() => {
+              const activeSessions = overrides?.tradingSessions;
+              if (activeSessions && activeSessions.length > 0) {
+                return ' (Session preview)';
+              }
+              return null;
+            })()}
           </FieldLabel>
           <HourGrid
-            selected={overrides?.allowedHoursUtc ?? null}
+            selected={(() => {
+              const activeSessions = overrides?.tradingSessions;
+              if (activeSessions && activeSessions.length > 0) {
+                return previewHoursForSessions(activeSessions);
+              }
+              return overrides?.allowedHoursUtc ?? null;
+            })()}
             onChange={(hours) => {
               if (hours === null) {
                 clearOverride('allowedHoursUtc');
@@ -268,6 +388,10 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
               }
             }}
             defaultHours={defaults.allowedHoursUtc}
+            isPreview={(() => {
+              const activeSessions = overrides?.tradingSessions;
+              return activeSessions != null && activeSessions.length > 0;
+            })()}
           />
           <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
