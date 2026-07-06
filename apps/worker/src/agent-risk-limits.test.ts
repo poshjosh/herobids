@@ -14,6 +14,7 @@ const DEFAULTS: AgentRiskDefaultsConfig = {
   maxDrawdownPct: 20,
   botConfigInvalidHaltThreshold: 1,
   botExecutionErrorHaltThreshold: 5,
+  botLlmProviderErrorHaltThreshold: 1,
   dailyLossLimitDefaultRatio: 0.05,
 };
 

@@ -150,6 +150,8 @@ export interface TradingActorDeps {
   botConfigInvalidHaltThreshold?: number;
   /** Consecutive strategy.execution_error errors before auto-stop (from operator config) */
   botExecutionErrorHaltThreshold?: number;
+  /** Consecutive strategy.llm_provider_error errors before auto-stop (from operator config) */
+  botLlmProviderErrorHaltThreshold?: number;
   /** Callback invoked when bot is halted due to exceeding strategy error thresholds */
   onHalted?: (botId: string) => Promise<void>;
 }
@@ -1733,7 +1735,9 @@ export class TradingActor implements InstanceActor, ExecutionActor {
           ? (this.deps.botConfigInvalidHaltThreshold ?? 1)
           : errorCode === 'strategy.execution_error'
             ? (this.deps.botExecutionErrorHaltThreshold ?? 5)
-            : undefined;
+            : errorCode === 'strategy.llm_provider_error'
+              ? (this.deps.botLlmProviderErrorHaltThreshold ?? 1)
+              : undefined;
 
         if (threshold !== undefined && this.consecutiveStrategyErrors >= threshold) {
           // Halt: emit strategy.fatal, stop the bot, and notify via callback

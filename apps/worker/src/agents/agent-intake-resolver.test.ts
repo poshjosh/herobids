@@ -110,6 +110,7 @@ describe('AgentIntakeResolver', () => {
           maxDrawdown: 1_000_000_000,
           botConfigInvalidHaltThreshold: 1,
           botExecutionErrorHaltThreshold: 5,
+          botLlmProviderErrorHaltThreshold: 1,
         },
         ...overrides,
       },

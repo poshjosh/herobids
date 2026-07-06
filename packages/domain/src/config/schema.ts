@@ -408,6 +408,7 @@ export const AgentRiskDefaultsSchema = z.object({
   maxOrderNotionalMultiplier: z.number().min(0).default(1),
   botConfigInvalidHaltThreshold: z.number().int().min(1).default(1),
   botExecutionErrorHaltThreshold: z.number().int().min(1).default(5),
+  botLlmProviderErrorHaltThreshold: z.number().int().min(1).default(1),
   maxDrawdown: z.number().min(0).default(1_000_000_000),
   /** Operator default and ceiling for peak-to-current equity drawdown (percent).
    *  Used when the creator did not set maxDrawdownPct. Agent may adjust downward at runtime. */

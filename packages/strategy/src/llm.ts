@@ -77,7 +77,15 @@ export class LlmStrategy implements Strategy {
     snapshot: MarketSnapshot,
     rawConfig: Record<string, unknown>,
   ): Promise<Result<Decision | null, StrategyError>> {
-    const config = this.parseConfig(rawConfig);
+    let config: LlmStrategyConfig;
+    try {
+      config = this.parseConfig(rawConfig);
+    } catch (parseErr) {
+      return err({
+        code: 'strategy.config_invalid',
+        message: parseErr instanceof Error ? parseErr.message : 'Invalid LLM strategy config',
+      });
+    }
     const contextHash = this.computeContextHash(snapshot, config);
     const decisionId = this.idGen();
     const prompt = this.buildPrompt(snapshot, config);
@@ -186,9 +194,17 @@ export class LlmStrategy implements Strategy {
   }
 
   private parseConfig(raw: Record<string, unknown>): LlmStrategyConfig {
+    const provider = raw['provider'];
+    const model = raw['model'];
+    if (typeof provider !== 'string' || !provider) {
+      throw new Error('LLM strategy is missing required "provider" in strategy.params');
+    }
+    if (typeof model !== 'string' || !model) {
+      throw new Error('LLM strategy is missing required "model" in strategy.params');
+    }
     return {
-      provider: (raw['provider'] as string) ?? 'openai',
-      model: (raw['model'] as string) ?? 'gpt-4',
+      provider,
+      model,
       promptVersion: raw['promptVersion'] as string | undefined,
       maxTokens: (raw['maxTokens'] as number) ?? 1024,
       timeoutMs: (raw['timeoutMs'] as number) ?? 30_000,

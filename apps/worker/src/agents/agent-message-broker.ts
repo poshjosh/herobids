@@ -21,6 +21,7 @@ import {
   deriveStrategyPreset,
   extractStrategyFromConfig,
   checkModeEscalation,
+  resolveEffectiveLlmSelection,
 } from '@herobids/domain';
 import type { AgentRepository, BotRepository } from '@herobids/db';
 import { forceReply, type TelegramClient } from '../alerting/telegram-client.js';
@@ -641,6 +642,39 @@ export class AgentMessageBroker {
       rawConfig['venue'] = connRow.venue;
       rawConfig['venueType'] = venueType;
 
+      // Stamp agent-resolved LLM provider/model into strategy.params for llm/hybrid bots.
+      // Agent-created bots must inherit the creator's LLM selection so they don't silently
+      // fall back to hardcoded defaults that may have no credentials configured.
+      const strategyType = (payload.config?.strategy as Record<string, unknown> | undefined)?.type as string | undefined;
+      const decisionMode = (payload.config?.strategy as Record<string, unknown> | undefined)?.decisionMode as string | undefined;
+      if (strategyType !== 'dca' && (decisionMode === 'llm' || decisionMode === 'hybrid')) {
+        const userAiModelConfig = await this.agentRepo.getUserAiModelConfig(agent.userId);
+        const resolved = resolveEffectiveLlmSelection({
+          agentConfig: {
+            provider: agent.unifiedConfig?.intelligence?.provider,
+            lightModel: agent.unifiedConfig?.intelligence?.lightModel,
+            heavyModel: agent.unifiedConfig?.intelligence?.heavyModel,
+            userModelDefaults: userAiModelConfig ? {
+              provider: userAiModelConfig.provider,
+              lightModel: userAiModelConfig.lightModel,
+              heavyModel: userAiModelConfig.heavyModel,
+            } : null,
+          },
+        });
+        // Use heavy model for bot decisions; fall back to light model.
+        const botProvider = resolved.provider;
+        const botModel = resolved.heavyModel ?? resolved.lightModel;
+        if (botProvider && botModel) {
+          const strategyParams = (rawConfig['strategy'] as Record<string, unknown>) ?? {};
+          strategyParams['params'] = {
+            ...(strategyParams['params'] as Record<string, unknown> ?? {}),
+            provider: botProvider,
+            model: botModel,
+          };
+          rawConfig['strategy'] = strategyParams;
+        }
+      }
+
       // Validate the full config against BotConfigSchema before persisting
       const validation = BotConfigSchema.safeParse(rawConfig);
       if (!validation.success) {
@@ -822,10 +856,41 @@ export class AgentMessageBroker {
         throw new Error(`Bot ${payload.botId} not found or not owned by this agent's user`);
       }
 
+      const baseConfig = bot.config as Record<string, unknown>;
       const mergedConfig = applyAgentCapitalLimit(
-        mergeBotConfig(bot.config as Record<string, unknown>, payload.config),
+        mergeBotConfig(baseConfig, payload.config),
         agent.capital ?? null,
       );
+
+      // Preserve previously stamped LLM provider/model for agent-created llm/hybrid bots.
+      // The agent tool contract does not expose provider/model, so the merge should not
+      // accidentally drop them from strategy.params.
+      if (bot.creatorType === 'agent') {
+        const baseStrategy = extractStrategyFromConfig(baseConfig);
+        const mergedStrategy = extractStrategyFromConfig(mergedConfig);
+        if (
+          baseStrategy && mergedStrategy &&
+          baseStrategy.type !== 'dca' &&
+          (baseStrategy.decisionMode === 'llm' || baseStrategy.decisionMode === 'hybrid')
+        ) {
+          const baseParams = (baseStrategy.params ?? {}) as Record<string, unknown>;
+          const mergedParams = (mergedStrategy.params ?? {}) as Record<string, unknown>;
+          const preservedProvider = baseParams['provider'] as string | undefined;
+          const preservedModel = baseParams['model'] as string | undefined;
+          if (preservedProvider && !mergedParams['provider']) {
+            (mergedConfig['strategy'] as Record<string, unknown>)['params'] = {
+              ...mergedParams,
+              provider: preservedProvider,
+            };
+          }
+          if (preservedModel && !mergedParams['model']) {
+            (mergedConfig['strategy'] as Record<string, unknown>)['params'] = {
+              ...((mergedConfig['strategy'] as Record<string, unknown>)?.['params'] as Record<string, unknown> ?? {}),
+              model: preservedModel,
+            };
+          }
+        }
+      }
 
       // Validate the merged config against BotConfigSchema before persisting
       const validation = BotConfigSchema.safeParse(mergedConfig);

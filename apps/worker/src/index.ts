@@ -1208,6 +1208,7 @@ const runtime = new WorkerRuntime(
       crashPolicy: appConfig.liveRollout.crashPolicy,
       botConfigInvalidHaltThreshold: appConfig.agentRiskDefaults.botConfigInvalidHaltThreshold,
       botExecutionErrorHaltThreshold: appConfig.agentRiskDefaults.botExecutionErrorHaltThreshold,
+      botLlmProviderErrorHaltThreshold: appConfig.agentRiskDefaults.botLlmProviderErrorHaltThreshold,
       liveOrderTimeoutPolicy: {
         limitOrderTimeoutMs: appConfig.liveRollout.limitOrderTimeoutMs,
         marketOrderTimeoutMs: appConfig.liveRollout.marketOrderTimeoutMs,
