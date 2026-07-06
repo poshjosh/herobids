@@ -72,6 +72,10 @@ export interface RuntimeActiveWatch {
   watchId: string;
   symbol: string;
   chain: string;
+  address?: string;
+  resolvedSymbol?: string;
+  resolvedChain?: string;
+  resolvedAddress?: string;
   condition: 'above' | 'below';
   thresholdPrice: number;
   note?: string;

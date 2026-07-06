@@ -22,9 +22,24 @@ function okPrice(priceUsd: number, source: 'oracle' | 'execution' | 'cached' = '
   };
 }
 
+function okResolve(symbol: string, chain: string, priceUsd: number, overrides?: Partial<{ address: string; source: 'oracle' | 'execution' | 'cached' }>) {
+  return {
+    ok: true as const,
+    data: {
+      symbol,
+      chain,
+      address: overrides?.address,
+      priceUsd,
+      source: overrides?.source ?? 'oracle',
+      fetchedAt: new Date().toISOString(),
+      stale: false,
+    },
+  };
+}
+
 function makeCtx(overrides: {
   redis?: Partial<ToolContext['redis']>;
-  priceService?: ToolContext['priceService'];
+  priceService?: ToolContext['priceService'] | null;
 } = {}): ToolContext {
   const hstore = new Map<string, Record<string, string>>();
   const sets = new Map<string, Set<string>>();
@@ -74,7 +89,7 @@ function makeCtx(overrides: {
     executionMode: 'paper',
     redis,
     publishToInbound: vi.fn().mockResolvedValue(undefined),
-    priceService: overrides.priceService,
+    priceService: overrides.priceService === null ? undefined : overrides.priceService,
   } as unknown as ToolContext;
 }
 
@@ -151,7 +166,7 @@ describe('watch_token', () => {
     expect(ctx.redis.hset).not.toHaveBeenCalled();
   });
 
-  it('rejects chain "any" and tells the caller to discover the chain first', async () => {
+  it('rejects chain "any" when no price service is available', async () => {
     const ctx = makeCtx();
     const result = await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'any', thresholdPrice: 1, condition: 'above' },
@@ -159,15 +174,15 @@ describe('watch_token', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('watch_token requires an explicit chain');
-    expect(result.error).toContain('Call get_price first');
+    expect(result.error).toContain('Cannot resolve "any" chain without a price service');
     expect(ctx.redis.hset).not.toHaveBeenCalled();
   });
 
   it('passes address-shaped symbol as address argument for identity-aware initial price', async () => {
     const evmAddress = '0x6982508145454Ce325dDbE47a25d4ec3d2311933';
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve(evmAddress, 'ethereum', 0.00001, { address: evmAddress }));
     const getPrice = vi.fn().mockResolvedValue(okPrice(0.00001));
-    const ctx = makeCtx({ priceService: { getPrice } });
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute(
       { symbol: evmAddress, chain: 'ethereum', thresholdPrice: 0.001, condition: 'above' },
@@ -254,9 +269,9 @@ describe('check_watches', () => {
   });
 
   it('returns empty triggered list when no watches exist', async () => {
-    const ctx = makeCtx({
-      priceService: { getPrice: vi.fn().mockResolvedValue({ ok: false, error: { code: 'price.not_found', message: 'not found' } }) },
-    });
+    const getPrice = vi.fn().mockResolvedValue({ ok: false, error: { code: 'price.not_found', message: 'not found' } });
+    const resolvePriceTarget = vi.fn().mockResolvedValue({ ok: false, error: { code: 'price.not_found', message: 'not found' } });
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
 
@@ -268,11 +283,8 @@ describe('check_watches', () => {
     const getPrice = vi.fn()
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(250));
-    const ctx = makeCtx({
-      priceService: {
-        getPrice,
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -285,13 +297,11 @@ describe('check_watches', () => {
   });
 
   it('does not trigger immediately when a watch starts already above the threshold', async () => {
-    const ctx = makeCtx({
-      priceService: {
-        getPrice: vi.fn()
-          .mockResolvedValueOnce(okPrice(250))
-          .mockResolvedValueOnce(okPrice(250)),
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 250));
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(250))
+      .mockResolvedValueOnce(okPrice(250));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -304,11 +314,8 @@ describe('check_watches', () => {
     const getPrice = vi.fn()
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(150));
-    const ctx = makeCtx({
-      priceService: {
-        getPrice,
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -321,11 +328,8 @@ describe('check_watches', () => {
     const getPrice = vi.fn()
       .mockResolvedValueOnce(okPrice(70_000, 'execution'))
       .mockResolvedValueOnce(okPrice(50_000, 'execution'));
-    const ctx = makeCtx({
-      priceService: {
-        getPrice,
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('BTC', 'hyperliquid', 70_000));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'BTC', chain: 'hyperliquid', thresholdPrice: 60_000, condition: 'below' }, ctx);
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -339,11 +343,8 @@ describe('check_watches', () => {
     const getPrice = vi.fn()
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(250));
-    const ctx = makeCtx({
-      priceService: {
-        getPrice,
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
     await checkWatchesTool.execute({ removeTriggered: true }, ctx);
@@ -357,11 +358,8 @@ describe('check_watches', () => {
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(250))
       .mockResolvedValueOnce(okPrice(250));
-    const ctx = makeCtx({
-      priceService: {
-        getPrice,
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
     const firstResult = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -379,7 +377,8 @@ describe('check_watches', () => {
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(350));
-    const ctx = makeCtx({ priceService: { getPrice: getPriceMock } });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice: getPriceMock, resolvePriceTarget } });
 
     // Two watches on the same symbol+chain
     await watchTokenTool.execute({ symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
@@ -402,7 +401,8 @@ describe('check_watches', () => {
       lookupCount += 1;
       return lookupCount === 1 ? okPrice(150) : okPrice(250);
     });
-    const ctx = makeCtx({ priceService: { getPrice: getPriceMock } });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve(mint, 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice: getPriceMock, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: mint, chain: 'solana', thresholdPrice: 200, condition: 'above' }, ctx);
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -414,11 +414,9 @@ describe('check_watches', () => {
   });
 
   it('places watches with unavailable prices in unchecked list', async () => {
-    const ctx = makeCtx({
-      priceService: {
-        getPrice: vi.fn().mockResolvedValue({ ok: false, error: { code: 'price.not_found', message: 'not found' } }),
-      },
-    });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('UNKNOWN', 'solana', 0));
+    const getPrice = vi.fn().mockResolvedValue({ ok: false, error: { code: 'price.not_found', message: 'not found' } });
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute({ symbol: 'UNKNOWN', chain: 'solana', thresholdPrice: 1, condition: 'above' }, ctx);
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
@@ -441,7 +439,8 @@ describe('check_watches — notified set', () => {
       .mockResolvedValueOnce(okPrice(150))  // watch_token initial: below, not triggered
       .mockResolvedValueOnce(okPrice(250))  // check_watches: crosses above → triggered
       .mockResolvedValueOnce(okPrice(150)); // check_watches: falls back → reset
-    const ctx = makeCtx({ priceService: { getPrice } });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
@@ -472,7 +471,8 @@ describe('check_watches — notified set', () => {
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(250))
       .mockResolvedValueOnce(okPrice(260)); // still above
-    const ctx = makeCtx({ priceService: { getPrice } });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
@@ -496,7 +496,8 @@ describe('check_watches — notified set', () => {
       .mockResolvedValueOnce(okPrice(150))
       .mockResolvedValueOnce(okPrice(140)) // still below
       .mockResolvedValueOnce(okPrice(130)); // still below
-    const ctx = makeCtx({ priceService: { getPrice } });
+    const resolvePriceTarget = vi.fn().mockResolvedValue(okResolve('SOL', 'solana', 150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
     await watchTokenTool.execute(
       { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },

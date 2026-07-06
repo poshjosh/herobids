@@ -25,8 +25,12 @@ const EXPLICIT_SUPPORTED_CHAIN_SET = new Set<string>(EXPLICIT_SUPPORTED_CHAINS);
 
 interface WatchEntry {
   watchId: string;
-  symbol: string;
-  chain: string;
+  symbol: string;           // what the caller asked for
+  chain: string;            // what the caller asked for (may be "any")
+  address?: string;         // pinned token address when resolved
+  resolvedSymbol?: string;  // what the resolver pinned
+  resolvedChain?: string;   // what the resolver pinned
+  resolvedAddress?: string; // what the resolver pinned
   thresholdPrice: number;
   condition: 'above' | 'below';
   note?: string;
@@ -56,6 +60,10 @@ function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
     watchId: watch.watchId,
     symbol: watch.symbol,
     chain: watch.chain,
+    ...(watch.address ? { address: watch.address } : {}),
+    ...(watch.resolvedSymbol ? { resolvedSymbol: watch.resolvedSymbol } : {}),
+    ...(watch.resolvedChain ? { resolvedChain: watch.resolvedChain } : {}),
+    ...(watch.resolvedAddress ? { resolvedAddress: watch.resolvedAddress } : {}),
     condition: watch.condition,
     thresholdPrice: watch.thresholdPrice,
     note: watch.note,
@@ -90,18 +98,36 @@ function isThresholdMet(watch: Pick<WatchEntry, 'condition' | 'thresholdPrice'>,
     : priceUsd <= watch.thresholdPrice;
 }
 
-function watchLookupKey(watch: Pick<WatchEntry, 'chain' | 'symbol'>): string {
-  return JSON.stringify([watch.chain, watch.symbol]);
+/**
+ * Determine the effective lookup target for a watch entry.
+ *
+ * D4 lookup rules:
+ * 1. If resolvedAddress exists, use resolvedSymbol, resolvedChain, resolvedAddress
+ * 2. Else if resolvedChain exists, use resolvedSymbol, resolvedChain
+ * 3. Else fall back to the caller-requested symbol and chain
+ */
+function getPinnedLookupTarget(watch: WatchEntry): { symbol: string; chain: string; address?: string } {
+  if (watch.resolvedAddress && watch.resolvedSymbol && watch.resolvedChain) {
+    return { symbol: watch.resolvedSymbol, chain: watch.resolvedChain, address: watch.resolvedAddress };
+  }
+  if (watch.resolvedChain && watch.resolvedSymbol) {
+    return { symbol: watch.resolvedSymbol, chain: watch.resolvedChain, address: watch.address };
+  }
+  return { symbol: watch.symbol, chain: watch.chain, address: watch.address };
 }
 
-function parseWatchLookupKey(key: string): { chain: string; symbol: string } | null {
+function watchLookupKey(target: { chain: string; symbol: string; address?: string }): string {
+  return JSON.stringify([target.chain, target.symbol, target.address ?? null]);
+}
+
+function parseWatchLookupKey(key: string): { chain: string; symbol: string; address: string | null } | null {
   try {
-    const parsed = JSON.parse(key) as [unknown, unknown];
-    const [chain, symbol] = parsed;
+    const parsed = JSON.parse(key) as [unknown, unknown, unknown];
+    const [chain, symbol, address] = parsed;
     if (typeof chain !== 'string' || typeof symbol !== 'string') {
       return null;
     }
-    return { chain, symbol };
+    return { chain, symbol, address: typeof address === 'string' ? address : null };
   } catch {
     return null;
   }
@@ -113,9 +139,9 @@ function parseWatchLookupKey(key: string): { chain: string; symbol: string } | n
 
 const WatchTokenParamsSchema = z.object({
   symbol: z.string().min(1).describe('Token symbol or ticker (e.g. BTC, SOL, WIF)'),
-  chain: z.enum(EXPLICIT_SUPPORTED_CHAINS).describe(
-    'Explicit chain context required for watches, e.g. "hyperliquid", "solana", "ethereum". ' +
-    'Watches do not support "any" because they must point at one stable asset. If the chain is unknown, call get_price first to discover it, then create the watch with that explicit chain.',
+  chain: z.enum(EXPLICIT_SUPPORTED_CHAINS).or(z.literal('any')).describe(
+    'Chain context for the watch. Use "hyperliquid", "solana", "ethereum", etc. for explicit lookups. ' +
+    'Use "any" to auto-resolve — the watch will pin to the discovered token and repricing will use the pinned identity.',
   ),
   thresholdPrice: z.number().positive().describe('Price level in USD that triggers the watch'),
   condition: z.enum(['above', 'below']).describe(
@@ -138,26 +164,73 @@ const watchTokenTool: AgentTool = {
     const trimmedSymbol = symbol.trim();
     const normalizedChain = chain.trim().toLowerCase();
 
-    if (normalizedChain === 'any') {
+    if (!EXPLICIT_SUPPORTED_CHAIN_SET.has(normalizedChain) && normalizedChain !== 'any') {
       return {
         success: false,
-        error:
-          'watch_token requires an explicit chain. "any" is only supported by get_price for one-shot discovery. Call get_price first, then create the watch with the resolved chain.',
+        error: `unsupported chain: ${chain}. Valid watch chains are: ${EXPLICIT_SUPPORTED_CHAINS.join(', ')}, any.`,
         retryable: false,
         fault: false,
       };
     }
 
-    if (!EXPLICIT_SUPPORTED_CHAIN_SET.has(normalizedChain)) {
+    // --- Identity resolution ---
+    // Resolve the asset identity so the watch is pinned to a concrete token.
+    // For explicit chains, resolution is best-effort — the watch is still created
+    // on failure (graceful degradation). For 'any', resolution is required.
+    let resolvedSymbol: string | undefined;
+    let resolvedChain: string | undefined;
+    let resolvedAddress: string | undefined;
+
+    if (ctx.priceService) {
+      const addressArg = isOnChainAddress(trimmedSymbol, normalizedChain === 'any' ? 'any' : normalizedChain)
+        ? trimmedSymbol
+        : undefined;
+
+      const resolution = await ctx.priceService.resolvePriceTarget(
+        trimmedSymbol,
+        normalizedChain,
+        addressArg,
+      );
+
+      if (resolution.ok && resolution.data) {
+        resolvedSymbol = resolution.data.symbol;
+        resolvedChain = resolution.data.chain;
+        resolvedAddress = resolution.data.address;
+      } else if (normalizedChain === 'any') {
+        // 'any' requires successful resolution — fail closed.
+        return {
+          success: false,
+          error: resolution.error?.message ?? `Could not resolve "${trimmedSymbol}" to a concrete token. Try an explicit chain instead.`,
+          retryable: resolution.error?.code === 'price.source_failed',
+          fault: false,
+        };
+      }
+      // For explicit chains, resolution failure is non-fatal — we create the watch
+      // with the requested identity as-is.
+    } else if (normalizedChain === 'any') {
       return {
         success: false,
-        error: `unsupported chain: ${chain}. Valid watch chains are: ${EXPLICIT_SUPPORTED_CHAINS.join(', ')}. If the chain is unknown, call get_price first and then create the watch with the resolved explicit chain.`,
+        error: 'Cannot resolve "any" chain without a price service. Provide an explicit chain instead.',
         retryable: false,
         fault: false,
       };
     }
 
-    const validationError = validateSymbolForChain(trimmedSymbol, normalizedChain);
+    // Validate resolved chain is in the supported watch chain set (Issue 5).
+    // Prevents creating a watch pinned to an unsupported chain (e.g. 'fantom' from DexScreener).
+    if (resolvedChain && !EXPLICIT_SUPPORTED_CHAIN_SET.has(resolvedChain) && resolvedChain !== 'hyperliquid') {
+      return {
+        success: false,
+        error: `resolved chain "${resolvedChain}" is not a supported watch chain`,
+        retryable: false,
+        fault: false,
+      };
+    }
+
+    // Validate symbol format for the effective (resolved) chain.
+    const effectiveSymbol = resolvedSymbol ?? trimmedSymbol;
+    const effectiveChain = resolvedChain ?? normalizedChain;
+    const validationError = validateSymbolForChain(effectiveSymbol, effectiveChain);
     if (validationError) {
       return {
         success: false,
@@ -169,8 +242,12 @@ const watchTokenTool: AgentTool = {
 
     const watch: WatchEntry = {
       watchId: crypto.randomUUID(),
-      symbol: trimmedSymbol,
-      chain: normalizedChain,
+      symbol: trimmedSymbol,              // what the caller asked for
+      chain: normalizedChain,             // what the caller asked for (may be "any")
+      ...(resolvedAddress ? { address: resolvedAddress } : {}),
+      ...(resolvedSymbol && resolvedSymbol !== trimmedSymbol ? { resolvedSymbol } : {}),
+      ...(resolvedChain && resolvedChain !== normalizedChain ? { resolvedChain } : {}),
+      ...(resolvedAddress ? { resolvedAddress } : {}),
       thresholdPrice,
       condition,
       ...(note ? { note } : {}),
@@ -178,9 +255,11 @@ const watchTokenTool: AgentTool = {
       lastConditionMet: null,
     };
 
+    // Get initial price using the pinned lookup target.
     if (ctx.priceService) {
-      const address = isOnChainAddress(watch.symbol, watch.chain) ? watch.symbol : undefined;
-      const initialPrice = await ctx.priceService.getPrice(watch.symbol, watch.chain, address);
+      const lookupTarget = getPinnedLookupTarget(watch);
+      const priceAddress = lookupTarget.address ?? (isOnChainAddress(lookupTarget.symbol, lookupTarget.chain) ? lookupTarget.symbol : undefined);
+      const initialPrice = await ctx.priceService.getPrice(lookupTarget.symbol, lookupTarget.chain, priceAddress);
       if (initialPrice.ok && initialPrice.data) {
         watch.lastConditionMet = isThresholdMet(watch, initialPrice.data.priceUsd);
         watch.lastCheckedAt = initialPrice.data.fetchedAt;
@@ -195,8 +274,11 @@ const watchTokenTool: AgentTool = {
       data: {
         ok: true,
         watchId: watch.watchId,
-        symbol: trimmedSymbol,
-        chain: normalizedChain,
+        symbol: watch.symbol,
+        chain: watch.chain,
+        resolvedSymbol: watch.resolvedSymbol,
+        resolvedChain: watch.resolvedChain,
+        resolvedAddress: watch.resolvedAddress,
         thresholdPrice,
         condition,
       },
@@ -311,11 +393,12 @@ const checkWatchesTool: AgentTool = {
       return { success: true, data: { ok: true, triggered: [], unchecked: [] } };
     }
 
-    // Deduplicate price lookups by symbol+chain
+    // Deduplicate price lookups by pinned identity
     const priceMap = new Map<string, { priceUsd: number; source: string; stale: boolean; fetchedAt: string } | null>();
 
     for (const watch of watches) {
-      const key = watchLookupKey(watch);
+      const target = getPinnedLookupTarget(watch);
+      const key = watchLookupKey(target);
       if (!priceMap.has(key)) {
         priceMap.set(key, null); // mark as pending
       }
@@ -326,9 +409,9 @@ const checkWatchesTool: AgentTool = {
       if (!parsedKey) {
         continue;
       }
-      const { chain, symbol } = parsedKey;
-      const address = isOnChainAddress(symbol, chain) ? symbol : undefined;
-      const result = await ctx.priceService.getPrice(symbol, chain, address);
+      const { chain, symbol, address } = parsedKey;
+      const priceAddress = address ?? (isOnChainAddress(symbol, chain) ? symbol : undefined);
+      const result = await ctx.priceService.getPrice(symbol, chain, priceAddress);
       priceMap.set(key, result.ok && result.data ? result.data : null);
     }
 
@@ -337,7 +420,8 @@ const checkWatchesTool: AgentTool = {
     const unchecked: Array<{ watchId: string; symbol: string; chain: string; reason: string }> = [];
 
     for (const watch of watches) {
-      const priceData = priceMap.get(watchLookupKey(watch));
+      const lookupTarget = getPinnedLookupTarget(watch);
+      const priceData = priceMap.get(watchLookupKey(lookupTarget));
       if (!priceData) {
         unchecked.push({
           watchId: watch.watchId,
