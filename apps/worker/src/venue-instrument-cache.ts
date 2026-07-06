@@ -21,6 +21,7 @@ export class VenueInstrumentCache {
   private cache = new Map<string, Set<string>>(); // venue → Set<normalized symbols>
   private normalizers = new Map<string, (raw: string) => string>();
   private ready = false;
+  private failedProviders = new Set<string>(); // venues whose symbol fetch failed at warmup
   private refreshInterval?: ReturnType<typeof setInterval>;
   private readonly logger: Logger;
 
@@ -30,7 +31,9 @@ export class VenueInstrumentCache {
 
   /**
    * Fetch all symbols from all providers and populate the in-memory cache.
-   * Blocks until all providers have been fetched (fail-closed: one failure fails warmup).
+   * Failed providers are skipped with an error log — symbol validation for that
+   * venue falls back to fail-open (hasSymbol returns true for unknown venues).
+   * This prevents a single unreachable external token list from crashing the worker.
    */
   async warmup(providers: VenueSymbolProvider[]): Promise<void> {
     this.logger.info('VenueInstrumentCache: starting warmup...');
@@ -47,20 +50,31 @@ export class VenueInstrumentCache {
         }
 
         this.cache.set(provider.venue, normalizedSet);
+        // Clear any prior degraded state from a previous failed warmup call.
+        this.failedProviders.delete(provider.venue);
         this.logger.info(
           `VenueInstrumentCache: ${provider.venue} — ${normalizedSet.size} symbols cached`,
         );
       } catch (err) {
+        this.failedProviders.add(provider.venue);
         this.logger.error(
           { err },
-          `VenueInstrumentCache: failed to fetch symbols for ${provider.venue}`,
+          `VenueInstrumentCache: failed to fetch symbols for ${provider.venue} — symbol validation disabled for this venue`,
         );
-        throw err; // fail-closed
+        // Skip this provider; hasSymbol() returns true for degraded venues (fail-open).
       }
     }
 
     this.ready = true;
-    this.logger.info('VenueInstrumentCache: warmup complete, ready for validation');
+    const degraded = [...this.failedProviders];
+    if (degraded.length > 0) {
+      this.logger.warn(
+        { degradedVenues: degraded },
+        `VenueInstrumentCache: warmup complete with degraded venues — symbol validation disabled for: ${degraded.join(', ')}`,
+      );
+    } else {
+      this.logger.info('VenueInstrumentCache: warmup complete, ready for validation');
+    }
   }
 
   /**
@@ -72,13 +86,19 @@ export class VenueInstrumentCache {
    */
   hasSymbol(venue: string, symbol: string): boolean {
     if (!this.ready) return true;
+    if (this.failedProviders.has(venue)) return true; // degraded provider — fail-open
     const symbols = this.cache.get(venue);
-    if (!symbols) return true; // unknown venue — don't block
+    if (!symbols) return true; // venue not configured — don't block
     const normalizer = this.normalizers.get(venue);
     if (normalizer) {
       symbol = normalizer(symbol);
     }
     return symbols.has(symbol);
+  }
+
+  /** Returns venues whose symbol fetch failed during the last warmup. */
+  getFailedProviders(): ReadonlySet<string> {
+    return this.failedProviders;
   }
 
   isReady(): boolean {
@@ -106,9 +126,17 @@ export class VenueInstrumentCache {
             normalizedSet.add(normalize(symbol));
           }
           this.cache.set(provider.venue, normalizedSet);
-          this.logger.info(
-            `VenueInstrumentCache: ${provider.venue} refreshed — ${normalizedSet.size} symbols`,
-          );
+          if (this.failedProviders.has(provider.venue)) {
+            this.failedProviders.delete(provider.venue);
+            this.logger.info(
+              { venue: provider.venue },
+              `VenueInstrumentCache: ${provider.venue} recovered — symbol validation re-enabled`,
+            );
+          } else {
+            this.logger.info(
+              `VenueInstrumentCache: ${provider.venue} refreshed — ${normalizedSet.size} symbols`,
+            );
+          }
         } catch (err) {
           this.logger.error(
             { err },

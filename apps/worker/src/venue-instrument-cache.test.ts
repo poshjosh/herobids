@@ -135,14 +135,53 @@ describe('VenueInstrumentCache', () => {
       expect(cache.hasSymbol('bybit', 'BTC')).toBe(false);           // wrong venue
     });
 
-    it('fails closed — throws on any provider failure', async () => {
+    it('skips a failing provider and keeps warmup going', async () => {
       const failingProvider = makeProvider('bad-venue', []);
       failingProvider.fetchSymbols = vi.fn().mockRejectedValue(new Error('API down'));
-      await expect(
-        cache.warmup([makeProvider('hyperliquid', ['BTC']), failingProvider]),
-      ).rejects.toThrow('API down');
-      // Cache is NOT ready after a failed warmup
-      expect(cache.isReady()).toBe(false);
+      // Should NOT throw — worker must not crash because one token list is unreachable
+      await cache.warmup([makeProvider('hyperliquid', ['BTC', 'ETH'], normalizeHyperliquidSymbol), failingProvider]);
+      expect(cache.isReady()).toBe(true);
+      // Failed venue is explicitly tracked
+      expect(cache.getFailedProviders().has('bad-venue')).toBe(true);
+      expect(cache.getFailedProviders().has('hyperliquid')).toBe(false);
+      // Failed venue is fail-open
+      expect(cache.hasSymbol('bad-venue', 'ANYTHING')).toBe(true);
+      // Healthy venues still validate correctly
+      expect(cache.hasSymbol('hyperliquid', 'BTC')).toBe(true);
+      expect(cache.hasSymbol('hyperliquid', 'DOGE')).toBe(false);
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('tracks all failed providers when every provider fails', async () => {
+      const failing = makeProvider('bad-venue', []);
+      failing.fetchSymbols = vi.fn().mockRejectedValue(new Error('API down'));
+      await cache.warmup([failing]);
+      expect(cache.isReady()).toBe(true);
+      expect(cache.getFailedProviders().has('bad-venue')).toBe(true);
+      expect(cache.hasSymbol('bad-venue', 'ANYTHING')).toBe(true);
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalled(); // degraded warmup summary
+    });
+
+    it('clears degraded status on a successful re-warmup', async () => {
+      const fetchSymbols = vi.fn()
+        .mockRejectedValueOnce(new Error('API down')) // first warmup fails
+        .mockResolvedValueOnce(['BTC', 'ETH']);        // second warmup succeeds
+
+      const provider: VenueSymbolProvider = {
+        venue: 'hyperliquid',
+        fetchSymbols,
+        normalizeSymbol: normalizeHyperliquidSymbol,
+      };
+
+      await cache.warmup([provider]);
+      expect(cache.getFailedProviders().has('hyperliquid')).toBe(true);
+      expect(cache.hasSymbol('hyperliquid', 'BTC')).toBe(true); // fail-open while degraded
+
+      await cache.warmup([provider]);
+      expect(cache.getFailedProviders().has('hyperliquid')).toBe(false);
+      expect(cache.hasSymbol('hyperliquid', 'BTC')).toBe(true);   // known symbol passes
+      expect(cache.hasSymbol('hyperliquid', 'DOGE')).toBe(false); // unknown symbol blocked
     });
 
     it('handles empty symbol lists gracefully', async () => {
@@ -203,6 +242,32 @@ describe('VenueInstrumentCache', () => {
       expect(cache.hasSymbol('hyperliquid', 'BTC')).toBe(true);
       expect(cache.hasSymbol('hyperliquid', 'ETH')).toBe(true);
       expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('clears degraded status and re-enables validation after a successful refresh', async () => {
+      // Warmup fails for jupiter — venue is degraded, hasSymbol is fail-open
+      const fetchSymbols = vi.fn()
+        .mockRejectedValueOnce(new Error('token list unreachable')) // warmup fails
+        .mockResolvedValueOnce(['So11111111111111111111111111111111111111112']);  // refresh succeeds
+
+      const provider: VenueSymbolProvider = {
+        venue: 'jupiter',
+        fetchSymbols,
+        normalizeSymbol: identityNormalize,
+      };
+
+      await cache.warmup([provider]);
+      expect(cache.getFailedProviders().has('jupiter')).toBe(true);
+      expect(cache.hasSymbol('jupiter', 'UnknownMint')).toBe(true); // fail-open while degraded
+
+      cache.startPeriodicRefresh([provider], 60_000);
+      await vi.advanceTimersByTimeAsync(61_000);
+
+      // Venue recovered — degraded flag cleared, validation active
+      expect(cache.getFailedProviders().has('jupiter')).toBe(false);
+      const knownMint = 'So11111111111111111111111111111111111111112';
+      expect(cache.hasSymbol('jupiter', knownMint)).toBe(true);
+      expect(cache.hasSymbol('jupiter', 'UnknownMint')).toBe(false); // now validates
     });
   });
 
