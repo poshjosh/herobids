@@ -431,6 +431,8 @@ export const AgentRiskDefaultsSchema = z.object({
   /** Operator default and ceiling for peak-to-current equity drawdown (percent).
    *  Used when the creator did not set maxDrawdownPct. Agent may adjust downward at runtime. */
   maxDrawdownPct: z.number().min(0).max(100).default(20),
+  /** Interval in ms for the periodic per-trade stop-loss / take-profit monitor loop. */
+  perTradeLevelMonitorIntervalMs: z.number().min(1000).default(5000),
 }).default({});
 
 export const StreamConfigSchema = z.object({

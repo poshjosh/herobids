@@ -34,6 +34,7 @@ import {
   DailyLossTracker,
   VenueCircuitBreaker,
   checkStopLoss,
+  checkPerTradeLevels,
   submitDecisionForExecution,
   rehydrateDailyLoss,
   computeSlippageBps,
@@ -60,6 +61,7 @@ import type {
   DecisionContext,
   LiveTimeoutPolicy,
   InstrumentExecutorDeps,
+  PerTradeLevelCheck,
 } from '@herobids/engine';
 import type {
   FillRepository,
@@ -147,6 +149,8 @@ export interface AgentTradingActorDeps {
   hasIntelligenceConfig?: boolean;
   /** In-memory venue instrument cache for symbol validation at decision intake */
   instrumentCache?: VenueInstrumentCache;
+  /** Interval in ms for the per-trade stop-loss / take-profit monitor loop (operator config) */
+  perTradeLevelMonitorIntervalMs?: number;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -210,6 +214,12 @@ export class AgentTradingActor implements ExecutionActor {
   /** Per-instrument per-trade exit levels (stopLoss / takeProfit). Keyed by instrument identifier. */
   private readonly exitLevels = new Map<string, { stopLoss?: Price; takeProfit?: Price }>();
 
+  /** Periodic timer that checks all per-trade stop-loss / take-profit levels */
+  private perTradeLevelInterval?: ReturnType<typeof setInterval>;
+
+  /** Instruments currently undergoing a stop-loss/take-profit exit (prevents double execution) */
+  private readonly exitingInstruments = new Set<string>();
+
   /** Equity tracker (drawdown + dynamic equity) */
   private equityTracker?: EquityTracker;
 
@@ -258,6 +268,7 @@ export class AgentTradingActor implements ExecutionActor {
         await this.rehydratePositions();
         await this.rehydrateExitLevels();
         await this.initializeRiskTrackers();
+        this.startPerTradeLevelMonitor();
         this.logger.info({ mode: 'paper', venue: deps.venue, venueType: deps.venueType }, 'Agent trading actor started');
         this.startTechnicalScanLoop();
         return;
@@ -403,6 +414,7 @@ export class AgentTradingActor implements ExecutionActor {
       await this.rehydratePositions();
       await this.rehydrateExitLevels();
       await this.initializeRiskTrackers();
+      this.startPerTradeLevelMonitor();
 
       // Ensure market data feeds are running for all open positions so that
       // computeUnrealizedPnl and stop-loss checks work in live mode (not just shadow).
@@ -489,7 +501,6 @@ export class AgentTradingActor implements ExecutionActor {
 
   async stop(): Promise<void> {
     if (!this.running) return;
-    this.running = false;
 
     if (this.reconciler) {
       this.reconciler.stop();
@@ -511,6 +522,11 @@ export class AgentTradingActor implements ExecutionActor {
       this.technicalScanTimer = undefined;
     }
 
+    if (this.perTradeLevelInterval) {
+      clearInterval(this.perTradeLevelInterval);
+      this.perTradeLevelInterval = undefined;
+    }
+
     for (const feed of this.instrumentFeeds.values()) {
       feed.stop();
     }
@@ -520,6 +536,7 @@ export class AgentTradingActor implements ExecutionActor {
       this.executor.dispose();
     }
 
+    this.running = false;
     this.logger.info('Agent trading actor stopped');
   }
 
@@ -901,8 +918,8 @@ export class AgentTradingActor implements ExecutionActor {
   /** Check if stop-loss threshold is breached for the given instrument. If triggered, fires async go_flat. */
   private isStopLossTriggered(instrumentId: string): boolean {
     const pct = this.deps.riskLimits.stopLossMaxUnrealizedLossPct;
-    if (!pct || pct <= 0) return false;
-    if (!this.equityTracker) return false;
+    if (!this.equityTracker && this.exitLevels.size === 0) return false;
+    if (!this.equityTracker && !this.exitLevels.has(instrumentId)) return false;
 
     const position = this.positions.get(instrumentId);
     if (!position || position.side === 'flat') return false;
@@ -911,27 +928,76 @@ export class AgentTradingActor implements ExecutionActor {
     const ticker = feed?.getTicker(instrumentId);
     if (!ticker) return false; // Cannot check without mark
 
-    const totalUnrealized = this.computeUnrealizedPnl();
-    if (totalUnrealized === undefined) return false;
-    const equity = this.equityTracker.currentEquity(totalUnrealized);
-    const slResult = checkStopLoss(
-      { maxUnrealizedLossPct: pct },
-      [{ instrument: instrumentId, position, markPrice: ticker.last, equity }],
-    );
+    // Portfolio-level stop-loss check
+    if (pct && pct > 0 && this.equityTracker) {
+      const totalUnrealized = this.computeUnrealizedPnl();
+      if (totalUnrealized !== undefined) {
+        const equity = this.equityTracker.currentEquity(totalUnrealized);
+        const slResult = checkStopLoss(
+          { maxUnrealizedLossPct: pct },
+          [{ instrument: instrumentId, position, markPrice: ticker.last, equity }],
+        );
 
-    if (slResult.triggered) {
-      this.logger.warn(
-        { instrument: slResult.instrument, loss: slResult.unrealizedLoss?.toString(), threshold: slResult.threshold?.toString() },
-        'Agent stop-loss triggered — forcing go_flat',
-      );
-      void this.executeAgentStopLoss(instrumentId);
-      return true;
+        if (slResult.triggered) {
+          this.logger.warn(
+            { instrument: slResult.instrument, loss: slResult.unrealizedLoss?.toString(), threshold: slResult.threshold?.toString() },
+            'Agent stop-loss triggered — forcing go_flat',
+          );
+          void this.executeAgentStopLoss(instrumentId);
+          return true;
+        }
+      }
     }
+
+    // Per-trade stop-loss / take-profit check
+    const exitLevels = this.exitLevels.get(instrumentId);
+    if (exitLevels && (exitLevels.stopLoss || exitLevels.takeProfit)) {
+      const check: PerTradeLevelCheck = {
+        instrument: instrumentId,
+        side: position.side as 'long' | 'short',
+        markPrice: ticker.last,
+        stopLoss: exitLevels.stopLoss,
+        takeProfit: exitLevels.takeProfit,
+      };
+      const ptResult = checkPerTradeLevels([check]);
+      if (ptResult.triggered && ptResult.reason) {
+        const tag = ptResult.reason === 'stop_loss' ? 'per_trade_stop_loss' : 'per_trade_take_profit';
+        this.logger.warn(
+          { instrument: instrumentId, reason: ptResult.reason, markPrice: ptResult.markPrice?.toString(), level: ptResult.level?.toString() },
+          `Per-trade ${ptResult.reason} triggered — forcing go_flat`,
+        );
+        // Prevent double execution: if the periodic monitor is already exiting, skip
+        if (this.exitingInstruments.has(instrumentId)) return true;
+        this.exitingInstruments.add(instrumentId);
+
+        void this.deps.journal.append({
+          actorType: 'agent',
+          actorId: this.agentId,
+          type: `${tag}.triggered`,
+          payload: {
+            instrument: instrumentId,
+            markPrice: ptResult.markPrice?.toString(),
+            level: ptResult.level?.toString(),
+            timestamp: Date.now(),
+          },
+        }).catch((e: unknown) => this.logger.warn({ err: e }, `Failed to append ${tag}.triggered journal event`));
+        void this.executeAgentStopLoss(instrumentId, {
+          trigger: tag,
+          instrument: instrumentId,
+          markPrice: ptResult.markPrice?.toString(),
+          level: ptResult.level?.toString(),
+        }).finally(() => {
+          this.exitingInstruments.delete(instrumentId);
+        });
+        return true;
+      }
+    }
+
     return false;
   }
 
   /** Execute a stop-loss go_flat decision for the agent */
-  private async executeAgentStopLoss(instrumentId: string): Promise<void> {
+  private async executeAgentStopLoss(instrumentId: string, metadataOverrides?: Record<string, unknown>): Promise<void> {
     if (!this.executor) return;
     const context = await this.getDecisionContext(instrumentId);
     if (!context) return;
@@ -949,7 +1015,7 @@ export class AgentTradingActor implements ExecutionActor {
       timestamp: new Date().toISOString(),
       actorType: 'agent',
       actorId: this.agentId,
-      metadata: { trigger: 'stop_loss' },
+      metadata: { trigger: 'stop_loss', ...metadataOverrides },
     };
     try {
       const result = await submitDecisionForExecution(decision, context, position, deps);
@@ -963,6 +1029,78 @@ export class AgentTradingActor implements ExecutionActor {
     } catch (err) {
       this.logger.error({ err, instrumentId }, 'Failed to execute agent stop-loss');
     }
+  }
+
+  /** Start a periodic timer that checks all per-trade stop-loss / take-profit levels. */
+  private startPerTradeLevelMonitor(): void {
+    if (this.perTradeLevelInterval) return; // already running
+    const intervalMs = this.deps.perTradeLevelMonitorIntervalMs ?? 5_000;
+    this.perTradeLevelInterval = setInterval(() => this.checkAllPerTradeLevels(), intervalMs);
+  }
+
+  /** Check all open positions with stored per-trade exit levels and execute stop-loss/TP if triggered. */
+  private checkAllPerTradeLevels(): void {
+    if (!this.running) return;
+    if (this.exitLevels.size === 0) return;
+
+    const checks: PerTradeLevelCheck[] = [];
+
+    for (const [instrumentId, levels] of this.exitLevels) {
+      if (!levels.stopLoss && !levels.takeProfit) continue;
+
+      const position = this.positions.get(instrumentId);
+      if (!position || position.side === 'flat') continue;
+
+      const feed = this.instrumentFeeds.get(instrumentId);
+      const ticker = feed?.getTicker(instrumentId);
+      if (!ticker) continue;
+
+      checks.push({
+        instrument: instrumentId,
+        side: position.side as 'long' | 'short',
+        markPrice: ticker.last,
+        stopLoss: levels.stopLoss,
+        takeProfit: levels.takeProfit,
+      });
+    }
+
+    if (checks.length === 0) return;
+
+    const result = checkPerTradeLevels(checks);
+    if (!result.triggered || !result.instrument || !result.reason) return;
+
+    const tag = result.reason === 'stop_loss' ? 'per_trade_stop_loss' : 'per_trade_take_profit';
+
+    this.logger.warn(
+      { instrument: result.instrument, reason: result.reason, markPrice: result.markPrice?.toString(), level: result.level?.toString() },
+      `Per-trade ${result.reason} triggered (periodic monitor) — forcing go_flat`,
+    );
+
+    // Prevent double execution: if the intake path is already exiting, skip
+    if (this.exitingInstruments.has(result.instrument)) return;
+    this.exitingInstruments.add(result.instrument);
+
+    // Journal the trigger event
+    void this.deps.journal.append({
+      actorType: 'agent',
+      actorId: this.agentId,
+      type: `${tag}.triggered`,
+      payload: {
+        instrument: result.instrument,
+        markPrice: result.markPrice?.toString(),
+        level: result.level?.toString(),
+        timestamp: Date.now(),
+      },
+    }).catch((e: unknown) => this.logger.warn({ err: e }, `Failed to append ${tag}.triggered journal event`));
+
+    void this.executeAgentStopLoss(result.instrument, {
+      trigger: tag,
+      instrument: result.instrument,
+      markPrice: result.markPrice?.toString(),
+      level: result.level?.toString(),
+    }).finally(() => {
+      this.exitingInstruments.delete(result.instrument!);
+    });
   }
 
   /** Build intake deps specifically for stop-loss execution (bypasses stop-loss check) */

@@ -49,7 +49,9 @@ export type JournalEventType =
   | 'credential.used'
   | 'strategy.error'
   | 'strategy.fatal'
-  | 'guardrail.rejected';
+  | 'guardrail.rejected'
+  | 'per_trade_stop_loss.triggered'
+  | 'per_trade_take_profit.triggered';
 
 export interface JournalEntry {
   id: string;

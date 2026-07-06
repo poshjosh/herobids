@@ -674,6 +674,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
           hasIntelligenceConfig: !!agent?.unifiedConfig?.intelligence,
           instrumentCache,
+          perTradeLevelMonitorIntervalMs: appConfig.agentRiskDefaults.perTradeLevelMonitorIntervalMs,
         });
 
         await actor.start();

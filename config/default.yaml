@@ -81,6 +81,7 @@ agentRiskDefaults:
   maxDrawdownPct: 20                     # operator ceiling: max peak-to-current drawdown as % of peak equity.
                                          # Fallback when user did not configure maxDrawdownPct at instance level.
                                          # Agent may adjust downward at runtime. See glossary.
+  perTradeLevelMonitorIntervalMs: 5000   # interval for periodic per-trade stop-loss / take-profit monitor loop
 
 # Per-tick LLM cost estimates by usage tier (USD). Derived from eval data
 # (.ignore/eval/2026/06/) — includes both input and output token costs for
@@ -200,7 +201,7 @@ marketData:
   tokenSafety:
     enabled: true
     defaults:
-      minLiquidityUsd: 10000
+      minLiquidityUsd: 25000
       minVolume24hUsd: 25000
       minTokenAgeHours: 24
       deadPoolMinAgeHours: 720
@@ -437,6 +438,7 @@ liveRollout:
   enabled: false                   # master switch — must be true for any live instance to start
   allowedVenues:                   # venues permitted to execute live orders
     - hyperliquid
+    - 1inch
   requireDbCredentials: true       # reject env-var credential fallback for live mode
   maxInitialOrderNotionalUsd: "50" # hard cap on single-order notional (USD) during rollout
   maxConsecutiveVenueErrors: 3     # circuit-breaker: halt after N consecutive venue errors (wired in Step 2)
