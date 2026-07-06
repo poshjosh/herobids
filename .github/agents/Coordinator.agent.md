@@ -1,11 +1,11 @@
 ---
 name: Coordinator
-description: Coordinate the implemenation of a plan.
+description: Coordinate the implemenation of a plan or task-list.
 argument-hint: A plan or task-list to implement
 handoffs:
   - label: Implement Plan
     agent: Implementer
-    prompt: "Implement the plan. The plan or task-list to implement is provided as the argument. Sequentially implement each item in the plan/task-list."
+    prompt: "Implement the plan or task-list. The plan or task-list to implement is provided as the argument. Sequentially implement each item in the plan/task-list."
     send: true
     model: DeepSeek V4 Pro
   - label: Review Code
@@ -20,7 +20,9 @@ STEPS
 
 Follow these steps to implement all the items in the plan or task-list provided as argument:
 
-1. Mark each item in the plan or task-list as PENDING.
+1. Mark each item in the plan or task-list, which has no existing status (e.g. PENDING, DONE e.t.c), as PENDING.
+   - If there is a plan or task-list document, update the document to mark each item as PENDING.
+   - If there is no plan or task-list document, create a plan or task-list in session memory, update it with the content of the plan or task-list provided as argument, then mark each item as PENDING.
 
 2. Go through the items in the plan or task-list and select the first item marked PENDING.
 
