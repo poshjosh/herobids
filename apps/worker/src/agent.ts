@@ -221,7 +221,6 @@ interface AgentConfig {
   dailySpendBudgetUsd?: number;
   dexWatchlistSymbols?: string[];
   dailyLossLimit?: string;
-  maxDrawdown?: string;
   maxDrawdownPct?: number | string;
   maxBots?: number;
   maxSlippageBps?: number;
@@ -1358,7 +1357,6 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       const creatorInput = extractCreatorInput({
         capital: agentConfig.capital ?? null,
         dailyLossLimit: agentConfig.dailyLossLimit ?? null,
-        maxDrawdown: agentConfig.maxDrawdown ?? null,
         maxDrawdownPct: agentConfig.maxDrawdownPct ?? null,
         maxOpenPositions: agentConfig.maxOpenPositions ?? null,
         maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
@@ -1375,7 +1373,6 @@ function buildRiskContractOps(): ToolContext['riskContractOps'] {
       const creatorInput = extractCreatorInput({
         capital: agentConfig.capital ?? null,
         dailyLossLimit: agentConfig.dailyLossLimit ?? null,
-        maxDrawdown: agentConfig.maxDrawdown ?? null,
         maxDrawdownPct: agentConfig.maxDrawdownPct ?? null,
         maxOpenPositions: agentConfig.maxOpenPositions ?? null,
         maxPositionSizePct: agentConfig.maxPositionSizePct ?? null,
@@ -1595,7 +1592,6 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
             return {
               capital: row.capital,
               dailyLossLimit: row.dailyLossLimit,
-              maxDrawdown: row.maxDrawdown,
               maxDrawdownPct: row.maxDrawdownPct,
             };
           },
@@ -1604,7 +1600,6 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
     operatorDefaults: {
       // agentRiskDefaults is guaranteed by Zod schema validation at worker startup.
       // Every field has a .default() — these are never undefined at runtime.
-      maxDrawdown: agentConfig.agentRiskDefaults!.maxDrawdown,
       maxDrawdownPct: agentConfig.agentRiskDefaults!.maxDrawdownPct,
     },
   };

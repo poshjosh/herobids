@@ -177,8 +177,7 @@ describe('AgentIntakeResolver', () => {
 
       expect(result?.riskLimits.maxPositionSize.toString()).toBe('1000000000');
       expect(result?.riskLimits.maxOpenPositions).toBe(10);
-      // maxDrawdown is separate from dailyLossLimit — when agent row has no maxDrawdown,
-      // it falls back to the operator default (1B).
+      // maxDrawdown is now always derived from operator defaults for agent flows.
       expect(result?.riskLimits.maxDrawdown.toString()).toBe('1000000000');
       expect(result?.riskLimits.maxOrderNotional?.toString()).toBe('250');
       expect(result?.riskLimits.maxPositionSizePct).toBe(100);

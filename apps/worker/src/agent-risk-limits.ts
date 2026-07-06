@@ -4,7 +4,6 @@ import type { RiskLimits } from '@herobids/engine';
 export interface AgentRiskLimitSource {
   capital: string | null;
   dailyLossLimit: string | null;
-  maxDrawdown: string | null;
   maxDrawdownPct: string | number | null;
   maxOpenPositions: number | null;
   maxPositionSizePct: string | number | null;
@@ -74,9 +73,9 @@ export function buildRiskLimitsFromContract(
   const capital = source.capital;
   const dailyLossLimit = source.dailyLossLimit;
 
-  // maxDrawdown (absolute USD) is a separate DB column, preserved for non-agent flows.
-  // Agents use maxDrawdownPct (percentage) from the risk contract for drawdown enforcement.
-  const maxDrawdown = source.maxDrawdown ?? (defaults.maxDrawdown != null ? String(defaults.maxDrawdown) : '1000000000');
+  // Agent flows always use the operator ceiling for absolute maxDrawdown.
+  // The canonical agent drawdown control is maxDrawdownPct.
+  const maxDrawdown = defaults.maxDrawdown != null ? String(defaults.maxDrawdown) : '1000000000';
 
   return {
     maxPositionSize: quantity(String(defaults.maxPositionSize)),

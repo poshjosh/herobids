@@ -21,7 +21,6 @@ const DEFAULTS: AgentRiskDefaultsConfig = {
 const EMPTY_SOURCE: AgentRiskLimitSource = {
   capital: null,
   dailyLossLimit: null,
-  maxDrawdown: null,
   maxDrawdownPct: null,
   maxOpenPositions: null,
   maxPositionSizePct: null,
@@ -174,7 +173,6 @@ describe('extractCreatorInput()', () => {
     const input = extractCreatorInput({
       capital: '1000',
       dailyLossLimit: '100',
-      maxDrawdown: null,
       maxDrawdownPct: 15,
       maxOpenPositions: 5,
       maxPositionSizePct: '25',
