@@ -425,3 +425,83 @@ describe('createPriceService — freshness propagation and cache TTL', () => {
     }
   });
 });
+
+describe('createPriceService — resolvePriceTarget (identity + price)', () => {
+  it('returns concrete network and address for chain "any"', async () => {
+    const registry = buildRegistry({
+      dexData: [
+        { ...makeDexToken('PEPE', 'solana', 0.00005, 100_000), address: '0xsolana_pepe' },
+        { ...makeDexToken('PEPE', 'ethereum', 0.00004, 500_000), address: '0xeth_pepe' },
+      ],
+    });
+    const svc = createPriceService(registry);
+    const result = await svc.resolvePriceTarget('PEPE', 'any');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.chain).toBe('ethereum'); // highest liquidity
+      expect(result.data.address).toBe('0xeth_pepe');
+      expect(result.data.symbol).toBe('PEPE');
+    }
+  });
+
+  it('honors exact address when provided (not just highest liquidity)', async () => {
+    const registry = buildRegistry({
+      dexData: [
+        { ...makeDexToken('PEPE', 'solana', 0.00005, 100_000), address: '0xdiscovered' },
+        { ...makeDexToken('PEPE', 'solana', 0.0001, 500_000), address: '0xrich' },
+      ],
+    });
+    const svc = createPriceService(registry);
+    const result = await svc.resolvePriceTarget('PEPE', 'solana', '0xdiscovered');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.priceUsd).toBe(0.00005);
+      expect(result.data.address).toBe('0xdiscovered');
+    }
+  });
+
+  it('chooses highest-liquidity candidate when no address is given', async () => {
+    const registry = buildRegistry({
+      dexData: [
+        { ...makeDexToken('PEPE', 'solana', 0.00005, 100_000), address: '0xlowsol' },
+        { ...makeDexToken('PEPE', 'solana', 0.0001, 500_000), address: '0xhighsol' },
+      ],
+    });
+    const svc = createPriceService(registry);
+    const result = await svc.resolvePriceTarget('PEPE', 'solana');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.priceUsd).toBe(0.0001);
+      expect(result.data.address).toBe('0xhighsol');
+    }
+  });
+
+  it('returns not_found for unresolvable symbol', async () => {
+    const registry = buildRegistry({ dexData: [] });
+    const svc = createPriceService(registry);
+    const result = await svc.resolvePriceTarget('NONEXISTENT', 'any');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('price.not_found');
+    }
+  });
+
+  it('getPrice returns same payload shape as before the refactor', async () => {
+    const registry = buildRegistry({
+      dexData: [{ ...makeDexToken('SOL', 'solana', 25, 1_000_000), address: '0xsol' }],
+    });
+    const svc = createPriceService(registry);
+    const result = await svc.getPrice('SOL', 'solana');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty('priceUsd');
+      expect(result.data).toHaveProperty('source');
+      expect(result.data).toHaveProperty('fetchedAt');
+      expect(result.data).toHaveProperty('stale');
+      // Should NOT have identity fields
+      expect(result.data).not.toHaveProperty('symbol');
+      expect(result.data).not.toHaveProperty('chain');
+      expect(result.data).not.toHaveProperty('address');
+    }
+  });
+});

@@ -535,3 +535,313 @@ describe('remove_watch — notified set', () => {
     expect(notifiedCall).toBeDefined();
   });
 });
+
+// ── Discovery and pinning ────────────────────────────────────────────────
+
+describe('watch_token — discovery and pinning', () => {
+  it('resolves and stores pinned identity when chain is "any"', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'solana', 0.00005, { address: '0xpepe_sol' }),
+    );
+    const getPrice = vi.fn(async (s: string, c: string) => {
+      const r = await resolvePriceTarget(s, c);
+      if (!r.ok) return r;
+      return { ok: true as const, data: { priceUsd: r.data.priceUsd, source: r.data.source, fetchedAt: r.data.fetchedAt, stale: r.data.stale } };
+    });
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'any', thresholdPrice: 0.001, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.symbol).toBe('PEPE');
+    expect(data.chain).toBe('any');
+    expect(data.resolvedChain).toBe('solana');
+    expect(data.resolvedAddress).toBe('0xpepe_sol');
+
+    // Verify stored watch has resolved fields
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.resolvedChain).toBe('solana');
+    expect(storedWatch.resolvedAddress).toBe('0xpepe_sol');
+    expect(storedWatch.chain).toBe('any');
+  });
+
+  it('with explicit chain also stores resolved address in the watch entry', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'solana', 0.00005, { address: '0xpepe_sol' }),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(0.00005));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'solana', thresholdPrice: 0.001, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.symbol).toBe('PEPE');
+    expect(data.chain).toBe('solana');
+    expect(data.resolvedAddress).toBe('0xpepe_sol');
+
+    // Stored watch should have the resolved address
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.resolvedAddress).toBe('0xpepe_sol');
+    expect(storedWatch.chain).toBe('solana');
+  });
+
+  it('fails closed when resolution fails for chain "any"', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue({
+      ok: false as const,
+      error: { code: 'price.not_found', message: 'not found' },
+    });
+    const getPrice = vi.fn();
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'UNKNOWN', chain: 'any', thresholdPrice: 1, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    // The error message comes from resolution.error.message
+    expect(result.error).toBe('not found');
+    expect(ctx.redis.hset).not.toHaveBeenCalled();
+  });
+
+  it('tool response includes both requested and resolved identity fields', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'ethereum', 0.00004, { address: '0xeth_pepe' }),
+    );
+    const getPrice = vi.fn(async (s: string, c: string) => {
+      const r = await resolvePriceTarget(s, c);
+      if (!r.ok) return r;
+      return { ok: true as const, data: { priceUsd: r.data.priceUsd, source: r.data.source, fetchedAt: r.data.fetchedAt, stale: r.data.stale } };
+    });
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'any', thresholdPrice: 0.001, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    // Requested identity
+    expect(data.symbol).toBe('PEPE');
+    expect(data.chain).toBe('any');
+    // Resolved identity
+    expect(data.resolvedSymbol).toBeUndefined(); // same as requested, so omitted
+    expect(data.resolvedChain).toBe('ethereum');
+    expect(data.resolvedAddress).toBe('0xeth_pepe');
+  });
+});
+
+describe('check_watches — pinned identity and legacy repair', () => {
+  it('uses pinned identity for repricing (does not drift)', async () => {
+    // Create a watch pinned to solana PEPE
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'solana', 0.00005, { address: '0xpepe_sol' }),
+    );
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(0.00005))   // initial price during watch_token
+      .mockResolvedValueOnce(okPrice(0.00006));   // price during check_watches
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'any', thresholdPrice: 0.001, condition: 'above' },
+      ctx,
+    );
+
+    getPrice.mockClear();
+
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // Must price against the pinned solana identity, not 'any'
+    expect(getPrice).toHaveBeenCalledWith('PEPE', 'solana', '0xpepe_sol');
+  });
+
+  it('lazily repairs legacy explicit-chain watch on first check', async () => {
+    const watchId = '00000000-0000-4000-8000-000000000001';
+    const legacyWatch = {
+      watchId,
+      symbol: 'PEPE',
+      chain: 'solana',
+      thresholdPrice: 0.001,
+      condition: 'above',
+      createdAt: new Date().toISOString(),
+      lastConditionMet: null,
+    };
+
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'solana', 0.00005, { address: '0xpepe_sol' }),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(0.00005));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    // Insert legacy watch directly (no resolved fields)
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(legacyWatch));
+
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // Should have persisted the repaired watch back.
+    // Use the LAST matching hset call — the initial insert comes first,
+    // then the repair persist, then the status update.
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCalls = hsetCalls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') &&
+        !(c[0] as string).includes('summary') && c[1] === watchId,
+    );
+    expect(watchCalls.length).toBeGreaterThanOrEqual(2); // initial insert + repair (or status update)
+    const lastCall = watchCalls[watchCalls.length - 1]!;
+    const repairedWatch = JSON.parse((lastCall as unknown[])[2] as string);
+    expect(repairedWatch.resolvedChain).toBe('solana');
+    expect(repairedWatch.resolvedAddress).toBe('0xpepe_sol');
+    expect(repairedWatch.resolvedSymbol).toBe('PEPE');
+    expect(repairedWatch.chain).toBe('solana');
+  });
+
+  it('lazily repairs legacy chain="any" watch to explicit chain', async () => {
+    const watchId = '00000000-0000-4000-8000-000000000002';
+    const legacyWatch = {
+      watchId,
+      symbol: 'PEPE',
+      chain: 'any',
+      thresholdPrice: 0.001,
+      condition: 'above',
+      createdAt: new Date().toISOString(),
+      lastConditionMet: null,
+    };
+
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'ethereum', 0.00004, { address: '0xeth_pepe' }),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(0.00004));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(legacyWatch));
+
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCalls = hsetCalls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') &&
+        !(c[0] as string).includes('summary') && c[1] === watchId,
+    );
+    expect(watchCalls.length).toBeGreaterThanOrEqual(2);
+    const lastCall = watchCalls[watchCalls.length - 1]!;
+    const repairedWatch = JSON.parse((lastCall as unknown[])[2] as string);
+    expect(repairedWatch.resolvedChain).toBe('ethereum');
+    expect(repairedWatch.resolvedAddress).toBe('0xeth_pepe');
+    expect(repairedWatch.chain).toBe('any');
+  });
+
+  it('returns unreparable legacy watch in unchecked list', async () => {
+    const watchId = '00000000-0000-4000-8000-000000000003';
+    const legacyWatch = {
+      watchId,
+      symbol: 'NONEXISTENT',
+      chain: 'solana',
+      thresholdPrice: 1,
+      condition: 'above' as const,
+      createdAt: new Date().toISOString(),
+      lastConditionMet: null,
+    };
+
+    const resolvePriceTarget = vi.fn().mockResolvedValue({
+      ok: false as const,
+      error: { code: 'price.not_found', message: 'not found' },
+    });
+    const getPrice = vi.fn();
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(legacyWatch));
+
+    const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { unchecked: Array<{ watchId: string; symbol: string }> };
+    expect(data.unchecked).toHaveLength(1);
+    expect(data.unchecked[0]!.watchId).toBe(watchId);
+    expect(data.unchecked[0]!.symbol).toBe('NONEXISTENT');
+  });
+
+  it('does not re-repair an already-pinned watch', async () => {
+    const watchId = '00000000-0000-4000-8000-000000000004';
+    const alreadyPinnedWatch = {
+      watchId,
+      symbol: 'PEPE',
+      chain: 'any',
+      resolvedSymbol: 'PEPE',
+      resolvedChain: 'solana',
+      resolvedAddress: '0xpepe_sol',
+      address: '0xpepe_sol',
+      thresholdPrice: 0.001,
+      condition: 'above',
+      createdAt: new Date().toISOString(),
+      lastConditionMet: null,
+    };
+
+    const resolvePriceTarget = vi.fn(); // should NOT be called
+    const getPrice = vi.fn().mockResolvedValue(okPrice(0.00005));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(alreadyPinnedWatch));
+
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // Already pinned — resolvePriceTarget should NOT have been called
+    expect(resolvePriceTarget).not.toHaveBeenCalled();
+  });
+
+  it('two same-symbol watches on different addresses produce separate lookups', async () => {
+    // When the resolved symbol matches the requested symbol, resolvedSymbol is
+    // not stored in the watch entry.  ensurePinnedWatchIdentity therefore calls
+    // resolvePriceTarget again during check_watches.  We supply enough mocks.
+    const resolvePriceTarget = vi.fn()
+      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xfirst' }))   // watch_token #1
+      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xsecond' }))  // watch_token #2
+      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xfirst' }))   // check_watches repair #1
+      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xsecond' })); // check_watches repair #2
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(0.00005))  // initial price watch 1
+      .mockResolvedValueOnce(okPrice(0.00005))  // initial price watch 2
+      .mockResolvedValueOnce(okPrice(0.00006))  // check_watches: first unique lookup
+      .mockResolvedValueOnce(okPrice(0.00006)); // check_watches: second unique lookup
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    // Create two PEPE watches on same chain but different addresses
+    await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'any', thresholdPrice: 0.001, condition: 'above' },
+      ctx,
+    );
+    await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'any', thresholdPrice: 0.0009, condition: 'above' },
+      ctx,
+    );
+
+    getPrice.mockClear();
+
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // Two distinct lookups — one per unique (chain, symbol, address) tuple
+    expect(getPrice).toHaveBeenCalledTimes(2);
+    const calls = (getPrice as ReturnType<typeof vi.fn>).mock.calls;
+    const argSets = calls.map((c: unknown[]) => ({ symbol: c[0], chain: c[1], address: c[2] }));
+    expect(argSets).toContainEqual({ symbol: 'PEPE', chain: 'solana', address: '0xfirst' });
+    expect(argSets).toContainEqual({ symbol: 'PEPE', chain: 'solana', address: '0xsecond' });
+  });
+});
