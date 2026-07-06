@@ -140,11 +140,21 @@ export async function assembleEvidence(ctx: EvidenceAssemblyContext): Promise<Ev
       };
       await ctx.store.write(ctx.runId, 'agent-metadata.json', JSON.stringify(metadata, null, 2));
       entries.push({ artifactName: 'agent-metadata.json', collected: true });
+
+      // Unified agent config — always emit when agent row exists, even if null
+      await ctx.store.write(
+        ctx.runId,
+        'unified-agent-config.json',
+        JSON.stringify(agent.unifiedConfig ?? null, null, 2),
+      );
+      entries.push({ artifactName: 'unified-agent-config.json', collected: true });
     } else {
       entries.push({ artifactName: 'agent-metadata.json', collected: false, error: 'Agent not found' });
+      entries.push({ artifactName: 'unified-agent-config.json', collected: false, error: 'Agent not found' });
     }
   } catch (err) {
     entries.push({ artifactName: 'agent-metadata.json', collected: false, error: String(err) });
+    entries.push({ artifactName: 'unified-agent-config.json', collected: false, error: String(err) });
   }
 
   // ── Cost data (best-effort — queries billingUsageEvents by agentId) ────
