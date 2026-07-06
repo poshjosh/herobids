@@ -133,6 +133,68 @@ function parseWatchLookupKey(key: string): { chain: string; symbol: string; addr
   }
 }
 
+/**
+ * Lazy-repair a watch entry that lacks pinned identity fields (legacy watches
+ * created before the token-discovery-and-pin feature).
+ *
+ * - Already-pinned watches (resolvedChain present) are returned unchanged.
+ * - Legacy watches with an explicit chain are resolved against that chain.
+ * - Legacy watches with chain "any" are resolved once to discover the best match.
+ *
+ * Returns { ok: false } when resolution fails — the caller should place the
+ * watch in the unchecked list.
+ */
+async function ensurePinnedWatchIdentity(
+  watch: WatchEntry,
+  priceService: NonNullable<ToolContext['priceService']>,
+): Promise<
+  | { ok: true; watch: WatchEntry }
+  | { ok: false; reason: string }
+> {
+  // Already pinned — nothing to do.
+  if (watch.resolvedChain) {
+    return { ok: true, watch };
+  }
+
+  // Legacy watch — resolve and pin.
+  const addressArg = isOnChainAddress(watch.symbol, watch.chain) ? watch.symbol : undefined;
+
+  const resolution = await priceService.resolvePriceTarget(
+    watch.symbol,
+    watch.chain,
+    addressArg,
+  );
+
+  if (!resolution.ok || !resolution.data) {
+    return { ok: false, reason: 'watch identity unresolved' };
+  }
+
+  const { symbol: resolvedSymbol, chain: resolvedChain, address: resolvedAddress } = resolution.data;
+
+  // Validate the resolved chain is supported for watch tracking.
+  if (resolvedChain && !EXPLICIT_SUPPORTED_CHAIN_SET.has(resolvedChain) && resolvedChain !== 'hyperliquid') {
+    return {
+      ok: false,
+      reason: `resolved chain "${resolvedChain}" is not a supported watch chain`,
+    };
+  }
+
+  // Validate symbol format for the resolved chain.
+  const validationError = validateSymbolForChain(resolvedSymbol, resolvedChain);
+  if (validationError) {
+    return { ok: false, reason: validationError };
+  }
+
+  const updatedWatch: WatchEntry = {
+    ...watch,
+    resolvedSymbol,
+    resolvedChain,
+    ...(resolvedAddress ? { resolvedAddress, address: resolvedAddress } : {}),
+  };
+
+  return { ok: true, watch: updatedWatch };
+}
+
 // ---------------------------------------------------------------------------
 // watch_token
 // ---------------------------------------------------------------------------
@@ -140,8 +202,8 @@ function parseWatchLookupKey(key: string): { chain: string; symbol: string; addr
 const WatchTokenParamsSchema = z.object({
   symbol: z.string().min(1).describe('Token symbol or ticker (e.g. BTC, SOL, WIF)'),
   chain: z.enum(EXPLICIT_SUPPORTED_CHAINS).or(z.literal('any')).describe(
-    'Chain context for the watch. Use "hyperliquid", "solana", "ethereum", etc. for explicit lookups. ' +
-    'Use "any" to auto-resolve — the watch will pin to the discovered token and repricing will use the pinned identity.',
+    'Chain context: an explicit chain (e.g. "hyperliquid", "solana", "ethereum") or "any" for cross-chain discovery. ' +
+    'When "any" is used, the best-matching token is resolved once and the watch is pinned to that concrete chain — it will not drift between chains later.',
   ),
   thresholdPrice: z.number().positive().describe('Price level in USD that triggers the watch'),
   condition: z.enum(['above', 'below']).describe(
@@ -153,7 +215,8 @@ const WatchTokenParamsSchema = z.object({
 const watchTokenTool: AgentTool = {
   name: 'watch_token',
   description:
-    'Register a price watch for a token. The watch fires when the token\'s price crosses the given threshold in the specified direction. ' +
+    'Register a price watch for a token. When chain is "any", the tool discovers the best-matching token and pins the watch to that concrete asset — future checks will always use the pinned identity. ' +
+    'The watch fires when the token\'s price crosses the given threshold in the specified direction. ' +
     'Use check_watches to evaluate all registered watches. Use list_watches to see active watches. Use remove_watch to cancel one.',
   parametersSchema: WatchTokenParamsSchema,
   parameters: convertZodToJsonSchema(WatchTokenParamsSchema),
@@ -365,7 +428,8 @@ const checkWatchesTool: AgentTool = {
   name: 'check_watches',
   description:
     'Evaluate all active price watches against current market prices. Returns a list of watches that have triggered (threshold crossed). ' +
-    'Set removeTriggered=true to automatically clear triggered watches after evaluation.',
+    'Set removeTriggered=true to automatically clear triggered watches after evaluation. ' +
+    'Legacy watches without a pinned identity are lazily repaired on first evaluation — any that fail resolution appear in the unchecked list.',
   parametersSchema: CheckWatchesParamsSchema,
   parameters: convertZodToJsonSchema(CheckWatchesParamsSchema),
   category: 'write-memory',
@@ -393,10 +457,34 @@ const checkWatchesTool: AgentTool = {
       return { success: true, data: { ok: true, triggered: [], unchecked: [] } };
     }
 
-    // Deduplicate price lookups by pinned identity
-    const priceMap = new Map<string, { priceUsd: number; source: string; stale: boolean; fetchedAt: string } | null>();
+    // Step 6: Lazy repair for legacy watches that lack pinned identity fields.
+    const pinnedWatches: WatchEntry[] = [];
+    const unchecked: Array<{ watchId: string; symbol: string; chain: string; reason: string }> = [];
 
     for (const watch of watches) {
+      const repair = await ensurePinnedWatchIdentity(watch, ctx.priceService);
+      if (!repair.ok) {
+        unchecked.push({
+          watchId: watch.watchId,
+          symbol: watch.symbol,
+          chain: watch.chain,
+          reason: repair.reason,
+        });
+        continue;
+      }
+      // Persist the repaired watch back to Redis so the pin survives restarts.
+      if (!watch.resolvedChain && repair.watch.resolvedChain) {
+        await ctx.redis.hset(watchesKey(ctx.agentId), watch.watchId, JSON.stringify(repair.watch));
+      }
+      pinnedWatches.push(repair.watch);
+    }
+
+    // Step 7: Deduplicate price lookups by pinned identity.
+    // Two same-symbol watches on different chains or with different addresses
+    // produce distinct lookup keys and separate price fetches.
+    const priceMap = new Map<string, { priceUsd: number; source: string; stale: boolean; fetchedAt: string } | null>();
+
+    for (const watch of pinnedWatches) {
       const target = getPinnedLookupTarget(watch);
       const key = watchLookupKey(target);
       if (!priceMap.has(key)) {
@@ -417,9 +505,8 @@ const checkWatchesTool: AgentTool = {
 
     const updatedWatches = new Map<string, WatchEntry>();
     const triggered: Array<WatchEntry & { currentPrice: number; priceSource: string; stale: boolean }> = [];
-    const unchecked: Array<{ watchId: string; symbol: string; chain: string; reason: string }> = [];
 
-    for (const watch of watches) {
+    for (const watch of pinnedWatches) {
       const lookupTarget = getPinnedLookupTarget(watch);
       const priceData = priceMap.get(watchLookupKey(lookupTarget));
       if (!priceData) {
