@@ -1,34 +1,29 @@
 # About HeroBids
 
-HeroBids offers AI agents as a service. Describe what you want, and an agent gets it for you. Our core skills are crypto trading and personal assistance.
+## Vision
 
-## Our mission
+To bring the power of AI agents to everyone.
 
-We believe that sophisticated algorithmic trading should not require a team of quants, a server rack, and a Bloomberg terminal. AI agents can now do the heavy lifting — market analysis, risk assessment, trade execution — so you can focus on strategy.
+## Mission
 
-## How it works
+Make using AI agents as simple as describing what you want to an AI agent that knows what to do to get what you want.
 
-1. **You define the goal.** Tell your agent what you want it to trade and how you want it to think.
-2. **The agent reasons.** Every tick, your agent scans market conditions, evaluates positions, and decides whether to act.
-3. **You stay in control.** Set risk limits, spending caps, and escalation policies. Your agent never exceeds the boundaries you define.
+## Core Concepts
+
+We offer AI agents as a service. AI agents: 
+
+1. **should do the work.** Give an agent instructions and it handles the rest — continuously, reliably, and within the limits you define.
+
+1. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
+
+2. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistantance.
+
+3. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
 
 ## AI-first, not AI-wrapped
 
-HeroBids was built from the ground up around AI agents — not as an afterthought bolted onto a traditional trading interface. The agent is the product. The dashboard, bots, and tools exist to support the agent, not the other way around.
+HeroBids was built from the ground up around AI agents. The agent is the product. The dashboard, tools and trading bots e.t.c exist to support the agent, not the other way around.
 
-## Venues
+## How it works
 
-We support trading on:
-
-- **Hyperliquid** — Perpetual futures with deep liquidity and low fees.
-- **Jupiter** — Solana's leading DEX aggregator for spot swaps.
-
-More venues are on the roadmap.
-
-## Execution modes
-
-Every agent runs in one of three modes:
-
-- **Paper** — Simulated trading with realistic slippage and fees. No real money at risk.
-- **Shadow** — Your agent makes decisions, but no orders hit the venue. Lets you evaluate a strategy against live market data.
-- **Live** — Real money, real orders, real markets. Your agent trades with the execution mode and account you configure.
+See: [Getting Started](/docs/help/get-started)

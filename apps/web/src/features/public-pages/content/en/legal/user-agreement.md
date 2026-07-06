@@ -1,14 +1,13 @@
-<!-- LEGAL REVIEW REQUIRED BEFORE PRODUCTION -->
-
 # User Agreement
 
-*Last updated: 2026-06-27*
+*Last updated: 2026-07-06*
 
 By using HeroBids ("the platform"), you agree to these terms. If you do not agree, do not use the platform.
 
 ## Service description
 
-HeroBids offers AI agents as a service. You create and run agents that act on your ideas — starting with crypto trading on supported venues (Hyperliquid perpetual futures, Jupiter DEX swaps).
+HeroBids offers AI agents as a service. You create and run agents that act on your ideas.
+
 
 ## Your responsibilities
 

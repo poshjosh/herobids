@@ -6,14 +6,16 @@ To bring the power of AI agents to everyone.
 
 ## Mission
 
-Make using AI agents as simple as describing what you want, then having an AI agent get it for you.
+Make using AI agents as simple as describing what you want to an AI agent that knows what to do to get what you want.
 
 ## Core Concepts
 
-We offer AI agents as a service. We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistant.
+We offer AI agents as a service. AI agents: 
 
-1. **AI should do the work.** Give it instructions and constraints; it handles the rest — continuously, reliably, and within the limits you define.
+1. **should do the work.** Give an agent instructions and it handles the rest — continuously, reliably, and within the limits you define.
 
-2. **Start narrow, build trust.** Trading is a proving ground: it demands real-time decisions, external integrations, and measurable outcomes. Winning here validates our service. 
+1. **should remain in contact.** You remain in contact with any agent working for you. An example is by using messaging apps or email.
 
-3. **Agents are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.
+2. **can be subject matter experts** We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistantance.
+
+3. **are unique.** Each user can run one or more agents, each operating independently with its own goals and constraints.

@@ -229,7 +229,7 @@ export function PublicFooter({ locale }: { locale: SupportedLocale }) {
                         textDecoration: 'none',
                         fontSize: '12px',
                         fontWeight: '600',
-                        textTransform: 'uppercase',
+                        textTransform: 'none',
                         letterSpacing: '0.05em',
                       }}
                     >

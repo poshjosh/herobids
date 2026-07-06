@@ -1,8 +1,6 @@
-<!-- LEGAL REVIEW REQUIRED BEFORE PRODUCTION -->
-
 # Privacy Policy
 
-*Last updated: 2026-06-27*
+*Last updated: 2026-07-06*
 
 HeroBids ("we", "our", or "us") operates the HeroBids platform. This policy explains how we collect, use, and protect your data.
 
@@ -24,17 +22,17 @@ HeroBids ("we", "our", or "us") operates the HeroBids platform. This policy expl
 
 ## How we use your data
 
-- **Service operation** — To run your agents, execute trades, and deliver the platform.
+- **Service operation** — To run your agents, and deliver the platform.
 - **Billing** — To calculate and display your usage costs.
 - **Support** — To investigate issues and respond to your inquiries.
 - **Improvement** — Aggregated, anonymized data may inform product improvements. We never sell your data.
 
 ## Data storage
 
-Your data is stored in:
+Your data is stored in persistent storage like:
 
-- **PostgreSQL** — Account data, trading records, agent configurations.
-- **Redis** — Ephemeral session state and caching.
+- **Database** — Account data, trading records, agent configurations.
+- **Cache** — Ephemeral session state and caching.
 
 All data is encrypted in transit (TLS) and at rest.
 
@@ -43,14 +41,13 @@ All data is encrypted in transit (TLS) and at rest.
 To operate the platform, we share necessary data with:
 
 - **LLM providers** — Your agent's reasoning is processed by AI model providers. Only the context needed for the current tick is sent.
-- **Trading venues** — Orders are submitted to Hyperliquid and Jupiter. Only order data is transmitted.
+- **Trading venues** — Orders are submitted to trading venues like Hyperliquid and Jupiter. Only order data is transmitted.
 - **Telegram** — If you link Telegram, agent messages are delivered through the Telegram Bot API.
 
 We do not share your data with third parties for their own marketing or analytics purposes.
 
 ## Your rights
 
-- **Access** — You can export your trading data and agent configurations from the platform.
 - **Correction** — You can update your account details and agent configurations at any time.
 - **Deletion** — You can request account deletion by contacting us at admin@herobids.com. Trading records required for regulatory compliance may be retained.
 
