@@ -40,6 +40,10 @@ export const DecisionSubmitPayloadSchema = z.object({
   intent: z.enum(['go_long', 'go_short', 'go_flat', 'increase', 'decrease']),
   targetSize: z.string().regex(/^\d+(\.\d+)?$/, 'Must be a decimal string'),
   limitPrice: z.string().regex(/^\d+(\.\d+)?$/).optional(),
+  stopLoss: z.string().regex(/^\d+(\.\d+)?$/).optional()
+    .describe('Stop-loss price level. Fires only if you become unable to trade (crash, manual stop, LLM budget exhausted). Omit at your own risk.'),
+  takeProfit: z.string().regex(/^\d+(\.\d+)?$/).optional()
+    .describe('Take-profit price level. Fires only if you become unable to trade (crash, manual stop, LLM budget exhausted). Omit at your own risk.'),
   contextHash: z.string().optional(),
   rationaleSummary: z.string().min(1).max(400),
   confidence: z.number().min(0).max(1).optional(),

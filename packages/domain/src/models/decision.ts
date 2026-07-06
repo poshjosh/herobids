@@ -20,6 +20,10 @@ export interface Decision {
   targetSize: Quantity;
   /** Optional limit price hint (strategy's desired entry). */
   limitPrice?: Price;
+  /** Optional stop-loss price level for this trade. */
+  stopLoss?: Price;
+  /** Optional take-profit price level for this trade. */
+  takeProfit?: Price;
   /** ISO 8601 timestamp (UTC) */
   timestamp: string;
   /** Optional context hash for audit replay */

@@ -1,7 +1,7 @@
 # Per-Trade Stop-Loss and Take-Profit
 
 **Created:** 2026-07-06
-**Status:** draft
+**Status:** in-progress
 
 ## Goal
 
@@ -19,9 +19,9 @@ Agents set stopLoss and takeProfit price levels on every `submit_decision` that 
 ### 1. Add `stopLoss` and `takeProfit` to the `submit_decision` schema
 
 **Files:**
-- `apps/worker/src/tools/trading.ts` — `SubmitDecisionParamsSchema`: add optional `stopLoss` and `takeProfit` (decimal string price levels)
 - `packages/domain/src/agent-protocol.ts` — `DecisionSubmitPayloadSchema`: add optional `stopLoss` and `takeProfit`
 - `packages/domain/src/models/decision.ts` — `Decision`: add optional `stopLoss?` and `takeProfit?` as `Price`
+- `apps/worker/src/tools/trading.ts` — `SubmitDecisionParamsSchema`: add optional `stopLoss` and `takeProfit` (handled in Item 2)
 
 **Details:**
 ```ts
@@ -253,16 +253,22 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 
 ## Implementation Order
 
-1. Add `stopLoss`/`takeProfit` to domain types (`Decision`, `DecisionSubmitPayloadSchema`)
-2. Add params to `submit_decision` tool schema and passthrough
-3. Propagate through `agent-decision-handler.ts` into the `Decision` object
-4. Add reminder logic in sync reply
-5. Implement `validatePerTradeLevels` pure function + tests
-6. Integrate price validation in `agent-decision-handler.ts` (reject before accept)
-7. Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
-8. Add `exitLevels` map to `agent-trading-actor.ts` with rehydration
-9. Add periodic per-trade level monitor loop
-10. Hide `stopLossPct` from agent surfaces
-11. Update system prompt guardrails
-12. Update all remaining tests
-13. `pnpm lint` + `pnpm test`
+1. [PENDING] Add `stopLoss`/`takeProfit` to domain types (`Decision`, `DecisionSubmitPayloadSchema`)
+2. [PENDING] Add params to `submit_decision` tool schema and passthrough
+3. [PENDING] Propagate through `agent-decision-handler.ts` into the `Decision` object
+4. [PENDING] Add reminder logic in sync reply
+5. [PENDING] Implement `validatePerTradeLevels` pure function + tests
+6. [PENDING] Integrate price validation in `agent-decision-handler.ts` (reject before accept)
+7. [PENDING] Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
+8. [PENDING] Add `exitLevels` map to `agent-trading-actor.ts` with rehydration
+9. [PENDING] Add periodic per-trade level monitor loop
+10. [PENDING] Hide `stopLossPct` from agent surfaces
+11. [PENDING] Update system prompt guardrails
+12. [PENDING] Update all remaining tests
+13. [PENDING] `pnpm lint` + `pnpm test`
+
+## Outstanding Issues
+
+### [Item 1] Add stopLoss/takeProfit to domain types
+- **LOW**: Regex `/^\d+(\.\d+)?$/` accepts zero price values (`"0"`, `"0.0"`) — deferred to Item 5 (`validatePerTradeLevels`) for semantic validation.
+- **LOW**: Inconsistent `.describe()` usage in `agent-protocol.ts` — new `stopLoss`/`takeProfit` fields have `.describe()` but adjacent `limitPrice` does not. Pre-existing cosmetic issue, not worth fixing now.
