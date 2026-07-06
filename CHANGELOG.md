@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Glossary
 - Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time
 - **Agent stop cascades to bots:** When an agent is stopped, all running agent-created bots are cascade-stopped via `AgentHealthMonitor` (primary UI/API path), `onSessionStopped` callback (supplemental), and `DockerAgentManager.onAgentCrashed` (crash path). Periodic `botOrphanSweepInterval` reconciliation sweep catches missed orphans. Configurable via `worker.agents.botOrphanSweepIntervalMs`.
+- E2E journey 17: bot creation modal interactions — page render, empty state, disabled submit without connection, cancel dismiss (UAT I-01, I-02, I-04)
 
 ### Changed
 
@@ -21,10 +22,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Locality gating for ollama:** Dev-only providers now use hostname inspection (`isLocalProviderEndpoint`) instead of `NODE_ENV` to determine availability.
 - **Single-provider UI mode:** When only one LLM provider is available, the provider dropdown is auto-selected and hidden in the UI.
 - **Relaxed provider schema:** `ProviderConfigSchema` now supports `pricingSource: 'openrouter' | 'inline' | 'none'` to control pricing origin.
+- **Venue-aware bot symbol field:** The bot creation modal now adapts the symbol input label and placeholder based on the selected connection's venue type — "Instrument (e.g. WETH/USDC)" for swap venues (jupiter, 1inch) and "Symbol (e.g. BTC-PERP)" for orderbook venues (hyperliquid, bybit).
 
 ### Removed
 
 - `seedStaticPricing()` function and its worker startup call — static YAML prices are no longer seeded into the DB.
+- **"Advanced: raw JSON config" toggle from bot creation:** The raw JSON editor escape hatch was removed from the bot create modal to simplify UX and align with agent creation. Strategy config is now exclusively preset-driven. Power users can use the API directly.
+
+### Fixed
+
+- Bot creation submit button now correctly disabled when the symbol field is empty, matching the backend `symbol: z.string().min(1)` requirement and preventing guaranteed 400 errors.
 
 ## v0.0.10 - 2026-07-06
 
