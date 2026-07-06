@@ -14,6 +14,8 @@ const SubmitDecisionParamsSchema = z.object({
   confidence: z.number().min(0).max(1).optional().describe('Confidence level 0-1. Used for position sizing hints.'),
   safetyOverrideId: z.string().optional().transform(v => v === '' ? undefined : v).describe('One-time code to override a previous safety rejection. Only provide the exact code from a prior rejection response.'),
   dryRun: z.boolean().optional().describe('If true, validates the decision without submitting it. Returns a preview of what would be sent to the engine.'),
+  stopLoss: z.string().regex(/^\d+(\.\d+)?$/).optional().transform(v => v === '' ? undefined : v).describe('Stop-loss price level. Fires only if you become unable to trade (crash, manual stop, LLM budget exhausted). Omit at your own risk.'),
+  takeProfit: z.string().regex(/^\d+(\.\d+)?$/).optional().transform(v => v === '' ? undefined : v).describe('Take-profit price level. Fires only if you become unable to trade (crash, manual stop, LLM budget exhausted). Omit at your own risk.'),
 });
 
 const submitDecisionTool: AgentTool = {
@@ -44,6 +46,8 @@ const submitDecisionTool: AgentTool = {
             intent: p.intent,
             targetSize: p.targetSize,
             limitPrice: p.limitPrice ?? 'market',
+            stopLoss: p.stopLoss ?? 'not set',
+            takeProfit: p.takeProfit ?? 'not set',
             rationaleSummary: p.rationaleSummary,
             confidence: p.confidence ?? null,
           },
@@ -62,6 +66,8 @@ const submitDecisionTool: AgentTool = {
       intent: p.intent,
       targetSize: p.targetSize,
       limitPrice: p.limitPrice,
+      stopLoss: p.stopLoss,
+      takeProfit: p.takeProfit,
       rationaleSummary: p.rationaleSummary,
       confidence: p.confidence,
       safetyOverrideId: p.safetyOverrideId,

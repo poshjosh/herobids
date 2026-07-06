@@ -253,7 +253,7 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 
 ## Implementation Order
 
-1. [PENDING] Add `stopLoss`/`takeProfit` to domain types (`Decision`, `DecisionSubmitPayloadSchema`)
+1. [DONE] Add `stopLoss`/`takeProfit` to domain types (`Decision`, `DecisionSubmitPayloadSchema`)
 2. [PENDING] Add params to `submit_decision` tool schema and passthrough
 3. [PENDING] Propagate through `agent-decision-handler.ts` into the `Decision` object
 4. [PENDING] Add reminder logic in sync reply
@@ -272,3 +272,7 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 ### [Item 1] Add stopLoss/takeProfit to domain types
 - **LOW**: Regex `/^\d+(\.\d+)?$/` accepts zero price values (`"0"`, `"0.0"`) — deferred to Item 5 (`validatePerTradeLevels`) for semantic validation.
 - **LOW**: Inconsistent `.describe()` usage in `agent-protocol.ts` — new `stopLoss`/`takeProfit` fields have `.describe()` but adjacent `limitPrice` does not. Pre-existing cosmetic issue, not worth fixing now.
+
+### [Item 2] Add params to submit_decision tool schema and passthrough
+- **LOW**: Regex accepts zero-price values (same as Item 1, deferred to Item 5).
+- **LOW**: No test changes in this changeset — tests are separate plan items (Items 4, 12).

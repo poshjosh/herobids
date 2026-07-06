@@ -208,6 +208,8 @@ export class AgentDecisionHandler {
       intent: payload.intent,
       targetSize: new Decimal(payload.targetSize),
       limitPrice: payload.limitPrice ? new Decimal(payload.limitPrice) : undefined,
+      stopLoss: payload.stopLoss ? new Decimal(payload.stopLoss) : undefined,
+      takeProfit: payload.takeProfit ? new Decimal(payload.takeProfit) : undefined,
       timestamp: envelope.createdAt,
       contextHash: payload.contextHash,
       metadata: {
