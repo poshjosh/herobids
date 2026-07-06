@@ -233,6 +233,26 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           </div>
         ))}
 
+        {/* weekendPause */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            id="rp-weekendPause"
+            type="checkbox"
+            checked={overrides?.weekendPause ?? defaults.weekendPause}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              if (checked === defaults.weekendPause) {
+                clearOverride('weekendPause');
+              } else {
+                setOverride('weekendPause', checked);
+              }
+            }}
+          />
+          <label htmlFor="rp-weekendPause" style={{ fontSize: '13px', cursor: 'pointer' }}>
+            {intl.formatMessage({ id: 'agents.runtimePolicy.weekendPause' })}
+          </label>
+        </div>
+
         {/* allowedHoursUtc */}
         <div style={{ gridColumn: '1 / -1' }}>
           <FieldLabel htmlFor="rp-allowedHoursUtc">
@@ -252,26 +272,6 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
             {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
           </div>
-        </div>
-
-        {/* weekendPause */}
-        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <input
-            id="rp-weekendPause"
-            type="checkbox"
-            checked={overrides?.weekendPause ?? defaults.weekendPause}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              if (checked === defaults.weekendPause) {
-                clearOverride('weekendPause');
-              } else {
-                setOverride('weekendPause', checked);
-              }
-            }}
-          />
-          <label htmlFor="rp-weekendPause" style={{ fontSize: '13px', cursor: 'pointer' }}>
-            {intl.formatMessage({ id: 'agents.runtimePolicy.weekendPause' })}
-          </label>
         </div>
       </div>
     </div>
