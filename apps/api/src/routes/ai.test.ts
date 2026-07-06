@@ -729,6 +729,7 @@ describe('PATCH /settings/ai-model', () => {
 
 describe('GET /ai/available-models — Ollama dynamic discovery', () => {
   beforeEach(() => {
+    clearOllamaModelCache();
     vi.clearAllMocks();
     delete process.env['LLM_API_KEY'];
   });
@@ -917,6 +918,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
 
 describe('PATCH /settings/ai-model — Ollama dynamic validation', () => {
   beforeEach(() => {
+    clearOllamaModelCache();
     vi.clearAllMocks();
     delete process.env['LLM_API_KEY'];
   });

@@ -464,10 +464,21 @@ export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<strin
       if (!isLocal) continue;
     }
 
-    // Dynamic providers must have an active pricing snapshot in production
+    // Pricing availability check: providers whose pricing comes from the DB
+    // must have an active snapshot. Dynamic providers (OpenRouter) need their own
+    // snapshot; openrouter-derived providers need the OpenRouter snapshot with
+    // matching prefix models. If pricing is unavailable, the provider is hidden
+    // — never fall back to stale prices.
     if (config.catalogMode === 'dynamic' && isProduction) {
       const hasSnapshot = !!(await getDbPricingSnapshot(deps.db, providerId));
       if (!hasSnapshot) continue;
+    }
+
+    // OpenRouter-derived providers (openai, anthropic, deepseek, google) must
+    // have an active OpenRouter snapshot with matching prefix models.
+    if (config.pricingSource === 'openrouter') {
+      const derived = await getOpenRouterDerivedModels(providerId, deps);
+      if (derived.length === 0) continue;
     }
 
     // API key gating: providers without an API key are hidden.
@@ -497,21 +508,16 @@ export async function getProviderModels(provider: string, deps: LlmCatalogDeps):
   // OpenRouter-derived providers: cross-reference pricing from the OpenRouter snapshot
   if (providerConfig?.pricingSource === 'openrouter') {
     const derived = await getOpenRouterDerivedModels(provider, deps);
-    if (derived.length > 0) {
-      return derived.map((m) => m.id);
-    }
-    // If the YAML has an explicit model allowlist, return those model IDs
-    // (even without pricing) so the provider is visible in the model selector.
-    const yamlModelIds = getProviderModelIds(providerConfig);
-    if (yamlModelIds.length > 0) return yamlModelIds;
-    // No models available — provider will be hidden
-    return [];
+    return derived.map((m) => m.id);
   }
 
   if (providerConfig?.catalogMode === 'dynamic') {
-    // Ollama — live discovery
+    // Ollama — live discovery. Use the provider's configured baseUrl (from YAML)
+    // rather than the operator's shared default, so availability gating and
+    // discovery are consistent when the platform default provider differs.
+    const effectiveBaseUrl = providerConfig.baseUrl ?? deps.context.baseUrl;
     const result = await discoverOllamaModels({
-      baseUrl: deps.context.baseUrl,
+      baseUrl: effectiveBaseUrl,
       configuredModel: deps.context.model,
       timeoutMs: deps.context.catalogTimeoutMs,
       cacheTtlMs: deps.context.catalogCacheTtlMs,
@@ -615,8 +621,10 @@ export async function validateAiModelSelection(
   }
 
   const providerConfig = deps.providersYaml.providers[selection.provider];
-  if (providerConfig?.catalogMode === 'dynamic') {
-    // Validate against the live-discovered catalog (DB snapshot or Ollama discovery)
+  // Validate against the live-discovered catalog for providers whose model list
+  // is dynamic: catalogMode 'dynamic' (OpenRouter, Ollama) and pricingSource
+  // 'openrouter' (OpenAI, Anthropic, DeepSeek, Google cross-referenced).
+  if (providerConfig?.catalogMode === 'dynamic' || providerConfig?.pricingSource === 'openrouter') {
     const models = await getProviderModels(selection.provider, deps);
     const issues: Array<{ code: 'custom'; path: string[]; message: string }> = [];
     if (!models.includes(selection.lightModel)) {
