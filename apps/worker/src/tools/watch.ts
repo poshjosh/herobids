@@ -259,8 +259,10 @@ const watchTokenTool: AgentTool = {
         resolvedSymbol = resolution.data.symbol;
         resolvedChain = resolution.data.chain;
         resolvedAddress = resolution.data.address;
-      } else if (normalizedChain === 'any') {
-        // 'any' requires successful resolution — fail closed.
+      } else {
+        // Resolution is required for any chain when a price service is
+        // available — a watch without a stable identity is the exact bug
+        // this feature fixes (plan D6).
         return {
           success: false,
           error: resolution.error?.message ?? `Could not resolve "${trimmedSymbol}" to a concrete token. Try an explicit chain instead.`,
@@ -268,8 +270,6 @@ const watchTokenTool: AgentTool = {
           fault: false,
         };
       }
-      // For explicit chains, resolution failure is non-fatal — we create the watch
-      // with the requested identity as-is.
     } else if (normalizedChain === 'any') {
       return {
         success: false,
@@ -308,8 +308,8 @@ const watchTokenTool: AgentTool = {
       symbol: trimmedSymbol,              // what the caller asked for
       chain: normalizedChain,             // what the caller asked for (may be "any")
       ...(resolvedAddress ? { address: resolvedAddress } : {}),
-      ...(resolvedSymbol && resolvedSymbol !== trimmedSymbol ? { resolvedSymbol } : {}),
-      ...(resolvedChain && resolvedChain !== normalizedChain ? { resolvedChain } : {}),
+      ...(resolvedSymbol ? { resolvedSymbol } : {}),
+      ...(resolvedChain ? { resolvedChain } : {}),
       ...(resolvedAddress ? { resolvedAddress } : {}),
       thresholdPrice,
       condition,

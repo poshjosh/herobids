@@ -620,6 +620,24 @@ describe('watch_token — discovery and pinning', () => {
     expect(ctx.redis.hset).not.toHaveBeenCalled();
   });
 
+  it('fails closed when resolution fails for an explicit chain', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue({
+      ok: false as const,
+      error: { code: 'price.not_found', message: 'not found' },
+    });
+    const getPrice = vi.fn();
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'UNKNOWN', chain: 'solana', thresholdPrice: 1, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('not found');
+    expect(ctx.redis.hset).not.toHaveBeenCalled();
+  });
+
   it('tool response includes both requested and resolved identity fields', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('PEPE', 'ethereum', 0.00004, { address: '0xeth_pepe' }),
@@ -641,8 +659,8 @@ describe('watch_token — discovery and pinning', () => {
     // Requested identity
     expect(data.symbol).toBe('PEPE');
     expect(data.chain).toBe('any');
-    // Resolved identity
-    expect(data.resolvedSymbol).toBeUndefined(); // same as requested, so omitted
+    // Resolved identity — always stored, even when same as requested
+    expect(data.resolvedSymbol).toBe('PEPE');
     expect(data.resolvedChain).toBe('ethereum');
     expect(data.resolvedAddress).toBe('0xeth_pepe');
   });
@@ -779,6 +797,36 @@ describe('check_watches — pinned identity and legacy repair', () => {
     expect(data.unchecked[0]!.symbol).toBe('NONEXISTENT');
   });
 
+  it('newly created "any" watch is fully pinned and does not re-resolve on first check', async () => {
+    // The core regression this feature prevents: a watch created from 'any'
+    // must be concrete from the start — not re-resolved on the first check.
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('PEPE', 'solana', 0.00005, { address: '0xpepe_sol' }),
+    );
+    const getPrice = vi.fn()
+      .mockResolvedValueOnce(okPrice(0.00005))   // initial price during watch_token
+      .mockResolvedValueOnce(okPrice(0.00006));   // price during check_watches
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    await watchTokenTool.execute(
+      { symbol: 'PEPE', chain: 'any', thresholdPrice: 0.001, condition: 'above' },
+      ctx,
+    );
+
+    // resolvePriceTarget called exactly once (during creation), not again.
+    expect(resolvePriceTarget).toHaveBeenCalledTimes(1);
+    resolvePriceTarget.mockClear();
+
+    await checkWatchesTool.execute({ removeTriggered: false }, ctx);
+
+    // After creation, the watch is already pinned. check_watches must NOT
+    // call resolvePriceTarget again for this watch.
+    expect(resolvePriceTarget).not.toHaveBeenCalled();
+
+    // Must price against the pinned solana identity, not 'any'.
+    expect(getPrice).toHaveBeenCalledWith('PEPE', 'solana', '0xpepe_sol');
+  });
+
   it('does not re-repair an already-pinned watch', async () => {
     const watchId = '00000000-0000-4000-8000-000000000004';
     const alreadyPinnedWatch = {
@@ -808,14 +856,11 @@ describe('check_watches — pinned identity and legacy repair', () => {
   });
 
   it('two same-symbol watches on different addresses produce separate lookups', async () => {
-    // When the resolved symbol matches the requested symbol, resolvedSymbol is
-    // not stored in the watch entry.  ensurePinnedWatchIdentity therefore calls
-    // resolvePriceTarget again during check_watches.  We supply enough mocks.
+    // Newly created watches now always store resolvedSymbol, so they are fully
+    // pinned from creation — ensurePinnedWatchIdentity will not re-resolve them.
     const resolvePriceTarget = vi.fn()
       .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xfirst' }))   // watch_token #1
-      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xsecond' }))  // watch_token #2
-      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xfirst' }))   // check_watches repair #1
-      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xsecond' })); // check_watches repair #2
+      .mockResolvedValueOnce(okResolve('PEPE', 'solana', 0.00005, { address: '0xsecond' }));  // watch_token #2
     const getPrice = vi.fn()
       .mockResolvedValueOnce(okPrice(0.00005))  // initial price watch 1
       .mockResolvedValueOnce(okPrice(0.00005))  // initial price watch 2
