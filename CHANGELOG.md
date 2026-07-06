@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Glossary
+- Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time
 
 ## v0.0.10 - 2026-07-06
 
