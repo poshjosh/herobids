@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Trading session presets:** Named market-window shortcuts (Asia, London, NY Morning/Mid/Afternoon) in the agent form's "Allowed active hours" control. Sessions are stored as semantic names and resolved to UTC with DST awareness via `Intl.DateTimeFormat('America/New_York')`. Only shown for trading agents.
 - Glossary
 - Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time
 - **Agent stop cascades to bots:** When an agent is stopped, all running agent-created bots are cascade-stopped via `AgentHealthMonitor` (primary UI/API path), `onSessionStopped` callback (supplemental), and `DockerAgentManager.onAgentCrashed` (crash path). Periodic `botOrphanSweepInterval` reconciliation sweep catches missed orphans. Configurable via `worker.agents.botOrphanSweepIntervalMs`.

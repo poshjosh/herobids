@@ -330,7 +330,7 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 5 — Frontend: thread `showTradingSessionPresets` from callers
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `apps/web/src/features/agents/AgentsPage.tsx`
@@ -359,7 +359,7 @@ Apply the same change in `EditAgentModal.tsx`.
 
 ## Step 6 — i18n strings
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `apps/web/src/app/i18n/locales/en.ts`
@@ -395,7 +395,7 @@ Add matching keys to `hi.ts` and `ar.ts` (translate or use English as placeholde
 
 ## Step 7 — Tests
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `apps/worker/src/tick-gates.test.ts`
@@ -481,7 +481,7 @@ it('rejects unknown session name', () => {
 
 ## Step 8 — Final lint & type-check
 
-**Status:** PENDING
+**Status:** DONE
 
 ```bash
 pnpm lint   # must pass with zero errors
@@ -542,6 +542,26 @@ Non-trivial state logic (numeric override CRUD, weekendPause toggling, session p
 
 Safe for the exhaustive Record, but if `TradingSessionName` gains a sixth value without updating the Record, `undefined` values would silently appear. Consider an assertion helper in future.
 
-### [Step 4] LOW — Hardcoded English labels
+### [Step 4] LOW — Hardcoded English labels (RESOLVED in Step 6)
 
-Session preset labels are hardcoded. Step 6 will add i18n keys to replace them.
+~~Session preset labels are hardcoded.~~ Resolved — Step 6 added i18n keys and replaced all hardcoded strings with `intl.formatMessage(...)`.
+
+### [Step 6] MEDIUM — Preview note label concatenation awkward
+
+The field label reads "Allowed active hours (UTC) Preview (UTC, current offset)" without a separator. Consider wrapping hint in parentheses or using a separate label-context key. Cosmetic only.
+
+### [Step 7] MEDIUM — `resolveAgentRuntimePolicy` never tested with `tradingSessions`
+
+The resolution function has no test passing `tradingSessions` in overrides. The worker threads `resolvedRuntimePolicy.tradingSessions` into `TradingHoursConfig`, so a silent resolution break would go undetected. Add a test for override pass-through and null default.
+
+### [Step 7] MEDIUM — `ny-morning` and `ny-mid` sessions not specifically tested in gate tests
+
+Only `asia`, `london`, and `ny-afternoon` are tested. `ny-morning` and `ny-mid` lack positive gate-level coverage.
+
+### [Step 7] MEDIUM — Only London tested in winter; Asia's UTC shift under EST untested
+
+At EST (UTC-5), `asia` shifts from `[0,1,2,3]` UTC to `[1,2,3,4]` UTC — a different arithmetic path that isn't validated.
+
+### [Step 7] MEDIUM — Empty `tradingSessions` with no `allowedHoursUtc` (open-world fallthrough) untested
+
+When both are empty, `isWithinTradingHours` returns `true`. This code path with the new `tradingSessions` field present is not explicitly covered.
