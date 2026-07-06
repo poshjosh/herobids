@@ -60,7 +60,6 @@ const UpdateAgentSchema = z.object({
   telegramChatId: z.string().nullable().optional(),
   executionMode: z.enum(['paper', 'shadow', 'live']).nullable().optional(),
   dailyLossLimit: nullablePositiveDecimalStringSchema,
-  maxDrawdown: nullablePositiveDecimalStringSchema,
   maxDrawdownPct: z.number().min(0).max(100).nullable().optional(),
   maxBots: nullablePositiveIntegerSchema(),
   maxSlippageBps: nullablePositiveIntegerSchema(0),

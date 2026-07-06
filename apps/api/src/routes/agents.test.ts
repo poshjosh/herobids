@@ -1654,7 +1654,6 @@ describe('agent routes — tickIntervalMs and capital fields', () => {
       maxPositionSizePct: 100,
       stopLossPct: 10,
       stopLossCooldownMs: 300000,
-      maxDrawdown: 1_000_000_000,
       dailyMaxLossPct: 20,
       maxDrawdownPct: 20,
       runtimePolicyCeilings: RUNTIME_POLICY_CEILINGS,

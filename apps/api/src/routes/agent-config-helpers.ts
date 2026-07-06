@@ -306,7 +306,7 @@ export function resolveNotificationPolicy(
   };
 }
 
-export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null }>(agent: T): T & {
+export function decorateAgentResponse<T extends { modelPolicy?: Record<string, unknown> | null; style?: string | null; runtimePolicyOverrides?: Record<string, unknown> | null; maxDrawdown?: unknown }>(agent: T): Omit<T, 'maxDrawdown'> & {
   provider: string | null;
   lightModel: string | null;
   heavyModel: string | null;
@@ -317,7 +317,7 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
   resolvedRuntimePolicy: Record<string, unknown> | null;
 } {
   const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
-  return {
+  const result: Record<string, unknown> = {
     ...agent,
     provider: typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : null,
     lightModel: typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : null,
@@ -332,6 +332,17 @@ export function decorateAgentResponse<T extends { modelPolicy?: Record<string, u
       agent.style ?? null,
       (agent.runtimePolicyOverrides ?? null) as Parameters<typeof resolveAgentRuntimePolicy>[1],
     ) as unknown as Record<string, unknown> | null,
+  };
+  delete result['maxDrawdown'];
+  return result as Omit<T, 'maxDrawdown'> & {
+    provider: string | null;
+    lightModel: string | null;
+    heavyModel: string | null;
+    costPreset: CostPreset | null;
+    dailySpendBudgetUsd: number | null;
+    dailyLlmTokenBudget: number | null;
+    dexWatchlistSymbols: string[] | null;
+    resolvedRuntimePolicy: Record<string, unknown> | null;
   };
 }
 
@@ -420,8 +431,6 @@ export function validateDailyLossRequiresCapital(input: {
 
 /**
  * Validate agent risk bounds against operator ceilings.
- * maxDrawdown is accepted as a string because it flows through the positiveDecimalStringSchema
- * which transforms the value to a string representation.
  * maxDrawdownPct is a numeric percentage (0–100).
  */
 export function validateAgentRiskBounds(
@@ -430,7 +439,6 @@ export function validateAgentRiskBounds(
     maxPositionSizePct?: number | null;
     stopLossPct?: number | null;
     stopLossCooldownMs?: number | null;
-    maxDrawdown?: string | null;
     maxDrawdownPct?: number | null;
   },
   defaults: AgentRiskDefaultsConfig,
@@ -467,17 +475,6 @@ export function validateAgentRiskBounds(
       path: ['stopLossCooldownMs'],
       message: `stopLossCooldownMs cannot exceed the platform limit of ${defaults.stopLossCooldownMs}ms`,
     });
-  }
-
-  if (input.maxDrawdown != null) {
-    const val = Number(input.maxDrawdown);
-    if (!Number.isNaN(val) && val > defaults.maxDrawdown) {
-      issues.push({
-        code: 'custom',
-        path: ['maxDrawdown'],
-        message: `maxDrawdown cannot exceed the platform limit of ${defaults.maxDrawdown}`,
-      });
-    }
   }
 
   if (input.maxDrawdownPct != null && input.maxDrawdownPct > defaults.maxDrawdownPct) {
