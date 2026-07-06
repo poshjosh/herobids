@@ -27,6 +27,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Legacy `maxDrawdown` from agent-facing surface:** The absolute USD `maxDrawdown` field was removed from agent API schemas (create/update/interactivity), risk-defaults response, export config, client types, form state, UI components, locale strings, worker risk limit construction, and domain tool types. The canonical agent drawdown control is now exclusively `maxDrawdownPct` (percentage). The operator ceiling (`agentRiskDefaults.maxDrawdown`) is still used internally as a safety net for non-agent flows.
 - `seedStaticPricing()` function and its worker startup call — static YAML prices are no longer seeded into the DB.
 - **"Advanced: raw JSON config" toggle from bot creation:** The raw JSON editor escape hatch was removed from the bot create modal to simplify UX and align with agent creation. Strategy config is now exclusively preset-driven. Power users can use the API directly.
 
