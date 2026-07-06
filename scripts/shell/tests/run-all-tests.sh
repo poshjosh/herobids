@@ -229,7 +229,7 @@ run_tier "API smoke (runtime-policy)" \
   bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/runtime-policy-e2e.sh"
 
 run_tier "API smoke (agent-evaluation)" \
-  bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/agent-evaluation-test.sh"
+  bash -c "cd '${ROOT}' && DEFAULT_PROVIDER='${DEFAULT_PROVIDER:-ollama}' DEFAULT_LIGHT_MODEL='${DEFAULT_LIGHT_MODEL:-qwen3.6:35b-a3b-q4_K_M}' DEFAULT_HEAVY_MODEL='${DEFAULT_HEAVY_MODEL:-qwen3.6:35b-a3b-q4_K_M}' API_BASE_URL=http://localhost:3000 scripts/shell/tests/agent-evaluation-test.sh"
 
 run_tier "API smoke (strategy-presets)" \
   bash -c "cd '${ROOT}' && API_BASE_URL=http://localhost:3000 scripts/shell/tests/test-presets.sh"

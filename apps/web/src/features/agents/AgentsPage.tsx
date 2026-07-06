@@ -169,7 +169,7 @@ function CreateAgentFlow({
     return {
     name: '',
     goal: '',
-    capabilityMode: 'technical',
+    capabilityMode: 'intelligence',
     technicalPreFilterEnabled: true,
     technicalConfig: defaultTechnicalConfigFormState(),
     skillPreset: 'trading',
@@ -417,6 +417,9 @@ function CreateAgentFlow({
       return agent;
     },
     onSuccess: (agent) => onCreated(agent.id),
+    onError: () => {
+      setFormErrors((prev) => ({ ...prev, _form: localizeApiError(intl, mutation.error, 'common.errorTitle') }));
+    },
   });
 
   function clearFieldError(field: string) {

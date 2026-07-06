@@ -23,7 +23,7 @@ test.describe('Journey 17: Create bot modal', () => {
     await registerUser(page, `${BASE_EMAIL}-a@e2e.local`, PASSWORD, 'E2E User J17a');
     await page.goto('/bots');
 
-    await expect(page.getByText('Bots')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('heading', { name: 'Bots' })).toBeVisible({ timeout: 5_000 });
     await expect(
       page.getByRole('button', { name: /create bot/i }).first(),
     ).toBeVisible({ timeout: 5_000 });
@@ -46,10 +46,10 @@ test.describe('Journey 17: Create bot modal', () => {
 
     // Open the modal via the header CTA
     await page.getByRole('button', { name: /create bot/i }).first().click();
-    await expect(page.getByText('Create Bot')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').getByText('Create Bot').first()).toBeVisible({ timeout: 5_000 });
 
     // Strategy preset and connection are empty by default — submit must be disabled
-    const createBtn = page.getByRole('button', { name: /^creating…$|^create bot$/i }).last();
+    const createBtn = page.getByRole('dialog').getByRole('button', { name: /^creating…$|^create bot$/i });
     await expect(createBtn).toBeDisabled({ timeout: 3_000 });
   });
 
@@ -58,7 +58,7 @@ test.describe('Journey 17: Create bot modal', () => {
     await page.goto('/bots');
 
     await page.getByRole('button', { name: /create bot/i }).first().click();
-    await expect(page.getByText('Create Bot')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').getByText('Create Bot').first()).toBeVisible({ timeout: 5_000 });
 
     await page.getByRole('button', { name: /^cancel$/i }).click();
     // Modal must be gone; bots page must still be present

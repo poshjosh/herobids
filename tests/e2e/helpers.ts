@@ -121,6 +121,12 @@ export async function createAgent(
     }
   }
 
+  // Wait for React effects (capabilityMode derivation) to commit after
+  // preset/skill changes. Without this, the form may submit with an empty
+  // prompt because capabilityMode hasn't been updated from 'technical'
+  // to 'intelligence' yet, causing the API to reject the payload.
+  await page.waitForTimeout(300);
+
   if ((options.skillIds ?? []).length > 0) {
     // Uncheck any pre-selected skills first so only the requested ones remain.
     const allCheckboxes = page.getByRole('checkbox');
