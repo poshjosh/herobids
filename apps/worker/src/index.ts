@@ -243,6 +243,34 @@ if (runtimeMode === 'docker' && !appConfig.llm.provider) {
   process.exit(1);
 }
 
+// Bot repository — instantiated before agentRuntimeLauncher so that the
+// cascadeStopAgentBots helper is available for onAgentCrashed wiring.
+const botRepo = new BotRepository(db);
+
+/**
+ * Cascade-stop all running bots created by an agent.
+ * No-op when the agent has no running bots. Failure to stop any individual bot
+ * is logged but does not block the cascade; Promise.allSettled is used so all
+ * bots get a stop attempt regardless of individual failures.
+ */
+async function cascadeStopAgentBots(agentId: string): Promise<void> {
+  try {
+    const agentBots = await botRepo.getBotsByCreator('agent', agentId);
+    const runningBots = agentBots.filter((b) => b.status === 'running');
+    if (runningBots.length === 0) return;
+    logger.info({ agentId, count: runningBots.length }, 'Cascade-stopping agent bots');
+    await Promise.allSettled(
+      runningBots.map((b) =>
+        runtime.stopInstanceDirect(b.id).catch((err: unknown) =>
+          logger.error({ err, botId: b.id, agentId }, 'Failed to cascade-stop agent bot'),
+        ),
+      ),
+    );
+  } catch (err) {
+    logger.error({ err, agentId }, 'cascadeStopAgentBots query failed');
+  }
+}
+
 const agentRuntimeLauncher = runtimeMode === 'docker'
   ? new AgentRuntimeLauncher({
       mode: 'docker',
@@ -287,6 +315,7 @@ const agentRuntimeLauncher = runtimeMode === 'docker'
               marketDataConfigJson: JSON.stringify(appConfig.marketData),
             }
           : {}),
+        onAgentCrashed: (agentId) => cascadeStopAgentBots(agentId),
       },
     })
   : new AgentRuntimeLauncher({ redis: redisClient });
@@ -675,6 +704,13 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
       updatedAt: new Date().toISOString(),
     });
     instanceExecutionModes.delete(agentId);
+
+    // Cascade-stop all running bots created by this agent.
+    // This is a supplemental path — the controlling path for UI/API stops is
+    // AgentHealthMonitor.onTerminalSessionCleanup.
+    cascadeStopAgentBots(agentId).catch((err: unknown) =>
+      logger.error({ err, agentId }, 'cascadeStopAgentBots failed in onSessionStopped'),
+    );
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
   usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml, appConfig.usageBilling.fallbackCacheReadPct),
@@ -686,7 +722,6 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
 // Queue used by the broker callback to enqueue bot start jobs
 const lifecycleQueue = new Queue(QUEUE_NAME, { connection: redisConnection });
 
-const botRepo = new BotRepository(db);
 const botStartCallback = async (botId: string, userId: string, connectionId: string, config: Record<string, unknown>) => {
   await lifecycleQueue.add('start-instance', {
     command: 'start',
@@ -766,7 +801,15 @@ const agentBroker = new AgentMessageBroker(
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
-const agentHealthMonitor = new AgentHealthMonitor(db, sessionManager, undefined, agentRuntimeLauncher);
+const agentHealthMonitor = new AgentHealthMonitor(
+  db,
+  sessionManager,
+  {
+    checkIntervalMs: appConfig.worker.agents.healthCheckIntervalMs,
+    onTerminalSessionCleanup: (agentId) => cascadeStopAgentBots(agentId),
+  },
+  agentRuntimeLauncher,
+);
 
 const reminderCoordinator = new ReminderCoordinator(redisClient, agentRepo, eventPublisher);
 
@@ -1449,6 +1492,11 @@ const pricingRefreshInterval = setInterval(() => {
   });
 }, PRICING_REFRESH_INTERVAL_MS);
 
+// Declared here so the signal handlers below can safely reference it even
+// before the actual setInterval call during startup. clearInterval(undefined)
+// is a no-op per the Node.js API.
+let botOrphanSweepInterval: ReturnType<typeof setInterval> | undefined;
+
 // Register graceful shutdown handlers after all services are fully initialized.
 // Placing them here guarantees no temporal-dead-zone reference errors if a
 // signal arrives during the async startup above.
@@ -1462,6 +1510,7 @@ process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down...');
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
+  clearInterval(botOrphanSweepInterval);
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -1485,6 +1534,7 @@ process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down...');
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
+  clearInterval(botOrphanSweepInterval);
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -1553,4 +1603,25 @@ agentCleanupSubscriber.on('pmessage', (_pattern: string, channel: string, _messa
 sessionManager.start();
 agentHealthMonitor.start();
 reminderCoordinator.start();
+
+// Periodic bot orphan sweep — safety net that stops running bots whose creator
+// agent is no longer active (stopped or crashed). Catches anything the immediate
+// cascade missed (worker restart, Redis pub/sub drop, crash mid-cleanup).
+botOrphanSweepInterval = setInterval(async () => {
+  try {
+    const orphans = await botRepo.listRunningBotsForInactiveAgents();
+    if (orphans.length === 0) return;
+    logger.warn({ count: orphans.length }, 'Bot orphan sweep: stopping bots for inactive agents');
+    await Promise.allSettled(
+      orphans.map((b) =>
+        runtime.stopInstanceDirect(b.id).catch((err: unknown) =>
+          logger.error({ err, botId: b.id, creatorId: b.creatorId }, 'Orphan sweep failed to stop bot'),
+        ),
+      ),
+    );
+  } catch (err) {
+    logger.error({ err }, 'Bot orphan sweep failed');
+  }
+}, appConfig.worker.agents.botOrphanSweepIntervalMs);
+
 logger.info({ workerId, queue: QUEUE_NAME }, 'Worker process started');

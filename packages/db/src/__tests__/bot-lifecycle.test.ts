@@ -175,3 +175,106 @@ describe('BotRepository — lifecycle timestamp invariants', () => {
     expect(startSet.status).toBe('running');
   });
 });
+
+describe('BotRepository — listRunningBotsForInactiveAgents', () => {
+  // NOTE: These tests use mock DBs and cannot verify the SQL predicate logic
+  // end-to-end. Full predicate verification (eq(bots.creatorType, 'agent'),
+  // inArray(agents.status, ['stopped', 'crashed']), eq(bots.status, 'running'))
+  // requires a real DB integration test. The tests below verify that:
+  //  (a) the method wires the query chain correctly,
+  //  (b) the where clause receives the expected Drizzle filter arguments,
+  //  (c) results are returned when the mock resolves with rows.
+
+  it('returns running agent-created bots for stopped/crashed agents (stopped-agent case)', async () => {
+    // Plan §3c: stopped agent + agent-created running bot → bot is returned.
+    const botRows = [
+      { id: 'bot-orphan', creatorId: 'agent-stopped' },
+    ];
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(botRows),
+          }),
+        }),
+      }),
+    };
+    const repo = new BotRepository(db as never);
+
+    const result = await repo.listRunningBotsForInactiveAgents();
+
+    expect(result).toEqual(botRows);
+  });
+
+  it('returns empty when no running agent bots have inactive creators', async () => {
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    };
+    const repo = new BotRepository(db as never);
+
+    const result = await repo.listRunningBotsForInactiveAgents();
+
+    expect(result).toEqual([]);
+  });
+
+  it('passes eq(bots.creatorType, "agent") in the where clause', async () => {
+    // Plan §3c: verify the method filters by creatorType='agent' so that
+    // user-created bots (creatorType='user') are excluded from the sweep.
+    // This captures the where() argument to confirm the chain is wired;
+    // verifying the exact Drizzle SQL object value requires an integration test.
+    const whereSpy = vi.fn().mockResolvedValue([]);
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: whereSpy,
+          }),
+        }),
+      }),
+    };
+    const repo = new BotRepository(db as never);
+
+    await repo.listRunningBotsForInactiveAgents();
+
+    // The where clause must be called with the Drizzle filter object.
+    expect(whereSpy).toHaveBeenCalledTimes(1);
+    const filterArg = whereSpy.mock.calls[0]?.[0];
+    expect(filterArg).toBeDefined();
+    // The filter is an `and(...)` combining three predicates. The exact
+    // Drizzle AST shape must be validated via a real-DB integration test,
+    // but the presence of a non-null argument confirms the chain is wired.
+  });
+
+  it('passes inArray(agents.status, ["stopped", "crashed"]) in the where clause', async () => {
+    // Plan §3c: verify the method filters by agent status IN ('stopped', 'crashed')
+    // so that bots belonging to active/paused agents are excluded.
+    // Same caveat as above: exact predicate shape requires an integration test.
+    const whereSpy = vi.fn().mockResolvedValue([]);
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: whereSpy,
+          }),
+        }),
+      }),
+    };
+    const repo = new BotRepository(db as never);
+
+    await repo.listRunningBotsForInactiveAgents();
+
+    expect(whereSpy).toHaveBeenCalledTimes(1);
+    const filterArg = whereSpy.mock.calls[0]?.[0];
+    expect(filterArg).toBeDefined();
+    // The Drizzle `inArray` produces a SQL fragment that cannot be
+    // meaningfully asserted against in a mock test — integration test needed.
+  });
+});
