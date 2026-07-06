@@ -53,6 +53,8 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 1 — Domain: add `tradingSessions` to policy types
 
+**Status:** PENDING
+
 **Files:**
 - `packages/domain/src/config/schema.ts`
 
@@ -96,6 +98,8 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 ---
 
 ## Step 2 — Worker: DST-aware session resolution in `isWithinTradingHours`
+
+**Status:** PENDING
 
 **Files:**
 - `apps/worker/src/tick-gates.ts`
@@ -195,6 +199,8 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 3 — Frontend: extend `RuntimePolicyOverrides`
 
+**Status:** PENDING
+
 **Files:**
 - `apps/web/src/features/agents/style-mapping.ts`
 
@@ -224,6 +230,8 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 ---
 
 ## Step 4 — Frontend: session preset UI in `RuntimePolicySection`
+
+**Status:** PENDING
 
 **Files:**
 - `apps/web/src/features/agents/RuntimePolicySection.tsx`
@@ -322,6 +330,8 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 5 — Frontend: thread `showTradingSessionPresets` from callers
 
+**Status:** PENDING
+
 **Files:**
 - `apps/web/src/features/agents/AgentsPage.tsx`
 - `apps/web/src/features/agents/EditAgentModal.tsx`
@@ -348,6 +358,8 @@ Apply the same change in `EditAgentModal.tsx`.
 ---
 
 ## Step 6 — i18n strings
+
+**Status:** PENDING
 
 **Files:**
 - `apps/web/src/app/i18n/locales/en.ts`
@@ -382,6 +394,8 @@ Add matching keys to `hi.ts` and `ar.ts` (translate or use English as placeholde
 ---
 
 ## Step 7 — Tests
+
+**Status:** PENDING
 
 **Files:**
 - `apps/worker/src/tick-gates.test.ts`
@@ -467,6 +481,8 @@ it('rejects unknown session name', () => {
 
 ## Step 8 — Final lint & type-check
 
+**Status:** PENDING
+
 ```bash
 pnpm lint   # must pass with zero errors
 pnpm test   # all tests green
@@ -493,3 +509,15 @@ pnpm test   # all tests green
 
 No database migration is required — `tradingSessions` is stored inside the existing
 `runtime_policy_overrides` JSONB column.
+
+---
+
+## Outstanding Issues
+
+### [Step 1] LOW — `TradingSessionName` uses `typeof TRADING_SESSION_NAMES[number]` pattern (cosmetic)
+
+Idiomatic and correct — no action needed for Step 1.
+
+### [Step 1] LOW — `tradingSessions` in `AgentRuntimePolicyOverridesSchema` is `z.array(...).nullable().optional()`
+
+Consistent with other fields. Semantics: `undefined` → style default, `null` → style default, `[]` → explicit "no sessions." No action needed.
