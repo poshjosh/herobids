@@ -87,6 +87,8 @@ export interface HybridEvaluatorResult {
     outputTokens?: number;
     cachedInputTokens?: number;
   };
+  /** LLM error when the call itself failed (timeout, server error, etc.) — populated instead of llmUsage. */
+  llmError?: { code: string; message: string };
 }
 
 /**
@@ -154,6 +156,7 @@ export async function runHybridEvaluator(input: HybridEvaluatorInput): Promise<H
   if (!llmResult.ok) {
     logger.error({ error: llmResult.error }, 'Hybrid evaluator: LLM returned error');
     result.errors.push(`llm_error: ${llmResult.error.code} — ${llmResult.error.message}`);
+    result.llmError = { code: llmResult.error.code, message: llmResult.error.message };
     return result;
   }
 

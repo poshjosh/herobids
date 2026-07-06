@@ -106,6 +106,7 @@ export function getLlmModelPricing(
 export function getLlmModelRateCardItems(
   providerId: string,
   snapshot: Record<string, Partial<ModelPricing>> | null,
+  options?: { fallbackCacheReadPct?: number },
 ): Array<{
   meterKey: string;
   provider: string;
@@ -150,15 +151,20 @@ export function getLlmModelRateCardItems(
         perUnit,
       },
     );
-    // Only seed a cached-input rate card item when the snapshot carries an
-    // explicit cache-read price.  Without it we record the event but charge
-    // nothing — approximating with a fixed discount in a money path is unsafe.
-    if (m.cacheReadUsdPerM !== undefined) {
+    // Use explicit cache-read price when available; otherwise fall back to a
+    // configurable fraction of the input rate (fallbackCacheReadPct).  When no
+    // fallback is configured, skip the item so cache reads are not charged.
+    const effectiveCacheReadUsdPerM =
+      m.cacheReadUsdPerM ??
+      (options?.fallbackCacheReadPct !== undefined
+        ? m.inputUsdPerM * (options.fallbackCacheReadPct / 100)
+        : undefined);
+    if (effectiveCacheReadUsdPerM !== undefined) {
       items.push({
         meterKey: 'llm.cached_input_tokens',
         provider: providerId,
         modelPattern: modelId,
-        priceMicrousd: Math.round(m.cacheReadUsdPerM * perUnit),
+        priceMicrousd: Math.round(effectiveCacheReadUsdPerM * perUnit),
         perUnit,
       });
     }

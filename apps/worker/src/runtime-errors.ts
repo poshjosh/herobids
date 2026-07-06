@@ -154,6 +154,8 @@ export async function callLlmWithRetry(
     call?: typeof callLlmProvider;
     sleep?: (ms: number) => Promise<void>;
     onRetry?: (info: { attempt: number; delayMs: number; classification: RuntimeFailureClassification }) => void;
+    /** Fires on every non-fatal failed attempt, including the final one after retries are exhausted. */
+    onAttemptFailed?: (info: { attempt: number; classification: RuntimeFailureClassification }) => void;
   },
 ): Promise<LlmRetryResult> {
   const caller = options?.call ?? callLlmProvider;
@@ -174,6 +176,8 @@ export async function callLlmWithRetry(
     if (classification.mode === 'fatal') {
       return { result, attempts: attempt + 1, delaysMs, classification };
     }
+
+    options?.onAttemptFailed?.({ attempt: attempt + 1, classification });
 
     let delayMs: number | null = null;
     if (result.error.code === 'provider.http_429') {

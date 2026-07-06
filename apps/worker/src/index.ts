@@ -677,7 +677,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
     instanceExecutionModes.delete(agentId);
   },
   onSessionStarted: (agentId, sessionId) => sendSessionStartedTelegramAnchor(agentId, sessionId),
-  usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml),
+  usageBillingRepo: new UsageBillingRepository(db, appConfig.usageBilling.defaultRateCardItems, providersYaml, appConfig.usageBilling.fallbackCacheReadPct),
   plansConfig: appConfig.plans,
   usageBillingConfig: appConfig.usageBilling,
   providersYaml,
@@ -1377,13 +1377,14 @@ async function seedStaticPricing(
     const existing = await repo.getLatestPricingSnapshot(providerId);
     if (existing) continue; // already seeded from prior deploy
 
-    const models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number }> = {};
+    const models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }> = {};
     for (const [modelId, m] of Object.entries(config.models)) {
       if (m.inputUsdPerM == null || m.outputUsdPerM == null) continue;
       models[modelId] = {
         inputUsdPerM: m.inputUsdPerM,
         outputUsdPerM: m.outputUsdPerM,
         ...(m.reasoningUsdPerM != null ? { reasoningUsdPerM: m.reasoningUsdPerM } : {}),
+        ...(m.cacheReadUsdPerM != null ? { cacheReadUsdPerM: m.cacheReadUsdPerM } : {}),
       };
     }
 

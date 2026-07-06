@@ -588,6 +588,18 @@ export const UsageBillingConfigSchema = z.object({
   })).default([
     { meterKey: 'agent.runtime_ms', priceMicrousd: 100, perUnit: 60_000 },
   ]),
+  /**
+   * Percentage of the input token rate to use as the cache-read rate when a
+   * pricing snapshot has no explicit cacheReadUsdPerM.  Set to 0 to disable
+   * the fallback and leave cache reads un-billed when pricing is absent.
+   */
+  fallbackCacheReadPct: z.number().min(0).max(100).default(75),
+  /**
+   * Percentage of maxTokens to bill as estimated output tokens when an LLM
+   * call fails (timeout or server error) before returning a response.
+   * Set to 0 to skip billing for failed calls.
+   */
+  failedRequestOutputPct: z.number().min(0).max(100).default(75),
   /** Whether credit top-up purchases are available globally */
   creditTopUpsEnabled: z.boolean().default(false),
   /** Provider top-up product mappings: provider → array of top-up packs */

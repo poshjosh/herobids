@@ -599,6 +599,8 @@ usageBilling:
       - packId: mock_topup_10000
         externalId: mock_topup_10000
         cents: 10000        
+  fallbackCacheReadPct: 75                 # % of input rate to use as cache-read rate when provider has no explicit cache price
+  failedRequestOutputPct: 75              # % of maxTokens to bill as estimated output on failed (timeout/server-error) LLM calls
   defaultRateCardItems:                    # seed items for how much each type of agent activity costs
     - meterKey: "agent.runtime_ms"
       priceMicrousd: 100

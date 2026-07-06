@@ -34,6 +34,12 @@ export interface StructuredToolLoopOptions {
     delayMs: number;
     classification: RuntimeFailureClassification;
   }) => void;
+  /** Fires on every non-fatal failed LLM attempt, including the final one (before and after retries). */
+  onFailedAttempt?: (info: {
+    turnIndex: number;
+    attempt: number;
+    classification: RuntimeFailureClassification;
+  }) => void;
   onBeforeTurn?: (info: { turnIndex: number; turnsRemaining: number }) =>
     | string
     | {
@@ -112,6 +118,9 @@ export async function runStructuredToolLoop(options: StructuredToolLoopOptions):
         ...options.retryPolicy,
         onRetry: options.onRetry
           ? ({ attempt, delayMs, classification }) => options.onRetry?.({ turnIndex, attempt, delayMs, classification })
+          : undefined,
+        onAttemptFailed: options.onFailedAttempt
+          ? ({ attempt, classification }) => options.onFailedAttempt?.({ turnIndex, attempt, classification })
           : undefined,
       },
     );

@@ -380,6 +380,12 @@ export class AgentSessionManager {
           ...(this.config.usageBillingConfig?.defaultRateCardItems
             ? { usageBillingRateCardItems: this.config.usageBillingConfig.defaultRateCardItems }
             : {}),
+          ...(this.config.usageBillingConfig?.fallbackCacheReadPct !== undefined
+            ? { usageBillingFallbackCacheReadPct: this.config.usageBillingConfig.fallbackCacheReadPct }
+            : {}),
+          ...(this.config.usageBillingConfig?.failedRequestOutputPct !== undefined
+            ? { usageBillingFailedRequestOutputPct: this.config.usageBillingConfig.failedRequestOutputPct }
+            : {}),
           ...(this.config.providersYaml
             ? { providersYaml: this.config.providersYaml }
             : {}),

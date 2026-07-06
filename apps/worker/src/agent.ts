@@ -240,6 +240,8 @@ interface AgentConfig {
   usageBillingSoftCapMicrousd?: number | null;
   usageBillingHardCapMicrousd?: number | null;
   usageBillingRateCardItems?: Array<{ meterKey: string; priceMicrousd: number; perUnit: number }>;
+  usageBillingFallbackCacheReadPct?: number;
+  usageBillingFailedRequestOutputPct?: number;
   agentRiskDefaults?: {
     maxOpenPositions: number;
     maxPositionSizePct: number;
@@ -819,6 +821,8 @@ const usageBillingService = createUsageBillingService(db, {
   runtimeChargeWindowMs: RUNTIME_CHARGE_WINDOW_MS,
   rateCardItems: agentConfig.usageBillingRateCardItems,
   providersYaml,
+  fallbackCacheReadPct: agentConfig.usageBillingFallbackCacheReadPct,
+  failedRequestOutputPct: agentConfig.usageBillingFailedRequestOutputPct,
   enabled: !!agentConfig.userId,
 });
 
@@ -2232,6 +2236,20 @@ async function runTick(): Promise<void> {
           });
         }
 
+        if (evalResult.llmError && (
+          evalResult.llmError.code === 'provider.timeout' ||
+          /^provider\.http_5\d\d$/.test(evalResult.llmError.code)
+        )) {
+          usageBillingService?.recordFailedLlmCall({
+            provider,
+            model: costProfile.heavyModel,
+            maxTokens: LLM_MAX_TOKENS,
+            phase: 'hybrid',
+            turnIndex: 0,
+            attemptIndex: 1,
+          });
+        }
+
         if (evalResult.errors.length > 0) {
           logger.warn({ errors: evalResult.errors, decisionsSubmitted: evalResult.decisionsSubmitted },
             'Hybrid evaluator completed with errors');
@@ -2520,6 +2538,18 @@ async function runTick(): Promise<void> {
         onRetry: ({ attempt, delayMs, classification }) => {
           logger.warn({ phase: 'scout', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying scout tool turn after backoff');
         },
+        onFailedAttempt: ({ turnIndex, attempt, classification }) => {
+          if (classification.reasonCode === 'llm.timeout' || classification.reasonCode === 'llm.server_error') {
+            usageBillingService?.recordFailedLlmCall({
+              provider,
+              model: lightModel,
+              maxTokens: scoutLoopConfig.maxTokens,
+              phase: 'scout',
+              turnIndex,
+              attemptIndex: attempt,
+            });
+          }
+        },
         onBeforeTurn: ({ turnsRemaining }) => {
           if (turnsRemaining === 1) {
             return {
@@ -2758,6 +2788,18 @@ async function runTick(): Promise<void> {
       },
       onRetry: ({ attempt, delayMs, classification }) => {
         logger.warn({ phase: 'judge', attempt, delayMs, reasonCode: classification.reasonCode }, 'Retrying judge LLM call after backoff');
+      },
+      onFailedAttempt: ({ turnIndex, attempt, classification }) => {
+        if (classification.reasonCode === 'llm.timeout' || classification.reasonCode === 'llm.server_error') {
+          usageBillingService?.recordFailedLlmCall({
+            provider,
+            model: costProfile.heavyModel,
+            maxTokens: LLM_MAX_TOKENS,
+            phase: 'judge',
+            turnIndex,
+            attemptIndex: attempt,
+          });
+        }
       },
     });
 

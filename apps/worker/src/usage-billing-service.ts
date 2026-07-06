@@ -32,6 +32,10 @@ export interface UsageBillingServiceConfig {
   runtimeChargeWindowMs: number;
   rateCardItems?: Array<{ meterKey: string; priceMicrousd: number; perUnit: number }>;
   providersYaml?: ProvidersYaml;
+  /** Percentage of input rate to use as cache-read rate when no explicit price is available */
+  fallbackCacheReadPct?: number;
+  /** Percentage of maxTokens to bill as estimated output on failed LLM calls */
+  failedRequestOutputPct?: number;
   enabled: boolean;
 }
 
@@ -61,7 +65,7 @@ export class UsageBillingService {
     db: Database,
     private readonly config: UsageBillingServiceConfig,
   ) {
-    this.repo = new UsageBillingRepository(db, config.rateCardItems, config.providersYaml);
+    this.repo = new UsageBillingRepository(db, config.rateCardItems, config.providersYaml, config.fallbackCacheReadPct);
   }
 
   /** Lazily resolve billing account and open period. Returns false if unavailable. */
@@ -150,6 +154,74 @@ export class UsageBillingService {
     void this.doRecordLlmUsage(input).catch((err: unknown) => {
       logger.warn({ err, phase: input.phase }, 'Failed to record LLM usage event');
     });
+  }
+
+  /** Record estimated billing for a failed (timeout / server-error) LLM call. Fire-and-forget. */
+  recordFailedLlmCall(input: {
+    provider: string;
+    model: string;
+    maxTokens: number;
+    phase: string;
+    turnIndex?: number;
+    attemptIndex?: number;
+  }): void {
+    if (!this.config.enabled) return;
+
+    void this.doRecordFailedLlmCall(input).catch((err: unknown) => {
+      logger.warn({ err, phase: input.phase }, 'Failed to record failed LLM call billing event');
+    });
+  }
+
+  private async doRecordFailedLlmCall(input: {
+    provider: string;
+    model: string;
+    maxTokens: number;
+    phase: string;
+    turnIndex?: number;
+    attemptIndex?: number;
+  }): Promise<void> {
+    const failedRequestOutputPct = this.config.failedRequestOutputPct ?? 75;
+    const estimatedOutputTokens = Math.round(input.maxTokens * failedRequestOutputPct / 100);
+    if (estimatedOutputTokens <= 0) return;
+
+    const now = new Date();
+    const ok = await this.ensureAccount(now);
+    if (!ok || !this.accountId) return;
+
+    const idScope = [
+      this.config.sessionId,
+      input.phase,
+      `t${input.turnIndex ?? 0}`,
+      `a${input.attemptIndex ?? 0}`,
+      input.provider,
+      input.model,
+      'failed',
+    ].join('_');
+
+    const event = {
+      id: `ue_${crypto.randomUUID().replace(/-/g, '')}`,
+      accountId: this.accountId,
+      userId: this.config.userId,
+      agentId: this.config.agentId,
+      sessionId: this.config.sessionId,
+      skillId: this.config.skillId ?? null,
+      sourceType: 'llm_call',
+      meterKey: 'llm.output_tokens' as const,
+      provider: input.provider,
+      model: input.model,
+      quantity: estimatedOutputTokens,
+      unit: 'tokens',
+      idempotencyKey: `llm_fail_out_${idScope}`,
+      occurredAt: now,
+      metadata: { estimated: true, basis: 'failed_request_fraction' },
+    };
+
+    if (this.periodId && this.rateCardId) {
+      const items = await this.repo.getRateCardItems(this.rateCardId);
+      await this.repo.recordAndRateUsageBatch([event], this.periodId, this.accountId, items);
+    } else {
+      await this.repo.recordUsageEvents([event]);
+    }
   }
 
   private async doRecordLlmUsage(input: LlmUsageInput): Promise<void> {

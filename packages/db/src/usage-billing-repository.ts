@@ -146,6 +146,7 @@ export class UsageBillingRepository {
     private readonly db: Database,
     private readonly rateCardItems: RateCardSeedItem[] = DEFAULT_RATE_CARD_ITEMS,
     private readonly providers?: ProvidersYaml,
+    private readonly fallbackCacheReadPct?: number,
   ) {}
 
   async getUserPlanId(userId: string): Promise<string | null> {
@@ -413,7 +414,9 @@ export class UsageBillingRepository {
       for (const [providerId] of Object.entries(this.providers.providers)) {
         const snapshot = await this.getLatestPricingSnapshot(providerId);
         if (!snapshot) continue;
-        const items = getLlmModelRateCardItems(providerId, snapshot.models as Record<string, Partial<ModelPricing>>);
+        const items = getLlmModelRateCardItems(providerId, snapshot.models as Record<string, Partial<ModelPricing>>, {
+          fallbackCacheReadPct: this.fallbackCacheReadPct,
+        });
         for (const item of items) {
           modelItems.push({
             id: `rci_${rateCardId}_${item.meterKey.replace(/[^a-z0-9_]/gi, '_')}_${item.provider}_${item.modelPattern.replace(/[^a-z0-9_]/gi, '_')}`,
