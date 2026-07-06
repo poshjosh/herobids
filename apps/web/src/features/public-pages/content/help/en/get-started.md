@@ -1,6 +1,6 @@
 # Get Started with HeroBids
 
-HeroBids is an AI-first algorithmic trading platform. You create AI agents that reason about markets and trade on your behalf — across Hyperliquid perpetuals, Jupiter DEX swaps, and more.
+HeroBids offers AI agents as a service. Describe what you want, and an agent gets it for you — starting with crypto trading on Hyperliquid perpetuals, Jupiter DEX swaps, and more.
 
 ## 1. Sign up
 

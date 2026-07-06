@@ -2,7 +2,7 @@
 
 ## Overview
 
-HeroBids is an agentic platform: users describe an outcome, the system runs agents continuously, and the platform handles execution, infrastructure, and persistence.
+HeroBids offers AI agents as a service: users describe what they want, agents run continuously, and the platform handles execution, infrastructure, and persistence.
 
 ```mermaid
 graph TB

@@ -8,7 +8,7 @@ By using HeroBids ("the platform"), you agree to these terms. If you do not agre
 
 ## Service description
 
-HeroBids is an algorithmic trading platform that lets you create and run AI agents to trade on supported venues (Hyperliquid perpetual futures, Jupiter DEX swaps). The platform provides tools for agent creation, market data streaming, trade execution, and performance monitoring.
+HeroBids offers AI agents as a service. You create and run agents that act on your ideas — starting with crypto trading on supported venues (Hyperliquid perpetual futures, Jupiter DEX swaps).
 
 ## Your responsibilities
 

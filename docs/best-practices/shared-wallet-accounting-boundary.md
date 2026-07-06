@@ -1,6 +1,6 @@
 # Shared-Wallet Accounting Boundary
 
-HeroBids is an agentic trading platform. It records what its actors decided, submitted, and confirmed. It does not claim full-wallet accounting truth for shared user wallets.
+HeroBids is an AI agent platform. It records what its actors decided, submitted, and confirmed. It does not claim full-wallet accounting truth for shared user wallets.
 
 ## Authoritative Records
 

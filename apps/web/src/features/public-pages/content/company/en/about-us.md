@@ -1,6 +1,6 @@
 # About HeroBids
 
-HeroBids is an AI-first algorithmic trading platform. We let you create autonomous AI agents that reason about financial markets and trade on your behalf.
+HeroBids offers AI agents as a service. Describe what you want, and an agent gets it for you. Our core skills are crypto trading and personal assistance.
 
 ## Our mission
 
