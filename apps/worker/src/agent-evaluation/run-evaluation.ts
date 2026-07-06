@@ -120,7 +120,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     // ── Step 3: Redact evidence artifacts for user-facing output ──────────
     // Now that all analyzers have read the raw evidence, redact the stored
     // artifacts so downloaded files never contain raw secrets.
-    const evidenceArtifacts = ['fills.json', 'journal.json', 'sessions.json', 'positions.json', 'agent-metadata.json'];
+    const evidenceArtifacts = ['fills.json', 'journal.json', 'sessions.json', 'positions.json', 'agent-metadata.json', 'unified-agent-config.json'];
     for (const name of evidenceArtifacts) {
       try {
         const raw = await store.read(runId, name);
