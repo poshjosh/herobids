@@ -137,7 +137,7 @@ Same check, using `this.deps.venue` and the shared instrument cache.
 - Start periodic refresh (every 60 minutes)
 - Inject into `AgentIntakeResolver` and `AgentTradingActor` constructors
 
-### Step 6: Populate instruments table (optional, Phase 2) — **PENDING**
+### Step 6: Populate instruments table (optional, Phase 2) — **DONE**
 
 Use the cache data to `INSERT … ON CONFLICT DO NOTHING` into the `instruments` table for operator visibility and future use cases (UI instrument picker, etc.).
 
