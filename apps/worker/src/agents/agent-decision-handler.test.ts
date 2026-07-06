@@ -914,7 +914,11 @@ describe('AgentDecisionHandler', () => {
 
       expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
         'dec-sync',
-        { status: 'accepted', planId: 'plan-1' },
+        {
+          status: 'accepted',
+          planId: 'plan-1',
+          message: "Accepted. Note: no stopLoss or takeProfit set — this position is unprotected if you're unable to trade.",
+        },
       );
     });
 
@@ -1141,6 +1145,255 @@ describe('AgentDecisionHandler', () => {
       await expect(
         handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true })),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // per-trade level validation (stopLoss / takeProfit vs mark price)
+  // ---------------------------------------------------------------------------
+  describe('per-trade level validation', () => {
+    function makePayload(overrides: Partial<Parameters<AgentDecisionHandler['handleDecisionSubmit']>[1]> = {}) {
+      return {
+        decisionId: 'dec-lvl',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'go_long' as const,
+        targetSize: '1',
+        rationaleSummary: 'level validation test',
+        _expectsReply: true,
+        ...overrides,
+      };
+    }
+
+    const envelope = {
+      schemaVersion: 'v1' as const,
+      messageId: 'msg-lvl',
+      correlationId: 'corr-lvl',
+      initiatorType: 'agent' as const,
+      initiatorId: 'agent-1',
+      botId: 'inst-1',
+      type: 'agent.decision.submit',
+      createdAt: '2026-06-03T00:00:00.000Z',
+      payload: {},
+    };
+
+    // -----------------------------------------------------------------------
+    // Scenario 1: go_long with stopLoss >= markPrice → rejected
+    // -----------------------------------------------------------------------
+
+    it('rejects go_long when stopLoss is at or above mark price', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'go_long', stopLoss: '100', _expectsReply: true }),
+      );
+
+      // Should publish a rejected sync reply
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-lvl',
+        {
+          status: 'rejected',
+          code: 'level.above_mark_for_long',
+          message: expect.stringContaining('stopLoss (100) must be below current price (100)'),
+        },
+      );
+
+      // Should emit decision rejected
+      expect(eventPublisher.emitDecisionRejected).toHaveBeenCalledWith(
+        'inst-1',
+        expect.objectContaining({
+          decisionId: 'dec-lvl',
+          code: 'level.above_mark_for_long',
+          retryable: false,
+        }),
+      );
+
+      // Should NOT proceed to engine intake
+      expect(submitDecisionForExecution).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // Scenario 2: go_short with takeProfit >= markPrice → rejected
+    // -----------------------------------------------------------------------
+
+    it('rejects go_short when takeProfit is at or above mark price', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'go_short', takeProfit: '100', _expectsReply: true }),
+      );
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-lvl',
+        {
+          status: 'rejected',
+          code: 'level.above_mark_for_short',
+          message: expect.stringContaining('takeProfit (100) must be below current price (100)'),
+        },
+      );
+
+      expect(eventPublisher.emitDecisionRejected).toHaveBeenCalledWith(
+        'inst-1',
+        expect.objectContaining({
+          decisionId: 'dec-lvl',
+          code: 'level.above_mark_for_short',
+          retryable: false,
+        }),
+      );
+
+      expect(submitDecisionForExecution).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // Scenario 3: increase intent resolves side from position and rejects bad levels
+    // -----------------------------------------------------------------------
+
+    it('resolves increase side from position.side and rejects bad stopLoss for a long position', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      // Override position to be long
+      const resolver = (handler as any).intakeResolver;
+      resolver.getPosition.mockReturnValue({
+        symbol: 'BTC/USD:USD',
+        side: 'long',
+        size: { toString: () => '0.5' },
+        entryPrice: { toString: () => '99' },
+        realizedPnl: { toString: () => '0' },
+      });
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'increase', stopLoss: '100', _expectsReply: true }),
+      );
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-lvl',
+        {
+          status: 'rejected',
+          code: 'level.above_mark_for_long',
+          message: expect.stringContaining('stopLoss (100) must be below current price (100)'),
+        },
+      );
+
+      expect(submitDecisionForExecution).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------------
+    // Scenario 4: go_flat / decrease skips level validation entirely
+    // -----------------------------------------------------------------------
+
+    it('skips level validation for go_flat even with invalid levels', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-flat', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'go_flat', targetSize: { toString: () => '0' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'go_flat', stopLoss: '100', takeProfit: '100', _expectsReply: true }),
+      );
+
+      // Should NOT be level-rejected — proceeds to intake
+      expect(submitDecisionForExecution).toHaveBeenCalled();
+      expect(eventPublisher.emitDecisionRejected).not.toHaveBeenCalledWith(
+        'inst-1',
+        expect.objectContaining({ code: expect.stringContaining('level.') }),
+      );
+    });
+
+    it('skips level validation for decrease even with invalid levels', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-dec', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'decrease', targetSize: { toString: () => '0.2' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'long', size: { toString: () => '0.5' }, entryPrice: { toString: () => '99' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'decrease', stopLoss: '100', takeProfit: '100', _expectsReply: true }),
+      );
+
+      // Should NOT be level-rejected — proceeds to intake
+      expect(submitDecisionForExecution).toHaveBeenCalled();
+      expect(eventPublisher.emitDecisionRejected).not.toHaveBeenCalledWith(
+        'inst-1',
+        expect.objectContaining({ code: expect.stringContaining('level.') }),
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // Scenario 5: missing mark price → validation skipped (non-blocking)
+    // -----------------------------------------------------------------------
+
+    it('skips level validation when mark price is unavailable', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      // Override context to have no mark price
+      const resolver = (handler as any).intakeResolver;
+      resolver.getDecisionContext.mockReturnValue({
+        snapshot: { symbol: 'BTC/USD:USD', price: '', timestamp: '2026-06-03T00:00:00.000Z' },
+        position: null,
+        referenceMark: { price: '', source: 'last_price' },
+        strategyParams: {},
+      });
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-nomark', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'go_long', stopLoss: '90', takeProfit: '110', _expectsReply: true }),
+      );
+
+      // Should NOT be level-rejected — proceeds to intake despite having stopLoss+takeProfit
+      expect(submitDecisionForExecution).toHaveBeenCalled();
+      expect(eventPublisher.emitDecisionRejected).not.toHaveBeenCalledWith(
+        'inst-1',
+        expect.objectContaining({ code: expect.stringContaining('level.') }),
+      );
+    });
+
+    // -----------------------------------------------------------------------
+    // malformed mark price → validation skipped (non-blocking, no crash)
+    // -----------------------------------------------------------------------
+
+    it('skips level validation when mark price is malformed (non-numeric)', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      const resolver = (handler as any).intakeResolver;
+      resolver.getDecisionContext.mockReturnValue({
+        snapshot: { symbol: 'BTC/USD:USD', price: 'not-a-number', timestamp: '2026-06-03T00:00:00.000Z' },
+        position: null,
+        referenceMark: { price: 'not-a-number', source: 'last_price' },
+        strategyParams: {},
+      });
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-malformed', botId: 'inst-1', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' }, timestamp: '2026-06-03T00:00:00.000Z' } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(
+        envelope,
+        makePayload({ intent: 'go_long', stopLoss: '90', takeProfit: '110', _expectsReply: true }),
+      );
+
+      // Should NOT crash and should proceed to intake
+      expect(submitDecisionForExecution).toHaveBeenCalled();
     });
   });
 });

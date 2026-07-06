@@ -1,16 +1,38 @@
-import type { Decision, VenueAccountId, DecisionId, InstrumentId } from '@herobids/domain';
+import type { Decision, VenueAccountId, DecisionId, InstrumentId, DecisionIntent } from '@herobids/domain';
 import type { MessageEnvelope, DecisionSubmitPayload } from '@herobids/domain';
 import { Decimal } from '@herobids/domain';
 import type { AgentRepository } from '@herobids/db';
 import type { DecisionFailureRepository } from '@herobids/db';
-import { submitDecisionForExecution, DecisionContextHashMismatchError } from '@herobids/engine';
-import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
+import { submitDecisionForExecution, DecisionContextHashMismatchError, validatePerTradeLevels } from '@herobids/engine';
+import type { DecisionIntakeDeps, DecisionContext, PositionState, LevelValidationError } from '@herobids/engine';
 import type { IntakeResult } from '../execution-actor.js';
 import { isIntakeRejection } from '../execution-actor.js';
 import type { InstanceEventPublisher } from './instance-event-publisher.js';
 import pino from 'pino';
 
 const logger = pino({ name: 'agent-decision-handler' });
+
+/** Intents that grow (or initiate) a position — used for level validation and stop-loss/take-profit reminders. */
+const POSITION_GROWING_INTENTS = new Set<DecisionIntent>(['go_long', 'go_short', 'increase']);
+
+/** Map a level validation error to an agent-facing rejection message. */
+function formatLevelValidationMessage(error: LevelValidationError): string {
+  const { reason, markPrice, level } = error;
+  switch (reason) {
+    case 'above_mark_for_long':
+      return `Rejected: stopLoss (${level}) must be below current price (${markPrice}) for a long position.`;
+    case 'below_mark_for_short':
+      return `Rejected: stopLoss (${level}) must be above current price (${markPrice}) for a short position.`;
+    case 'below_mark_for_long':
+      return `Rejected: takeProfit (${level}) must be above current price (${markPrice}) for a long position.`;
+    case 'above_mark_for_short':
+      return `Rejected: takeProfit (${level}) must be below current price (${markPrice}) for a short position.`;
+    default: {
+      const _exhaustive: never = reason;
+      throw new Error(`Unhandled level validation reason: ${String(_exhaustive)}`);
+    }
+  }
+}
 
 /**
  * Resolves the execution context needed by the decision intake pipeline.
@@ -221,6 +243,67 @@ export class AgentDecisionHandler {
       actorId: initiatorId,
     };
 
+    // 4b. Validate per-trade stopLoss/takeProfit levels against mark price
+    // before accepting the decision. Skip for exit intents (go_flat, decrease).
+    if (POSITION_GROWING_INTENTS.has(decision.intent) && (decision.stopLoss || decision.takeProfit)) {
+      let validationSide: 'long' | 'short' | null = null;
+      if (decision.intent === 'go_long') {
+        validationSide = 'long';
+      } else if (decision.intent === 'go_short') {
+        validationSide = 'short';
+      } else if (decision.intent === 'increase') {
+        if (position.side === 'long' || position.side === 'short') {
+          validationSide = position.side;
+        }
+        // Flat position with 'increase' intent is anomalous — skip validation.
+      }
+
+      if (validationSide) {
+        const markPriceStr = context.referenceMark.price;
+        let markPrice: Decimal | undefined;
+        if (markPriceStr) {
+          try {
+            markPrice = new Decimal(markPriceStr);
+          } catch {
+            logger.warn({ decisionId: payload.decisionId, markPriceStr }, 'Skipping per-trade level validation — malformed mark price');
+          }
+        }
+
+        if (markPrice) {
+          const validationError = validatePerTradeLevels({
+            side: validationSide,
+            markPrice,
+            stopLoss: decision.stopLoss,
+            takeProfit: decision.takeProfit,
+          });
+
+          if (validationError) {
+            const message = formatLevelValidationMessage(validationError);
+            setSyncReply('rejected', { code: `level.${validationError.reason}`, message });
+            await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
+              decisionId: payload.decisionId,
+              code: `level.${validationError.reason}`,
+              message,
+              retryable: false,
+            });
+            this.recordFailure({
+              actorType: 'agent',
+              actorId: effectiveAgentId,
+              decisionId: payload.decisionId,
+              instrumentId: payload.instrumentId,
+              failureCode: `level.${validationError.reason}`,
+              failureMessage: message,
+              failureClass: 'rejection',
+              retryable: false,
+            });
+            return;
+          }
+        } else {
+          logger.warn({ decisionId: payload.decisionId }, 'Skipping per-trade level validation — mark price unavailable');
+        }
+      }
+    }
+
     // 5. Submit through the shared decision intake pipeline.
     try {
       const depsWithOverride: DecisionIntakeDeps = payload.safetyOverrideId
@@ -298,9 +381,8 @@ export class AgentDecisionHandler {
 
         // 5a. Build non-blocking reminder for position-growing intents missing
         // stopLoss or takeProfit levels (per-trade protection).
-        const positionGrowingIntents = new Set(['go_long', 'go_short', 'increase']);
         const buildAcceptedMessage = (): string | undefined => {
-          if (!positionGrowingIntents.has(decision.intent)) return undefined;
+          if (!POSITION_GROWING_INTENTS.has(decision.intent)) return undefined;
           const hasSl = decision.stopLoss !== undefined;
           const hasTp = decision.takeProfit !== undefined;
           if (!hasSl && !hasTp) {
