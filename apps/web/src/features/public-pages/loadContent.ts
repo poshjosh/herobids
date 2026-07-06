@@ -12,9 +12,9 @@ export interface LoadedContent {
 /**
  * Vite glob of all markdown content files.
  * Keys are relative paths from this module, e.g.:
- *   `./content/help/en/faqs.md`
- *   `./content/docs/agents/agent-style.md`
- *   `./content/legal/privacy-policy.md`
+ *   `./content/en/help/faqs.md`
+ *   `./content/en/docs/agents/agent-style.md`
+ *   `./content/en/legal/privacy-policy.md`
  */
 const contentModules = import.meta.glob<string>('./content/**/*.md', {
   query: '?raw',
@@ -25,10 +25,9 @@ const contentModules = import.meta.glob<string>('./content/**/*.md', {
 /**
  * Load markdown content for a public page.
  *
- * For translated sections (`help`, `company`), the locale is used to look up
- * the locale-specific file. Falls back to `en` if the locale file does not exist.
- *
- * For English-only sections (`docs`, `legal`), the locale parameter is ignored.
+ * All content now lives under `content/{locale}/{section}/{page}.md`.
+ * Translated sections (help, company) use the URL locale param with `en` fallback.
+ * English-only sections (docs, legal) always resolve to `en`.
  *
  * @returns The loaded content + title, or `null` if no matching file exists.
  */
@@ -37,32 +36,34 @@ export async function loadContent(
   page: string,
   locale?: string,
 ): Promise<LoadedContent | null> {
-  if (isTranslatedSection(section)) {
-    // Try the requested locale first, then fall back to English
-    const localesToTry = locale && locale !== 'en' ? [locale, 'en'] : ['en'];
+  // All content lives under content/{locale}/{section}/{page}.md
+  // English-only sections always use 'en'; translated sections use the URL param
+  const effectiveLocale = isTranslatedSection(section) ? (locale ?? 'en') : 'en';
+  const localesToTry = effectiveLocale !== 'en' ? [effectiveLocale, 'en'] : ['en'];
 
-    let matched: (() => Promise<string>) | undefined;
+  let matched: (() => Promise<string>) | undefined;
+  for (const loc of localesToTry) {
+    const path = `./content/${loc}/${section}/${page}.md`;
+    if (path in contentModules) {
+      matched = contentModules[path];
+      break;
+    }
+  }
+
+  // Also try index.md fallback for group landing pages (e.g. docs/agents/index.md)
+  if (!matched) {
     for (const loc of localesToTry) {
-      const path = `./content/${section}/${loc}/${page}.md`;
-      if (path in contentModules) {
-        matched = contentModules[path];
+      const indexPath = `./content/${loc}/${section}/${page}/index.md`;
+      if (indexPath in contentModules) {
+        matched = contentModules[indexPath];
         break;
       }
     }
-
-    if (!matched!) return null;
-
-    const raw = await matched();
-    return { content: raw, title: extractTitle(raw) };
   }
 
-  // English-only section — no locale in path
-  const directPath = `./content/${section}/${page}.md`;
-  const indexPath = `./content/${section}/${page}/index.md`;
-  const loader = contentModules[directPath] ?? contentModules[indexPath];
-  if (!loader) return null;
+  if (!matched) return null;
 
-  const raw = await loader();
+  const raw = await matched();
   return { content: raw, title: extractTitle(raw) };
 }
 

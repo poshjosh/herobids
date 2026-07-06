@@ -13,7 +13,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Eliminate static LLM pricing (ADR 001):** All provider model pricing (OpenAI, Anthropic, DeepSeek, Google) now cross-referenced from the OpenRouter `llm_pricing_snapshots` table instead of hardcoded YAML. `config/providers.yaml` no longer contains stale prices.
+- **Eliminate static LLM pricing (ADR 001):** All provider model pricing (OpenAI, Anthropic, DeepSeek, Google) now cross-referenced from the OpenRouter `llm_pricing_snapshots` table instead of hardcoded YAML.
+- **Restructure public content to `{lang}/{type}/` layout:** Content files moved from `content/{type}/{locale}/` (and flat `content/{type}/` for English-only) to the standard `content/{locale}/{type}/` layout. `loadContent()` simplified to a single unified path. All 14 markdown files now live under `content/en/`.
 - **API key gating:** `GET /ai/available-models` now hides providers without a configured `LLM_API_KEY_<PROVIDER>` or generic `LLM_API_KEY` environment variable (ollama exempt).
 - **Locality gating for ollama:** Dev-only providers now use hostname inspection (`isLocalProviderEndpoint`) instead of `NODE_ENV` to determine availability.
 - **Single-provider UI mode:** When only one LLM provider is available, the provider dropdown is auto-selected and hidden in the UI.

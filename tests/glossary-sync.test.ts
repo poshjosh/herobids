@@ -12,7 +12,7 @@ const ROOT = resolve(__dirname, '..');
 const TECHNICAL_GLOSSARY = resolve(ROOT, 'docs/tech/glossary.md');
 const PUBLIC_GLOSSARY = resolve(
   ROOT,
-  'apps/web/src/features/public-pages/content/docs/reference/glossary.md',
+  'apps/web/src/features/public-pages/content/en/docs/reference/glossary.md',
 );
 
 // ── Helpers ────────────────────────────────────────────────────────────────

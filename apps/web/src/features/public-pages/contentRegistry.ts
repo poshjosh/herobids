@@ -3,8 +3,8 @@
  *
  * Maps URL path segments (section → page) to content metadata.
  * Every page listed here must have a corresponding markdown file
- * under `content/<section>/<page>.md` (or `content/<section>/<locale>/<page>.md`
- * for translated sections).
+ * under `content/<locale>/<section>/<page>.md` (e.g. `content/en/help/get-started.md`).
+ * English-only sections always resolve to the `en` locale.
  */
 export interface PageMeta {
   /** i18n message key for the page title (translated sections) */
