@@ -668,6 +668,7 @@ function CreateAgentFlow({
                   }));
                 }}
                 alwaysExpanded
+                showTradingSessionPresets={requiresTradingSetup}
               />
             }
             modelSlot={

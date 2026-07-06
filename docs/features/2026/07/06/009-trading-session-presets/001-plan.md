@@ -99,7 +99,7 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 2 — Worker: DST-aware session resolution in `isWithinTradingHours`
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `apps/worker/src/tick-gates.ts`
@@ -199,7 +199,7 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 3 — Frontend: extend `RuntimePolicyOverrides`
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `apps/web/src/features/agents/style-mapping.ts`
@@ -231,7 +231,7 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 4 — Frontend: session preset UI in `RuntimePolicySection`
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `apps/web/src/features/agents/RuntimePolicySection.tsx`
@@ -525,3 +525,23 @@ Consistent with other fields. Semantics: `undefined` → style default, `null` �
 ### [Step 2] LOW — `getNyUtcOffsetHours` returns `number` instead of plan's `4 | 5`
 
 The runtime assertion `if (diff !== 4 && diff !== 5) throw` makes a literal union type impossible without a type assertion. No behavioral impact — `number` works identically for the arithmetic usage `(localH + offset) % 24`. Plan could be updated to reflect `number`.
+
+### [Step 3] LOW — `AgentStyleValue` duplicated locally in web (pre-existing)
+
+The type `'careful' | 'balanced' | 'bold'` exists in both `@herobids/domain` and `apps/web/src/features/agents/style-mapping.ts`. If a fourth style is added to domain, the web's local type will silently diverge. Pre-existing — not introduced by this change.
+
+### [Step 3] LOW — `StyleDefaults` lacks `tradingSessions` field
+
+Trading sessions can only be supplied via overrides, not via style presets. This is by design — sessions are market-window conveniences, not risk-tier characteristics.
+
+### [Step 4] MEDIUM — No unit tests for RuntimePolicySection component
+
+Non-trivial state logic (numeric override CRUD, weekendPause toggling, session preset selection with auto-clear, HourGrid custom-vs-default detection, timezone offset computation) warrants test coverage. Deferred to Step 7.
+
+### [Step 4] LOW — `!` non-null assertion on `SESSION_LOCAL_HOURS[s]`
+
+Safe for the exhaustive Record, but if `TradingSessionName` gains a sixth value without updating the Record, `undefined` values would silently appear. Consider an assertion helper in future.
+
+### [Step 4] LOW — Hardcoded English labels
+
+Session preset labels are hardcoded. Step 6 will add i18n keys to replace them.
