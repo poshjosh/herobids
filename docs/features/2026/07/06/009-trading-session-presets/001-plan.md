@@ -53,7 +53,7 @@ Session preset checkboxes are only rendered when `showTradingSessionPresets` is 
 
 ## Step 1 — Domain: add `tradingSessions` to policy types
 
-**Status:** PENDING
+**Status:** DONE
 
 **Files:**
 - `packages/domain/src/config/schema.ts`
@@ -521,3 +521,7 @@ Idiomatic and correct — no action needed for Step 1.
 ### [Step 1] LOW — `tradingSessions` in `AgentRuntimePolicyOverridesSchema` is `z.array(...).nullable().optional()`
 
 Consistent with other fields. Semantics: `undefined` → style default, `null` → style default, `[]` → explicit "no sessions." No action needed.
+
+### [Step 2] LOW — `getNyUtcOffsetHours` returns `number` instead of plan's `4 | 5`
+
+The runtime assertion `if (diff !== 4 && diff !== 5) throw` makes a literal union type impossible without a type assertion. No behavioral impact — `number` works identically for the arithmetic usage `(localH + offset) % 24`. Plan could be updated to reflect `number`.

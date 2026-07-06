@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import type { TradingSessionName } from '@herobids/domain';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
 
 /** Per-instrument summary used for stable context hashing across multi-instrument batches. */
@@ -42,6 +43,7 @@ export interface TickGateDependencies {
 export interface TradingHoursConfig {
   allowedHoursUtc?: number[];
   weekendPause?: boolean;
+  tradingSessions?: TradingSessionName[];
 }
 
 export interface TickSkipDecision {
@@ -60,12 +62,51 @@ const DEFAULT_BASE_INTERVAL_MS = 900_000;
 const LOW_VOL_THRESHOLD_PCT = 0.3;
 const FORCE_FULL_EVALUATION_EVERY_TICK = 10;
 
+const nyHourFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour: 'numeric',
+  hour12: false,
+});
+
+function getNyUtcOffsetHours(now: Date): number {
+  const parts = nyHourFormatter.formatToParts(now);
+  const hourPart = parts.find(p => p.type === 'hour');
+  if (!hourPart) {
+    throw new Error('Intl.DateTimeFormat did not return an hour part');
+  }
+  const nyHour = parseInt(hourPart.value, 10);
+  const utcHour = now.getUTCHours();
+  const diff = (utcHour - nyHour + 24) % 24;
+  if (diff !== 4 && diff !== 5) {
+    throw new Error(`Unexpected UTC offset for America/New_York: ${diff}`);
+  }
+  return diff;
+}
+
+const SESSION_LOCAL_HOURS: Record<TradingSessionName, number[]> = {
+  'asia':         [20, 21, 22, 23],
+  'london':       [1, 2, 3, 4],
+  'ny-morning':   [7, 8, 9],
+  'ny-mid':       [10, 11],
+  'ny-afternoon': [12, 13, 14, 15],
+};
+
+function resolveTradingSessionHours(sessions: TradingSessionName[], now: Date): number[] {
+  const offset = getNyUtcOffsetHours(now);
+  const hours = new Set<number>();
+  for (const session of sessions) {
+    for (const localH of SESSION_LOCAL_HOURS[session]) {
+      hours.add((localH + offset) % 24);
+    }
+  }
+  return [...hours].sort((a, b) => a - b);
+}
+
 export function isWithinTradingHours(now: Date, tradingHours?: TradingHoursConfig): boolean {
   if (!tradingHours) {
     return true;
   }
 
-  const allowedHours = tradingHours.allowedHoursUtc ?? [];
   const hour = now.getUTCHours();
   const day = now.getUTCDay();
   const weekendPaused = Boolean(tradingHours.weekendPause)
@@ -75,6 +116,12 @@ export function isWithinTradingHours(now: Date, tradingHours?: TradingHoursConfi
     return false;
   }
 
+  const sessions = tradingHours.tradingSessions;
+  if (sessions && sessions.length > 0) {
+    return resolveTradingSessionHours(sessions, now).includes(hour);
+  }
+
+  const allowedHours = tradingHours.allowedHoursUtc ?? [];
   if (allowedHours.length === 0) {
     return true;
   }
