@@ -1577,7 +1577,7 @@ describe('runtime composition helpers', () => {
       }), undefined, enrichmentPolicy);
 
       expect(prompt).toContain('Trading Guardrails');
-      expect(prompt).toContain('Daily loss limit (rolling 24h realized loss): $10.00');
+      expect(prompt).toContain('Daily loss limit (rolling 24h realized loss): $10.00 — when reached, new positions are blocked until losses roll out of the 24h window, but go_flat and decrease remain available to manage existing positions');
       expect(prompt).toContain('Max drawdown: 15% of peak equity');
       expect(prompt).toContain('Max concurrent bots: 2');
     });

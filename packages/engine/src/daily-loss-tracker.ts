@@ -32,4 +32,15 @@ export class DailyLossTracker {
       price('0') as Price,
     );
   }
+
+  /**
+   * Returns the timestamp (ms) of the oldest active loss entry, or undefined if the window is empty.
+   * Adding DAY_MS gives the earliest time the rolling total can decrease as that entry expires.
+   */
+  oldestEntryMs(nowMs: number): number | undefined {
+    const cutoff = nowMs - DAY_MS;
+    const active = this.entries.filter(e => e.timestampMs > cutoff);
+    if (active.length === 0) return undefined;
+    return Math.min(...active.map(e => e.timestampMs));
+  }
 }

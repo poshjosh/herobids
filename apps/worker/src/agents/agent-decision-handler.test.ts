@@ -8,7 +8,8 @@ vi.mock('@herobids/engine', async () => {
   };
 });
 
-import { submitDecisionForExecution, DecisionContextHashMismatchError } from '@herobids/engine';
+import { submitDecisionForExecution, DecisionContextHashMismatchError, DailyLossTracker } from '@herobids/engine';
+import { price } from '@herobids/domain';
 import { AgentDecisionHandler } from './agent-decision-handler.js';
 
 describe('AgentDecisionHandler', () => {
@@ -997,6 +998,51 @@ describe('AgentDecisionHandler', () => {
         'dec-sync',
         { status: 'rejected', code: 'risk.max_order_notional_exceeded', message: 'Order notional exceeds limit' },
       );
+    });
+
+    // -----------------------------------------------------------------------
+    // enriches daily loss rejection with blocked-till guidance and timestamp
+    // -----------------------------------------------------------------------
+
+    it('enriches daily loss rejection with blocked-till timestamp and go_flat/decrease guidance', async () => {
+      const { handler, eventPublisher } = makeHandler();
+
+      const now = Date.now();
+      const oldestLossTs = now - 3_600_000; // 1h ago — expires in 23h
+      const tracker = new DailyLossTracker();
+      tracker.recordFill(price('-57.71'), oldestLossTs);
+      tracker.recordFill(price('-5.68'), now);
+
+      // Override intake deps to include the tracker
+      const resolver = (handler as any).intakeResolver;
+      resolver.getIntakeDeps.mockReturnValue({
+        symbol: 'BTC/USD:USD',
+        markSource: { fetchMark: vi.fn().mockResolvedValue({ ok: true, data: { price: '101', source: 'oracle', stale: false } }) },
+        dailyLossTracker: tracker,
+      });
+
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-daily', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' } } as any,
+        riskRejected: true,
+        riskError: { code: 'risk.daily_max_loss_exceeded', message: 'Daily loss limit reached: $57.71 realized (limit: $50.00)', context: {} },
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+      });
+
+      await handler.handleDecisionSubmit(envelope, makePayload({ _expectsReply: true }));
+
+      expect(eventPublisher.publishDecisionReply).toHaveBeenCalledWith(
+        'dec-sync',
+        expect.objectContaining({
+          status: 'rejected',
+          code: 'risk.daily_max_loss_exceeded',
+          message: expect.stringContaining('New positions are blocked till at least'),
+        }),
+      );
+      const call = (eventPublisher.publishDecisionReply as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+      const msg = call[1].message as string;
+      expect(msg).toContain('go_flat or decrease to manage existing open positions');
+      expect(msg).toContain('subsequent losses may extend the block');
     });
 
     // -----------------------------------------------------------------------
