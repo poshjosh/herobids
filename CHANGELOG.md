@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Glossary
 - Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time
+- **Agent stop cascades to bots:** When an agent is stopped, all running agent-created bots are cascade-stopped via `AgentHealthMonitor` (primary UI/API path), `onSessionStopped` callback (supplemental), and `DockerAgentManager.onAgentCrashed` (crash path). Periodic `botOrphanSweepInterval` reconciliation sweep catches missed orphans. Configurable via `worker.agents.botOrphanSweepIntervalMs`.
 
 ### Changed
 
