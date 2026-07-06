@@ -453,8 +453,6 @@ export const messages: Record<string, string> = {
   'agents.create.technicalPreFilter.help': 'AI एजेंट को दिखाने से पहले ट्रेड उम्मीदवारों को फ़िल्टर करके लागत कम करें',
   'agents.controls.dailyLossLimit': 'दैनिक हानि सीमा (USD)',
   'agents.controls.dailyLossLimit.help': '24 घंटे की वास्तविक हानि पर कठोर सीमा। प्लेटफ़ॉर्म डिफ़ॉल्ट उपयोग करने के लिए खाली छोड़ें।',
-  'agents.controls.maxDrawdown': 'अधिकतम गिरावट (USD)',
-  'agents.controls.maxDrawdown.help': 'शिखर से वर्तमान इक्विटी गिरावट पर कठोर सीमा (USD)। गैर-एजेंट प्रवाह के लिए विरासत।',
   'agents.controls.maxDrawdownPct': 'अधिकतम गिरावट (%)',
   'agents.controls.maxDrawdownPct.help': 'शिखर से वर्तमान इक्विटी गिरावट पर प्रतिशत के रूप में कठोर सीमा। प्लेटफ़ॉर्म डिफ़ॉल्ट उपयोग करने के लिए खाली छोड़ें जिसे एजेंट समायोजित कर सकता है।',
   'agents.controls.maxOpenPositions': 'अधिकतम खुली पोजीशन',

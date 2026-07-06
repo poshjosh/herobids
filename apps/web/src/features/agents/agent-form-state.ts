@@ -40,7 +40,6 @@ export interface AgentFormState {
 
   // Trading guardrails
   dailyLossLimit: string;
-  maxDrawdown: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -111,7 +110,6 @@ export function agentToFormState(agent: Agent): AgentFormState {
       agent.dailySpendBudgetUsd != null ? String(agent.dailySpendBudgetUsd) : '',
     tickIntervalMins: formatTickIntervalMinutesForInput(agent.tickIntervalMs),
     dailyLossLimit: agent.dailyLossLimit ?? '',
-    maxDrawdown: agent.maxDrawdown ?? '',
     maxDrawdownPct: agent.maxDrawdownPct != null ? String(agent.maxDrawdownPct) : '',
     maxSlippageBps:
       agent.maxSlippageBps != null ? String(agent.maxSlippageBps) : '',
@@ -156,7 +154,6 @@ export function intentToFormState(intent: {
   dailySpendBudgetUsd: string;
   tickIntervalMins: string;
   dailyLossLimit: string;
-  maxDrawdown: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -181,7 +178,6 @@ export function intentToFormState(intent: {
     dailySpendBudgetUsd,
     tickIntervalMins,
     dailyLossLimit,
-    maxDrawdown,
     maxDrawdownPct,
     maxSlippageBps,
     maxOpenPositions,
@@ -206,7 +202,6 @@ export function intentToFormState(intent: {
     dailySpendBudgetUsd,
     tickIntervalMins,
     dailyLossLimit,
-    maxDrawdown,
     maxDrawdownPct,
     maxSlippageBps,
     maxOpenPositions,

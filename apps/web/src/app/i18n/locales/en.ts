@@ -453,8 +453,6 @@ export const messages: Record<string, string> = {
   'agents.create.technicalPreFilter.help': 'Reduce cost by filtering trade candidates before AI agent sees them',
   'agents.controls.dailyLossLimit': 'Daily loss limit (USD)',
   'agents.controls.dailyLossLimit.help': 'Hard cap on rolling 24h realized loss. Leave blank to use the platform default.',
-  'agents.controls.maxDrawdown': 'Max drawdown (USD)',
-  'agents.controls.maxDrawdown.help': 'Hard cap on absolute peak-to-current equity drawdown (USD). Legacy for non-agent flows.',
   'agents.controls.maxDrawdownPct': 'Max drawdown (%)',
   'agents.controls.maxDrawdownPct.help': 'Hard cap on peak-to-current equity drawdown as a percentage. Leave blank to use the platform default that the agent can adjust.',
   'agents.controls.maxSlippage': 'Max slippage (bps)',

@@ -40,7 +40,6 @@ function renderModal(options: {
   capabilityReadiness?: CapabilityReadiness;
   capital?: string;
   dailyLossLimit?: string;
-  maxDrawdown?: string;
   maxDrawdownPct?: number | null;
   maxSlippageBps?: number | '';
   maxOpenPositions?: number | '';
@@ -91,7 +90,6 @@ function renderModal(options: {
             executionMode: 'paper',
             dailyTokenBudget: 45000,
             dailyLossLimit: options.dailyLossLimit ?? '250',
-            maxDrawdown: options.maxDrawdown ?? null,
             maxDrawdownPct: options.maxDrawdownPct ?? null,
             maxSlippageBps: options.maxSlippageBps === '' ? null : (options.maxSlippageBps ?? 25),
             maxOpenPositions: options.maxOpenPositions === '' ? null : (options.maxOpenPositions ?? 5),

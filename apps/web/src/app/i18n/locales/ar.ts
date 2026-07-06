@@ -451,8 +451,6 @@ export const messages: Record<string, string> = {
   'agents.create.technicalPreFilter.help': 'قلل التكلفة بتصفية المرشحين للتداول قبل أن يراهم وكيل الذكاء الاصطناعي',
   'agents.controls.dailyLossLimit': 'حد الخسارة اليومية (USD)',
   'agents.controls.dailyLossLimit.help': 'حد صارم على الخسارة المحققة خلال 24 ساعة. اتركه فارغًا لاستخدام الإعداد الافتراضي للمنصة.',
-  'agents.controls.maxDrawdown': 'الحد الأقصى للانخفاض (USD)',
-  'agents.controls.maxDrawdown.help': 'حد صارم على انخفاض رأس المال من الذروة إلى القاع (USD). إرث للتدفقات غير الوكيل.',
   'agents.controls.maxDrawdownPct': 'الحد الأقصى للانخفاض (%)',
   'agents.controls.maxDrawdownPct.help': 'حد صارم على انخفاض رأس المال من الذروة إلى القاع كنسبة مئوية. اتركه فارغًا لاستخدام الإعداد الافتراضي للمنصة الذي يمكن للوكيل تعديله.',
   'agents.controls.maxOpenPositions': 'الحد الأقصى للمراكز المفتوحة',

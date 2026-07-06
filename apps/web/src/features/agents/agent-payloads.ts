@@ -58,7 +58,6 @@ export interface CreateAgentIntentPayloadInput {
   tickIntervalMins: string;
   capital: string;
   dailyLossLimit: string;
-  maxDrawdown: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -86,7 +85,6 @@ export interface UpdateAgentPayloadInput {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom';
   dailySpendBudgetUsd: string;
   dailyLossLimit: string;
-  maxDrawdown: string;
   maxDrawdownPct: string;
   maxSlippageBps: string;
   maxOpenPositions: string;
@@ -129,8 +127,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
   stopLossCooldownMs?: number;
   tickIntervalMs?: number;
   capital?: string;
-  dailyLossLimit?: string;
-  maxDrawdown?: string;
   maxDrawdownPct?: number;
   technical?: TechnicalConfig;
   strategyPreset?: string;
@@ -159,7 +155,6 @@ export function buildCreateAgentPayload(input: CreateAgentIntentPayloadInput): {
     ...(tickIntervalMs != null ? { tickIntervalMs } : {}),
     ...(input.capital.trim() ? { capital: input.capital.trim() } : {}),
     ...(input.dailyLossLimit?.trim() ? { dailyLossLimit: input.dailyLossLimit.trim() } : {}),
-    ...(input.maxDrawdown?.trim() ? { maxDrawdown: input.maxDrawdown.trim() } : {}),
     ...(input.maxDrawdownPct?.trim() ? { maxDrawdownPct: parseFloat(input.maxDrawdownPct) } : {}),
     ...(input.maxSlippageBps ? { maxSlippageBps: parseInt(input.maxSlippageBps, 10) } : {}),
     ...(input.maxOpenPositions ? { maxOpenPositions: parseInt(input.maxOpenPositions, 10) } : {}),
@@ -188,7 +183,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
   costPreset: '' | 'minimal' | 'standard' | 'premium' | 'custom' | null;
   dailySpendBudgetUsd: number | null;
   dailyLossLimit: string | null;
-  maxDrawdown: string | null;
   maxDrawdownPct: number | null;
   maxSlippageBps: number | null;
   maxOpenPositions: number | null;
@@ -226,7 +220,6 @@ export function buildUpdateAgentPayload(input: UpdateAgentPayloadInput): {
     costPreset: input.costPreset || null,
     dailySpendBudgetUsd: input.dailySpendBudgetUsd ? parseFloat(input.dailySpendBudgetUsd) : null,
     dailyLossLimit: input.dailyLossLimit?.trim() || null,
-    maxDrawdown: input.maxDrawdown?.trim() || null,
     maxDrawdownPct: input.maxDrawdownPct?.trim() ? parseFloat(input.maxDrawdownPct) : null,
     maxSlippageBps: input.maxSlippageBps ? parseInt(input.maxSlippageBps, 10) : null,
     maxOpenPositions: input.maxOpenPositions ? parseInt(input.maxOpenPositions, 10) : null,
