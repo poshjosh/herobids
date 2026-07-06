@@ -18,7 +18,7 @@ import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
-import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher } from '@herobids/venues';
+import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
@@ -53,6 +53,7 @@ import { ReminderCoordinator } from './reminder-coordinator.js';
 import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
+import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
 
 async function enrichTokenWithDiscovery(
   registry: ReturnType<typeof createProviderRegistry>,
@@ -327,6 +328,12 @@ const oracleMarkSource = new OracleMarkSource({
   vsCurrency: appConfig.marking.oracleVsCurrency,
 });
 
+// --- Venue instrument cache (symbol validation) ---
+// Created before AgentIntakeResolver so the cache reference is available
+// at construction time. Warmup happens later, after venue adapters are
+// available. Until isReady() flips true, validation is a no-op.
+const instrumentCache = new VenueInstrumentCache(logger);
+
 const agentIntakeResolver = new AgentIntakeResolver({
   db,
   agentRepo,
@@ -343,6 +350,7 @@ const agentIntakeResolver = new AgentIntakeResolver({
   agentRiskDefaults: appConfig.agentRiskDefaults,
   swapTokenSafety,
   oneInchConfig: appConfig.venues['1inch'],
+  instrumentCache,
 });
 
 const intakeResolver: DecisionIntakeResolver = {
@@ -657,6 +665,7 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           },
           emitAgentWake: (wakeAgentId, payload) => eventPublisher.emitAgentWake(wakeAgentId, payload),
           hasIntelligenceConfig: !!agent?.unifiedConfig?.intelligence,
+          instrumentCache,
         });
 
         await actor.start();
@@ -868,6 +877,68 @@ const venueAdapterFactory = new VenueAdapterFactory({
   venues: appConfig.venues,
   streamConfig: appConfig.streams.private,
 });
+
+// --- Venue instrument cache — build providers & warmup ---
+// Create lightweight adapters solely for fetchAvailableSymbols().
+// Empty/dummy credentials work because loadMarkets() (Hyperliquid/Bybit)
+// and token list fetches (Jupiter) are public endpoints.
+const venueSymbolProviders: VenueSymbolProvider[] = [];
+
+if (appConfig.venues['hyperliquid']) {
+  const hlTestnet = appConfig.venues['hyperliquid'].testnet ?? false;
+  const hlAdapter = new HyperliquidAdapter({
+    credentials: { apiKey: '', secret: '', walletAddress: '', testnet: hlTestnet },
+  });
+  venueSymbolProviders.push({
+    venue: 'hyperliquid',
+    normalizeSymbol: normalizeHyperliquidSymbol,
+    fetchSymbols: async () => {
+      const result = await hlAdapter.fetchAvailableSymbols();
+      if (!result.ok) throw new Error(`Failed to fetch Hyperliquid symbols: ${result.error.message}`);
+      return result.data;
+    },
+  });
+}
+
+if (appConfig.venues['bybit']) {
+  const bybitTestnet = appConfig.venues['bybit'].testnet ?? false;
+  const bybitAdapter = new BybitAdapter({
+    credentials: { apiKey: '', secret: '', testnet: bybitTestnet },
+  });
+  venueSymbolProviders.push({
+    venue: 'bybit',
+    normalizeSymbol: normalizeBybitSymbol,
+    fetchSymbols: async () => {
+      const result = await bybitAdapter.fetchAvailableSymbols();
+      if (!result.ok) throw new Error(`Failed to fetch Bybit symbols: ${result.error.message}`);
+      return result.data;
+    },
+  });
+}
+
+if (appConfig.venues['jupiter']) {
+  const jupiterAdapter = new JupiterSwapAdapter({
+    walletAddress: 'SYMBOL_VALIDATION_ONLY',
+  });
+  venueSymbolProviders.push({
+    venue: 'jupiter',
+    normalizeSymbol: identityNormalize,
+    fetchSymbols: async () => {
+      const result = await jupiterAdapter.fetchAvailableSymbols();
+      if (!result.ok) throw new Error(`Failed to fetch Jupiter symbols: ${result.error.message}`);
+      return result.data;
+    },
+  });
+}
+
+// 1inch is intentionally skipped — its fetchAvailableSymbols() returns a
+// hardcoded curated list of token addresses per chain. Validating against
+// that list would reject legitimate tokens not in the curated set.
+// Additionally, constructing a OneInchSwapAdapter requires real credentials
+// (EvmSigner validates the private key at construction time).
+
+await instrumentCache.warmup(venueSymbolProviders);
+instrumentCache.startPeriodicRefresh(venueSymbolProviders, 60 * 60 * 1000);
 
 const runtime = new WorkerRuntime(
   {
@@ -1510,6 +1581,7 @@ process.on('SIGTERM', async () => {
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
   clearInterval(botOrphanSweepInterval);
+  instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();
@@ -1534,6 +1606,7 @@ process.on('SIGINT', async () => {
   clearInterval(healthRefreshInterval);
   clearInterval(pricingRefreshInterval);
   clearInterval(botOrphanSweepInterval);
+  instrumentCache.stop();
   agentRuntimeLauncher.stopEventStream();
   agentHealthMonitor.stop();
   agentStreamConsumer.stop();

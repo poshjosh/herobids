@@ -48,6 +48,8 @@ export const VenueConfigSchema = z.object({
   wsTestnetPrivateUrl: z.string().url().optional(),
   testnetBaseUrl: z.string().url().optional(),
   testnetWsUrl: z.string().url().optional(),
+  /** When true, the adapter uses testnet/sandbox endpoints. Defaults to false (mainnet). */
+  testnet: z.boolean().optional(),
   rpcUrl: z.string().url().optional(),
   chainId: z.number().int().positive().optional(),
   tokenSafetyNetwork: TokenSafetyNetworkSchema.optional(),

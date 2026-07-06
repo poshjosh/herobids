@@ -113,7 +113,7 @@ class VenueInstrumentCache {
 }
 ```
 
-### Step 4: Add validation to decision intake — **PENDING**
+### Step 4: Add validation to decision intake — **DONE**
 
 **`AgentIntakeResolver.getIntakeDeps()`** (`agent-intake-resolver.ts`):
 ```typescript
