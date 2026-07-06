@@ -80,7 +80,7 @@ fetchAvailableSymbols?(): Promise<Result<string[], SwapVenueError>>;
 
 Both are optional (`?`) — venues that don't implement them get no symbol validation (existing behavior preserved).
 
-### Step 2: Implement in venue adapters (`packages/venues`) — **PENDING**
+### Step 2: Implement in venue adapters (`packages/venues`) — **DONE**
 
 **Hyperliquid** (`hyperliquid.ts`):
 ```typescript
