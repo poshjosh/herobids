@@ -14,6 +14,7 @@ import type {
   Subscription,
   PrivateStreamHandlers,
   PublicStreamHandlers,
+  MarketMetadata,
 } from '@herobids/domain';
 import type { OrderId } from '@herobids/domain';
 import { ok, err } from '@herobids/domain';
@@ -312,6 +313,27 @@ export class BybitAdapter implements OrderbookVenuePort {
         .filter((m: { type?: string; linear?: boolean }) => m.type === 'swap' && m.linear === true)
         .map((m: { symbol: string }) => m.symbol);
       return ok(symbols);
+    });
+  }
+
+  async fetchMarketMetadata(): Promise<Result<MarketMetadata[], VenueError>> {
+    return this.withRateLimit(async () => {
+      const markets = await this.exchange.loadMarkets();
+      const result: MarketMetadata[] = [];
+      for (const m of Object.values(markets)) {
+        const market = m as { type?: string; linear?: boolean; symbol: string; base?: string; quote?: string; precision?: { price?: number; amount?: number } };
+        if (market.type === 'swap' && market.linear === true) {
+          result.push({
+            symbol: market.symbol,
+            type: market.type,
+            base: market.base ?? '',
+            quote: market.quote ?? '',
+            tickSize: String(market.precision?.price ?? 0),
+            lotSize: String(market.precision?.amount ?? 0),
+          });
+        }
+      }
+      return ok(result);
     });
   }
 

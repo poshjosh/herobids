@@ -115,6 +115,16 @@ export interface VenueFill {
   filledAt: string;
 }
 
+/** Full market metadata for a tradeable instrument. Used for populating the instruments table. */
+export interface MarketMetadata {
+  symbol: string;    // ccxt unified symbol, e.g. "BTC/USD:USD"
+  type: string;      // "swap", "spot", "future"
+  base: string;      // e.g. "BTC"
+  quote: string;     // e.g. "USD"
+  tickSize: string;  // as decimal string
+  lotSize: string;   // as decimal string
+}
+
 /**
  * Port interface for orderbook venues (CEX perps, spot exchanges).
  * Stateful order lifecycle: submit → amend → cancel.
@@ -160,6 +170,9 @@ export interface OrderbookVenuePort {
 
   /** Fetch all tradeable symbols on this venue. Used for decision intake validation. */
   fetchAvailableSymbols?(): Promise<Result<string[], VenueError>>;
+
+  /** Fetch full market metadata for all tradeable instruments. Used for populating the instruments table. */
+  fetchMarketMetadata?(): Promise<Result<MarketMetadata[], VenueError>>;
 }
 
 // ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, bots, users } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
 import type { IdGenerator } from '@herobids/engine';
@@ -54,6 +54,7 @@ import type { ResolvedSwapTokenData } from './token-safety-adapter.js';
 import { resolveSwapTokenData, type DexScreenerProvider, type CanonicalResolver } from './swap-token-resolver.js';
 import { buildAgentRiskLimits } from './agent-risk-limits.js';
 import { VenueInstrumentCache, normalizeHyperliquidSymbol, normalizeBybitSymbol, identityNormalize, type VenueSymbolProvider } from './venue-instrument-cache.js';
+import { populateInstrumentsFromVenues } from './instrument-population.js';
 
 async function enrichTokenWithDiscovery(
   registry: ReturnType<typeof createProviderRegistry>,
@@ -174,6 +175,7 @@ const backtestingRepo = new BacktestingRepository(db);
 const alertDeliveryRepo = new AlertDeliveryRepository(db);
 const tokenSafetyOverrideRepo = new TokenSafetyOverrideRepository(db);
 const decisionFailureRepo = new DecisionFailureRepository(db);
+const instrumentRepo = new InstrumentRepository(db);
 
 const sharedMarketDataRegistry = appConfig.marketData
   ? createProviderRegistry(appConfig.marketData, { redisClient: redisClient as unknown as RedisEvalClient, discoverySeenClient: redisClient })
@@ -883,10 +885,12 @@ const venueAdapterFactory = new VenueAdapterFactory({
 // Empty/dummy credentials work because loadMarkets() (Hyperliquid/Bybit)
 // and token list fetches (Jupiter) are public endpoints.
 const venueSymbolProviders: VenueSymbolProvider[] = [];
+let hlAdapter: HyperliquidAdapter | undefined;
+let bybitAdapter: BybitAdapter | undefined;
 
 if (appConfig.venues['hyperliquid']) {
   const hlTestnet = appConfig.venues['hyperliquid'].testnet ?? false;
-  const hlAdapter = new HyperliquidAdapter({
+  hlAdapter = new HyperliquidAdapter({
     credentials: { apiKey: '', secret: '', walletAddress: '', testnet: hlTestnet },
   });
   venueSymbolProviders.push({
@@ -902,7 +906,7 @@ if (appConfig.venues['hyperliquid']) {
 
 if (appConfig.venues['bybit']) {
   const bybitTestnet = appConfig.venues['bybit'].testnet ?? false;
-  const bybitAdapter = new BybitAdapter({
+  bybitAdapter = new BybitAdapter({
     credentials: { apiKey: '', secret: '', testnet: bybitTestnet },
   });
   venueSymbolProviders.push({
@@ -939,6 +943,23 @@ if (appConfig.venues['jupiter']) {
 
 await instrumentCache.warmup(venueSymbolProviders);
 instrumentCache.startPeriodicRefresh(venueSymbolProviders, 60 * 60 * 1000);
+
+// Populate instruments table from venue market data via adapters (non-blocking).
+try {
+  const instrumentAdapters: Array<{
+    venue: string;
+    fetchMarketMetadata: () => ReturnType<HyperliquidAdapter['fetchMarketMetadata']>;
+  }> = [];
+  if (hlAdapter?.fetchMarketMetadata) {
+    instrumentAdapters.push({ venue: 'hyperliquid', fetchMarketMetadata: () => hlAdapter!.fetchMarketMetadata!() });
+  }
+  if (bybitAdapter?.fetchMarketMetadata) {
+    instrumentAdapters.push({ venue: 'bybit', fetchMarketMetadata: () => bybitAdapter!.fetchMarketMetadata!() });
+  }
+  await populateInstrumentsFromVenues(instrumentRepo, logger, instrumentAdapters);
+} catch (err) {
+  logger.warn({ err }, 'Instrument table population failed — continuing without instrument data');
+}
 
 const runtime = new WorkerRuntime(
   {

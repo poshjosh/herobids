@@ -2,6 +2,17 @@ import { like, or, and, eq } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { instruments } from './schema/index.js';
 
+export interface UpsertInstrumentRow {
+  id: string;
+  symbol: string;
+  venue: string;
+  type: string;
+  base: string;
+  quote: string;
+  tickSize: string;
+  lotSize: string;
+}
+
 export interface InstrumentSearchParams {
   query: string;
   venue?: string;
@@ -30,6 +41,15 @@ export interface InstrumentRow {
  */
 export class InstrumentRepository {
   constructor(private db: Database) {}
+
+  /**
+   * Insert or silently skip instruments by their venue+symbol unique constraint.
+   * Uses PostgreSQL ON CONFLICT DO NOTHING — no error on duplicates.
+   */
+  async upsertInstruments(rows: UpsertInstrumentRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db.insert(instruments).values(rows).onConflictDoNothing();
+  }
 
   async search(params: InstrumentSearchParams): Promise<InstrumentRow[]> {
     const { query, venue, limit = 5 } = params;

@@ -34,7 +34,7 @@ export type { InsertUsageEvent, InsertLedgerEntry, RecordUsageBatchInput, UsageS
 export { AgentRepository } from './agent-repository.js';
 export type { InsertAgent, UpdateAgent, InsertAgentRuntimeSession, UpdateAgentRuntimeSession, LaunchableStartingSession, InsertAgentMessage, InsertAgentArtifact, InsertAgentOutboundMessage } from './agent-repository.js';
 export { InstrumentRepository } from './instrument-repository.js';
-export type { InstrumentSearchParams, InstrumentRow } from './instrument-repository.js';
+export type { InstrumentSearchParams, InstrumentRow, UpsertInstrumentRow } from './instrument-repository.js';
 export { resolveRuntimeCapabilityDescriptor, buildRuntimeDescriptor, deriveReadiness, chooseLatest } from './agent-runtime-descriptor.js';
 export type { RuntimeCapabilityDescriptor, RuntimeAssignmentRow } from './agent-runtime-descriptor.js';
 export { TokenSafetyOverrideRepository } from './token-safety-override-repository.js';

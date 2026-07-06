@@ -130,7 +130,7 @@ if (!instrumentCache.hasSymbol(binding.venue, instrumentId)) {
 **`AgentTradingActor.getIntakeDeps()`** (`agent-trading-actor.ts`):
 Same check, using `this.deps.venue` and the shared instrument cache.
 
-### Step 5: Wire up in worker (`apps/worker/src/index.ts`) — **PENDING**
+### Step 5: Wire up in worker (`apps/worker/src/index.ts`) — **DONE**
 
 - Instantiate `VenueInstrumentCache` at worker startup
 - Call `warmup()` during initialization — block agent decision processing until ready
