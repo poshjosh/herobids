@@ -10,7 +10,7 @@ Make using AI agents as simple as describing what you want, then having an AI ag
 
 ## Core Concepts
 
-We offer AI agents as a service. We use skills to make agents experts. Our first and core skills are crypto trading and personal assistant.
+We offer AI agents as a service. We use skills to make agents experts. Our first and core skills relate to crypto trading and personal assistant.
 
 1. **AI should do the work.** Give it instructions and constraints; it handles the rest — continuously, reliably, and within the limits you define.
 
