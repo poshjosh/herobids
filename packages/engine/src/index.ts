@@ -53,6 +53,8 @@ export { rehydrateDailyLoss } from './rehydrate-daily-loss.js';
 export type { StoredFill } from './rehydrate-daily-loss.js';
 export { checkStopLoss } from './stop-loss-monitor.js';
 export type { StopLossConfig, StopLossCheck, StopLossResult } from './stop-loss-monitor.js';
+export { validatePerTradeLevels } from './per-trade-level-validator.js';
+export type { LevelValidationInput, LevelValidationError } from './per-trade-level-validator.js';
 export { VenueCircuitBreaker } from './circuit-breaker.js';
 export { simulateFee, applyPaperSlippage } from './fee-simulator.js';
 export type { FeeSimulatorConfig } from './fee-simulator.js';
