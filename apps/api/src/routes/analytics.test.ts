@@ -394,7 +394,7 @@ describe('GET /analytics — symbols filter & groupBy', () => {
     expect(groupMap.get('SOL-USD')).toBe(-30);
   });
 
-  it('symbol groupBy skips journal events (eventCount=0, fillCount from positions)', async () => {
+  it('symbol groupBy skips journal events (eventCount=0, fillCount=0)', async () => {
     const db = buildAnalyticsDb([bot1], [event1], [ethPos]);
     const app = Fastify();
     decorateWithAuth(app);
@@ -404,11 +404,11 @@ describe('GET /analytics — symbols filter & groupBy', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.groups).toHaveLength(1);
-    // Event loop is skipped for symbol groupBy, so event/decision counts should be 0
+    // Event loop is skipped for symbol groupBy, so event/decision/fill counts are 0.
+    // fillCount is not synthesized — a positions row is an aggregate, not a fill record.
     expect(body.groups[0].eventCount).toBe(0);
     expect(body.groups[0].decisionCount).toBe(0);
-    // fillCount is derived from closed positions (one position = one fill)
-    expect(body.groups[0].fillCount).toBe(1);
+    expect(body.groups[0].fillCount).toBe(0);
     // P&L from positions should still be present
     expect(body.groups[0].realizedPnl).toBe(50);
   });
@@ -551,13 +551,54 @@ describe('GET /analytics — exitReasons filter & groupBy', () => {
     const body = res.json();
     expect(body.groups).toHaveLength(1);
     expect(body.groups[0].period).toBe('signal_lost');
-    // Event loop is skipped, so event/decision counts should be 0
+    // Event loop is skipped, so event/decision/fill counts should be 0.
+    // fillCount is not synthesized — a positions row is an aggregate, not a fill record.
     expect(body.groups[0].eventCount).toBe(0);
     expect(body.groups[0].decisionCount).toBe(0);
-    // fillCount derived from closed positions
-    expect(body.groups[0].fillCount).toBe(1);
+    expect(body.groups[0].fillCount).toBe(0);
     // No spurious 'unknown' bucket from the journal event
     expect(body.groups.every((g: { period: string }) => g.period !== 'unknown')).toBe(true);
+  });
+});
+
+// ─── event skip when position-only filters are active ─────────────────────
+
+describe('GET /analytics — event skip on position-only filters', () => {
+  it('skips events when symbols filter is active with day groupBy', async () => {
+    // Events can't be filtered by symbol, so event counts must be 0 to avoid
+    // mixing filtered P&L with unfiltered activity counts.
+    const db = buildAnalyticsDb([bot1], [event1], [ethPos, btcPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?symbols=ETH-USD&groupBy=day' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groups).toHaveLength(1);
+    // Event counts are 0 because events can't be filtered by symbol
+    expect(body.groups[0].eventCount).toBe(0);
+    expect(body.groups[0].decisionCount).toBe(0);
+    expect(body.groups[0].fillCount).toBe(0);
+    // P&L is correctly filtered to ETH-USD only
+    expect(body.groups[0].realizedPnl).toBe(50);
+  });
+
+  it('skips events when exitReasons filter is active with day groupBy', async () => {
+    const db = buildAnalyticsDb([bot1], [event1], [sigLostPos, parabolicPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?exitReasons=signal_lost&groupBy=day' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Event counts are 0 because events can't be filtered by exit reason
+    expect(body.groups[0].eventCount).toBe(0);
+    expect(body.groups[0].decisionCount).toBe(0);
+    expect(body.groups[0].fillCount).toBe(0);
+    // P&L is correctly filtered to signal_lost only
+    expect(body.groups[0].realizedPnl).toBe(-100);
   });
 });
 

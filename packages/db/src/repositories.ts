@@ -203,7 +203,42 @@ export class PositionRepository {
     }
 
     if (existing.length > 0) {
-      // Update existing
+      // If the side changed (e.g. long→short reversal), the prior position was
+      // closed. Stamp exitReason on the close and insert a new row for the new
+      // direction so reversal closes are recorded in analytics.
+      const existingRow = existing[0]!;
+      if (existingRow.side !== pos.side) {
+        await this.db
+          .update(positions)
+          .set({
+            side: 'flat',
+            size: '0',
+            realizedPnl: pos.realizedPnl,
+            exitReason: pos.exitReason ?? null,
+            closedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(positions.id, existingRow.id));
+
+        // Insert new row for the new direction
+        await this.db.insert(positions).values({
+          id: crypto.randomUUID(),
+          venueAccountId: pos.venueAccountId,
+          actorType: pos.actorType,
+          actorId: pos.actorId,
+          venue: pos.venue,
+          symbol: pos.symbol,
+          side: pos.side,
+          size: pos.size,
+          entryPrice: pos.entryPrice,
+          realizedPnl: pos.realizedPnl,
+          markSource: pos.markSource ?? null,
+          openedAt: new Date(),
+        });
+        return;
+      }
+
+      // Update existing (same side — increase or partial close)
       await this.db
         .update(positions)
         .set({
@@ -214,7 +249,7 @@ export class PositionRepository {
           markSource: pos.markSource ?? null,
           updatedAt: new Date(),
         })
-        .where(eq(positions.id, existing[0]!.id));
+        .where(eq(positions.id, existingRow.id));
     } else {
       // Insert new
       await this.db.insert(positions).values({
