@@ -2,6 +2,12 @@
 
 An alphabetic reference of terms used across the HeroBids platform.
 
+> ⚠️ **Sync rule:** Every term in this public glossary must have a corresponding entry in the
+> [technical glossary](/docs/tech/glossary.md), which is the single source of truth.
+> When adding or changing a term, update the technical glossary first, then mirror
+> the user-facing version here. A CI test enforces this — `pnpm test` will fail if
+> a term exists here but not in the technical glossary.
+
 ---
 
 ## Actor
