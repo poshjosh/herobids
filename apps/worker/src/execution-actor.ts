@@ -7,7 +7,8 @@ export type IntakeRejectionCode =
   | 'instance_not_running'
   | 'no_executor'
   | 'swap.instrument_format'
-  | 'swap_recovery_ambiguous';
+  | 'swap_recovery_ambiguous'
+  | 'instrument_unknown';
 
 export interface IntakeRejection {
   rejected: true;

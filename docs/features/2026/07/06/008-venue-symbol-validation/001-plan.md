@@ -97,7 +97,7 @@ async fetchAvailableSymbols(): Promise<Result<string[], VenueError>> {
 
 **Jupiter** (`jupiter.ts`): Fetch from `https://token.jup.ag/strict` — returns token list.
 
-### Step 3: Create instrument cache (`apps/worker/src/`) — **PENDING**
+### Step 3: Create instrument cache (`apps/worker/src/`) — **DONE**
 
 New file: `venue-instrument-cache.ts`
 

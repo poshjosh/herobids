@@ -3,6 +3,7 @@ import type { ContextSnapshotPayload, OrderbookVenuePort, SwapVenuePort, MarkSou
 import type { OrderId } from '@herobids/domain';
 import { quantity, price, Decimal } from '@herobids/domain';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
+import type { VenueInstrumentCache } from './venue-instrument-cache.js';
 import type { VenueAdapterFactory } from './venue-adapter-factory.js';
 import { assertLiveReadiness } from './live-gate.js';
 import type { StreamConfig } from './trading-actor.js';
@@ -144,6 +145,8 @@ export interface AgentTradingActorDeps {
   emitAgentWake?: (agentId: string, payload: AgentWakePayload) => Promise<void>;
   /** Whether the agent has an intelligence (LLM) config — implies hybrid mode when technical is also present */
   hasIntelligenceConfig?: boolean;
+  /** In-memory venue instrument cache for symbol validation at decision intake */
+  instrumentCache?: VenueInstrumentCache;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -769,6 +772,16 @@ export class AgentTradingActor implements ExecutionActor {
         code: 'swap.instrument_format',
         message: `Swap venue requires instrument in BASE/QUOTE format (e.g. 'WETH/USDC' for 1inch on Base, 'SOL/USDC' for Jupiter on Solana). Got: '${instrumentId}'`,
         retryable: true,
+      };
+    }
+
+    // Venue symbol validation — reject unknown instruments
+    if (this.deps.instrumentCache?.isReady() && !this.deps.instrumentCache.hasSymbol(this.deps.venue, instrumentId)) {
+      return {
+        rejected: true,
+        code: 'instrument_unknown',
+        message: `'${instrumentId}' is not a recognized instrument on ${this.deps.venue}`,
+        retryable: false,
       };
     }
 

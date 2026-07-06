@@ -11,6 +11,8 @@ import type { Journal } from '@herobids/engine';
 import type { TradingCyclePersistence } from '@herobids/engine';
 import pino from 'pino';
 import { buildAgentRiskLimits } from '../agent-risk-limits.js';
+import type { VenueInstrumentCache } from '../venue-instrument-cache.js';
+import type { IntakeResult } from '../execution-actor.js';
 import { resolveSwapNetwork } from '../resolve-swap-assets.js';
 
 const logger = pino({ name: 'agent-intake-resolver' });
@@ -31,6 +33,7 @@ export interface AgentIntakeResolverDeps {
   agentRiskDefaults: AgentRiskDefaultsConfig;
   swapTokenSafety?: SwapTokenSafetyPort;
   oneInchConfig?: { tokenSafetyNetwork?: string; chainId?: number };
+  instrumentCache?: VenueInstrumentCache;
 }
 
 /**
@@ -42,7 +45,7 @@ export interface AgentIntakeResolverDeps {
 export class AgentIntakeResolver {
   constructor(private readonly deps: AgentIntakeResolverDeps) {}
 
-  async getIntakeDeps(agentId: string, instrumentId: string): Promise<DecisionIntakeDeps | undefined> {
+  async getIntakeDeps(agentId: string, instrumentId: string): Promise<IntakeResult> {
     const binding = await this.resolveActiveBinding(agentId);
     if (!binding) return undefined;
     const agent = await this.deps.agentRepo.getAgent(agentId);
@@ -57,6 +60,16 @@ export class AgentIntakeResolver {
     if (agent.executionMode && agent.executionMode !== 'paper') {
       logger.warn({ agentId, mode: agent.executionMode }, 'Grant fallback rejected — agent is not in paper mode');
       return undefined;
+    }
+
+    // Venue symbol validation — reject unknown instruments
+    if (this.deps.instrumentCache?.isReady() && !this.deps.instrumentCache.hasSymbol(binding.venue, instrumentId)) {
+      return {
+        rejected: true,
+        code: 'instrument_unknown',
+        message: `'${instrumentId}' is not a recognized instrument on ${binding.venue}`,
+        retryable: false,
+      };
     }
 
     const openPositions = await this.deps.positionRepo.getOpenByActorAndVenueAccount('agent', agentId, binding.venueAccountId);
