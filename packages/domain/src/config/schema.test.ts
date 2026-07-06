@@ -844,6 +844,34 @@ describe('AgentRuntimePolicyOverridesSchema', () => {
     const result = AgentRuntimePolicyOverridesSchema.safeParse({ allowedHoursUtc: [0, 8, 16, 23] });
     expect(result.success).toBe(true);
   });
+
+  it('accepts tradingSessions in AgentRuntimePolicyOverridesSchema', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      tradingSessions: ['asia', 'london'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects unknown session name', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      tradingSessions: ['bogus'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts empty tradingSessions array', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      tradingSessions: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts tradingSessions null', () => {
+    const result = AgentRuntimePolicyOverridesSchema.safeParse({
+      tradingSessions: null,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('AGENT_STYLE_RUNTIME_DEFAULTS', () => {

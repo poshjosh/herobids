@@ -517,6 +517,7 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                   );
                 }}
                 alwaysExpanded
+                showTradingSessionPresets={showTradingControls}
               />
             }
             connectionSlot={

@@ -56,6 +56,7 @@ import {
   type RuntimeCompositionState,
 } from './runtime-composition.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
+import type { TradingSessionName } from '@herobids/domain';
 import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { hasUncoveredTrackedPosition, resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
@@ -279,6 +280,7 @@ interface AgentConfig {
     toolResultFullRetentionTurns: number;
     toolResultMaxStaleChars: number;
     maxHoldDurationMs?: number;
+    tradingSessions?: TradingSessionName[] | null;
   };
 }
 
@@ -363,6 +365,7 @@ const tradingHours = agentConfig.resolvedRuntimePolicy
   ? {
     allowedHoursUtc: agentConfig.resolvedRuntimePolicy.allowedHoursUtc,
     weekendPause: agentConfig.resolvedRuntimePolicy.weekendPause,
+    tradingSessions: agentConfig.resolvedRuntimePolicy.tradingSessions ?? undefined,
   }
   : parseTradingHours(TRADING_HOURS_RAW);
 const { provider: resolvedProvider, heavyModel: resolvedHeavyModel, lightModel: resolvedLightModel } = resolveEffectiveLlmSelection({

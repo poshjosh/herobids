@@ -164,6 +164,16 @@ export const LlmThinkingConfigSchema = z.object({
 
 // ── Per-agent runtime policy ────────────────────────────────────────────────
 
+export const TRADING_SESSION_NAMES = [
+  'asia',
+  'london',
+  'ny-morning',
+  'ny-mid',
+  'ny-afternoon',
+] as const;
+export type TradingSessionName = typeof TRADING_SESSION_NAMES[number];
+export const TradingSessionNameSchema = z.enum(TRADING_SESSION_NAMES);
+
 /** Operator ceilings — the absolute max any agent can be configured with. */
 export const RUNTIME_POLICY_CEILINGS = {
   scoutMaxTurns: 500,
@@ -206,6 +216,7 @@ export const AgentRuntimePolicyOverridesSchema = z.object({
   toolResultFullRetentionTurns: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.toolResultFullRetentionTurns).nullable().optional(),
   toolResultMaxStaleChars: z.number().int().min(1).max(RUNTIME_POLICY_CEILINGS.toolResultMaxStaleChars).nullable().optional(),
   maxHoldDurationMs: z.number().int().min(0).max(RUNTIME_POLICY_CEILINGS.maxHoldDurationMs).nullable().optional(),
+  tradingSessions: z.array(TradingSessionNameSchema).nullable().optional(),
 }).default({});
 
 export type AgentRuntimePolicyOverrides = z.infer<typeof AgentRuntimePolicyOverridesSchema>;
@@ -236,6 +247,7 @@ export interface ResolvedAgentRuntimePolicy {
   toolResultFullRetentionTurns: number;
   toolResultMaxStaleChars: number;
   maxHoldDurationMs: number | undefined;
+  tradingSessions: TradingSessionName[] | null;
 }
 
 /**
@@ -257,6 +269,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 4_096,
     allowedHoursUtc: [14, 15, 16, 17, 18, 19, 20],
     weekendPause: true,
+    tradingSessions: null,
     maxHistoryMessages: 10,
     maxHistoryTokens: 20_000,
     maxRecentToolMessages: 3,
@@ -280,6 +293,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 10_240,
     allowedHoursUtc: [],
     weekendPause: true,
+    tradingSessions: null,
     maxHistoryMessages: 20,
     maxHistoryTokens: 40_000,
     maxRecentToolMessages: 6,
@@ -303,6 +317,7 @@ export const AGENT_STYLE_RUNTIME_DEFAULTS: Record<AgentStyleValue, ResolvedAgent
     deepThinkingTokens: 20_480,
     allowedHoursUtc: [],
     weekendPause: false,
+    tradingSessions: null,
     maxHistoryMessages: 40,
     maxHistoryTokens: 80_000,
     maxRecentToolMessages: 12,
@@ -349,6 +364,7 @@ export function resolveAgentRuntimePolicy(
     toolResultFullRetentionTurns: o.toolResultFullRetentionTurns ?? defaults.toolResultFullRetentionTurns,
     toolResultMaxStaleChars: o.toolResultMaxStaleChars ?? defaults.toolResultMaxStaleChars,
     maxHoldDurationMs: o.maxHoldDurationMs ?? defaults.maxHoldDurationMs,
+    tradingSessions: o.tradingSessions ?? defaults.tradingSessions,
   };
 }
 

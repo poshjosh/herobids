@@ -1,3 +1,5 @@
+export type { TradingSessionName } from '@herobids/domain';
+
 export type AgentStyleValue = 'careful' | 'balanced' | 'bold';
 
 const MS_PER_MINUTE = 60_000;
@@ -41,6 +43,7 @@ export type RuntimePolicyOverrides = Partial<{
   deepThinkingTokens: number | null;
   allowedHoursUtc: number[] | null;
   weekendPause: boolean | null;
+  tradingSessions: TradingSessionName[] | null;
   maxHistoryMessages: number | null;
   maxHistoryTokens: number | null;
   maxRecentToolMessages: number | null;

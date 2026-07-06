@@ -315,6 +315,71 @@ describe('trading-hours helpers', () => {
   });
 });
 
+describe('isWithinTradingHours — trading sessions', () => {
+  it('allows tick during Asia session (EDT)', () => {
+    // 2026-07-01T01:30:00Z = 9:30 pm EDT (UTC-4) → inside Asia (8 pm–12 am ET = 0–3 UTC)
+    expect(isWithinTradingHours(
+      new Date('2026-07-01T01:30:00Z'),
+      { tradingSessions: ['asia'] },
+    )).toBe(true);
+  });
+
+  it('blocks tick outside Asia session (EDT)', () => {
+    // 2026-07-01T10:00:00Z = 6 am EDT → outside Asia
+    expect(isWithinTradingHours(
+      new Date('2026-07-01T10:00:00Z'),
+      { tradingSessions: ['asia'] },
+    )).toBe(false);
+  });
+
+  it('sessions union correctly — Asia + London covers both windows', () => {
+    // 2026-07-01T06:30:00Z = 2:30 am EDT → inside London (1–5 am ET = 5–8 UTC)
+    expect(isWithinTradingHours(
+      new Date('2026-07-01T06:30:00Z'),
+      { tradingSessions: ['asia', 'london'] },
+    )).toBe(true);
+  });
+
+  it('sessions respected in winter (EST — UTC-5)', () => {
+    // 2026-01-07T06:30:00Z = 1:30 am EST → inside London (1–5 am ET, UTC-5 → UTC 6–10)
+    expect(isWithinTradingHours(
+      new Date('2026-01-07T06:30:00Z'),
+      { tradingSessions: ['london'] },
+    )).toBe(true);
+  });
+
+  it('weekendPause takes priority over sessions', () => {
+    // Saturday UTC
+    expect(isWithinTradingHours(
+      new Date('2026-07-04T02:00:00Z'),
+      { tradingSessions: ['asia'], weekendPause: true },
+    )).toBe(false);
+  });
+
+  it('empty tradingSessions falls back to allowedHoursUtc', () => {
+    expect(isWithinTradingHours(
+      new Date('2026-07-01T05:00:00Z'),
+      { tradingSessions: [], allowedHoursUtc: [5] },
+    )).toBe(true);
+  });
+
+  it('tradingSessions undefined falls back to allowedHoursUtc', () => {
+    expect(isWithinTradingHours(
+      new Date('2026-07-01T14:00:00Z'),
+      { allowedHoursUtc: [14] },
+    )).toBe(true);
+  });
+
+  it('blocks tick outside NY Afternoon session (EDT)', () => {
+    // 2026-07-01T20:00:00Z = 4 pm EDT → edge of NY Afternoon (12–4 pm ET = 16–19 UTC)
+    // 4 pm EDT = 20:00 UTC, which is past 19:00 → should be outside
+    expect(isWithinTradingHours(
+      new Date('2026-07-01T20:00:00Z'),
+      { tradingSessions: ['ny-afternoon'] },
+    )).toBe(false);
+  });
+});
+
 describe('adaptive interval helpers', () => {
   const lowVolCandles = Array.from({ length: 14 }, (_, index) => ({
     timestamp: new Date(Date.UTC(2026, 5, 8, index)).toISOString(),
