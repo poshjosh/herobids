@@ -23,6 +23,16 @@ import { renderReport } from './render-report.js';
 import { generateEvaluationNarrative } from './generate-narrative.js';
 import { redact, redactJson } from './redaction.js';
 
+/** Evidence artifact names that must pass through the JSON redaction pass before user-facing output. */
+export const EVIDENCE_ARTIFACTS_FOR_REDACTION = [
+  'fills.json',
+  'journal.json',
+  'sessions.json',
+  'positions.json',
+  'agent-metadata.json',
+  'unified-agent-config.json',
+] as const;
+
 const logger = pino({ name: 'run-evaluation' });
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -120,8 +130,7 @@ export async function runEvaluation(ctx: RunEvaluationContext): Promise<void> {
     // ── Step 3: Redact evidence artifacts for user-facing output ──────────
     // Now that all analyzers have read the raw evidence, redact the stored
     // artifacts so downloaded files never contain raw secrets.
-    const evidenceArtifacts = ['fills.json', 'journal.json', 'sessions.json', 'positions.json', 'agent-metadata.json', 'unified-agent-config.json'];
-    for (const name of evidenceArtifacts) {
+    for (const name of EVIDENCE_ARTIFACTS_FOR_REDACTION) {
       try {
         const raw = await store.read(runId, name);
         if (raw) {
