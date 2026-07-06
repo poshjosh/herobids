@@ -19,8 +19,8 @@ import { MarketDataRecorder } from '@herobids/backtesting';
 import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, bots, users } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
+import { createFillFirstMarkSource } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
-import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
 import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, type ProvidersYaml } from '@herobids/domain';
 import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
@@ -628,7 +628,12 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           createStreamPoolHandle: venueType !== 'swap'
             ? (testnet: boolean) => createScopedStreamPoolHandle(publicStreamPool, binding.venue, testnet)
             : undefined,
-          markSource: oracleMarkSource,
+          markSource: createFillFirstMarkSource({
+            fillLookup: fillRepo,
+            actorId: agentId,
+            fallbackSource: oracleMarkSource,
+            stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
+          }),
           journal,
           idGen,
           positionRepo,
@@ -1276,11 +1281,12 @@ const runtime = new WorkerRuntime(
       streamPool: venueType !== 'swap'
         ? createScopedStreamPoolHandle(publicStreamPool, venue, testnet)
         : undefined,
-      markSource: new MarkSelector(
-        { stalenessThresholdMs: appConfig.marking.stalenessThresholdMs },
-        new LastFillMarkSource(fillRepo, botId),
-        oracleMarkSource,
-      ),
+      markSource: createFillFirstMarkSource({
+        fillLookup: fillRepo,
+        actorId: botId,
+        fallbackSource: oracleMarkSource,
+        stalenessThresholdMs: appConfig.marking.stalenessThresholdMs,
+      }),
       recordMarketSnapshot,
       recordReferenceMark,
       shadowPollIntervalMs: config.shadowPollIntervalMs ?? appConfig.execution.shadowPollIntervalMs,

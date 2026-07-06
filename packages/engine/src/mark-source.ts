@@ -85,3 +85,24 @@ export class MarkSelector implements MarkSource {
     });
   }
 }
+
+/**
+ * Creates the standard fill-first MarkSource used by agents and bots.
+ *
+ * Prefers the most recent fill price (within stalenessThresholdMs) as the
+ * reference mark, falling back to the given fallback source (typically an
+ * oracle like CoinGecko). Anchoring the reference mark to actual execution
+ * prices prevents phantom P&L from oracle/spot divergence.
+ */
+export function createFillFirstMarkSource(params: {
+  fillLookup: FillLookup;
+  actorId?: string;
+  fallbackSource: MarkSource;
+  stalenessThresholdMs: number;
+}): MarkSelector {
+  return new MarkSelector(
+    { stalenessThresholdMs: params.stalenessThresholdMs },
+    new LastFillMarkSource(params.fillLookup, params.actorId),
+    params.fallbackSource,
+  );
+}

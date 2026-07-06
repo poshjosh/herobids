@@ -38,7 +38,7 @@ export type { MarketDataFeed, TickerSnapshot, TradeEvent, TradeHandler } from '.
 export { StreamMarketDataFeed } from './stream-market-data-feed.js';
 export type { StreamPoolHandle, TickerFetcher } from './stream-market-data-feed.js';
 
-export { LastFillMarkSource, MarkSelector } from './mark-source.js';
+export { LastFillMarkSource, MarkSelector, createFillFirstMarkSource } from './mark-source.js';
 export type { FillLookup, FillRecord, MarkSelectorConfig } from './mark-source.js';
 
 export { flatPosition, applyFill, unrealizedPnl, totalUnrealizedPnl } from './position-tracker.js';
