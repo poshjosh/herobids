@@ -394,7 +394,7 @@ describe('GET /analytics — symbols filter & groupBy', () => {
     expect(groupMap.get('SOL-USD')).toBe(-30);
   });
 
-  it('symbol groupBy skips journal events (eventCount=0)', async () => {
+  it('symbol groupBy skips journal events (eventCount=0, fillCount from positions)', async () => {
     const db = buildAnalyticsDb([bot1], [event1], [ethPos]);
     const app = Fastify();
     decorateWithAuth(app);
@@ -404,10 +404,11 @@ describe('GET /analytics — symbols filter & groupBy', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.groups).toHaveLength(1);
-    // Event loop is skipped for symbol groupBy, so event counts should be 0
+    // Event loop is skipped for symbol groupBy, so event/decision counts should be 0
     expect(body.groups[0].eventCount).toBe(0);
     expect(body.groups[0].decisionCount).toBe(0);
-    expect(body.groups[0].fillCount).toBe(0);
+    // fillCount is derived from closed positions (one position = one fill)
+    expect(body.groups[0].fillCount).toBe(1);
     // P&L from positions should still be present
     expect(body.groups[0].realizedPnl).toBe(50);
   });
@@ -535,6 +536,28 @@ describe('GET /analytics — exitReasons filter & groupBy', () => {
     expect(groupMap.get('signal_lost')).toBe(-100);
     expect(groupMap.get('parabolic_move')).toBe(500);
     expect(groupMap.get('unknown')).toBe(30);
+  });
+
+  it('exitReason groupBy skips journal events (eventCount=0, no synthetic unknown)', async () => {
+    // Even with events present, the journal event loop is skipped for exitReason
+    // mode to avoid bucketing every event into 'unknown'.
+    const db = buildAnalyticsDb([bot1], [event1], [sigLostPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?groupBy=exitReason' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0].period).toBe('signal_lost');
+    // Event loop is skipped, so event/decision counts should be 0
+    expect(body.groups[0].eventCount).toBe(0);
+    expect(body.groups[0].decisionCount).toBe(0);
+    // fillCount derived from closed positions
+    expect(body.groups[0].fillCount).toBe(1);
+    // No spurious 'unknown' bucket from the journal event
+    expect(body.groups.every((g: { period: string }) => g.period !== 'unknown')).toBe(true);
   });
 });
 

@@ -525,4 +525,95 @@ describe('submitDecisionForExecution', () => {
       expect(result.riskRejected).toBe(false);
     });
   });
+
+  it('stamps exitReason from decision metadata.reason on close', async () => {
+    const context = makeContext();
+    const persistence = makePersistence();
+
+    // Start from a non-flat (long) position so go_flat actually closes.
+    const longPosition = {
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      side: 'long' as const,
+      size: quantity('0.5'),
+      entryPrice: price('59000'),
+      realizedPnl: price('0'),
+    };
+
+    const decisionWithReason: Decision = {
+      ...makeDecision(),
+      intent: 'go_flat',
+      targetSize: quantity('0'),
+      metadata: { reason: 'signal_lost' },
+    };
+
+    await submitDecisionForExecution(
+      decisionWithReason,
+      context,
+      longPosition,
+      {
+        actorType: 'bot',
+        actorId: 'bot-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        venueAccountId: 'venue-account-1',
+        executor: new PaperExecutor(makeIdGen()),
+        journal: { append: vi.fn().mockResolvedValue(undefined) },
+        riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+        persistence,
+        idGen: makeIdGen(),
+        clock,
+      },
+    );
+
+    expect(persistence.calls.persistPosition).toHaveLength(1);
+    const posArg = persistence.calls.persistPosition[0]![0] as { side: string; exitReason?: string };
+    expect(posArg.side).toBe('flat');
+    expect(posArg.exitReason).toBe('signal_lost');
+  });
+
+  it('omits exitReason from persistPosition when decision has no metadata.reason', async () => {
+    const context = makeContext();
+    const persistence = makePersistence();
+
+    const longPosition = {
+      venue: 'hyperliquid',
+      symbol: 'BTC/USD:USD',
+      side: 'long' as const,
+      size: quantity('0.5'),
+      entryPrice: price('59000'),
+      realizedPnl: price('0'),
+    };
+
+    // No metadata at all
+    const decisionNoReason: Decision = {
+      ...makeDecision(),
+      intent: 'go_flat',
+      targetSize: quantity('0'),
+    };
+
+    await submitDecisionForExecution(
+      decisionNoReason,
+      context,
+      longPosition,
+      {
+        actorType: 'bot',
+        actorId: 'bot-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        venueAccountId: 'venue-account-1',
+        executor: new PaperExecutor(makeIdGen()),
+        journal: { append: vi.fn().mockResolvedValue(undefined) },
+        riskLimits: { maxPositionSize: quantity('100'), maxOpenPositions: 5, maxDrawdown: price('10000') },
+        persistence,
+        idGen: makeIdGen(),
+        clock,
+      },
+    );
+
+    expect(persistence.calls.persistPosition).toHaveLength(1);
+    const posArg = persistence.calls.persistPosition[0]![0] as { side: string; exitReason?: string };
+    expect(posArg.side).toBe('flat');
+    expect(posArg.exitReason).toBeUndefined();
+  });
 });

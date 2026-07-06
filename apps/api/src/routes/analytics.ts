@@ -238,9 +238,14 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
   // 9. Aggregate events and positions into groups
   const groups: Record<string, GroupData> = {};
 
-  // Journal events do not have a symbol column — skip the event loop for groupBy='symbol'.
-  // Event counts (eventCount, decisionCount, fillCount) are omitted for symbol grouping.
-  if (query.groupBy !== 'symbol') {
+  // Journal events lack a symbol or exitReason column.
+  // Skip the event loop for groupBy modes that rely on position-only columns:
+  //   - 'symbol': events don't carry symbol
+  //   - 'exitReason': events don't carry exit reason; running the loop would bucket
+  //     every event into 'unknown', producing a misleading synthetic bucket.
+  // For these modes, fillCount is derived from closed positions instead.
+  const eventModes = new Set(['day', 'week', 'session', 'strategy']);
+  if (eventModes.has(query.groupBy)) {
     for (const e of filteredEvents) {
       const period = groupKey(e.createdAt, e.actorId);
       if (!groups[period]) {
@@ -257,6 +262,11 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
     const period = groupKey(p.closedAt, p.actorId, p.symbol, p.exitReason);
     if (!groups[period]) {
       groups[period] = { period, eventCount: 0, decisionCount: 0, fillCount: 0, realizedPnl: 0 };
+    }
+    // Each closed position implies at least one fill — use this for fillCount
+    // when the event loop is skipped (symbol / exitReason modes).
+    if (!eventModes.has(query.groupBy)) {
+      groups[period].fillCount++;
     }
     groups[period].realizedPnl += parseFloat(p.realizedPnl ?? '0');
   }
