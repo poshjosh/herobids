@@ -135,10 +135,9 @@ These replace the raw `strategyId` / `config` fields as the primary input.
 
 ### 7. Remove Technical Venue/Symbol Exposure From Default User Flows
 
-- No free-text symbol entry in default bot create — instrument is selected from a list derived from the venue profile
+- No free-text symbol entry in default bot create — instrument is selected from a list derived from the venue profile *(not yet implemented; free-text symbol input is still present as of 2026-07-06)*
 - No `venueType` selector in default bot create — derived from venue account credential
-- No raw JSON config editor in default bot create — strategy preset populates config automatically
-- All raw fields remain accessible under an "Advanced" toggle (for power users and internal testing)
+- No raw JSON config editor in bot create — strategy preset populates config automatically. The "Advanced: raw JSON config" toggle was removed entirely (2026-07-06) to simplify UX and align with agent creation. Power users use the API directly.
 
 ---
 

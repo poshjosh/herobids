@@ -88,9 +88,9 @@ Route: `/bots` — lists advanced trading bots created by a user or by an agent.
 | ID | Test Case | Steps | Expected | Status | Notes |
 |----|-----------|-------|----------|--------|-------|
 | I-01 | Bots list renders | Navigate to `/bots` | Page titled "Bots"; subtitle "Trading bots created by you or your agents"; list shows status badges | ✅ | Title "Bots"; subtitle "Trading bots created by you or your AI agents" |
-| I-02 | Empty state | Open with no bots | "No bots yet" empty state; "Create Bot" CTA | ✅ | "No bots yet" with "Create Bot" CTA |
-| I-03 | Create bot — happy path | Click "Create Bot"; fill required fields; submit | Bot appears in list | — | Requires at least one connection (venue account selector replaced with connection selector); requires at least one active connection |
-| I-04 | Create bot — validation error | Submit form with missing required fields | Field-level or banner error shown; form not dismissed | ✅ | Create Bot button disabled when symbol or connection is empty |
+| I-02 | Empty state | Open with no bots | "No bots yet" empty state; "Create Bot" CTA | ✅ | Covered by E2E journey 17 |
+| I-03 | Create bot — happy path | Click "Create Bot"; fill required fields; submit | Bot appears in list | — | Requires at least one active connection; manual UAT until test credentials are provisioned |
+| I-04 | Create bot — validation error | Submit form with missing required fields | Field-level or banner error shown; form not dismissed | ✅ | Create Bot button disabled when connection is empty; covered by E2E journey 17 |
 | I-05 | Create bot — API error | Submit with valid data while API returns 4xx | Human-readable error message shown | — | |
 | I-06 | Navigate to detail | Click a bot card | Navigates to `/bots/:id` | — | |
 

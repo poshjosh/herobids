@@ -8,6 +8,7 @@ import {
   Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle,
 } from '../../lib/ui.js';
 import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
+import { SWAP_VENUES } from '@herobids/domain';
 
 const STYLE_OPTIONS = [
   { value: 'economy', label: 'Economy', description: 'Fewer indicators, lower confidence thresholds' },
@@ -126,8 +127,6 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
     executionMode: 'paper',
     symbol: '',
   });
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [configJson, setConfigJson] = useState('');
   const [selectedStyle, setSelectedStyle] = useState<string>('standard');
 
   const tradingConnectionsQuery = useQuery({
@@ -138,6 +137,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
     (c) => c.status === 'active',
   );
   const selectedConnection = tradingConnections.find((c) => c.connectionId === form.connectionId) ?? null;
+  const isSwapVenue = selectedConnection != null && (SWAP_VENUES as readonly string[]).includes(selectedConnection.provider);
 
   const presetsQuery = useQuery({
     queryKey: ['blueprintPresets', selectedStyle],
@@ -155,34 +155,22 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
       if (!venue) {
         throw new Error('Select a platform link before creating a bot');
       }
-      let config: Record<string, unknown> = {
+      const config: Record<string, unknown> = {
         strategy: preset.strategy,
         ...(preset.risk ? { risk: preset.risk } : {}),
         execution: { mode: form.executionMode },
         venue,
         symbol: form.symbol,
       };
-      if (showAdvanced && configJson.trim()) {
-        try {
-          config = JSON.parse(configJson) as Record<string, unknown>;
-        } catch {
-          throw new Error('Invalid JSON in advanced config');
-        }
-      }
-      if (!form.connectionId) {
-        throw new Error('Select a platform link before creating a bot');
-      }
       return botsApi.create({
         connectionId: form.connectionId,
-        venue: (config['venue'] as string) || venue,
+        venue,
         symbol: form.symbol,
         config,
       });
     },
     onSuccess: onCreated,
   });
-
-  const selectedPreset = fetchedPresets.find((p) => p.key === form.strategyPreset);
 
   return (
     <Modal title="Create Bot" onClose={onClose}>
@@ -204,13 +192,13 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
         {/* Symbol */}
         <div>
-          <FieldLabel>Symbol (e.g. BTC-PERP)</FieldLabel>
+          <FieldLabel>{isSwapVenue ? 'Instrument (e.g. WETH/USDC)' : 'Symbol (e.g. BTC-PERP)'}</FieldLabel>
           <input
             type="text"
             style={inputStyle}
             value={form.symbol}
             onChange={(e) => setForm((s) => ({ ...s, symbol: e.target.value }))}
-            placeholder="BTC-PERP"
+            placeholder={isSwapVenue ? 'WETH/USDC' : 'BTC-PERP'}
           />
         </div>
 
@@ -254,31 +242,6 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           </select>
         </div>
 
-        {/* Advanced config toggle */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '13px', padding: 0 }}
-          >
-            {showAdvanced ? '▼' : '▶'} Advanced: raw JSON config
-          </button>
-          {showAdvanced && (
-            <textarea
-              style={{ ...inputStyle, marginTop: '8px', minHeight: '120px', fontFamily: 'monospace', fontSize: '12px', resize: 'vertical' }}
-              value={configJson}
-              onChange={(e) => setConfigJson(e.target.value)}
-              placeholder={JSON.stringify({
-                strategy: { type: selectedPreset?.key ?? 'momentum', params: {} },
-                risk: {},
-                execution: { mode: form.executionMode },
-                venue: selectedConnection?.provider ?? 'hyperliquid',
-                symbol: form.symbol || 'BTC-PERP',
-              }, null, 2)}
-            />
-          )}
-        </div>
-
         {mutation.isError && <ErrorBanner message={(mutation.error as Error).message} />}
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -286,7 +249,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <Button
             variant="primary"
             type="button"
-            disabled={mutation.isPending || presetsQuery.isLoading || !form.connectionId || !form.strategyPreset}
+            disabled={mutation.isPending || presetsQuery.isLoading || !form.connectionId || !form.strategyPreset || !form.symbol.trim()}
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? 'Creating…' : 'Create Bot'}
