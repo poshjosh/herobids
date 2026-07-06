@@ -772,7 +772,7 @@ export class BotRepository {
    * Returns running bots created by agents that are now stopped or crashed.
    * Used by the bot orphan reconcile sweep.
    */
-  async listRunningBotsForInactiveAgents(): Promise<{ id: string; creatorId: string }[]> {
+  async listRunningBotsForInactiveAgents(): Promise<{ id: string; creatorId: string | null }[]> {
     return this.db
       .select({ id: bots.id, creatorId: bots.creatorId })
       .from(bots)
