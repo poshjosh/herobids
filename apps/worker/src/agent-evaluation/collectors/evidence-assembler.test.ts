@@ -180,6 +180,43 @@ describe('assembleEvidence — unified-agent-config.json', () => {
     expect(entry!.error).toContain('DB connection refused');
   });
 
+  it('keeps unified-agent-config.json best-effort when persisting that artifact fails', async () => {
+    mockGetAgent.mockResolvedValue({
+      id: 'agent-test-1',
+      name: 'Test Agent',
+      status: 'stopped',
+      style: 'balanced',
+      executionMode: 'paper',
+      dailyLossLimit: null,
+      maxBots: null,
+      maxSlippageBps: null,
+      createdAt: new Date(),
+      unifiedConfig: { technical: { leverage: 2 } },
+    });
+
+    const { store } = makeStore();
+    const originalWrite = store.write;
+    store.write = vi.fn(async (runId: string, name: string, content: Uint8Array | string) => {
+      if (name === 'unified-agent-config.json') {
+        throw new Error('disk full');
+      }
+      return originalWrite(runId, name, content);
+    });
+
+    const ctx = makeContext({ store });
+
+    const manifest = await assembleEvidence(ctx);
+
+    const entry = manifest.entries.find((e) => e.artifactName === 'unified-agent-config.json');
+    expect(entry).toBeDefined();
+    expect(entry!.collected).toBe(false);
+    expect(entry!.error).toContain('disk full');
+
+    const fillsEntry = manifest.entries.find((e) => e.artifactName === 'fills.json');
+    expect(fillsEntry).toBeDefined();
+    expect(fillsEntry!.collected).toBe(true);
+  });
+
   it('does not crash the assembler when AgentRepository throws', async () => {
     mockGetAgent.mockRejectedValue(new Error('DB connection refused'));
 
