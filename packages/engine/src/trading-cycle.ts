@@ -106,6 +106,8 @@ export interface PersistPositionParams {
   entryPrice: string;
   realizedPnl: string;
   markSource?: string;
+  /** Reason the position was closed (only meaningful when side='flat'). */
+  exitReason?: string;
 }
 
 export interface PersistOrderParams {

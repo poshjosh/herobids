@@ -366,6 +366,10 @@ export async function submitDecisionForExecution(
   }
 
   // Persist position state
+  // Extract exit reason from decision metadata when closing (side='flat').
+  const exitReason = typeof resolvedDecision.metadata?.reason === 'string'
+    ? resolvedDecision.metadata.reason
+    : undefined;
   await deps.persistence.persistPosition({
     venueAccountId: deps.venueAccountId,
     botId: resolvedDecision.botId,
@@ -378,6 +382,7 @@ export async function submitDecisionForExecution(
     entryPrice: updatedPosition.entryPrice.toString(),
     realizedPnl: updatedPosition.realizedPnl.toString(),
     markSource: context.referenceMark.source,
+    exitReason,
   });
 
   // Mark plan completed/failed

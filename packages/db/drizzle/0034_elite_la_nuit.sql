@@ -1,0 +1,1 @@
+ALTER TABLE "positions" ADD COLUMN "exit_reason" text;

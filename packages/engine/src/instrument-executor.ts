@@ -204,6 +204,7 @@ export async function executeDecision(
         entryPrice: pos.entryPrice,
         realizedPnl: pos.realizedPnl,
         markSource: pos.markSource,
+        exitReason: pos.exitReason,
       });
     },
     persistOrder: async (order) => {

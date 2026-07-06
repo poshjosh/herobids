@@ -21,6 +21,10 @@ export const positions = pgTable('positions', {
   realizedPnl: numeric('realized_pnl').notNull().default('0'),
   /** Source of the canonical mark price used for P&L/risk: last_fill | oracle | ticker */
   markSource: text('mark_source'),
+  /** Reason the position was closed (null for open positions or unknown closes).
+   *  Values: signal_lost | parabolic_move | daily_limit_reached | sentiment_suppressed |
+   *          stop_loss | manual | limit_order_timeout | market_order_timeout | etc. */
+  exitReason: text('exit_reason'),
   openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

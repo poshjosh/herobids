@@ -53,18 +53,18 @@ the journal event loop.
 
 ### Checklist
 
-- [ ] Add `symbols` to `AnalyticsQuerySchema` and `AnalyticsBodySchema`
+- [x] Add `symbols` to `AnalyticsQuerySchema` and `AnalyticsBodySchema`
   ```typescript
   symbols: z.union([z.string(), z.array(z.string())]).optional().transform(...)
   ```
-- [ ] Filter `posRows` by `p.symbol` when `query.symbols` is set
-- [ ] Add `'symbol'` to the `groupBy` enum in both schemas
-- [ ] Add `symbol` case to `groupKey()` function — returns `p.symbol`
-- [ ] When `groupBy='symbol'`, skip the journal events loop (events lack symbol) or
+- [x] Filter `posRows` by `p.symbol` when `query.symbols` is set
+- [x] Add `'symbol'` to the `groupBy` enum in both schemas
+- [x] Add `symbol` case to `groupKey()` function — returns `p.symbol`
+- [x] When `groupBy='symbol'`, skip the journal events loop (events lack symbol) or
   populate fill counts from `posRows` only
-- [ ] Add unit tests: filter by single symbol, filter by multiple symbols,
+- [x] Add unit tests: filter by single symbol, filter by multiple symbols,
   groupBy='symbol' returns one group per symbol
-- [ ] `pnpm lint` passes
+- [x] `pnpm lint` passes
 
 ---
 
@@ -116,17 +116,17 @@ negative avg P&L if they exit too early).
 
 ### Checklist
 
-- [ ] Add `exitReason: text('exit_reason')` to `positions` schema
-- [ ] Generate and apply migration
-- [ ] Identify write path(s) where positions are closed — stamp `exitReason` from
+- [x] Add `exitReason: text('exit_reason')` to `positions` schema
+- [x] Generate and apply migration
+- [x] Identify write path(s) where positions are closed — stamp `exitReason` from
   decision `metadata.reason` (check `packages/engine/src/instrument-executor.ts`
   and position tracker)
-- [ ] Add `exitReasons` to `AnalyticsQuerySchema` and `AnalyticsBodySchema`
-- [ ] Filter `posRows` by `p.exitReason` when `query.exitReasons` is set
-- [ ] Add `'exitReason'` to the `groupBy` enum
-- [ ] Add `exitReason` case to `groupKey()` — returns `p.exitReason ?? 'unknown'`
-- [ ] Add unit tests: filter by exit reason, groupBy='exitReason' breakdown
-- [ ] `pnpm lint` passes
+- [x] Add `exitReasons` to `AnalyticsQuerySchema` and `AnalyticsBodySchema`
+- [x] Filter `posRows` by `p.exitReason` when `query.exitReasons` is set
+- [x] Add `'exitReason'` to the `groupBy` enum
+- [x] Add `exitReason` case to `groupKey()` — returns `p.exitReason ?? 'unknown'`
+- [x] Add unit tests: filter by exit reason, groupBy='exitReason' breakdown
+- [x] `pnpm lint` passes
 
 ---
 
@@ -136,3 +136,16 @@ Step 1 and Step 2 are independent. Step 1 is cheaper (no migration) and can ship
 first.
 
 Recommended order: **1 → 2**
+
+---
+
+## Outstanding Issues
+
+### [Step 1 — symbols] No outstanding issues.
+
+### [Step 2 — exitReasons] No outstanding issues.
+
+- All checklist items completed. `pnpm lint` and 26 unit tests pass.
+- Migration `0034_elite_la_nuit` (`ALTER TABLE positions ADD COLUMN exit_reason text`) is generated and registered in the Drizzle journal.
+- `exitReason` is stamped from `decision.metadata.reason` in `decision-intake.ts` and threaded through `PersistPositionParams` → `UpsertPosition` → `PositionRepository.upsert`.
+- Backward compatible: the column is nullable and defaults to null for existing rows.

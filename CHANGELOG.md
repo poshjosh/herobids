@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Analytics filters parity:** Added `symbols` filter and `symbol` groupBy to analytics API. Filter by instrument to see which are profitable. `groupBy=symbol` aggregates P&L per symbol (skips journal events which lack symbol). Added `exitReasons` filter and `exitReason` groupBy — filter by closure reason (`signal_lost`, `parabolic_move`, etc.) to understand why positions close. Added `exitReason` column to `positions` table (migration `0034_elite_la_nuit`), stamped from decision `metadata.reason` on close.
 - **Watch token discovery and pinning:** `watch_token` now accepts `chain: "any"` for cross-chain discovery. The system resolves the asset once at creation time and pins the watch to a concrete identity (chain + address). Future price checks use the pinned identity, preventing silent drift when market liquidity shifts between chains. Legacy watches are lazily repaired on first `check_watches` evaluation. `get_price` behavior remains unchanged for one-shot discovery.
 - Glossary
 - Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time

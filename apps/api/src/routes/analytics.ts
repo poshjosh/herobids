@@ -26,7 +26,13 @@ const AnalyticsQuerySchema = z.object({
   sessions: z.union([z.string(), z.array(z.string())]).optional().transform((v) =>
     v === undefined ? undefined : Array.isArray(v) ? v : [v],
   ),
-  groupBy: z.enum(['day', 'week', 'session', 'strategy']).optional().default('day'),
+  symbols: z.union([z.string(), z.array(z.string())]).optional().transform((v) =>
+    v === undefined ? undefined : Array.isArray(v) ? v : [v],
+  ),
+  exitReasons: z.union([z.string(), z.array(z.string())]).optional().transform((v) =>
+    v === undefined ? undefined : Array.isArray(v) ? v : [v],
+  ),
+  groupBy: z.enum(['day', 'week', 'session', 'strategy', 'symbol', 'exitReason']).optional().default('day'),
 });
 
 const AnalyticsBodySchema = z.object({
@@ -37,7 +43,9 @@ const AnalyticsBodySchema = z.object({
   decisionModes: z.array(z.enum(['mechanical', 'llm', 'hybrid'])).optional(),
   executionModes: z.array(z.enum(['paper', 'shadow', 'live'])).optional(),
   sessions: z.array(z.string()).optional(),
-  groupBy: z.enum(['day', 'week', 'session', 'strategy']).optional().default('day'),
+  symbols: z.array(z.string()).optional(),
+  exitReasons: z.array(z.string()).optional(),
+  groupBy: z.enum(['day', 'week', 'session', 'strategy', 'symbol', 'exitReason']).optional().default('day'),
 });
 
 type AnalyticsQuery = z.infer<typeof AnalyticsQuerySchema>;
@@ -179,17 +187,28 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
 
   // Apply the same session-range filter to positions that was applied to events.
   // Without this, a sessions=[...] query returns scoped event counts but unscoped PnL.
-  const posRows = query.sessions && query.sessions.length > 0
+  const sessionFilteredPosRows = query.sessions && query.sessions.length > 0
     ? rawPosRows.filter((p) => p.closedAt && sessionRanges.some((sr) => {
         const t = p.closedAt!.getTime();
         return t >= sr.start && (sr.end === null || t <= sr.end);
       }))
     : rawPosRows;
 
+  // Apply symbols filter — restrict to positions where symbol is in the requested set.
+  const symbolFilteredPosRows = query.symbols && query.symbols.length > 0
+    ? sessionFilteredPosRows.filter((p) => query.symbols!.includes(p.symbol))
+    : sessionFilteredPosRows;
+
+  // Apply exitReasons filter — restrict to positions whose exitReason matches.
+  // Open positions (exitReason = null) never match an exitReasons filter.
+  const posRows = query.exitReasons && query.exitReasons.length > 0
+    ? symbolFilteredPosRows.filter((p) => p.exitReason && query.exitReasons!.includes(p.exitReason))
+    : symbolFilteredPosRows;
+
   // 8. groupKey function covering all four modes
   const botStrategyMap = new Map(targetMeta.map((b) => [b.id, b.strategyType ?? 'unknown']));
 
-  const groupKey = (createdAt: Date, actorId: string | null): string => {
+  const groupKey = (createdAt: Date, actorId: string | null, symbol?: string | null, exitReason?: string | null): string => {
     switch (query.groupBy) {
       case 'week': {
         const d = new Date(createdAt);
@@ -200,6 +219,10 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
       }
       case 'strategy':
         return botStrategyMap.get(actorId ?? '') ?? 'unknown';
+      case 'symbol':
+        return symbol ?? 'unknown';
+      case 'exitReason':
+        return exitReason ?? 'unknown';
       case 'session': {
         const t = createdAt.getTime();
         const match = sessionRanges.find((sr) =>
@@ -215,19 +238,23 @@ async function computeAnalytics(db: Database, userId: string, query: AnalyticsQu
   // 9. Aggregate events and positions into groups
   const groups: Record<string, GroupData> = {};
 
-  for (const e of filteredEvents) {
-    const period = groupKey(e.createdAt, e.actorId);
-    if (!groups[period]) {
-      groups[period] = { period, eventCount: 0, decisionCount: 0, fillCount: 0, realizedPnl: 0 };
+  // Journal events do not have a symbol column — skip the event loop for groupBy='symbol'.
+  // Event counts (eventCount, decisionCount, fillCount) are omitted for symbol grouping.
+  if (query.groupBy !== 'symbol') {
+    for (const e of filteredEvents) {
+      const period = groupKey(e.createdAt, e.actorId);
+      if (!groups[period]) {
+        groups[period] = { period, eventCount: 0, decisionCount: 0, fillCount: 0, realizedPnl: 0 };
+      }
+      groups[period].eventCount++;
+      if (e.type.startsWith('decision.')) groups[period].decisionCount++;
+      if (e.type.startsWith('order.fill') || e.type === 'fill.recorded') groups[period].fillCount++;
     }
-    groups[period].eventCount++;
-    if (e.type.startsWith('decision.')) groups[period].decisionCount++;
-    if (e.type.startsWith('order.fill') || e.type === 'fill.recorded') groups[period].fillCount++;
   }
 
   for (const p of posRows) {
     if (!p.closedAt) continue;
-    const period = groupKey(p.closedAt, p.actorId);
+    const period = groupKey(p.closedAt, p.actorId, p.symbol, p.exitReason);
     if (!groups[period]) {
       groups[period] = { period, eventCount: 0, decisionCount: 0, fillCount: 0, realizedPnl: 0 };
     }

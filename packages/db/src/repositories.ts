@@ -34,6 +34,8 @@ export interface UpsertPosition {
   entryPrice: string;
   realizedPnl: string;
   markSource?: string;
+  /** Reason the position was closed (only meaningful when side='flat'). */
+  exitReason?: string;
 }
 
 /**
@@ -191,6 +193,7 @@ export class PositionRepository {
             side: 'flat',
             size: '0',
             realizedPnl: pos.realizedPnl,
+            exitReason: pos.exitReason ?? null,
             closedAt: new Date(),
             updatedAt: new Date(),
           })

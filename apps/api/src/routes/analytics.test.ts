@@ -282,3 +282,259 @@ describe('POST /analytics/query', () => {
     expect(body.groups[0].period).toBe('no_session');
   });
 });
+
+// ─── symbols filter & symbol groupBy ──────────────────────────────────────
+
+const ethPos = {
+  id: 'pos-1',
+  actorId: 'bot-1',
+  actorType: 'bot',
+  symbol: 'ETH-USD',
+  side: 'flat',
+  size: '0',
+  entryPrice: '3000',
+  realizedPnl: '50',
+  venue: 'hyperliquid',
+  venueAccountId: 'va-1',
+  openedAt: now,
+  closedAt: now,
+  updatedAt: now,
+  markSource: null,
+};
+
+const btcPos = {
+  id: 'pos-2',
+  actorId: 'bot-1',
+  actorType: 'bot',
+  symbol: 'BTC-USD',
+  side: 'flat',
+  size: '0',
+  entryPrice: '60000',
+  realizedPnl: '200',
+  venue: 'hyperliquid',
+  venueAccountId: 'va-1',
+  openedAt: now,
+  closedAt: now,
+  updatedAt: now,
+  markSource: null,
+};
+
+const solPos = {
+  id: 'pos-3',
+  actorId: 'bot-1',
+  actorType: 'bot',
+  symbol: 'SOL-USD',
+  side: 'flat',
+  size: '0',
+  entryPrice: '150',
+  realizedPnl: '-30',
+  venue: 'hyperliquid',
+  venueAccountId: 'va-1',
+  openedAt: now,
+  closedAt: now,
+  updatedAt: now,
+  markSource: null,
+};
+
+describe('GET /analytics — symbols filter & groupBy', () => {
+  it('filters positions by a single symbol', async () => {
+    // Responses: bots, events, positions
+    const db = buildAnalyticsDb([bot1], [], [ethPos, btcPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?symbols=ETH-USD' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groups).toHaveLength(1);
+    // Only ETH-USD P&L should be included (= 50)
+    expect(body.groups[0].realizedPnl).toBe(50);
+  });
+
+  it('filters positions by multiple symbols', async () => {
+    const db = buildAnalyticsDb([bot1], [], [ethPos, btcPos, solPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?symbols=ETH-USD&symbols=BTC-USD' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Both ETH + BTC, grouped by day (same date)
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0].realizedPnl).toBe(250); // 50 + 200
+  });
+
+  it('returns empty groups when no positions match the symbol filter', async () => {
+    const db = buildAnalyticsDb([bot1], [], [ethPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?symbols=SOL-USD' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().groups).toEqual([]);
+  });
+
+  it('groupBy=symbol returns one group per symbol', async () => {
+    const db = buildAnalyticsDb([bot1], [], [ethPos, btcPos, solPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?groupBy=symbol' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groupBy).toBe('symbol');
+    expect(body.groups).toHaveLength(3);
+    const groupMap = new Map(body.groups.map((g: { period: string; realizedPnl: number }) => [g.period, g.realizedPnl]));
+    expect(groupMap.get('ETH-USD')).toBe(50);
+    expect(groupMap.get('BTC-USD')).toBe(200);
+    expect(groupMap.get('SOL-USD')).toBe(-30);
+  });
+
+  it('symbol groupBy skips journal events (eventCount=0)', async () => {
+    const db = buildAnalyticsDb([bot1], [event1], [ethPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?groupBy=symbol' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groups).toHaveLength(1);
+    // Event loop is skipped for symbol groupBy, so event counts should be 0
+    expect(body.groups[0].eventCount).toBe(0);
+    expect(body.groups[0].decisionCount).toBe(0);
+    expect(body.groups[0].fillCount).toBe(0);
+    // P&L from positions should still be present
+    expect(body.groups[0].realizedPnl).toBe(50);
+  });
+});
+
+// ─── exitReasons filter & exitReason groupBy ──────────────────────────────
+
+const sigLostPos = {
+  id: 'pos-sl',
+  actorId: 'bot-1',
+  actorType: 'bot',
+  symbol: 'ETH-USD',
+  side: 'flat',
+  size: '0',
+  entryPrice: '3000',
+  realizedPnl: '-100',
+  venue: 'hyperliquid',
+  venueAccountId: 'va-1',
+  openedAt: now,
+  closedAt: now,
+  updatedAt: now,
+  markSource: null,
+  exitReason: 'signal_lost',
+};
+
+const parabolicPos = {
+  id: 'pos-pm',
+  actorId: 'bot-1',
+  actorType: 'bot',
+  symbol: 'BTC-USD',
+  side: 'flat',
+  size: '0',
+  entryPrice: '60000',
+  realizedPnl: '500',
+  venue: 'hyperliquid',
+  venueAccountId: 'va-1',
+  openedAt: now,
+  closedAt: now,
+  updatedAt: now,
+  markSource: null,
+  exitReason: 'parabolic_move',
+};
+
+const unknownExitPos = {
+  id: 'pos-unk',
+  actorId: 'bot-1',
+  actorType: 'bot',
+  symbol: 'SOL-USD',
+  side: 'flat',
+  size: '0',
+  entryPrice: '150',
+  realizedPnl: '30',
+  venue: 'hyperliquid',
+  venueAccountId: 'va-1',
+  openedAt: now,
+  closedAt: now,
+  updatedAt: now,
+  markSource: null,
+  exitReason: null,
+};
+
+describe('GET /analytics — exitReasons filter & groupBy', () => {
+  it('filters positions by a single exit reason', async () => {
+    const db = buildAnalyticsDb([bot1], [], [sigLostPos, parabolicPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?exitReasons=signal_lost' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0].realizedPnl).toBe(-100);
+  });
+
+  it('filters positions by multiple exit reasons', async () => {
+    const db = buildAnalyticsDb([bot1], [], [sigLostPos, parabolicPos, unknownExitPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?exitReasons=signal_lost&exitReasons=parabolic_move' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Both signal_lost + parabolic_move grouped by day (same date)
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0].realizedPnl).toBe(400); // -100 + 500
+  });
+
+  it('returns empty groups when no positions match the exit reason filter', async () => {
+    const db = buildAnalyticsDb([bot1], [], [sigLostPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?exitReasons=daily_limit_reached' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().groups).toEqual([]);
+  });
+
+  it('excludes positions with null exitReason from exit reason filter', async () => {
+    const db = buildAnalyticsDb([bot1], [], [unknownExitPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?exitReasons=signal_lost' });
+    expect(res.statusCode).toBe(200);
+    // unknownExitPos has exitReason=null, so it should not match 'signal_lost'
+    expect(res.json().groups).toEqual([]);
+  });
+
+  it('groupBy=exitReason returns one group per exit reason', async () => {
+    const db = buildAnalyticsDb([bot1], [], [sigLostPos, parabolicPos, unknownExitPos]);
+    const app = Fastify();
+    decorateWithAuth(app);
+    await analyticsRoutes(app, db);
+
+    const res = await app.inject({ method: 'GET', url: '/analytics?groupBy=exitReason' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.groupBy).toBe('exitReason');
+    expect(body.groups).toHaveLength(3);
+    const groupMap = new Map(body.groups.map((g: { period: string; realizedPnl: number }) => [g.period, g.realizedPnl]));
+    expect(groupMap.get('signal_lost')).toBe(-100);
+    expect(groupMap.get('parabolic_move')).toBe(500);
+    expect(groupMap.get('unknown')).toBe(30);
+  });
+});
+

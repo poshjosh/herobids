@@ -239,6 +239,13 @@
       "when": 1783285789000,
       "tag": "0033_dazzling_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783353198894,
+      "tag": "0034_elite_la_nuit",
+      "breakpoints": true
     }
   ]
 }
