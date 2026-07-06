@@ -93,7 +93,7 @@ describe('TradingActor lifecycle', () => {
       const deps = makeBaseDeps({
         venuePort,
         reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
-        executionMode: 'shadow',
+        executionMode: 'live',
       });
 
       const actor = new TradingActor('inst-1', {}, deps);
@@ -117,7 +117,7 @@ describe('TradingActor lifecycle', () => {
       const deps = makeBaseDeps({
         venuePort,
         reconciliationConfig: { intervalMs: 30000, driftAlertOnly: false },
-        executionMode: 'shadow',
+        executionMode: 'live',
       });
 
       const actor = new TradingActor('inst-2', {}, deps);

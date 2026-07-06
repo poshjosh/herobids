@@ -76,7 +76,7 @@ export function buildRiskLimitsFromContract(
 
   // maxDrawdown (absolute USD) is a separate DB column, preserved for non-agent flows.
   // Agents use maxDrawdownPct (percentage) from the risk contract for drawdown enforcement.
-  const maxDrawdown = source.maxDrawdown ?? String(defaults.maxDrawdown);
+  const maxDrawdown = source.maxDrawdown ?? (defaults.maxDrawdown != null ? String(defaults.maxDrawdown) : '1000000000');
 
   return {
     maxPositionSize: quantity(String(defaults.maxPositionSize)),

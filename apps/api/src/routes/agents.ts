@@ -58,6 +58,7 @@ import {
   resolveNotificationPolicy,
   resolveAgentRiskContractForResponse,
   validateAgentModelPolicy,
+  validateDailyLossRequiresCapital,
   validateMaxHoldDurationInvariant,
   validateAgentRiskBounds,
 } from './agent-config-helpers.js';
@@ -720,7 +721,7 @@ export async function agentRoutes(
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           dailyLossLimit: parsed.data.dailyLossLimit ?? null,
           maxDrawdown: parsed.data.maxDrawdown ?? null,
-          maxDrawdownPct: parsed.data.maxDrawdownPct ?? null,
+          maxDrawdownPct: parsed.data.maxDrawdownPct != null ? String(parsed.data.maxDrawdownPct) : null,
           maxBots: resolvedMaxBots,
           maxSlippageBps: parsed.data.maxSlippageBps ?? null,
           maxOpenPositions: parsed.data.maxOpenPositions ?? null,
@@ -1027,6 +1028,7 @@ export async function agentRoutes(
       maxPositionSizePct: rawMaxPositionSizePct,
       stopLossPct: rawStopLossPct,
       maxBots: rawMaxBots,
+      maxDrawdownPct: rawMaxDrawdownPct,
       technical: technicalUpdate,
       strategyPreset: strategyPresetUpdate,
       ...agentUpdates
@@ -1154,6 +1156,7 @@ export async function agentRoutes(
           ...(rawTelegramChatId !== undefined ? { telegramChatId: rawTelegramChatId?.trim() || null } : {}),
           ...(finalMaxPositionSizePctUpdate !== undefined ? { maxPositionSizePct: finalMaxPositionSizePctUpdate } : {}),
           ...(finalStopLossPctUpdate !== undefined ? { stopLossPct: finalStopLossPctUpdate } : {}),
+          ...(rawMaxDrawdownPct !== undefined ? { maxDrawdownPct: rawMaxDrawdownPct != null ? String(rawMaxDrawdownPct) : null } : {}),
           ...resolvedMaxBotsPatch,
           ...(executionMode.value != null ? { executionMode: executionMode.value } : {}),
           ...(effectiveNotificationPolicy !== undefined ? { notificationPolicy: effectiveNotificationPolicy } : {}),

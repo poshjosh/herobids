@@ -22,6 +22,8 @@ const BASE_CONFIG = {
   dockerNetwork: 'herobids_default',
   agentImage: 'herobids-agent:latest',
   redisUrl: 'redis://localhost:6379',
+  databaseUrl: 'postgresql://test:test@localhost:5432/test',
+  agentRuntimeConfigJson: '{}',
 };
 
 const SPEC = {

@@ -2,7 +2,6 @@ import pino from 'pino';
 import type { Strategy, MarketSnapshot, OrderbookVenuePort, Subscription, SubscriptionState, PrivateStreamFill, PrivateStreamOrder, PrivateStreamPosition, SwapVenuePort, MarkSource, SwapTokenSafetyPort, CandleFetcher } from '@herobids/domain';
 import type { InstanceActor } from './runtime.js';
 import type { ExecutionActor, IntakeResult } from './execution-actor.js';
-import { cleanupOrphanedPositions } from './reconciliation-orphaned-cleanup.js';
 import type { SwapConfirmationPoller } from '@herobids/venues';
 import {
   PaperExecutor,
@@ -1337,38 +1336,8 @@ export class TradingActor implements InstanceActor, ExecutionActor {
     }
 
     // If drift is detected (exceeds threshold) and we are NOT in alert-only mode, block trading.
-    // Exception: shadow/paper mode — orphaned local positions (venue has no matching position)
-    // are auto-closed because no real trades happen on the venue. Only balance mismatches
-    // and venue-only positions (someone else trading on the shared account) remain actionable.
+    // Shadow/paper modes return early above (no venue state to reconcile against).
     if (result.status === 'drift_detected' && !reconciliationConfig.driftAlertOnly) {
-      const isShadowOrPaper = this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper';
-
-      if (isShadowOrPaper) {
-        // Delegate orphaned-position auto-close to the shared cleanup helper.
-        // Returns any remaining non-orphaned diffs that still need action.
-        const otherDiffs = await cleanupOrphanedPositions(result.diffs, {
-          positionRepo: this.deps.positionRepo,
-          venueAccountId: this.deps.venueAccountId,
-          actorType: 'bot',
-          actorId: this.botId,
-          venue: this.deps.venue,
-          logger: this.logger,
-        });
-
-        // If there are still other actionable diffs, block trading
-        if (otherDiffs.length > 0) {
-          this.logger.error(
-            { diffCount: otherDiffs.length, diffs: otherDiffs },
-            'Reconciliation drift detected on startup (non-orphaned diffs) — blocking trading',
-          );
-          throw new Error(`Reconciliation drift detected: ${otherDiffs.length} non-orphaned diff(s). Trading blocked.`);
-        }
-
-        // All diffs were orphaned positions — cleanup helper already logged, proceed
-        return;
-      }
-
-      // Live mode or unhandled mode — block trading
       this.logger.error(
         { diffCount: result.diffs.length, diffs: result.diffs },
         'Reconciliation drift detected on startup — blocking trading',

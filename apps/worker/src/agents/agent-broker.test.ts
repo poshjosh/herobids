@@ -630,10 +630,13 @@ describe('AgentMessageBroker', () => {
             tool: 'list_bots',
             status: 'ok',
             message: 'Found 2 bot(s)',
-            data: [
-              expect.objectContaining({ id: 'bot-a', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' }),
-              expect.objectContaining({ id: 'bot-b', status: 'stopped', strategyPreset: 'scalper', symbol: 'ETH-USD' }),
-            ],
+            data: expect.objectContaining({
+              ok: true,
+              bots: [
+                expect.objectContaining({ id: 'bot-a', status: 'running', strategyPreset: 'momentum', symbol: 'BTC-USD' }),
+                expect.objectContaining({ id: 'bot-b', status: 'stopped', strategyPreset: 'scalper', symbol: 'ETH-USD' }),
+              ],
+            }),
           }),
         );
       });

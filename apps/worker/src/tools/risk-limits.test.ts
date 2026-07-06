@@ -11,6 +11,7 @@ function makeContract(overrides?: Partial<ResolvedAgentRiskContract>): ResolvedA
     maxPositionSizePct: { effectiveValue: 100, source: 'default', mutable: true, operatorCeiling: 100 },
     stopLossPct: { effectiveValue: 5, source: 'user', mutable: false, operatorCeiling: 10, creatorValue: 5 },
     stopLossCooldownMs: { effectiveValue: 60000, source: 'agent_override', mutable: true, operatorCeiling: 300000, overrideValue: 60000 },
+    maxDrawdownPct: { effectiveValue: 1_000_000_000, source: 'default', mutable: true, operatorCeiling: 1_000_000_000 },
     ...overrides,
   };
 }

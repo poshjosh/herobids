@@ -376,12 +376,14 @@ export async function agentInteractivityRoutes(
       modelPolicy: _modelPolicy,
       skillIds: _skillIds,
       runtimePolicyOverrides: _runtimePolicyOverrides,
+      maxDrawdownPct: rawMaxDrawdownPct,
       ...agentUpdates
     } = parsed.data;
     void _skillIds;
 
     await db.update(agents).set({
       ...agentUpdates,
+      ...(rawMaxDrawdownPct !== undefined ? { maxDrawdownPct: rawMaxDrawdownPct != null ? String(rawMaxDrawdownPct) : null } : {}),
       executionMode: executionMode.value ?? 'paper',
       ...(parsed.data.runtimePolicyOverrides !== undefined ? { runtimePolicyOverrides: parsed.data.runtimePolicyOverrides } : {}),
       toolPolicy: effectiveToolPolicy,

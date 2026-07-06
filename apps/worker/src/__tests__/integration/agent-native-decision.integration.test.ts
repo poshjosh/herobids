@@ -260,6 +260,8 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
         dailyMaxLossPct: 20,
         stopLossCooldownMs: 300_000,
         maxOrderNotionalMultiplier: 1,
+        maxDrawdown: 1_000_000_000,
+        maxDrawdownPct: 20,
       } satisfies AgentRiskDefaultsConfig,
     });
 
@@ -556,6 +558,8 @@ describe.skipIf(SKIP)('Agent-native decision resolution (integration)', () => {
           dailyMaxLossPct: 20,
           stopLossCooldownMs: 300_000,
           maxOrderNotionalMultiplier: 1,
+          maxDrawdown: 1_000_000_000,
+          maxDrawdownPct: 20,
         } satisfies AgentRiskDefaultsConfig,
         swapTokenSafety: swapTokenSafety as any,
         oneInchConfig: { tokenSafetyNetwork: 'base', chainId: 8453 },
