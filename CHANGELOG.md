@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.9 - 2026-07-06
+
 ### Added
 - Bot strategy error circuit breaker: consecutive `strategy.config_invalid` (1 failure) or `strategy.execution_error` (5 failures) auto-halts bot, emits `strategy.fatal`, notifies agent.
 - `agentRiskDefaults.maxDrawdown` operator config field, split from `dailyLossLimit`.
@@ -15,6 +17,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Redis equity cache (`equity:{actorId}` hash) — worker writes equity snapshot after each decision; `get_risk_limits` reads live drawdown from Redis.
 - `get_risk_limits`: added `maxDrawdown` to limits response and `source` field to `dailyLoss` and `drawdown` runtime sections.
 - DB migration `0032_opposite_photon.sql` — adds `max_drawdown` column to `agents` table.
+- Optional prompt template for skills
+- Optional prompt hint for skills
 
 ### Fixed
 - Shadow/paper reconciliation: reconciler is no longer started for non-live execution modes, eliminating false-positive `reconciliation.drift_detected` events.
@@ -28,11 +32,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
 - Move skills section from advanced section to main section of create/edit agent form
-
-### Added
-
-- Optional prompt template for skills
-- Optional prompt hint for skills
 
 ## v0.0.8 - 2026-07-05
 
