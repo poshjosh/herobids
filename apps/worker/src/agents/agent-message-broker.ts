@@ -645,15 +645,21 @@ export class AgentMessageBroker {
       // Stamp agent-resolved LLM provider/model into strategy.params for llm/hybrid bots.
       // Agent-created bots must inherit the creator's LLM selection so they don't silently
       // fall back to hardcoded defaults that may have no credentials configured.
+      // Priority: agent.unifiedConfig.intelligence (agent self-config) > modelPolicy (API-set) > user AI defaults.
       const strategyType = (payload.config?.strategy as Record<string, unknown> | undefined)?.type as string | undefined;
       const decisionMode = (payload.config?.strategy as Record<string, unknown> | undefined)?.decisionMode as string | undefined;
       if (strategyType !== 'dca' && (decisionMode === 'llm' || decisionMode === 'hybrid')) {
         const userAiModelConfig = await this.agentRepo.getUserAiModelConfig(agent.userId);
+        const modelPolicy = (agent.modelPolicy as Record<string, unknown> | null | undefined) ?? null;
         const resolved = resolveEffectiveLlmSelection({
           agentConfig: {
-            provider: agent.unifiedConfig?.intelligence?.provider,
-            lightModel: agent.unifiedConfig?.intelligence?.lightModel,
-            heavyModel: agent.unifiedConfig?.intelligence?.heavyModel,
+            // Agent self-config (set at runtime) takes priority over API-set modelPolicy
+            provider: (agent.unifiedConfig?.intelligence?.provider as string | undefined)
+              ?? (typeof modelPolicy?.['provider'] === 'string' ? modelPolicy['provider'] : undefined),
+            lightModel: (agent.unifiedConfig?.intelligence?.lightModel as string | undefined)
+              ?? (typeof modelPolicy?.['lightModel'] === 'string' ? modelPolicy['lightModel'] : undefined),
+            heavyModel: (agent.unifiedConfig?.intelligence?.heavyModel as string | undefined)
+              ?? (typeof modelPolicy?.['heavyModel'] === 'string' ? modelPolicy['heavyModel'] : undefined),
             userModelDefaults: userAiModelConfig ? {
               provider: userAiModelConfig.provider,
               lightModel: userAiModelConfig.lightModel,

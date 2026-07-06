@@ -3,10 +3,10 @@
 #
 # Test tiers (in order):
 #   1. Unit tests          — pure logic, no external services required
-#   2. Integration tests   — DB + auth flows; requires postgres & redis
-#   3. Functional tests    — full API + worker in-process; requires postgres & redis
-#   4. API smoke tests     — shell-based API tests (runtime-policy); requires API server
-#   5. E2E tests           — Playwright browser journeys; requires the full Docker stack
+#   4. Integration tests   — DB + auth flows; requires postgres & redis
+#   5. Functional tests    — full API + worker in-process; requires postgres & redis
+#   6. API smoke tests     — shell-based API tests (runtime-policy); requires API server
+#   7. E2E tests           — Playwright browser journeys; requires the full Docker stack
 #                            (opt-in: pass --e2e to include)
 #
 # Venue integration tests (Hyperliquid, Bybit, 1inch) are excluded — they
@@ -152,6 +152,14 @@ else
   RESULTS+=("${RED}FAIL${RESET}  Unit tests")
   OVERALL_EXIT=1
 fi
+
+# ─── Step 1b: Agent-bot LLM inheritance verification ─────────────────────────
+# Dedicated verification for bug-report 001: ensures agent-created LLM bots
+# inherit the creator agent's provider/model instead of hardcoded defaults.
+# Runs the focused vitest suite (4 tests) to keep feedback fast.
+
+run_tier "Agent-bot LLM inheritance" \
+  bash -c "cd '${ROOT}' && pnpm test -- --run -t 'manage_bot create_and_start.*LLM inheritance'"
 
 # ─── Step 2: Ensure postgres + redis are up ──────────────────────────────────
 

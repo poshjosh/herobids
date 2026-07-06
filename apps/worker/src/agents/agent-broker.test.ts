@@ -39,6 +39,7 @@ function mockAgentRepo() {
     getRuntimeCapabilityDescriptor: vi.fn().mockResolvedValue(makeTradingCapabilityDescriptor()),
     insertArtifact: vi.fn().mockResolvedValue('art-id'),
     getActiveLink: vi.fn().mockResolvedValue({ botId: 'ti-456' }),
+    getUserAiModelConfig: vi.fn().mockResolvedValue(null),
   };
 }
 
@@ -2497,5 +2498,208 @@ describe('AgentMessageBroker — runtime activity audit events', () => {
 
     expect(result.accepted).toBe(false);
     expect(result.error).toBe('unknown_message_type');
+  });
+});
+
+describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () => {
+  function makeLlmAgentRepo(overrides: Record<string, unknown> = {}) {
+    const base = mockAgentRepo();
+    base.getAgent.mockResolvedValue({
+      id: 'agent-123',
+      userId: 'user-1',
+      status: 'active',
+      maxBots: 5,
+      toolPolicy: { manage_bot: { capability: 'manage_bot', tier: 'brokered', enabled: true, limits: { maxPerMinute: 5, maxConcurrent: 1, timeoutMs: 30_000 } } },
+      modelPolicy: {
+        provider: 'openrouter',
+        heavyModel: 'openai/gpt-4o',
+        lightModel: 'openai/gpt-4o-mini',
+      },
+      executionMode: 'paper',
+      ...overrides,
+    });
+    return base;
+  }
+
+  function makeLlmManageBotEnvelope(overrides: Record<string, unknown> = {}) {
+    return {
+      schemaVersion: 'v1',
+      messageId: `msg-${Math.random().toString(36).slice(2)}`,
+      correlationId: 'corr-001',
+      initiatorType: 'agent' as const,
+      initiatorId: 'agent-123',
+      agentId: 'agent-123',
+      type: 'agent.manage_bot' as const,
+      createdAt: new Date().toISOString(),
+      payload: {
+        action: 'create_and_start' as const,
+        connectionId: 'binding-1',
+        config: {
+          symbol: 'BTC-USD',
+          strategy: { type: 'momentum' as const, decisionMode: 'llm' as const },
+          execution: { mode: 'paper' as const },
+          risk: {},
+        },
+        ...overrides,
+      },
+    };
+  }
+
+  const mockDbSelect = vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([{ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }]),
+      }),
+    }),
+  });
+
+  function makeBotRepo() {
+    return {
+      db: { select: mockDbSelect },
+      isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
+      countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
+      createBot: vi.fn().mockResolvedValue('bot-new-001'),
+      markBotRunning: vi.fn().mockResolvedValue(undefined),
+      getBotsByCreator: vi.fn().mockResolvedValue([]),
+      getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
+      getResolvedVenueAccount: vi.fn().mockResolvedValue({ resolvedVenueAccountId: 'va-001', venue: 'hyperliquid' }),
+    };
+  }
+
+  it('stamps agent modelPolicy provider/model into strategy.params for llm bots', async () => {
+    const agentRepo = makeLlmAgentRepo();
+    agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+    agentRepo.getUserAiModelConfig.mockResolvedValue(null);
+
+    const botRepo = makeBotRepo();
+    const broker = new AgentMessageBroker(
+      {} as any, // redis
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+      undefined, // telegram
+      botRepo as any,
+      vi.fn().mockResolvedValue(undefined), // botStart
+    );
+
+    const envelope = makeLlmManageBotEnvelope();
+    const result = await broker.processInbound(envelope);
+
+    expect(result.accepted).toBe(true);
+    expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+
+    // Extract the config passed to createBot
+    const createBotCall = (botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>;
+    const createBotArg = createBotCall[0] as Record<string, unknown>;
+    const config = createBotArg['config'] as Record<string, unknown>;
+    const strategy = config['strategy'] as Record<string, unknown>;
+    const params = strategy['params'] as Record<string, unknown>;
+
+    expect(params['provider']).toBe('openrouter');
+    expect(params['model']).toBe('openai/gpt-4o'); // heavy model preferred for bot
+  });
+
+  it('falls back to user AI defaults when modelPolicy is empty', async () => {
+    const agentRepo = makeLlmAgentRepo({ modelPolicy: null });
+    agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+    agentRepo.getUserAiModelConfig.mockResolvedValue({
+      provider: 'openai',
+      lightModel: 'gpt-4o-mini',
+      heavyModel: 'gpt-4o',
+    });
+
+    const botRepo = makeBotRepo();
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+      undefined,
+      botRepo as any,
+      vi.fn().mockResolvedValue(undefined),
+    );
+
+    const envelope = makeLlmManageBotEnvelope();
+    const result = await broker.processInbound(envelope);
+
+    expect(result.accepted).toBe(true);
+    const createBotArg = ((botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown>;
+
+    expect(params['provider']).toBe('openai');
+    expect(params['model']).toBe('gpt-4o');
+  });
+
+  it('does NOT stamp provider/model for mechanical bots', async () => {
+    const agentRepo = makeLlmAgentRepo();
+    agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+    const botRepo = makeBotRepo();
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+      undefined,
+      botRepo as any,
+      vi.fn().mockResolvedValue(undefined),
+    );
+
+    const envelope = makeLlmManageBotEnvelope({
+      config: {
+        symbol: 'BTC-USD',
+        strategy: { type: 'momentum', decisionMode: 'mechanical' },
+        execution: { mode: 'paper' },
+        risk: {},
+      },
+    } as unknown as Record<string, unknown>);
+
+    const result = await broker.processInbound(envelope);
+    expect(result.accepted).toBe(true);
+
+    const createBotArg = ((botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown> | undefined;
+
+    // params should not have provider/model stamped for mechanical
+    expect(params?.['provider']).toBeUndefined();
+    expect(params?.['model']).toBeUndefined();
+  });
+
+  it('does NOT stamp provider/model for DCA bots', async () => {
+    const agentRepo = makeLlmAgentRepo();
+    agentRepo.getActiveSession.mockResolvedValue({ id: 'sess-001', status: 'running' });
+
+    const botRepo = makeBotRepo();
+    const broker = new AgentMessageBroker(
+      {} as any,
+      agentRepo as any,
+      mockDecisionHandler(),
+      mockSessionManager(),
+      mockEventPublisher(),
+      undefined,
+      botRepo as any,
+      vi.fn().mockResolvedValue(undefined),
+    );
+
+    const envelope = makeLlmManageBotEnvelope({
+      config: {
+        symbol: 'BTC-USD',
+        strategy: { type: 'dca' },
+        execution: { mode: 'paper' },
+        risk: {},
+      },
+    } as unknown as Record<string, unknown>);
+
+    const result = await broker.processInbound(envelope);
+    expect(result.accepted).toBe(true);
+
+    const createBotArg = ((botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown> | undefined;
+
+    expect(params?.['provider']).toBeUndefined();
+    expect(params?.['model']).toBeUndefined();
   });
 });
