@@ -259,7 +259,7 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 4. [DONE] Add reminder logic in sync reply
 5. [PENDING] Implement `validatePerTradeLevels` pure function + tests
 6. [PENDING] Integrate price validation in `agent-decision-handler.ts` (reject before accept)
-7. [PENDING] Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
+7. [DONE] Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
 8. [PENDING] Add `exitLevels` map to `agent-trading-actor.ts` with rehydration
 9. [PENDING] Add periodic per-trade level monitor loop
 10. [PENDING] Hide `stopLossPct` from agent surfaces
@@ -280,3 +280,10 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 ### [Item 4] Add reminder logic in sync reply
 - **LOW**: `positionGrowingIntents` Set recreated on every invocation — could be hoisted to module scope as a static constant.
 - **LOW**: `message: undefined` passed into spread when both levels are set — `JSON.stringify` drops it correctly, but debugging shows `undefined`.
+
+### [Item 7] Implement checkPerTradeLevels in stop-loss-monitor + tests
+- **MEDIUM**: Missing test for stop-loss priority within a single instrument (documentation of the order-invariant contract).
+- **MEDIUM**: Missing test for empty array input (`checkPerTradeLevels([])`).
+- **LOW**: Misleading comment in multiple-instruments test (SOL entry comment says "would trigger" but actually wouldn't).
+- **LOW**: `mkCheck` helper has long-biased defaults that make short-side tests fragile.
+- **LOW**: No short-side test for "neither stopLoss nor takeProfit is set".

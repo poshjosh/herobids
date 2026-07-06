@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { price, quantity, Decimal } from '@herobids/domain';
 import { flatPosition, applyFill } from './position-tracker.js';
-import { checkStopLoss } from './stop-loss-monitor.js';
+import { checkStopLoss, checkPerTradeLevels } from './stop-loss-monitor.js';
+import type { PerTradeLevelCheck } from './stop-loss-monitor.js';
 import type { FillEvent } from './order-state.js';
 import type { OrderId, FillId, BotId } from '@herobids/domain';
 
@@ -80,5 +81,185 @@ describe('Stop-loss monitor', () => {
       [{ instrument: 'BTC/USD:USD', position: flat, markPrice: price('50000'), equity: price('1000') }],
     );
     expect(result.triggered).toBe(false);
+  });
+});
+
+// ── Per-trade stop-loss / take-profit ──
+
+function mkCheck(overrides: Partial<PerTradeLevelCheck> = {}): PerTradeLevelCheck {
+  return {
+    instrument: 'BTC/USD:USD',
+    side: 'long',
+    markPrice: price('100'),
+    stopLoss: price('95'),
+    takeProfit: price('110'),
+    ...overrides,
+  };
+}
+
+describe('checkPerTradeLevels', () => {
+  describe('long stop-loss', () => {
+    it('triggers when mark ≤ stopLoss', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('95'), stopLoss: price('95') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.instrument).toBe('BTC/USD:USD');
+      expect(result.reason).toBe('stop_loss');
+      expect(result.level!.eq(price('95'))).toBe(true);
+    });
+
+    it('triggers when mark < stopLoss', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('94'), stopLoss: price('95') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('stop_loss');
+    });
+
+    it('does NOT trigger when mark > stopLoss', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('96'), stopLoss: price('95') }),
+      ]);
+      expect(result.triggered).toBe(false);
+    });
+  });
+
+  describe('short stop-loss', () => {
+    it('triggers when mark ≥ stopLoss', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('105'), stopLoss: price('105') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('stop_loss');
+    });
+
+    it('triggers when mark > stopLoss', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('106'), stopLoss: price('105') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('stop_loss');
+    });
+
+    it('does NOT trigger when mark < stopLoss', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('104'), stopLoss: price('105'), takeProfit: undefined }),
+      ]);
+      expect(result.triggered).toBe(false);
+    });
+  });
+
+  describe('long take-profit', () => {
+    it('triggers when mark ≥ takeProfit', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('110'), takeProfit: price('110') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('take_profit');
+      expect(result.level!.eq(price('110'))).toBe(true);
+    });
+
+    it('triggers when mark > takeProfit', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('111'), takeProfit: price('110') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('take_profit');
+    });
+
+    it('does NOT trigger when mark < takeProfit', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('109'), takeProfit: price('110') }),
+      ]);
+      expect(result.triggered).toBe(false);
+    });
+  });
+
+  describe('short take-profit', () => {
+    it('triggers when mark ≤ takeProfit', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('90'), takeProfit: price('90') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('take_profit');
+    });
+
+    it('triggers when mark < takeProfit', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('89'), takeProfit: price('90') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('take_profit');
+    });
+
+    it('does NOT trigger when mark > takeProfit', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('91'), takeProfit: price('90') }),
+      ]);
+      expect(result.triggered).toBe(false);
+    });
+  });
+
+  describe('multiple instruments', () => {
+    it('returns first triggered result', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ instrument: 'ETH/USD:USD', markPrice: price('101'), stopLoss: price('100'), takeProfit: undefined }), // not triggered (long, mark > stop)
+        mkCheck({ instrument: 'BTC/USD:USD', markPrice: price('90'), stopLoss: price('95'), takeProfit: undefined }),   // TRIGGERED
+        mkCheck({ instrument: 'SOL/USD:USD', markPrice: price('10'), stopLoss: price('5'), takeProfit: undefined }),    // would trigger but shouldn't be reached
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.instrument).toBe('BTC/USD:USD');
+      expect(result.reason).toBe('stop_loss');
+    });
+
+    it('returns false when none triggered', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ instrument: 'ETH/USD:USD', markPrice: price('100'), stopLoss: price('90') }),
+        mkCheck({ instrument: 'BTC/USD:USD', markPrice: price('100'), stopLoss: price('95') }),
+      ]);
+      expect(result.triggered).toBe(false);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('does not trigger when neither stopLoss nor takeProfit is set', () => {
+      const result = checkPerTradeLevels([
+        { instrument: 'BTC/USD:USD', side: 'long', markPrice: price('100') },
+      ]);
+      expect(result.triggered).toBe(false);
+    });
+
+    it('triggers stop-loss at exact equality (long)', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('95'), stopLoss: price('95') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('stop_loss');
+    });
+
+    it('triggers take-profit at exact equality (long)', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ markPrice: price('110'), takeProfit: price('110') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('take_profit');
+    });
+
+    it('triggers take-profit at exact equality (short)', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('90'), takeProfit: price('90') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('take_profit');
+    });
+
+    it('triggers stop-loss at exact equality (short)', () => {
+      const result = checkPerTradeLevels([
+        mkCheck({ side: 'short', markPrice: price('105'), stopLoss: price('105') }),
+      ]);
+      expect(result.triggered).toBe(true);
+      expect(result.reason).toBe('stop_loss');
+    });
   });
 });

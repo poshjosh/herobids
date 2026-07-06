@@ -52,3 +52,59 @@ export function checkStopLoss(config: StopLossConfig, checks: StopLossCheck[]): 
 
   return { triggered: false };
 }
+
+// ── Per-trade stop-loss / take-profit ──
+
+export interface PerTradeLevelCheck {
+  instrument: string;
+  side: 'long' | 'short';
+  markPrice: Price;
+  stopLoss?: Price;
+  takeProfit?: Price;
+}
+
+export interface PerTradeLevelResult {
+  triggered: boolean;
+  instrument?: string;
+  reason?: 'stop_loss' | 'take_profit';
+  markPrice?: Price;
+  level?: Price;
+}
+
+/**
+ * Check if any position has hit its per-trade stop-loss or take-profit level.
+ * Returns the first triggered result, or { triggered: false } if all checks pass.
+ */
+export function checkPerTradeLevels(checks: PerTradeLevelCheck[]): PerTradeLevelResult {
+  for (const check of checks) {
+    if (check.stopLoss) {
+      const hit = check.side === 'long'
+        ? check.markPrice.lte(check.stopLoss)   // long stop: price fell to/below stop
+        : check.markPrice.gte(check.stopLoss);   // short stop: price rose to/above stop
+      if (hit) {
+        return {
+          triggered: true,
+          instrument: check.instrument,
+          reason: 'stop_loss',
+          markPrice: check.markPrice,
+          level: check.stopLoss,
+        };
+      }
+    }
+    if (check.takeProfit) {
+      const hit = check.side === 'long'
+        ? check.markPrice.gte(check.takeProfit)  // long TP: price rose to/above TP
+        : check.markPrice.lte(check.takeProfit); // short TP: price fell to/below TP
+      if (hit) {
+        return {
+          triggered: true,
+          instrument: check.instrument,
+          reason: 'take_profit',
+          markPrice: check.markPrice,
+          level: check.takeProfit,
+        };
+      }
+    }
+  }
+  return { triggered: false };
+}
