@@ -515,11 +515,20 @@ function CreateAgentFlow({
               value={intent.skillPreset}
               onChange={(e) => {
                 const skillPreset = e.target.value as SkillPresetId;
-                setIntent((state) => ({
-                  ...state,
-                  skillPreset,
-                  skillIds: resolveSkillPresetSkillIds(skillPreset, state.skillIds),
-                }));
+                setIntent((state) => {
+                  const next = {
+                    ...state,
+                    skillPreset,
+                    skillIds: resolveSkillPresetSkillIds(skillPreset, state.skillIds),
+                  };
+                  // Clear trading sessions when switching away from trading
+                  // so the hour grid (0-23) becomes editable again.
+                  if (skillPreset !== 'trading' && next.runtimePolicyOverrides?.tradingSessions) {
+                    const { tradingSessions: _, ...rest } = next.runtimePolicyOverrides;
+                    next.runtimePolicyOverrides = Object.keys(rest).length > 0 ? rest : null;
+                  }
+                  return next;
+                });
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}
             >

@@ -276,6 +276,45 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
           </div>
         ))}
 
+        {/* allowedHoursUtc */}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <FieldLabel htmlFor="rp-allowedHoursUtc">
+            {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtc' })}
+            {(() => {
+              const activeSessions = overrides?.tradingSessions;
+              if (activeSessions && activeSessions.length > 0) {
+                return ` ${intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}`;
+              }
+              return null;
+            })()}
+          </FieldLabel>
+          <HourGrid
+            selected={(() => {
+              const activeSessions = overrides?.tradingSessions;
+              if (activeSessions && activeSessions.length > 0) {
+                return previewHoursForSessions(activeSessions);
+              }
+              return overrides?.allowedHoursUtc ?? null;
+            })()}
+            onChange={(hours) => {
+              if (hours === null) {
+                clearOverride('allowedHoursUtc');
+              } else {
+                setOverride('allowedHoursUtc', hours);
+              }
+            }}
+            defaultHours={defaults.allowedHoursUtc}
+            isPreview={(() => {
+              const activeSessions = overrides?.tradingSessions;
+              return showTradingSessionPresets === true && activeSessions != null && activeSessions.length > 0;
+            })()}
+            previewNote={intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}
+          />
+          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+            {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
+          </div>
+        </div>
+
         {/* weekendPause */}
         <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <input
@@ -361,45 +400,6 @@ export function RuntimePolicySection({ style, overrides, onChange, alwaysExpande
             </div>
           </div>
         )}
-
-        {/* allowedHoursUtc */}
-        <div style={{ gridColumn: '1 / -1' }}>
-          <FieldLabel htmlFor="rp-allowedHoursUtc">
-            {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtc' })}
-            {(() => {
-              const activeSessions = overrides?.tradingSessions;
-              if (activeSessions && activeSessions.length > 0) {
-                return ` ${intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}`;
-              }
-              return null;
-            })()}
-          </FieldLabel>
-          <HourGrid
-            selected={(() => {
-              const activeSessions = overrides?.tradingSessions;
-              if (activeSessions && activeSessions.length > 0) {
-                return previewHoursForSessions(activeSessions);
-              }
-              return overrides?.allowedHoursUtc ?? null;
-            })()}
-            onChange={(hours) => {
-              if (hours === null) {
-                clearOverride('allowedHoursUtc');
-              } else {
-                setOverride('allowedHoursUtc', hours);
-              }
-            }}
-            defaultHours={defaults.allowedHoursUtc}
-            isPreview={(() => {
-              const activeSessions = overrides?.tradingSessions;
-              return activeSessions != null && activeSessions.length > 0;
-            })()}
-            previewNote={intl.formatMessage({ id: 'agents.runtimePolicy.sessionPreviewNote' })}
-          />
-          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
-            {intl.formatMessage({ id: 'agents.runtimePolicy.allowedHoursUtcHelp' })}
-          </div>
-        </div>
       </div>
     </div>
   );

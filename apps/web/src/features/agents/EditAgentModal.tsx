@@ -360,6 +360,15 @@ export function EditAgentModal({ agentId, onClose, initialData, isAdmin }: EditA
                     stopLossCooldownSecs: '',
                   } : {}),
                 }));
+                // Clear trading session overrides when switching away from trading
+                // so the hour grid (0-23) becomes editable again.
+                if (preset !== 'trading') {
+                  setRuntimePolicyOverrides((current) => {
+                    if (!current?.tradingSessions) return current;
+                    const { tradingSessions: _, ...rest } = current;
+                    return Object.keys(rest).length > 0 ? rest : null;
+                  });
+                }
               }}
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
