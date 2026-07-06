@@ -109,4 +109,6 @@ export {
   type PriceLookupResult,
   type PriceLookupError,
   type PriceResult,
+  type ResolvedPriceTarget,
+  type ResolvePriceTargetResult,
 } from './price-service.js';

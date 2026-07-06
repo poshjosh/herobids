@@ -177,6 +177,11 @@ export interface ToolContext {
       data?: { priceUsd: number; source: 'execution' | 'oracle' | 'cached'; fetchedAt: string; stale: boolean };
       error?: { code: string; message: string };
     }>;
+    resolvePriceTarget(symbol: string, chain: string, address?: string): Promise<{
+      ok: boolean;
+      data?: { symbol: string; chain: string; address?: string; name?: string; priceUsd: number; source: 'execution' | 'oracle' | 'cached'; fetchedAt: string; stale: boolean };
+      error?: { code: string; message: string };
+    }>;
   };
   /** Agent risk contract operations for reading and adjusting runtime risk limits. */
   riskContractOps?: {

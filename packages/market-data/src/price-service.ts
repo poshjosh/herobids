@@ -36,8 +36,37 @@ export type PriceResult =
   | { ok: true; data: PriceLookupResult }
   | { ok: false; error: PriceLookupError };
 
+/**
+ * Identity + price snapshot returned by the resolver.
+ *
+ * `symbol` and `chain` represent the **resolved** (effective) identity —
+ * the concrete asset the resolver selected, not necessarily what the caller
+ * requested.  Use these fields for stable repricing.
+ *
+ * `address` is the pinned token address when available.  When present,
+ * repricing should supply it for exact-identity lookups.
+ *
+ * `name` is the human-readable token name from the data source (may be
+ * absent for some providers).
+ */
+export interface ResolvedPriceTarget {
+  symbol: string;
+  chain: string;
+  address?: string;
+  name?: string;
+  priceUsd: number;
+  source: PriceSource;
+  fetchedAt: string;
+  stale: boolean;
+}
+
+export type ResolvePriceTargetResult =
+  | { ok: true; data: ResolvedPriceTarget }
+  | { ok: false; error: PriceLookupError };
+
 export interface PriceService {
   getPrice(symbol: string, chain: string, address?: string): Promise<PriceResult>;
+  resolvePriceTarget(symbol: string, chain: string, address?: string): Promise<ResolvePriceTargetResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,5 +268,13 @@ export function createPriceService(registry: ProviderRegistry): PriceService {
         };
   }
 
-  return { getPrice };
+  async function resolvePriceTarget(_symbol: string, _chain: string, _address?: string): Promise<ResolvePriceTargetResult> {
+    console.warn('resolvePriceTarget called before implementation is complete — returning not_implemented');
+    return {
+      ok: false,
+      error: { code: 'price.not_implemented', message: 'resolvePriceTarget not yet implemented' },
+    };
+  }
+
+  return { getPrice, resolvePriceTarget };
 }
