@@ -74,8 +74,11 @@ export function resolveDefaultModelSelection(
     }
   }
 
-  // Fall back to first multi-provider
-  const defaultProvider = providers.find((provider) => provider.isMultiProvider && provider.models.length > 0);
+  // Fall back to the first provider that has models.
+  // Single-provider mode: when exactly one provider is available, auto-select it.
+  // Multi-provider: pick the first available (preferring isMultiProvider for backward compat).
+  const multiProvider = providers.find((provider) => provider.isMultiProvider && provider.models.length > 0);
+  const defaultProvider = multiProvider ?? providers.find((provider) => provider.models.length > 0);
   if (!defaultProvider) {
     return null;
   }
@@ -130,6 +133,18 @@ export function ModelSelectionFields({
 }: ModelSelectionFieldsProps) {
   const providerModels = getProviderModels(providers, value.provider);
   const normalizedValue = normalizeModelSelection(value, providers);
+
+  // Single-provider mode: auto-select the only available provider when none is selected.
+  useEffect(() => {
+    if (providers.length === 1 && !value.provider && providers[0]?.models.length) {
+      const autoSelected = providers[0]!;
+      onChange(normalizeModelSelection({
+        provider: autoSelected.provider,
+        lightModel: value.lightModel,
+        heavyModel: value.heavyModel,
+      }, providers));
+    }
+  }, [providers, value.provider, value.lightModel, value.heavyModel, onChange]);
 
   useEffect(() => {
     if (normalizedValue === value) {

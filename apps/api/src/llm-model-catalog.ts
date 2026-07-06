@@ -371,6 +371,60 @@ export interface LlmCatalogDeps {
   context: OperatorLlmCatalogContext;
 }
 
+// --- API key resolution ---
+
+/**
+ * Check whether an API key is configured for the given provider.
+ * Looks for `LLM_API_KEY_<PROVIDER>` first, then falls back to generic `LLM_API_KEY`.
+ */
+function hasApiKey(provider: string): boolean {
+  const specific = process.env[`LLM_API_KEY_${provider.toUpperCase()}`];
+  if (specific && specific.length > 0) return true;
+  const generic = process.env['LLM_API_KEY'];
+  if (generic && generic.length > 0) return true;
+  return false;
+}
+
+// --- OpenRouter cross-reference helpers ---
+
+/**
+ * Derive model entries for a provider whose pricing comes from the OpenRouter
+ * snapshot (pricingSource: 'openrouter'). OpenRouter model IDs use the format
+ * `<upstream>/<model>` (e.g. `openai/gpt-5.5`). This function:
+ * 1. Fetches the active OpenRouter snapshot from the DB.
+ * 2. Filters keys starting with `${provider}/`.
+ * 3. Strips the prefix to get bare model IDs.
+ * 4. Returns models with pricing from the snapshot.
+ *
+ * If no models match, returns an empty array — the provider should be hidden.
+ */
+async function getOpenRouterDerivedModels(
+  provider: string,
+  deps: LlmCatalogDeps,
+): Promise<Array<{ id: string; inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }>> {
+  const snapshot = await getDbPricingSnapshot(deps.db, 'openrouter');
+  if (!snapshot) return [];
+
+  const prefix = `${provider}/`;
+  const result: Array<{ id: string; inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }> = [];
+
+  for (const [modelId, mp] of Object.entries(snapshot)) {
+    if (!modelId.startsWith(prefix)) continue;
+    if (mp.inputUsdPerM === undefined || mp.outputUsdPerM === undefined) continue;
+
+    const strippedId = modelId.slice(prefix.length);
+    result.push({
+      id: strippedId,
+      inputUsdPerM: mp.inputUsdPerM,
+      outputUsdPerM: mp.outputUsdPerM,
+      reasoningUsdPerM: mp.reasoningUsdPerM,
+      cacheReadUsdPerM: mp.cacheReadUsdPerM,
+    });
+  }
+
+  return result;
+}
+
 // --- Exported catalog helpers ---
 
 /** Construct a catalog context from the resolved operator LLM config. */
@@ -395,16 +449,31 @@ export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<strin
   const isProduction = process.env['NODE_ENV'] === 'production';
 
   for (const [providerId, config] of Object.entries(deps.providersYaml.providers)) {
-    // In production, only expose dynamic providers (static pricing goes stale)
-    if (isProduction && config.catalogMode !== 'dynamic') continue;
-    // Hide dev-only providers in production
-    if (config.devOnly && isProduction) continue;
+    // In production, only expose providers whose pricing is sourced from the DB
+    // (dynamic fetch or openrouter cross-reference). Inline-priced static providers
+    // are dev-only because their YAML prices go stale between deploys.
+    if (isProduction) {
+      const hasLivePricing = config.catalogMode === 'dynamic' || config.pricingSource === 'openrouter';
+      if (!hasLivePricing) continue;
+    }
+
+    // Locality gating for dev-only (local) providers like ollama.
+    // Replaces the old `NODE_ENV`-based check with hostname inspection.
+    if (config.devOnly) {
+      const isLocal = isLocalProviderEndpoint(config.baseUrl, deps.context.catalogLocality);
+      if (!isLocal) continue;
+    }
 
     // Dynamic providers must have an active pricing snapshot in production
     if (config.catalogMode === 'dynamic' && isProduction) {
       const hasSnapshot = !!(await getDbPricingSnapshot(deps.db, providerId));
       if (!hasSnapshot) continue;
     }
+
+    // API key gating: providers without an API key are hidden.
+    // - ollama never requires an API key (local provider).
+    // - Other providers require either a provider-specific key or the generic fallback.
+    if (providerId !== 'ollama' && !hasApiKey(providerId)) continue;
 
     providers.push(providerId);
   }
@@ -423,6 +492,20 @@ export async function getProviderModels(provider: string, deps: LlmCatalogDeps):
     }
     // Fallback to static model list from providers.yaml
     return getProviderModelIds(providerConfig);
+  }
+
+  // OpenRouter-derived providers: cross-reference pricing from the OpenRouter snapshot
+  if (providerConfig?.pricingSource === 'openrouter') {
+    const derived = await getOpenRouterDerivedModels(provider, deps);
+    if (derived.length > 0) {
+      return derived.map((m) => m.id);
+    }
+    // If the YAML has an explicit model allowlist, return those model IDs
+    // (even without pricing) so the provider is visible in the model selector.
+    const yamlModelIds = getProviderModelIds(providerConfig);
+    if (yamlModelIds.length > 0) return yamlModelIds;
+    // No models available — provider will be hidden
+    return [];
   }
 
   if (providerConfig?.catalogMode === 'dynamic') {
@@ -485,16 +568,36 @@ export async function getProviderCatalogEntry(
     };
   }
 
-  // ⚠️ DO NOT add pricing for static providers here.
-  //
-  // Production policy (docs/features/2026/06/27/006-dynamic-llm-pricing/001-plan.md):
-  //   "Production continues to expose only catalogMode: 'dynamic' providers (OpenRouter).
-  //    Static providers remain dev-only."
-  //
-  // Static pricing from providers.yaml goes stale — only DB-snapshot pricing
-  // (refreshed hourly from OpenRouter) is considered reliable for user display.
-  // The UI's resolveModelPricing() already handles the case where pricing is
-  // absent by falling back to a budget-target display.
+  // OpenRouter-derived providers: supply pricing metadata from the cross-referenced snapshot.
+  if (providerConfig?.pricingSource === 'openrouter') {
+    const derived = await getOpenRouterDerivedModels(provider, deps);
+    const pricingByModel = new Map<string, ModelPricing>();
+    for (const m of derived) {
+      pricingByModel.set(m.id, { inputUsdPerM: m.inputUsdPerM, outputUsdPerM: m.outputUsdPerM, reasoningUsdPerM: m.reasoningUsdPerM, cacheReadUsdPerM: m.cacheReadUsdPerM });
+    }
+
+    // If the YAML defines an allowlist, intersect with derived models.
+    const yamlModelIds = getProviderModelIds(providerConfig);
+    const effectiveModelIds = yamlModelIds.length > 0
+      ? yamlModelIds.filter((id) => pricingByModel.has(id))
+      : [...pricingByModel.keys()];
+
+    return {
+      provider,
+      models: mapProviderModels(
+        effectiveModelIds,
+        (modelId) => {
+          const mp = pricingByModel.get(modelId);
+          if (!mp) return undefined;
+          const legacyPricing = modelPricingToOpenRouter(mp);
+          return mapOpenRouterModelPricingMetadata(legacyPricing);
+        },
+      ).filter((m) => m.pricing !== undefined),
+      isMultiProvider,
+    };
+  }
+
+  // Static providers with inline pricing: no dynamic pricing (dev-only, legacy).
   return {
     provider,
     models: mapProviderModels(models),
@@ -539,12 +642,19 @@ export async function revalidatePersistedSelection(
   deps: LlmCatalogDeps,
 ): Promise<{ provider: string; lightModel: string; heavyModel: string } | null> {
   const providerConfig = deps.providersYaml.providers[selection.provider];
-  if (!providerConfig || providerConfig.catalogMode !== 'dynamic') {
-    // Static providers are validated by the domain normalizer already
+  if (!providerConfig) {
+    return null;
+  }
+
+  // For providers whose model list is dynamic (catalogMode: 'dynamic' or
+  // pricingSource: 'openrouter'), revalidate against the live catalog.
+  const isDynamicCatalog = providerConfig.catalogMode === 'dynamic' || providerConfig.pricingSource === 'openrouter';
+  if (!isDynamicCatalog) {
+    // Static providers with inline pricing are validated by the domain normalizer already
     return selection;
   }
 
-  // Dynamic provider — check availability first
+  // Check availability first
   const available = await getAvailableProviders(deps);
   if (!available.includes(selection.provider)) {
     return null;

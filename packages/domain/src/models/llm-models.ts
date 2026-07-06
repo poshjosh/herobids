@@ -34,6 +34,7 @@ const RawProviderConfigSchema = z.object({
   devOnly: z.boolean().optional(),
   isMultiProvider: z.boolean().optional(),
   fetchUrl: z.string().url().optional(),
+  pricingSource: z.enum(['openrouter', 'inline', 'none']).optional(),
   models: z.record(z.string(), z.object({
     inputUsdPerM: z.number().positive().optional(),
     outputUsdPerM: z.number().positive().optional(),
@@ -42,17 +43,26 @@ const RawProviderConfigSchema = z.object({
   })),
 });
 
-// Refine: static providers must have pricing for all models
+/**
+ * Refine rule:
+ * - `pricingSource: 'inline'` (or absent with catalogMode: 'static'): every model MUST have pricing.
+ * - `pricingSource: 'openrouter'`: pricing comes from the DB — models MAY omit pricing fields.
+ * - `pricingSource: 'none'`: no pricing expected (e.g. ollama).
+ * - `catalogMode: 'dynamic'`: no pricing validation (prices come from worker fetch).
+ */
 export const ProviderConfigSchema = RawProviderConfigSchema.refine(
   (config) => {
-    if (config.catalogMode === 'static') {
+    const effectivePricingSource = config.pricingSource ??
+      (config.catalogMode === 'static' ? 'inline' : 'none');
+
+    if (effectivePricingSource === 'inline') {
       return Object.values(config.models).every(
         (m) => m.inputUsdPerM != null && m.outputUsdPerM != null,
       );
     }
     return true;
   },
-  { message: 'Static providers must have inputUsdPerM and outputUsdPerM for every model' },
+  { message: 'Static providers with inline pricing must have inputUsdPerM and outputUsdPerM for every model' },
 );
 
 export const ProvidersYamlSchema = z.object({
@@ -207,8 +217,9 @@ export function validateLlmModelSelection(
     return issues;
   }
 
-  // For dynamic providers (no static model list), defer to API layer (Ollama)
-  if (providerConfig.catalogMode === 'dynamic') {
+  // For dynamic providers or openrouter-derived providers (model list comes from DB),
+  // defer validation to the API layer.
+  if (providerConfig.catalogMode === 'dynamic' || providerConfig.pricingSource === 'openrouter') {
     return issues;
   }
 

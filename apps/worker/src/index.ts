@@ -1364,47 +1364,12 @@ function resolveLlmApiKey(provider: string): string | undefined {
 }
 
 /**
- * Seed static provider pricing from config/providers.yaml into the DB.
- * Only inserts if no active snapshot exists for the provider (idempotent).
- */
-async function seedStaticPricing(
-  providers: ProvidersYaml,
-  repo: UsageBillingRepository,
-): Promise<void> {
-  for (const [providerId, config] of Object.entries(providers.providers)) {
-    if (config.catalogMode !== 'static') continue;
-
-    const existing = await repo.getLatestPricingSnapshot(providerId);
-    if (existing) continue; // already seeded from prior deploy
-
-    const models: Record<string, { inputUsdPerM: number; outputUsdPerM: number; reasoningUsdPerM?: number; cacheReadUsdPerM?: number }> = {};
-    for (const [modelId, m] of Object.entries(config.models)) {
-      if (m.inputUsdPerM == null || m.outputUsdPerM == null) continue;
-      models[modelId] = {
-        inputUsdPerM: m.inputUsdPerM,
-        outputUsdPerM: m.outputUsdPerM,
-        ...(m.reasoningUsdPerM != null ? { reasoningUsdPerM: m.reasoningUsdPerM } : {}),
-        ...(m.cacheReadUsdPerM != null ? { cacheReadUsdPerM: m.cacheReadUsdPerM } : {}),
-      };
-    }
-
-    if (Object.keys(models).length === 0) continue;
-
-    await repo.upsertPricingSnapshot({
-      id: `seed_${providerId}_v1`,
-      provider: providerId,
-      fetchedAt: null, // static — no fetch timestamp
-      models,
-    });
-
-    logger.info({ provider: providerId, modelCount: Object.keys(models).length },
-      'Seeded static pricing snapshot from config');
-  }
-}
-
-/**
  * Refresh dynamic provider pricing from their APIs and persist to DB.
  * On failure, logs a warning and keeps the existing snapshot.
+ *
+ * All pricing — including for formerly-static providers (OpenAI, Anthropic,
+ * DeepSeek, Google) — now comes from the OpenRouter snapshot. See ADR 001
+ * (eliminate-static-llm-pricing) for rationale.
  */
 async function refreshDynamicPricing(
   providers: ProvidersYaml,
@@ -1465,13 +1430,11 @@ const healthRefreshInterval = setInterval(() => {
   }
 }, HEALTH_REFRESH_INTERVAL_MS);
 
-// ── LLM Pricing — seed static + refresh dynamic on startup ──────────────────
+// ── LLM Pricing — refresh dynamic pricing on startup ────────────────────────
+// All provider pricing is now sourced from the OpenRouter snapshot refreshed
+// here. Formerly-static providers (OpenAI, Anthropic, DeepSeek, Google) are
+// cross-referenced from the same snapshot by the API catalog layer.
 const pricingRepo = new UsageBillingRepository(db);
-
-// Seed on startup (idempotent)
-seedStaticPricing(providersYaml, pricingRepo).catch((err) => {
-  logger.error({ err }, 'Failed to seed static LLM pricing on startup');
-});
 
 // Refresh dynamic pricing immediately on startup
 refreshDynamicPricing(providersYaml, pricingRepo).catch((err) => {

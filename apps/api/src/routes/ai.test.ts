@@ -116,6 +116,7 @@ const mockOllamaProvidersYaml: ProvidersYaml = {
     ollama: {
       catalogMode: 'dynamic',
       devOnly: true,
+      baseUrl: 'http://localhost:11434/v1',
       models: {},
     },
   },
@@ -136,8 +137,9 @@ function buildDbWithOpenrouterSnapshot(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Ensure no real API keys are set
-  delete process.env['LLM_API_KEY'];
+  // Set a generic API key so providers pass API key gating by default.
+  // Individual tests that need to verify no-key behavior should delete it.
+  process.env['LLM_API_KEY'] = 'sk-test';
   delete process.env['LLM_API_KEY_TEST-PROVIDER'];
   delete process.env['LLM_API_KEY_OPENAI'];
   delete process.env['LLM_API_KEY_ANTHROPIC'];
@@ -818,7 +820,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     vi.unstubAllGlobals();
   });
 
-  it('does not mark remote ollama endpoints as Free', async () => {
+  it('hides ollama when the provider baseUrl is remote (locality gating)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ models: [{ name: 'qwen3:8b' }] }),
@@ -829,18 +831,28 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     const redis = buildMockRedis();
     const app = Fastify();
     decorateWithAuth(app);
+    // Use a providers YAML with a remote baseUrl to trigger locality gating
+    const remoteOllamaYaml: ProvidersYaml = {
+      providers: {
+        ollama: {
+          catalogMode: 'dynamic',
+          devOnly: true,
+          baseUrl: 'https://remote-ollama.example.com/v1',
+          models: {},
+        },
+      },
+    };
     await aiRoutes(app, db, {
       ...stubLlmConfig,
       provider: 'ollama',
       model: 'qwen3:8b',
       baseUrl: 'https://remote-ollama.example.com/v1',
-    }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
+    }, redis, remoteOllamaYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
-    expect(res.statusCode).toBe(200);
-    const body = res.json<AvailableModelsTestResponse>();
-    expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.models[0]!.pricing).toBeUndefined();
+    // Remote ollama endpoints are hidden by locality gating (devOnly + non-local baseUrl)
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('no_ai_provider');
 
     vi.unstubAllGlobals();
   });
@@ -873,7 +885,7 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     vi.unstubAllGlobals();
   });
 
-  it('does not mark localhost ollama as Free when locality override is remote', async () => {
+  it('hides ollama when locality override is remote even for localhost', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ models: [{ name: 'qwen3:8b' }] }),
@@ -893,10 +905,9 @@ describe('GET /ai/available-models — Ollama dynamic discovery', () => {
     }, redis, mockOllamaProvidersYaml, stubAgentRuntime);
 
     const res = await app.inject({ method: 'GET', url: '/ai/available-models' });
-    expect(res.statusCode).toBe(200);
-    const body = res.json<AvailableModelsTestResponse>();
-    expect(body.providers[0]!.provider).toBe('ollama');
-    expect(body.providers[0]!.models[0]!.pricing).toBeUndefined();
+    // Locality override 'remote' forces ollama hidden regardless of hostname
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('no_ai_provider');
 
     vi.unstubAllGlobals();
   });

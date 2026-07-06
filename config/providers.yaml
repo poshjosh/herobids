@@ -1,65 +1,40 @@
 # LLM Provider Registry
 # - Provider metadata (IDs, catalog mode, fetch URLs)
-# - Static provider model pricing (OpenAI, Anthropic, DeepSeek, Google)
-# - Dynamic providers (OpenRouter) have empty models — pricing is fetched at runtime
+# - All pricing now comes from the OpenRouter `llm_pricing_snapshots` table,
+#   refreshed hourly by the worker. No model prices are hardcoded here.
+# - `pricingSource: 'openrouter'` providers cross-reference their model list
+#   and pricing from the active OpenRouter snapshot (prefix-stripped).
+# - `pricingSource: 'none'` providers have no pricing (e.g. ollama is free).
+# - An empty `models: {}` means "auto-discover all models from OpenRouter."
+#   A non-empty models block acts as an allowlist / denylist.
 #
 # To add a provider: add an entry here.
-# To add/update static pricing: edit the models block + deploy.
-# Dynamic pricing updates automatically (worker fetches hourly).
+# Pricing updates automatically (worker fetches hourly from OpenRouter).
 
 providers:
   openai:
     baseUrl: https://api.openai.com/v1
     catalogMode: static
-    models:
-      gpt-5.5:       { inputUsdPerM: 5,    outputUsdPerM: 30 }
-      gpt-5.4:       { inputUsdPerM: 2.5,  outputUsdPerM: 15 }
-      gpt-5:         { inputUsdPerM: 2,    outputUsdPerM: 8 }
-      o3:            { inputUsdPerM: 2,    outputUsdPerM: 8 }
-      gpt-4.1:       { inputUsdPerM: 2,    outputUsdPerM: 8 }
-      gpt-5.4-mini:  { inputUsdPerM: 0.75, outputUsdPerM: 4.5 }
-      gpt-5-mini:    { inputUsdPerM: 0.75, outputUsdPerM: 4.5 }
-      gpt-4o:        { inputUsdPerM: 2.5,  outputUsdPerM: 10 }
-      o4-mini:       { inputUsdPerM: 1.1,  outputUsdPerM: 4.4 }
-      gpt-4.1-mini:  { inputUsdPerM: 0.4,  outputUsdPerM: 1.6 }
-      gpt-4.1-nano:  { inputUsdPerM: 0.1,  outputUsdPerM: 0.4 }
-      gpt-4o-mini:   { inputUsdPerM: 0.15, outputUsdPerM: 0.6 }
-      gpt-5-nano:    { inputUsdPerM: 0.2,  outputUsdPerM: 1.25 }
-      gpt-5.4-nano:  { inputUsdPerM: 0.2,  outputUsdPerM: 1.25 }
+    pricingSource: openrouter
+    models: {}
 
   anthropic:
     baseUrl: https://api.anthropic.com/v1
     catalogMode: static
-    models:
-      claude-opus-4-8:   { inputUsdPerM: 5,   outputUsdPerM: 25 }
-      claude-opus-4-7:   { inputUsdPerM: 5,   outputUsdPerM: 25 }
-      claude-opus-4-5:   { inputUsdPerM: 15,  outputUsdPerM: 75 }
-      claude-sonnet-4-6: { inputUsdPerM: 3,   outputUsdPerM: 15 }
-      claude-sonnet-4-5: { inputUsdPerM: 3,   outputUsdPerM: 15 }
-      claude-haiku-4-5:  { inputUsdPerM: 1,   outputUsdPerM: 5 }
-      claude-haiku-3-5:  { inputUsdPerM: 0.8, outputUsdPerM: 4 }
+    pricingSource: openrouter
+    models: {}
 
   deepseek:
     baseUrl: https://api.deepseek.com/v1
     catalogMode: static
-    models:
-      deepseek-v4-flash: { inputUsdPerM: 0.14, outputUsdPerM: 0.28 }
-      deepseek-v4-pro:   { inputUsdPerM: 0.43, outputUsdPerM: 0.87 }
-      deepseek-r1:       { inputUsdPerM: 0.7,  outputUsdPerM: 2.5 }
-      deepseek-chat:     { inputUsdPerM: 0.32, outputUsdPerM: 0.89 }
+    pricingSource: openrouter
+    models: {}
 
   google:
     baseUrl: https://generativelanguage.googleapis.com/v1beta
     catalogMode: static
-    models:
-      gemini-3.1-pro-preview:        { inputUsdPerM: 2,     outputUsdPerM: 12 }
-      gemini-2.5-pro:                { inputUsdPerM: 1.25,  outputUsdPerM: 10 }
-      gemini-3-flash-preview:        { inputUsdPerM: 0.5,   outputUsdPerM: 3 }
-      gemini-2.5-flash:              { inputUsdPerM: 0.3,   outputUsdPerM: 2.5 }
-      gemini-3.1-flash-lite-preview: { inputUsdPerM: 0.25,  outputUsdPerM: 1.5 }
-      gemini-2.5-flash-lite:         { inputUsdPerM: 0.1,   outputUsdPerM: 0.4 }
-      gemini-1.5-pro:                { inputUsdPerM: 1.25,  outputUsdPerM: 5 }
-      gemini-1.5-flash:              { inputUsdPerM: 0.075, outputUsdPerM: 0.3 }
+    pricingSource: openrouter
+    models: {}
 
   openrouter:
     baseUrl: https://openrouter.ai/api/v1
@@ -72,4 +47,5 @@ providers:
     baseUrl: http://localhost:11434/v1
     catalogMode: dynamic
     devOnly: true
+    pricingSource: none
     models: {}

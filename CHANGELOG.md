@@ -11,6 +11,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Glossary
 - Agent evaluation: `unified-agent-config.json` downloadable artifact containing the agent's current persisted unified config at evaluation time
 
+### Changed
+
+- **Eliminate static LLM pricing (ADR 001):** All provider model pricing (OpenAI, Anthropic, DeepSeek, Google) now cross-referenced from the OpenRouter `llm_pricing_snapshots` table instead of hardcoded YAML. `config/providers.yaml` no longer contains stale prices.
+- **API key gating:** `GET /ai/available-models` now hides providers without a configured `LLM_API_KEY_<PROVIDER>` or generic `LLM_API_KEY` environment variable (ollama exempt).
+- **Locality gating for ollama:** Dev-only providers now use hostname inspection (`isLocalProviderEndpoint`) instead of `NODE_ENV` to determine availability.
+- **Single-provider UI mode:** When only one LLM provider is available, the provider dropdown is auto-selected and hidden in the UI.
+- **Relaxed provider schema:** `ProviderConfigSchema` now supports `pricingSource: 'openrouter' | 'inline' | 'none'` to control pricing origin.
+
+### Removed
+
+- `seedStaticPricing()` function and its worker startup call — static YAML prices are no longer seeded into the DB.
+
 ## v0.0.10 - 2026-07-06
 
 ### Fixed
