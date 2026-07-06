@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { LastFillMarkSource, MarkSelector } from './mark-source.js';
+import { LastFillMarkSource, MarkSelector, createFillFirstMarkSource } from './mark-source.js';
 import type { FillLookup } from './mark-source.js';
 import type { MarkSource, Mark, MarkError } from '@herobids/domain';
 import type { Result } from '@herobids/domain';
@@ -164,5 +164,70 @@ describe('MarkSelector', () => {
     if (result.ok) {
       expect(result.data.source).toBe('oracle');
     }
+  });
+});
+
+// --- createFillFirstMarkSource ---
+
+describe('createFillFirstMarkSource', () => {
+  const STALENESS_5_MIN = 5 * 60_000;
+
+  it('returns a MarkSelector that prefers a recent fill over the fallback', async () => {
+    const lookup = makeFillLookup({ price: '67000.50', filledAt: new Date(Date.now() - 60_000).toISOString() }); // 1 min old
+    const fallback = makeStubMarkSource(oracleMark());
+
+    const source = createFillFirstMarkSource({
+      fillLookup: lookup,
+      actorId: 'agent-1',
+      fallbackSource: fallback,
+      stalenessThresholdMs: STALENESS_5_MIN,
+    });
+
+    const result = await source.fetchMark('BTC/USD');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.source).toBe('last_fill');
+      expect(result.data.price.toString()).toBe('67000.5');
+    }
+    expect(fallback.fetchMark).not.toHaveBeenCalled();
+    expect(lookup.getLatestFillByInstrument).toHaveBeenCalledWith('BTC/USD', 'agent-1');
+  });
+
+  it('returns a MarkSelector that falls back to the fallback source when no fill exists', async () => {
+    const lookup = makeFillLookup(null);
+    const fallback = makeStubMarkSource(oracleMark());
+
+    const source = createFillFirstMarkSource({
+      fillLookup: lookup,
+      fallbackSource: fallback,
+      stalenessThresholdMs: STALENESS_5_MIN,
+    });
+
+    const result = await source.fetchMark('ETH/USD');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.source).toBe('oracle');
+      expect(result.data.price.toString()).toBe('49500');
+    }
+    expect(fallback.fetchMark).toHaveBeenCalledWith('ETH/USD');
+  });
+
+  it('returns a MarkSelector that falls back when the fill is older than the threshold', async () => {
+    const oldFill = { price: '67000.50', filledAt: new Date(Date.now() - 10 * 60_000).toISOString() }; // 10 min old
+    const lookup = makeFillLookup(oldFill);
+    const fallback = makeStubMarkSource(oracleMark());
+
+    const source = createFillFirstMarkSource({
+      fillLookup: lookup,
+      fallbackSource: fallback,
+      stalenessThresholdMs: STALENESS_5_MIN,
+    });
+
+    const result = await source.fetchMark('BTC/USD');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.source).toBe('oracle');
+    }
+    expect(fallback.fetchMark).toHaveBeenCalledWith('BTC/USD');
   });
 });

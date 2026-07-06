@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentTradingActor } from './agent-trading-actor.js';
 import type { AgentTradingActorDeps } from './agent-trading-actor.js';
 import { price, quantity, ok } from '@herobids/domain';
-import { PaperExecutor, ShadowExecutor, LiveExecutor } from '@herobids/engine';
+import { PaperExecutor, ShadowExecutor, LiveExecutor, LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { OrderId, FillId } from '@herobids/domain';
 import { FULL_CAPABILITIES } from '@herobids/tests/fixtures/venue-capabilities.js';
 
@@ -1147,6 +1147,68 @@ describe('AgentTradingActor', () => {
 
       const ctx = await actor.getDecisionContext('ETH/USD:USD');
       expect(ctx!.position).toBeNull();
+
+      await actor.stop();
+    });
+
+    it('uses last fill price as reference mark when MarkSelector has a recent fill', async () => {
+      const fillLookup = {
+        getLatestFillByInstrument: vi.fn().mockResolvedValue({
+          price: '0.00000484',
+          filledAt: new Date().toISOString(),
+        }),
+      };
+      const oracleMark = {
+        fetchMark: vi.fn().mockResolvedValue(ok({
+          price: price('0.00002099'),
+          source: 'oracle' as const,
+          instrument: 'BONK',
+          timestamp: new Date().toISOString(),
+          stale: false,
+        })),
+      };
+      const markSource = new MarkSelector(
+        { stalenessThresholdMs: 5 * 60 * 1000 },
+        new LastFillMarkSource(fillLookup),
+        oracleMark as any,
+      );
+      const actor = new AgentTradingActor(makeBaseDeps({ markSource }));
+      await actor.start();
+
+      const ctx = await actor.getDecisionContext('BONK');
+      expect(ctx).toBeDefined();
+      expect(ctx!.referenceMark.price).toBe('0.00000484');
+      expect(ctx!.referenceMark.source).toBe('last_fill');
+      expect(oracleMark.fetchMark).not.toHaveBeenCalled();
+
+      await actor.stop();
+    });
+
+    it('falls back to oracle price as reference mark when no fill exists', async () => {
+      const fillLookup = {
+        getLatestFillByInstrument: vi.fn().mockResolvedValue(null),
+      };
+      const oracleMark = {
+        fetchMark: vi.fn().mockResolvedValue(ok({
+          price: price('0.00002099'),
+          source: 'oracle' as const,
+          instrument: 'BONK',
+          timestamp: new Date().toISOString(),
+          stale: false,
+        })),
+      };
+      const markSource = new MarkSelector(
+        { stalenessThresholdMs: 5 * 60 * 1000 },
+        new LastFillMarkSource(fillLookup),
+        oracleMark as any,
+      );
+      const actor = new AgentTradingActor(makeBaseDeps({ markSource }));
+      await actor.start();
+
+      const ctx = await actor.getDecisionContext('BONK');
+      expect(ctx).toBeDefined();
+      expect(ctx!.referenceMark.price).toBe('0.00002099');
+      expect(ctx!.referenceMark.source).toBe('oracle');
 
       await actor.stop();
     });
