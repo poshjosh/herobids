@@ -106,4 +106,7 @@ export interface SwapVenuePort {
 
   /** Fetch recent wallet transactions as observational telemetry. */
   fetchRecentTransactions(since?: Date): Promise<Result<SwapTransaction[], SwapVenueError>>;
+
+  /** Fetch all tradeable token symbols/addresses on this venue. */
+  fetchAvailableSymbols?(): Promise<Result<string[], SwapVenueError>>;
 }

@@ -157,6 +157,9 @@ export interface OrderbookVenuePort {
 
   /** Subscribe to public market data stream for given symbols */
   subscribePublic(symbols: string[], handlers: PublicStreamHandlers): Promise<Result<Subscription, VenueError>>;
+
+  /** Fetch all tradeable symbols on this venue. Used for decision intake validation. */
+  fetchAvailableSymbols?(): Promise<Result<string[], VenueError>>;
 }
 
 // ---------------------------------------------------------------------------
