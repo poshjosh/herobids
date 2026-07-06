@@ -207,6 +207,9 @@ export class AgentTradingActor implements ExecutionActor {
   /** Per-instrument stop-loss exit timestamps (cooldown enforcement) */
   private readonly stopLossExits = new Map<string, number>();
 
+  /** Per-instrument per-trade exit levels (stopLoss / takeProfit). Keyed by instrument identifier. */
+  private readonly exitLevels = new Map<string, { stopLoss?: Price; takeProfit?: Price }>();
+
   /** Equity tracker (drawdown + dynamic equity) */
   private equityTracker?: EquityTracker;
 
@@ -253,6 +256,7 @@ export class AgentTradingActor implements ExecutionActor {
         await this.captureStartupPendingLiveSnapshot();
         await this.reconcileIncompletePlans();
         await this.rehydratePositions();
+        await this.rehydrateExitLevels();
         await this.initializeRiskTrackers();
         this.logger.info({ mode: 'paper', venue: deps.venue, venueType: deps.venueType }, 'Agent trading actor started');
         this.startTechnicalScanLoop();
@@ -397,6 +401,7 @@ export class AgentTradingActor implements ExecutionActor {
       await this.captureStartupPendingLiveSnapshot();
       await this.reconcileIncompletePlans();
       await this.rehydratePositions();
+      await this.rehydrateExitLevels();
       await this.initializeRiskTrackers();
 
       // Ensure market data feeds are running for all open positions so that
@@ -718,6 +723,7 @@ export class AgentTradingActor implements ExecutionActor {
         const result = await submitDecisionForExecution(decision, context, position, deps);
         if (!result.executionFailed && result.position.side === 'flat') {
           this.positions.delete(instrumentId);
+          this.exitLevels.delete(instrumentId);
           succeeded++;
         } else {
           this.positions.set(instrumentId, result.position);
@@ -949,6 +955,7 @@ export class AgentTradingActor implements ExecutionActor {
       const result = await submitDecisionForExecution(decision, context, position, deps);
       if (!result.executionFailed && result.position.side === 'flat') {
         this.positions.delete(instrumentId);
+        this.exitLevels.delete(instrumentId);
         this.recordStopLossExit(instrumentId);
       } else {
         this.positions.set(instrumentId, result.position);
@@ -1369,6 +1376,7 @@ export class AgentTradingActor implements ExecutionActor {
     if (!result.error) {
       if (result.newPosition.side === 'flat') {
         this.positions.delete(instrumentId);
+        this.exitLevels.delete(instrumentId);
       } else {
         this.positions.set(instrumentId, result.newPosition);
       }
@@ -1907,6 +1915,7 @@ export class AgentTradingActor implements ExecutionActor {
   private async persistPrivateStreamPositionState(position: PositionState): Promise<void> {
     if (position.side === 'flat') {
       this.positions.delete(position.symbol);
+      this.exitLevels.delete(position.symbol);
     } else {
       this.positions.set(position.symbol, position);
       // Ensure a market data feed is running for this instrument (needed for
@@ -2473,6 +2482,31 @@ export class AgentTradingActor implements ExecutionActor {
     }
   }
 
+  /** Rehydrate per-trade exit levels from the most recent decision per open position. */
+  private async rehydrateExitLevels(): Promise<void> {
+    if (this.positions.size === 0) return;
+    try {
+      for (const [instrumentId] of this.positions) {
+        const levels = await this.deps.decisionRepo.getLatestExitLevelsForInstrument(
+          this.agentId,
+          this.deps.venueAccountId,
+          instrumentId,
+        );
+        if (levels) {
+          this.exitLevels.set(instrumentId, {
+            stopLoss: levels.stopLoss ? new Decimal(levels.stopLoss) : undefined,
+            takeProfit: levels.takeProfit ? new Decimal(levels.takeProfit) : undefined,
+          });
+        }
+      }
+      if (this.exitLevels.size > 0) {
+        this.logger.info({ count: this.exitLevels.size }, 'Rehydrated per-trade exit levels from decisions');
+      }
+    } catch (err) {
+      this.logger.warn({ err }, 'Failed to rehydrate per-trade exit levels — starting without levels');
+    }
+  }
+
   /** Replay historical fills into the swap position tracker to rebuild expected holdings on restart. */
   private async rehydrateSwapPositionTracker(): Promise<void> {
     if (!this.swapPositionTracker || !this.deps.swapAssets) return;
@@ -2728,8 +2762,18 @@ export class AgentTradingActor implements ExecutionActor {
   }
 
   private buildPersistence(_instrumentId: string): TradingCyclePersistence {
+    // Stash per-trade exit levels from persistDecision so persistPosition can
+    // upsert into the exitLevels map once the final position is known.
+    let pendingExitLevels: { stopLoss?: Price; takeProfit?: Price } | null = null;
+
     return {
       persistDecision: async (decision) => {
+        if (decision.stopLoss || decision.takeProfit) {
+          pendingExitLevels = {
+            stopLoss: decision.stopLoss,
+            takeProfit: decision.takeProfit,
+          };
+        }
         await this.deps.decisionRepo.insertDecision({
           id: decision.id,
           venueAccountId: decision.venueAccountId,
@@ -2741,6 +2785,8 @@ export class AgentTradingActor implements ExecutionActor {
           actorType: decision.actorType,
           actorId: decision.actorId,
           metadata: decision.metadata,
+          stopLoss: decision.stopLoss?.toString(),
+          takeProfit: decision.takeProfit?.toString(),
         });
       },
       persistDecisionContext: async (context) => {
@@ -2787,6 +2833,7 @@ export class AgentTradingActor implements ExecutionActor {
         // Keep in-memory positions map in sync
         if (pos.side === 'flat') {
           this.positions.delete(pos.symbol);
+          this.exitLevels.delete(pos.symbol);
         } else {
           this.positions.set(pos.symbol, {
             venue: pos.venue,
@@ -2796,6 +2843,13 @@ export class AgentTradingActor implements ExecutionActor {
             entryPrice: new Decimal(pos.entryPrice),
             realizedPnl: new Decimal(pos.realizedPnl),
           });
+          // Upsert per-trade exit levels from the accepted decision (if any).
+          // When a new decision with levels comes in for an already-open position,
+          // this UPDATEs the entry (the agent can tighten or widen stops).
+          if (pendingExitLevels) {
+            this.exitLevels.set(pos.symbol, pendingExitLevels);
+            pendingExitLevels = null;
+          }
           // Ensure a market data feed is running for unrealized P&L and stop-loss checks
           this.ensureMarketDataFeed(pos.symbol);
         }

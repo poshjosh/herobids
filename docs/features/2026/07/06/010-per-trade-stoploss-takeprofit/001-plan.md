@@ -257,10 +257,10 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 2. [DONE] Add params to `submit_decision` tool schema and passthrough
 3. [DONE] Propagate through `agent-decision-handler.ts` into the `Decision` object
 4. [DONE] Add reminder logic in sync reply
-5. [PENDING] Implement `validatePerTradeLevels` pure function + tests
-6. [PENDING] Integrate price validation in `agent-decision-handler.ts` (reject before accept)
+5. [DONE] Implement `validatePerTradeLevels` pure function + tests
+6. [DONE] Integrate price validation in `agent-decision-handler.ts` (reject before accept)
 7. [DONE] Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
-8. [PENDING] Add `exitLevels` map to `agent-trading-actor.ts` with rehydration
+8. [DONE] Add `exitLevels` map to `agent-trading-actor.ts` with rehydration
 9. [PENDING] Add periodic per-trade level monitor loop
 10. [PENDING] Hide `stopLossPct` from agent surfaces
 11. [PENDING] Update system prompt guardrails
@@ -287,3 +287,10 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 - **LOW**: Misleading comment in multiple-instruments test (SOL entry comment says "would trigger" but actually wouldn't).
 - **LOW**: `mkCheck` helper has long-biased defaults that make short-side tests fragile.
 - **LOW**: No short-side test for "neither stopLoss nor takeProfit is set".
+
+### [Item 8] Add exitLevels map to agent-trading-actor with rehydration
+- **MEDIUM**: Zombie exit levels on position re-entry after restart — rehydration query returns most recent decision with levels globally, not per-lifecycle. Documented limitation; future fix could add `positionLifecycleId`.
+- **MEDIUM**: Sequential DB queries in rehydration loop — could be parallelized with `Promise.all`.
+- **LOW**: `stop()` does not clear `exitLevels` while `instrumentFeeds` is cleared.
+- **LOW**: `pendingExitLevels` not nullified in the flat branch of `persistPosition`.
+- **LOW**: Missing GIN index on `decisions.metadata` for JSONB queries (future optimization).

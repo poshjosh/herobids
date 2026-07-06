@@ -699,6 +699,10 @@ export interface InsertDecision {
   actorType?: string;
   actorId?: string;
   metadata?: Record<string, unknown>;
+  /** Per-trade stop-loss price level (stored in metadata JSONB). */
+  stopLoss?: string;
+  /** Per-trade take-profit price level (stored in metadata JSONB). */
+  takeProfit?: string;
 }
 
 /**
@@ -708,6 +712,11 @@ export class DecisionRepository {
   constructor(private readonly db: Database) {}
 
   async insertDecision(decision: InsertDecision): Promise<void> {
+    // Merge stopLoss/takeProfit into metadata so they are queryable via JSONB operators.
+    const meta: Record<string, unknown> = { ...decision.metadata };
+    if (decision.stopLoss) meta.stopLoss = decision.stopLoss;
+    if (decision.takeProfit) meta.takeProfit = decision.takeProfit;
+
     await this.db.insert(decisions).values({
       id: decision.id,
       venueAccountId: decision.venueAccountId,
@@ -718,7 +727,7 @@ export class DecisionRepository {
       contextHash: decision.contextHash ?? null,
       actorType: decision.actorType ?? 'system',
       actorId: decision.actorId ?? null,
-      metadata: decision.metadata ?? null,
+      metadata: Object.keys(meta).length > 0 ? meta : null,
     });
   }
 
@@ -745,6 +754,42 @@ export class DecisionRepository {
       .where(eq(decisions.venueAccountId, venueAccountId))
       .orderBy(desc(decisions.createdAt))
       .limit(limit);
+  }
+
+  /**
+   * Get the most recent per-trade exit levels (stopLoss / takeProfit) for a
+   * single instrument from an agent's decisions. Used to rehydrate the in-memory
+   * exitLevels map on actor startup.
+   */
+  async getLatestExitLevelsForInstrument(
+    agentId: string,
+    venueAccountId: string,
+    instrumentId: string,
+  ): Promise<{ stopLoss?: string; takeProfit?: string } | null> {
+    const [row] = await this.db
+      .select({ metadata: decisions.metadata })
+      .from(decisions)
+      .where(
+        and(
+          eq(decisions.actorType, 'agent'),
+          eq(decisions.actorId, agentId),
+          eq(decisions.venueAccountId, venueAccountId),
+          eq(decisions.instrumentId, instrumentId),
+          or(
+            sql`${decisions.metadata}->>'stopLoss' IS NOT NULL`,
+            sql`${decisions.metadata}->>'takeProfit' IS NOT NULL`,
+          ),
+        ),
+      )
+      .orderBy(desc(decisions.createdAt))
+      .limit(1);
+
+    if (!row?.metadata) return null;
+    const meta = row.metadata as Record<string, unknown>;
+    const stopLoss = typeof meta.stopLoss === 'string' ? meta.stopLoss : undefined;
+    const takeProfit = typeof meta.takeProfit === 'string' ? meta.takeProfit : undefined;
+    if (!stopLoss && !takeProfit) return null;
+    return { stopLoss, takeProfit };
   }
 }
 
