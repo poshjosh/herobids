@@ -145,8 +145,9 @@ export class VenueInstrumentCache {
  */
 export function normalizeHyperliquidSymbol(raw: string): string {
   const upper = raw.toUpperCase();
-  // Strip -PERP suffix, then strip /QUOTE:QUOTE suffix to get base currency
-  return upper.replace(/-PERP$/i, '').replace(/\/.*$/, '');
+  // Strip /QUOTE:QUOTE suffix first, then strip -PERP.
+  // Order matters: 'ETH-PERP/USD:USD' → /USD:USD removed → 'ETH-PERP' → -PERP removed → 'ETH'
+  return upper.replace(/\/.*$/, '').replace(/-PERP$/i, '');
 }
 
 /**

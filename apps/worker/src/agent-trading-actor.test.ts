@@ -1027,6 +1027,56 @@ describe('AgentTradingActor', () => {
 
       await actor.stop();
     });
+
+    it('rejects with instrument_unknown when cache is ready and symbol is not recognized', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        instrumentCache: {
+          isReady: () => true,
+          hasSymbol: (venue: string, symbol: string) => {
+            if (venue === 'hyperliquid' && symbol === 'DOGE') return false;
+            return true;
+          },
+        } as any,
+      }));
+      await actor.start();
+
+      const result = actor.getIntakeDeps('DOGE');
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('rejected', true);
+      expect(result).toHaveProperty('code', 'instrument_unknown');
+      expect(result).toHaveProperty('retryable', false);
+
+      await actor.stop();
+    });
+
+    it('allows known symbols when cache is ready', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({
+        instrumentCache: {
+          isReady: () => true,
+          hasSymbol: () => true,
+        } as any,
+      }));
+      await actor.start();
+
+      const result = actor.getIntakeDeps('BTC/USD:USD');
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty('rejected');
+      expect(result).toHaveProperty('actorType', 'agent');
+
+      await actor.stop();
+    });
+
+    it('skips validation when instrumentCache is absent (backward compat)', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps());
+      await actor.start();
+
+      const result = actor.getIntakeDeps('DOGE');
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty('rejected');
+      expect(result).toHaveProperty('actorType', 'agent');
+
+      await actor.stop();
+    });
   });
 
   describe('getDecisionContext', () => {

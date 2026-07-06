@@ -275,6 +275,54 @@ describe('AgentIntakeResolver', () => {
       expect(result!.swapTokenSafety).toBe(deps.swapTokenSafety);
       expect(result!.venue).toBe('1inch');
     });
+
+    it('rejects with instrument_unknown when cache is ready and symbol is not recognized', async () => {
+      const { deps } = makeDeps({
+        instrumentCache: {
+          isReady: () => true,
+          hasSymbol: (venue: string, symbol: string) => {
+            if (venue === 'hyperliquid' && symbol === 'DOGE') return false;
+            return true;
+          },
+        },
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'DOGE');
+
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('rejected', true);
+      expect(result).toHaveProperty('code', 'instrument_unknown');
+      expect(result).toHaveProperty('retryable', false);
+    });
+
+    it('allows known symbols through when cache is ready', async () => {
+      const { deps } = makeDeps({
+        instrumentCache: {
+          isReady: () => true,
+          hasSymbol: () => true,
+        },
+      });
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'BTC/USD:USD');
+
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('actorType', 'agent');
+      expect(result).not.toHaveProperty('rejected');
+    });
+
+    it('skips validation when instrumentCache is not provided (backward compat)', async () => {
+      const { deps } = makeDeps(); // no instrumentCache override
+      const resolver = new AgentIntakeResolver(deps);
+
+      const result = await resolver.getIntakeDeps('agent-1', 'DOGE');
+
+      // Should NOT reject — cache is absent, so validation is skipped
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('actorType', 'agent');
+      expect(result).not.toHaveProperty('rejected');
+    });
   });
 
   describe('getDecisionContext', () => {

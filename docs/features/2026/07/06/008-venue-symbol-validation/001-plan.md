@@ -1,6 +1,6 @@
 # 001 — Venue Symbol Validation at Decision Intake
 
-**Status:** pending  
+**Status:** done  
 **Created:** 2026-06-17  
 **Scope:** Prevent agents from trading symbols that don't exist on their bound venue.
 
@@ -34,6 +34,13 @@ Add a fast, in-memory instrument cache populated from venue APIs. Validate every
 | Bybit | ccxt `exchange.loadMarkets()` | Same pattern |
 | Jupiter | Jupiter token list API | `https://token.jup.ag/strict` |
 | 1inch | 1inch token list per chain | `https://api.1inch.dev/token/v1.2/{chainId}/search` |
+
+> **1inch exclusion note:** 1inch is a universal DEX aggregator that supports any ERC-20 token
+> on the configured EVM chain. Enforcing symbol validation against any finite token list
+> would reject legitimate but less-common tokens. The 1inch adapter provides
+> `fetchAvailableSymbols()` returning a curated set of popular token addresses per chain
+> for operator visibility, but the worker intentionally skips 1inch when building the
+> enforcement cache. 1inch agent decisions are NOT gated by `instrument_unknown`.
 
 **Decision:** Add `fetchAvailableSymbols(): Promise<Result<string[], VenueError>>` to `OrderbookVenuePort` (for orderbook venues). For swap venues, add to `SwapVenuePort`. Each adapter implements it using the appropriate source.
 
@@ -140,6 +147,11 @@ Same check, using `this.deps.venue` and the shared instrument cache.
 ### Step 6: Populate instruments table (optional, Phase 2) — **DONE**
 
 Use the cache data to `INSERT … ON CONFLICT DO NOTHING` into the `instruments` table for operator visibility and future use cases (UI instrument picker, etc.).
+
+**Scope limitation:** Currently orderbook-only (Hyperliquid + Bybit). Jupiter and 1inch
+are excluded because the `instruments` table schema (base/quote/tick/lot) is designed
+for orderbook markets and doesn't fit swap-venue token lists. Swap-venue instrument
+registry is deferred to a future schema update.
 
 ## Edge Cases
 
