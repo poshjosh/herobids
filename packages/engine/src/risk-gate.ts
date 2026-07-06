@@ -117,7 +117,7 @@ export function checkRisk(
     if (snapshot.dailyLoss.gte(dailyLossLimit)) {
       return err({
         code: 'risk.daily_max_loss_exceeded',
-        message: `Daily loss ${snapshot.dailyLoss.toString()} exceeds ${limits.dailyMaxLossPct}% of equity (${dailyLossLimit.toString()})`,
+        message: `Daily loss limit reached: $${snapshot.dailyLoss.toFixed(2)} realized (limit: $${dailyLossLimit.toFixed(2)})`,
         context: {
           dailyLoss: snapshot.dailyLoss.toString(),
           dailyMaxLossPct: limits.dailyMaxLossPct,

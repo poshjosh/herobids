@@ -50,4 +50,51 @@ describe('DailyLossTracker', () => {
     tracker.recordFill(price('-300'), now);
     expect(tracker.rollingLoss(now).eq(new Decimal(1000))).toBe(true);
   });
+
+  // --- oldestEntryMs ---
+
+  it('oldestEntryMs returns undefined for an empty tracker', () => {
+    const tracker = new DailyLossTracker();
+    expect(tracker.oldestEntryMs(Date.now())).toBeUndefined();
+  });
+
+  it('oldestEntryMs returns the timestamp of the single active entry', () => {
+    const tracker = new DailyLossTracker();
+    const now = Date.now();
+    const entryTs = now - 3_600_000; // 1h ago
+    tracker.recordFill(price('-500'), entryTs);
+    expect(tracker.oldestEntryMs(now)).toBe(entryTs);
+  });
+
+  it('oldestEntryMs returns the earliest timestamp among multiple entries', () => {
+    const tracker = new DailyLossTracker();
+    const now = Date.now();
+    const twoHoursAgo = now - 7_200_000;
+    const oneHourAgo = now - 3_600_000;
+    tracker.recordFill(price('-200'), oneHourAgo);
+    tracker.recordFill(price('-500'), twoHoursAgo);
+    tracker.recordFill(price('-300'), now);
+    expect(tracker.oldestEntryMs(now)).toBe(twoHoursAgo);
+  });
+
+  it('oldestEntryMs excludes entries older than 24h', () => {
+    const tracker = new DailyLossTracker();
+    const now = Date.now();
+    const twoDaysAgo = now - 2 * 86_400_000;
+    const oneHourAgo = now - 3_600_000;
+    tracker.recordFill(price('-1000'), twoDaysAgo);
+    tracker.recordFill(price('-200'), oneHourAgo);
+    expect(tracker.oldestEntryMs(now)).toBe(oneHourAgo);
+  });
+
+  it('oldestEntryMs adding DAY_MS gives the earliest unblock time', () => {
+    const tracker = new DailyLossTracker();
+    const now = Date.now();
+    const entryTs = now - 3_600_000; // 1h ago → expires in 23h
+    tracker.recordFill(price('-500'), entryTs);
+    const oldestMs = tracker.oldestEntryMs(now)!;
+    const unblockTime = oldestMs + 86_400_000;
+    expect(unblockTime).toBe(entryTs + 86_400_000);
+    expect(unblockTime).toBeGreaterThan(now);
+  });
 });

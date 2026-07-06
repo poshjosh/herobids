@@ -272,7 +272,16 @@ export class AgentDecisionHandler {
       try {
         if (result.riskRejected) {
           const riskCode = result.riskError?.code ?? 'risk.rejected';
-          const riskMsg = result.riskError?.message ?? 'Decision rejected by risk gate';
+          const baseRiskMsg = result.riskError?.message ?? 'Decision rejected by risk gate';
+          let riskMsg = baseRiskMsg;
+          if (riskCode === 'risk.daily_max_loss_exceeded') {
+            const nowMs = Date.now();
+            const oldestMs = intakeDeps.dailyLossTracker?.oldestEntryMs(nowMs);
+            const blockedTill = oldestMs != null
+              ? new Date(oldestMs + 86_400_000).toISOString()
+              : 'within 24h';
+            riskMsg = `${baseRiskMsg}. New positions are blocked till at least ${blockedTill} (subsequent losses may extend the block). Use go_flat or decrease to manage existing open positions.`;
+          }
           setSyncReply('rejected', { code: riskCode, message: riskMsg });
           await this.eventPublisher.emitGuardrailTriggered(effectiveBotId, {
             scope: 'risk_gate',
