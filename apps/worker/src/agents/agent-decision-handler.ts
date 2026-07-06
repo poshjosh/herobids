@@ -296,6 +296,25 @@ export class AgentDecisionHandler {
           return;
         }
 
+        // 5a. Build non-blocking reminder for position-growing intents missing
+        // stopLoss or takeProfit levels (per-trade protection).
+        const positionGrowingIntents = new Set(['go_long', 'go_short', 'increase']);
+        const buildAcceptedMessage = (): string | undefined => {
+          if (!positionGrowingIntents.has(decision.intent)) return undefined;
+          const hasSl = decision.stopLoss !== undefined;
+          const hasTp = decision.takeProfit !== undefined;
+          if (!hasSl && !hasTp) {
+            return "Accepted. Note: no stopLoss or takeProfit set — this position is unprotected if you're unable to trade.";
+          }
+          if (!hasSl) {
+            return "Accepted. Note: no stopLoss set — this position has no downside protection if you're unable to trade.";
+          }
+          if (!hasTp) {
+            return "Accepted. Note: no takeProfit set — profits won't be captured if you're unable to trade.";
+          }
+          return undefined;
+        };
+
         // 6. Emit accepted — deferred until hash, risk, AND execution checks all pass.
         // Previously this was emitted before the execution result check, which meant
         // the agent could receive "accepted" for a decision that subsequently failed
@@ -346,7 +365,7 @@ export class AgentDecisionHandler {
             completedAt: new Date().toISOString(),
           });
         } else if (result.executionResult) {
-          setSyncReply('accepted', { planId: result.plan?.id });
+          setSyncReply('accepted', { planId: result.plan?.id, message: buildAcceptedMessage() });
           await this.eventPublisher.emitExecutionResult(effectiveBotId, {
             decisionId: payload.decisionId,
             planId: result.plan?.id ?? '',
@@ -372,7 +391,7 @@ export class AgentDecisionHandler {
           });
         } else {
           // Execution produced no result and didn't fail — e.g. no-op plan
-          setSyncReply('accepted', { planId: result.plan?.id });
+          setSyncReply('accepted', { planId: result.plan?.id, message: buildAcceptedMessage() });
         }
       } catch (publishErr) {
         logger.error({ decisionId: payload.decisionId, err: publishErr }, 'Failed to publish decision outcome');

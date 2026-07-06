@@ -254,9 +254,9 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 ## Implementation Order
 
 1. [DONE] Add `stopLoss`/`takeProfit` to domain types (`Decision`, `DecisionSubmitPayloadSchema`)
-2. [PENDING] Add params to `submit_decision` tool schema and passthrough
-3. [PENDING] Propagate through `agent-decision-handler.ts` into the `Decision` object
-4. [PENDING] Add reminder logic in sync reply
+2. [DONE] Add params to `submit_decision` tool schema and passthrough
+3. [DONE] Propagate through `agent-decision-handler.ts` into the `Decision` object
+4. [DONE] Add reminder logic in sync reply
 5. [PENDING] Implement `validatePerTradeLevels` pure function + tests
 6. [PENDING] Integrate price validation in `agent-decision-handler.ts` (reject before accept)
 7. [PENDING] Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
@@ -276,3 +276,7 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 ### [Item 2] Add params to submit_decision tool schema and passthrough
 - **LOW**: Regex accepts zero-price values (same as Item 1, deferred to Item 5).
 - **LOW**: No test changes in this changeset — tests are separate plan items (Items 4, 12).
+
+### [Item 4] Add reminder logic in sync reply
+- **LOW**: `positionGrowingIntents` Set recreated on every invocation — could be hoisted to module scope as a static constant.
+- **LOW**: `message: undefined` passed into spread when both levels are set — `JSON.stringify` drops it correctly, but debugging shows `undefined`.
