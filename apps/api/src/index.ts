@@ -30,7 +30,7 @@ import { toolSchemaRoutes } from './routes/tool-schemas.js';
 import { agentToolsRoutes } from './routes/agent-tools.js';
 import { venueDefaultsRoutes } from './routes/venue-defaults.js';
 import { strategySchemaRoutes } from './routes/strategy-schemas.js';
-import { loadProvidersConfig } from '@herobids/domain';
+import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { makeCatalogContext, type LlmCatalogDeps } from './llm-model-catalog.js';
 import { connectionRoutes } from './routes/connections.js';
 import { capabilityRoutes } from './routes/capabilities/index.js';

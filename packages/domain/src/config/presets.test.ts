@@ -3,12 +3,15 @@ import {
   loadPresets,
   getPreset,
   listPresets,
+} from './presets-loader.js';
+import {
   agentStyleToPresetStyle,
   applyPresetToAgent,
+  AGENT_TECHNICAL_STRATEGY_TYPES,
   type PresetEntry,
 } from './presets.js';
 
-// The presets module uses a module-level cache. Clear it between tests so
+// The presets-loader module uses a module-level cache. Clear it between tests so
 // each test gets a fresh load (important when we mock readFileSync).
 // We do this by re-importing the module after vi.resetModules().
 
@@ -17,11 +20,11 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Helper: re-import presets module with a clean cache
+// Helper: re-import presets-loader module with a clean cache
 // ---------------------------------------------------------------------------
 
 async function freshPresets() {
-  return await import('./presets.js');
+  return await import('./presets-loader.js');
 }
 
 // ---------------------------------------------------------------------------
@@ -160,26 +163,22 @@ describe('listPresets', () => {
 // ---------------------------------------------------------------------------
 
 describe('agentStyleToPresetStyle', () => {
-  it("maps 'careful' to 'economy'", async () => {
-    const { agentStyleToPresetStyle: map } = await freshPresets();
-    expect(map('careful')).toBe('economy');
+  it("maps 'careful' to 'economy'", () => {
+    expect(agentStyleToPresetStyle('careful')).toBe('economy');
   });
 
-  it("maps 'balanced' to 'standard'", async () => {
-    const { agentStyleToPresetStyle: map } = await freshPresets();
-    expect(map('balanced')).toBe('standard');
+  it("maps 'balanced' to 'standard'", () => {
+    expect(agentStyleToPresetStyle('balanced')).toBe('standard');
   });
 
-  it("maps 'bold' to 'premium'", async () => {
-    const { agentStyleToPresetStyle: map } = await freshPresets();
-    expect(map('bold')).toBe('premium');
+  it("maps 'bold' to 'premium'", () => {
+    expect(agentStyleToPresetStyle('bold')).toBe('premium');
   });
 
-  it("defaults unknown styles to 'standard'", async () => {
-    const { agentStyleToPresetStyle: map } = await freshPresets();
-    expect(map('reckless')).toBe('standard');
-    expect(map('')).toBe('standard');
-    expect(map('unknown')).toBe('standard');
+  it("defaults unknown styles to 'standard'", () => {
+    expect(agentStyleToPresetStyle('reckless')).toBe('standard');
+    expect(agentStyleToPresetStyle('')).toBe('standard');
+    expect(agentStyleToPresetStyle('unknown')).toBe('standard');
   });
 });
 
@@ -220,10 +219,9 @@ describe('applyPresetToAgent', () => {
     };
   }
 
-  it('produces correct split with technical, risk, and execution sections', async () => {
-    const { applyPresetToAgent: apply } = await freshPresets();
+  it('produces correct split with technical, risk, and execution sections', () => {
     const preset = makeMomentumPreset();
-    const result = apply(preset, 'llm');
+    const result = applyPresetToAgent(preset, 'llm');
 
     // Technical
     expect(result.technical.indicators).toEqual({
@@ -243,8 +241,7 @@ describe('applyPresetToAgent', () => {
     expect(result.execution.positionSizeMode).toBe('percent_equity');
   });
 
-  it('uses defaults when preset fields are missing', async () => {
-    const { applyPresetToAgent: apply } = await freshPresets();
+  it('uses defaults when preset fields are missing', () => {
     const preset: PresetEntry = {
       name: 'Minimal',
       description: 'Minimal preset',
@@ -254,7 +251,7 @@ describe('applyPresetToAgent', () => {
         params: {},
       },
     };
-    const result = apply(preset, 'hybrid');
+    const result = applyPresetToAgent(preset, 'hybrid');
 
     expect(result.technical.indicators).toEqual({});
     expect(result.technical.candles).toEqual({ interval: '15m', limit: 48 });
@@ -265,17 +262,15 @@ describe('applyPresetToAgent', () => {
     expect(result.execution.positionSizeMode).toBeUndefined();
   });
 
-  it('omits risk fields when risk block is absent', async () => {
-    const { applyPresetToAgent: apply } = await freshPresets();
+  it('omits risk fields when risk block is absent', () => {
     const preset = makeMomentumPreset({ risk: undefined });
-    const result = apply(preset, 'llm');
+    const result = applyPresetToAgent(preset, 'llm');
 
     expect(result.risk.maxPositionSizePct).toBeUndefined();
     expect(result.risk.stopLossPct).toBe(5); // from strategy.params
   });
 
-  it('handles non-numeric stopLossPct gracefully', async () => {
-    const { applyPresetToAgent: apply } = await freshPresets();
+  it('handles non-numeric stopLossPct gracefully', () => {
     const preset = makeMomentumPreset({
       strategy: {
         type: 'momentum',
@@ -283,13 +278,12 @@ describe('applyPresetToAgent', () => {
         params: { stopLossPct: '5%' }, // string, not number
       },
     });
-    const result = apply(preset, 'llm');
+    const result = applyPresetToAgent(preset, 'llm');
     // stopLossPct is only included when it's a number
     expect(result.risk.stopLossPct).toBeUndefined();
   });
 
-  it('rejects DCA preset for agent application', async () => {
-    const { applyPresetToAgent: apply } = await freshPresets();
+  it('rejects DCA preset for agent application', () => {
     const dcaPreset: PresetEntry = {
       name: 'DCA',
       description: 'Dollar-cost averaging',
@@ -299,12 +293,11 @@ describe('applyPresetToAgent', () => {
         params: { intervalMs: 86_400_000, amountPerBuy: '100' },
       },
     };
-    expect(() => apply(dcaPreset, 'llm')).toThrow(/dca.*not supported/i);
+    expect(() => applyPresetToAgent(dcaPreset, 'llm')).toThrow(/dca.*not supported/i);
   });
 
-  it('accepts all supported agent technical strategy types', async () => {
-    const { applyPresetToAgent: apply, AGENT_TECHNICAL_STRATEGY_TYPES: types } = await freshPresets();
-    for (const type of types) {
+  it('accepts all supported agent technical strategy types', () => {
+    for (const type of AGENT_TECHNICAL_STRATEGY_TYPES) {
       const preset: PresetEntry = {
         name: `Test ${type}`,
         description: `Test preset for ${type}`,
@@ -314,7 +307,7 @@ describe('applyPresetToAgent', () => {
           params: { candleInterval: '1H', candleLimit: 24, positionSize: '5' },
         },
       };
-      const result = apply(preset, 'llm');
+      const result = applyPresetToAgent(preset, 'llm');
       expect(result.execution.fixedPositionSize).toBe('5');
     }
   });

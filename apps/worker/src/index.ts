@@ -22,7 +22,8 @@ import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdap
 import type { IdGenerator } from '@herobids/engine';
 import { LastFillMarkSource, MarkSelector } from '@herobids/engine';
 import type { DecisionContext } from '@herobids/engine';
-import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, loadProvidersConfig, type ProvidersYaml } from '@herobids/domain';
+import { quantity, price, BotConfigSchema, ACTOR_HEALTH_TTL_SECONDS, type ProvidersYaml } from '@herobids/domain';
+import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import type { MarketSnapshot, OrderId, FillId, Strategy, StrategyConfig, OrderbookVenuePort, SwapVenuePort, CandleFetcher } from '@herobids/domain';
 import crypto from 'node:crypto';
 import { resolve } from 'node:path';
@@ -890,14 +891,15 @@ let bybitAdapter: BybitAdapter | undefined;
 
 if (appConfig.venues['hyperliquid']) {
   const hlTestnet = appConfig.venues['hyperliquid'].testnet ?? false;
-  hlAdapter = new HyperliquidAdapter({
+  const adapter = new HyperliquidAdapter({
     credentials: { apiKey: '', secret: '', walletAddress: '', testnet: hlTestnet },
   });
+  hlAdapter = adapter;
   venueSymbolProviders.push({
     venue: 'hyperliquid',
     normalizeSymbol: normalizeHyperliquidSymbol,
     fetchSymbols: async () => {
-      const result = await hlAdapter.fetchAvailableSymbols();
+      const result = await adapter.fetchAvailableSymbols();
       if (!result.ok) throw new Error(`Failed to fetch Hyperliquid symbols: ${result.error.message}`);
       return result.data;
     },
@@ -906,14 +908,15 @@ if (appConfig.venues['hyperliquid']) {
 
 if (appConfig.venues['bybit']) {
   const bybitTestnet = appConfig.venues['bybit'].testnet ?? false;
-  bybitAdapter = new BybitAdapter({
+  const adapter = new BybitAdapter({
     credentials: { apiKey: '', secret: '', testnet: bybitTestnet },
   });
+  bybitAdapter = adapter;
   venueSymbolProviders.push({
     venue: 'bybit',
     normalizeSymbol: normalizeBybitSymbol,
     fetchSymbols: async () => {
-      const result = await bybitAdapter.fetchAvailableSymbols();
+      const result = await adapter.fetchAvailableSymbols();
       if (!result.ok) throw new Error(`Failed to fetch Bybit symbols: ${result.error.message}`);
       return result.data;
     },

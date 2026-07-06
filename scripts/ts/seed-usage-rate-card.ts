@@ -10,7 +10,8 @@
  */
 
 import { createDatabase, closeDatabase, UsageBillingRepository } from '@herobids/db';
-import { loadProvidersConfig, type ProvidersYaml } from '@herobids/domain';
+import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
+import type { ProvidersYaml } from '@herobids/domain';
 
 const DEFAULT_DATABASE_URL = 'postgres://herobids:herobids@localhost:5432/herobids';
 const PROVIDERS_CONFIG_PATH = process.env['PROVIDERS_CONFIG_PATH'] ?? 'config/providers.yaml';

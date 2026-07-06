@@ -5,7 +5,7 @@ import type { AgentRepository, PositionRepository, DecisionRepository, Execution
 import type { AgentRiskDefaultsConfig, AgentRiskOverrides, MarkSource, SwapTokenSafetyPort } from '@herobids/domain';
 import { quantity, price } from '@herobids/domain';
 import { PaperExecutor, realClock, flatPosition } from '@herobids/engine';
-import type { DecisionIntakeDeps, DecisionContext, PositionState } from '@herobids/engine';
+import type { DecisionContext, PositionState } from '@herobids/engine';
 import type { IdGenerator } from '@herobids/engine';
 import type { Journal } from '@herobids/engine';
 import type { TradingCyclePersistence } from '@herobids/engine';

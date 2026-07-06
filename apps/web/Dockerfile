@@ -10,6 +10,8 @@ WORKDIR /app
 COPY . .
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
+# Build domain first — the web package depends on its type definitions.
+RUN pnpm --filter @herobids/domain run build
 # VITE_API_BASE_URL defaults to /api which nginx proxies to the api service.
 # Pass VITE_API_ORIGIN so the OAuth URL points at the host-accessible API port.
 ARG VITE_API_ORIGIN=http://localhost:3000

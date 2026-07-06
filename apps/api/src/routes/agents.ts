@@ -39,8 +39,8 @@ import {
   type AgentCostEstimatesConfig,
   agentStyleToPresetStyle,
   applyPresetToAgent,
-  getPreset,
 } from '@herobids/domain';
+import { getPreset } from '@herobids/domain/config/presets-loader';
 import { checkAgentLimit, resolvePlanLimitEntitlements, resolvePlanSkillEntitlements } from '../plan-guards.js';
 import { errorPayload } from '../error-payload.js';
 import type { LlmCatalogDeps } from '../llm-model-catalog.js';

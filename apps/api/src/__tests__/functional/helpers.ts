@@ -24,7 +24,7 @@ import { datasetRoutes } from '../../routes/datasets.js';
 import { exportRoutes } from '../../routes/exports.js';
 import { setupRoutes } from '../../routes/setup.js';
 import type { AuthConfig, RuntimeBudgetPolicy } from '@herobids/domain';
-import { loadProvidersConfig } from '@herobids/domain';
+import { loadProvidersConfig } from '@herobids/domain/config/load-providers';
 import { LlmRuntimeConfigSchema } from '@herobids/domain';
 import { syncSystemSkills } from '../../sync-system-skills.js';
 import { resolve, dirname } from 'node:path';

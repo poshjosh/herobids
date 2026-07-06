@@ -3,10 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./config/load-providers": {
+      "import": "./dist/config/load-providers.js",
+      "types": "./dist/config/load-providers.d.ts"
+    },
+    "./config/presets-loader": {
+      "import": "./dist/config/presets-loader.js",
+      "types": "./dist/config/presets-loader.d.ts"
     }
   },
   "scripts": {

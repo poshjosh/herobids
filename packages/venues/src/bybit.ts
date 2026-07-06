@@ -310,8 +310,8 @@ export class BybitAdapter implements OrderbookVenuePort {
       // Filter to linear perpetuals — the adapter primarily trades derivatives.
       // ccxt caches loadMarkets() results in memory after the first call.
       const symbols = Object.values(markets)
-        .filter((m: { type?: string; linear?: boolean }) => m.type === 'swap' && m.linear === true)
-        .map((m: { symbol: string }) => m.symbol);
+        .filter((m): m is NonNullable<typeof m> => m != null && m.type === 'swap' && m.linear === true)
+        .map((m) => m.symbol);
       return ok(symbols);
     });
   }

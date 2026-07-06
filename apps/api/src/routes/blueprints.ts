@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { eq, and, or, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
 import { blueprints, bots } from '@herobids/db';
-import { extractStrategyFromConfig, listPresets, getPreset, applyPresetToAgent } from '@herobids/domain';
+import { extractStrategyFromConfig, applyPresetToAgent } from '@herobids/domain';
+import { listPresets, getPreset } from '@herobids/domain/config/presets-loader';
 import { deepMerge } from '../config.js';
 
 // --- Request schemas ---
