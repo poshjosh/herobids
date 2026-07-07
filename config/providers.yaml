@@ -44,7 +44,7 @@ providers:
     models: {}
 
   ollama:
-    baseUrl: http://localhost:11434/v1
+    baseUrl: http://host.docker.internal:11434/v1  # host.docker.internal resolves correctly both inside Docker and on macOS host
     catalogMode: dynamic
     devOnly: true
     pricingSource: none
