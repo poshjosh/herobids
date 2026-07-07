@@ -40,3 +40,9 @@ export const defaultBotCustomConfig: BotCustomConfigFormState = {
   dailyMaxLossPct: '',
   stopLossMaxUnrealizedLossPct: '',
 };
+
+interface BotCustomConfigSectionProps {
+  value: BotCustomConfigFormState;
+  onChange: (patch: Partial<BotCustomConfigFormState>) => void;
+  isSwapVenue: boolean;
+}
