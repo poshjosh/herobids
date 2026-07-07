@@ -334,7 +334,7 @@ export function BillingPage() {
                           >
                             {upgradeMutation.isPending
                               ? intl.formatMessage({ id: 'billing.switching' })
-                              : intl.formatMessage({ id: 'billing.switchAction' }, { interval: intl.formatMessage({ id: `billing.interval.${price.interval}` }) })}
+                              : intl.formatMessage({ id: 'billing.switchAction' }, { label: price.displayLabel })}
                           </Button>
                         ))
                       ) : (
@@ -347,7 +347,7 @@ export function BillingPage() {
                           >
                             {checkoutMutation.isPending
                               ? intl.formatMessage({ id: 'billing.loadingCheckout' })
-                              : intl.formatMessage({ id: 'billing.subscribeAction' }, { interval: intl.formatMessage({ id: `billing.interval.${price.interval}` }) })}
+                              : intl.formatMessage({ id: 'billing.subscribeAction' }, { label: price.displayLabel })}
                           </Button>
                         ))
                       )}
