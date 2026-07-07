@@ -2713,6 +2713,12 @@ export class AgentTradingActor implements ExecutionActor {
   }
 
   private async startReconciler(): Promise<void> {
+    // Shadow/paper mode — positions are synthetic and never sent to the venue.
+    // There is nothing to reconcile against real venue state. Skipping avoids
+    // false-positive reconciliation.drift_detected events every pass.
+    // (Matches the same guard in bot TradingActor.startReconciler.)
+    if (this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper') return;
+
     const { venuePort, reconciliationConfig } = { venuePort: this.venuePort, reconciliationConfig: this.deps.reconciliationConfig };
     if ((!venuePort && !this.swapVenue) || !reconciliationConfig) return;
 
