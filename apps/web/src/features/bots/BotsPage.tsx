@@ -258,6 +258,14 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           loading={presetsQuery.isLoading}
         />
 
+        {form.strategyPreset === 'custom' && (
+          <BotCustomConfigSection
+            value={form.customConfig}
+            onChange={(patch) => setForm((s) => ({ ...s, customConfig: { ...s.customConfig, ...patch } }))}
+            isSwapVenue={isSwapVenue}
+          />
+        )}
+
         {/* Execution mode */}
         <div>
           <FieldLabel>Execution mode</FieldLabel>
