@@ -2810,7 +2810,7 @@ export class AgentTradingActor implements ExecutionActor {
       venueAccountId: this.deps.venueAccountId,
       balanceDiffMode: this.deps.venueType === 'swap' ? 'observational' : 'authoritative',
       logger: this.logger,
-      isShadowOrPaper: this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper',
+      isShadowOrPaper: false,
       getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId),
     });
 
@@ -2867,7 +2867,7 @@ export class AgentTradingActor implements ExecutionActor {
     // are auto-closed because no real trades happen on the venue. Only balance mismatches
     // and venue-only positions (someone else trading on the shared account) remain actionable.
     if (firstResult.status === 'drift_detected' && !reconciliationConfig.driftAlertOnly) {
-      const isShadowOrPaper = this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper';
+      const isShadowOrPaper = false;
 
       if (isShadowOrPaper) {
         // Delegate orphaned-position auto-close to the shared cleanup helper.
