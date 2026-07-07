@@ -253,6 +253,13 @@
       "when": 1783385727344,
       "tag": "0035_tricky_thunderbird",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783424793839,
+      "tag": "0036_shocking_steel_serpent",
+      "breakpoints": true
     }
   ]
 }

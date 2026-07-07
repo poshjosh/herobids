@@ -75,6 +75,9 @@ export interface ToolBotRecord {
 export interface ToolPositionRecord {
   actorType: string;
   actorId: string;
+  venue: string;
+  /** Canonical instrument ID from the venue's instrument repository. Nullable for legacy positions. */
+  instrumentId?: string | null;
   symbol: string;
   side: string;
   size: string;

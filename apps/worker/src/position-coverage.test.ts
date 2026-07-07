@@ -13,6 +13,7 @@ function makeWatch(overrides: Partial<WatchInput> = {}): WatchInput {
     symbol: 'BTC-USD',
     lastConditionMet: null,
     schemaVersion: 2,
+    instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD', symbol: 'BTC-USD' },
     ...overrides,
   };
 }
@@ -20,6 +21,7 @@ function makeWatch(overrides: Partial<WatchInput> = {}): WatchInput {
 function makePosition(overrides: Partial<PositionInput> = {}): PositionInput {
   return {
     venue: 'hyperliquid',
+    instrumentId: 'BTC-USD',
     symbol: 'BTC-USD',
     side: 'long',
     ...overrides,
@@ -124,13 +126,13 @@ describe('evaluatePositionCoverage', () => {
   it('multiple positions with mixed coverage', () => {
     const result = evaluatePositionCoverage({
       positions: [
-        makePosition({ symbol: 'BTC-USD', side: 'long' }),
-        makePosition({ symbol: 'ETH-USD', side: 'short' }),
-        makePosition({ symbol: 'SOL-USD', side: 'long' }),
+        makePosition({ instrumentId: 'BTC-USD', symbol: 'BTC-USD', side: 'long' }),
+        makePosition({ instrumentId: 'ETH-USD', symbol: 'ETH-USD', side: 'short' }),
+        makePosition({ instrumentId: 'SOL-USD', symbol: 'SOL-USD', side: 'long' }),
       ],
       watches: [
-        makeWatch({ watchId: 'w1', symbol: 'BTC-USD', purpose: 'stop_loss' }),
-        makeWatch({ watchId: 'w2', symbol: 'ETH-USD', purpose: 'monitor' }),
+        makeWatch({ watchId: 'w1', symbol: 'BTC-USD', purpose: 'stop_loss', instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD', symbol: 'BTC-USD' } }),
+        makeWatch({ watchId: 'w2', symbol: 'ETH-USD', purpose: 'monitor', instrument: { venue: 'hyperliquid', instrumentId: 'ETH-USD', symbol: 'ETH-USD' } }),
       ],
     });
 
@@ -186,6 +188,7 @@ describe('evaluatePositionCoverage', () => {
       symbol: 'btc-perp',
       purpose: 'exit',
       schemaVersion: undefined,
+      instrument: undefined,
       // No instrument, no coverage → not trustable
     });
 
@@ -200,12 +203,13 @@ describe('evaluatePositionCoverage', () => {
     expect(result.hasUncoveredPosition).toBe(true);
   });
 
-  it('v2 watch with schemaVersion provides protective coverage via symbol fallback', () => {
-    const position = makePosition({ symbol: 'BTC-USD', side: 'short' });
+  it('v2 watch with instrument identity provides protective coverage via instrumentId matching', () => {
+    const position = makePosition({ instrumentId: 'BTC-USD-PERP', symbol: 'BTC-PERP', side: 'short' });
     const watch = makeWatch({
-      symbol: 'btc-perp',
+      symbol: 'BTC/USDT',
       purpose: 'exit',
       schemaVersion: 2,
+      instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD-PERP', symbol: 'BTC-USD' },
     });
 
     const result = evaluatePositionCoverage({
@@ -265,11 +269,11 @@ describe('evaluatePositionCoverage', () => {
   it('hasUncoveredPosition aggregate flag', () => {
     const result = evaluatePositionCoverage({
       positions: [
-        makePosition({ symbol: 'BTC-USD', side: 'long' }),
-        makePosition({ symbol: 'ETH-USD', side: 'long' }),
+        makePosition({ instrumentId: 'BTC-USD', symbol: 'BTC-USD', side: 'long' }),
+        makePosition({ instrumentId: 'ETH-USD', symbol: 'ETH-USD', side: 'long' }),
       ],
       watches: [
-        makeWatch({ watchId: 'w1', symbol: 'BTC-USD', purpose: 'stop_loss' }),
+        makeWatch({ watchId: 'w1', symbol: 'BTC-USD', purpose: 'stop_loss', instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD', symbol: 'BTC-USD' } }),
       ],
     });
 
@@ -281,12 +285,12 @@ describe('evaluatePositionCoverage', () => {
   it('hasTriggeredProtectiveWatch aggregate flag across multiple positions', () => {
     const result = evaluatePositionCoverage({
       positions: [
-        makePosition({ symbol: 'BTC-USD', side: 'long' }),
-        makePosition({ symbol: 'ETH-USD', side: 'long' }),
+        makePosition({ instrumentId: 'BTC-USD', symbol: 'BTC-USD', side: 'long' }),
+        makePosition({ instrumentId: 'ETH-USD', symbol: 'ETH-USD', side: 'long' }),
       ],
       watches: [
-        makeWatch({ watchId: 'w1', symbol: 'BTC-USD', purpose: 'stop_loss', lastConditionMet: true }),
-        makeWatch({ watchId: 'w2', symbol: 'ETH-USD', purpose: 'take_profit', lastConditionMet: false }),
+        makeWatch({ watchId: 'w1', symbol: 'BTC-USD', purpose: 'stop_loss', lastConditionMet: true, instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD', symbol: 'BTC-USD' } }),
+        makeWatch({ watchId: 'w2', symbol: 'ETH-USD', purpose: 'take_profit', lastConditionMet: false, instrument: { venue: 'hyperliquid', instrumentId: 'ETH-USD', symbol: 'ETH-USD' } }),
       ],
     });
 
@@ -366,7 +370,7 @@ describe('evaluatePositionCoverage', () => {
   });
 
   it('positionKey includes venue and falls back to symbol when no instrumentId', () => {
-    const position = makePosition({ venue: 'jupiter', symbol: 'ETH-USD', side: 'long' });
+    const position = makePosition({ venue: 'jupiter', instrumentId: undefined, symbol: 'ETH-USD', side: 'long' });
     const result = evaluatePositionCoverage({
       positions: [position],
       watches: [],

@@ -174,20 +174,34 @@ export class FillRepository {
 export class PositionRepository {
   constructor(private readonly db: Database) {}
 
-  /** Upsert the current position for an actor + symbol */
+  /** Upsert the current position for an actor + venue + symbol + instrumentId.
+   *  instrumentId is part of the canonical identity — two positions with the same
+   *  actor/venue/symbol but different instrumentIds are distinct exposures. */
   async upsert(pos: UpsertPosition): Promise<void> {
-    // Find existing open position for this actor+symbol
+    // Find existing open position for this actor+venue+symbol+instrumentId.
+    // Venue disambiguation prevents same-symbol positions on different
+    // venues (e.g. Hyperliquid BTC vs Jupiter BTC) from colliding.
+    // instrumentId disambiguation prevents same-symbol positions on the same
+    // venue from colliding when the venue distinguishes them by instrument ID.
+    const idConditions = [
+      eq(positions.actorType, pos.actorType),
+      eq(positions.actorId, pos.actorId),
+      eq(positions.venue, pos.venue),
+      eq(positions.symbol, pos.symbol),
+      isNull(positions.closedAt),
+    ];
+    // Include instrumentId in the identity match when provided.
+    // When instrumentId is null/undefined, match rows where instrumentId IS NULL
+    // to prevent collision between identified and unidentified positions.
+    if (pos.instrumentId != null) {
+      idConditions.push(eq(positions.instrumentId, pos.instrumentId));
+    } else {
+      idConditions.push(isNull(positions.instrumentId));
+    }
     const existing = await this.db
       .select()
       .from(positions)
-      .where(
-        and(
-          eq(positions.actorType, pos.actorType),
-          eq(positions.actorId, pos.actorId),
-          eq(positions.symbol, pos.symbol),
-          isNull(positions.closedAt),
-        ),
-      )
+      .where(and(...idConditions))
       .limit(1);
 
     if (pos.side === 'flat') {

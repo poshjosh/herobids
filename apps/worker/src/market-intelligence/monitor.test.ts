@@ -126,6 +126,7 @@ function makeWatch(overrides: Partial<{
     condition: overrides.condition ?? 'above',
     createdAt: '2026-06-10T00:00:00.000Z',
     lastConditionMet: overrides.lastConditionMet ?? null,
+    schemaVersion: overrides.schemaVersion ?? 2,
   };
   if (overrides.resolvedChain) base.resolvedChain = overrides.resolvedChain;
   if (overrides.resolvedSymbol) base.resolvedSymbol = overrides.resolvedSymbol;
@@ -455,7 +456,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.schemaVersion).toBe(2);
   });
 
-  it('does NOT populate new fields in payload when watch lacks purpose/instrument/coverage', async () => {
+  it('does NOT populate purpose/instrument/positionKey when watch lacks them, but schemaVersion is always present', async () => {
     seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
     seedDiscoveryPrice('SOL', 'solana', 204);
 
@@ -468,7 +469,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBeUndefined();
     expect(payload.instrumentId).toBeUndefined();
     expect(payload.positionKey).toBeUndefined();
-    expect(payload.schemaVersion).toBeUndefined();
+    expect(payload.schemaVersion).toBe(2);
   });
 
   it('populates only partial new fields when watch has some but not all metadata', async () => {
@@ -519,8 +520,8 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.currentPrice).toBe(204);
   });
 
-  it('falls back to watch.chain/watch.symbol when resolved fields are absent (legacy watches)', async () => {
-    // Legacy watch with no resolvedChain/resolvedSymbol
+  it('falls back to watch.chain/watch.symbol when resolved fields are absent', async () => {
+    // Watch with no resolvedChain/resolvedSymbol (e.g. created before price service was available)
     seedWatch('agent-1', makeWatch({
       symbol: 'BTC',
       chain: 'hyperliquid',

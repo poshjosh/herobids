@@ -97,6 +97,7 @@ export class AgentIntakeResolver {
       actorId: agentId,
       venue: binding.venue,
       symbol: instrumentId,
+      instrumentId,
       venueAccountId: binding.venueAccountId,
       venueType,
       swapNetwork,

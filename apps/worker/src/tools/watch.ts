@@ -15,12 +15,12 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import pino from 'pino';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
-import { WatchPurposeEnum } from '@herobids/domain';
+import { WatchPurposeEnum, type WatchPurpose } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
 import { summarizeActiveWatches } from '../runtime-composition.js';
 import { type WatchEntry, type WatchInstrumentIdentity, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
-import { derivePositionKey, type PositionInput } from '../position-coverage.js';
+import { derivePositionKey, type PositionInput, PROTECTIVE_WATCH_PURPOSES } from '../position-coverage.js';
 
 const logger = pino({ name: 'watch-tools' });
 
@@ -96,12 +96,15 @@ function deserializeLookupKey(key: string): { chain: string; symbol: string; add
 }
 
 /**
- * Lazy-repair a watch entry that lacks pinned identity fields (legacy watches
- * created before the token-discovery-and-pin feature).
+ * Repair a watch entry that lacks pinned identity fields.
+ *
+ * New watches created by watch_token always have pinned identity (resolvedChain,
+ * resolvedSymbol). This function handles edge cases where a watch was created
+ * without price service availability.
  *
  * - Already-pinned watches (resolvedChain present) are returned unchanged.
- * - Legacy watches with an explicit chain are resolved against that chain.
- * - Legacy watches with chain "any" are resolved once to discover the best match.
+ * - Unpinned watches with an explicit chain are resolved against that chain.
+ * - Unpinned watches with chain "any" are resolved once to discover the best match.
  *
  * Returns { ok: false } when resolution fails — the caller should place the
  * watch in the unchecked list.
@@ -118,7 +121,7 @@ async function ensurePinnedWatchIdentity(
     return { ok: true, watch };
   }
 
-  // Legacy watch — resolve and pin.
+  // Unpinned watch — resolve and pin.
   const addressArg = isOnChainAddress(watch.symbol, watch.chain) ? watch.symbol : undefined;
 
   const resolution = await priceService.resolvePriceTarget(
@@ -179,8 +182,6 @@ const WatchTokenParamsSchema = z.object({
   coverage: z.object({
     actorType: z.enum(['agent', 'bot', 'user', 'system']).optional(),
     actorId: z.string().optional(),
-    /** Worker-derived position key — DO NOT supply directly. Provide targetPosition instead. */
-    positionKey: z.string().optional(),
     intentGroup: z.string().optional(),
     /** Identify the target position so the worker can derive a canonical positionKey. */
     targetPosition: z.object({
@@ -320,23 +321,90 @@ const watchTokenTool: AgentTool = {
       }
     }
 
-    // --- Coverage linkage — derive canonical positionKey from targetPosition ---
+    // --- Coverage linkage — resolve from live positions ---
     // The worker OWNS the positionKey contract. Agents identify the target position
-    // by venue/symbol/side, and the worker derives the canonical key.
+    // by venue/symbol/side, and the worker resolves it against actual open positions.
     let resolvedCoverage = coverage;
+    // Strip any caller-supplied positionKey — the worker owns this contract.
+    if (resolvedCoverage && 'positionKey' in resolvedCoverage) {
+      const { positionKey: _, ...rest } = resolvedCoverage;
+      resolvedCoverage = Object.keys(rest).length > 0 ? rest as typeof resolvedCoverage : undefined;
+    }
     if (coverage?.targetPosition) {
       const { venue, symbol: posSymbol, side } = coverage.targetPosition;
-      // Derive the canonical position key using the same contract as coverage evaluation.
-      const derivedKey = derivePositionKey({ venue, symbol: posSymbol, side, instrumentId: instrument?.instrumentId });
-      resolvedCoverage = {
-        ...coverage,
-        positionKey: derivedKey,
-      };
-    } else if (coverage?.positionKey) {
-      // Legacy: caller-supplied positionKey. Log a warning — the worker should own this contract.
-      logger.warn({ agentId: ctx.agentId, positionKey: coverage.positionKey },
-        'watch_token called with raw positionKey — prefer targetPosition for worker-derived linkage');
+      const isProtective = purpose ? (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) : false;
+
+      // Resolve against the agent's actual open positions.
+      let matchedPosition: PositionInput | undefined;
+      if (ctx.botRepo) {
+        try {
+          const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId);
+          const matches = openPositions.filter(
+            (p) => p.venue === venue && p.symbol === posSymbol && p.side === side,
+          );
+          if (matches.length === 1) {
+            const match = matches[0]!;
+            matchedPosition = {
+              venue: match.venue,
+              symbol: match.symbol,
+              side: match.side,
+              instrumentId: match.instrumentId ?? undefined,
+            };
+          } else if (matches.length > 1) {
+            // Multiple open positions match — ambiguous linkage.
+            if (isProtective) {
+              return {
+                success: false,
+                error: `Ambiguous target: ${matches.length} open positions match venue=${venue} symbol=${posSymbol} side=${side}. Cannot safely attach a protective watch — provide a more specific target.`,
+                retryable: false,
+                fault: false,
+              };
+            }
+            // Non-protective: use the first match but warn.
+            logger.warn({ agentId: ctx.agentId, venue, posSymbol, side, matchCount: matches.length },
+              'Multiple open positions match targetPosition — using first match for non-protective watch');
+            const match = matches[0]!;
+            matchedPosition = {
+              venue: match.venue,
+              symbol: match.symbol,
+              side: match.side,
+              instrumentId: match.instrumentId ?? undefined,
+            };
+          }
+        } catch (err) {
+          logger.warn({ err, agentId: ctx.agentId }, 'Failed to look up open positions for watch linkage — falling back to caller-provided identity');
+        }
+      }
+
+      if (matchedPosition) {
+        // Derive from the matched live position — canonical identity wins.
+        const derivedKey = derivePositionKey(matchedPosition);
+        resolvedCoverage = {
+          ...coverage,
+          positionKey: derivedKey,
+        };
+      } else if (isProtective) {
+        // Protective watches MUST resolve to an actual open position.
+        // Reject ambiguous attachment — we cannot safely protect a position that doesn't exist.
+        return {
+          success: false,
+          error: `No open position found matching venue=${venue} symbol=${posSymbol} side=${side}. Protective watches must target an existing open position.`,
+          retryable: false,
+          fault: false,
+        };
+      } else {
+        // Non-protective: derive from caller input (best-effort, less risky).
+        const derivedKey = derivePositionKey({ venue, symbol: posSymbol, side, instrumentId: instrument?.instrumentId });
+        resolvedCoverage = {
+          ...coverage,
+          positionKey: derivedKey,
+        };
+      }
     }
+
+    // Every watch MUST carry machine-readable intent. If the caller did not
+    // specify a purpose, default to 'alert' — a passive monitoring watch.
+    const effectivePurpose: WatchPurpose = purpose ?? 'alert';
 
     const watch: WatchEntry = {
       watchId: crypto.randomUUID(),
@@ -352,8 +420,8 @@ const watchTokenTool: AgentTool = {
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
       schemaVersion: 2,
+      purpose: effectivePurpose,
       ...(instrument ? { instrument } : {}),
-      ...(purpose ? { purpose } : {}),
       ...(resolvedCoverage ? { coverage: resolvedCoverage } : {}),
     };
 
@@ -384,7 +452,7 @@ const watchTokenTool: AgentTool = {
         thresholdPrice,
         condition,
         ...(instrument ? { instrument } : {}),
-        ...(purpose ? { purpose } : {}),
+        purpose: effectivePurpose,
         ...(resolvedCoverage ? { coverage: resolvedCoverage } : {}),
       },
     };
@@ -499,7 +567,7 @@ const checkWatchesTool: AgentTool = {
       return { success: true, data: { ok: true, triggered: [], unchecked: [] } };
     }
 
-    // Step 6: Lazy repair for legacy watches that lack pinned identity fields.
+    // Step 6: Lazy repair for watches that lack pinned identity fields.
     const pinnedWatches: WatchEntry[] = [];
     const unchecked: Array<{ watchId: string; symbol: string; chain: string; reason: string }> = [];
 

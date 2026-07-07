@@ -1124,6 +1124,7 @@ export class AgentTradingActor implements ExecutionActor {
       actorId: this.agentId,
       venue: this.deps.venue,
       symbol: instrumentId,
+      instrumentId,
       venueAccountId: this.deps.venueAccountId,
       venueType: this.deps.venueType,
       swapAssets: swapDecisionMetadata?.swapAssets,

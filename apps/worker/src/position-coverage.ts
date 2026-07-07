@@ -9,7 +9,6 @@
  */
 
 import type { WatchPurpose } from '@herobids/domain';
-import { normalizeTrackedSymbol } from './venue-intelligence.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,7 +71,7 @@ export interface WatchInput {
   watchId: string;
   symbol: string;
   purpose?: string;
-  /** Schema version discriminator. undefined = legacy, 2 = v2. */
+  /** Schema version discriminator (inert metadata). */
   schemaVersion?: number;
   instrument?: {
     venue: string;
@@ -147,13 +146,16 @@ function isTrustableForCoverage(watch: WatchInput): boolean {
 }
 
 /**
- * Match a watch to a position using a 3-tier strategy:
- * 1. Direct linkage via coverage.positionKey
- * 2. Instrument identity via instrument.instrumentId
- * 3. Symbol fallback via normalizeTrackedSymbol (only for trustable watches)
+ * Match a watch to a position using a 2-tier strategy:
+ * 1. Direct linkage via coverage.positionKey (worker-derived)
+ * 2. Instrument identity via instrument.instrumentId (canonical venue instrument)
+ *
+ * Symbol-only fallback has been removed — all supported watches carry
+ * structured identity (schemaVersion >= 2), and coverage matching relies
+ * on explicit linkage rather than same-symbol heuristics.
  */
 function watchMatchesPosition(watch: WatchInput, position: PositionInput, positionKey: string): boolean {
-  // Tier 1: Direct linkage
+  // Tier 1: Direct linkage via worker-derived positionKey
   if (watch.coverage?.positionKey && watch.coverage.positionKey === positionKey) {
     return true;
   }
@@ -162,15 +164,6 @@ function watchMatchesPosition(watch: WatchInput, position: PositionInput, positi
   // Both the watch and the position must carry instrumentId for this tier to work.
   if (watch.instrument?.instrumentId && position.instrumentId) {
     if (watch.instrument.instrumentId === position.instrumentId) {
-      return true;
-    }
-  }
-
-  // Tier 3: Symbol fallback (normalized comparison)
-  const normalizedWatchSymbol = normalizeTrackedSymbol(watch.symbol);
-  const normalizedPositionSymbol = normalizeTrackedSymbol(position.symbol);
-  if (normalizedWatchSymbol && normalizedPositionSymbol) {
-    if (normalizedWatchSymbol === normalizedPositionSymbol) {
       return true;
     }
   }

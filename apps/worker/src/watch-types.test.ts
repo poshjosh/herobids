@@ -66,20 +66,13 @@ describe('parseWatch', () => {
     expect(result!.schemaVersion).toBe(2);
   });
 
-  it('parses a valid legacy record without schemaVersion', () => {
+  it('rejects a record without schemaVersion (only structured watches supported)', () => {
     const raw = JSON.stringify(validLegacyRecord());
     const result = parseWatch(raw);
-    expect(result).not.toBeNull();
-    expect(result!.watchId).toBe(VALID_UUID);
-    expect(result!.symbol).toBe('ETH');
-    expect(result!.chain).toBe('ethereum');
-    expect(result!.thresholdPrice).toBe(3_000);
-    expect(result!.condition).toBe('below');
-    expect(result!.schemaVersion).toBeUndefined();
-    expect(result!.lastConditionMet).toBe(false);
+    expect(result).toBeNull();
   });
 
-  it('parses a minimal legacy record with only required fields', () => {
+  it('rejects a minimal record without schemaVersion (only structured watches supported)', () => {
     const raw = JSON.stringify({
       watchId: VALID_UUID,
       symbol: 'SOL',
@@ -90,12 +83,7 @@ describe('parseWatch', () => {
       lastConditionMet: null,
     });
     const result = parseWatch(raw);
-    expect(result).not.toBeNull();
-    expect(result!.symbol).toBe('SOL');
-    expect(result!.address).toBeUndefined();
-    expect(result!.note).toBeUndefined();
-    expect(result!.lastCheckedAt).toBeUndefined();
-    expect(result!.schemaVersion).toBeUndefined();
+    expect(result).toBeNull();
   });
 
   it('parses a record with lastConditionMet: true', () => {
@@ -289,11 +277,10 @@ describe('parseWatch', () => {
     expect(result!.instrument!.address).toBeUndefined();
   });
 
-  it('parses legacy record without instrument field', () => {
+  it('rejects legacy record without instrument field (no schemaVersion)', () => {
     const raw = JSON.stringify(validLegacyRecord());
     const result = parseWatch(raw);
-    expect(result).not.toBeNull();
-    expect(result!.instrument).toBeUndefined();
+    expect(result).toBeNull();
   });
 
   it('returns null when instrument.venue is empty', () => {

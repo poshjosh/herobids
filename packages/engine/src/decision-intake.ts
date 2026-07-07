@@ -28,6 +28,8 @@ export interface DecisionIntakeDeps {
   actorId: string;
   venue: string;
   symbol: string;
+  /** Canonical instrument ID from the venue's instrument repository. Populated when available for position identity. */
+  instrumentId?: string;
   venueAccountId: string;
   venueType?: 'orderbook' | 'swap';
   swapAssets?: { baseAsset: string; quoteAsset: string; baseDecimals?: number; quoteDecimals?: number };
@@ -377,6 +379,7 @@ export async function submitDecisionForExecution(
     actorId: deps.actorId,
     venue: deps.venue,
     symbol: deps.symbol,
+    instrumentId: deps.instrumentId,
     side: updatedPosition.side,
     size: updatedPosition.size.toString(),
     entryPrice: updatedPosition.entryPrice.toString(),

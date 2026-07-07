@@ -668,7 +668,7 @@ describe('watch_token — discovery and pinning', () => {
   });
 });
 
-describe('check_watches — pinned identity and legacy repair', () => {
+describe('check_watches — pinned identity repair', () => {
   it('uses pinned identity for repricing (does not drift)', async () => {
     // Create a watch pinned to solana PEPE
     const resolvePriceTarget = vi.fn().mockResolvedValue(
@@ -692,9 +692,9 @@ describe('check_watches — pinned identity and legacy repair', () => {
     expect(getPrice).toHaveBeenCalledWith('PEPE', 'solana', '0xpepe_sol');
   });
 
-  it('lazily repairs legacy explicit-chain watch on first check', async () => {
+  it('lazily repairs unpinned explicit-chain watch on first check', async () => {
     const watchId = '00000000-0000-4000-8000-000000000001';
-    const legacyWatch = {
+    const unpinnedWatch = {
       watchId,
       symbol: 'PEPE',
       chain: 'solana',
@@ -702,6 +702,7 @@ describe('check_watches — pinned identity and legacy repair', () => {
       condition: 'above',
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
+      schemaVersion: 2,
     };
 
     const resolvePriceTarget = vi.fn().mockResolvedValue(
@@ -710,8 +711,8 @@ describe('check_watches — pinned identity and legacy repair', () => {
     const getPrice = vi.fn().mockResolvedValue(okPrice(0.00005));
     const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
-    // Insert legacy watch directly (no resolved fields)
-    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(legacyWatch));
+    // Insert unpinned watch directly (no resolved fields)
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(unpinnedWatch));
 
     await checkWatchesTool.execute({ removeTriggered: false }, ctx);
 
@@ -733,9 +734,9 @@ describe('check_watches — pinned identity and legacy repair', () => {
     expect(repairedWatch.chain).toBe('solana');
   });
 
-  it('lazily repairs legacy chain="any" watch to explicit chain', async () => {
+  it('lazily repairs unpinned chain="any" watch to explicit chain', async () => {
     const watchId = '00000000-0000-4000-8000-000000000002';
-    const legacyWatch = {
+    const unpinnedWatch = {
       watchId,
       symbol: 'PEPE',
       chain: 'any',
@@ -743,6 +744,7 @@ describe('check_watches — pinned identity and legacy repair', () => {
       condition: 'above',
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
+      schemaVersion: 2,
     };
 
     const resolvePriceTarget = vi.fn().mockResolvedValue(
@@ -751,7 +753,7 @@ describe('check_watches — pinned identity and legacy repair', () => {
     const getPrice = vi.fn().mockResolvedValue(okPrice(0.00004));
     const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
-    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(legacyWatch));
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(unpinnedWatch));
 
     await checkWatchesTool.execute({ removeTriggered: false }, ctx);
 
@@ -769,9 +771,9 @@ describe('check_watches — pinned identity and legacy repair', () => {
     expect(repairedWatch.chain).toBe('any');
   });
 
-  it('returns unreparable legacy watch in unchecked list', async () => {
+  it('returns unresolvable watch in unchecked list', async () => {
     const watchId = '00000000-0000-4000-8000-000000000003';
-    const legacyWatch = {
+    const unpinnedWatch = {
       watchId,
       symbol: 'NONEXISTENT',
       chain: 'solana',
@@ -779,6 +781,7 @@ describe('check_watches — pinned identity and legacy repair', () => {
       condition: 'above' as const,
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
+      schemaVersion: 2,
     };
 
     const resolvePriceTarget = vi.fn().mockResolvedValue({
@@ -788,7 +791,7 @@ describe('check_watches — pinned identity and legacy repair', () => {
     const getPrice = vi.fn();
     const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
-    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(legacyWatch));
+    await ctx.redis.hset(`agent:watches:${ctx.agentId}`, watchId, JSON.stringify(unpinnedWatch));
 
     const result = await checkWatchesTool.execute({ removeTriggered: false }, ctx);
 
@@ -1095,7 +1098,7 @@ describe('watch_token — purpose', () => {
     expect(storedWatch.purpose).toBe('entry');
   });
 
-  it('creates a watch without purpose (backward compat)', async () => {
+  it('defaults purpose to "alert" when not specified', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('SOL', 'solana', 150),
     );
@@ -1110,7 +1113,7 @@ describe('watch_token — purpose', () => {
     expect(result.success).toBe(true);
 
     const data = result.data as Record<string, unknown>;
-    expect(data.purpose).toBeUndefined();
+    expect(data.purpose).toBe('alert');
 
     const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
     const watchCall = hsetCalls.find(
@@ -1118,7 +1121,7 @@ describe('watch_token — purpose', () => {
         typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
     );
     const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
-    expect(storedWatch.purpose).toBeUndefined();
+    expect(storedWatch.purpose).toBe('alert');
   });
 
   it.each([
@@ -1147,7 +1150,7 @@ describe('watch_token — purpose', () => {
 });
 
 describe('watch_token — coverage', () => {
-  it('creates a watch with full coverage metadata', async () => {
+  it('creates a watch with full coverage metadata (positionKey derived by worker)', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('BTC-USD', 'hyperliquid', 60_000),
     );
@@ -1157,7 +1160,6 @@ describe('watch_token — coverage', () => {
     const coverage = {
       actorType: 'agent' as const,
       actorId: 'agent-1',
-      positionKey: 'BTC-USD-long',
       intentGroup: 'momentum-entry',
     };
 
@@ -1175,9 +1177,15 @@ describe('watch_token — coverage', () => {
 
     expect(result.success).toBe(true);
 
-    // Coverage in tool response
+    // Coverage in tool response — positionKey is NOT accepted as input;
+    // the worker derives it from targetPosition (not provided here).
     const data = result.data as Record<string, unknown>;
-    expect(data.coverage).toEqual(coverage);
+    const returnedCoverage = data.coverage as Record<string, unknown> | undefined;
+    expect(returnedCoverage).toBeDefined();
+    expect(returnedCoverage!.actorType).toBe('agent');
+    expect(returnedCoverage!.actorId).toBe('agent-1');
+    expect(returnedCoverage!.intentGroup).toBe('momentum-entry');
+    expect(returnedCoverage!.positionKey).toBeUndefined();
 
     // Coverage in persisted watch
     const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
@@ -1186,17 +1194,20 @@ describe('watch_token — coverage', () => {
         typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
     );
     const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
-    expect(storedWatch.coverage).toEqual(coverage);
+    expect(storedWatch.coverage).toBeDefined();
+    expect(storedWatch.coverage.positionKey).toBeUndefined();
   });
 
-  it('creates a watch with partial coverage (only positionKey)', async () => {
+  it('rejects raw positionKey in coverage (worker owns the linkage contract)', async () => {
     const resolvePriceTarget = vi.fn().mockResolvedValue(
       okResolve('SOL', 'solana', 150),
     );
     const getPrice = vi.fn().mockResolvedValue(okPrice(150));
     const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
 
-    const coverage = { positionKey: 'SOL-USD-short' };
+    // positionKey is no longer in the schema — it will be silently stripped.
+    // The coverage object with only positionKey becomes empty.
+    const coverage = { positionKey: 'SOL-USD-short' } as Record<string, unknown>;
 
     const result = await watchTokenTool.execute(
       {
@@ -1205,14 +1216,16 @@ describe('watch_token — coverage', () => {
         thresholdPrice: 100,
         condition: 'below',
         coverage,
-      },
+      } as unknown as Record<string, unknown>,
       ctx,
     );
 
     expect(result.success).toBe(true);
 
     const data = result.data as Record<string, unknown>;
-    expect(data.coverage).toEqual(coverage);
+    // coverage with only positionKey becomes empty and may be omitted
+    const returnedCoverage = data.coverage as Record<string, unknown> | undefined;
+    expect(returnedCoverage?.positionKey).toBeUndefined();
 
     const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
     const watchCall = hsetCalls.find(
@@ -1220,7 +1233,7 @@ describe('watch_token — coverage', () => {
         typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
     );
     const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
-    expect(storedWatch.coverage).toEqual(coverage);
+    expect(storedWatch.coverage?.positionKey).toBeUndefined();
   });
 
   it('creates a watch without coverage (backward compat)', async () => {

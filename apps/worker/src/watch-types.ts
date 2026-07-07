@@ -62,9 +62,8 @@ export interface WatchEntry {
   lastConditionMet: boolean | null;
   lastCheckedAt?: string;
   /**
-   * Schema version discriminator.
-   * - undefined or 1: legacy record (created before schemaVersion was introduced)
-   * - 2: current (canonical fields, pinned identity support)
+   * Schema version discriminator (inert metadata).
+   * - 2: current structured watch model (the only supported shape)
    */
   schemaVersion?: number;
   /** Canonical venue + instrument identity, resolved from the trading system's instrument repository. */
@@ -93,7 +92,7 @@ export const WatchEntrySchema = z.object({
   createdAt: z.string().min(1),
   lastConditionMet: z.boolean().nullable(),
   lastCheckedAt: z.string().optional(),
-  schemaVersion: z.number().int().positive().optional(),
+  schemaVersion: z.number().int().min(2),
   instrument: z.object({
     venue: z.string().min(1),
     instrumentId: z.string().min(1),
@@ -117,7 +116,8 @@ export const WatchEntrySchema = z.object({
 /**
  * Parse a raw JSON string into a WatchEntry.
  *
- * Handles both legacy records (no schemaVersion) and v2 records.
+ * Only structured watches (schemaVersion >= 2) are supported.
+ * Records that fail Zod validation are discarded.
  * Returns null for any malformed or missing data.
  */
 export function parseWatch(raw: string): WatchEntry | null {

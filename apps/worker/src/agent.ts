@@ -1513,6 +1513,8 @@ async function executeTool(call: ToolCall, phase: 'scout' | 'judge' = 'judge'): 
             return {
               actorType: position.actorType,
               actorId: position.actorId,
+              venue: position.venue,
+              instrumentId: position.instrumentId,
               symbol: position.symbol,
               side: position.side,
               size: position.size,
