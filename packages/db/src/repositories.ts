@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, isNull, desc, or, gte, inArray, notInArray, sql } from 'drizzle-orm';
+import { eq, and, isNull, desc, or, gte, inArray, notInArray } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { fills, positions, bots, connections, executionPlans, orders, balanceSnapshots, decisions, venueAccounts, agents } from './schema/index.js';
 
@@ -36,6 +36,10 @@ export interface UpsertPosition {
   markSource?: string;
   /** Reason the position was closed (only meaningful when side='flat'). */
   exitReason?: string;
+  /** Per-trade stop-loss price level — written when a decision includes one. */
+  stopLoss?: string | null;
+  /** Per-trade take-profit price level — written when a decision includes one. */
+  takeProfit?: string | null;
 }
 
 /**
@@ -237,6 +241,8 @@ export class PositionRepository {
           entryPrice: pos.entryPrice,
           realizedPnl: '0',
           markSource: pos.markSource ?? null,
+          stopLoss: pos.stopLoss ?? null,
+          takeProfit: pos.takeProfit ?? null,
           openedAt: new Date(),
         });
         return;
@@ -251,6 +257,8 @@ export class PositionRepository {
           entryPrice: pos.entryPrice,
           realizedPnl: pos.realizedPnl,
           markSource: pos.markSource ?? null,
+          ...(pos.stopLoss !== undefined ? { stopLoss: pos.stopLoss } : {}),
+          ...(pos.takeProfit !== undefined ? { takeProfit: pos.takeProfit } : {}),
           updatedAt: new Date(),
         })
         .where(eq(positions.id, existingRow.id));
@@ -268,6 +276,8 @@ export class PositionRepository {
         entryPrice: pos.entryPrice,
         realizedPnl: pos.realizedPnl,
         markSource: pos.markSource ?? null,
+        stopLoss: pos.stopLoss ?? null,
+        takeProfit: pos.takeProfit ?? null,
         openedAt: new Date(),
       });
     }
@@ -756,41 +766,6 @@ export class DecisionRepository {
       .limit(limit);
   }
 
-  /**
-   * Get the most recent per-trade exit levels (stopLoss / takeProfit) for a
-   * single instrument from an agent's decisions. Used to rehydrate the in-memory
-   * exitLevels map on actor startup.
-   */
-  async getLatestExitLevelsForInstrument(
-    agentId: string,
-    venueAccountId: string,
-    instrumentId: string,
-  ): Promise<{ stopLoss?: string; takeProfit?: string } | null> {
-    const [row] = await this.db
-      .select({ metadata: decisions.metadata })
-      .from(decisions)
-      .where(
-        and(
-          eq(decisions.actorType, 'agent'),
-          eq(decisions.actorId, agentId),
-          eq(decisions.venueAccountId, venueAccountId),
-          eq(decisions.instrumentId, instrumentId),
-          or(
-            sql`${decisions.metadata}->>'stopLoss' IS NOT NULL`,
-            sql`${decisions.metadata}->>'takeProfit' IS NOT NULL`,
-          ),
-        ),
-      )
-      .orderBy(desc(decisions.createdAt))
-      .limit(1);
-
-    if (!row?.metadata) return null;
-    const meta = row.metadata as Record<string, unknown>;
-    const stopLoss = typeof meta.stopLoss === 'string' ? meta.stopLoss : undefined;
-    const takeProfit = typeof meta.takeProfit === 'string' ? meta.takeProfit : undefined;
-    if (!stopLoss && !takeProfit) return null;
-    return { stopLoss, takeProfit };
-  }
 }
 
 /**

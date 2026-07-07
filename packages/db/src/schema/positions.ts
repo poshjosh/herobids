@@ -25,6 +25,10 @@ export const positions = pgTable('positions', {
    *  Values: signal_lost | parabolic_move | daily_limit_reached | sentiment_suppressed |
    *          stop_loss | manual | limit_order_timeout | market_order_timeout | etc. */
   exitReason: text('exit_reason'),
+  /** Per-trade stop-loss price level set at entry. Nullable — not all trades carry levels. */
+  stopLoss: numeric('stop_loss'),
+  /** Per-trade take-profit price level set at entry. Nullable — not all trades carry levels. */
+  takeProfit: numeric('take_profit'),
   openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

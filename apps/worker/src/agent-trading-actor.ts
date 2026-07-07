@@ -2625,30 +2625,12 @@ export class AgentTradingActor implements ExecutionActor {
             entryPrice: new Decimal(pos.entryPrice ?? '0'),
             realizedPnl: new Decimal(pos.realizedPnl ?? '0'),
           });
-          // Rehydrate exit levels anchored to this position's openedAt so that
-          // stale levels from a prior position lifecycle are never resurrected.
-          // NOTE: The `since` boundary is the position's `openedAt`.
-          // If the entry decision (which may carry stopLoss/takeProfit) was created
-          // milliseconds before the fill, it will be included. However, if the
-          // decision was created *before* the position opened (e.g. due to async fill
-          // latency), it may be excluded. A future improvement is to anchor by a
-          // positionLifecycleId rather than by timestamp. The window of vulnerability
-          // is limited to the restart gap before the agent's next decision cycle.
-          try {
-            const levels = await this.deps.decisionRepo.getLatestExitLevelsForInstrument(
-              this.agentId,
-              this.deps.venueAccountId,
-              pos.symbol,
-              pos.openedAt,
-            );
-            if (levels) {
-              this.exitLevels.set(pos.symbol, {
-                stopLoss: levels.stopLoss ? new Decimal(levels.stopLoss) : undefined,
-                takeProfit: levels.takeProfit ? new Decimal(levels.takeProfit) : undefined,
-              });
-            }
-          } catch (err) {
-            this.logger.warn({ err, symbol: pos.symbol }, 'Failed to rehydrate exit levels for symbol — starting without levels');
+          // Read exit levels directly from the position row (persisted at fill time).
+          if (pos.stopLoss || pos.takeProfit) {
+            this.exitLevels.set(pos.symbol, {
+              stopLoss: pos.stopLoss ? new Decimal(pos.stopLoss) : undefined,
+              takeProfit: pos.takeProfit ? new Decimal(pos.takeProfit) : undefined,
+            });
           }
         }
       }
@@ -2656,7 +2638,7 @@ export class AgentTradingActor implements ExecutionActor {
         this.logger.info({ count: this.positions.size }, 'Rehydrated agent positions from DB');
       }
       if (this.exitLevels.size > 0) {
-        this.logger.info({ count: this.exitLevels.size }, 'Rehydrated per-trade exit levels from decisions');
+        this.logger.info({ count: this.exitLevels.size }, 'Rehydrated per-trade exit levels from positions');
       }
     } catch (err) {
       this.logger.error({ err }, 'Failed to rehydrate agent positions — starting flat');
@@ -2985,11 +2967,16 @@ export class AgentTradingActor implements ExecutionActor {
           ...pos,
           actorType: pos.actorType ?? 'agent',
           actorId: pos.actorId ?? this.agentId,
+          ...(pendingExitLevels != null ? {
+            ...(pendingExitLevels.stopLoss !== undefined ? { stopLoss: pendingExitLevels.stopLoss.toString() } : {}),
+            ...(pendingExitLevels.takeProfit !== undefined ? { takeProfit: pendingExitLevels.takeProfit.toString() } : {}),
+          } : {}),
         });
         // Keep in-memory positions map in sync
         if (pos.side === 'flat') {
           this.positions.delete(pos.symbol);
           this.exitLevels.delete(pos.symbol);
+          pendingExitLevels = null;
         } else {
           this.positions.set(pos.symbol, {
             venue: pos.venue,

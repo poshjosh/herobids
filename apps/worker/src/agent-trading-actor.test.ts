@@ -36,7 +36,6 @@ function makeRepo() {
     getLatestByVenueAccount: vi.fn().mockResolvedValue(null),
     insertSnapshot: vi.fn().mockResolvedValue('snap-id'),
     insert: vi.fn().mockResolvedValue(undefined),
-    getLatestExitLevelsForInstrument: vi.fn().mockResolvedValue(null),
   };
 }
 
@@ -1446,16 +1445,13 @@ describe('AgentTradingActor', () => {
             entryPrice: '90000',
             realizedPnl: '0',
             openedAt: new Date('2026-01-02T00:00:00Z'),
+            stopLoss: '90000',
           },
         ]),
       };
-      const decisionRepo = {
-        ...makeRepo(),
-        getLatestExitLevelsForInstrument: vi.fn().mockResolvedValue({ stopLoss: '90000' }),
-      };
 
       const actor = new AgentTradingActor(
-        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any, decisionRepo: decisionRepo as any }),
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
       );
 
       await actor.start();
@@ -1499,11 +1495,8 @@ describe('AgentTradingActor', () => {
   });
 
   describe('exit-level lifecycle boundary', () => {
-    it('does not rehydrate exit levels from decisions before position openedAt', async () => {
-      // Decision at T1 (before position opened) carries a stop-loss
-      // Decision at T3 (after position opened) carries no levels
-      // After restart, exit levels must be empty because T1 is outside the current lifecycle
-      const positionOpenedAt = new Date('2026-01-02T00:00:00Z');
+    it('does not rehydrate exit levels when position row has no stopLoss or takeProfit', async () => {
+      // Position row without exit levels — must not populate exitLevels map
       const positionRepo = {
         ...makeRepo(),
         getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
@@ -1514,28 +1507,18 @@ describe('AgentTradingActor', () => {
             size: '1.0',
             entryPrice: '90000',
             realizedPnl: '0',
-            openedAt: positionOpenedAt,
+            openedAt: new Date('2026-01-02T00:00:00Z'),
+            stopLoss: null,
+            takeProfit: null,
           },
         ]),
       };
-      // Simulate the repository correctly filtering out the pre-openedAt decision
-      // (returns null because the only level-bearing decision is before since)
-      const getLatestExitLevels = vi.fn().mockResolvedValue(null);
-      const decisionRepo = { ...makeRepo(), getLatestExitLevelsForInstrument: getLatestExitLevels };
 
       const actor = new AgentTradingActor(
-        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any, decisionRepo: decisionRepo as any }),
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
       );
 
       await actor.start();
-
-      // The query must have been called with openedAt as the since bound
-      expect(getLatestExitLevels).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(String),
-        'BTC/USD:USD',
-        positionOpenedAt,
-      );
 
       // No exit levels must have been set
       const exitLevels = (actor as any).exitLevels as Map<string, unknown>;
@@ -1544,8 +1527,7 @@ describe('AgentTradingActor', () => {
       await actor.stop();
     });
 
-    it('rehydrates exit levels from decisions after position openedAt', async () => {
-      const positionOpenedAt = new Date('2026-01-02T00:00:00Z');
+    it('rehydrates exit levels from position row stopLoss and takeProfit columns', async () => {
       const positionRepo = {
         ...makeRepo(),
         getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
@@ -1556,34 +1538,159 @@ describe('AgentTradingActor', () => {
             size: '1.0',
             entryPrice: '90000',
             realizedPnl: '0',
-            openedAt: positionOpenedAt,
+            openedAt: new Date('2026-01-02T00:00:00Z'),
+            stopLoss: '88000',
+            takeProfit: '95000',
           },
         ]),
       };
-      // Simulate a decision within the current lifecycle that carries a stop-loss
-      const getLatestExitLevels = vi.fn().mockResolvedValue({ stopLoss: '88000' });
-      const decisionRepo = {
-        ...makeRepo(),
-        getLatestExitLevelsForInstrument: getLatestExitLevels,
-      };
 
       const actor = new AgentTradingActor(
-        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any, decisionRepo: decisionRepo as any }),
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
       );
 
       await actor.start();
 
-      // The query must have been called with openedAt as the since bound
-      expect(getLatestExitLevels).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(String),
-        'BTC/USD:USD',
-        positionOpenedAt,
-      );
-
-      const exitLevels = (actor as any).exitLevels as Map<string, { stopLoss?: { toFixed(): string } }>;
+      const exitLevels = (actor as any).exitLevels as Map<string, { stopLoss?: { toFixed(): string }; takeProfit?: { toFixed(): string } }>;
       expect(exitLevels.has('BTC/USD:USD')).toBe(true);
       expect(exitLevels.get('BTC/USD:USD')?.stopLoss?.toFixed()).toBe('88000');
+      expect(exitLevels.get('BTC/USD:USD')?.takeProfit?.toFixed()).toBe('95000');
+
+      await actor.stop();
+    });
+
+    it('persistPosition is called with stopLoss and takeProfit when decision carries exit levels', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        upsert: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const persistence = (actor as any).buildPersistence('BTC/USD:USD');
+
+      // Simulate persistDecision carrying stopLoss + takeProfit
+      await persistence.persistDecision({
+        id: 'd-1',
+        venueAccountId: 'va-1',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'open_long',
+        targetSize: quantity('1'),
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        stopLoss: price('88000'),
+        takeProfit: price('95000'),
+      });
+
+      // Simulate persistPosition for the resulting open position
+      await persistence.persistPosition({
+        venueAccountId: 'va-1',
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        side: 'long',
+        size: '1',
+        entryPrice: '90000',
+        realizedPnl: '0',
+      });
+
+      expect(positionRepo.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ stopLoss: '88000', takeProfit: '95000' }),
+      );
+
+      await actor.stop();
+    });
+
+    it('persistPosition does NOT pass stopLoss when decision carries only takeProfit', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        upsert: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const persistence = (actor as any).buildPersistence('BTC/USD:USD');
+
+      // Decision carries only takeProfit — no stopLoss
+      await persistence.persistDecision({
+        id: 'd-tp-only',
+        venueAccountId: 'va-1',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'open_long',
+        targetSize: quantity('1'),
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        takeProfit: price('95000'),
+      });
+
+      await persistence.persistPosition({
+        venueAccountId: 'va-1',
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        side: 'long',
+        size: '1',
+        entryPrice: '90000',
+        realizedPnl: '0',
+      });
+
+      const callArg = positionRepo.upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArg).toEqual(expect.objectContaining({ takeProfit: '95000' }));
+      expect('stopLoss' in callArg).toBe(false);
+
+      await actor.stop();
+    });
+
+    it('persistPosition does NOT pass any exit fields when decision has no levels', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        upsert: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any }),
+      );
+
+      await actor.start();
+
+      const persistence = (actor as any).buildPersistence('BTC/USD:USD');
+
+      // Decision with no exit levels
+      await persistence.persistDecision({
+        id: 'd-no-levels',
+        venueAccountId: 'va-1',
+        instrumentId: 'BTC/USD:USD',
+        intent: 'open_long',
+        targetSize: quantity('1'),
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+      });
+
+      await persistence.persistPosition({
+        venueAccountId: 'va-1',
+        actorType: 'agent',
+        actorId: 'agent-test-1',
+        venue: 'hyperliquid',
+        symbol: 'BTC/USD:USD',
+        side: 'long',
+        size: '1',
+        entryPrice: '90000',
+        realizedPnl: '0',
+      });
+
+      const callArg = positionRepo.upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect('stopLoss' in callArg).toBe(false);
+      expect('takeProfit' in callArg).toBe(false);
 
       await actor.stop();
     });
