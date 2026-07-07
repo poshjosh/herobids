@@ -42,6 +42,49 @@ function presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState {
   };
 }
 
+function buildCustomBotConfig(
+  c: BotCustomConfigFormState,
+  executionMode: string,
+  venue: string,
+  symbol: string,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {
+    candleInterval: c.candleInterval,
+    candleLimit: Number.isFinite(parseInt(c.candleLimit, 10)) ? parseInt(c.candleLimit, 10) : 48,
+    signalBias: c.signalBias,
+    stopLossPct: Number.isFinite(parseFloat(c.stopLossPct)) ? parseFloat(c.stopLossPct) : null,
+    takeProfitPct: Number.isFinite(parseFloat(c.takeProfitPct)) ? parseFloat(c.takeProfitPct) : null,
+    trailingStopPct: Number.isFinite(parseFloat(c.trailingStopPct)) ? parseFloat(c.trailingStopPct) : null,
+    positionSize: c.positionSize,
+    positionSizeMode: c.positionSizeMode,
+  };
+
+  const risk: Record<string, unknown> = {};
+  const maxPosSizePct = parseFloat(c.maxPositionSizePct);
+  if (Number.isFinite(maxPosSizePct)) risk['maxPositionSizePct'] = maxPosSizePct;
+
+  const maxOpen = parseInt(c.maxOpenPositions, 10);
+  if (Number.isFinite(maxOpen)) risk['maxOpenPositions'] = maxOpen;
+
+  const dailyLoss = parseFloat(c.dailyMaxLossPct);
+  if (Number.isFinite(dailyLoss)) risk['dailyMaxLossPct'] = dailyLoss;
+
+  const maxUnrealized = parseFloat(c.stopLossMaxUnrealizedLossPct);
+  if (Number.isFinite(maxUnrealized)) risk['stopLossMaxUnrealizedLossPct'] = maxUnrealized;
+
+  return {
+    strategy: {
+      type: c.strategyType,
+      decisionMode: c.decisionMode,
+      params,
+    },
+    ...(Object.keys(risk).length > 0 ? { risk } : {}),
+    execution: { mode: executionMode },
+    venue,
+    symbol,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // BotsPage
 // ---------------------------------------------------------------------------
@@ -167,27 +210,26 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
   const mutation = useMutation({
     mutationFn: () => {
-      const preset = fetchedPresets.find((p) => p.key === form.strategyPreset);
-      if (!preset) {
-        throw new Error('Selected strategy preset not found');
-      }
       const venue = selectedConnection?.provider;
-      if (!venue) {
-        throw new Error('Select a platform link before creating a bot');
+      if (!venue) throw new Error('Select a platform link before creating a bot');
+
+      let config: Record<string, unknown>;
+
+      if (form.strategyPreset === 'custom') {
+        config = buildCustomBotConfig(form.customConfig, form.executionMode, venue, form.symbol);
+      } else {
+        const preset = fetchedPresets.find((p) => p.key === form.strategyPreset);
+        if (!preset) throw new Error('Selected strategy preset not found');
+        config = {
+          strategy: preset.strategy,
+          ...(preset.risk ? { risk: preset.risk } : {}),
+          execution: { mode: form.executionMode },
+          venue,
+          symbol: form.symbol,
+        };
       }
-      const config: Record<string, unknown> = {
-        strategy: preset.strategy,
-        ...(preset.risk ? { risk: preset.risk } : {}),
-        execution: { mode: form.executionMode },
-        venue,
-        symbol: form.symbol,
-      };
-      return botsApi.create({
-        connectionId: form.connectionId,
-        venue,
-        symbol: form.symbol,
-        config,
-      });
+
+      return botsApi.create({ connectionId: form.connectionId, venue, symbol: form.symbol, config });
     },
     onSuccess: onCreated,
   });
@@ -289,7 +331,18 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <Button
             variant="primary"
             type="button"
-            disabled={mutation.isPending || presetsQuery.isLoading || !form.connectionId || !form.strategyPreset || !form.symbol.trim()}
+            disabled={
+              mutation.isPending
+              || presetsQuery.isLoading
+              || !form.connectionId
+              || !form.symbol.trim()
+              || (form.strategyPreset !== 'custom' && !form.strategyPreset)
+              || (form.strategyPreset === 'custom' && (
+                !form.customConfig.stopLossPct
+                || !form.customConfig.takeProfitPct
+                || !form.customConfig.positionSize
+              ))
+            }
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? 'Creating…' : 'Create Bot'}
