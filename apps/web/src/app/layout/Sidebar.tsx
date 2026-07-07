@@ -27,10 +27,6 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
 
   const ADVANCED_ITEMS = useMemo(() => [
     { path: '/bots', label: intl.formatMessage({ id: 'nav.bots' }), icon: '⊞' },
-    { path: '/venue-accounts', label: intl.formatMessage({ id: 'nav.tradingSetup' }), icon: '⬡' },
-    { path: '/exposure', label: intl.formatMessage({ id: 'nav.exposure' }), icon: '◑' },
-    { path: '/activity', label: intl.formatMessage({ id: 'nav.activity' }), icon: '◎' },
-    { path: '/outcomes', label: intl.formatMessage({ id: 'nav.outcomes' }), icon: '▦' },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [locale]);
 
