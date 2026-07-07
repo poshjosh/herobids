@@ -1580,6 +1580,7 @@ describe('runtime composition helpers', () => {
       expect(prompt).toContain('Daily loss limit (rolling 24h realized loss): $10.00 — when reached, new positions are blocked until losses roll out of the 24h window, but go_flat and decrease remain available to manage existing positions');
       expect(prompt).toContain('Max drawdown: 15% of peak equity');
       expect(prompt).toContain('Max concurrent bots: 2');
+      expect(prompt).toContain('Per-trade stop-loss and take-profit should be set via submit_decision. An operator backstop applies if levels are missing.');
     });
 
     it('omits Trading Guardrails when configReference is disabled', () => {

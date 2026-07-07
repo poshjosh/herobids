@@ -216,4 +216,92 @@ describe('submit_decision — synchronous reply', () => {
 
     expect(metrics.decisionsSubmitted).toBe(1);
   });
+
+  // -------------------------------------------------------------------------
+  // stopLoss / takeProfit
+  // -------------------------------------------------------------------------
+
+  it('passes stopLoss and takeProfit through to publishToInbound', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({ status: 'accepted', planId: 'plan-42' }),
+    ]);
+
+    await submitDecision.execute(
+      { ...validParams, stopLoss: '62000', takeProfit: '68000' },
+      ctx,
+    );
+
+    expect(ctx.publishToInbound).toHaveBeenCalledTimes(1);
+    const [_type, payload] = (ctx.publishToInbound as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload.stopLoss).toBe('62000');
+    expect(payload.takeProfit).toBe('68000');
+  });
+
+  it('passes only stopLoss through to publishToInbound when takeProfit is omitted', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({ status: 'accepted' }),
+    ]);
+
+    await submitDecision.execute(
+      { ...validParams, stopLoss: '62000' },
+      ctx,
+    );
+
+    const [_type, payload] = (ctx.publishToInbound as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload.stopLoss).toBe('62000');
+    expect(payload.takeProfit).toBeUndefined();
+  });
+
+  it('passes only takeProfit through to publishToInbound when stopLoss is omitted', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({ status: 'accepted' }),
+    ]);
+
+    await submitDecision.execute(
+      { ...validParams, takeProfit: '68000' },
+      ctx,
+    );
+
+    const [_type, payload] = (ctx.publishToInbound as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload.stopLoss).toBeUndefined();
+    expect(payload.takeProfit).toBe('68000');
+  });
+
+  it('omits stopLoss and takeProfit from publishToInbound when neither is provided', async () => {
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({ status: 'accepted' }),
+    ]);
+
+    await submitDecision.execute(validParams, ctx);
+
+    const [_type, payload] = (ctx.publishToInbound as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload.stopLoss).toBeUndefined();
+    expect(payload.takeProfit).toBeUndefined();
+  });
+
+  it('dry-run preview includes stopLoss and takeProfit when provided', async () => {
+    const result = await submitDecision.execute(
+      { ...validParams, dryRun: true, stopLoss: '62000', takeProfit: '68000' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.preview.stopLoss).toBe('62000');
+    expect(result.data.preview.takeProfit).toBe('68000');
+  });
+
+  it('dry-run preview shows "not set" for stopLoss and takeProfit when omitted', async () => {
+    const result = await submitDecision.execute(
+      { ...validParams, dryRun: true },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.preview.stopLoss).toBe('not set');
+    expect(result.data.preview.takeProfit).toBe('not set');
+  });
 });
