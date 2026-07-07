@@ -733,6 +733,18 @@ export const billing = {
     const qs = params.toString();
     return request<UsageBreakdownResponse>(`/billing/usage-breakdown${qs ? `?${qs}` : ''}`);
   },
+  ledgerEntries: (filters: LedgerEntriesFilters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.limit != null) params.set('limit', String(filters.limit));
+    if (filters.offset != null) params.set('offset', String(filters.offset));
+    if (filters.entryType) params.set('entryType', filters.entryType);
+    if (filters.direction) params.set('direction', filters.direction);
+    if (filters.periodId) params.set('periodId', filters.periodId);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    const qs = params.toString();
+    return request<LedgerEntriesResponse>(`/billing/ledger-entries${qs ? `?${qs}` : ''}`);
+  },
   periods: () => request<UsagePeriodsResponse>('/billing/periods'),
   updateSpendCaps: (caps: { softCapCents?: number | null; hardCapCents?: number | null }) =>
     request<{ success: boolean; status: UsageBillingAccount['status'] }>('/billing/spend-caps', {
@@ -821,6 +833,35 @@ export interface UsageBreakdownResponse {
   byAgent: Array<{ agentId: string; agentName: string; quantity: number; chargeMicrousd: number }>;
   byMeter: Array<{ meterKey: string; quantity: number; chargeMicrousd: number }>;
   bySkill: Array<{ skillId: string; quantity: number }>;
+}
+
+export interface BillingLedgerEntry {
+  id: string;
+  entryType: string;
+  direction: 'credit' | 'debit';
+  amountMicrousd: number;
+  currency: string;
+  sourceType: string;
+  sourceId: string | null;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface LedgerEntriesFilters {
+  limit?: number;
+  offset?: number;
+  entryType?: string;
+  direction?: 'credit' | 'debit';
+  periodId?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface LedgerEntriesResponse {
+  records: BillingLedgerEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface UsagePeriod {

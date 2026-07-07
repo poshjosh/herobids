@@ -31,6 +31,17 @@ function formatMicrousd(microusd: number): string {
   return `$${(microusd / 1_000_000).toFixed(4)}`;
 }
 
+const LEDGER_ENTRY_TYPE_LABELS: Record<string, string> = {
+  included_credit: 'Included credits',
+  top_up_credit: 'Credit top-up',
+  usage_charge: 'Usage charge',
+  manual_adjustment: 'Manual adjustment',
+  reversal: 'Reversal',
+  reservation: 'Reservation',
+  reservation_release: 'Reservation release',
+  invoice_settlement: 'Invoice settlement',
+};
+
 export function BillingPage() {
   const intl = useIntl();
   const queryClient = useQueryClient();
@@ -47,7 +58,10 @@ export function BillingPage() {
   const [spendCapsError, setSpendCapsError] = useState<string | null>(null);
   const [topUpError, setTopUpError] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
+  const [ledgerOffset, setLedgerOffset] = useState(0);
+  const [ledgerDirectionFilter, setLedgerDirectionFilter] = useState('');
   const USAGE_EVENTS_PAGE_SIZE = 50;
+  const LEDGER_PAGE_SIZE = 50;
 
   const usageFilters = useMemo(() => ({
     meterKey: meterFilter || undefined,
@@ -76,6 +90,16 @@ export function BillingPage() {
   const usageEventsQuery = useQuery({
     queryKey: ['billing', 'usage-events', usageEventOffset, usageFilters],
     queryFn: () => billing.usageEvents({ limit: USAGE_EVENTS_PAGE_SIZE, offset: usageEventOffset, ...usageFilters }),
+  });
+
+  const ledgerQuery = useQuery({
+    queryKey: ['billing', 'ledger-entries', ledgerOffset, usageFilters.periodId, ledgerDirectionFilter],
+    queryFn: () => billing.ledgerEntries({
+      limit: LEDGER_PAGE_SIZE,
+      offset: ledgerOffset,
+      periodId: usageFilters.periodId || undefined,
+      direction: (ledgerDirectionFilter as 'credit' | 'debit') || undefined,
+    }),
   });
 
   const periodsQuery = useQuery({
@@ -145,6 +169,7 @@ export function BillingPage() {
   const usageSummary = usageSummaryQuery.data;
   const usageBreakdown = usageBreakdownQuery.data;
   const usageEvents = usageEventsQuery.data;
+  const ledgerEntries = ledgerQuery.data;
   const usageAccount = usageSummary?.account ?? null;
 
   useEffect(() => {
@@ -656,6 +681,97 @@ export function BillingPage() {
                   ))}
                 </tbody>
               </table>
+            )}
+          </Card>
+
+          {/* Billing Ledger */}
+          <Card style={{ padding: '20px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Billing Ledger
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <select
+                value={ledgerDirectionFilter}
+                onChange={(e) => { setLedgerDirectionFilter(e.target.value); setLedgerOffset(0); }}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text-primary)', fontSize: '13px' }}
+              >
+                <option value="">All Entries</option>
+                <option value="credit">Credits Only</option>
+                <option value="debit">Debits Only</option>
+              </select>
+            </div>
+            {ledgerQuery.isLoading && <LoadingRows count={5} />}
+            {ledgerQuery.isError && (
+              <ErrorState
+                message={localizeApiError(intl, ledgerQuery.error, 'common.errorTitle')}
+                onRetry={() => void ledgerQuery.refetch()}
+              />
+            )}
+            {ledgerEntries && ledgerEntries.records.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px', padding: '24px 0' }}>
+                No billing ledger entries recorded yet.
+              </div>
+            )}
+            {ledgerEntries && ledgerEntries.records.length > 0 && (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Date</th>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Type</th>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Direction</th>
+                        <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: '500', color: 'var(--color-text-muted)' }}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ledgerEntries.records.map((entry) => (
+                        <tr key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                          <td style={{ padding: '8px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                            {new Date(entry.createdAt).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '8px' }}>
+                            <div>{LEDGER_ENTRY_TYPE_LABELS[entry.entryType] ?? entry.entryType}</div>
+                            {entry.description && (
+                              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{entry.description}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              background: entry.direction === 'credit' ? 'var(--color-success-bg, #f0fff4)' : 'var(--color-danger-bg, #fff5f5)',
+                              color: entry.direction === 'credit' ? 'var(--color-success-text, #276749)' : 'var(--color-danger, #e53e3e)',
+                            }}>
+                              {entry.direction === 'credit' ? '+ CREDIT' : '- DEBIT'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px', textAlign: 'right' }}>{formatMicrousd(entry.amountMicrousd)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="secondary"
+                    disabled={ledgerOffset === 0}
+                    onClick={() => setLedgerOffset(Math.max(0, ledgerOffset - LEDGER_PAGE_SIZE))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={(ledgerEntries.offset + ledgerEntries.records.length) >= ledgerEntries.total}
+                    onClick={() => setLedgerOffset(ledgerOffset + LEDGER_PAGE_SIZE)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </>
             )}
           </Card>
 

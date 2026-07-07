@@ -74,6 +74,16 @@ export interface UsageEventFilters {
   to?: Date;
 }
 
+export interface LedgerEntryFilters {
+  limit?: number;
+  offset?: number;
+  entryType?: string;
+  direction?: 'credit' | 'debit';
+  periodId?: string;
+  from?: Date;
+  to?: Date;
+}
+
 export interface SpendCaps {
   softCapMicrousd?: number | null;
   hardCapMicrousd?: number | null;
@@ -918,6 +928,48 @@ export class UsageBillingRepository {
     const countRows = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(billingUsageEvents)
+      .where(and(...conditions));
+
+    return { rows, total: countRows[0]?.count ?? 0, limit, offset };
+  }
+
+  async listLedgerEntries(
+    accountId: string,
+    filters: LedgerEntryFilters = {},
+  ): Promise<{ rows: typeof billingLedgerEntries.$inferSelect[]; total: number; limit: number; offset: number }> {
+    const limit = Math.min(filters.limit ?? 50, 200);
+    const offset = filters.offset ?? 0;
+
+    const conditions = [eq(billingLedgerEntries.accountId, accountId)];
+    if (filters.entryType) conditions.push(eq(billingLedgerEntries.entryType, filters.entryType));
+    if (filters.direction) conditions.push(eq(billingLedgerEntries.direction, filters.direction));
+    if (filters.from) conditions.push(gte(billingLedgerEntries.createdAt, filters.from));
+    if (filters.to) conditions.push(lte(billingLedgerEntries.createdAt, filters.to));
+
+    if (filters.periodId) {
+      const [period] = await this.db
+        .select({ periodStart: billingPeriods.periodStart, periodEnd: billingPeriods.periodEnd })
+        .from(billingPeriods)
+        .where(eq(billingPeriods.id, filters.periodId))
+        .limit(1);
+
+      if (period) {
+        conditions.push(gte(billingLedgerEntries.createdAt, period.periodStart));
+        conditions.push(lte(billingLedgerEntries.createdAt, period.periodEnd));
+      }
+    }
+
+    const rows = await this.db
+      .select()
+      .from(billingLedgerEntries)
+      .where(and(...conditions))
+      .orderBy(desc(billingLedgerEntries.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const countRows = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(billingLedgerEntries)
       .where(and(...conditions));
 
     return { rows, total: countRows[0]?.count ?? 0, limit, offset };

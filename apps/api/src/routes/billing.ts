@@ -759,6 +759,84 @@ export async function billingRoutes(
   });
 
   // ---------------------------------------------------------------------------
+  // GET /billing/ledger-entries — paginated, filterable financial ledger entries
+  // ---------------------------------------------------------------------------
+  app.get<{
+    Querystring: {
+      limit?: string;
+      offset?: string;
+      entryType?: string;
+      direction?: string;
+      periodId?: string;
+      from?: string;
+      to?: string;
+    };
+  }>('/billing/ledger-entries', async (request, reply) => {
+    const userId = request.userId;
+
+    const account = await usageBillingRepo.getAccountByUserId(userId);
+    if (!account) {
+      return reply.send({ records: [], total: 0, limit: 50, offset: 0 });
+    }
+
+    const limitRaw = Number.parseInt(request.query.limit ?? '50', 10);
+    const offsetRaw = Number.parseInt(request.query.offset ?? '0', 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+    const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
+
+    if (request.query.direction && request.query.direction !== 'credit' && request.query.direction !== 'debit') {
+      return reply.status(400).send(errorPayload('billing.ledger.invalid_direction', 'direction must be "credit" or "debit"'));
+    }
+
+    const fromDate = parseIsoDate(request.query.from);
+    if (request.query.from && !fromDate) {
+      return reply.status(400).send(errorPayload('billing.ledger.invalid_from', 'from must be a valid ISO-8601 date-time string'));
+    }
+    const toDate = parseIsoDate(request.query.to);
+    if (request.query.to && !toDate) {
+      return reply.status(400).send(errorPayload('billing.ledger.invalid_to', 'to must be a valid ISO-8601 date-time string'));
+    }
+
+    if (request.query.periodId) {
+      const [period] = await db
+        .select({ id: billingPeriods.id })
+        .from(billingPeriods)
+        .where(and(eq(billingPeriods.id, request.query.periodId), eq(billingPeriods.accountId, account.id)))
+        .limit(1);
+      if (!period) {
+        return reply.status(404).send(errorPayload('billing.ledger.period_not_found', 'Billing period not found', { periodId: request.query.periodId }));
+      }
+    }
+
+    const { rows, total } = await usageBillingRepo.listLedgerEntries(account.id, {
+      limit,
+      offset,
+      entryType: request.query.entryType,
+      direction: request.query.direction as 'credit' | 'debit' | undefined,
+      periodId: request.query.periodId,
+      from: fromDate ?? undefined,
+      to: toDate ?? undefined,
+    });
+
+    return reply.send({
+      records: rows.map((r) => ({
+        id: r.id,
+        entryType: r.entryType,
+        direction: r.direction,
+        amountMicrousd: r.amountMicrousd,
+        currency: r.currency,
+        sourceType: r.sourceType,
+        sourceId: r.sourceId ?? null,
+        description: r.description ?? null,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      total,
+      limit,
+      offset,
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // GET /billing/usage-breakdown — spend by agent and by meter
   // ---------------------------------------------------------------------------
   app.get<{
