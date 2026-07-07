@@ -19,7 +19,7 @@ import { WatchPurposeEnum, type WatchPurpose } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
 import { summarizeActiveWatches } from '../runtime-composition.js';
-import { type WatchEntry, type WatchInstrumentIdentity, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
+import { type WatchEntry, type WatchCoverageLink, type WatchInstrumentIdentity, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 import { derivePositionKey, type PositionInput, PROTECTIVE_WATCH_PURPOSES } from '../position-coverage.js';
 
 const logger = pino({ name: 'watch-tools' });
@@ -327,11 +327,11 @@ const watchTokenTool: AgentTool = {
     // --- Coverage linkage — resolve from live positions ---
     // The worker OWNS the positionKey contract. Agents identify the target position
     // by venue/symbol/side, and the worker resolves it against actual open positions.
-    let resolvedCoverage = coverage;
+    let resolvedCoverage: WatchCoverageLink | undefined = coverage as WatchCoverageLink | undefined;
     // Strip any caller-supplied positionKey — the worker owns this contract.
     if (resolvedCoverage && 'positionKey' in resolvedCoverage) {
       const { positionKey: _, ...rest } = resolvedCoverage;
-      resolvedCoverage = Object.keys(rest).length > 0 ? rest as typeof resolvedCoverage : undefined;
+      resolvedCoverage = Object.keys(rest).length > 0 ? (rest as WatchCoverageLink) : undefined;
     }
     if (coverage?.targetPosition) {
       const { venue, symbol: posSymbol, side, instrumentId: targetInstrumentId } = coverage.targetPosition;
