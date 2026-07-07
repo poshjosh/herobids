@@ -29,6 +29,10 @@ export interface TickGateState {
    * state could not be loaded and the gate should err on the side of running
    * the LLM. Undefined means watch state is not incorporated (backward compat). */
   watchSummaryDigest?: string;
+  /** Stable digest of the pending wake signal buffer (source+reason pairs,
+   * sorted by source, NO timestamps). When "__none__", the buffer was empty.
+   * Undefined means wake signal state is not incorporated (backward compat). */
+  wakeSignalDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -172,6 +176,31 @@ export function computeWatchSummaryDigest(summary: RuntimeActiveWatchSummary | n
     .digest('hex');
 }
 
+/**
+ * Produces a stable digest from a pending wake signal buffer for use in the
+ * tick gate fingerprint. Only hashes source+reason pairs (sorted by source for
+ * stability) — NOT timestamps, which change every tick and would defeat the gate.
+ *
+ * Returns "__none__" when the buffer is null, undefined, or empty.
+ * This sentinel is stable between ticks with no pending signals, allowing the
+ * gate to skip when nothing has changed.
+ */
+export function computeWakeSignalDigest(
+  signals: Array<{ source: string; reason: string }> | null | undefined,
+): string {
+  if (!signals || signals.length === 0) {
+    return '__none__';
+  }
+  // Sort by source then reason for stable, deterministic ordering
+  const sorted = [...signals].sort((a, b) =>
+    a.source.localeCompare(b.source, 'en') || a.reason.localeCompare(b.reason, 'en')
+  );
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(sorted.map((s) => ({ source: s.source, reason: s.reason }))))
+    .digest('hex');
+}
+
 export function computeDecisionContextHash(input: {
   positionSide?: string | null;
   latestPrice?: number | null;
@@ -179,6 +208,7 @@ export function computeDecisionContextHash(input: {
   regimePass?: boolean | null;
   instrumentSnapshots?: InstrumentHashEntry[];
   watchSummaryDigest?: string;
+  wakeSignalDigest?: string;
 }): string {
   // When multi-instrument snapshots are available, use the sorted per-instrument
   // summary for a stable, order-independent hash. This ensures a price move in
@@ -190,6 +220,9 @@ export function computeDecisionContextHash(input: {
     };
     if (input.watchSummaryDigest !== undefined) {
       payload.watchSummaryDigest = input.watchSummaryDigest;
+    }
+    if (input.wakeSignalDigest !== undefined) {
+      payload.wakeSignalDigest = input.wakeSignalDigest;
     }
     return crypto
       .createHash('sha256')
@@ -206,6 +239,9 @@ export function computeDecisionContextHash(input: {
   };
   if (input.watchSummaryDigest !== undefined) {
     payload.watchSummaryDigest = input.watchSummaryDigest;
+  }
+  if (input.wakeSignalDigest !== undefined) {
+    payload.wakeSignalDigest = input.wakeSignalDigest;
   }
   return crypto
     .createHash('sha256')
@@ -338,6 +374,7 @@ export async function shouldSkipTick(
       regimePass: null,
       instrumentSnapshots: state.instrumentSnapshots,
       watchSummaryDigest: effectiveWatchDigest,
+      wakeSignalDigest: state.wakeSignalDigest,
     });
 
     if (
@@ -383,6 +420,7 @@ export async function shouldSkipTick(
     regimePass: regime?.pass ?? null,
     instrumentSnapshots: state.instrumentSnapshots,
     watchSummaryDigest: effectiveWatchDigest,
+    wakeSignalDigest: state.wakeSignalDigest,
   });
 
   if (regime !== null && !regime.pass) {

@@ -274,4 +274,39 @@ describe('buildTickGateState', () => {
 
     expect(state.watchSummaryDigest).toBeUndefined();
   });
+
+  it('passes wakeSignalDigest through to the returned TickGateState', () => {
+    const digest = 'def456abc789';
+    const state = buildTickGateState({
+      tickNumber: 5,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      wakeSignalDigest: digest,
+    });
+
+    expect(state.wakeSignalDigest).toBe(digest);
+  });
+
+  it('leaves wakeSignalDigest undefined when not provided (backward compat)', () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      hasOpenPositions: false,
+    });
+
+    expect(state.wakeSignalDigest).toBeUndefined();
+  });
+
+  it('passes both watchSummaryDigest and wakeSignalDigest simultaneously', () => {
+    const state = buildTickGateState({
+      tickNumber: 3,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      watchSummaryDigest: 'watch-hash',
+      wakeSignalDigest: 'wake-hash',
+    });
+
+    expect(state.watchSummaryDigest).toBe('watch-hash');
+    expect(state.wakeSignalDigest).toBe('wake-hash');
+  });
 });

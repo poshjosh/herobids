@@ -59,7 +59,7 @@ import {
 import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { computeWatchSummaryDigest, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWakeSignalDigest, computeWatchSummaryDigest, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -1977,6 +1977,14 @@ async function runTick(): Promise<void> {
       }
     }
 
+    // ── Tick gate fingerprint: snapshot pending wake signals BEFORE drain ──
+    // The digest captures source+reason pairs (no timestamps) so the context-hash
+    // gate can detect when new wake signals arrived between ticks. Must happen
+    // BEFORE the buffer is drained below, otherwise the snapshot is always empty.
+    const wakeSignalDigest = computeWakeSignalDigest(
+      pendingWakeSignalBuffer.length > 0 ? pendingWakeSignalBuffer.slice() : null,
+    );
+
     // ── Prompt context enrichment: drain queued wake signals ──────────────
     if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
       const max = agentRuntimePolicy.promptEnrichment.queuedSignals.max;
@@ -2067,6 +2075,7 @@ async function runTick(): Promise<void> {
       tradingHours,
       now: new Date(),
       watchSummaryDigest,
+      wakeSignalDigest,
       previousContextHash,
       baseTickIntervalMs: costProfile.tickIntervalMs,
       currentTickIntervalMs: effectiveTickIntervalMs,

@@ -12,6 +12,10 @@ export interface BuildTickGateStateParams {
    * When "__unknown__", the watch state was unavailable. Passed through to
    * TickGateState for use by the context-hash gate. */
   watchSummaryDigest?: string;
+  /** Stable digest of the pending wake signal buffer.
+   *  `"__none__"` when the buffer is empty.
+   *  `undefined` means wake signal state is not incorporated (backward compat). */
+  wakeSignalDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -139,6 +143,7 @@ export function buildTickGateState(params: BuildTickGateStateParams): TickGateSt
     portfolioPnlUsd: tickSignals.portfolioPnlUsd,
     instrumentSnapshots: tickSignals.instrumentSnapshots.length > 0 ? tickSignals.instrumentSnapshots : undefined,
     watchSummaryDigest: params.watchSummaryDigest,
+    wakeSignalDigest: params.wakeSignalDigest,
     previousContextHash: params.previousContextHash,
     baseTickIntervalMs: params.baseTickIntervalMs,
     currentTickIntervalMs: params.currentTickIntervalMs,

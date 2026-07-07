@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RegimeResult } from '@herobids/market-data';
-import { calculateAtrPercent, computeDecisionContextHash, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
+import { calculateAtrPercent, computeDecisionContextHash, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 
 function makeRegimeResult(pass: boolean, reasons: string[]): RegimeResult {
@@ -76,6 +76,99 @@ describe('computeWatchSummaryDigest', () => {
   });
 });
 
+describe('computeWakeSignalDigest', () => {
+  it('returns "__none__" for null', () => {
+    expect(computeWakeSignalDigest(null)).toBe('__none__');
+  });
+
+  it('returns "__none__" for undefined', () => {
+    expect(computeWakeSignalDigest(undefined)).toBe('__none__');
+  });
+
+  it('returns "__none__" for empty array', () => {
+    expect(computeWakeSignalDigest([])).toBe('__none__');
+  });
+
+  it('produces a stable hex digest for non-empty signals', () => {
+    const digest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ]);
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('produces identical digests for identical signals', () => {
+    const signals = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ];
+    expect(computeWakeSignalDigest(signals)).toBe(computeWakeSignalDigest(signals));
+  });
+
+  it('produces identical digests regardless of insertion order (sorted by source)', () => {
+    const orderA = [
+      { source: 'reminder', reason: 'check positions', receivedAt: 2000 },
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ];
+    const orderB = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 3000 },
+      { source: 'reminder', reason: 'check positions', receivedAt: 1500 },
+    ];
+    expect(computeWakeSignalDigest(orderA)).toBe(computeWakeSignalDigest(orderB));
+  });
+
+  it('produces identical digests for same-source signals with different reasons regardless of insertion order', () => {
+    const orderA = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+      { source: 'price_alert', reason: 'BTC below 90k', receivedAt: 2000 },
+    ];
+    const orderB = [
+      { source: 'price_alert', reason: 'BTC below 90k', receivedAt: 3000 },
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1500 },
+    ];
+    expect(computeWakeSignalDigest(orderA)).toBe(computeWakeSignalDigest(orderB));
+  });
+
+  it('produces different digests when a signal is added', () => {
+    const before = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ];
+    const after = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+      { source: 'reminder', reason: 'check positions', receivedAt: 2000 },
+    ];
+    expect(computeWakeSignalDigest(before)).not.toBe(computeWakeSignalDigest(after));
+  });
+
+  it('does NOT change when only timestamps differ', () => {
+    const tick1 = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ];
+    const tick2 = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 9999 },
+    ];
+    expect(computeWakeSignalDigest(tick1)).toBe(computeWakeSignalDigest(tick2));
+  });
+
+  it('produces different digests when a signal reason changes', () => {
+    const before = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ];
+    const after = [
+      { source: 'price_alert', reason: 'BTC below 90k', receivedAt: 2000 },
+    ];
+    expect(computeWakeSignalDigest(before)).not.toBe(computeWakeSignalDigest(after));
+  });
+
+  it('produces different digests when a signal source changes', () => {
+    const before = [
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ];
+    const after = [
+      { source: 'watch_trigger', reason: 'BTC above 100k', receivedAt: 2000 },
+    ];
+    expect(computeWakeSignalDigest(before)).not.toBe(computeWakeSignalDigest(after));
+  });
+});
+
 describe('computeDecisionContextHash with watchSummaryDigest', () => {
   it('produces the same hash as before when watchSummaryDigest is not provided (backward compat)', () => {
     const hashWithout = computeDecisionContextHash({
@@ -123,6 +216,32 @@ describe('computeDecisionContextHash with watchSummaryDigest', () => {
       instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
     });
     expect(hashWith).not.toBe(hashWithout);
+  });
+
+  it('produces the same hash when wakeSignalDigest is undefined vs omitted (backward compat)', () => {
+    const hashWithout = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+    });
+    const hashWithUndefined = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      wakeSignalDigest: undefined,
+    });
+    expect(hashWithout).toBe(hashWithUndefined);
+  });
+
+  it('produces the same hash when wakeSignalDigest is undefined vs omitted in multi-instrument path (backward compat)', () => {
+    const hashWithout = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+    });
+    const hashWithUndefined = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+      wakeSignalDigest: undefined,
+    });
+    expect(hashWithout).toBe(hashWithUndefined);
   });
 });
 
@@ -460,6 +579,219 @@ describe('shouldSkipTick', () => {
     );
 
     expect(wakeTickResult.skip).toBe(false);
+  });
+
+  // ── Wake signal digest gate tests ────────────────────────────────────────
+
+  it('skips when wake signal digest is unchanged (no new signals between ticks, flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const wakeDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: wakeDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: wakeDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
+  });
+
+  it('does NOT skip when wake signal digest changes (new signals arrived, flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const beforeDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ]);
+    const afterDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+      { source: 'reminder', reason: 'check positions', receivedAt: 2000 },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: beforeDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: afterDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('skips when wake signal digest is "__none__" on both ticks (stable no-signal state, flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: '__none__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: '__none__',
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
+  });
+
+  it('does NOT skip when wake signal digest transitions from "__none__" to a real digest (signals arrived, flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const realDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: '__none__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        wakeSignalDigest: realDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('wake bypass still works with wake signal digest present', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const wakeDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        wakeSignalDigest: wakeDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const wakeTickResult = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        hasWakeSignal: true,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        wakeSignalDigest: wakeDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(wakeTickResult.skip).toBe(false);
+  });
+
+  it('does NOT skip when wake signal digest changes but price/PnL stay the same (open positions)', async () => {
+    const beforeDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+    ]);
+    const afterDigest = computeWakeSignalDigest([
+      { source: 'price_alert', reason: 'BTC above 100k', receivedAt: 1000 },
+      { source: 'reminder', reason: 'check positions', receivedAt: 2000 },
+    ]);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        wakeSignalDigest: beforeDigest,
+      },
+      {},
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        wakeSignalDigest: afterDigest,
+        previousContextHash: first.contextHash,
+      },
+      {},
+    );
+
+    expect(second.skip).toBe(false);
   });
 
   it('returns current interval without throwing when fetchVolatilityCandles fails', async () => {
