@@ -1855,9 +1855,9 @@ describe('AgentTradingActor', () => {
 
       await actor.start();
 
-      // With existing snapshot: no seeding occurs. Only 1 call from persistResult promotion.
-      // If seeding had occurred, there would be 2 calls (seed + promotion).
-      expect(balanceSnapshotRepo.insertSnapshot).toHaveBeenCalledTimes(1);
+      // With existing snapshot: no seeding occurs. Reconciler is skipped entirely in
+      // shadow mode, so persistResult never runs and insertSnapshot is never called.
+      expect(balanceSnapshotRepo.insertSnapshot).toHaveBeenCalledTimes(0);
 
       await actor.stop();
     });

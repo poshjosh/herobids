@@ -2713,18 +2713,40 @@ export class AgentTradingActor implements ExecutionActor {
   }
 
   private async startReconciler(): Promise<void> {
+    const { venuePort, reconciliationConfig } = { venuePort: this.venuePort, reconciliationConfig: this.deps.reconciliationConfig };
+    if (!venuePort && !this.swapVenue) return;
+
+    const fetchVenueState = venuePort
+      ? createOrderbookVenueStateLoader(venuePort, this.logger)
+      : createSwapVenueStateLoader(this.swapVenue!, this.logger);
+
+    // Seed initial balance snapshot on first boot to prevent false drift from empty local state.
+    // Runs in all execution modes (including shadow/paper) so the balance tracker has a baseline.
+    const existingSnapshot = await this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId, this.deps.venue);
+    if (!existingSnapshot) {
+      const initialVenueState = await fetchVenueState(null);
+      if (initialVenueState) {
+        await this.deps.balanceSnapshotRepo.insertSnapshot({
+          venueAccountId: this.deps.venueAccountId,
+          venue: this.deps.venue,
+          balances: initialVenueState.balances.balances.map((b) => ({
+            asset: b.asset,
+            free: b.free.toString(),
+            locked: b.locked.toString(),
+            total: b.total.toString(),
+          })),
+          snapshotAt: new Date(initialVenueState.balances.timestamp),
+        });
+      }
+    }
+
     // Shadow/paper mode — positions are synthetic and never sent to the venue.
     // There is nothing to reconcile against real venue state. Skipping avoids
     // false-positive reconciliation.drift_detected events every pass.
     // (Matches the same guard in bot TradingActor.startReconciler.)
     if (this.deps.executionMode === 'shadow' || this.deps.executionMode === 'paper') return;
 
-    const { venuePort, reconciliationConfig } = { venuePort: this.venuePort, reconciliationConfig: this.deps.reconciliationConfig };
-    if ((!venuePort && !this.swapVenue) || !reconciliationConfig) return;
-
-    const fetchVenueState = venuePort
-      ? createOrderbookVenueStateLoader(venuePort, this.logger)
-      : createSwapVenueStateLoader(this.swapVenue!, this.logger);
+    if (!reconciliationConfig) return;
 
     this.reconciler = new Reconciler(reconciliationConfig, {
       fetchVenueState,
@@ -2813,25 +2835,6 @@ export class AgentTradingActor implements ExecutionActor {
       isShadowOrPaper: false,
       getLastReconciledAt: () => this.deps.reconciliationRepo.getLastReconciledAtForInstance(this.deps.venueAccountId),
     });
-
-    // Seed initial balance snapshot on first boot to prevent false drift from empty local state
-    const existingSnapshot = await this.deps.balanceSnapshotRepo.getLatestByVenueAccount(this.deps.venueAccountId, this.deps.venue);
-    if (!existingSnapshot) {
-      const initialVenueState = await fetchVenueState(null);
-      if (initialVenueState) {
-        await this.deps.balanceSnapshotRepo.insertSnapshot({
-          venueAccountId: this.deps.venueAccountId,
-          venue: this.deps.venue,
-          balances: initialVenueState.balances.balances.map((b) => ({
-            asset: b.asset,
-            free: b.free.toString(),
-            locked: b.locked.toString(),
-            total: b.total.toString(),
-          })),
-          snapshotAt: new Date(initialVenueState.balances.timestamp),
-        });
-      }
-    }
 
     this.reconciler.start();
 
