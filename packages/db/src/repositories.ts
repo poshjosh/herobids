@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, isNull, desc, or, gte, inArray, notInArray } from 'drizzle-orm';
+import { eq, and, isNull, desc, or, gte, inArray, notInArray, sql } from 'drizzle-orm';
 import type { Database } from './index.js';
 import { fills, positions, bots, connections, executionPlans, orders, balanceSnapshots, decisions, venueAccounts, agents } from './schema/index.js';
 
