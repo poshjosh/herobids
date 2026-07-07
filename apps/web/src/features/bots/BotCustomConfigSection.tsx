@@ -337,6 +337,10 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
           )}
         </div>
       </div>
+
+      <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>
+        Your settings are not saved as a blueprint. To reuse this configuration, save it as a blueprint from the Blueprints page.
+      </div>
     </div>
   );
 }
