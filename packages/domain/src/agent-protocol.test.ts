@@ -6,6 +6,7 @@ import {
   DiscoveryDeltaWakeContextSchema,
   RegimeChangeWakeContextSchema,
   ScannerWakeContextSchema,
+  MarketWatchTriggeredPayloadSchema,
 } from './agent-protocol.js';
 
 // Shared base fields for all wake payloads
@@ -238,6 +239,110 @@ describe('Source-specific context schemas', () => {
       currentPrice: 50001,
       stale: false,
       triggeredAt: '2024-01-01T00:00:00.000Z',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('WatchThresholdWakeContextSchema accepts optional purpose, instrument, and positionKey', () => {
+    const result = WatchThresholdWakeContextSchema.safeParse({
+      watchId: 'w-1',
+      symbol: 'BTC',
+      chain: 'ethereum',
+      condition: 'above',
+      thresholdPrice: 50000,
+      currentPrice: 51000,
+      stale: false,
+      triggeredAt: '2024-01-01T00:00:00.000Z',
+      purpose: 'stop_loss',
+      instrumentVenue: 'hyperliquid',
+      instrumentId: 'BTC-USD',
+      positionKey: 'pos-btc-1',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.purpose).toBe('stop_loss');
+      expect(result.data.instrumentVenue).toBe('hyperliquid');
+      expect(result.data.instrumentId).toBe('BTC-USD');
+      expect(result.data.positionKey).toBe('pos-btc-1');
+    }
+  });
+
+  it('WatchThresholdWakeContextSchema accepts minimal payload without new fields', () => {
+    const result = WatchThresholdWakeContextSchema.safeParse({
+      watchId: 'w-1',
+      symbol: 'BTC',
+      chain: 'ethereum',
+      condition: 'above',
+      thresholdPrice: 50000,
+      currentPrice: 51000,
+      stale: false,
+      triggeredAt: '2024-01-01T00:00:00.000Z',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.purpose).toBeUndefined();
+      expect(result.data.instrumentVenue).toBeUndefined();
+      expect(result.data.instrumentId).toBeUndefined();
+      expect(result.data.positionKey).toBeUndefined();
+    }
+  });
+
+  it('MarketWatchTriggeredPayloadSchema accepts optional purpose, instrument, and positionKey', () => {
+    const result = MarketWatchTriggeredPayloadSchema.safeParse({
+      eventId: 'evt-1',
+      monitorType: 'watch_threshold',
+      watchId: 'w-1',
+      symbol: 'SOL',
+      chain: 'solana',
+      condition: 'above',
+      thresholdPrice: 200,
+      currentPrice: 204,
+      priceSource: 'dex',
+      stale: false,
+      triggeredAt: '2024-01-01T00:00:00.000Z',
+      purpose: 'entry',
+      instrumentVenue: 'jupiter',
+      instrumentId: 'SOL-USDC',
+      positionKey: 'pos-sol-1',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.purpose).toBe('entry');
+      expect(result.data.instrumentVenue).toBe('jupiter');
+      expect(result.data.instrumentId).toBe('SOL-USDC');
+      expect(result.data.positionKey).toBe('pos-sol-1');
+    }
+  });
+
+  it('MarketWatchTriggeredPayloadSchema rejects unknown purpose value', () => {
+    const result = MarketWatchTriggeredPayloadSchema.safeParse({
+      eventId: 'evt-1',
+      monitorType: 'watch_threshold',
+      watchId: 'w-1',
+      symbol: 'SOL',
+      chain: 'solana',
+      condition: 'above',
+      thresholdPrice: 200,
+      currentPrice: 204,
+      priceSource: 'dex',
+      stale: false,
+      triggeredAt: '2024-01-01T00:00:00.000Z',
+      purpose: 'unknown_purpose',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('WatchThresholdWakeContextSchema rejects unknown purpose value', () => {
+    const result = WatchThresholdWakeContextSchema.safeParse({
+      watchId: 'w-1',
+      symbol: 'BTC',
+      chain: 'ethereum',
+      condition: 'above',
+      thresholdPrice: 50000,
+      currentPrice: 51000,
+      stale: false,
+      triggeredAt: '2024-01-01T00:00:00.000Z',
+      purpose: 'not_valid',
     });
     expect(result.success).toBe(false);
   });

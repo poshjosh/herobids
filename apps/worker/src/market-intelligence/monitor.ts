@@ -243,6 +243,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             stale: priceData.stale,
             ...(watch.note ? { note: watch.note } : {}),
             triggeredAt: new Date().toISOString(),
+            ...(watch.purpose ? { purpose: watch.purpose } : {}),
+            ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
+            ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
+            ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
           };
 
           await publisher.emitMarketWatchTriggered(agentId, payload);
@@ -262,6 +266,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
               stale: priceData.stale,
               triggeredAt: payload.triggeredAt,
               watchId: watch.watchId,
+              ...(watch.purpose ? { purpose: watch.purpose } : {}),
+              ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
+              ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
+              ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
             },
           );
           metrics.eventsEmitted++;

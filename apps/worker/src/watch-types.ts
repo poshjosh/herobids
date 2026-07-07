@@ -9,6 +9,8 @@
 
 import { z } from 'zod';
 import pino from 'pino';
+import { WatchPurposeEnum } from '@herobids/domain';
+import type { WatchPurpose } from '@herobids/domain';
 import type { RuntimeActiveWatch } from './runtime-composition.js';
 
 const logger = pino({ name: 'watch-types' });
@@ -30,8 +32,8 @@ export interface WatchInstrumentIdentity {
 // Purpose and coverage metadata
 // ---------------------------------------------------------------------------
 
-/** Semantic purpose of a watch — tells the runtime what the watch is for. */
-export type WatchPurpose = 'entry' | 'exit' | 'stop_loss' | 'take_profit' | 'monitor' | 'alert';
+// WatchPurpose type re-exported from @herobids/domain — single source of truth.
+export type { WatchPurpose };
 
 /** Links a watch to a specific actor, position, or intent group for coverage tracking. */
 export interface WatchCoverageLink {
@@ -99,7 +101,7 @@ export const WatchEntrySchema = z.object({
     chain: z.string().optional(),
     address: z.string().optional(),
   }).optional(),
-  purpose: z.enum(['entry', 'exit', 'stop_loss', 'take_profit', 'monitor', 'alert']).optional(),
+  purpose: WatchPurposeEnum.optional(),
   coverage: z.object({
     actorType: z.enum(['agent', 'bot', 'user', 'system']).optional(),
     actorId: z.string().optional(),

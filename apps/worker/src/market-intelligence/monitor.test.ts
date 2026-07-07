@@ -100,6 +100,8 @@ function makePublisherMock() {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const DEFAULT_WATCH_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
 function makeWatch(overrides: Partial<{
   watchId: string;
   symbol: string;
@@ -107,16 +109,32 @@ function makeWatch(overrides: Partial<{
   thresholdPrice: number;
   condition: 'above' | 'below';
   lastConditionMet: boolean | null;
+  purpose: 'entry' | 'exit' | 'stop_loss' | 'take_profit' | 'monitor' | 'alert';
+  instrumentVenue: string;
+  instrumentId: string;
+  positionKey: string;
 }> = {}) {
-  return JSON.stringify({
-    watchId: overrides.watchId ?? 'watch-1',
+  const base: Record<string, unknown> = {
+    watchId: overrides.watchId ?? DEFAULT_WATCH_ID,
     symbol: overrides.symbol ?? 'SOL',
     chain: overrides.chain ?? 'solana',
     thresholdPrice: overrides.thresholdPrice ?? 200,
     condition: overrides.condition ?? 'above',
     createdAt: '2026-06-10T00:00:00.000Z',
     lastConditionMet: overrides.lastConditionMet ?? null,
-  });
+  };
+  if (overrides.purpose) base.purpose = overrides.purpose;
+  if (overrides.instrumentVenue || overrides.instrumentId) {
+    base.instrument = {
+      venue: overrides.instrumentVenue ?? 'hyperliquid',
+      instrumentId: overrides.instrumentId ?? 'SOL-USD',
+      symbol: overrides.symbol ?? 'SOL',
+    };
+  }
+  if (overrides.positionKey) {
+    base.coverage = { positionKey: overrides.positionKey };
+  }
+  return JSON.stringify(base);
 }
 
 function makeDiscoverySnapshot(tokens: Array<{
@@ -288,7 +306,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     seedDiscoveryPrice('SOL', 'solana', 204);
 
     // Pre-populate dedupe key
-    redis._store.set('market-monitor:dedupe:watch:watch-1:cross:above', '1');
+    redis._store.set(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`, '1');
 
     const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
     await monitor.evaluate();
@@ -338,6 +356,70 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.currentPrice).toBe(65_000);
     expect(payload.priceSource).toBe('regime_snapshot');
   });
+
+  it('populates purpose, instrument, and positionKey in payload when present on watch', async () => {
+    seedWatch('agent-1', makeWatch({
+      symbol: 'SOL',
+      condition: 'above',
+      thresholdPrice: 200,
+      lastConditionMet: false,
+      purpose: 'stop_loss',
+      instrumentVenue: 'hyperliquid',
+      instrumentId: 'SOL-USD',
+      positionKey: 'pos-sol-stop-1',
+    }));
+    seedDiscoveryPrice('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.purpose).toBe('stop_loss');
+    expect(payload.instrumentVenue).toBe('hyperliquid');
+    expect(payload.instrumentId).toBe('SOL-USD');
+    expect(payload.positionKey).toBe('pos-sol-stop-1');
+  });
+
+  it('does NOT populate new fields in payload when watch lacks purpose/instrument/coverage', async () => {
+    seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
+    seedDiscoveryPrice('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.purpose).toBeUndefined();
+    expect(payload.instrumentVenue).toBeUndefined();
+    expect(payload.instrumentId).toBeUndefined();
+    expect(payload.positionKey).toBeUndefined();
+  });
+
+  it('populates only partial new fields when watch has some but not all metadata', async () => {
+    seedWatch('agent-1', makeWatch({
+      symbol: 'ETH',
+      chain: 'ethereum',
+      condition: 'below',
+      thresholdPrice: 3000,
+      lastConditionMet: false,
+      purpose: 'entry',
+      instrumentVenue: 'hyperliquid',
+      instrumentId: 'ETH-USD',
+      // no positionKey
+    }));
+    seedDiscoveryPrice('ETH', 'ethereum', 2950);
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.purpose).toBe('entry');
+    expect(payload.instrumentVenue).toBe('hyperliquid');
+    expect(payload.instrumentId).toBe('ETH-USD');
+    expect(payload.positionKey).toBeUndefined();
+  });
 });
 
 // ===========================================================================
@@ -381,7 +463,7 @@ describe('createMarketMonitor — family toggles', () => {
     const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
     await monitor.evaluate();
 
-    expect(redis.del).toHaveBeenCalledWith('market-monitor:dedupe:watch:watch-1:cross:above');
+    expect(redis.del).toHaveBeenCalledWith(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`);
   });
 
   it('skips discovery evaluation when discoveryDeltas=false', async () => {
@@ -695,7 +777,7 @@ describe('createMarketMonitor — metrics', () => {
     redis._hstore.set('agent:watches:agent-1', new Map([['w1', makeWatch({ condition: 'above', thresholdPrice: 100, lastConditionMet: false })]]));
     redis._scanKeys.push('agent:watches:agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{ network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 }]));
-    redis._store.set('market-monitor:dedupe:watch:watch-1:cross:above', '1');
+    redis._store.set(`market-monitor:dedupe:watch:${DEFAULT_WATCH_ID}:cross:above`, '1');
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
@@ -725,9 +807,11 @@ describe('createMarketMonitor — wake coalescing', () => {
     const publisher = makePublisherMock();
 
     // Two watches for the same agent that will both trigger
+    const W1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const W2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
     redis._hstore.set('agent:watches:agent-1', new Map([
-      ['w1', makeWatch({ watchId: 'w1', symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
-      ['w2', makeWatch({ watchId: 'w2', symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
+      [W1, makeWatch({ watchId: W1, symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
+      [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
     ]));
     redis._scanKeys.push('agent:watches:agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
@@ -749,18 +833,17 @@ describe('createMarketMonitor — wake coalescing', () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
 
-    // 6 watches for same agent
+    // 6 watches for same agent — generate valid UUIDs to pass WatchEntrySchema validation
     const watches = new Map<string, string>();
     for (let i = 1; i <= 6; i++) {
-      watches.set(`w${i}`, makeWatch({ watchId: `w${i}`, symbol: 'SOL', condition: 'above', thresholdPrice: i, lastConditionMet: false }));
+      const watchId = `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
+      watches.set(watchId, makeWatch({ watchId, symbol: 'SOL', condition: 'above', thresholdPrice: i, lastConditionMet: false }));
     }
     redis._hstore.set('agent:watches:agent-1', watches);
     redis._scanKeys.push('agent:watches:agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([
       { network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 },
     ]));
-    // No dedupe keys for any watch
-    redis._store.delete('market-monitor:dedupe:watch:w1:cross:above');
 
     const monitor = createMarketMonitor(
       { families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } },
@@ -779,9 +862,11 @@ describe('createMarketMonitor — wake coalescing', () => {
     const redis = makeRedisMock();
     const publisher = makePublisherMock();
 
+    const W1 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const W2 = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
     redis._hstore.set('agent:watches:agent-1', new Map([
-      ['w1', makeWatch({ watchId: 'w1', symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
-      ['w2', makeWatch({ watchId: 'w2', symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
+      [W1, makeWatch({ watchId: W1, symbol: 'SOL', condition: 'above', thresholdPrice: 100, lastConditionMet: false })],
+      [W2, makeWatch({ watchId: W2, symbol: 'SOL', condition: 'above', thresholdPrice: 150, lastConditionMet: false })],
     ]));
     redis._scanKeys.push('agent:watches:agent-1');
     redis._store.set('market-intel:discovery:latest', makeDiscoverySnapshot([{ network: 'solana', address: '0xSOL', symbol: 'SOL', priceUsd: 200 }]));

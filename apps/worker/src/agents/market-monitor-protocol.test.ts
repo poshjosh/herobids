@@ -57,6 +57,37 @@ describe('MarketWatchTriggeredPayloadSchema', () => {
     const { eventId: _, ...rest } = valid;
     expect(MarketWatchTriggeredPayloadSchema.safeParse(rest).success).toBe(false);
   });
+
+  it('accepts all new optional fields (purpose, instrumentVenue, instrumentId, positionKey)', () => {
+    const full = {
+      ...valid,
+      purpose: 'stop_loss' as const,
+      instrumentVenue: 'hyperliquid',
+      instrumentId: 'SOL-USD',
+      positionKey: 'pos-sol-stop-1',
+    };
+    const result = MarketWatchTriggeredPayloadSchema.safeParse(full);
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts partial new optional fields (purpose only)', () => {
+    const partial = {
+      ...valid,
+      purpose: 'entry' as const,
+    };
+    const result = MarketWatchTriggeredPayloadSchema.safeParse(partial);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.purpose).toBe('entry');
+      expect(result.data.instrumentVenue).toBeUndefined();
+      expect(result.data.instrumentId).toBeUndefined();
+      expect(result.data.positionKey).toBeUndefined();
+    }
+  });
+
+  it('rejects invalid purpose value', () => {
+    expect(MarketWatchTriggeredPayloadSchema.safeParse({ ...valid, purpose: 'invalid_purpose' }).success).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

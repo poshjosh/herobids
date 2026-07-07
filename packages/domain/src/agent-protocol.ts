@@ -282,6 +282,10 @@ export type ToolResultPayload = z.infer<typeof ToolResultPayloadSchema>;
 
 // --- Market Monitor Payload Schemas ---
 
+export const WATCH_PURPOSE_VALUES = ['entry', 'exit', 'stop_loss', 'take_profit', 'monitor', 'alert'] as const;
+export const WatchPurposeEnum = z.enum(WATCH_PURPOSE_VALUES);
+export type WatchPurpose = z.infer<typeof WatchPurposeEnum>;
+
 export const MarketWatchTriggeredPayloadSchema = z.object({
   eventId: z.string().min(1),
   monitorType: z.literal('watch_threshold'),
@@ -295,6 +299,10 @@ export const MarketWatchTriggeredPayloadSchema = z.object({
   stale: z.boolean(),
   note: z.string().optional(),
   triggeredAt: z.string().datetime(),
+  purpose: WatchPurposeEnum.optional(),
+  instrumentVenue: z.string().optional(),
+  instrumentId: z.string().optional(),
+  positionKey: z.string().optional(),
 });
 
 export type MarketWatchTriggeredPayload = z.infer<typeof MarketWatchTriggeredPayloadSchema>;
@@ -352,6 +360,10 @@ export const WatchThresholdWakeContextSchema = z.object({
   stale: z.boolean(),
   triggeredAt: z.string().datetime(),
   note: z.string().optional(),
+  purpose: WatchPurposeEnum.optional(),
+  instrumentVenue: z.string().optional(),
+  instrumentId: z.string().optional(),
+  positionKey: z.string().optional(),
 });
 export type WatchThresholdWakeContext = z.infer<typeof WatchThresholdWakeContextSchema>;
 

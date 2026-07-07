@@ -15,6 +15,7 @@ import { z } from 'zod';
 import crypto from 'node:crypto';
 import pino from 'pino';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
+import { WatchPurposeEnum } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
 import { summarizeActiveWatches } from '../runtime-composition.js';
@@ -170,7 +171,7 @@ const WatchTokenParamsSchema = z.object({
     '"above" triggers when price rises above threshold; "below" triggers when price falls below threshold',
   ),
   note: z.string().optional().describe('Optional label or reason for this watch'),
-  purpose: z.enum(['entry', 'exit', 'stop_loss', 'take_profit', 'monitor', 'alert']).optional().describe(
+  purpose: WatchPurposeEnum.optional().describe(
     'Semantic purpose of this watch — tells the runtime what the watch is for. ' +
     'New watches SHOULD include this. Values: entry, exit, stop_loss, take_profit, monitor, alert.',
   ),
