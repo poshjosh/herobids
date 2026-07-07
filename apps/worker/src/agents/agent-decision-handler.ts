@@ -15,21 +15,6 @@ const logger = pino({ name: 'agent-decision-handler' });
 /** Intents that grow (or initiate) a position — used for level validation and stop-loss/take-profit reminders. */
 const POSITION_GROWING_INTENTS = new Set<DecisionIntent>(['go_long', 'go_short', 'increase']);
 
-/**
- * Consecutive-failure thresholds for the per-instrument circuit breaker.
- * After N consecutive failures of the same code on the same instrument,
- * the rejection is hardened (retryable → false) to prevent agent retry loops.
- *
- * Values should eventually come from operator config (agentRiskDefaults.*);
- * kept as constants for now until the config schema is extended.
- */
-const CIRCUIT_BREAKER_THRESHOLDS: Record<string, number> = {
-  /** Mark data is simply not available — retrying will never help. */
-  no_context: 3,
-  /** Agent needs to reformat the instrument ID — if it hasn't after 5 tries, it's stuck. */
-  'swap.instrument_format': 5,
-};
-
 /** Max age (ms) for a tracked failure entry before it's considered stale and pruned. */
 const FAILURE_ENTRY_MAX_AGE_MS = 5 * 60_000; // 5 min
 
@@ -75,12 +60,20 @@ export class AgentDecisionHandler {
    *  mark unavailability (no_context should trigger the circuit breaker). */
   private readonly actorsWithSuccessfulContext = new Set<string>();
 
+  private readonly breakerThresholds: Record<string, number>;
+
   constructor(
     private readonly agentRepo: AgentRepository,
     private readonly intakeResolver: DecisionIntakeResolver,
     private readonly eventPublisher: InstanceEventPublisher,
     private readonly decisionFailureRepo?: DecisionFailureRepository,
-  ) {}
+    thresholds?: { noContext?: number; swapInstrumentFormat?: number },
+  ) {
+    this.breakerThresholds = {
+      no_context: thresholds?.noContext ?? 10,
+      'swap.instrument_format': thresholds?.swapInstrumentFormat ?? 5,
+    };
+  }
 
   private recordFailure(input: {
     actorType: string;
@@ -129,7 +122,7 @@ export class AgentDecisionHandler {
     originalMessage: string,
     originalRetryable: boolean,
   ): { retryable: boolean; message: string } {
-    const threshold = CIRCUIT_BREAKER_THRESHOLDS[failureCode];
+    const threshold = this.breakerThresholds[failureCode];
     if (!threshold || !instrumentId) {
       return { retryable: originalRetryable, message: originalMessage };
     }

@@ -405,7 +405,16 @@ const intakeResolver: DecisionIntakeResolver = {
   },
 };
 
-const agentDecisionHandler = new AgentDecisionHandler(agentRepo, intakeResolver, eventPublisher, decisionFailureRepo);
+const agentDecisionHandler = new AgentDecisionHandler(
+  agentRepo,
+  intakeResolver,
+  eventPublisher,
+  decisionFailureRepo,
+  {
+    noContext: appConfig.agentRiskDefaults.agentDecisionNoContextThreshold,
+    swapInstrumentFormat: appConfig.agentRiskDefaults.agentDecisionSwapInstrumentFormatThreshold,
+  },
+);
 
 const snapshotResolver: ContextSnapshotResolver = {
   resolveSnapshots: async (instanceId: string) => {

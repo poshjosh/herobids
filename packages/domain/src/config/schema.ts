@@ -427,6 +427,11 @@ export const AgentRiskDefaultsSchema = z.object({
   botConfigInvalidHaltThreshold: z.number().int().min(1).default(1),
   botExecutionErrorHaltThreshold: z.number().int().min(1).default(5),
   botLlmProviderErrorHaltThreshold: z.number().int().min(1).default(1),
+  /** Consecutive no_context failures before hardening retryable → false.
+   *  Only applies after the actor has proven it CAN fetch context (first successful fetch). */
+  agentDecisionNoContextThreshold: z.number().int().min(1).default(10),
+  /** Consecutive swap.instrument_format failures before hardening retryable → false. */
+  agentDecisionSwapInstrumentFormatThreshold: z.number().int().min(1).default(5),
   maxDrawdown: z.number().min(0).default(1_000_000_000),
   /** Operator default and ceiling for peak-to-current equity drawdown (percent).
    *  Used when the creator did not set maxDrawdownPct. Agent may adjust downward at runtime. */

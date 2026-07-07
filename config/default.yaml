@@ -76,6 +76,8 @@ agentRiskDefaults:
   botConfigInvalidHaltThreshold: 1       # consecutive strategy.config_invalid errors before auto-stop
   botExecutionErrorHaltThreshold: 5      # consecutive strategy.execution_error errors before auto-stop
   botLlmProviderErrorHaltThreshold: 1    # consecutive strategy.llm_provider_error errors before auto-stop
+  agentDecisionNoContextThreshold: 10       # consecutive no_context before hardening; only counts after first successful context fetch
+  agentDecisionSwapInstrumentFormatThreshold: 5  # consecutive swap.instrument_format before hardening
   maxDrawdown: 1000000000                # operator absolute ceiling on equity drawdown (USD).
                                          # Non-agent flows use this directly. Agents use maxDrawdownPct below.
   maxDrawdownPct: 20                     # operator ceiling: max peak-to-current drawdown as % of peak equity.

@@ -855,9 +855,9 @@ describe('AgentDecisionHandler', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // circuit breaker for no_context
+  // circuit breaker for decision-level rejections (no_context, swap.instrument_format)
   // ---------------------------------------------------------------------------
-  describe('circuit breaker for no_context', () => {
+  describe('circuit breaker for decision-level rejections', () => {
     function makeHandlerWithFailureRepo() {
       const base = (() => {
         const markSource = {
@@ -954,17 +954,25 @@ describe('AgentDecisionHandler', () => {
     });
 
     it('trips circuit breaker after 3 consecutive no_context failures for an initialized actor', async () => {
-      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      const { handler, eventPublisher, intakeResolver, agentRepo } = makeHandlerWithFailureRepo();
       intakeResolver.getDecisionContext.mockReturnValue(null);
 
+      // Reconstruct handler with threshold=3 so the test doesn't need 10 iterations
+      const handlerWithThreshold3 = new AgentDecisionHandler(
+        agentRepo as any,
+        intakeResolver as any,
+        eventPublisher as any,
+        undefined, // no failureRepo for this test
+        { noContext: 3 },
+      );
+
       // Simulate that the actor has previously succeeded in fetching context
-      // by accessing the private set (only way to seed it without a successful call first)
-      const privateSet = (handler as any).actorsWithSuccessfulContext as Set<string>;
+      const privateSet = (handlerWithThreshold3 as any).actorsWithSuccessfulContext as Set<string>;
       privateSet.add('agent-1');
 
       // Failures 1 and 2 — should be retryable
       for (let i = 0; i < 2; i++) {
-        await handler.handleDecisionSubmit(envelope, payload);
+        await handlerWithThreshold3.handleDecisionSubmit(envelope, payload);
       }
 
       // Verify calls 0 and 1 stayed retryable (breaker not yet tripped)
@@ -973,12 +981,43 @@ describe('AgentDecisionHandler', () => {
       expect(calls[1][1].retryable).toBe(true);
 
       // Failure 3 — should trip the breaker
-      await handler.handleDecisionSubmit(envelope, payload);
+      await handlerWithThreshold3.handleDecisionSubmit(envelope, payload);
 
       const lastCall = calls[calls.length - 1] as any[];
       expect(lastCall[1].retryable).toBe(false);
       expect(lastCall[1].message).toContain('CIRCUIT BREAKER');
       expect(lastCall[1].message).toContain('3 consecutive');
+    });
+
+    it('trips circuit breaker after 5 consecutive swap.instrument_format intake rejections', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      intakeResolver.getIntakeDeps.mockReturnValue({
+        rejected: true,
+        code: 'swap.instrument_format',
+        message: "Swap venue requires instrument in BASE/QUOTE format (e.g. 'WETH/USDC' for 1inch on Base, 'SOL/USDC' for Jupiter on Solana). Got: 'SOL'",
+        retryable: true,
+      });
+
+      // Failures 1-4 — should stay retryable (threshold is 5)
+      for (let i = 0; i < 4; i++) {
+        await handler.handleDecisionSubmit(envelope, payload);
+      }
+
+      // Verify calls 0-3 stayed retryable
+      const calls = eventPublisher.emitDecisionRejected.mock.calls;
+      for (let i = 0; i < 4; i++) {
+        expect(calls[i][1].retryable).toBe(true);
+        expect(calls[i][1].message).not.toContain('CIRCUIT BREAKER');
+      }
+
+      // Failure 5 — should trip the breaker
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      const lastCall = calls[calls.length - 1] as any[];
+      expect(lastCall[1].retryable).toBe(false);
+      expect(lastCall[1].message).toContain('CIRCUIT BREAKER');
+      expect(lastCall[1].message).toContain('5 consecutive');
+      expect(lastCall[1].message).toContain('swap.instrument_format');
     });
   });
 
