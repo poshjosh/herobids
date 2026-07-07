@@ -20,8 +20,6 @@ agentRuntime:
 billing:
   primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
   # fallbackProvider: creem                   # optional — uncomment to enable failover
-  checkoutSuccessUrl: https://herobids.com/billing?session=success
-  checkoutCancelUrl: https://herobids.com/billing?session=cancelled
 
 # Alerting — dispatches journal events to Telegram channels.
 alerts:

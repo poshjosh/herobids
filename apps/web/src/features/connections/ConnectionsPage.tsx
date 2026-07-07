@@ -114,7 +114,7 @@ export function ConnectionsPage() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {conn.status === 'active' && (
+              {conn.status === 'active' && (conn.assignedAgentCount > 0 || conn.referencingBotCount > 0) && (
                 <Button
                   variant="danger"
                   onClick={() => {
@@ -129,7 +129,6 @@ export function ConnectionsPage() {
               )}
               <Button
                 variant="danger"
-                size="sm"
                 onClick={() => {
                   if (confirm(intl.formatMessage({ id: 'connections.deleteConfirm' }, { label: conn.label }))) {
                     deleteMutation.mutate(conn.id);

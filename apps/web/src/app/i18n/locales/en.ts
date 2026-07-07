@@ -299,7 +299,7 @@ export const messages: Record<string, string> = {
   'connections.usedBy': 'Used by: {agents}',
   'connections.usedByNone': 'Not assigned to any agents',
   'connections.revoke': 'Revoke',
-  'connections.revokeConfirm': 'Revoke this connection? Agents using it will lose access.',
+  'connections.revokeConfirm': 'Revoke this connection? Agents and bots using it will lose access.',
   'connections.delete': 'Delete',
   'connections.deleteConfirm': 'Delete connection "{label}"? This cannot be undone.',
   'connections.deleteBlocked': 'Cannot delete this connection because it is actively assigned to one or more agents. Revoke it instead, or remove it from all agents first.',

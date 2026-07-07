@@ -1085,6 +1085,8 @@ export interface Connection {
   meta: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+  assignedAgentCount: number;
+  referencingBotCount: number;
 }
 
 export const connections = {

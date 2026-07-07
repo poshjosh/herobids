@@ -12,8 +12,6 @@ describe('BillingConfigSchema', () => {
   it('parses enabled billing with Creem as primary', () => {
     const result = BillingConfigSchema.parse({
       primaryProvider: 'creem',
-      checkoutSuccessUrl: 'https://app.example.com/billing?session=success',
-      checkoutCancelUrl: 'https://app.example.com/billing?session=cancelled',
       creem: {
         apiKey: 'creem_test_xxx',
         webhookSecret: 'whsec_creem',
@@ -29,8 +27,6 @@ describe('BillingConfigSchema', () => {
   it('parses enabled billing with Stripe as primary', () => {
     const result = BillingConfigSchema.parse({
       primaryProvider: 'stripe',
-      checkoutSuccessUrl: 'https://app.example.com/billing?session=success',
-      checkoutCancelUrl: 'https://app.example.com/billing?session=cancelled',
       stripe: {
         secretKey: 'sk_test_xxx',
         webhookSecret: 'whsec_xxx',
@@ -41,14 +37,6 @@ describe('BillingConfigSchema', () => {
     });
     expect(result.primaryProvider).toBe('stripe');
     expect(result.stripe.planPrices['pro']).toHaveLength(1);
-  });
-
-  it('rejects invalid checkout URL', () => {
-    expect(() =>
-      BillingConfigSchema.parse({
-        checkoutSuccessUrl: 'not-a-url',
-      }),
-    ).toThrow();
   });
 
   it('rejects invalid plan price interval', () => {

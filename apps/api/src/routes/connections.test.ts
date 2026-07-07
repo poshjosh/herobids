@@ -59,11 +59,22 @@ function decorateWithAuth(app: ReturnType<typeof Fastify>, userId = TEST_USER_ID
   });
 }
 
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((_col, val) => ({ _eq: val })),
-  and: vi.fn((...args) => ({ _and: args })),
-  sql: vi.fn().mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => ({ _sql: strings.join('') })),
-}));
+vi.mock('drizzle-orm', () => {
+  const sqlMock = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const sqlObj = { _sql: strings.join('') };
+    return new Proxy(sqlObj, {
+      get(target, prop) {
+        if (prop === 'mapWith') return () => sqlObj;
+        return (target as Record<string, unknown>)[prop as string];
+      },
+    });
+  });
+  return {
+    eq: vi.fn((_col, val) => ({ _eq: val })),
+    and: vi.fn((...args) => ({ _and: args })),
+    sql: sqlMock,
+  };
+});
 
 const CONNECTION_ROW = {
   id: 'conn-1',
@@ -75,6 +86,8 @@ const CONNECTION_ROW = {
   meta: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
+  assignedAgentCount: 0,
+  referencingBotCount: 0,
 };
 
 let mockDbRows: Record<string, unknown>[] = [];
@@ -103,7 +116,14 @@ function buildMockDb(credRows: Record<string, unknown>[] = []) {
           // First call after insert is the re-fetch; credential check calls come first
           if (selectCallCount === 1 && credRows.length > 0) return credRows;
           if (mockDbRows.length > 0) return mockDbRows;
-          if (insertedValues.length > 0) return [{ id: insertedValues[0]!['id'], ...insertedValues[0] }];
+          if (insertedValues.length > 0) {
+            return [{
+              id: insertedValues[0]!['id'],
+              ...insertedValues[0],
+              assignedAgentCount: 0,
+              referencingBotCount: 0,
+            }];
+          }
           return [];
         }),
       }),
@@ -145,6 +165,8 @@ describe('POST /connections', () => {
     // Only the connection itself is created — no hidden venue account or trading binding
     expect(insertedValues).toHaveLength(1);
     expect(insertedValues[0]!['provider']).toBe('hyperliquid');
+    expect(res.json<{ assignedAgentCount: number; referencingBotCount: number }>().assignedAgentCount).toBe(0);
+    expect(res.json<{ assignedAgentCount: number; referencingBotCount: number }>().referencingBotCount).toBe(0);
   });
 
   it('returns 400 for missing required fields', async () => {
@@ -328,8 +350,10 @@ describe('GET /connections', () => {
 
     const res = await app.inject({ method: 'GET', url: '/connections' });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ connections: unknown[] }>();
+    const body = res.json<{ connections: Array<{ assignedAgentCount: number; referencingBotCount: number }> }>();
     expect(Array.isArray(body.connections)).toBe(true);
+    expect(body.connections[0]?.assignedAgentCount).toBe(0);
+    expect(body.connections[0]?.referencingBotCount).toBe(0);
   });
 });
 
@@ -347,6 +371,8 @@ describe('GET /connections/:id', () => {
 
     const res = await app.inject({ method: 'GET', url: '/connections/conn-1' });
     expect(res.statusCode).toBe(200);
+    expect(res.json<{ assignedAgentCount: number; referencingBotCount: number }>().assignedAgentCount).toBe(0);
+    expect(res.json<{ assignedAgentCount: number; referencingBotCount: number }>().referencingBotCount).toBe(0);
   });
 
   it('returns 404 when connection does not exist', async () => {

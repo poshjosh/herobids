@@ -590,8 +590,6 @@ plans:
 billing:
   primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
   # fallbackProvider: creem                   # optional — uncomment to enable failover
-  checkoutSuccessUrl: http://localhost:5173/billing?session=success
-  checkoutCancelUrl: http://localhost:5173/billing?session=cancelled
   stripe:
     secretKey: ""                             # override: STRIPE_SECRET_KEY
     webhookSecret: ""                         # override: STRIPE_WEBHOOK_SECRET

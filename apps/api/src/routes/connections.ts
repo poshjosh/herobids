@@ -15,6 +15,31 @@ import {
   providerSupportsConnections,
 } from '../providers/registry.js';
 
+function selectConnectionView() {
+  return {
+    id: connections.id,
+    userId: connections.userId,
+    credentialId: connections.credentialId,
+    provider: connections.provider,
+    label: connections.label,
+    status: connections.status,
+    meta: connections.meta,
+    createdAt: connections.createdAt,
+    updatedAt: connections.updatedAt,
+    assignedAgentCount: sql<number>`(
+      SELECT count(*)::int
+      FROM agent_connections ac
+      WHERE ac.connection_id = ${connections.id}
+        AND ac.status = 'active'
+    )`.mapWith(Number),
+    referencingBotCount: sql<number>`(
+      SELECT count(*)::int
+      FROM bots b
+      WHERE b.connection_id = ${connections.id}
+    )`.mapWith(Number),
+  };
+}
+
 export async function connectionRoutes(
   app: FastifyInstance,
   db: Database,
@@ -218,7 +243,7 @@ export async function connectionRoutes(
     }
 
     const [conn] = await db
-      .select()
+      .select(selectConnectionView())
       .from(connections)
       .where(eq(connections.id, id));
 
@@ -228,7 +253,7 @@ export async function connectionRoutes(
   // GET /connections — list all connections for the authenticated user
   app.get('/connections', async (request, reply) => {
     const rows = await db
-      .select()
+      .select(selectConnectionView())
       .from(connections)
       .where(eq(connections.userId, request.userId));
     return reply.send({ connections: rows });
@@ -238,7 +263,7 @@ export async function connectionRoutes(
   app.get<{ Params: { id: string } }>('/connections/:id', async (request, reply) => {
     const { id } = request.params;
     const [conn] = await db
-      .select()
+      .select(selectConnectionView())
       .from(connections)
       .where(and(eq(connections.id, id), eq(connections.userId, request.userId)));
     if (!conn) {

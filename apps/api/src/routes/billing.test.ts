@@ -58,6 +58,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
     );
 
     const res = await app.inject({ method: 'GET', url: '/trading/fills' });
@@ -86,6 +87,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
     );
 
     const summaryRes = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
@@ -125,6 +127,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
     );
 
     const invalidMeter = await app.inject({ method: 'GET', url: '/billing/usage-events?meterKey=bad_meter' });
@@ -160,6 +163,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
     );
 
     const res = await app.inject({ method: 'GET', url: '/billing/usage-events?periodId=period_other_user' });
@@ -220,6 +224,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
       usageBillingConfig,
     );
 
@@ -283,6 +288,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
       usageBillingConfig,
     );
 
@@ -351,6 +357,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
       usageBillingConfig,
     );
 
@@ -370,8 +377,6 @@ describe('billing routes', () => {
         apiKey: 'creem_test_xxx',
         webhookSecret: 'whsec_creem',
       },
-      checkoutSuccessUrl: 'http://localhost:5173/billing?session=success',
-      checkoutCancelUrl: 'http://localhost:5173/billing?session=cancelled',
     });
     const usageBillingConfig = UsageBillingConfigSchema.parse({
       enabled: true,
@@ -421,6 +426,7 @@ describe('billing routes', () => {
       billingConfig,
       plansConfig,
       db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
       usageBillingConfig,
     );
 

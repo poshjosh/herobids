@@ -726,10 +726,6 @@ export const BillingConfigSchema = z.object({
   primaryProvider: BillingProviderSchema.default('mock'),
   /** Fallback payment provider (optional) */
   fallbackProvider: BillingProviderSchema.optional(),
-  /** URL the browser lands on after successful checkout */
-  checkoutSuccessUrl: z.string().url().default('http://localhost:5173/billing?session=success'),
-  /** URL the browser lands on if checkout is cancelled */
-  checkoutCancelUrl: z.string().url().default('http://localhost:5173/billing?session=cancelled'),
   /** Stripe configuration */
   stripe: StripeConfigSchema.default({}),
   /** Creem configuration */

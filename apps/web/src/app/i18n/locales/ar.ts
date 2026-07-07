@@ -299,7 +299,7 @@ export const messages: Record<string, string> = {
   'connections.usedBy': 'يستخدمها: {agents}',
   'connections.usedByNone': 'غير معيّن لأي وكيل',
   'connections.revoke': 'إلغاء',
-  'connections.revokeConfirm': 'هل تريد إلغاء هذا الاتصال؟ سيفقد الوكلاء المستخدمون له الوصول.',
+  'connections.revokeConfirm': 'هل تريد إلغاء هذا الاتصال؟ سيفقد الوكلاء والبوتات المستخدمون له الوصول.',,
   'connections.delete': 'حذف',
   'connections.deleteConfirm': 'حذف الاتصال "{label}"؟ لا يمكن التراجع عن هذا.',
   'connections.deleteBlocked': 'لا يمكن حذف هذا الاتصال لأنه معين بشكل نشط لواحد أو أكثر من الوكلاء. قم بإلغائه بدلاً من ذلك، أو قم بإزالته من جميع الوكلاء أولاً.',

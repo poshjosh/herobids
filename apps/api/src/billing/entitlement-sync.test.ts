@@ -8,8 +8,6 @@ function makeBillingConfig(overrides: Partial<BillingConfig> = {}): BillingConfi
   return {
     enabled: true,
     primaryProvider: 'creem',
-    checkoutSuccessUrl: 'http://localhost:5173/billing?session=success',
-    checkoutCancelUrl: 'http://localhost:5173/billing?session=cancelled',
     stripe: {
       secretKey: 'sk_test_xxx',
       webhookSecret: 'whsec_xxx',

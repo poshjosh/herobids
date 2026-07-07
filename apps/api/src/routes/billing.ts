@@ -29,9 +29,14 @@ export async function billingRoutes(
   billingConfig: BillingConfig,
   plansConfig: PlansConfig,
   db: Database,
+  frontendOrigin: string,
   usageBillingConfig?: UsageBillingConfig,
   providersYaml?: ProvidersYaml,
 ) {
+  const billingBase = `${frontendOrigin}/billing`;
+  const successUrl = `${billingBase}?session=success`;
+  const cancelUrl = `${billingBase}?session=cancelled`;
+
   const billingRepo = new BillingRepository(db);
   const usageBillingRepo = new UsageBillingRepository(db, usageBillingConfig?.defaultRateCardItems, providersYaml);
   const providerManager = createProviderManager(billingConfig, billingRepo);
@@ -173,8 +178,8 @@ export async function billingRoutes(
       planId: targetPlanId,
       priceId: targetPriceId,
       interval: targetPriceId ? resolveIntervalFromPriceId(billingConfig, targetPlanId, targetPriceId) : undefined,
-      successUrl: billingConfig.checkoutSuccessUrl,
-      cancelUrl: billingConfig.checkoutCancelUrl,
+      successUrl: successUrl,
+      cancelUrl: cancelUrl,
       metadata: { displayName: user.displayName },
     });
 
@@ -216,7 +221,7 @@ export async function billingRoutes(
     const url = await providerManager.createPortalUrl(
       {
         customerId: customer.externalCustomerId,
-        returnUrl: billingConfig.checkoutSuccessUrl.replace(/\?.*$/, ''),
+        returnUrl: frontendOrigin,
       },
       subscription.provider as 'creem' | 'stripe',
     );
@@ -933,8 +938,8 @@ export async function billingRoutes(
         email: user.email,
         planId: `top_up_${packId}`,
         priceId: matchedPack.externalId,
-        successUrl: billingConfig.checkoutSuccessUrl,
-        cancelUrl: billingConfig.checkoutCancelUrl,
+        successUrl: successUrl,
+        cancelUrl: cancelUrl,
         metadata: {
           displayName: user.displayName,
           topUpPackId: packId,
