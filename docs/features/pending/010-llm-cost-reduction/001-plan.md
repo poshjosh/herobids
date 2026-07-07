@@ -1,6 +1,6 @@
 # 010 — LLM Cost Reduction Follow-on Plan
 
-**Status:** Draft  
+**Status:** Implemented (2026-07-07)  
 **Created:** 2026-07-07  
 **Depends on:** `docs/features/2026/07/07/003-session-circuit-breaker-and-non-wakeable-events/001-plan.md`  
 **Source inputs:**
