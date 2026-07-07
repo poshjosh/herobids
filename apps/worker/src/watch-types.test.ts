@@ -335,6 +335,98 @@ describe('parseWatch', () => {
       instrument: { venue: 'hl', instrumentId: 'BTC', symbol: 'BTC', chain: 123 },
     })))).toBeNull();
   });
+
+  // -------------------------------------------------------------------
+  // Purpose
+  // -------------------------------------------------------------------
+
+  it.each([
+    'entry',
+    'exit',
+    'stop_loss',
+    'take_profit',
+    'monitor',
+    'alert',
+  ] as const)('parses a valid v2 record with purpose "%s"', (purpose) => {
+    const raw = JSON.stringify(validV2Record({ purpose }));
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.purpose).toBe(purpose);
+  });
+
+  it('parses a record without purpose field (backward compat)', () => {
+    const raw = JSON.stringify(validV2Record());
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.purpose).toBeUndefined();
+  });
+
+  it('returns null when purpose is an invalid value', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({ purpose: 'invalid' })))).toBeNull();
+  });
+
+  it('returns null when purpose is not a string', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({ purpose: 123 })))).toBeNull();
+  });
+
+  it('returns null when purpose is an empty string', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({ purpose: '' })))).toBeNull();
+  });
+
+  // -------------------------------------------------------------------
+  // Coverage
+  // -------------------------------------------------------------------
+
+  it('parses a valid v2 record with full coverage link', () => {
+    const raw = JSON.stringify(validV2Record({
+      coverage: {
+        actorType: 'agent',
+        actorId: 'agent-1',
+        positionKey: 'BTC-USD-long',
+        intentGroup: 'momentum-entry',
+      },
+    }));
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.coverage).toEqual({
+      actorType: 'agent',
+      actorId: 'agent-1',
+      positionKey: 'BTC-USD-long',
+      intentGroup: 'momentum-entry',
+    });
+  });
+
+  it('parses a record with partial coverage link (only positionKey)', () => {
+    const raw = JSON.stringify(validV2Record({
+      coverage: { positionKey: 'SOL-USD-short' },
+    }));
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.coverage).toEqual({ positionKey: 'SOL-USD-short' });
+  });
+
+  it('parses a record without coverage field (backward compat)', () => {
+    const raw = JSON.stringify(validV2Record());
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.coverage).toBeUndefined();
+  });
+
+  it('returns null when coverage.actorType is invalid', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      coverage: { actorType: 'invalid' },
+    })))).toBeNull();
+  });
+
+  it('returns null when coverage is not an object', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({ coverage: 'not-an-object' })))).toBeNull();
+  });
+
+  it('returns null when coverage.actorId is not a string', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      coverage: { actorId: 123 },
+    })))).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -516,6 +608,66 @@ describe('toRuntimeActiveWatch', () => {
     const runtime = toRuntimeActiveWatch(watch);
     expect(runtime.instrument).toBeUndefined();
     expect(Object.hasOwn(runtime, 'instrument')).toBe(false);
+  });
+
+  it('propagates purpose when present', () => {
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'BTC',
+      chain: 'ethereum',
+      thresholdPrice: 50_000,
+      condition: 'above',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: null,
+      purpose: 'entry',
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.purpose).toBe('entry');
+  });
+
+  it('omits purpose from runtime when not present', () => {
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'BTC',
+      chain: 'ethereum',
+      thresholdPrice: 50_000,
+      condition: 'above',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: null,
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.purpose).toBeUndefined();
+    expect(Object.hasOwn(runtime, 'purpose')).toBe(false);
+  });
+
+  it('propagates coverage when present', () => {
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'BTC',
+      chain: 'ethereum',
+      thresholdPrice: 50_000,
+      condition: 'above',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: null,
+      coverage: { positionKey: 'BTC-USD-long', actorType: 'agent' },
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.coverage).toEqual({ positionKey: 'BTC-USD-long', actorType: 'agent' });
+  });
+
+  it('omits coverage from runtime when not present', () => {
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'BTC',
+      chain: 'ethereum',
+      thresholdPrice: 50_000,
+      condition: 'above',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: null,
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.coverage).toBeUndefined();
+    expect(Object.hasOwn(runtime, 'coverage')).toBe(false);
   });
 });
 

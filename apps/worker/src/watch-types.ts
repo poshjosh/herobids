@@ -27,6 +27,21 @@ export interface WatchInstrumentIdentity {
 }
 
 // ---------------------------------------------------------------------------
+// Purpose and coverage metadata
+// ---------------------------------------------------------------------------
+
+/** Semantic purpose of a watch — tells the runtime what the watch is for. */
+export type WatchPurpose = 'entry' | 'exit' | 'stop_loss' | 'take_profit' | 'monitor' | 'alert';
+
+/** Links a watch to a specific actor, position, or intent group for coverage tracking. */
+export interface WatchCoverageLink {
+  actorType?: 'agent' | 'bot' | 'user' | 'system';
+  actorId?: string;
+  positionKey?: string;
+  intentGroup?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Canonical WatchEntry
 // ---------------------------------------------------------------------------
 
@@ -52,6 +67,10 @@ export interface WatchEntry {
   schemaVersion?: number;
   /** Canonical venue + instrument identity, resolved from the trading system's instrument repository. */
   instrument?: WatchInstrumentIdentity;
+  /** Semantic purpose — tells the runtime what this watch is for. */
+  purpose?: WatchPurpose;
+  /** Links this watch to a specific actor, position, or intent group. */
+  coverage?: WatchCoverageLink;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +98,13 @@ export const WatchEntrySchema = z.object({
     symbol: z.string().min(1),
     chain: z.string().optional(),
     address: z.string().optional(),
+  }).optional(),
+  purpose: z.enum(['entry', 'exit', 'stop_loss', 'take_profit', 'monitor', 'alert']).optional(),
+  coverage: z.object({
+    actorType: z.enum(['agent', 'bot', 'user', 'system']).optional(),
+    actorId: z.string().optional(),
+    positionKey: z.string().optional(),
+    intentGroup: z.string().optional(),
   }).optional(),
 });
 
@@ -134,6 +160,8 @@ export function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
     lastCheckedAt: watch.lastCheckedAt,
     ...(watch.schemaVersion !== undefined ? { schemaVersion: watch.schemaVersion } : {}),
     ...(watch.instrument ? { instrument: watch.instrument } : {}),
+    ...(watch.purpose ? { purpose: watch.purpose } : {}),
+    ...(watch.coverage ? { coverage: watch.coverage } : {}),
   };
 }
 

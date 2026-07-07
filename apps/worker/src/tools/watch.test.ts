@@ -1063,3 +1063,189 @@ describe('watch_token — instrument identity resolution', () => {
     expect(storedWatch.instrument).toBeUndefined();
   });
 });
+
+// ── Purpose and coverage metadata ────────────────────────────────────────
+
+describe('watch_token — purpose', () => {
+  it('creates a watch with an explicit purpose', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('SOL', 'solana', 150),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above', purpose: 'entry' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    // Purpose in tool response
+    const data = result.data as Record<string, unknown>;
+    expect(data.purpose).toBe('entry');
+
+    // Purpose in persisted watch
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.purpose).toBe('entry');
+  });
+
+  it('creates a watch without purpose (backward compat)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('SOL', 'solana', 150),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    const data = result.data as Record<string, unknown>;
+    expect(data.purpose).toBeUndefined();
+
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.purpose).toBeUndefined();
+  });
+
+  it.each([
+    'entry',
+    'exit',
+    'stop_loss',
+    'take_profit',
+    'monitor',
+    'alert',
+  ] as const)('accepts purpose "%s"', async (purpose) => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('SOL', 'solana', 150),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above', purpose },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    const data = result.data as Record<string, unknown>;
+    expect(data.purpose).toBe(purpose);
+  });
+});
+
+describe('watch_token — coverage', () => {
+  it('creates a watch with full coverage metadata', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const coverage = {
+      actorType: 'agent' as const,
+      actorId: 'agent-1',
+      positionKey: 'BTC-USD-long',
+      intentGroup: 'momentum-entry',
+    };
+
+    const result = await watchTokenTool.execute(
+      {
+        symbol: 'BTC-USD',
+        chain: 'hyperliquid',
+        thresholdPrice: 70_000,
+        condition: 'above',
+        purpose: 'entry',
+        coverage,
+      },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    // Coverage in tool response
+    const data = result.data as Record<string, unknown>;
+    expect(data.coverage).toEqual(coverage);
+
+    // Coverage in persisted watch
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.coverage).toEqual(coverage);
+  });
+
+  it('creates a watch with partial coverage (only positionKey)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('SOL', 'solana', 150),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const coverage = { positionKey: 'SOL-USD-short' };
+
+    const result = await watchTokenTool.execute(
+      {
+        symbol: 'SOL',
+        chain: 'solana',
+        thresholdPrice: 100,
+        condition: 'below',
+        coverage,
+      },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    const data = result.data as Record<string, unknown>;
+    expect(data.coverage).toEqual(coverage);
+
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.coverage).toEqual(coverage);
+  });
+
+  it('creates a watch without coverage (backward compat)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('SOL', 'solana', 150),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(150));
+    const ctx = makeCtx({ priceService: { getPrice, resolvePriceTarget } });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'SOL', chain: 'solana', thresholdPrice: 200, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    const data = result.data as Record<string, unknown>;
+    expect(data.coverage).toBeUndefined();
+
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.coverage).toBeUndefined();
+  });
+});

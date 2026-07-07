@@ -5,7 +5,7 @@ import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate } from './technical-phase.js';
-import type { WatchInstrumentIdentity } from './watch-types.js';
+import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from './watch-types.js';
 import { fmtUsd } from './fmt.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
@@ -82,12 +82,12 @@ export interface RuntimeActiveWatch {
   note?: string;
   lastConditionMet: boolean | null;
   lastCheckedAt?: string;
-  /** Human-readable purpose label (e.g. "entry", "exit", "alert"). */
-  purpose?: string;
+  /** Semantic purpose — tells the runtime what this watch is for. */
+  purpose?: WatchPurpose;
   /** Schema version discriminator from the canonical WatchEntry. */
   schemaVersion?: number;
-  /** Forward-looking key for coverage matching (future). */
-  positionKey?: string;
+  /** Links this watch to a specific actor, position, or intent group. */
+  coverage?: WatchCoverageLink;
   /** Canonical venue + instrument identity resolved from the trading system's instrument repository. */
   instrument?: WatchInstrumentIdentity;
 }

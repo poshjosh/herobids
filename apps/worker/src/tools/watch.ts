@@ -170,6 +170,18 @@ const WatchTokenParamsSchema = z.object({
     '"above" triggers when price rises above threshold; "below" triggers when price falls below threshold',
   ),
   note: z.string().optional().describe('Optional label or reason for this watch'),
+  purpose: z.enum(['entry', 'exit', 'stop_loss', 'take_profit', 'monitor', 'alert']).optional().describe(
+    'Semantic purpose of this watch — tells the runtime what the watch is for. ' +
+    'New watches SHOULD include this. Values: entry, exit, stop_loss, take_profit, monitor, alert.',
+  ),
+  coverage: z.object({
+    actorType: z.enum(['agent', 'bot', 'user', 'system']).optional(),
+    actorId: z.string().optional(),
+    positionKey: z.string().optional(),
+    intentGroup: z.string().optional(),
+  }).optional().describe(
+    'Optional linkage metadata — attach this watch to a specific actor, open position, or intent group for coverage tracking.',
+  ),
 });
 
 const watchTokenTool: AgentTool = {
@@ -182,7 +194,7 @@ const watchTokenTool: AgentTool = {
   parameters: convertZodToJsonSchema(WatchTokenParamsSchema),
   category: 'write-memory',
   async execute(params: unknown, ctx: ToolContext): Promise<ToolResult> {
-    const { symbol, chain, thresholdPrice, condition, note } =
+    const { symbol, chain, thresholdPrice, condition, note, purpose, coverage } =
       params as z.infer<typeof WatchTokenParamsSchema>;
     const trimmedSymbol = symbol.trim();
     const normalizedChain = chain.trim().toLowerCase();
@@ -312,6 +324,8 @@ const watchTokenTool: AgentTool = {
       lastConditionMet: null,
       schemaVersion: 2,
       ...(instrument ? { instrument } : {}),
+      ...(purpose ? { purpose } : {}),
+      ...(coverage ? { coverage } : {}),
     };
 
     // Get initial price using the pinned lookup target.
@@ -341,6 +355,8 @@ const watchTokenTool: AgentTool = {
         thresholdPrice,
         condition,
         ...(instrument ? { instrument } : {}),
+        ...(purpose ? { purpose } : {}),
+        ...(coverage ? { coverage } : {}),
       },
     };
   },
