@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Bot create custom strategy config:** Added a "Custom" card to the bot strategy preset grid. Selecting "Custom" reveals `BotCustomConfigSection` with structured fields for strategy type, signal bias, candle parameters, exit targets, position sizing, and risk guardrails — no JSON editing required. Swap venues hide candle-based fields and show an informational notice. Pre-populates from the first loaded preset for a familiar baseline. Includes blur-triggered inline validation with NaN guards. Resets to defaults when switching away from custom mode.
 - **Watch system redesign:** Consolidated watch types into single canonical module (`watch-types.ts`). Added structured purpose and coverage metadata to watches. Added canonical instrument identity resolution at watch creation. Extended wake payload schemas with purpose, instrument identity, and position keys. Implemented position coverage evaluation with 3-tier matching. Replaced blanket open-position escalation with coverage-aware gating. Added stale coverage detection and escalation. Tightened runtime summaries with purpose prefixes and coverage status blocks.
 
 ## v0.0.11 - 2026-07-07
