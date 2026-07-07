@@ -222,22 +222,24 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
           />
         </div>
 
-        {/* Style tier */}
-        <div>
-          <FieldLabel>Strategy style</FieldLabel>
-          <select
-            value={selectedStyle}
-            onChange={(e) => {
-              setSelectedStyle(e.target.value);
-              setForm((s) => ({ ...s, strategyPreset: '' }));
-            }}
-            style={{ ...inputStyle, cursor: 'pointer' }}
-          >
-            {STYLE_OPTIONS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label} — {s.description}</option>
-            ))}
-          </select>
-        </div>
+        {/* Style tier — hidden in custom mode, since the style only controls preset tier */}
+        {form.strategyPreset !== 'custom' && (
+          <div>
+            <FieldLabel>Strategy style</FieldLabel>
+            <select
+              value={selectedStyle}
+              onChange={(e) => {
+                setSelectedStyle(e.target.value);
+                setForm((s) => ({ ...s, strategyPreset: '' }));
+              }}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              {STYLE_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label} — {s.description}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Strategy preset */}
         <StrategyPresetSelector
