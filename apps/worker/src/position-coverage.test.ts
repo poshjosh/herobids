@@ -239,10 +239,11 @@ describe('evaluatePositionCoverage', () => {
   });
 
   it('watch with coverage.positionKey provides coverage even without instrument identity', () => {
-    const position = makePosition({ venue: 'jupiter', symbol: 'XYZ-USD', side: 'long' });
+    const position = makePosition({ venue: 'jupiter', instrumentId: undefined, symbol: 'XYZ-USD', side: 'long' });
     const watch = makeWatch({
       symbol: 'COMPLETELY-DIFFERENT',
       purpose: 'stop_loss',
+      instrument: undefined,
       coverage: { positionKey: 'jupiter::XYZ-USD::long' },
     });
 

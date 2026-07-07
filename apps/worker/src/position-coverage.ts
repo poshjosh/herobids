@@ -161,9 +161,12 @@ function watchMatchesPosition(watch: WatchInput, position: PositionInput, positi
   }
 
   // Tier 2: Instrument identity matching via canonical instrumentId.
-  // Both the watch and the position must carry instrumentId for this tier to work.
+  // Both the watch and the position must carry instrumentId, and the venue
+  // must match to prevent cross-venue false positives (e.g. same instrumentId
+  // on Hyperliquid and Jupiter).
   if (watch.instrument?.instrumentId && position.instrumentId) {
-    if (watch.instrument.instrumentId === position.instrumentId) {
+    if (watch.instrument.instrumentId === position.instrumentId &&
+        watch.instrument.venue === position.venue) {
       return true;
     }
   }

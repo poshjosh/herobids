@@ -133,7 +133,13 @@ export function parseWatch(raw: string): WatchEntry | null {
       logger.warn({ watchId, raw: raw.length > 200 ? raw.slice(0, 200) + '...' : raw, errors: parsed.error.issues }, 'Malformed watch record — discarding');
       return null;
     }
-    return parsed.data;
+    // Repair: default missing purpose to 'alert' for backward compatibility
+    // with watches persisted before purpose became mandatory at write time.
+    const entry = parsed.data;
+    if (!entry.purpose) {
+      entry.purpose = 'alert';
+    }
+    return entry;
   } catch {
     return null;
   }

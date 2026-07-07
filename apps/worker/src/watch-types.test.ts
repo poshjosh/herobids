@@ -341,11 +341,11 @@ describe('parseWatch', () => {
     expect(result!.purpose).toBe(purpose);
   });
 
-  it('parses a record without purpose field (backward compat)', () => {
+  it('defaults missing purpose to "alert" on parse (repair step)', () => {
     const raw = JSON.stringify(validV2Record());
     const result = parseWatch(raw);
     expect(result).not.toBeNull();
-    expect(result!.purpose).toBeUndefined();
+    expect(result!.purpose).toBe('alert');
   });
 
   it('returns null when purpose is an invalid value', () => {

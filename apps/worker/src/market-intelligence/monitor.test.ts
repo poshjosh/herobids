@@ -456,7 +456,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.schemaVersion).toBe(2);
   });
 
-  it('does NOT populate purpose/instrument/positionKey when watch lacks them, but schemaVersion is always present', async () => {
+  it('populates purpose="alert" (repair default) and schemaVersion=2, but no instrument/positionKey when watch lacks them', async () => {
     seedWatch('agent-1', makeWatch({ symbol: 'SOL', condition: 'above', thresholdPrice: 200, lastConditionMet: false }));
     seedDiscoveryPrice('SOL', 'solana', 204);
 
@@ -465,7 +465,7 @@ describe('createMarketMonitor — watch thresholds', () => {
 
     expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
     const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
-    expect(payload.purpose).toBeUndefined();
+    expect(payload.purpose).toBe('alert');
     expect(payload.instrumentVenue).toBeUndefined();
     expect(payload.instrumentId).toBeUndefined();
     expect(payload.positionKey).toBeUndefined();

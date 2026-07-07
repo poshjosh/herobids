@@ -188,6 +188,9 @@ const WatchTokenParamsSchema = z.object({
       venue: z.string().min(1).describe('Venue where the position is held (e.g. "hyperliquid", "jupiter")'),
       symbol: z.string().min(1).describe('Symbol of the position'),
       side: z.enum(['long', 'short']).describe('Direction of the position'),
+      instrumentId: z.string().optional().describe(
+        'Canonical instrument ID of the position. Provide when available to disambiguate same-symbol positions.',
+      ),
     }).optional().describe(
       'Identify the open position this watch protects. The worker derives the canonical positionKey — do NOT supply a raw positionKey.',
     ),
@@ -331,7 +334,7 @@ const watchTokenTool: AgentTool = {
       resolvedCoverage = Object.keys(rest).length > 0 ? rest as typeof resolvedCoverage : undefined;
     }
     if (coverage?.targetPosition) {
-      const { venue, symbol: posSymbol, side } = coverage.targetPosition;
+      const { venue, symbol: posSymbol, side, instrumentId: targetInstrumentId } = coverage.targetPosition;
       const isProtective = purpose ? (PROTECTIVE_WATCH_PURPOSES as readonly string[]).includes(purpose) : false;
 
       // Resolve against the agent's actual open positions.
@@ -340,7 +343,8 @@ const watchTokenTool: AgentTool = {
         try {
           const openPositions = await ctx.botRepo.getOpenPositionsByCreator('agent', ctx.agentId);
           const matches = openPositions.filter(
-            (p) => p.venue === venue && p.symbol === posSymbol && p.side === side,
+            (p) => p.venue === venue && p.symbol === posSymbol && p.side === side &&
+              (!targetInstrumentId || p.instrumentId === targetInstrumentId),
           );
           if (matches.length === 1) {
             const match = matches[0]!;
@@ -355,7 +359,7 @@ const watchTokenTool: AgentTool = {
             if (isProtective) {
               return {
                 success: false,
-                error: `Ambiguous target: ${matches.length} open positions match venue=${venue} symbol=${posSymbol} side=${side}. Cannot safely attach a protective watch — provide a more specific target.`,
+                error: `Ambiguous target: ${matches.length} open positions match venue=${venue} symbol=${posSymbol} side=${side}. Cannot safely attach a protective watch — provide a more specific target (include instrumentId if available).`,
                 retryable: false,
                 fault: false,
               };
@@ -394,7 +398,7 @@ const watchTokenTool: AgentTool = {
         };
       } else {
         // Non-protective: derive from caller input (best-effort, less risky).
-        const derivedKey = derivePositionKey({ venue, symbol: posSymbol, side, instrumentId: instrument?.instrumentId });
+        const derivedKey = derivePositionKey({ venue, symbol: posSymbol, side, instrumentId: targetInstrumentId ?? instrument?.instrumentId });
         resolvedCoverage = {
           ...coverage,
           positionKey: derivedKey,

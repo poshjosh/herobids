@@ -178,31 +178,50 @@ export class PositionRepository {
    *  instrumentId is part of the canonical identity — two positions with the same
    *  actor/venue/symbol but different instrumentIds are distinct exposures. */
   async upsert(pos: UpsertPosition): Promise<void> {
-    // Find existing open position for this actor+venue+symbol+instrumentId.
-    // Venue disambiguation prevents same-symbol positions on different
-    // venues (e.g. Hyperliquid BTC vs Jupiter BTC) from colliding.
-    // instrumentId disambiguation prevents same-symbol positions on the same
-    // venue from colliding when the venue distinguishes them by instrument ID.
-    const idConditions = [
+    // Base identity conditions (without instrumentId).
+    // Used for the null→known promotion lookup below.
+    const baseConditions = [
       eq(positions.actorType, pos.actorType),
       eq(positions.actorId, pos.actorId),
       eq(positions.venue, pos.venue),
       eq(positions.symbol, pos.symbol),
       isNull(positions.closedAt),
     ];
-    // Include instrumentId in the identity match when provided.
+
+    // First pass: exact match including instrumentId.
     // When instrumentId is null/undefined, match rows where instrumentId IS NULL
     // to prevent collision between identified and unidentified positions.
+    const exactConditions = [...baseConditions];
     if (pos.instrumentId != null) {
-      idConditions.push(eq(positions.instrumentId, pos.instrumentId));
+      exactConditions.push(eq(positions.instrumentId, pos.instrumentId));
     } else {
-      idConditions.push(isNull(positions.instrumentId));
+      exactConditions.push(isNull(positions.instrumentId));
     }
-    const existing = await this.db
+    let existing = await this.db
       .select()
       .from(positions)
-      .where(and(...idConditions))
+      .where(and(...exactConditions))
       .limit(1);
+
+    // Second pass: if instrumentId is provided and no exact match, try the
+    // null-instrumentId row. This handles the migration case where a position
+    // was first persisted without instrumentId and is now being updated with
+    // one — we promote the existing row rather than inserting a duplicate.
+    if (existing.length === 0 && pos.instrumentId != null) {
+      const nullRow = await this.db
+        .select()
+        .from(positions)
+        .where(and(...baseConditions, isNull(positions.instrumentId)))
+        .limit(1);
+      if (nullRow.length > 0) {
+        // Promote: set instrumentId so future lookups match the canonical identity.
+        await this.db
+          .update(positions)
+          .set({ instrumentId: pos.instrumentId, updatedAt: new Date() })
+          .where(eq(positions.id, nullRow[0]!.id));
+        existing = nullRow;
+      }
+    }
 
     if (pos.side === 'flat') {
       // Close existing position
