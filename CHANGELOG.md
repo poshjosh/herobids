@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## v0.0.11 - 2026-07-07
+
 ### Added
 
 - coinmarketcap env key egistry arity and documentation
