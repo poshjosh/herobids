@@ -5,7 +5,9 @@
 
 ## Goal
 
-Agents set stopLoss and takeProfit price levels on every `submit_decision` that opens or increases a position. These provide trade-specific protection that works even if the agent becomes incapacitated (crash, LLM budget exhausted, paused, stopped). When per-trade levels are absent, the engine returns a non-blocking reminder to set them.
+Agents set stopLoss and takeProfit price levels on every `submit_decision` that opens or increases a position. These provide trade-specific protection that works as long as the worker process is running — specifically, protection persists through LLM budget exhaustion and agent pauses because the periodic monitor loop continues independent of the agent's decision cycle. Levels survive worker restarts because they are stored on the position row and rehydrated at startup. When per-trade levels are absent, the engine returns a non-blocking reminder to set them.
+
+> **Known limitation:** A worker crash or explicit agent stop clears the in-process monitor. Positions are unprotected until the worker restarts and rehydrates. Full crash-proof protection requires venue-native stop orders — see the follow-up plan at [docs/features/pending/070-per-trade-level-outage-protection/001-plan.md](../../../pending/070-per-trade-level-outage-protection/001-plan.md).
 
 ## Motivation
 
