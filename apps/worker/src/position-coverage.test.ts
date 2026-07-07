@@ -12,6 +12,7 @@ function makeWatch(overrides: Partial<WatchInput> = {}): WatchInput {
     watchId: '00000000-0000-0000-0000-000000000001',
     symbol: 'BTC-USD',
     lastConditionMet: null,
+    schemaVersion: 2,
     ...overrides,
   };
 }
@@ -178,12 +179,13 @@ describe('evaluatePositionCoverage', () => {
     expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
   });
 
-  it('symbol fallback for legacy watches (no instrument identity)', () => {
+  it('legacy watch without structured identity does NOT provide protective coverage (conservative gating)', () => {
     const position = makePosition({ symbol: 'BTC-USD', side: 'short' });
     const watch = makeWatch({
       symbol: 'btc-perp',
       purpose: 'exit',
-      // No instrument, no coverage — falls back to symbol normalization
+      schemaVersion: undefined, // Explicitly legacy — no structured identity
+      // No instrument, no coverage
     });
 
     const result = evaluatePositionCoverage({
@@ -191,8 +193,85 @@ describe('evaluatePositionCoverage', () => {
       watches: [watch],
     });
 
-    // Both normalize to 'BTC'
+    // Legacy watches are NOT trustable for coverage — position is uncovered
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
+    expect(result.positions[0]!.protectiveWatchCount).toBe(0);
+    expect(result.hasUncoveredPosition).toBe(true);
+  });
+
+  it('v2 watch with schemaVersion provides protective coverage via symbol fallback', () => {
+    const position = makePosition({ symbol: 'BTC-USD', side: 'short' });
+    const watch = makeWatch({
+      symbol: 'btc-perp',
+      purpose: 'exit',
+      schemaVersion: 2,
+      // v2 trustable — symbol fallback is acceptable
+    });
+
+    const result = evaluatePositionCoverage({
+      positions: [position],
+      watches: [watch],
+    });
+
     expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
+    expect(result.positions[0]!.protectiveWatchCount).toBe(1);
+  });
+
+  it.each([
+    { schemaVersion: 2, expectedCoverage: true, desc: 'v2' },
+    { schemaVersion: undefined, expectedCoverage: false, desc: 'legacy (undefined)' },
+    { schemaVersion: 1, expectedCoverage: false, desc: 'legacy (v1)' },
+  ] as const)('schemaVersion=$desc → hasProtectiveCoverage=$expectedCoverage for stop_loss watch',
+    ({ schemaVersion, expectedCoverage }) => {
+      const result = evaluatePositionCoverage({
+        positions: [makePosition()],
+        watches: [makeWatch({ purpose: 'stop_loss', schemaVersion })],
+      });
+
+      expect(result.positions[0]!.hasProtectiveCoverage).toBe(expectedCoverage);
+      if (!expectedCoverage) {
+        expect(result.positions[0]!.protectiveWatchCount).toBe(0);
+        expect(result.hasUncoveredPosition).toBe(true);
+      }
+    },
+  );
+
+  it('watch with coverage.positionKey provides coverage even without schemaVersion', () => {
+    const position = makePosition({ symbol: 'XYZ-USD', side: 'long' });
+    const watch = makeWatch({
+      symbol: 'COMPLETELY-DIFFERENT',
+      purpose: 'stop_loss',
+      schemaVersion: undefined,
+      coverage: { positionKey: 'XYZ-USD::long' },
+    });
+
+    const result = evaluatePositionCoverage({
+      positions: [position],
+      watches: [watch],
+    });
+
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
+  });
+
+  it('v2 watch without purpose is not protective', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition()],
+      watches: [makeWatch({ purpose: undefined })],
+    });
+
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
+    expect(result.hasUncoveredPosition).toBe(true);
+  });
+
+  it('legacy watch (no schemaVersion) without purpose is not protective', () => {
+    const result = evaluatePositionCoverage({
+      positions: [makePosition()],
+      watches: [makeWatch({ purpose: undefined, schemaVersion: undefined })],
+    });
+
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
+    expect(result.positions[0]!.protectiveWatchCount).toBe(0);
+    expect(result.hasUncoveredPosition).toBe(true);
   });
 
   // ── Aggregate flags ───────────────────────────────────────────────

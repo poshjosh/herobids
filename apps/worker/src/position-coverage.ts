@@ -69,6 +69,8 @@ export interface WatchInput {
   watchId: string;
   symbol: string;
   purpose?: string;
+  /** Schema version discriminator. undefined = legacy, 2 = v2. */
+  schemaVersion?: number;
   instrument?: {
     venue: string;
     instrumentId: string;
@@ -104,10 +106,35 @@ function isStale(lastCheckedAt: string | undefined, staleThresholdMs: number): b
 }
 
 /**
+ * Returns true when a watch can be trusted for protective coverage evaluation.
+ * Legacy watches (no schemaVersion >= 2, no coverage.positionKey, no instrument.instrumentId)
+ * cannot be trusted — they rely on symbol-only heuristics that may conflate different
+ * instruments across venues.
+ *
+ * @returns true when the watch has sufficient structured identity to be trusted for protective coverage evaluation.
+ */
+function isTrustableForCoverage(watch: WatchInput): boolean {
+  // V2 watches with schema version are trustable
+  if (watch.schemaVersion && watch.schemaVersion >= 2) {
+    return true;
+  }
+  // Watches with explicit position key linkage are trustable
+  if (watch.coverage?.positionKey) {
+    return true;
+  }
+  // Watches with canonical instrument identity are trustable
+  if (watch.instrument?.instrumentId) {
+    return true;
+  }
+  // Legacy watches without structured identity are NOT trustable for coverage
+  return false;
+}
+
+/**
  * Match a watch to a position using a 3-tier strategy:
  * 1. Direct linkage via coverage.positionKey
  * 2. Instrument identity via instrument.instrumentId
- * 3. Symbol fallback via normalizeTrackedSymbol
+ * 3. Symbol fallback via normalizeTrackedSymbol (only for trustable watches)
  */
 function watchMatchesPosition(watch: WatchInput, position: PositionInput, positionKey: string): boolean {
   // Tier 1: Direct linkage
@@ -164,6 +191,12 @@ export function evaluatePositionCoverage(params: {
 
     for (const watch of params.watches) {
       if (!watchMatchesPosition(watch, position, positionKey)) {
+        continue;
+      }
+
+      // Legacy watches without structured identity cannot be trusted for
+      // protective coverage — skip them.
+      if (!isTrustableForCoverage(watch)) {
         continue;
       }
 

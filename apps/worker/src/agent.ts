@@ -2359,6 +2359,7 @@ async function runTick(): Promise<void> {
         watchId: w.watchId,
         symbol: w.symbol,
         purpose: w.purpose,
+        schemaVersion: w.schemaVersion,
         instrument: w.instrument,
         coverage: w.coverage,
         lastConditionMet: w.lastConditionMet,
