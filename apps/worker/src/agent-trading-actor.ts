@@ -151,6 +151,9 @@ export interface AgentTradingActorDeps {
   instrumentCache?: VenueInstrumentCache;
   /** Interval in ms for the per-trade stop-loss / take-profit monitor loop (operator config) */
   perTradeLevelMonitorIntervalMs?: number;
+  /** Callback invoked alongside journal.append for events the agent's circuit breaker should track.
+   *  Caller (worker index.ts) wires this to publish to the agent's outbound stream. */
+  onJournalEvent?: (event: { type: string; payload?: Record<string, unknown> }) => void;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -242,11 +245,26 @@ export class AgentTradingActor implements ExecutionActor {
   private technicalScanTimer?: ReturnType<typeof setInterval>;
   /** Latest technical scan results — forwarded to agent container for LLM context enrichment */
   private lastTechnicalScan?: TechnicalScanState;
+  /** Last reconciliation status for drift-only reconnect suppression. */
+  private lastReconciliationStatus?: string;
+  /** Whether the last reconciliation detected position changes (as opposed to balance-only drift). */
+  private lastReconciliationHadPositionChange?: boolean;
 
   constructor(private readonly deps: AgentTradingActorDeps) {
     this.agentId = deps.agentId;
     this.logger = pino({ name: `agent-actor-${deps.agentId.slice(0, 8)}` });
     this.streamPool = deps.streamPool;
+  }
+
+  /**
+   * Returns true when the last reconciliation detected drift but no position
+   * changes. In this state, context snapshots carry no actionable difference
+   * for the agent and would only trigger spurious LLM ticks through the
+   * context-hash gate.
+   */
+  private isDriftOnlyReconnect(): boolean {
+    return this.lastReconciliationStatus === 'drift_detected'
+      && this.lastReconciliationHadPositionChange === false;
   }
 
   get isRunning(): boolean {
@@ -1245,6 +1263,14 @@ export class AgentTradingActor implements ExecutionActor {
 
   /** Build reconnect snapshots for ALL tracked instruments (positions + feeds). */
   async buildReconnectSnapshots(): Promise<ContextSnapshotPayload[]> {
+    // Drift-only reconnect: suppress context snapshots to prevent spurious LLM ticks.
+    // When the reconciler detects drift but positions haven't changed, a new snapshot
+    // would only differ in fields the agent cannot meaningfully act on.
+    if (this.isDriftOnlyReconnect()) {
+      this.logger.debug('Drift-only reconnect detected — suppressing context snapshots');
+      return [];
+    }
+
     const instrumentIds = this.getReconnectInstrumentIds();
     if (instrumentIds.length === 0) return [];
 
@@ -2797,6 +2823,12 @@ export class AgentTradingActor implements ExecutionActor {
         };
       },
       persistResult: async (result, localState, venueState) => {
+        // Track actual reconciliation outcome for isDriftOnlyReconnect().
+        this.lastReconciliationStatus = result.status;
+        this.lastReconciliationHadPositionChange = result.diffs?.some(
+          (d: { type?: string }) => d.type === 'position_mismatch',
+        ) ?? false;
+
         const serializedLocal = {
           positions: localState.positions.map((p) => ({ symbol: p.symbol, side: p.side, size: p.size.toString(), entryPrice: p.entryPrice.toString() })),
           balances: localState.balances.map((b) => ({ asset: b.asset, total: b.total.toString() })),
@@ -2827,7 +2859,28 @@ export class AgentTradingActor implements ExecutionActor {
           });
         }
       },
-      journal: this.deps.journal,
+      // Wrap journal to feed the agent's session circuit breaker via onJournalEvent.
+      // Reconciliation events (drift, match) are emitted by the engine Reconciler
+      // and need to be forwarded to the agent's outbound stream for breaker tracking.
+      journal: this.deps.onJournalEvent
+        ? {
+            append: async (entry) => {
+              await this.deps.journal.append(entry);
+              // Forward reconciliation event types to the breaker callback.
+              if (typeof entry.type === 'string' && entry.type.startsWith('reconciliation.')) {
+                this.deps.onJournalEvent?.({ type: entry.type, payload: entry.payload as Record<string, unknown> });
+              }
+            },
+            appendBatch: async (entries) => {
+              await this.deps.journal.appendBatch(entries);
+              for (const entry of entries) {
+                if (typeof entry.type === 'string' && entry.type.startsWith('reconciliation.')) {
+                  this.deps.onJournalEvent?.({ type: entry.type, payload: entry.payload as Record<string, unknown> });
+                }
+              }
+            },
+          }
+        : this.deps.journal,
       actorType: 'agent',
       actorId: this.agentId,
       venueAccountId: this.deps.venueAccountId,

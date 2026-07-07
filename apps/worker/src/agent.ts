@@ -1294,6 +1294,14 @@ async function pollWakeSignals(): Promise<void> {
           try {
             const envelope = JSON.parse(fields[envelopeIdx + 1]!) as Record<string, unknown>;
             if (envelope['type'] === 'agent.wake') {
+              // Suppress wake-driven ticks when circuit breaker is in cooldown
+              if (sessionCircuitBreaker.isOpen() && sessionCircuitBreaker.state !== 'TERMINATED') {
+                // ACK but don't wake — breaker is suppressing LLM dispatch
+                logger.debug({ breakerState: sessionCircuitBreaker.state }, 'Suppressing wake signal — circuit breaker open');
+                await wakeRedis.xack(OUTBOUND_STREAM, WAKE_CONSUMER_GROUP, msgId).catch(() => { /* ignore */ });
+                continue;
+              }
+
               // Phase 5: only buffer when prompt enrichment is active; classic mode is strict no-op.
               if (agentRuntimePolicy.promptStyle === 'enriched' && agentRuntimePolicy.promptEnrichment.queuedSignals.enabled) {
                 const source = String(envelope['source'] ?? 'unknown');

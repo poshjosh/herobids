@@ -651,6 +651,62 @@ describe('AgentTradingActor', () => {
 
       await actor.stop();
     });
+
+    it('returns empty array when last reconciliation was drift_detected with no position changes', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '50000',
+            realizedPnl: '0',
+          },
+        ]),
+      };
+      const actor = new AgentTradingActor(makeBaseDeps({ positionRepo: positionRepo as any }));
+
+      await actor.start();
+
+      // Simulate reconciler detecting drift with no position changes
+      (actor as any).lastReconciliationStatus = 'drift_detected';
+      (actor as any).lastReconciliationHadPositionChange = false;
+
+      const snapshots = await actor.buildReconnectSnapshots();
+      expect(snapshots).toEqual([]);
+
+      await actor.stop();
+    });
+
+    it('returns normal snapshots when last reconciliation had actual position diffs', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '50000',
+            realizedPnl: '0',
+          },
+        ]),
+      };
+      const actor = new AgentTradingActor(makeBaseDeps({ positionRepo: positionRepo as any }));
+
+      await actor.start();
+
+      // Simulate reconciler detecting drift WITH position changes
+      (actor as any).lastReconciliationStatus = 'drift_detected';
+      (actor as any).lastReconciliationHadPositionChange = true;
+
+      const snapshots = await actor.buildReconnectSnapshots();
+      expect(snapshots.length).toBeGreaterThan(0);
+
+      await actor.stop();
+    });
   });
 
   describe('executor selection', () => {

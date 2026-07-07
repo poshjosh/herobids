@@ -684,6 +684,12 @@ const sessionManager = new AgentSessionManager(agentRepo, eventPublisher, agentR
           hasIntelligenceConfig: !!agent?.unifiedConfig?.intelligence,
           instrumentCache,
           perTradeLevelMonitorIntervalMs: appConfig.agentRiskDefaults.perTradeLevelMonitorIntervalMs,
+          onJournalEvent: (event) => {
+            eventPublisher.emitJournalEvent(agentId, {
+              journalType: event.type,
+              detail: JSON.stringify(event.payload ?? {}),
+            }).catch((err) => logger.warn({ err, agentId, eventType: event.type }, 'Failed to emit journal event'));
+          },
         });
 
         await actor.start();
