@@ -8,6 +8,7 @@ import {
   Button, StatusBadge, RelativeTime, KV, Modal, FieldLabel, ErrorBanner, inputStyle,
 } from '../../lib/ui.js';
 import { StrategyPresetSelector } from '../../lib/StrategyPresetSelector.js';
+import { BotCustomConfigSection, type BotCustomConfigFormState, defaultBotCustomConfig } from './BotCustomConfigSection.js';
 import { SWAP_VENUES } from '@herobids/domain';
 
 const STYLE_OPTIONS = [
