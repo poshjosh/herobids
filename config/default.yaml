@@ -367,6 +367,20 @@ agentRuntime:
     reopenAfterTicks: 5        # 1 means: circuit is locked for the remainder of the current tick, 
                                # then available again at the start of the next tick.
                                # 5 for trading agents to avoid hammering a broken venue/platform
+  sessionCircuitBreaker:
+    enabled: true
+    strategyError:
+      maxInWindow: 10
+      windowMs: 60000
+    drift:
+      maxInWindow: 5
+      windowMs: 300000
+    streamDisconnect:
+      maxInWindow: 5
+      windowMs: 300000
+    cooldownMs: 300000
+    maxTrips: 3
+    probeIntervalMs: 60000
   thinking:
     drawdownThresholdPct: -2   # drawdown % that triggers deep thinking mode
   llm:

@@ -910,6 +910,25 @@ export const WebAccessToolsConfigSchema = z.object({
   }).default({}),
 });
 
+export const SessionCircuitBreakerSchema = z.object({
+  enabled: z.boolean().default(true),
+  strategyError: z.object({
+    maxInWindow: z.number().int().min(1).default(10),
+    windowMs: z.number().int().min(1000).default(60_000),
+  }).default({}),
+  drift: z.object({
+    maxInWindow: z.number().int().min(1).default(5),
+    windowMs: z.number().int().min(1000).default(300_000),
+  }).default({}),
+  streamDisconnect: z.object({
+    maxInWindow: z.number().int().min(1).default(5),
+    windowMs: z.number().int().min(1000).default(300_000),
+  }).default({}),
+  cooldownMs: z.number().int().min(10_000).default(300_000),
+  maxTrips: z.number().int().min(1).default(3),
+  probeIntervalMs: z.number().int().min(5_000).default(60_000),
+});
+
 export const AgentRuntimeConfigSchema = z.object({
   failureBackoff: z.object({
     backoffThreshold: z.number().int().min(1).default(3),
@@ -920,6 +939,7 @@ export const AgentRuntimeConfigSchema = z.object({
     failureThreshold: z.number().int().min(1).default(3),
     reopenAfterTicks: z.number().int().min(1).default(1),
   }).default({}),
+  sessionCircuitBreaker: SessionCircuitBreakerSchema.default({}),
   thinking: z.object({
     drawdownThresholdPct: z.number().min(-100).max(0).default(-2),
   }).default({}),
@@ -1245,6 +1265,7 @@ export const AppConfigSchema = z.object({
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
+export type SessionCircuitBreakerConfig = z.infer<typeof SessionCircuitBreakerSchema>;
 export type AgentRuntimeConfig = z.infer<typeof AgentRuntimeConfigSchema>;
 export type AgentRuntimePolicy = z.infer<typeof AgentRuntimePolicySchema>;
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;

@@ -23,6 +23,8 @@ Across seven eval sessions on 2026-07-06, the platform burned **24.2M input toke
 1. **Session-level circuit breaker**: Stop LLM invocations when the session is in an unrecoverable error/drift loop.
 2. **Non-wakeable events**: Prevent events that the agent cannot act on from triggering LLM ticks.
 
+Read: docs/best-practices/agent-runtime.md
+
 ## Design
 
 ### Part A — Session Circuit Breaker (`SessionCircuitBreaker`)
