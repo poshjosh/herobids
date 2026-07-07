@@ -37,7 +37,13 @@ export function ConnectionsPage() {
     },
     onError: (error: ApiError) => {
       if (error.code === 'connection.in_use') {
-        setDeleteError(intl.formatMessage({ id: 'connections.deleteBlocked' }));
+        if (error.params?.blockingBotIds) {
+          setDeleteError(intl.formatMessage({ id: 'connections.deleteBlockedByBots' }, {
+            blockingBotIds: (error.params.blockingBotIds as string[]).join(', '),
+          }));
+        } else {
+          setDeleteError(intl.formatMessage({ id: 'connections.deleteBlocked' }));
+        }
       } else {
         setDeleteError(intl.formatMessage({ id: 'connections.deleteFailed' }));
       }

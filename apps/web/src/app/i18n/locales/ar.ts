@@ -303,6 +303,7 @@ export const messages: Record<string, string> = {
   'connections.delete': 'حذف',
   'connections.deleteConfirm': 'حذف الاتصال "{label}"؟ لا يمكن التراجع عن هذا.',
   'connections.deleteBlocked': 'لا يمكن حذف هذا الاتصال لأنه معين بشكل نشط لواحد أو أكثر من الوكلاء. قم بإلغائه بدلاً من ذلك، أو قم بإزالته من جميع الوكلاء أولاً.',
+  'connections.deleteBlockedByBots': 'لا يمكن حذف هذا الاتصال لأنه مشار إليه بواسطة البوتات: {blockingBotIds}. احذف البوتات أولاً.',
   'connections.deleteFailed': 'فشل حذف الاتصال. يرجى المحاولة مرة أخرى.',
   'connections.assignmentSuccess': 'تم تعيين الاتصال للوكلاء المحددين.',
 

@@ -303,6 +303,7 @@ export const messages: Record<string, string> = {
   'connections.delete': 'हटाएँ',
   'connections.deleteConfirm': 'कनेक्शन "{label}" हटाएँ? इसे वापस नहीं लाया जा सकता।',
   'connections.deleteBlocked': 'इस कनेक्शन को हटाया नहीं जा सकता क्योंकि यह सक्रिय रूप से एक या अधिक एजेंटों को असाइन किया गया है। इसके बजाय इसे रद्द करें, या पहले सभी एजेंटों से हटाएँ।',
+  'connections.deleteBlockedByBots': 'इस कनेक्शन को हटाया नहीं जा सकता क्योंकि यह बॉट्स द्वारा संदर्भित है: {blockingBotIds}. पहले बॉट्स हटाएँ।',
   'connections.deleteFailed': 'कनेक्शन हटाने में विफल। कृपया पुनः प्रयास करें।',
   'connections.assignmentSuccess': 'कनेक्शन चयनित एजेंटों को सौंपा गया।',
 
