@@ -16,6 +16,10 @@ export interface BuildTickGateStateParams {
    *  `"__none__"` when the buffer is empty.
    *  `undefined` means wake signal state is not incorporated (backward compat). */
   wakeSignalDigest?: string;
+  /** Stable digest of risk/playbook data (drawdown bucket + open position count).
+   *  `"__unknown__"` when the data is unavailable.
+   *  `undefined` means risk state is not incorporated (backward compat). */
+  riskPlaybookDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -144,6 +148,7 @@ export function buildTickGateState(params: BuildTickGateStateParams): TickGateSt
     instrumentSnapshots: tickSignals.instrumentSnapshots.length > 0 ? tickSignals.instrumentSnapshots : undefined,
     watchSummaryDigest: params.watchSummaryDigest,
     wakeSignalDigest: params.wakeSignalDigest,
+    riskPlaybookDigest: params.riskPlaybookDigest,
     previousContextHash: params.previousContextHash,
     baseTickIntervalMs: params.baseTickIntervalMs,
     currentTickIntervalMs: params.currentTickIntervalMs,

@@ -33,6 +33,11 @@ export interface TickGateState {
    * sorted by source, NO timestamps). When "__none__", the buffer was empty.
    * Undefined means wake signal state is not incorporated (backward compat). */
   wakeSignalDigest?: string;
+  /** Stable digest of risk/playbook data that materially affects agent
+   * actionability (drawdown bucket + open position count). When "__unknown__",
+   * the data was unavailable and the gate will err on the side of running the
+   * LLM. Undefined means risk state is not incorporated (backward compat). */
+  riskPlaybookDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -201,6 +206,51 @@ export function computeWakeSignalDigest(
     .digest('hex');
 }
 
+/**
+ * Produces a stable digest from risk/playbook data that materially affects
+ * agent actionability. Hashes the drawdown bucket (bucketed into bands so
+ * small fluctuations within a band don't invalidate the hash) and the raw
+ * open position count (every position opened/closed is meaningful).
+ *
+ * Returns "__unknown__" when both inputs are null/undefined (data unavailable).
+ * The shouldSkipTick gate resolves this sentinel by appending the tick number,
+ * ensuring the hash never matches and the LLM always runs.
+ */export function computeRiskPlaybookDigest(input: {
+  openPositionCount?: number | null;
+  drawdownPct?: number | null;
+}): string {
+  if (
+    (input.openPositionCount === null || input.openPositionCount === undefined)
+    && (input.drawdownPct === null || input.drawdownPct === undefined)
+  ) {
+    return '__unknown__';
+  }
+
+  const drawdownBucket = computeDrawdownBucket(input.drawdownPct ?? null);
+  const openPositionCount = input.openPositionCount ?? 0;
+
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ drawdownBucket, openPositionCount }))
+    .digest('hex');
+}
+
+/**
+ * Bucket drawdown percentage into coarse bands so small fluctuations within a
+ * band don't invalidate the tick gate fingerprint.
+ */
+function computeDrawdownBucket(drawdownPct: number | null): string {
+  if (drawdownPct === null || drawdownPct === undefined || !Number.isFinite(drawdownPct)) {
+    return '0';
+  }
+  const abs = Math.abs(drawdownPct);
+  if (abs <= 0) return '0';
+  if (abs <= 5) return '0-5';
+  if (abs <= 10) return '5-10';
+  if (abs <= 20) return '10-20';
+  return '20+';
+}
+
 export function computeDecisionContextHash(input: {
   positionSide?: string | null;
   latestPrice?: number | null;
@@ -209,6 +259,7 @@ export function computeDecisionContextHash(input: {
   instrumentSnapshots?: InstrumentHashEntry[];
   watchSummaryDigest?: string;
   wakeSignalDigest?: string;
+  riskPlaybookDigest?: string;
 }): string {
   // When multi-instrument snapshots are available, use the sorted per-instrument
   // summary for a stable, order-independent hash. This ensures a price move in
@@ -223,6 +274,9 @@ export function computeDecisionContextHash(input: {
     }
     if (input.wakeSignalDigest !== undefined) {
       payload.wakeSignalDigest = input.wakeSignalDigest;
+    }
+    if (input.riskPlaybookDigest !== undefined) {
+      payload.riskPlaybookDigest = input.riskPlaybookDigest;
     }
     return crypto
       .createHash('sha256')
@@ -242,6 +296,9 @@ export function computeDecisionContextHash(input: {
   }
   if (input.wakeSignalDigest !== undefined) {
     payload.wakeSignalDigest = input.wakeSignalDigest;
+  }
+  if (input.riskPlaybookDigest !== undefined) {
+    payload.riskPlaybookDigest = input.riskPlaybookDigest;
   }
   return crypto
     .createHash('sha256')
@@ -321,6 +378,13 @@ export async function shouldSkipTick(
     ? `__unknown__${state.tickNumber}`
     : state.watchSummaryDigest;
 
+  // Resolve the effective risk/playbook digest with the same "__unknown__"
+  // sentinel semantics: when risk data is unavailable, append the tick number
+  // so the hash never matches.
+  const effectiveRiskPlaybookDigest = state.riskPlaybookDigest === '__unknown__'
+    ? `__unknown__${state.tickNumber}`
+    : state.riskPlaybookDigest;
+
   let adaptiveIntervalDegraded = false;
   let regimeDegraded = false;
 
@@ -375,6 +439,7 @@ export async function shouldSkipTick(
       instrumentSnapshots: state.instrumentSnapshots,
       watchSummaryDigest: effectiveWatchDigest,
       wakeSignalDigest: state.wakeSignalDigest,
+      riskPlaybookDigest: effectiveRiskPlaybookDigest,
     });
 
     if (
@@ -421,6 +486,7 @@ export async function shouldSkipTick(
     instrumentSnapshots: state.instrumentSnapshots,
     watchSummaryDigest: effectiveWatchDigest,
     wakeSignalDigest: state.wakeSignalDigest,
+    riskPlaybookDigest: effectiveRiskPlaybookDigest,
   });
 
   if (regime !== null && !regime.pass) {

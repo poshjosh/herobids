@@ -59,7 +59,7 @@ import {
 import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { computeWakeSignalDigest, computeWatchSummaryDigest, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWakeSignalDigest, computeWatchSummaryDigest, computeRiskPlaybookDigest, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -2067,6 +2067,14 @@ async function runTick(): Promise<void> {
       }
     }
 
+    // Compute risk/playbook digest from already-loaded sessionMetrics.
+    // Uses drawdownPct (bucketed into bands) and open position count —
+    // both are available in-memory with no extra I/O.
+    const riskPlaybookDigest = computeRiskPlaybookDigest({
+      openPositionCount: sessionMetrics.openPositions.length,
+      drawdownPct: sessionMetrics.portfolio.drawdownPct,
+    });
+
     const tickGateState = buildTickGateState({
       tickNumber: tickCount,
       incomingMessages,
@@ -2076,6 +2084,7 @@ async function runTick(): Promise<void> {
       now: new Date(),
       watchSummaryDigest,
       wakeSignalDigest,
+      riskPlaybookDigest,
       previousContextHash,
       baseTickIntervalMs: costProfile.tickIntervalMs,
       currentTickIntervalMs: effectiveTickIntervalMs,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RegimeResult } from '@herobids/market-data';
-import { calculateAtrPercent, computeDecisionContextHash, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
+import { calculateAtrPercent, computeDecisionContextHash, computeRiskPlaybookDigest, computeWakeSignalDigest, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
 import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 
 function makeRegimeResult(pass: boolean, reasons: string[]): RegimeResult {
@@ -169,6 +169,81 @@ describe('computeWakeSignalDigest', () => {
   });
 });
 
+describe('computeRiskPlaybookDigest', () => {
+  it('returns "__unknown__" when both inputs are null', () => {
+    expect(computeRiskPlaybookDigest({ openPositionCount: null, drawdownPct: null })).toBe('__unknown__');
+  });
+
+  it('returns "__unknown__" when both inputs are undefined', () => {
+    expect(computeRiskPlaybookDigest({})).toBe('__unknown__');
+  });
+
+  it('produces a stable hex digest for valid inputs', () => {
+    const digest = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 3.5 });
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('produces identical digests for identical inputs', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 3, drawdownPct: 7.2 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 3, drawdownPct: 7.2 });
+    expect(a).toBe(b);
+  });
+
+  it('produces different digests when open position count changes', () => {
+    const before = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 5 });
+    const after = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 5 });
+    expect(before).not.toBe(after);
+  });
+
+  it('produces the same digest when drawdown fluctuates within the same band', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 2.1 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 4.9 });
+    expect(a).toBe(b);
+  });
+
+  it('produces different digests when drawdown crosses a band boundary', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 4.9 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 5.1 });
+    expect(a).not.toBe(b);
+  });
+
+  it('produces the same digest for drawdown=0 and drawdown=null (both bucket "0")', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 0 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: null });
+    expect(a).toBe(b);
+  });
+
+  it('produces a valid digest when only openPositionCount is available', () => {
+    const digest = computeRiskPlaybookDigest({ openPositionCount: 5 });
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(digest).not.toBe('__unknown__');
+  });
+
+  it('produces a valid digest when only drawdownPct is available', () => {
+    const digest = computeRiskPlaybookDigest({ drawdownPct: 8 });
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(digest).not.toBe('__unknown__');
+  });
+
+  it('handles negative drawdown (uses absolute value for bucketing)', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: -3 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 3 });
+    expect(a).toBe(b);
+  });
+
+  it('drawdown in 10-20 band produces different digest from 5-10 band', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 8 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 15 });
+    expect(a).not.toBe(b);
+  });
+
+  it('drawdown in 20+ band produces different digest from 10-20 band', () => {
+    const a = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 18 });
+    const b = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 25 });
+    expect(a).not.toBe(b);
+  });
+});
+
 describe('computeDecisionContextHash with watchSummaryDigest', () => {
   it('produces the same hash as before when watchSummaryDigest is not provided (backward compat)', () => {
     const hashWithout = computeDecisionContextHash({
@@ -242,6 +317,63 @@ describe('computeDecisionContextHash with watchSummaryDigest', () => {
       wakeSignalDigest: undefined,
     });
     expect(hashWithout).toBe(hashWithUndefined);
+  });
+
+  it('produces the same hash when riskPlaybookDigest is undefined vs omitted (backward compat)', () => {
+    const hashWithout = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+    });
+    const hashWithUndefined = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      riskPlaybookDigest: undefined,
+    });
+    expect(hashWithout).toBe(hashWithUndefined);
+  });
+
+  it('produces the same hash when riskPlaybookDigest is undefined vs omitted in multi-instrument path (backward compat)', () => {
+    const hashWithout = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+    });
+    const hashWithUndefined = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+      riskPlaybookDigest: undefined,
+    });
+    expect(hashWithout).toBe(hashWithUndefined);
+  });
+
+  it('produces different hashes when riskPlaybookDigest differs (drawdown band change)', () => {
+    const digestA = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 3 });
+    const digestB = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 8 });
+
+    const hashA = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      riskPlaybookDigest: digestA,
+    });
+    const hashB = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      riskPlaybookDigest: digestB,
+    });
+    expect(hashA).not.toBe(hashB);
+  });
+
+  it('includes riskPlaybookDigest in multi-instrument hash path', () => {
+    const digest = computeRiskPlaybookDigest({ openPositionCount: 2, drawdownPct: 5 });
+    const hashWith = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+      riskPlaybookDigest: digest,
+    });
+    const hashWithout = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+    });
+    expect(hashWith).not.toBe(hashWithout);
   });
 });
 
@@ -1024,6 +1156,172 @@ describe('shouldSkipTick', () => {
     );
     expect(tick3.skip).toBe(true);
     expect(tick3.reason).toBe('context_unchanged');
+  });
+
+  it('does NOT skip when risk/playbook digest changes but price/PnL stay the same (flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const riskBefore = computeRiskPlaybookDigest({ openPositionCount: 0, drawdownPct: 0 });
+    const riskAfter = computeRiskPlaybookDigest({ openPositionCount: 1, drawdownPct: 0 });
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        riskPlaybookDigest: riskBefore,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        riskPlaybookDigest: riskAfter,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('does NOT skip when riskPlaybookDigest is unknown (__unknown__ sentinel forces evaluation, flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        riskPlaybookDigest: '__unknown__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        riskPlaybookDigest: '__unknown__',
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('does NOT skip when riskPlaybookDigest is unknown with open positions', async () => {
+    const result1 = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        riskPlaybookDigest: '__unknown__',
+      },
+      {},
+    );
+    expect(result1.skip).toBe(false);
+
+    const result2 = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        riskPlaybookDigest: '__unknown__',
+        previousContextHash: result1.contextHash ?? null,
+      },
+      {},
+    );
+    // hash includes __unknown__2 which differs from __unknown__1, so should NOT skip
+    expect(result2.skip).toBe(false);
+  });
+
+  it('skips when risk/playbook digest, price/PnL, and watch are all unchanged (flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const watchDigest = computeWatchSummaryDigest(makeWatchSummary());
+    const riskDigest = computeRiskPlaybookDigest({ openPositionCount: 0, drawdownPct: 0 });
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+        riskPlaybookDigest: riskDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+        riskPlaybookDigest: riskDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
+  });
+
+  it('does NOT skip when only risk/playbook digest changes (drawdown crosses band, flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const watchDigest = computeWatchSummaryDigest(makeWatchSummary());
+    const riskBefore = computeRiskPlaybookDigest({ openPositionCount: 0, drawdownPct: 4 });
+    const riskAfter = computeRiskPlaybookDigest({ openPositionCount: 0, drawdownPct: 6 });
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+        riskPlaybookDigest: riskBefore,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+        riskPlaybookDigest: riskAfter,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
   });
 });
 

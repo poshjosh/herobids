@@ -309,4 +309,41 @@ describe('buildTickGateState', () => {
     expect(state.watchSummaryDigest).toBe('watch-hash');
     expect(state.wakeSignalDigest).toBe('wake-hash');
   });
+
+  it('passes riskPlaybookDigest through to the returned TickGateState', () => {
+    const digest = 'risk-digest-abc123';
+    const state = buildTickGateState({
+      tickNumber: 5,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      riskPlaybookDigest: digest,
+    });
+
+    expect(state.riskPlaybookDigest).toBe(digest);
+  });
+
+  it('leaves riskPlaybookDigest undefined when not provided (backward compat)', () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      hasOpenPositions: false,
+    });
+
+    expect(state.riskPlaybookDigest).toBeUndefined();
+  });
+
+  it('passes all three digests simultaneously', () => {
+    const state = buildTickGateState({
+      tickNumber: 3,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      watchSummaryDigest: 'watch-hash',
+      wakeSignalDigest: 'wake-hash',
+      riskPlaybookDigest: 'risk-hash',
+    });
+
+    expect(state.watchSummaryDigest).toBe('watch-hash');
+    expect(state.wakeSignalDigest).toBe('wake-hash');
+    expect(state.riskPlaybookDigest).toBe('risk-hash');
+  });
 });
