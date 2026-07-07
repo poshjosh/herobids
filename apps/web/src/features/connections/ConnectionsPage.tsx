@@ -114,7 +114,7 @@ export function ConnectionsPage() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {conn.status === 'active' && (conn.assignedAgentCount > 0 || conn.referencingBotCount > 0) && (
+              {conn.status === 'active' && (
                 <Button
                   variant="danger"
                   onClick={() => {
@@ -127,6 +127,7 @@ export function ConnectionsPage() {
                   {intl.formatMessage({ id: 'connections.revoke' })}
                 </Button>
               )}
+              {conn.assignedAgentCount === 0 && conn.referencingBotCount === 0 && (
               <Button
                 variant="danger"
                 onClick={() => {
@@ -138,6 +139,7 @@ export function ConnectionsPage() {
               >
                 {intl.formatMessage({ id: 'connections.delete' })}
               </Button>
+              )}
             </div>
           </div>
         </Card>

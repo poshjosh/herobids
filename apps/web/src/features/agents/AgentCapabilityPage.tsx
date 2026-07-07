@@ -57,6 +57,7 @@ export function AgentCapabilityPage() {
         qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'] }),
         qc.invalidateQueries({ queryKey: ['agents', agentId] }),
         qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] }),
+        qc.invalidateQueries({ queryKey: ['connections'] }),
       ]);
     },
   });
@@ -242,6 +243,7 @@ export function AgentCapabilityPage() {
             void Promise.all([
               qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] }),
               qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'] }),
+              qc.invalidateQueries({ queryKey: ['connections'] }),
             ]).then(async () => {
               // Auto-assign the new connection to this agent
               const currentIds = [...boundConnectionIds];
@@ -256,6 +258,7 @@ export function AgentCapabilityPage() {
                   qc.invalidateQueries({ queryKey: ['agents', agentId, 'capabilities', 'trading', 'connections'] }),
                   qc.invalidateQueries({ queryKey: ['agents', agentId] }),
                   qc.invalidateQueries({ queryKey: ['capabilities', 'trading', 'connections'] }),
+                  qc.invalidateQueries({ queryKey: ['connections'] }),
                 ]);
               }
             });

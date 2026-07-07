@@ -506,3 +506,181 @@ describe('DELETE /connections/:id', () => {
     expect(envelope.payload.runtimeDescriptor.budgets.maxVisibleToolSchemas).toBe(37);
   });
 });
+
+describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Build a Drizzle-like mock whose select→from→where chain yields rows
+   * from a sequence. Supports .limit(1) chained after .where().
+   */
+  function buildHardDeleteDb(selectSequence: unknown[][]) {
+    let callIdx = 0;
+
+    function makeThenable(rows: unknown[]) {
+      // Drizzle query objects are thenable AND have chain methods like .limit()
+      const thenable: Record<string, unknown> = {
+        then: (resolve: (v: unknown) => void) => resolve(rows),
+      };
+      thenable.limit = vi.fn().mockImplementation(() => makeThenable(rows));
+      return thenable;
+    }
+
+    return {
+      select: vi.fn().mockImplementation(() => {
+        const chain: Record<string, unknown> = {};
+        chain.from = vi.fn().mockImplementation(() => {
+          const innerChain: Record<string, unknown> = {};
+          innerChain.where = vi.fn().mockImplementation(() =>
+            makeThenable(selectSequence[callIdx++] ?? []),
+          );
+          return innerChain;
+        });
+        return chain;
+      }),
+      delete: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockResolvedValue(undefined),
+      })),
+      transaction: vi.fn().mockImplementation(
+        async (fn: (tx: unknown) => Promise<unknown>) => {
+          await fn({
+            delete: vi.fn().mockImplementation(() => ({
+              where: vi.fn().mockResolvedValue(undefined),
+            })),
+          });
+        },
+      ),
+    } as any;
+  }
+
+  it('hard-deletes when no active agent grants or bots reference the connection', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'active' }], // conn lookup
+      [],                                     // active grants → none
+      [],                                     // bots → none
+    ]);
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/conn-1?permanent=true',
+    });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('returns 409 when active agent grants reference the connection', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'active' }],
+      [{ agentId: 'agent-1' }], // active grant exists
+    ]);
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/conn-1?permanent=true',
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toBe('connection.in_use');
+    expect(
+      res.json<{ params: { hint: string } }>().params.hint,
+    ).toContain('Revoke the connection instead');
+  });
+
+  it('returns 409 with blockingBotIds when bots reference the connection', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'active' }],
+      [], // no active agent grants
+      [{ id: 'bot-1' }, { id: 'bot-2' }], // two bots
+    ]);
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/conn-1?permanent=true',
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toBe('connection.in_use');
+    const params = res.json<{
+      params: { blockingBotIds: string[]; hint: string };
+    }>().params;
+    expect(params.blockingBotIds).toEqual(['bot-1', 'bot-2']);
+    expect(params.hint).toContain('Delete the bots');
+  });
+
+  it('returns 404 when connection does not exist', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([[]]); // conn not found
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/missing?permanent=true',
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('handles concurrent FK violation after checks pass (race condition)', async () => {
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const selectSequence: unknown[][] = [
+      [{ id: 'conn-1', status: 'active' }],
+      [], // no active agent grants
+      [], // no bots
+    ];
+    let callIdx = 0;
+    const fkError = new Error(
+      'update or delete on table "connections" violates foreign key constraint',
+    ) as Error & { code: string };
+    fkError.code = '23503';
+
+    function makeThenable(rows: unknown[]) {
+      const thenable: Record<string, unknown> = {
+        then: (resolve: (v: unknown) => void) => resolve(rows),
+      };
+      thenable.limit = vi.fn().mockImplementation(() => makeThenable(rows));
+      return thenable;
+    }
+
+    const db = {
+      select: vi.fn().mockImplementation(() => {
+        const chain: Record<string, unknown> = {};
+        chain.from = vi.fn().mockImplementation(() => {
+          const innerChain: Record<string, unknown> = {};
+          innerChain.where = vi.fn().mockImplementation(() =>
+            makeThenable(selectSequence[callIdx++] ?? []),
+          );
+          return innerChain;
+        });
+        return chain;
+      }),
+      transaction: vi.fn().mockRejectedValue(fkError),
+    } as any;
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/connections/conn-1?permanent=true',
+    });
+    // FK error is re-thrown after re-checks find no concurrent grants → 500
+    expect(res.statusCode).toBe(500);
+  });
+});
