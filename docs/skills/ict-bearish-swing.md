@@ -1,4 +1,4 @@
-Follow the guidelines below, to regulate your trading decisions, e.g. when to open a position, place stop losses, take profits and so on.
+During a bearish market, follow the guidelines below, to regulate your trading decisions, e.g. when to open a position, place stop losses, take profits and so on.
 
 **Bearish Swing Trade Checklist (Daily + 1H ICT EMA Model)**
 
