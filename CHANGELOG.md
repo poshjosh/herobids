@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Session Circuit Breaker & Non-Wakeable Events:** New `SessionCircuitBreaker` state machine suppresses LLM invocations during unrecoverable error/drift loops. Tracks `strategy_error`, `strategy_fatal`, `drift_detected`, `stream_disconnect`. Configurable under `agentRuntime.sessionCircuitBreaker`. Estimated 40-60% token reduction for pathological sessions.
+
 
 - **Watch system redesign:** Consolidated watch types into single canonical module (`watch-types.ts`). Added structured purpose and coverage metadata to watches. Added canonical instrument identity resolution at watch creation. Extended wake payload schemas with purpose, instrument identity, and position keys. Implemented position coverage evaluation with 3-tier matching. Replaced blanket open-position escalation with coverage-aware gating. Added stale coverage detection and escalation. Tightened runtime summaries with purpose prefixes and coverage status blocks.
 
