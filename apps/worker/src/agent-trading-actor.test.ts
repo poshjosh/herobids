@@ -1432,6 +1432,51 @@ describe('AgentTradingActor', () => {
     });
   });
 
+  describe('paper mode restart — feed bootstrapping', () => {
+    it('bootstraps a market data feed for a rehydrated open position on restart', async () => {
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '90000',
+            realizedPnl: '0',
+          },
+        ]),
+      };
+      const decisionRepo = {
+        ...makeRepo(),
+        getLatestExitLevelsForInstrument: vi.fn().mockResolvedValue({ stopLoss: '90000' }),
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any, decisionRepo: decisionRepo as any }),
+      );
+
+      await actor.start();
+
+      // Feed must have been bootstrapped for the rehydrated BTC position
+      const feeds = (actor as any).instrumentFeeds as Map<string, unknown>;
+      expect(feeds.has('BTC/USD:USD')).toBe(true);
+
+      await actor.stop();
+    });
+
+    it('does not bootstrap feeds when there are no rehydrated open positions', async () => {
+      const actor = new AgentTradingActor(makeBaseDeps({ executionMode: 'paper' }));
+
+      await actor.start();
+
+      const feeds = (actor as any).instrumentFeeds as Map<string, unknown>;
+      expect(feeds.size).toBe(0);
+
+      await actor.stop();
+    });
+  });
+
   describe('position rehydration', () => {
     it('rehydration failure is non-fatal — actor starts with empty positions', async () => {
       const positionRepo = {

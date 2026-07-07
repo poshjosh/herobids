@@ -269,6 +269,15 @@ export class AgentTradingActor implements ExecutionActor {
         await this.rehydrateExitLevels();
         await this.initializeRiskTrackers();
         this.startPerTradeLevelMonitor();
+        // Ensure market data feeds are running for rehydrated open positions
+        // so that per-trade level checks fire correctly on restart.
+        for (const [symbol, pos] of this.positions) {
+          // Defensive: rehydratePositions() only inserts non-flat positions,
+          // but guard is retained for clarity.
+          if (pos.side !== 'flat') {
+            this.ensureMarketDataFeed(symbol);
+          }
+        }
         this.logger.info({ mode: 'paper', venue: deps.venue, venueType: deps.venueType }, 'Agent trading actor started');
         this.startTechnicalScanLoop();
         return;
@@ -419,6 +428,8 @@ export class AgentTradingActor implements ExecutionActor {
       // Ensure market data feeds are running for all open positions so that
       // computeUnrealizedPnl and stop-loss checks work in live mode (not just shadow).
       for (const [symbol, pos] of this.positions) {
+        // Defensive: rehydratePositions() only inserts non-flat positions,
+        // but guard is retained for clarity.
         if (pos.side !== 'flat') {
           this.ensureMarketDataFeed(symbol);
         }
@@ -2208,6 +2219,12 @@ export class AgentTradingActor implements ExecutionActor {
       );
     }
 
+    if (!this.venuePort && !this.swapVenue) {
+      this.logger.warn(
+        { symbol },
+        'ensureMarketDataFeed: no venue connection available — feed will not receive live prices (paper mode)',
+      );
+    }
     feed.start();
     this.instrumentFeeds.set(symbol, feed);
     this.logger.debug({ symbol }, 'Started market data feed for instrument');
