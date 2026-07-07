@@ -36,6 +36,7 @@ function makeRepo() {
     getLatestByVenueAccount: vi.fn().mockResolvedValue(null),
     insertSnapshot: vi.fn().mockResolvedValue('snap-id'),
     insert: vi.fn().mockResolvedValue(undefined),
+    getLatestExitLevelsForInstrument: vi.fn().mockResolvedValue(null),
   };
 }
 
@@ -1444,6 +1445,7 @@ describe('AgentTradingActor', () => {
             size: '1.0',
             entryPrice: '90000',
             realizedPnl: '0',
+            openedAt: new Date('2026-01-02T00:00:00Z'),
           },
         ]),
       };
@@ -1491,6 +1493,97 @@ describe('AgentTradingActor', () => {
 
       const pos = actor.getPosition('BTC/USD:USD');
       expect(pos!.side).toBe('flat');
+
+      await actor.stop();
+    });
+  });
+
+  describe('exit-level lifecycle boundary', () => {
+    it('does not rehydrate exit levels from decisions before position openedAt', async () => {
+      // Decision at T1 (before position opened) carries a stop-loss
+      // Decision at T3 (after position opened) carries no levels
+      // After restart, exit levels must be empty because T1 is outside the current lifecycle
+      const positionOpenedAt = new Date('2026-01-02T00:00:00Z');
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '90000',
+            realizedPnl: '0',
+            openedAt: positionOpenedAt,
+          },
+        ]),
+      };
+      // Simulate the repository correctly filtering out the pre-openedAt decision
+      // (returns null because the only level-bearing decision is before since)
+      const getLatestExitLevels = vi.fn().mockResolvedValue(null);
+      const decisionRepo = { ...makeRepo(), getLatestExitLevelsForInstrument: getLatestExitLevels };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any, decisionRepo: decisionRepo as any }),
+      );
+
+      await actor.start();
+
+      // The query must have been called with openedAt as the since bound
+      expect(getLatestExitLevels).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        'BTC/USD:USD',
+        positionOpenedAt,
+      );
+
+      // No exit levels must have been set
+      const exitLevels = (actor as any).exitLevels as Map<string, unknown>;
+      expect(exitLevels.has('BTC/USD:USD')).toBe(false);
+
+      await actor.stop();
+    });
+
+    it('rehydrates exit levels from decisions after position openedAt', async () => {
+      const positionOpenedAt = new Date('2026-01-02T00:00:00Z');
+      const positionRepo = {
+        ...makeRepo(),
+        getOpenByActorAndVenueAccount: vi.fn().mockResolvedValue([
+          {
+            venue: 'hyperliquid',
+            symbol: 'BTC/USD:USD',
+            side: 'long',
+            size: '1.0',
+            entryPrice: '90000',
+            realizedPnl: '0',
+            openedAt: positionOpenedAt,
+          },
+        ]),
+      };
+      // Simulate a decision within the current lifecycle that carries a stop-loss
+      const getLatestExitLevels = vi.fn().mockResolvedValue({ stopLoss: '88000' });
+      const decisionRepo = {
+        ...makeRepo(),
+        getLatestExitLevelsForInstrument: getLatestExitLevels,
+      };
+
+      const actor = new AgentTradingActor(
+        makeBaseDeps({ executionMode: 'paper', positionRepo: positionRepo as any, decisionRepo: decisionRepo as any }),
+      );
+
+      await actor.start();
+
+      // The query must have been called with openedAt as the since bound
+      expect(getLatestExitLevels).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        'BTC/USD:USD',
+        positionOpenedAt,
+      );
+
+      const exitLevels = (actor as any).exitLevels as Map<string, { stopLoss?: { toFixed(): string } }>;
+      expect(exitLevels.has('BTC/USD:USD')).toBe(true);
+      expect(exitLevels.get('BTC/USD:USD')?.stopLoss?.toFixed()).toBe('88000');
 
       await actor.stop();
     });

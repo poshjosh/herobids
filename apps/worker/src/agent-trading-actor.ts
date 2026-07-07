@@ -266,7 +266,6 @@ export class AgentTradingActor implements ExecutionActor {
         await this.captureStartupPendingLiveSnapshot();
         await this.reconcileIncompletePlans();
         await this.rehydratePositions();
-        await this.rehydrateExitLevels();
         await this.initializeRiskTrackers();
         this.startPerTradeLevelMonitor();
         // Ensure market data feeds are running for rehydrated open positions
@@ -421,7 +420,6 @@ export class AgentTradingActor implements ExecutionActor {
       await this.captureStartupPendingLiveSnapshot();
       await this.reconcileIncompletePlans();
       await this.rehydratePositions();
-      await this.rehydrateExitLevels();
       await this.initializeRiskTrackers();
       this.startPerTradeLevelMonitor();
 
@@ -2627,38 +2625,41 @@ export class AgentTradingActor implements ExecutionActor {
             entryPrice: new Decimal(pos.entryPrice ?? '0'),
             realizedPnl: new Decimal(pos.realizedPnl ?? '0'),
           });
+          // Rehydrate exit levels anchored to this position's openedAt so that
+          // stale levels from a prior position lifecycle are never resurrected.
+          // NOTE: The `since` boundary is the position's `openedAt`.
+          // If the entry decision (which may carry stopLoss/takeProfit) was created
+          // milliseconds before the fill, it will be included. However, if the
+          // decision was created *before* the position opened (e.g. due to async fill
+          // latency), it may be excluded. A future improvement is to anchor by a
+          // positionLifecycleId rather than by timestamp. The window of vulnerability
+          // is limited to the restart gap before the agent's next decision cycle.
+          try {
+            const levels = await this.deps.decisionRepo.getLatestExitLevelsForInstrument(
+              this.agentId,
+              this.deps.venueAccountId,
+              pos.symbol,
+              pos.openedAt,
+            );
+            if (levels) {
+              this.exitLevels.set(pos.symbol, {
+                stopLoss: levels.stopLoss ? new Decimal(levels.stopLoss) : undefined,
+                takeProfit: levels.takeProfit ? new Decimal(levels.takeProfit) : undefined,
+              });
+            }
+          } catch (err) {
+            this.logger.warn({ err, symbol: pos.symbol }, 'Failed to rehydrate exit levels for symbol — starting without levels');
+          }
         }
       }
       if (this.positions.size > 0) {
         this.logger.info({ count: this.positions.size }, 'Rehydrated agent positions from DB');
       }
-    } catch (err) {
-      this.logger.error({ err }, 'Failed to rehydrate agent positions — starting flat');
-    }
-  }
-
-  /** Rehydrate per-trade exit levels from the most recent decision per open position. */
-  private async rehydrateExitLevels(): Promise<void> {
-    if (this.positions.size === 0) return;
-    try {
-      for (const [instrumentId] of this.positions) {
-        const levels = await this.deps.decisionRepo.getLatestExitLevelsForInstrument(
-          this.agentId,
-          this.deps.venueAccountId,
-          instrumentId,
-        );
-        if (levels) {
-          this.exitLevels.set(instrumentId, {
-            stopLoss: levels.stopLoss ? new Decimal(levels.stopLoss) : undefined,
-            takeProfit: levels.takeProfit ? new Decimal(levels.takeProfit) : undefined,
-          });
-        }
-      }
       if (this.exitLevels.size > 0) {
         this.logger.info({ count: this.exitLevels.size }, 'Rehydrated per-trade exit levels from decisions');
       }
     } catch (err) {
-      this.logger.warn({ err }, 'Failed to rehydrate per-trade exit levels — starting without levels');
+      this.logger.error({ err }, 'Failed to rehydrate agent positions — starting flat');
     }
   }
 
