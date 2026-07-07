@@ -215,7 +215,8 @@ export function computeWakeSignalDigest(
  * Returns "__unknown__" when both inputs are null/undefined (data unavailable).
  * The shouldSkipTick gate resolves this sentinel by appending the tick number,
  * ensuring the hash never matches and the LLM always runs.
- */export function computeRiskPlaybookDigest(input: {
+ */
+export function computeRiskPlaybookDigest(input: {
   openPositionCount?: number | null;
   drawdownPct?: number | null;
 }): string {
