@@ -113,6 +113,7 @@ function makeWatch(overrides: Partial<{
   instrumentVenue: string;
   instrumentId: string;
   positionKey: string;
+  schemaVersion: number;
 }> = {}) {
   const base: Record<string, unknown> = {
     watchId: overrides.watchId ?? DEFAULT_WATCH_ID,
@@ -133,6 +134,9 @@ function makeWatch(overrides: Partial<{
   }
   if (overrides.positionKey) {
     base.coverage = { positionKey: overrides.positionKey };
+  }
+  if (overrides.schemaVersion !== undefined) {
+    base.schemaVersion = overrides.schemaVersion;
   }
   return JSON.stringify(base);
 }
@@ -357,7 +361,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.priceSource).toBe('regime_snapshot');
   });
 
-  it('populates purpose, instrument, and positionKey in payload when present on watch', async () => {
+  it('populates purpose, instrument, positionKey, and schemaVersion in payload when present on watch', async () => {
     seedWatch('agent-1', makeWatch({
       symbol: 'SOL',
       condition: 'above',
@@ -367,6 +371,7 @@ describe('createMarketMonitor — watch thresholds', () => {
       instrumentVenue: 'hyperliquid',
       instrumentId: 'SOL-USD',
       positionKey: 'pos-sol-stop-1',
+      schemaVersion: 2,
     }));
     seedDiscoveryPrice('SOL', 'solana', 204);
 
@@ -379,6 +384,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBe('hyperliquid');
     expect(payload.instrumentId).toBe('SOL-USD');
     expect(payload.positionKey).toBe('pos-sol-stop-1');
+    expect(payload.schemaVersion).toBe(2);
   });
 
   it('does NOT populate new fields in payload when watch lacks purpose/instrument/coverage', async () => {
@@ -394,6 +400,7 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBeUndefined();
     expect(payload.instrumentId).toBeUndefined();
     expect(payload.positionKey).toBeUndefined();
+    expect(payload.schemaVersion).toBeUndefined();
   });
 
   it('populates only partial new fields when watch has some but not all metadata', async () => {

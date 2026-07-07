@@ -247,6 +247,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
             ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
             ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
+            ...(watch.schemaVersion ? { schemaVersion: watch.schemaVersion } : {}),
           };
 
           await publisher.emitMarketWatchTriggered(agentId, payload);
@@ -270,6 +271,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
               ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
               ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
               ...(watch.coverage?.positionKey ? { positionKey: watch.coverage.positionKey } : {}),
+              ...(watch.schemaVersion ? { schemaVersion: watch.schemaVersion } : {}),
             },
           );
           metrics.eventsEmitted++;

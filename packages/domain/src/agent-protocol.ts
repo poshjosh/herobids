@@ -303,6 +303,8 @@ export const MarketWatchTriggeredPayloadSchema = z.object({
   instrumentVenue: z.string().optional(),
   instrumentId: z.string().optional(),
   positionKey: z.string().optional(),
+  /** Schema version from the triggering watch entry. Undefined for legacy watches. */
+  schemaVersion: z.number().int().positive().optional(),
 });
 
 export type MarketWatchTriggeredPayload = z.infer<typeof MarketWatchTriggeredPayloadSchema>;
@@ -364,6 +366,8 @@ export const WatchThresholdWakeContextSchema = z.object({
   instrumentVenue: z.string().optional(),
   instrumentId: z.string().optional(),
   positionKey: z.string().optional(),
+  /** Schema version from the triggering watch entry. Undefined for legacy watches. */
+  schemaVersion: z.number().int().positive().optional(),
 });
 export type WatchThresholdWakeContext = z.infer<typeof WatchThresholdWakeContextSchema>;
 

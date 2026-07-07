@@ -243,7 +243,7 @@ describe('Source-specific context schemas', () => {
     expect(result.success).toBe(false);
   });
 
-  it('WatchThresholdWakeContextSchema accepts optional purpose, instrument, and positionKey', () => {
+  it('WatchThresholdWakeContextSchema accepts optional purpose, instrument, positionKey, and schemaVersion', () => {
     const result = WatchThresholdWakeContextSchema.safeParse({
       watchId: 'w-1',
       symbol: 'BTC',
@@ -257,6 +257,7 @@ describe('Source-specific context schemas', () => {
       instrumentVenue: 'hyperliquid',
       instrumentId: 'BTC-USD',
       positionKey: 'pos-btc-1',
+      schemaVersion: 2,
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -264,6 +265,7 @@ describe('Source-specific context schemas', () => {
       expect(result.data.instrumentVenue).toBe('hyperliquid');
       expect(result.data.instrumentId).toBe('BTC-USD');
       expect(result.data.positionKey).toBe('pos-btc-1');
+      expect(result.data.schemaVersion).toBe(2);
     }
   });
 
@@ -284,10 +286,11 @@ describe('Source-specific context schemas', () => {
       expect(result.data.instrumentVenue).toBeUndefined();
       expect(result.data.instrumentId).toBeUndefined();
       expect(result.data.positionKey).toBeUndefined();
+      expect(result.data.schemaVersion).toBeUndefined();
     }
   });
 
-  it('MarketWatchTriggeredPayloadSchema accepts optional purpose, instrument, and positionKey', () => {
+  it('MarketWatchTriggeredPayloadSchema accepts optional purpose, instrument, positionKey, and schemaVersion', () => {
     const result = MarketWatchTriggeredPayloadSchema.safeParse({
       eventId: 'evt-1',
       monitorType: 'watch_threshold',
@@ -304,6 +307,7 @@ describe('Source-specific context schemas', () => {
       instrumentVenue: 'jupiter',
       instrumentId: 'SOL-USDC',
       positionKey: 'pos-sol-1',
+      schemaVersion: 2,
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -311,6 +315,7 @@ describe('Source-specific context schemas', () => {
       expect(result.data.instrumentVenue).toBe('jupiter');
       expect(result.data.instrumentId).toBe('SOL-USDC');
       expect(result.data.positionKey).toBe('pos-sol-1');
+      expect(result.data.schemaVersion).toBe(2);
     }
   });
 
