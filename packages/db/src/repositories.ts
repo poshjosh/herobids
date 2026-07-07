@@ -901,6 +901,128 @@ export class BotRepository {
     return rows.length;
   }
 
+  /**
+   * Atomically check the maxBots limit and mark a bot as running.
+   * Returns true if the slot was claimed, false if at capacity.
+   *
+   * The count-then-mark happens inside a single transaction so two concurrent
+   * starts cannot both see "under limit" and both mark running.
+   */
+  async tryMarkBotRunningWithLimit(
+    botId: string,
+    creatorType: string,
+    creatorId: string,
+    maxBots: number,
+  ): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      // Lock the agent row to serialize concurrent bot lifecycle operations.
+      // Without this, two concurrent transactions under READ COMMITTED both see
+      // the same count and both proceed — the transaction wraps count+write but
+      // doesn't serialize because they touch different bot rows.
+      if (creatorType === 'agent' && creatorId) {
+        await tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, creatorId))
+          .for('update');
+      }
+
+      const runningRows = await tx
+        .select({ id: bots.id })
+        .from(bots)
+        .where(
+          and(
+            eq(bots.creatorType, creatorType),
+            eq(bots.creatorId, creatorId),
+            eq(bots.status, 'running'),
+          ),
+        );
+
+      if (runningRows.length >= maxBots) return false;
+
+      const now = new Date();
+      const [current] = await tx
+        .select({ status: bots.status, startedAt: bots.startedAt })
+        .from(bots)
+        .where(eq(bots.id, botId))
+        .limit(1);
+
+      const startedAt = current?.status === 'running' && current.startedAt
+        ? current.startedAt
+        : now;
+
+      await tx
+        .update(bots)
+        .set({
+          status: 'running',
+          startedAt,
+          stoppedAt: null,
+          updatedAt: now,
+        })
+        .where(eq(bots.id, botId));
+
+      return true;
+    });
+  }
+
+  /**
+   * Atomically check the maxBots limit and create a new bot (status: 'stopped').
+   * Returns { created: true, botId } if under limit, or { created: false } if at capacity.
+   */
+  async tryCreateBotWithLimit(params: {
+    userId: string;
+    connectionId: string;
+    venueAccountId: string;
+    config: Record<string, unknown>;
+    creatorType: string;
+    creatorId: string;
+    maxBots: number;
+  }): Promise<{ created: boolean; botId?: string }> {
+    return this.db.transaction(async (tx) => {
+      // Lock the agent row to serialize concurrent bot lifecycle operations.
+      // See tryMarkBotRunningWithLimit for rationale.
+      if (params.creatorType === 'agent' && params.creatorId) {
+        await tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, params.creatorId))
+          .for('update');
+      }
+
+      const runningRows = await tx
+        .select({ id: bots.id })
+        .from(bots)
+        .where(
+          and(
+            eq(bots.creatorType, params.creatorType),
+            eq(bots.creatorId, params.creatorId),
+            eq(bots.status, 'running'),
+          ),
+        );
+
+      if (runningRows.length >= params.maxBots) {
+        return { created: false };
+      }
+
+      const id = crypto.randomUUID();
+      const now = new Date();
+      await tx.insert(bots).values({
+        id,
+        userId: params.userId,
+        venueAccountId: params.venueAccountId,
+        connectionId: params.connectionId,
+        config: params.config,
+        status: 'stopped',
+        creatorType: params.creatorType,
+        creatorId: params.creatorId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return { created: true, botId: id };
+    });
+  }
+
   /** Update bot config JSON in place. */
   async updateBotConfig(botId: string, config: Record<string, unknown>): Promise<void> {
     await this.db

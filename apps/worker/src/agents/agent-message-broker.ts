@@ -9,6 +9,7 @@ import type {
   SendMessagePayload,
   ManageBotPayload,
   BotQueryPayload,
+  AgentRiskDefaultsConfig,
 } from '@herobids/domain';
 import {
   Decimal,
@@ -103,6 +104,7 @@ export class AgentMessageBroker {
     private readonly botRestart?: BotRestartCallback,
     private readonly emailClient?: EmailClient,
     readonly onAgentConfigUpdate?: (agentId: string, config: Record<string, unknown> | null) => void,
+    private readonly agentRiskDefaults?: AgentRiskDefaultsConfig,
   ) {}
 
   private getCapabilityEngine(agentId: string, perAgentGrants?: CapabilityGrant[], policySig = ''): CapabilityPolicyEngine {
@@ -626,13 +628,6 @@ export class AgentMessageBroker {
         await this.botLimitCheck(agent.userId);
       }
 
-      // Enforce agent-level maxBots limit (additional per-agent guardrail on top of the plan cap).
-      const maxBots = agent.maxBots ?? 5;
-      const runningBots = await this.botRepo.countRunningBotsByCreator('agent', agent.id);
-      if (runningBots >= maxBots) {
-        throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
-      }
-
       // Stamp venue/venueType unconditionally — agent-provided values are discarded
       const venueType = venueTypeFromProvider(connRow.venue);
       if (!venueType) {
@@ -737,20 +732,37 @@ export class AgentMessageBroker {
         }
       }
 
-      const botId = await this.botRepo!.createBot({
+      // Atomically check agent-level maxBots limit and create the bot.
+      // The count + insert happen inside a single transaction so two concurrent
+      // creates cannot both see "under limit" and both create.
+      const maxBots = agent.maxBots ?? this.agentRiskDefaults?.maxBots ?? 5;
+      const createResult = await this.botRepo!.tryCreateBotWithLimit({
         userId: agent.userId,
         connectionId: connection.connectionId,
         venueAccountId: connRow.resolvedVenueAccountId,
         config: validatedConfig,
         creatorType: 'agent',
         creatorId: agent.id,
+        maxBots,
       });
+
+      if (!createResult.created) {
+        throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
+      }
+
+      const botId = createResult.botId!;
 
       logger.info({ agentId: agent.id, botId }, 'Agent created bot via manage_bot');
 
       if (this.botStart) {
-        // Mark running before queuing — matches the API start-bot path so the worker sees status='running'.
-        await this.botRepo!.markBotRunning(botId);
+        // Atomically claim a running slot for the newly created bot.
+        const claimed = await this.botRepo!.tryMarkBotRunningWithLimit(
+          botId, 'agent', agent.id, maxBots,
+        );
+        if (!claimed) {
+          // Shouldn't happen since we just created under the limit, but defend against races.
+          throw new Error(`Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before creating a new one.`);
+        }
         await this.botStart(botId, agent.userId, connection.connectionId, {
           ...validatedConfig,
           venueAccountId: connRow.resolvedVenueAccountId,
@@ -800,13 +812,31 @@ export class AgentMessageBroker {
         throw new Error(`Bot config is invalid — cannot start. Fix the config before retrying: ${details}`);
       }
 
+      // Enforce agent-level maxBots limit for new starts.
+      // Reclaim (bot already running) is exempt — the bot already holds a slot.
+      const maxBots = agent.maxBots ?? this.agentRiskDefaults?.maxBots ?? 5;
+      const isReclaim = bot.status === 'running';
+
       // Consistency model: we mark the bot running in DB then enqueue the
       // lifecycle start job.  If the process crashes between these two steps
       // the bot will be marked 'running' with no active actor — the worker's
       // periodic reclaim sweep (WorkerRuntime.reclaimOrphans) detects this and
       // re-starts the actor, converging DB and runtime without manual intervention.
       if (this.botStart) {
-        await this.botRepo.markBotRunning(payload.botId);
+        if (isReclaim) {
+          // Reclaim: bot already running, just remark it (preserve startedAt) and enqueue.
+          await this.botRepo.markBotRunning(payload.botId);
+        } else {
+          // New start: atomically check limit and claim a slot.
+          const claimed = await this.botRepo.tryMarkBotRunningWithLimit(
+            payload.botId, bot.creatorType, bot.creatorId ?? '', maxBots,
+          );
+          if (!claimed) {
+            throw new Error(
+              `Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before starting a new one.`,
+            );
+          }
+        }
         try {
           // venueAccountId is resolved via startupContext at job processing
           // time — no longer passed in the config payload to avoid stale/dual sources of truth.
@@ -828,7 +858,18 @@ export class AgentMessageBroker {
           throw new Error('Bot start failed: unable to enqueue lifecycle start. Please try again.');
         }
       } else {
-        await this.botRepo.markBotRunning(payload.botId);
+        if (isReclaim) {
+          await this.botRepo.markBotRunning(payload.botId);
+        } else {
+          const claimed = await this.botRepo.tryMarkBotRunningWithLimit(
+            payload.botId, bot.creatorType, bot.creatorId ?? '', maxBots,
+          );
+          if (!claimed) {
+            throw new Error(
+              `Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before starting a new one.`,
+            );
+          }
+        }
       }
 
       const agentBots = await this.botRepo.getBotsByCreator('agent', agent.id);

@@ -16,7 +16,7 @@ import { ActorStateOwner } from './agents/actor-state-owner.js';
 import { LlmStrategy, MechanicalStrategy, HybridStrategy, DcaStrategy } from '@herobids/strategy';
 import { fetchOpenRouterPricing } from '@herobids/llm';
 import { MarketDataRecorder } from '@herobids/backtesting';
-import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, bots, users } from '@herobids/db';
+import { createDatabase, PgJournal, FillRepository, PositionRepository, ExecutionPlanRepository, OrderRepository, BalanceSnapshotRepository, ReconciliationEventRepository, DecisionRepository, BacktestingRepository, AlertDeliveryRepository, AgentRepository, BotRepository, TokenSafetyOverrideRepository, UsageBillingRepository, DecisionFailureRepository, InstrumentRepository, bots, users, agents } from '@herobids/db';
 import { eq } from 'drizzle-orm';
 import { PublicStreamPool, OracleMarkSource, VenueCandleFetcher, HyperliquidAdapter, BybitAdapter, JupiterSwapAdapter } from '@herobids/venues';
 import { createFillFirstMarkSource } from '@herobids/engine';
@@ -829,6 +829,7 @@ const agentBroker = new AgentMessageBroker(
       actor.applyPendingConfigUpdate(config as Parameters<typeof actor.applyPendingConfigUpdate>[0]);
     }
   },
+  appConfig.agentRiskDefaults,
 );
 const agentStreamConsumer = new AgentStreamConsumer(redisClient, agentBroker);
 agentStreamSubscribeFn = (agentId: string) => agentStreamConsumer.subscribe(agentId);
@@ -1057,8 +1058,27 @@ const runtime = new WorkerRuntime(
       // Persist running status to DB so user-started bots (API path) and
       // reclaim-rehydrated bots converge. Agent-created bots are pre-marked
       // by the broker, making this a no-op for that path.
+      //
+      // For agent-created bots, use the atomic limit-enforcing path so that
+      // a race between concurrent API starts cannot bypass the maxBots guard.
       try {
-        await botRepo.markBotRunning(botId);
+        const [bot] = await db.select({ creatorType: bots.creatorType, creatorId: bots.creatorId })
+          .from(bots).where(eq(bots.id, botId)).limit(1);
+        if (bot?.creatorType === 'agent' && bot.creatorId) {
+          const [agentRow] = await db.select({ maxBots: agents.maxBots })
+            .from(agents).where(eq(agents.id, bot.creatorId)).limit(1);
+          const maxBots = agentRow?.maxBots ?? appConfig.agentRiskDefaults.maxBots;
+          const claimed = await botRepo.tryMarkBotRunningWithLimit(
+            botId, bot.creatorType, bot.creatorId, maxBots,
+          );
+          if (!claimed) {
+            logger.warn({ botId, maxBots }, 'Bot start denied — agent at maxBots capacity');
+            // The actor has already started; stop it to converge state.
+            throw new Error(`Agent max bots limit (${maxBots}) reached — stopping bot to converge.`);
+          }
+        } else {
+          await botRepo.markBotRunning(botId);
+        }
       } catch (err) {
         logger.error({ err, botId }, 'Failed to persist running state to DB');
       }

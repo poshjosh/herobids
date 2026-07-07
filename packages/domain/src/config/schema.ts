@@ -438,6 +438,8 @@ export const AgentRiskDefaultsSchema = z.object({
   maxDrawdownPct: z.number().min(0).max(100).default(20),
   /** Interval in ms for the periodic per-trade stop-loss / take-profit monitor loop. */
   perTradeLevelMonitorIntervalMs: z.number().min(1000).default(5000),
+  /** Operator default for agent max concurrent bots. Used when the agent row has no maxBots override. */
+  maxBots: z.number().int().min(1).default(5),
 }).default({});
 
 export const StreamConfigSchema = z.object({

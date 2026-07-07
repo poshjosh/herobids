@@ -443,8 +443,8 @@ describe('AgentMessageBroker', () => {
       return {
         db: { select: mockDbSelect },
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-new-001'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-new-001' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
@@ -497,7 +497,7 @@ describe('AgentMessageBroker', () => {
       // overwritten, this would be a different reference even though policySig looks identical.
       expect(engineAfterSecond).toBe(engineAfterFirst);
       // Both requests succeeded (createBot called twice confirms neither was denied)
-      expect(botRepo.createBot).toHaveBeenCalledTimes(2);
+      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(2);
     });
 
     it('rebuilds engine when toolPolicy changes between calls', async () => {
@@ -559,7 +559,7 @@ describe('AgentMessageBroker', () => {
       const result = await brokerWithBot.processInbound(e1);
       expect(result.accepted).toBe(false);
       expect(result.error).toMatch(/capability_denied/);
-      expect(botRepo.createBot).not.toHaveBeenCalled();
+      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
     });
   });
 
@@ -880,8 +880,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-abc'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-abc' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([
           { id: 'bot-abc', status: 'running', config: { strategy: { type: 'momentum', decisionMode: 'mechanical' }, symbol: 'BTC-USD' } },
@@ -921,8 +921,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-xyz'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-xyz' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
@@ -953,8 +953,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: instanceStatusDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-min'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-min' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([
           { id: 'bot-min', status: 'stopped', config: {} },
@@ -1016,8 +1016,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: mockDbV2,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-targeted'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-targeted' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
@@ -1046,7 +1046,7 @@ describe('AgentMessageBroker', () => {
 
       expect(result.accepted).toBe(true);
       expect(botRepo.isConnectionOwnedBy).toHaveBeenCalledWith('binding-2', 'user-1');
-      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
         connectionId: 'binding-2',
         venueAccountId: 'va-002',
       }));
@@ -1087,8 +1087,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: mockDbByConn,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-by-connectionid'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-by-connectionid' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
@@ -1116,7 +1116,7 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
         connectionId: 'binding-2',
         venueAccountId: 'va-002',
       }));
@@ -1125,8 +1125,8 @@ describe('AgentMessageBroker', () => {
     it('rejects when connectionId does not match any granted connection', async () => {
       const botRepo = {
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-never'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-never' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
@@ -1152,7 +1152,7 @@ describe('AgentMessageBroker', () => {
 
       expect(result.accepted).toBe(false);
       expect(result.error).toMatch(/no trading capability connection found with connectionid nonexistent/i);
-      expect(botRepo.createBot).not.toHaveBeenCalled();
+      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
     });
 
     it('uses the default connection when no connectionId is provided', async () => {
@@ -1187,8 +1187,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: mockDbDefault,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-default'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-default' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
@@ -1215,7 +1215,7 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
         connectionId: 'binding-2',
         venueAccountId: 'va-002',
       }));
@@ -1255,8 +1255,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: mockDbAmbiguous,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-ambiguous'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-ambiguous' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-002', venue: 'hyperliquid', userId: 'user-1' }),
@@ -1283,7 +1283,7 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(true);
-      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
         connectionId: 'binding-1',
         venueAccountId: 'va-002',
       }));
@@ -1303,8 +1303,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: mockDbNotOwned,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(false),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-never'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-never' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
@@ -1322,7 +1322,7 @@ describe('AgentMessageBroker', () => {
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
       expect(result.accepted).toBe(false);
-      expect(botRepo.createBot).not.toHaveBeenCalled();
+      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
       expect((eventPublisher as any).emitInstanceStatus).not.toHaveBeenCalled();
     });
 
@@ -1346,7 +1346,8 @@ describe('AgentMessageBroker', () => {
         db: mockDbMaxBots,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
         countRunningBotsByCreator: vi.fn().mockResolvedValue(2), // at limit
-        createBot: vi.fn().mockResolvedValue('bot-over'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-over' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
@@ -1364,7 +1365,7 @@ describe('AgentMessageBroker', () => {
 
       const result = await brokerWithBot.processInbound(makeManageBotEnvelope());
       expect(result.accepted).toBe(false);
-      expect(botRepo.createBot).not.toHaveBeenCalled();
+      expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
     });
 
     it('clamps create_and_start risk.maxOrderNotional to the agent capital limit', async () => {
@@ -1390,8 +1391,8 @@ describe('AgentMessageBroker', () => {
       const botRepo = {
         db: mockDbCap,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-cap'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-cap' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
@@ -1428,7 +1429,7 @@ describe('AgentMessageBroker', () => {
       // maxDrawdownPct is not a RiskConfigSchema field — it is stripped by
       // BotConfigSchema.safeParse() validation. The capital clamp on
       // maxOrderNotional (2500 → 1000) is what this test cares about.
-      expect(botRepo.createBot).toHaveBeenCalledWith(expect.objectContaining({
+      expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledWith(expect.objectContaining({
         config: expect.objectContaining({
           risk: expect.objectContaining({ maxOrderNotional: '1000' }),
         }),
@@ -1495,7 +1496,7 @@ describe('AgentMessageBroker', () => {
           creatorId: 'agent-123',
         }),
         updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
@@ -1517,7 +1518,7 @@ describe('AgentMessageBroker', () => {
       }));
 
       expect(result.accepted).toBe(false);
-      expect(botRepo.markBotRunning).toHaveBeenCalledWith('bot-start');
+      expect(botRepo.tryMarkBotRunningWithLimit).toHaveBeenCalledWith('bot-start', 'agent', 'agent-123', 5);
       expect(botRepo.restoreBotRuntimeState).toHaveBeenCalledWith({
         botId: 'bot-start',
         status: 'stopped',
@@ -1550,7 +1551,7 @@ describe('AgentMessageBroker', () => {
           creatorId: 'agent-123',
         }),
         updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         restoreBotRuntimeState: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
       };
@@ -1585,6 +1586,7 @@ describe('AgentMessageBroker', () => {
         getBotById: vi.fn().mockResolvedValue({
           id: 'bot-start',
           userId: 'user-1',
+          connectionId: 'binding-1',
           venueAccountId: 'va-001',
           status: 'stopped',
           startedAt: null,
@@ -1594,7 +1596,7 @@ describe('AgentMessageBroker', () => {
           creatorId: 'agent-123',
         }),
         updateBotConfig: vi.fn().mockResolvedValue(undefined),
-        markBotRunning: vi.fn().mockResolvedValue(undefined),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         restoreBotRuntimeState: vi.fn().mockRejectedValue(new Error('DB also down')),
       };
       const botStart = vi.fn().mockRejectedValue(new Error('Redis connection refused'));
@@ -1959,8 +1961,8 @@ describe('AgentMessageBroker', () => {
       const makeBotRepo = () => ({
         db: execModeDbMock,
         isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-        countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-        createBot: vi.fn().mockResolvedValue('bot-exec-mode'),
+        tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-exec-mode' }),
+        tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
         markBotRunning: vi.fn().mockResolvedValue(undefined),
         getBotsByCreator: vi.fn().mockResolvedValue([]),
         getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
@@ -2038,7 +2040,7 @@ describe('AgentMessageBroker', () => {
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/cannot create a bot with execution mode "live".*permitted execution modes: paper/i);
-        expect(botRepo.createBot).not.toHaveBeenCalled();
+        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
       });
 
       it('rejects shadow agent creating a live-mode bot', async () => {
@@ -2057,7 +2059,7 @@ describe('AgentMessageBroker', () => {
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/cannot create a bot with execution mode "live".*permitted execution modes: paper, shadow/i);
-        expect(botRepo.createBot).not.toHaveBeenCalled();
+        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
       });
 
       it('allows paper agent to create a paper-mode bot', async () => {
@@ -2075,7 +2077,7 @@ describe('AgentMessageBroker', () => {
 
         const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
       });
 
       it('allows live agent to create a live-mode bot', async () => {
@@ -2093,7 +2095,7 @@ describe('AgentMessageBroker', () => {
 
         const result = await brokerWithBot.processInbound(makeLiveBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
       });
 
       it('rejects live bot creation when botLiveCheck callback throws (plan gate)', async () => {
@@ -2119,7 +2121,7 @@ describe('AgentMessageBroker', () => {
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/not available on your plan/);
         expect(botLiveCheck).toHaveBeenCalledWith('user-1');
-        expect(botRepo.createBot).not.toHaveBeenCalled();
+        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
       });
 
       it('allows shadow agent to create a paper-mode bot', async () => {
@@ -2137,7 +2139,7 @@ describe('AgentMessageBroker', () => {
 
         const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
       });
 
       it('rejects paper agent creating a shadow-mode bot', async () => {
@@ -2156,7 +2158,7 @@ describe('AgentMessageBroker', () => {
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
         expect(result.accepted).toBe(false);
         expect(result.error).toMatch(/cannot create a bot with execution mode "shadow".*permitted execution modes: paper/i);
-        expect(botRepo.createBot).not.toHaveBeenCalled();
+        expect(botRepo.tryCreateBotWithLimit).not.toHaveBeenCalled();
       });
 
       it('allows shadow agent to create a shadow-mode bot', async () => {
@@ -2174,7 +2176,7 @@ describe('AgentMessageBroker', () => {
 
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
       });
 
       it('allows live agent to create a paper-mode bot', async () => {
@@ -2192,7 +2194,7 @@ describe('AgentMessageBroker', () => {
 
         const result = await brokerWithBot.processInbound(makePaperBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
       });
 
       it('allows live agent to create a shadow-mode bot', async () => {
@@ -2210,13 +2212,12 @@ describe('AgentMessageBroker', () => {
 
         const result = await brokerWithBot.processInbound(makeShadowBotEnvelope());
         expect(result.accepted).toBe(true);
-        expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+        expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
       });
 
       describe('adjust_config mode escalation guard', () => {
         const makeAdjustConfigBotRepo = () => ({
           isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-          countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
           getBotById: vi.fn().mockResolvedValue({
             id: 'bot-shadow',
             userId: 'user-1',
@@ -2557,8 +2558,8 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     return {
       db: { select: mockDbSelect },
       isConnectionOwnedBy: vi.fn().mockResolvedValue(true),
-      countRunningBotsByCreator: vi.fn().mockResolvedValue(0),
-      createBot: vi.fn().mockResolvedValue('bot-new-001'),
+      tryCreateBotWithLimit: vi.fn().mockResolvedValue({ created: true, botId: 'bot-new-001' }),
+      tryMarkBotRunningWithLimit: vi.fn().mockResolvedValue(true),
       markBotRunning: vi.fn().mockResolvedValue(undefined),
       getBotsByCreator: vi.fn().mockResolvedValue([]),
       getVenueAccountById: vi.fn().mockResolvedValue({ id: 'va-001', venue: 'hyperliquid', userId: 'user-1' }),
@@ -2587,10 +2588,10 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     const result = await broker.processInbound(envelope);
 
     expect(result.accepted).toBe(true);
-    expect(botRepo.createBot).toHaveBeenCalledTimes(1);
+    expect(botRepo.tryCreateBotWithLimit).toHaveBeenCalledTimes(1);
 
     // Extract the config passed to createBot
-    const createBotCall = (botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>;
+    const createBotCall = (botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>;
     const createBotArg = createBotCall[0] as Record<string, unknown>;
     const config = createBotArg['config'] as Record<string, unknown>;
     const strategy = config['strategy'] as Record<string, unknown>;
@@ -2625,7 +2626,7 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     const result = await broker.processInbound(envelope);
 
     expect(result.accepted).toBe(true);
-    const createBotArg = ((botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const createBotArg = ((botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
     const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown>;
 
     expect(params['provider']).toBe('openai');
@@ -2660,7 +2661,7 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     const result = await broker.processInbound(envelope);
     expect(result.accepted).toBe(true);
 
-    const createBotArg = ((botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const createBotArg = ((botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
     const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown> | undefined;
 
     // params should not have provider/model stamped for mechanical
@@ -2696,7 +2697,7 @@ describe('manage_bot create_and_start — LLM inheritance (bug-report 001)', () 
     const result = await broker.processInbound(envelope);
     expect(result.accepted).toBe(true);
 
-    const createBotArg = ((botRepo.createBot as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const createBotArg = ((botRepo.tryCreateBotWithLimit as ReturnType<typeof vi.fn>).mock.calls[0] as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
     const params = ((createBotArg['config'] as Record<string, unknown>)['strategy'] as Record<string, unknown>)['params'] as Record<string, unknown> | undefined;
 
     expect(params?.['provider']).toBeUndefined();

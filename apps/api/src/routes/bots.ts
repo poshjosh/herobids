@@ -4,8 +4,8 @@ import type { Redis } from 'ioredis';
 import crypto from 'node:crypto';
 import { eq, and, sql, sum, asc, inArray, or } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { bots, connections, blueprints, PgJournal, fills, journalEvents } from '@herobids/db';
-import type { PlansConfig } from '@herobids/domain';
+import { bots, connections, blueprints, PgJournal, fills, journalEvents, agents } from '@herobids/db';
+import type { PlansConfig, AgentRiskDefaultsConfig } from '@herobids/domain';
 import {
   CreateInstanceSchema,
   UpdateInstanceConfigSchema,
@@ -28,7 +28,7 @@ function normalizeBotConfig(config: Record<string, unknown>, venue: string, symb
   return normalized;
 }
 
-export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig): Promise<void> {
+export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>, db: Database, redis: Redis, plansConfig?: PlansConfig, agentRiskDefaults?: AgentRiskDefaultsConfig): Promise<void> {
   // Create bot
   app.post('/bots', async (request, reply) => {
     const parsed = CreateInstanceSchema.safeParse(request.body);
@@ -522,6 +522,30 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
 
     if (bot.status === 'running') {
       return reply.status(200).send({ status: 'already_running', botId: id });
+    }
+
+    // Enforce agent-level maxBots limit for agent-created bots.
+    // Non-agent bots (user-created, system) are not subject to this limit.
+    if (bot.creatorType === 'agent' && bot.creatorId) {
+      const [agentRow] = await db.select({ maxBots: agents.maxBots })
+        .from(agents)
+        .where(eq(agents.id, bot.creatorId))
+        .limit(1);
+      const maxBots = agentRow?.maxBots ?? agentRiskDefaults?.maxBots ?? 5;
+      const runningRows = await db
+        .select({ id: bots.id })
+        .from(bots)
+        .where(and(
+          eq(bots.creatorType, 'agent'),
+          eq(bots.creatorId, bot.creatorId),
+          eq(bots.status, 'running'),
+        ));
+      if (runningRows.length >= maxBots) {
+        return reply.status(409).send({
+          error: 'max_bots_reached',
+          message: `Agent has reached its max concurrent bots limit (${maxBots}). Stop a bot before starting a new one.`,
+        });
+      }
     }
 
     // Resolve execution mode from config for capability validation

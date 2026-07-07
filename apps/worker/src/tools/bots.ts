@@ -248,7 +248,9 @@ const startBotTool: AgentTool = {
       return { success: false, error: `bot ${botId} is already running`, fault: false };
     }
 
-    await ctx.botRepo.markBotRunning(botId);
+    // Do NOT mark the bot running here — the broker handles the status transition
+    // atomically via tryMarkBotRunningWithLimit when it processes the start action.
+    // Pre-marking bypasses the limit check (two concurrent starts could both pass).
     try {
       await ctx.publishToInbound(AGENT_MESSAGE_TYPES.MANAGE_BOT, {
         action: 'start',
@@ -256,21 +258,11 @@ const startBotTool: AgentTool = {
         rationale,
       });
     } catch (err) {
-      logger.error({ err, botId }, 'Failed to enqueue direct bot start — restoring previous runtime state');
-      try {
-        await ctx.botRepo.restoreBotRuntimeState({
-          botId,
-          status: startTarget.status,
-          startedAt: startTarget.startedAt,
-          stoppedAt: startTarget.stoppedAt,
-        });
-      } catch (rollbackErr) {
-        logger.error({ rollbackErr, botId }, 'CRITICAL: failed to restore bot state after start enqueue failure');
-      }
+      logger.error({ err, botId }, 'Failed to enqueue direct bot start');
       return { success: false, data: { ok: false, botId, note: 'failed to submit bot start' }, fault: false };
     }
 
-    return { success: true, data: { ok: true, botId, status: 'running', note: 'bot start submitted' } };
+    return { success: true, data: { ok: true, botId, note: 'bot start submitted' } };
   },
 };
 
