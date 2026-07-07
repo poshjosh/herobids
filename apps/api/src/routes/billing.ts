@@ -24,6 +24,34 @@ import { errorPayload } from '../error-payload.js';
  * - POST /billing/cancel-subscription — authenticated
  * - POST /billing/upgrade-subscription — authenticated
  */
+/**
+ * Resolve available top-up packs for a plan from operator config.
+ * Pure config lookup — does not depend on a billing account existing.
+ */
+function resolveTopUpPacks(
+  planId: string,
+  plansConfig: PlansConfig,
+  usageBillingConfig: UsageBillingConfig | undefined,
+  providerManager: ReturnType<typeof createProviderManager>,
+) {
+  const planUsage = plansConfig.plans[planId]?.usage;
+  const allowedPackIds = new Set(planUsage?.topUpPackIds ?? []);
+  const topUpsEnabled = (planUsage?.topUpPackIds?.length ?? 0) > 0 && Boolean(usageBillingConfig?.creditTopUpsEnabled);
+  if (!topUpsEnabled || !usageBillingConfig) return [];
+
+  return Object.entries(usageBillingConfig.topUpProductsByProvider).flatMap(([provider, packs]) =>
+    providerManager.getProvider(provider as BillingProvider)
+      ? packs
+          .filter((pack) => allowedPackIds.has(pack.packId))
+          .map((pack) => ({
+            provider,
+            packId: pack.packId,
+            cents: pack.cents,
+          }))
+      : [],
+  );
+}
+
 export async function billingRoutes(
   app: FastifyInstance,
   billingConfig: BillingConfig,
@@ -549,11 +577,17 @@ export async function billingRoutes(
 
     const account = await usageBillingRepo.getAccountByUserId(userId);
     if (!account) {
+      // Resolve top-up packs from the user's plan even when no billing account
+      // exists yet (e.g. fresh local deployment with no agent activity).
+      const [user] = await db.select({ planId: users.planId }).from(users).where(eq(users.id, userId)).limit(1);
+      const planId = user?.planId ?? plansConfig.defaultPlanId;
+      const topUpPacks = resolveTopUpPacks(planId, plansConfig, usageBillingConfig, providerManager);
       return reply.send({
         account: null,
         currentPeriod: null,
         warnings: [],
         byMeter: {},
+        topUpPacks,
       });
     }
 
@@ -569,22 +603,7 @@ export async function billingRoutes(
     const warningThresholds = usageBillingConfig?.warningThresholdsPct ?? [50, 80, 100];
     const netOutOfPocket = period ? Math.max(0, -period.balanceMicrousd) : 0;
     const hardCap = period?.hardCapMicrousd;
-    const planUsage = plansConfig.plans[account.activePlanId]?.usage;
-    const allowedPackIds = new Set(planUsage?.topUpPackIds ?? []);
-    const topUpsEnabled = (planUsage?.topUpPackIds?.length ?? 0) > 0 && Boolean(usageBillingConfig?.creditTopUpsEnabled);
-    const topUpPacks = topUpsEnabled && usageBillingConfig
-      ? Object.entries(usageBillingConfig.topUpProductsByProvider).flatMap(([provider, packs]) =>
-          providerManager.getProvider(provider as BillingProvider)
-            ? packs
-                .filter((pack) => allowedPackIds.has(pack.packId))
-                .map((pack) => ({
-                  provider,
-                  packId: pack.packId,
-                  cents: pack.cents,
-                }))
-            : [],
-        )
-      : [];
+    const topUpPacks = resolveTopUpPacks(account.activePlanId, plansConfig, usageBillingConfig, providerManager);
     const warnings = warningThresholds.map((pct) => ({
       thresholdPct: pct,
       reached: hardCap != null ? netOutOfPocket >= (hardCap * pct) / 100 : false,

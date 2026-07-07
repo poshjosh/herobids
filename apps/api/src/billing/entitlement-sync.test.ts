@@ -195,64 +195,189 @@ describe('EntitlementSync top-up events', () => {
     expect(billingRepo.recordEventFailed).toHaveBeenCalledTimes(1);
   });
 
-  it('reconciles an existing billing account to the current plan before applying a top-up', async () => {
+  it('ensures usage billing account exists on active subscription webhook without overwriting caps', async () => {
     const billingRepo = {
       isEventProcessed: vi.fn().mockResolvedValue(false),
       recordEventProcessed: vi.fn().mockResolvedValue(undefined),
       recordEventFailed: vi.fn().mockResolvedValue(undefined),
+      findCustomerByExternalId: vi.fn().mockResolvedValue({ userId: 'user-1', externalCustomerId: 'cus_1', provider: 'stripe' }),
+      findSubscriptionByExternalId: vi.fn().mockResolvedValue(null),
+      upsertSubscriptionAndSyncPlan: vi.fn().mockResolvedValue(undefined),
     } as unknown as BillingRepository;
 
-    const existingAccount = {
-      id: 'acc_user_1',
-      activePlanId: 'free',
-      softCapMicrousd: null,
-      hardCapMicrousd: null,
-    };
-
     const usageBillingRepo = {
-      getAccountByUserId: vi.fn().mockResolvedValue(existingAccount),
-      getUserPlanId: vi.fn().mockResolvedValue('pro'),
       getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
         id: 'acc_user_1',
         activePlanId: 'pro',
-        softCapMicrousd: 3_000_000,
-        hardCapMicrousd: 5_000_000,
+        softCapMicrousd: null,
+        hardCapMicrousd: null,
       }),
-      ensureActiveRateCard: vi.fn().mockResolvedValue({ id: 'rc_default_v1' }),
-      getOrCreateOpenPeriod: vi.fn().mockResolvedValue({ id: 'period_1' }),
-      openTopUpCreditFromWebhook: vi.fn().mockResolvedValue(undefined),
-      recomputeSpendState: vi.fn().mockResolvedValue(undefined),
     } as unknown as UsageBillingRepository;
 
-    const plansConfig = PlansConfigSchema.parse({
-      defaultPlanId: 'free',
-      plans: {
-        pro: {
-          usage: {
-            includedCreditCents: 250,
-            softCapCents: 300,
-            hardCapCents: 500,
-          },
-        },
-      },
-    });
+    const config = makeBillingConfig();
+    const sync = new EntitlementSync(billingRepo, config, 'free', usageBillingRepo, 'default');
 
-    const sync = new EntitlementSync(billingRepo, makeBillingConfig(), 'free', usageBillingRepo, 'default', plansConfig);
-    const result = await sync.processEvent(makeTopUpEvent());
+    const event: NormalizedWebhookEvent = {
+      id: 'evt_sub_1',
+      type: 'subscription.created',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_pro_monthly',
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-07-31T23:59:59.999Z'),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    const result = await sync.processEvent(event);
 
     expect(result).toEqual({ processed: true });
-    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro', {
-      softCapMicrousd: 3_000_000,
-      hardCapMicrousd: 5_000_000,
-    });
-    expect(usageBillingRepo.getOrCreateOpenPeriod).toHaveBeenCalledWith(
-      'acc_user_1',
-      expect.any(Date),
+    expect(billingRepo.upsertSubscriptionAndSyncPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', planId: 'pro' }),
       'pro',
-      'rc_default_v1',
-      2_500_000,
-      3_000_000,
-      5_000_000,
     );
+    // Caps are NOT passed — only userId and planId to ensure existence
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro');
+    expect(billingRepo.recordEventProcessed).toHaveBeenCalledWith('stripe:evt_sub_1', 'stripe.subscription.created');
+  });
+
+  it('ensures usage billing account exists on subscription cancel/downgrade without overwriting caps', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+      findCustomerByExternalId: vi.fn().mockResolvedValue({ userId: 'user-1', externalCustomerId: 'cus_1', provider: 'stripe' }),
+      findSubscriptionByExternalId: vi.fn().mockResolvedValue(null),
+      upsertSubscriptionAndSyncPlan: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const usageBillingRepo = {
+      getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'free',
+        softCapMicrousd: null,
+        hardCapMicrousd: null,
+      }),
+    } as unknown as UsageBillingRepository;
+
+    const config = makeBillingConfig();
+    const sync = new EntitlementSync(billingRepo, config, 'free', usageBillingRepo, 'default');
+
+    const event: NormalizedWebhookEvent = {
+      id: 'evt_sub_cancel',
+      type: 'subscription.canceled',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_pro_monthly',
+      status: 'canceled',
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      canceledAt: new Date('2026-07-07T00:00:00.000Z'),
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-07-07T00:00:00.000Z'),
+    };
+
+    const result = await sync.processEvent(event);
+
+    expect(result).toEqual({ processed: true });
+    expect(billingRepo.upsertSubscriptionAndSyncPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', planId: 'free' }),
+      'free',
+    );
+    // Account is still ensured to exist (for top-up packs / spend controls)
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'free');
+    expect(billingRepo.recordEventProcessed).toHaveBeenCalledWith('stripe:evt_sub_cancel', 'stripe.subscription.canceled');
+  });
+
+  it('preserves existing user-set spend caps when billing account already exists on subscription webhook', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+      findCustomerByExternalId: vi.fn().mockResolvedValue({ userId: 'user-1', externalCustomerId: 'cus_1', provider: 'stripe' }),
+      findSubscriptionByExternalId: vi.fn().mockResolvedValue(null),
+      upsertSubscriptionAndSyncPlan: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const usageBillingRepo = {
+      getOrCreateBillingAccountForUser: vi.fn().mockResolvedValue({
+        id: 'acc_user_1',
+        activePlanId: 'pro',
+        softCapMicrousd: 1_000_000,
+        hardCapMicrousd: 2_000_000,
+      }),
+    } as unknown as UsageBillingRepository;
+
+    const config = makeBillingConfig();
+    const sync = new EntitlementSync(billingRepo, config, 'free', usageBillingRepo, 'default');
+
+    const event: NormalizedWebhookEvent = {
+      id: 'evt_sub_upgrade',
+      type: 'subscription.updated',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_pro_monthly',
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-07-31T23:59:59.999Z'),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-07-07T00:00:00.000Z'),
+    };
+
+    const result = await sync.processEvent(event);
+
+    expect(result).toEqual({ processed: true });
+    // Caps are NOT passed — user-set values (1M / 2M) must survive the webhook
+    expect(usageBillingRepo.getOrCreateBillingAccountForUser).toHaveBeenCalledWith('user-1', 'pro');
+  });
+
+  it('skips usage billing account creation when usageBillingRepo is not configured', async () => {
+    const billingRepo = {
+      isEventProcessed: vi.fn().mockResolvedValue(false),
+      recordEventProcessed: vi.fn().mockResolvedValue(undefined),
+      recordEventFailed: vi.fn().mockResolvedValue(undefined),
+      findCustomerByExternalId: vi.fn().mockResolvedValue({ userId: 'user-1', externalCustomerId: 'cus_1', provider: 'stripe' }),
+      findSubscriptionByExternalId: vi.fn().mockResolvedValue(null),
+      upsertSubscriptionAndSyncPlan: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BillingRepository;
+
+    const config = makeBillingConfig();
+    // No usageBillingRepo passed — simulates billing-only deployment
+    const sync = new EntitlementSync(billingRepo, config, 'free');
+
+    const event: NormalizedWebhookEvent = {
+      id: 'evt_sub_1',
+      type: 'subscription.created',
+      provider: 'stripe',
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+      productOrPriceId: 'price_pro_monthly',
+      status: 'active',
+      currentPeriodStart: new Date('2026-07-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-07-31T23:59:59.999Z'),
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      trialEnd: null,
+      metadata: {},
+      createdAt: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    const result = await sync.processEvent(event);
+
+    expect(result).toEqual({ processed: true });
+    expect(billingRepo.upsertSubscriptionAndSyncPlan).toHaveBeenCalled();
+    expect(billingRepo.recordEventProcessed).toHaveBeenCalledWith('stripe:evt_sub_1', 'stripe.subscription.created');
   });
 });

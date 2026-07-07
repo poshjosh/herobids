@@ -92,7 +92,7 @@ describe('billing routes', () => {
 
     const summaryRes = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
     expect(summaryRes.statusCode).toBe(200);
-    expect(summaryRes.json()).toEqual({ account: null, currentPeriod: null, warnings: [], byMeter: {} });
+    expect(summaryRes.json()).toEqual({ account: null, currentPeriod: null, warnings: [], byMeter: {}, topUpPacks: [] });
 
     const eventsRes = await app.inject({ method: 'GET', url: '/billing/usage-events' });
     expect(eventsRes.statusCode).toBe(200);
@@ -169,6 +169,61 @@ describe('billing routes', () => {
     const res = await app.inject({ method: 'GET', url: '/billing/usage-events?periodId=period_other_user' });
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toBe('billing.usage.period_not_found');
+  });
+
+  it('usage-summary resolves top-up packs from user plan when no billing account exists', async () => {
+    const billingConfig = BillingConfigSchema.parse({
+      stripe: {
+        secretKey: 'sk_test_xxx',
+      },
+    });
+    const usageBillingConfig = UsageBillingConfigSchema.parse({
+      enabled: true,
+      creditTopUpsEnabled: true,
+      topUpProductsByProvider: {
+        stripe: [
+          { packId: 'starter_500', externalId: 'price_starter_500', cents: 500 },
+        ],
+      },
+    });
+    const plansConfig = PlansConfigSchema.parse({
+      defaultPlanId: 'free',
+      plans: {
+        pro: {
+          label: 'Pro',
+          usage: {
+            includedCreditCents: 0,
+            topUpPackIds: ['starter_500'],
+          },
+        },
+      },
+    });
+
+    const db = {
+      select: vi.fn().mockImplementation(() => makeChain([{ planId: 'pro' }])),
+    };
+
+    vi.spyOn(UsageBillingRepository.prototype, 'getAccountByUserId').mockResolvedValue(null);
+
+    const app = Fastify();
+    app.decorateRequest('userId', '');
+    app.addHook('onRequest', async (request) => {
+      request.userId = 'user-1';
+    });
+    await billingRoutes(
+      app,
+      billingConfig,
+      plansConfig,
+      db as unknown as import('@herobids/db').Database,
+      'http://localhost:5173',
+      usageBillingConfig,
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/billing/usage-summary' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().topUpPacks).toEqual([
+      { provider: 'stripe', packId: 'starter_500', cents: 500 },
+    ]);
   });
 
   it('usage-summary includes plan-driven top-up packs when enabled for plan and operator config', async () => {

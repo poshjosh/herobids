@@ -165,6 +165,16 @@ export class EntitlementSync {
       targetPlanId,
     );
 
+    // Ensure a usage billing account exists so top-up packs and spend controls
+    // are immediately available in the UI without waiting for agent activity.
+    // Caps are not passed here — existing user-set caps must be preserved.
+    if (this.usageBillingRepo) {
+      await this.usageBillingRepo.getOrCreateBillingAccountForUser(
+        resolvedCustomer.userId,
+        targetPlanId,
+      );
+    }
+
     return true;
   }
 
