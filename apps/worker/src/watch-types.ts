@@ -14,6 +14,19 @@ import type { RuntimeActiveWatch } from './runtime-composition.js';
 const logger = pino({ name: 'watch-types' });
 
 // ---------------------------------------------------------------------------
+// Instrument identity
+// ---------------------------------------------------------------------------
+
+/** Canonical venue + instrument identity resolved from the trading system's instrument repository. */
+export interface WatchInstrumentIdentity {
+  venue: string;
+  instrumentId: string;
+  symbol: string;
+  chain?: string;
+  address?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Canonical WatchEntry
 // ---------------------------------------------------------------------------
 
@@ -37,6 +50,8 @@ export interface WatchEntry {
    * - 2: current (canonical fields, pinned identity support)
    */
   schemaVersion?: number;
+  /** Canonical venue + instrument identity, resolved from the trading system's instrument repository. */
+  instrument?: WatchInstrumentIdentity;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +73,13 @@ export const WatchEntrySchema = z.object({
   lastConditionMet: z.boolean().nullable(),
   lastCheckedAt: z.string().optional(),
   schemaVersion: z.number().int().positive().optional(),
+  instrument: z.object({
+    venue: z.string().min(1),
+    instrumentId: z.string().min(1),
+    symbol: z.string().min(1),
+    chain: z.string().optional(),
+    address: z.string().optional(),
+  }).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -111,6 +133,7 @@ export function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
     lastConditionMet: watch.lastConditionMet,
     lastCheckedAt: watch.lastCheckedAt,
     ...(watch.schemaVersion !== undefined ? { schemaVersion: watch.schemaVersion } : {}),
+    ...(watch.instrument ? { instrument: watch.instrument } : {}),
   };
 }
 

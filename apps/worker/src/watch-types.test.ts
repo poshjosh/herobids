@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWatch, toRuntimeActiveWatch, isWatchEntryV2, type WatchEntry } from './watch-types.js';
+import { parseWatch, toRuntimeActiveWatch, isWatchEntryV2, type WatchEntry, type WatchInstrumentIdentity } from './watch-types.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -225,6 +225,116 @@ describe('parseWatch', () => {
   it('returns null when watchId is an empty string', () => {
     expect(parseWatch(JSON.stringify(validV2Record({ watchId: '' })))).toBeNull();
   });
+
+  // -------------------------------------------------------------------
+  // Instrument identity
+  // -------------------------------------------------------------------
+
+  it('parses a valid v2 record with instrument identity', () => {
+    const raw = JSON.stringify(validV2Record({
+      instrument: {
+        venue: 'hyperliquid',
+        instrumentId: 'BTC-USD',
+        symbol: 'BTC',
+        chain: 'hyperliquid',
+      },
+    }));
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.instrument).toEqual({
+      venue: 'hyperliquid',
+      instrumentId: 'BTC-USD',
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+    });
+  });
+
+  it('parses instrument identity with optional address', () => {
+    const raw = JSON.stringify(validV2Record({
+      instrument: {
+        venue: 'hyperliquid',
+        instrumentId: 'ETH-USD',
+        symbol: 'ETH',
+        chain: 'ethereum',
+        address: '0xabc123',
+      },
+    }));
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.instrument).toEqual({
+      venue: 'hyperliquid',
+      instrumentId: 'ETH-USD',
+      symbol: 'ETH',
+      chain: 'ethereum',
+      address: '0xabc123',
+    });
+  });
+
+  it('parses instrument identity without optional chain and address', () => {
+    const raw = JSON.stringify(validV2Record({
+      instrument: {
+        venue: 'hyperliquid',
+        instrumentId: 'SOL-USD',
+        symbol: 'SOL',
+      },
+    }));
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.instrument).toEqual({
+      venue: 'hyperliquid',
+      instrumentId: 'SOL-USD',
+      symbol: 'SOL',
+    });
+    expect(result!.instrument!.chain).toBeUndefined();
+    expect(result!.instrument!.address).toBeUndefined();
+  });
+
+  it('parses legacy record without instrument field', () => {
+    const raw = JSON.stringify(validLegacyRecord());
+    const result = parseWatch(raw);
+    expect(result).not.toBeNull();
+    expect(result!.instrument).toBeUndefined();
+  });
+
+  it('returns null when instrument.venue is empty', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      instrument: { venue: '', instrumentId: 'BTC-USD', symbol: 'BTC' },
+    })))).toBeNull();
+  });
+
+  it('returns null when instrument.instrumentId is empty', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      instrument: { venue: 'hyperliquid', instrumentId: '', symbol: 'BTC' },
+    })))).toBeNull();
+  });
+
+  it('returns null when instrument.symbol is empty', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD', symbol: '' },
+    })))).toBeNull();
+  });
+
+  it('returns null when instrument is missing required venue', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      instrument: { instrumentId: 'BTC-USD', symbol: 'BTC' },
+    })))).toBeNull();
+  });
+
+  it('returns null when instrument is missing required instrumentId', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      instrument: { venue: 'hyperliquid', symbol: 'BTC' },
+    })))).toBeNull();
+  });
+
+  it('returns null when instrument is not an object', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({ instrument: 'not-an-object' })))).toBeNull();
+  });
+
+  it('returns null when instrument.chain is not a string', () => {
+    expect(parseWatch(JSON.stringify(validV2Record({
+      instrument: { venue: 'hl', instrumentId: 'BTC', symbol: 'BTC', chain: 123 },
+    })))).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -348,6 +458,64 @@ describe('toRuntimeActiveWatch', () => {
     };
     const runtime = toRuntimeActiveWatch(watch);
     expect(Object.hasOwn(runtime, 'schemaVersion')).toBe(false);
+  });
+
+  it('propagates instrument identity when present', () => {
+    const instrument: WatchInstrumentIdentity = {
+      venue: 'hyperliquid',
+      instrumentId: 'BTC-USD',
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+    };
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+      thresholdPrice: 50_000,
+      condition: 'above',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: null,
+      instrument,
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.instrument).toEqual(instrument);
+  });
+
+  it('propagates instrument identity with address', () => {
+    const instrument: WatchInstrumentIdentity = {
+      venue: 'hyperliquid',
+      instrumentId: 'ETH-USD',
+      symbol: 'ETH',
+      chain: 'ethereum',
+      address: '0xdef456',
+    };
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'ETH',
+      chain: 'ethereum',
+      thresholdPrice: 3_000,
+      condition: 'below',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: false,
+      instrument,
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.instrument).toEqual(instrument);
+  });
+
+  it('omits instrument from runtime when not present', () => {
+    const watch: WatchEntry = {
+      watchId: VALID_UUID,
+      symbol: 'BTC',
+      chain: 'ethereum',
+      thresholdPrice: 50_000,
+      condition: 'above',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      lastConditionMet: null,
+    };
+    const runtime = toRuntimeActiveWatch(watch);
+    expect(runtime.instrument).toBeUndefined();
+    expect(Object.hasOwn(runtime, 'instrument')).toBe(false);
   });
 });
 

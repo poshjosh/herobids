@@ -18,7 +18,7 @@ import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
 import { summarizeActiveWatches } from '../runtime-composition.js';
-import { type WatchEntry, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
+import { type WatchEntry, type WatchInstrumentIdentity, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 
 const logger = pino({ name: 'watch-tools' });
 
@@ -263,6 +263,40 @@ const watchTokenTool: AgentTool = {
       };
     }
 
+    // --- Instrument identity resolution ---
+    // Resolve the canonical venue + instrumentId from the trading system's instrument
+    // repository. This is best-effort — watch creation does NOT fail if instrumentRepo
+    // is unavailable or returns no matches.
+    let instrument: WatchInstrumentIdentity | undefined;
+
+    if (ctx.instrumentRepo) {
+      try {
+        const searchQuery = resolvedSymbol ?? effectiveSymbol;
+        const results = await ctx.instrumentRepo.search({ query: searchQuery, limit: 5 });
+        // Match on exact symbol for now; future iterations can use chain/address disambiguation.
+        const match = results.find(
+          (r) => r.symbol.toUpperCase() === searchQuery.toUpperCase(),
+        );
+        if (match) {
+          instrument = {
+            venue: match.venue,
+            instrumentId: match.id,
+            symbol: match.symbol,
+          };
+          // If we also have chain/address info, attach it for richer identity.
+          if (effectiveChain && effectiveChain !== 'any') {
+            instrument.chain = effectiveChain;
+          }
+          if (resolvedAddress) {
+            instrument.address = resolvedAddress;
+          }
+        }
+      } catch (err) {
+        // Best-effort — log and continue without instrument identity.
+        logger.warn({ err, symbol: effectiveSymbol }, 'Instrument repo search failed — watch created without instrument identity');
+      }
+    }
+
     const watch: WatchEntry = {
       watchId: crypto.randomUUID(),
       symbol: trimmedSymbol,              // what the caller asked for
@@ -277,6 +311,7 @@ const watchTokenTool: AgentTool = {
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
       schemaVersion: 2,
+      ...(instrument ? { instrument } : {}),
     };
 
     // Get initial price using the pinned lookup target.
@@ -305,6 +340,7 @@ const watchTokenTool: AgentTool = {
         resolvedAddress: watch.resolvedAddress,
         thresholdPrice,
         condition,
+        ...(instrument ? { instrument } : {}),
       },
     };
   },

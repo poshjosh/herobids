@@ -5,6 +5,7 @@ import type { ScoredSignal } from '@herobids/strategy';
 import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate } from './technical-phase.js';
+import type { WatchInstrumentIdentity } from './watch-types.js';
 import { fmtUsd } from './fmt.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
@@ -87,6 +88,8 @@ export interface RuntimeActiveWatch {
   schemaVersion?: number;
   /** Forward-looking key for coverage matching (future). */
   positionKey?: string;
+  /** Canonical venue + instrument identity resolved from the trading system's instrument repository. */
+  instrument?: WatchInstrumentIdentity;
 }
 
 export interface RuntimeActiveWatchSummary {

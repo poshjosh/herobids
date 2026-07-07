@@ -40,6 +40,7 @@ function okResolve(symbol: string, chain: string, priceUsd: number, overrides?: 
 function makeCtx(overrides: {
   redis?: Partial<ToolContext['redis']>;
   priceService?: ToolContext['priceService'] | null;
+  instrumentRepo?: ToolContext['instrumentRepo'] | null;
 } = {}): ToolContext {
   const hstore = new Map<string, Record<string, string>>();
   const sets = new Map<string, Set<string>>();
@@ -90,6 +91,7 @@ function makeCtx(overrides: {
     redis,
     publishToInbound: vi.fn().mockResolvedValue(undefined),
     priceService: overrides.priceService === null ? undefined : overrides.priceService,
+    instrumentRepo: overrides.instrumentRepo === null ? undefined : overrides.instrumentRepo,
   } as unknown as ToolContext;
 }
 
@@ -888,5 +890,176 @@ describe('check_watches — pinned identity and legacy repair', () => {
     const argSets = calls.map((c: unknown[]) => ({ symbol: c[0], chain: c[1], address: c[2] }));
     expect(argSets).toContainEqual({ symbol: 'PEPE', chain: 'solana', address: '0xfirst' });
     expect(argSets).toContainEqual({ symbol: 'PEPE', chain: 'solana', address: '0xsecond' });
+  });
+});
+
+// ── Instrument identity resolution ────────────────────────────────────────
+// The watch_token tool resolves canonical venue + instrumentId from the
+// trading system's instrument repository. This is best-effort — watch
+// creation does NOT fail if instrumentRepo is unavailable or returns no matches.
+
+function makeInstrumentRow(overrides: Partial<{
+  id: string;
+  symbol: string;
+  base: string;
+  quote: string;
+  type: string;
+  venue: string;
+  tickSize: string;
+  lotSize: string;
+}> = {}) {
+  return {
+    id: 'BTC-USD',
+    symbol: 'BTC-USD',
+    base: 'BTC',
+    quote: 'USD',
+    type: 'perpetual',
+    venue: 'hyperliquid',
+    tickSize: '0.1',
+    lotSize: '0.001',
+    ...overrides,
+  };
+}
+
+describe('watch_token — instrument identity resolution', () => {
+  it('resolves instrument identity when instrumentRepo returns a match', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const search = vi.fn().mockResolvedValue([
+      makeInstrumentRow({ id: 'BTC-USD', symbol: 'BTC-USD', venue: 'hyperliquid' }),
+    ]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: { search },
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    // Verify instrument is in the tool response data
+    const data = result.data as Record<string, unknown>;
+    expect(data.instrument).toBeDefined();
+    expect(data.instrument).toMatchObject({
+      venue: 'hyperliquid',
+      instrumentId: 'BTC-USD',
+      symbol: 'BTC-USD',
+    });
+
+    // Verify instrument is persisted in the watch entry
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.instrument).toBeDefined();
+    expect(storedWatch.instrument).toMatchObject({
+      venue: 'hyperliquid',
+      instrumentId: 'BTC-USD',
+      symbol: 'BTC-USD',
+    });
+  });
+
+  it('creates watch without instrument when instrumentRepo returns no matches', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('UNKNOWN', 'solana', 0.01),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(0.01));
+    const search = vi.fn().mockResolvedValue([]);
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: { search },
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'UNKNOWN', chain: 'solana', thresholdPrice: 1, condition: 'above' },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+
+    // No instrument in tool response
+    const data = result.data as Record<string, unknown>;
+    expect(data.instrument).toBeUndefined();
+
+    // No instrument in persisted watch
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.instrument).toBeUndefined();
+  });
+
+  it('creates watch without instrument when instrumentRepo.search throws (best-effort)', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const search = vi.fn().mockRejectedValue(new Error('DB connection lost'));
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: { search },
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above' },
+      ctx,
+    );
+
+    // Watch should still be created despite instrument repo error
+    expect(result.success).toBe(true);
+
+    // No instrument in tool response
+    const data = result.data as Record<string, unknown>;
+    expect(data.instrument).toBeUndefined();
+
+    // No instrument in persisted watch
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.instrument).toBeUndefined();
+  });
+
+  it('creates watch without instrument when instrumentRepo is undefined on ToolContext', async () => {
+    const resolvePriceTarget = vi.fn().mockResolvedValue(
+      okResolve('BTC-USD', 'hyperliquid', 60_000),
+    );
+    const getPrice = vi.fn().mockResolvedValue(okPrice(60_000));
+    const ctx = makeCtx({
+      priceService: { getPrice, resolvePriceTarget },
+      instrumentRepo: null, // explicitly null → undefined on context
+    });
+
+    const result = await watchTokenTool.execute(
+      { symbol: 'BTC-USD', chain: 'hyperliquid', thresholdPrice: 70_000, condition: 'above' },
+      ctx,
+    );
+
+    // Watch should be created successfully without instrument
+    expect(result.success).toBe(true);
+
+    // No instrument in tool response
+    const data = result.data as Record<string, unknown>;
+    expect(data.instrument).toBeUndefined();
+
+    // No instrument in persisted watch
+    const hsetCalls = (ctx.redis.hset as ReturnType<typeof vi.fn>).mock.calls;
+    const watchCall = hsetCalls.find(
+      (c: unknown[]) =>
+        typeof c[0] === 'string' && c[0].startsWith('agent:watches:') && !(c[0] as string).includes('summary'),
+    );
+    const storedWatch = JSON.parse((watchCall as unknown[])[2] as string);
+    expect(storedWatch.instrument).toBeUndefined();
   });
 });
