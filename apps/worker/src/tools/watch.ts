@@ -17,27 +17,12 @@ import pino from 'pino';
 import type { AgentTool, ToolResult, ToolContext } from '@herobids/domain';
 import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
-import { summarizeActiveWatches, type RuntimeActiveWatch } from '../runtime-composition.js';
+import { summarizeActiveWatches } from '../runtime-composition.js';
+import { type WatchEntry, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 
 const logger = pino({ name: 'watch-tools' });
 
 const EXPLICIT_SUPPORTED_CHAIN_SET = new Set<string>(EXPLICIT_SUPPORTED_CHAINS);
-
-interface WatchEntry {
-  watchId: string;
-  symbol: string;           // what the caller asked for
-  chain: string;            // what the caller asked for (may be "any")
-  address?: string;         // pinned token address when resolved
-  resolvedSymbol?: string;  // what the resolver pinned
-  resolvedChain?: string;   // what the resolver pinned
-  resolvedAddress?: string; // what the resolver pinned
-  thresholdPrice: number;
-  condition: 'above' | 'below';
-  note?: string;
-  createdAt: string;
-  lastConditionMet: boolean | null;
-  lastCheckedAt?: string;
-}
 
 function watchesKey(agentId: string): string {
   return `agent:watches:${agentId}`;
@@ -45,31 +30,6 @@ function watchesKey(agentId: string): string {
 
 function watchSummaryKey(agentId: string): string {
   return `agent:watches:summary:${agentId}`;
-}
-
-function parseWatch(raw: string): WatchEntry | null {
-  try {
-    return JSON.parse(raw) as WatchEntry;
-  } catch {
-    return null;
-  }
-}
-
-function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
-  return {
-    watchId: watch.watchId,
-    symbol: watch.symbol,
-    chain: watch.chain,
-    ...(watch.address ? { address: watch.address } : {}),
-    ...(watch.resolvedSymbol ? { resolvedSymbol: watch.resolvedSymbol } : {}),
-    ...(watch.resolvedChain ? { resolvedChain: watch.resolvedChain } : {}),
-    ...(watch.resolvedAddress ? { resolvedAddress: watch.resolvedAddress } : {}),
-    condition: watch.condition,
-    thresholdPrice: watch.thresholdPrice,
-    note: watch.note,
-    lastConditionMet: watch.lastConditionMet,
-    lastCheckedAt: watch.lastCheckedAt,
-  };
 }
 
 async function refreshWatchSummaryCache(ctx: ToolContext): Promise<void> {
@@ -120,7 +80,7 @@ function watchLookupKey(target: { chain: string; symbol: string; address?: strin
   return JSON.stringify([target.chain, target.symbol, target.address ?? null]);
 }
 
-function parseWatchLookupKey(key: string): { chain: string; symbol: string; address: string | null } | null {
+function deserializeLookupKey(key: string): { chain: string; symbol: string; address: string | null } | null {
   try {
     const parsed = JSON.parse(key) as [unknown, unknown, unknown];
     const [chain, symbol, address] = parsed;
@@ -316,6 +276,7 @@ const watchTokenTool: AgentTool = {
       ...(note ? { note } : {}),
       createdAt: new Date().toISOString(),
       lastConditionMet: null,
+      schemaVersion: 2,
     };
 
     // Get initial price using the pinned lookup target.
@@ -493,7 +454,7 @@ const checkWatchesTool: AgentTool = {
     }
 
     for (const key of priceMap.keys()) {
-      const parsedKey = parseWatchLookupKey(key);
+      const parsedKey = deserializeLookupKey(key);
       if (!parsedKey) {
         continue;
       }

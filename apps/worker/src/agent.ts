@@ -55,6 +55,7 @@ import {
   type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
 } from './runtime-composition.js';
+import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
 import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
@@ -671,39 +672,9 @@ function isRuntimeActiveWatchSummary(value: unknown): value is RuntimeActiveWatc
 }
 
 function parseRuntimeActiveWatch(raw: string): RuntimeActiveWatch | null {
-  try {
-    const parsed = JSON.parse(raw) as Partial<RuntimeActiveWatch> & {
-      thresholdPrice?: unknown;
-      lastConditionMet?: unknown;
-      lastCheckedAt?: unknown;
-    };
-
-    if (
-      typeof parsed.watchId !== 'string'
-      || typeof parsed.symbol !== 'string'
-      || typeof parsed.chain !== 'string'
-      || parsed.condition !== 'above' && parsed.condition !== 'below'
-      || typeof parsed.thresholdPrice !== 'number'
-      || (parsed.note !== undefined && typeof parsed.note !== 'string')
-      || (parsed.lastConditionMet !== null && parsed.lastConditionMet !== true && parsed.lastConditionMet !== false)
-      || (parsed.lastCheckedAt !== undefined && typeof parsed.lastCheckedAt !== 'string')
-    ) {
-      return null;
-    }
-
-    return {
-      watchId: parsed.watchId,
-      symbol: parsed.symbol,
-      chain: parsed.chain,
-      condition: parsed.condition,
-      thresholdPrice: parsed.thresholdPrice,
-      ...(parsed.note !== undefined ? { note: parsed.note } : {}),
-      lastConditionMet: parsed.lastConditionMet,
-      ...(parsed.lastCheckedAt !== undefined ? { lastCheckedAt: parsed.lastCheckedAt } : {}),
-    };
-  } catch {
-    return null;
-  }
+  const watch = parseWatch(raw);
+  if (!watch) return null;
+  return toRuntimeActiveWatch(watch);
 }
 
 async function loadRawActiveWatches(agentId: string): Promise<RuntimeActiveWatch[]> {

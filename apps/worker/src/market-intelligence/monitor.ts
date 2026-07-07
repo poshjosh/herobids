@@ -13,6 +13,7 @@ import type {
   RegimeChangeWakeContext,
 } from '@herobids/domain';
 import { summarizeActiveWatches } from '../runtime-composition.js';
+import { type WatchEntry, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
 
 const logger = pino({ name: 'market-monitor' });
 
@@ -44,18 +45,6 @@ export interface MonitorConfig {
 export interface MonitorDeps {
   redis: Redis;
   publisher: InstanceEventPublisher;
-}
-
-interface WatchEntry {
-  watchId: string;
-  symbol: string;
-  chain: string;
-  thresholdPrice: number;
-  condition: 'above' | 'below';
-  note?: string;
-  createdAt: string;
-  lastConditionMet: boolean | null;
-  lastCheckedAt?: string;
 }
 
 interface PendingWake {
@@ -163,16 +152,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
   async function refreshSummaryCache(agentId: string, watches: WatchEntry[]): Promise<void> {
     try {
-      const summary = summarizeActiveWatches(watches.map((watch) => ({
-        watchId: watch.watchId,
-        symbol: watch.symbol,
-        chain: watch.chain,
-        condition: watch.condition,
-        thresholdPrice: watch.thresholdPrice,
-        note: watch.note,
-        lastConditionMet: watch.lastConditionMet,
-        lastCheckedAt: watch.lastCheckedAt,
-      })));
+      const summary = summarizeActiveWatches(watches.map(toRuntimeActiveWatch));
       if (summary.totalCount === 0) {
         await redis.hdel(`agent:watches:summary:${agentId}`, 'summary');
       } else {
@@ -198,9 +178,10 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
       const watches: WatchEntry[] = [];
       for (const value of Object.values(raw)) {
-        try {
-          watches.push(JSON.parse(value) as WatchEntry);
-        } catch { /* skip malformed */ }
+        const parsed = parseWatch(value);
+        if (parsed) {
+          watches.push(parsed);
+        }
       }
 
       if (watches.length === 0) continue;

@@ -81,6 +81,12 @@ export interface RuntimeActiveWatch {
   note?: string;
   lastConditionMet: boolean | null;
   lastCheckedAt?: string;
+  /** Human-readable purpose label (e.g. "entry", "exit", "alert"). */
+  purpose?: string;
+  /** Schema version discriminator from the canonical WatchEntry. */
+  schemaVersion?: number;
+  /** Forward-looking key for coverage matching (future). */
+  positionKey?: string;
 }
 
 export interface RuntimeActiveWatchSummary {
