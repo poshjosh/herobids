@@ -15,6 +15,24 @@ const logger = pino({ name: 'agent-decision-handler' });
 /** Intents that grow (or initiate) a position — used for level validation and stop-loss/take-profit reminders. */
 const POSITION_GROWING_INTENTS = new Set<DecisionIntent>(['go_long', 'go_short', 'increase']);
 
+/**
+ * Consecutive-failure thresholds for the per-instrument circuit breaker.
+ * After N consecutive failures of the same code on the same instrument,
+ * the rejection is hardened (retryable → false) to prevent agent retry loops.
+ *
+ * Values should eventually come from operator config (agentRiskDefaults.*);
+ * kept as constants for now until the config schema is extended.
+ */
+const CIRCUIT_BREAKER_THRESHOLDS: Record<string, number> = {
+  /** Mark data is simply not available — retrying will never help. */
+  no_context: 3,
+  /** Agent needs to reformat the instrument ID — if it hasn't after 5 tries, it's stuck. */
+  'swap.instrument_format': 5,
+};
+
+/** Max age (ms) for a tracked failure entry before it's considered stale and pruned. */
+const FAILURE_ENTRY_MAX_AGE_MS = 5 * 60_000; // 5 min
+
 /** Map a level validation error to an agent-facing rejection message. */
 function formatLevelValidationMessage(error: LevelValidationError): string {
   const { reason, markPrice, level } = error;
@@ -49,6 +67,9 @@ export interface DecisionIntakeResolver {
  * AgentDecisionHandler — translates `agent.decision.submit` into the engine decision-ingestion path.
  */
 export class AgentDecisionHandler {
+  /** Per-instrument failure counters: key = `${agentId}::${instrumentId}::${failureCode}` */
+  private readonly failureCounters = new Map<string, { count: number; lastFailedAt: number }>();
+
   constructor(
     private readonly agentRepo: AgentRepository,
     private readonly intakeResolver: DecisionIntakeResolver,
@@ -85,6 +106,70 @@ export class AgentDecisionHandler {
     }).catch((err) => {
       logger.error({ err, failureCode: input.failureCode }, 'Failed to persist decision failure');
     });
+  }
+
+  /**
+   * Check and increment the per-instrument failure counter.
+   * Returns a hardened message if the threshold has been exceeded.
+   * The caller should use the returned values instead of the original retryable/message.
+   *
+   * @param originalRetryable — The retryable value from the original rejection,
+   *   preserved when the circuit breaker is not tripped. When the breaker trips,
+   *   retryable is always forced to false.
+   */
+  private checkCircuitBreaker(
+    actorId: string,
+    instrumentId: string | undefined,
+    failureCode: string,
+    originalMessage: string,
+    originalRetryable: boolean,
+  ): { retryable: boolean; message: string } {
+    const threshold = CIRCUIT_BREAKER_THRESHOLDS[failureCode];
+    if (!threshold || !instrumentId) {
+      return { retryable: originalRetryable, message: originalMessage };
+    }
+
+    const key = `${actorId}::${instrumentId}::${failureCode}`;
+    const now = Date.now();
+    const entry = this.failureCounters.get(key);
+
+    // If the last failure was long enough ago, treat this as a fresh start.
+    // This prevents the breaker from tripping on sporadic failures hours apart,
+    // and allows startup initialization gaps to naturally reset the counter.
+    const isStale = entry != null && (now - entry.lastFailedAt) > FAILURE_ENTRY_MAX_AGE_MS;
+    const count = isStale ? 1 : (entry?.count ?? 0) + 1;
+
+    this.failureCounters.set(key, { count, lastFailedAt: now });
+
+    // Prune stale entries from other keys on a sampling basis
+    if (this.failureCounters.size > 200) {
+      const cutoff = now - FAILURE_ENTRY_MAX_AGE_MS;
+      for (const [k, v] of this.failureCounters) {
+        if (v.lastFailedAt < cutoff) this.failureCounters.delete(k);
+      }
+    }
+
+    if (count >= threshold) {
+      const action = failureCode === 'no_context'
+        ? 'Mark price is not available. Stop retrying and consider a different instrument.'
+        : 'Too many consecutive failures. Check the instrument format and try a different approach.';
+      return {
+        retryable: false,
+        message: `${originalMessage} [CIRCUIT BREAKER: ${count} consecutive '${failureCode}' failures on ${instrumentId}. ${action}]`,
+      };
+    }
+
+    return { retryable: originalRetryable, message: originalMessage };
+  }
+
+  /** Reset the failure counter for a given instrument (called on successful acceptance). */
+  private resetCircuitBreaker(actorId: string, instrumentId: string | undefined): void {
+    if (!instrumentId) return;
+    // Remove all failure-code entries for this (actor, instrument)
+    const prefix = `${actorId}::${instrumentId}::`;
+    for (const key of this.failureCounters.keys()) {
+      if (key.startsWith(prefix)) this.failureCounters.delete(key);
+    }
   }
 
   async handleDecisionSubmit(envelope: MessageEnvelope, payload: DecisionSubmitPayload): Promise<void> {
@@ -166,14 +251,15 @@ export class AgentDecisionHandler {
       return;
     }
     if (isIntakeRejection(intakeResult)) {
-      setSyncReply('rejected', { code: intakeResult.code, message: intakeResult.message });
+      const cb = this.checkCircuitBreaker(effectiveAgentId, payload.instrumentId, intakeResult.code, intakeResult.message, intakeResult.retryable);
+      setSyncReply('rejected', { code: intakeResult.code, message: cb.message });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: intakeResult.code,
-        message: intakeResult.message,
-        retryable: intakeResult.retryable,
+        message: cb.message,
+        retryable: cb.retryable,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: intakeResult.code, failureMessage: intakeResult.message, failureClass: 'rejection', retryable: intakeResult.retryable });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: intakeResult.code, failureMessage: cb.message, failureClass: 'rejection', retryable: cb.retryable });
       return;
     }
     const intakeDeps = intakeResult;
@@ -196,15 +282,16 @@ export class AgentDecisionHandler {
 
     const context = await this.intakeResolver.getDecisionContext(resolveId, payload.instrumentId);
     if (!context) {
-      const msg = 'No decision context available — actor may still be initializing or mark price unavailable';
-      setSyncReply('rejected', { code: 'no_context', message: msg });
+      const baseMsg = 'No decision context available — actor may still be initializing or mark price unavailable';
+      const cb = this.checkCircuitBreaker(effectiveAgentId, payload.instrumentId, 'no_context', baseMsg, true);
+      setSyncReply('rejected', { code: 'no_context', message: cb.message });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
         code: 'no_context',
-        message: msg,
-        retryable: true,
+        message: cb.message,
+        retryable: cb.retryable,
       });
-      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'no_context', failureMessage: msg, failureClass: 'rejection', retryable: true });
+      this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'no_context', failureMessage: cb.message, failureClass: 'rejection', retryable: cb.retryable });
       return;
     }
 
@@ -401,6 +488,7 @@ export class AgentDecisionHandler {
         // Previously this was emitted before the execution result check, which meant
         // the agent could receive "accepted" for a decision that subsequently failed
         // during execution (e.g. executor timeout in shadow mode).
+        this.resetCircuitBreaker(effectiveAgentId, payload.instrumentId);
         await this.eventPublisher.emitDecisionAccepted(effectiveBotId, {
           decisionId: payload.decisionId,
           acceptedAt: new Date().toISOString(),
