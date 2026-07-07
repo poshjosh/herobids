@@ -140,25 +140,24 @@ Key invariants:
 
 See [Agent Mode Purity](./docs/tech/agents/runtime-boundary-and-message-contract.md#agent-mode-purity) for the full specification.
 
-## Best Practices
-
-Before making changes, read all documents in `./docs/best-practices/`. Follow the patterns and guidelines described there.
-
-Key principles:
-- Prefer loud failure over silent degradation. A trading system that doesn't know it's broken is dangerous.
-- Paper/shadow modes must simulate realistic costs (slippage + fees).
-- Never assume token decimals — fetch and persist them. Fail if unknown.
-- Migration files must match the Drizzle journal. Use `drizzle-kit generate`.
-- Config flows through one resolved, typed object. Schema changes affect one resolution function.
-- Apply cooldowns after forced exits (stop-loss, circuit breaker) before re-entry.
-
 ## Guides
 
-- [General lessons](./docs/lessons/lessons-from-previous-project.md) — critical bugs from previous project
-- [Rate limiting guide](./docs/lessons/rate-limiting-guide.md) — venue rate limit architecture
-- [Configuration management](./docs/best-practices/configuration.md) — config layers and loading; avoid hard-coded literals unless they are genuinely internal and not user-facing
-- [Docker conventions](./docs/best-practices/docker.md) — shared Dockerfile, build targets, cache rules
- - [Skill authoring guide](./docs/tech/agents/skill-authoring.md) — conventions for writing skills and a JSON template for `POST /skills`
+- Before making changes, read: [General lessons](./docs/lessons/lessons-from-previous-project.md) — critical bugs from previous project
+
+- If your changes relate to rate-limiting, read: [Rate limiting guide](./docs/lessons/rate-limiting-guide.md) — venue rate limit architecture
+
+- If your changes may introduce new configuration, read: [Configuration management](./docs/best-practices/configuration.md) — config layers and loading; avoid hard-coded literals unless they are genuinely internal and not user-facing
+
+- If your changes affect docker, read: [Docker conventions](./docs/best-practices/docker.md) — shared Dockerfile, build targets, cache rules
+
+- If your changes affect skills, read: [Skill authoring guide](./docs/tech/agents/skill-authoring.md) — conventions for writing skills and a JSON template for `POST /skills`
+
+## Best Practices
+
+Before making changes:
+- read `docs/best-practices/README.md` 
+- determine which areas relate to the changes
+- read the best practice document relating to the specific areas you determined.
 
 ## Rules
 
