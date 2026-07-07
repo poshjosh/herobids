@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FieldLabel, inputStyle } from '../../lib/ui.js';
 
 export interface BotCustomConfigFormState {
@@ -49,7 +50,16 @@ export interface BotCustomConfigSectionProps {
   isSwapVenue: boolean;
 }
 
+function isPctOutOfRange(val: string): boolean {
+  const n = parseFloat(val);
+  return !Number.isFinite(n) || n < 0 || n > 100;
+}
+
 export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCustomConfigSectionProps) {
+  const [blurred, setBlurred] = useState<Set<string>>(new Set());
+  const markBlurred = (field: string) => setBlurred((prev) => new Set(prev).add(field));
+  const isBlurred = (field: string) => blurred.has(field);
+
   const sectionTitleStyle: React.CSSProperties = {
     fontSize: '13px',
     fontWeight: '600',
@@ -75,6 +85,13 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
     fontSize: '13px',
     color: 'var(--color-text-primary)',
   });
+
+  const errorTextStyle: React.CSSProperties = {
+    marginTop: '4px',
+    fontSize: '12px',
+    color: 'var(--color-danger)',
+    lineHeight: '1.5',
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -173,7 +190,14 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             required
             value={value.stopLossPct}
             onChange={(e) => onChange({ stopLossPct: e.target.value })}
+            onBlur={() => markBlurred('stopLossPct')}
           />
+          {isBlurred('stopLossPct') && !value.stopLossPct && (
+            <div style={errorTextStyle}>Stop loss is required</div>
+          )}
+          {isBlurred('stopLossPct') && value.stopLossPct && isPctOutOfRange(value.stopLossPct) && (
+            <div style={errorTextStyle}>Must be a number between 0 and 100</div>
+          )}
         </div>
 
         <div>
@@ -182,10 +206,18 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             style={inputStyle}
             type="number"
             min={0}
+            max={100}
             required
             value={value.takeProfitPct}
             onChange={(e) => onChange({ takeProfitPct: e.target.value })}
+            onBlur={() => markBlurred('takeProfitPct')}
           />
+          {isBlurred('takeProfitPct') && !value.takeProfitPct && (
+            <div style={errorTextStyle}>Take profit is required</div>
+          )}
+          {isBlurred('takeProfitPct') && value.takeProfitPct && isPctOutOfRange(value.takeProfitPct) && (
+            <div style={errorTextStyle}>Must be a number between 0 and 100</div>
+          )}
         </div>
 
         <div>
@@ -196,7 +228,11 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             placeholder="optional"
             value={value.trailingStopPct}
             onChange={(e) => onChange({ trailingStopPct: e.target.value })}
+            onBlur={() => markBlurred('trailingStopPct')}
           />
+          {isBlurred('trailingStopPct') && value.trailingStopPct && isPctOutOfRange(value.trailingStopPct) && (
+            <div style={errorTextStyle}>Must be a number between 0 and 100</div>
+          )}
         </div>
       </div>
 
@@ -210,7 +246,17 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             style={inputStyle}
             value={value.positionSize}
             onChange={(e) => onChange({ positionSize: e.target.value })}
+            onBlur={() => markBlurred('positionSize')}
           />
+          {isBlurred('positionSize') && !value.positionSize && (
+            <div style={errorTextStyle}>Position size is required</div>
+          )}
+          {isBlurred('positionSize') && value.positionSize && isNaN(parseFloat(value.positionSize)) && (
+            <div style={errorTextStyle}>Must be a positive number</div>
+          )}
+          {isBlurred('positionSize') && value.positionSize && !isNaN(parseFloat(value.positionSize)) && parseFloat(value.positionSize) <= 0 && (
+            <div style={errorTextStyle}>Must be a positive number</div>
+          )}
         </div>
 
         <div>
@@ -243,7 +289,11 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             placeholder="use default"
             value={value.maxPositionSizePct}
             onChange={(e) => onChange({ maxPositionSizePct: e.target.value })}
+            onBlur={() => markBlurred('maxPositionSizePct')}
           />
+          {isBlurred('maxPositionSizePct') && value.maxPositionSizePct && isPctOutOfRange(value.maxPositionSizePct) && (
+            <div style={errorTextStyle}>Must be a number between 0 and 100</div>
+          )}
         </div>
 
         <div>
@@ -265,7 +315,11 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             placeholder="use default"
             value={value.dailyMaxLossPct}
             onChange={(e) => onChange({ dailyMaxLossPct: e.target.value })}
+            onBlur={() => markBlurred('dailyMaxLossPct')}
           />
+          {isBlurred('dailyMaxLossPct') && value.dailyMaxLossPct && isPctOutOfRange(value.dailyMaxLossPct) && (
+            <div style={errorTextStyle}>Must be a number between 0 and 100</div>
+          )}
         </div>
 
         <div>
@@ -276,7 +330,11 @@ export function BotCustomConfigSection({ value, onChange, isSwapVenue }: BotCust
             placeholder="use default"
             value={value.stopLossMaxUnrealizedLossPct}
             onChange={(e) => onChange({ stopLossMaxUnrealizedLossPct: e.target.value })}
+            onBlur={() => markBlurred('stopLossMaxUnrealizedLossPct')}
           />
+          {isBlurred('stopLossMaxUnrealizedLossPct') && value.stopLossMaxUnrealizedLossPct && isPctOutOfRange(value.stopLossMaxUnrealizedLossPct) && (
+            <div style={errorTextStyle}>Must be a number between 0 and 100</div>
+          )}
         </div>
       </div>
     </div>
