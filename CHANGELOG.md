@@ -8,6 +8,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **LLM Cost Reduction — Complete Tick Gate Fingerprint:** Expanded `shouldSkipTick` context-hash gate with watch summary, wake signal, and risk/playbook digests. Uses `__unknown__` sentinel for unavailable data. Zero additional I/O. Preserves all safety valves.
+- **LLM Cost Reduction — Bot Config Preflight on Start:** Added `BotConfigSchema` validation before marking bots running in both agent broker and API start paths. Prevents invalid persisted config from entering start→fail→retry cycles.
+- **LLM Cost Reduction — Atomic maxBots Budget Guard:** Transaction-based atomic enforcement with `SELECT ... FOR UPDATE` on agent row. Applied to create, start, and API-triggered lifecycle paths. Reclaim exempt. Config-driven defaults.
+
 - **Session Circuit Breaker & Non-Wakeable Events:** New `SessionCircuitBreaker` state machine suppresses LLM invocations during unrecoverable error/drift loops. Tracks `strategy_error`, `strategy_fatal`, `drift_detected`, `stream_disconnect`. Configurable under `agentRuntime.sessionCircuitBreaker`. Estimated 40-60% token reduction for pathological sessions.
 - **Watch system redesign:** Consolidated watch types into single canonical module (`watch-types.ts`). Added structured purpose and coverage metadata to watches. Added canonical instrument identity resolution at watch creation. Extended wake payload schemas with purpose, instrument identity, and position keys. Implemented position coverage evaluation with 3-tier matching. Replaced blanket open-position escalation with coverage-aware gating. Added stale coverage detection and escalation. Tightened runtime summaries with purpose prefixes and coverage status blocks.
 
