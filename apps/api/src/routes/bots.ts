@@ -554,6 +554,18 @@ export async function botRoutes(app: FastifyInstance, queue: Queue<LifecycleJob>
       }
     }
 
+    // Preflight: validate persisted config before enqueuing start.
+    // A persisted invalid config (legacy, corrupted, etc.) must not be pushed
+    // through start → fail → retry cycles.
+    const configCheck = BotConfigSchema.safeParse(bot.config as Record<string, unknown>);
+    if (!configCheck.success) {
+      return reply.status(400).send({
+        error: 'config_invalid',
+        message: 'Bot config is invalid — cannot start. Fix the config before retrying.',
+        details: configCheck.error.issues,
+      });
+    }
+
     // Enqueue start job on the lifecycle queue
     await queue.add('start-instance', {
       command: 'start',

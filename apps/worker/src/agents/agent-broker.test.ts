@@ -1490,7 +1490,7 @@ describe('AgentMessageBroker', () => {
           status: 'stopped',
           startedAt: null,
           stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: {},
+          config: { strategy: { type: 'dca' }, symbol: 'ETH/USDC' },
           creatorType: 'agent',
           creatorId: 'agent-123',
         }),
@@ -1545,7 +1545,7 @@ describe('AgentMessageBroker', () => {
           status: 'stopped',
           startedAt: null,
           stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: { risk: { maxOrderNotional: '1500', maxDrawdownPct: 10 } },
+          config: { strategy: { type: 'dca' }, risk: { maxOrderNotional: '1500', maxDrawdownPct: 10 }, symbol: 'ETH/USDC' },
           creatorType: 'agent',
           creatorId: 'agent-123',
         }),
@@ -1573,10 +1573,10 @@ describe('AgentMessageBroker', () => {
 
       expect(result.accepted).toBe(true);
       expect(botRepo.updateBotConfig).toHaveBeenCalledWith('bot-start', {
-        risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
+        strategy: { type: 'dca' }, risk: { maxOrderNotional: '750', maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
       });
       expect(botStart).toHaveBeenCalledWith('bot-start', 'user-1', 'binding-1', {
-        risk: { maxOrderNotional: '750', maxDrawdownPct: 10 },
+        strategy: { type: 'dca' }, risk: { maxOrderNotional: '750', maxDrawdownPct: 10 }, symbol: 'ETH/USDC',
       });
     });
 
@@ -1589,7 +1589,7 @@ describe('AgentMessageBroker', () => {
           status: 'stopped',
           startedAt: null,
           stoppedAt: new Date('2026-06-01T00:00:00.000Z'),
-          config: {},
+          config: { strategy: { type: 'dca' }, symbol: 'ETH/USDC' },
           creatorType: 'agent',
           creatorId: 'agent-123',
         }),

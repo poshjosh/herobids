@@ -789,6 +789,17 @@ export class AgentMessageBroker {
         await this.botRepo.updateBotConfig(payload.botId, effectiveConfig);
       }
 
+      // Preflight: validate persisted config before marking running.
+      // A persisted invalid config (legacy, corrupted, etc.) must not be pushed
+      // through start → fail → retry cycles.
+      const configValidation = BotConfigSchema.safeParse(effectiveConfig);
+      if (!configValidation.success) {
+        const details = configValidation.error.issues.map((i) =>
+          `${i.path.join('.') || 'root'}: ${i.message}`
+        ).join('; ');
+        throw new Error(`Bot config is invalid — cannot start. Fix the config before retrying: ${details}`);
+      }
+
       // Consistency model: we mark the bot running in DB then enqueue the
       // lifecycle start job.  If the process crashes between these two steps
       // the bot will be marked 'running' with no active actor — the worker's
