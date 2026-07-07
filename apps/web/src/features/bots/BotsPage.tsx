@@ -119,6 +119,7 @@ interface CreateBotForm {
   strategyPreset: string;
   executionMode: ExecutionModeValue;
   symbol: string;
+  customConfig: BotCustomConfigFormState;
 }
 
 function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
@@ -127,6 +128,7 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
     strategyPreset: 'momentum',
     executionMode: 'paper',
     symbol: '',
+    customConfig: defaultBotCustomConfig,
   });
   const [selectedStyle, setSelectedStyle] = useState<string>('standard');
 
