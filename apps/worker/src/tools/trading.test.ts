@@ -127,6 +127,19 @@ describe('submit_decision — synchronous reply', () => {
     expect(result.data.planId).toBeUndefined();
   });
 
+  it('uses engine message as note when accepted reply contains a message', async () => {
+    const engineMessage = 'Accepted. Note: no stopLoss or takeProfit set — this position is unprotected.';
+    (ctx.redis.blpop as ReturnType<typeof vi.fn>).mockResolvedValue([
+      'replyKey',
+      JSON.stringify({ status: 'accepted', planId: 'plan-99', message: engineMessage }),
+    ]);
+
+    const result = await submitDecision.execute(validParams, ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.data.note).toBe(engineMessage);
+  });
+
   // -------------------------------------------------------------------------
   // Rejected reply
   // -------------------------------------------------------------------------

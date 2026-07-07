@@ -45,8 +45,6 @@ const getAccountSummaryTool: AgentTool = {
             maxOpenPositionsSource: contract.maxOpenPositions.source,
             maxPositionSizePct: contract.maxPositionSizePct.effectiveValue,
             maxPositionSizePctSource: contract.maxPositionSizePct.source,
-            stopLossPct: contract.stopLossPct.effectiveValue,
-            stopLossPctSource: contract.stopLossPct.source,
             stopLossCooldownMs: contract.stopLossCooldownMs.effectiveValue,
           };
         } catch (err) {

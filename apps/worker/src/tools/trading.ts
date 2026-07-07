@@ -107,7 +107,7 @@ const submitDecisionTool: AgentTool = {
           ok: true,
           decisionId,
           planId: parsed.planId,
-          note: 'Decision accepted by engine and sent for execution.',
+          note: parsed.message ?? 'Decision accepted by engine and sent for execution.',
         },
       };
     }

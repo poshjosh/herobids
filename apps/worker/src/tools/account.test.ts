@@ -65,7 +65,6 @@ describe('get_account_summary', () => {
         getContract: vi.fn(async () => ({
           maxOpenPositions: { effectiveValue: 5, source: 'user' },
           maxPositionSizePct: { effectiveValue: 25, source: 'default' },
-          stopLossPct: { effectiveValue: 10, source: 'user' },
           stopLossCooldownMs: { effectiveValue: 300000, source: 'default' },
         })),
       } as unknown as ToolContext['riskContractOps'],
@@ -96,6 +95,8 @@ describe('get_account_summary', () => {
     expect(data.agentDirectPositions).toBe(1);
     expect(data.botManagedPositions).toBe(1);
     expect(data.riskLimits).toMatchObject({ maxOpenPositions: 5 });
+    expect((data.riskLimits as Record<string, unknown>).stopLossPct).toBeUndefined();
+    expect((data.riskLimits as Record<string, unknown>).stopLossPctSource).toBeUndefined();
     expect(data.guidance).toEqual(expect.stringContaining('10000'));
     expect(data.warnings).toBeUndefined();
   });
