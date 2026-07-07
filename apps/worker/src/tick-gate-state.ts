@@ -8,6 +8,10 @@ export interface BuildTickGateStateParams {
   lastKnownPositionSide?: string | null;
   tradingHours?: TickGateState['tradingHours'];
   now?: Date;
+  /** Stable digest of the active watch summary, computed before gate decision.
+   * When "__unknown__", the watch state was unavailable. Passed through to
+   * TickGateState for use by the context-hash gate. */
+  watchSummaryDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -134,6 +138,7 @@ export function buildTickGateState(params: BuildTickGateStateParams): TickGateSt
     latestPrice: tickSignals.latestPrice,
     portfolioPnlUsd: tickSignals.portfolioPnlUsd,
     instrumentSnapshots: tickSignals.instrumentSnapshots.length > 0 ? tickSignals.instrumentSnapshots : undefined,
+    watchSummaryDigest: params.watchSummaryDigest,
     previousContextHash: params.previousContextHash,
     baseTickIntervalMs: params.baseTickIntervalMs,
     currentTickIntervalMs: params.currentTickIntervalMs,

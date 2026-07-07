@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { TradingSessionName } from '@herobids/domain';
 import type { PriceCandle, RegimeResult } from '@herobids/market-data';
+import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 
 /** Per-instrument summary used for stable context hashing across multi-instrument batches. */
 export interface InstrumentHashEntry {
@@ -24,6 +25,10 @@ export interface TickGateState {
   portfolioPnlUsd?: number | null;
   /** Sorted per-instrument summaries for stable multi-instrument context hashing. */
   instrumentSnapshots?: InstrumentHashEntry[];
+  /** Stable digest of the active watch summary. When "__unknown__", the watch
+   * state could not be loaded and the gate should err on the side of running
+   * the LLM. Undefined means watch state is not incorporated (backward compat). */
+  watchSummaryDigest?: string;
   previousContextHash?: string | null;
   baseTickIntervalMs?: number;
   currentTickIntervalMs?: number;
@@ -143,35 +148,68 @@ export function computePnlBucket(portfolioPnlUsd?: number | null): string {
   return String(Math.round(portfolioPnlUsd / 10) * 10);
 }
 
+/**
+ * Produces a stable digest from an active watch summary for use in the tick gate
+ * fingerprint. Only hashes counts and ordered status lines — NOT raw timestamps,
+ * which change every second and would defeat the gate.
+ *
+ * Returns "__unknown__" when the summary is null (watch state unavailable).
+ * The `shouldSkipTick` gate resolves this sentinel by appending the tick number,
+ * ensuring the hash never matches and the LLM always runs.
+ */
+export function computeWatchSummaryDigest(summary: RuntimeActiveWatchSummary | null): string {
+  if (!summary) {
+    return '__unknown__';
+  }
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      totalCount: summary.totalCount,
+      uniqueCount: summary.uniqueCount,
+      lines: summary.lines,
+      overflowCount: summary.overflowCount,
+    }))
+    .digest('hex');
+}
+
 export function computeDecisionContextHash(input: {
   positionSide?: string | null;
   latestPrice?: number | null;
   portfolioPnlUsd?: number | null;
   regimePass?: boolean | null;
   instrumentSnapshots?: InstrumentHashEntry[];
+  watchSummaryDigest?: string;
 }): string {
   // When multi-instrument snapshots are available, use the sorted per-instrument
   // summary for a stable, order-independent hash. This ensures a price move in
   // any tracked instrument is detected regardless of message ordering.
   if (input.instrumentSnapshots && input.instrumentSnapshots.length > 0) {
+    const payload: Record<string, unknown> = {
+      instruments: input.instrumentSnapshots,
+      regimePass: input.regimePass ?? 'unknown',
+    };
+    if (input.watchSummaryDigest !== undefined) {
+      payload.watchSummaryDigest = input.watchSummaryDigest;
+    }
     return crypto
       .createHash('sha256')
-      .update(JSON.stringify({
-        instruments: input.instrumentSnapshots,
-        regimePass: input.regimePass ?? 'unknown',
-      }))
+      .update(JSON.stringify(payload))
       .digest('hex');
   }
 
   // Single-instrument fallback: uses aggregate scalars.
+  const payload: Record<string, unknown> = {
+    positionSide: input.positionSide ?? 'flat',
+    priceBucket: computePriceBucket(input.latestPrice),
+    pnlBucket: computePnlBucket(input.portfolioPnlUsd),
+    regimePass: input.regimePass ?? 'unknown',
+  };
+  if (input.watchSummaryDigest !== undefined) {
+    payload.watchSummaryDigest = input.watchSummaryDigest;
+  }
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify({
-      positionSide: input.positionSide ?? 'flat',
-      priceBucket: computePriceBucket(input.latestPrice),
-      pnlBucket: computePnlBucket(input.portfolioPnlUsd),
-      regimePass: input.regimePass ?? 'unknown',
-    }))
+    .update(JSON.stringify(payload))
     .digest('hex');
 }
 
@@ -240,6 +278,13 @@ export async function shouldSkipTick(
     adaptiveInterval: state.enabledGates?.adaptiveInterval ?? true,
   };
 
+  // Resolve the effective watch digest, handling the "__unknown__" sentinel.
+  // When the watch state could not be loaded, append the tick number so the
+  // hash always differs — the gate must err on the side of running the LLM.
+  const effectiveWatchDigest = state.watchSummaryDigest === '__unknown__'
+    ? `__unknown__${state.tickNumber}`
+    : state.watchSummaryDigest;
+
   let adaptiveIntervalDegraded = false;
   let regimeDegraded = false;
 
@@ -292,6 +337,7 @@ export async function shouldSkipTick(
       portfolioPnlUsd: state.portfolioPnlUsd,
       regimePass: null,
       instrumentSnapshots: state.instrumentSnapshots,
+      watchSummaryDigest: effectiveWatchDigest,
     });
 
     if (
@@ -336,6 +382,7 @@ export async function shouldSkipTick(
     portfolioPnlUsd: state.portfolioPnlUsd,
     regimePass: regime?.pass ?? null,
     instrumentSnapshots: state.instrumentSnapshots,
+    watchSummaryDigest: effectiveWatchDigest,
   });
 
   if (regime !== null && !regime.pass) {

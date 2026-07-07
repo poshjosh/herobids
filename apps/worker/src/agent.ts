@@ -59,7 +59,7 @@ import {
 import { parseWatch, toRuntimeActiveWatch } from './watch-types.js';
 import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
-import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
+import { computeWatchSummaryDigest, shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
@@ -2043,6 +2043,22 @@ async function runTick(): Promise<void> {
       }
     }
 
+    // Load active watch summary before the tick gate decision so watch state
+    // changes (new watch, triggered, completed) are part of the gate fingerprint.
+    // Uses the cached Redis summary (agent:watches:summary:{agentId}) which is
+    // cheap to load. Stored in a local to avoid a second load later.
+    let activeWatchSummaryForGate: RuntimeActiveWatchSummary | null = null;
+    let watchSummaryDigest: string | undefined;
+    if (tradingTickWorkPlan.hasTradingCapability) {
+      try {
+        activeWatchSummaryForGate = await loadActiveWatchSummary(AGENT_ID!);
+        watchSummaryDigest = computeWatchSummaryDigest(activeWatchSummaryForGate);
+      } catch (err) {
+        logger.warn({ err }, 'Failed to load active watch summary for tick gate — forcing full evaluation (watch state unknown)');
+        watchSummaryDigest = computeWatchSummaryDigest(null);
+      }
+    }
+
     const tickGateState = buildTickGateState({
       tickNumber: tickCount,
       incomingMessages,
@@ -2050,6 +2066,7 @@ async function runTick(): Promise<void> {
       lastKnownPositionSide: sessionMetrics.lastPositionSide,
       tradingHours,
       now: new Date(),
+      watchSummaryDigest,
       previousContextHash,
       baseTickIntervalMs: costProfile.tickIntervalMs,
       currentTickIntervalMs: effectiveTickIntervalMs,
@@ -2364,7 +2381,10 @@ async function runTick(): Promise<void> {
     const reminderScheduledBy = runtimeState.metrics.currentReminder?.scheduledBy ?? null;
 
     if (tradingTickWorkPlan.hasTradingCapability) {
-      recordActiveWatchSummary(runtimeState, await loadActiveWatchSummary(AGENT_ID!));
+      // Reuse the watch summary already loaded before the gate decision.
+      // If it was loaded successfully, use it; otherwise fall back to a fresh load
+      // in case the gate load failed but a retry might succeed.
+      recordActiveWatchSummary(runtimeState, activeWatchSummaryForGate ?? await loadActiveWatchSummary(AGENT_ID!));
     } else {
       recordActiveWatchSummary(runtimeState, null);
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RegimeResult } from '@herobids/market-data';
-import { calculateAtrPercent, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
+import { calculateAtrPercent, computeDecisionContextHash, computeWatchSummaryDigest, isWithinTradingHours, resolveAdaptiveIntervalMs, shouldSkipTick } from './tick-gates.js';
+import type { RuntimeActiveWatchSummary } from './runtime-composition.js';
 
 function makeRegimeResult(pass: boolean, reasons: string[]): RegimeResult {
   return {
@@ -21,6 +22,109 @@ function makeRegimeResult(pass: boolean, reasons: string[]): RegimeResult {
     },
   };
 }
+
+function makeWatchSummary(overrides: Partial<RuntimeActiveWatchSummary> = {}): RuntimeActiveWatchSummary {
+  return {
+    totalCount: 3,
+    uniqueCount: 2,
+    lines: [
+      '[protective] BTC (ethereum) above $50000 status=not_met',
+      'ETH (ethereum) below $3000 status=met x2',
+    ],
+    overflowCount: 0,
+    ...overrides,
+  };
+}
+
+describe('computeWatchSummaryDigest', () => {
+  it('returns "__unknown__" for null summary', () => {
+    expect(computeWatchSummaryDigest(null)).toBe('__unknown__');
+  });
+
+  it('produces a stable hex digest for a valid summary', () => {
+    const summary = makeWatchSummary();
+    const digest = computeWatchSummaryDigest(summary);
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('produces identical digests for identical summaries', () => {
+    const a = makeWatchSummary();
+    const b = makeWatchSummary();
+    expect(computeWatchSummaryDigest(a)).toBe(computeWatchSummaryDigest(b));
+  });
+
+  it('produces different digests when a watch line changes status', () => {
+    const before = makeWatchSummary({
+      lines: ['BTC (ethereum) above $50000 status=not_met'],
+    });
+    const after = makeWatchSummary({
+      lines: ['BTC (ethereum) above $50000 status=met'],
+    });
+    expect(computeWatchSummaryDigest(before)).not.toBe(computeWatchSummaryDigest(after));
+  });
+
+  it('produces different digests when totalCount changes (watch added/removed)', () => {
+    const before = makeWatchSummary({ totalCount: 2 });
+    const after = makeWatchSummary({ totalCount: 3 });
+    expect(computeWatchSummaryDigest(before)).not.toBe(computeWatchSummaryDigest(after));
+  });
+
+  it('produces different digests when uniqueCount changes', () => {
+    const before = makeWatchSummary({ uniqueCount: 1 });
+    const after = makeWatchSummary({ uniqueCount: 2 });
+    expect(computeWatchSummaryDigest(before)).not.toBe(computeWatchSummaryDigest(after));
+  });
+});
+
+describe('computeDecisionContextHash with watchSummaryDigest', () => {
+  it('produces the same hash as before when watchSummaryDigest is not provided (backward compat)', () => {
+    const hashWithout = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+    });
+    const hashWithUndefined = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      watchSummaryDigest: undefined,
+    });
+    expect(hashWithout).toBe(hashWithUndefined);
+  });
+
+  it('produces different hashes when watchSummaryDigest differs', () => {
+    const summaryA = makeWatchSummary({ lines: ['BTC above $50000 status=not_met'] });
+    const summaryB = makeWatchSummary({ lines: ['BTC above $50000 status=met'] });
+    const digestA = computeWatchSummaryDigest(summaryA);
+    const digestB = computeWatchSummaryDigest(summaryB);
+
+    const hashA = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      watchSummaryDigest: digestA,
+    });
+    const hashB = computeDecisionContextHash({
+      positionSide: 'long',
+      latestPrice: 100,
+      portfolioPnlUsd: 50,
+      watchSummaryDigest: digestB,
+    });
+    expect(hashA).not.toBe(hashB);
+  });
+
+  it('includes watchSummaryDigest in multi-instrument hash path', () => {
+    const digest = computeWatchSummaryDigest(makeWatchSummary());
+    const hashWith = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+      watchSummaryDigest: digest,
+    });
+    const hashWithout = computeDecisionContextHash({
+      instrumentSnapshots: [{ symbol: 'BTC/USD:USD', priceBucket: '100', pnlBucket: '10', side: 'long' }],
+    });
+    expect(hashWith).not.toBe(hashWithout);
+  });
+});
 
 describe('shouldSkipTick', () => {
   it('skips when regime is unfavorable and there are no open positions', async () => {
@@ -186,6 +290,178 @@ describe('shouldSkipTick', () => {
     expect(tenth.skip).toBe(false);
   });
 
+  it('skips when context AND watch digest are both unchanged (flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const watchDigest = computeWatchSummaryDigest(makeWatchSummary());
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(true);
+    expect(second.reason).toBe('context_unchanged');
+  });
+
+  it('does NOT skip when watch digest changes but price/PnL stay the same (flat position)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const watchBefore = computeWatchSummaryDigest(makeWatchSummary({
+      lines: ['BTC above $50000 status=not_met'],
+    }));
+    const watchAfter = computeWatchSummaryDigest(makeWatchSummary({
+      lines: ['BTC above $50000 status=met'],
+    }));
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchBefore,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchAfter,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('does NOT skip when watch digest changes but price/PnL stay the same (open positions)', async () => {
+    const watchBefore = computeWatchSummaryDigest(makeWatchSummary({
+      lines: ['BTC above $50000 status=not_met'],
+    }));
+    const watchAfter = computeWatchSummaryDigest(makeWatchSummary({
+      lines: ['BTC above $50000 status=met'],
+    }));
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        watchSummaryDigest: watchBefore,
+      },
+      {},
+    );
+
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        watchSummaryDigest: watchAfter,
+        previousContextHash: first.contextHash,
+      },
+      {},
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('does NOT skip when watch digest is unknown (__unknown__ sentinel forces evaluation)', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: '__unknown__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    // Even though price/PnL are identical, the __unknown__ sentinel causes
+    // a per-tick hash variation so the gate never skips on unknown watch state.
+    const second = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: '__unknown__',
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(second.skip).toBe(false);
+  });
+
+  it('still bypasses the context hash gate when hasWakeSignal is true regardless of watch digest', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const watchDigest = computeWatchSummaryDigest(makeWatchSummary());
+
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        watchSummaryDigest: watchDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    const wakeTickResult = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        hasWakeSignal: true,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 0,
+        watchSummaryDigest: watchDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(wakeTickResult.skip).toBe(false);
+  });
+
   it('returns current interval without throwing when fetchVolatilityCandles fails', async () => {
     const fetchVolatilityCandles = vi.fn().mockRejectedValue(new Error('AbortError: This operation was aborted'));
 
@@ -301,6 +577,121 @@ describe('shouldSkipTick', () => {
     expect(second.gate).toBe('context_hash');
     expect(second.degraded).toBe(true);
     expect(second.degradationReason).toBe('regime_unavailable');
+  });
+
+  it('does NOT skip when watch digest is unknown with open positions', async () => {
+    const result1 = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        watchSummaryDigest: computeWatchSummaryDigest(null),
+      },
+      {},
+    );
+    // tick 1 — no previous hash to compare against, so it should not skip
+    expect(result1.skip).toBe(false);
+
+    const result2 = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: true,
+        positionSide: 'long',
+        latestPrice: 100,
+        portfolioPnlUsd: 5,
+        watchSummaryDigest: computeWatchSummaryDigest(null),
+        previousContextHash: result1.contextHash ?? null,
+      },
+      {},
+    );
+    // tick 2 — hash includes __unknown__2 which differs from __unknown__1, so should NOT skip
+    expect(result2.skip).toBe(false);
+  });
+
+  it('forces evaluation on the 10th tick even when watch digest is present and context matches', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const watchDigest = computeWatchSummaryDigest(makeWatchSummary());
+
+    // Build a reference hash from tick 1 with the watch digest
+    const first = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    // tick 10 with same context + same watch digest should NOT skip (forced evaluation)
+    const tenth = await shouldSkipTick(
+      {
+        tickNumber: 10,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: watchDigest,
+        previousContextHash: first.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+
+    expect(tenth.skip).toBe(false);
+  });
+
+  it('transitions from __unknown__ to known digest: evaluate → evaluate → skip', async () => {
+    const regime = makeRegimeResult(true, ['All regime checks passed']);
+    const realDigest = computeWatchSummaryDigest(makeWatchSummary());
+
+    // Tick 1: unknown watch state — must evaluate
+    const tick1 = await shouldSkipTick(
+      {
+        tickNumber: 1,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: '__unknown__',
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+    expect(tick1.skip).toBe(false);
+
+    // Tick 2: real digest — hash differs from __unknown__1, must evaluate
+    const tick2 = await shouldSkipTick(
+      {
+        tickNumber: 2,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: realDigest,
+        previousContextHash: tick1.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+    expect(tick2.skip).toBe(false);
+
+    // Tick 3: same real digest — hash matches tick 2, should skip
+    const tick3 = await shouldSkipTick(
+      {
+        tickNumber: 3,
+        hasOpenPositions: false,
+        positionSide: 'flat',
+        latestPrice: 100,
+        portfolioPnlUsd: 12,
+        watchSummaryDigest: realDigest,
+        previousContextHash: tick2.contextHash,
+      },
+      { evaluateRegime: vi.fn().mockResolvedValue(regime) },
+    );
+    expect(tick3.skip).toBe(true);
+    expect(tick3.reason).toBe('context_unchanged');
   });
 });
 

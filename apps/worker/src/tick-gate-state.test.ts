@@ -252,4 +252,26 @@ describe('buildTickGateState', () => {
     // Hash must differ because BTC price moved even though ETH (the final snapshot) didn't
     expect(hashOriginal).not.toBe(hashMoved);
   });
+
+  it('passes watchSummaryDigest through to the returned TickGateState', () => {
+    const digest = 'abc123def456';
+    const state = buildTickGateState({
+      tickNumber: 5,
+      incomingMessages: [],
+      hasOpenPositions: false,
+      watchSummaryDigest: digest,
+    });
+
+    expect(state.watchSummaryDigest).toBe(digest);
+  });
+
+  it('leaves watchSummaryDigest undefined when not provided (backward compat)', () => {
+    const state = buildTickGateState({
+      tickNumber: 1,
+      incomingMessages: [],
+      hasOpenPositions: false,
+    });
+
+    expect(state.watchSummaryDigest).toBeUndefined();
+  });
 });
