@@ -1,7 +1,7 @@
 # Per-Trade Stop-Loss and Take-Profit
 
 **Created:** 2026-07-06
-**Status:** in-progress
+**Status:** complete
 
 ## Goal
 
@@ -261,11 +261,11 @@ export function validatePerTradeLevels(input: LevelValidationInput): LevelValida
 6. [DONE] Integrate price validation in `agent-decision-handler.ts` (reject before accept)
 7. [DONE] Implement `checkPerTradeLevels` pure function in stop-loss-monitor + tests
 8. [DONE] Add `exitLevels` map to `agent-trading-actor.ts` with rehydration
-9. [PENDING] Add periodic per-trade level monitor loop
-10. [PENDING] Hide `stopLossPct` from agent surfaces
-11. [PENDING] Update system prompt guardrails
-12. [PENDING] Update all remaining tests
-13. [PENDING] `pnpm lint` + `pnpm test`
+9. [DONE] Add periodic per-trade level monitor loop
+10. [DONE] Hide `stopLossPct` from agent surfaces
+11. [DONE] Update system prompt guardrails
+12. [DONE] Update all remaining tests
+13. [DONE] `pnpm lint` + `pnpm test`
 
 ## Outstanding Issues
 
