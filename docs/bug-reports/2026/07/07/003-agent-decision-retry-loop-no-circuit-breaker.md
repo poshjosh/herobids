@@ -6,14 +6,19 @@
 - **Summary:** Agent decision failures with `no_context` and `swap.instrument_format` codes are marked `retryable: true` indefinitely. Agents stuck in retry loops waste LLM tokens — one agent recorded 69 `no_context` failures for WIF/RENDER/LIT across ~2 hours, and another recorded 42 `swap.instrument_format` failures. The bot `TradingActor` already has a circuit breaker for strategy errors (Issue 1 in the agent-runtime-reliability plan); agent-direct decisions lacked equivalent protection.
 - **Root Cause:** `AgentDecisionHandler` records failures via `recordFailure()` but has no per-instrument consecutive-failure counter. Both `no_context` (mark price unavailable — will never self-heal) and `swap.instrument_format` (bare symbol submitted to swap venue — could self-heal but agent hasn't reformatted) are marked `retryable: true` regardless of repeat count.
 - **Fix:** Added a per-instrument circuit breaker to `AgentDecisionHandler`:
-  - `no_context` → hardened after **3** consecutive failures (mark data won't appear)
-  - `swap.instrument_format` → hardened after **5** consecutive failures (agent has had enough chances to reformat)
+  - `no_context` → hardened after **10** consecutive failures (operator-configurable via `agentDecisionNoContextThreshold`). Only counts after the actor has proven it CAN fetch context (first successful `getDecisionContext` call). During startup initialization, `no_context` is always `retryable: true` — the breaker is not invoked until context has been fetched at least once.
+  - `swap.instrument_format` → hardened after **5** consecutive failures (operator-configurable via `agentDecisionSwapInstrumentFormatThreshold`)
   - Counters reset on first successful decision acceptance for that instrument
-  - Stale entries (>5 min) pruned when map exceeds 200 entries
-  - Thresholds defined as `CIRCUIT_BREAKER_THRESHOLDS` constant; should move to operator config (`agentRiskDefaults.*`) when the config schema is extended
+  - Stale entries (>5 min since last failure) reset their count to 1 on next use, and are bulk-pruned when the failure map exceeds 200 entries
+  - Thresholds are injected via constructor from operator config (`agentRiskDefaults.*`); no hardcoded constants remain in the handler
   - When tripped, the rejection message includes `[CIRCUIT BREAKER: N consecutive 'code' failures on instrument. ...]` and `retryable` is flipped to `false`
+  - The handler preserves the original `retryable` value from the intake rejection when the breaker is not tripped, so non-retryable errors (`swap_recovery_ambiguous`, `circuit_breaker_open`, `stop_loss_active`, `instrument_unknown`) are not accidentally made retryable
 - **Files Changed:**
-  - `apps/worker/src/agents/agent-decision-handler.ts` — added `failureCounters` map, `checkCircuitBreaker()`, `resetCircuitBreaker()`, and wired into `isIntakeRejection` and `no_context` paths plus acceptance reset
+  - `apps/worker/src/agents/agent-decision-handler.ts` — added `failureCounters` map, `actorsWithSuccessfulContext` set, `checkCircuitBreaker()`, `resetCircuitBreaker()`, and wired into `isIntakeRejection`, `no_context`, and acceptance-reset paths
+  - `packages/domain/src/config/schema.ts` — added `agentDecisionNoContextThreshold` and `agentDecisionSwapInstrumentFormatThreshold` to `AgentRiskDefaultsSchema`
+  - `config/default.yaml` — added corresponding values under `agentRiskDefaults`
+  - `apps/worker/src/index.ts` — wired thresholds from `appConfig.agentRiskDefaults` into the handler constructor
+  - `apps/worker/src/agents/agent-decision-handler.test.ts` — added tests for `no_context` startup bypass, tripping after consecutive failures, and `swap.instrument_format` breaker path
 - **Verification:** `pnpm lint` (tsc --noEmit) passes cleanly. Behaviour verified by code review — circuit breaker trips after threshold consecutive failures and resets on success.
 - **References:**
   - Plan: `docs/features/2026/07/05/001-agent-runtime-reliability/001-plan.md` (Issue 1 — same pattern for bots)
