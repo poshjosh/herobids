@@ -454,7 +454,6 @@ function buildFallbackRuntimeDescriptor(): RuntimeDescriptor {
       maxBots: agentConfig.maxBots ?? null,
       maxOpenPositions: toGuardrailNumber(agentConfig.maxOpenPositions),
       maxPositionSizePct: toGuardrailNumber(agentConfig.maxPositionSizePct),
-      stopLossPct: toGuardrailNumber(agentConfig.stopLossPct),
       capital: agentConfig.capital ?? null,
     },
     budgets: { ...agentRuntimePolicy.defaultBudgets },

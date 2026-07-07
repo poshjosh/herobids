@@ -27,7 +27,6 @@ const getRiskLimitsTool: AgentTool = {
         limits: {
           maxOpenPositions: formatField(contract.maxOpenPositions),
           maxPositionSizePct: formatField(contract.maxPositionSizePct),
-          stopLossPct: formatField(contract.stopLossPct),
           stopLossCooldownMs: formatField(contract.stopLossCooldownMs),
           maxDrawdownPct: formatField(contract.maxDrawdownPct),
         },
@@ -42,7 +41,6 @@ const getRiskLimitsTool: AgentTool = {
 const AdjustRiskLimitsParamsSchema = z.object({
   maxOpenPositions: z.number().int().positive().optional().nullable().describe('Max concurrent open positions. Set null to reset to operator default.'),
   maxPositionSizePct: z.number().min(0).max(100).optional().nullable().describe('Max position size as % of equity (0-100). Set null to reset to operator default.'),
-  stopLossPct: z.number().min(0).max(100).optional().nullable().describe('Unrealized loss % threshold for stop-loss (0-100). Set null to reset to operator default.'),
   stopLossCooldownMs: z.number().int().min(0).optional().nullable().describe('Cooldown in ms after stop-loss exit before re-entry. Set null to reset to operator default.'),
   maxDrawdownPct: z.number().min(0).max(100).optional().nullable().describe('Max peak-to-current equity drawdown % (0-100). Set null to reset to operator default.'),
 });
@@ -64,7 +62,6 @@ const adjustRiskLimitsTool: AgentTool = {
     const overrides: Record<string, number | null> = {};
     if (p.maxOpenPositions !== undefined) overrides.maxOpenPositions = p.maxOpenPositions ?? null;
     if (p.maxPositionSizePct !== undefined) overrides.maxPositionSizePct = p.maxPositionSizePct ?? null;
-    if (p.stopLossPct !== undefined) overrides.stopLossPct = p.stopLossPct ?? null;
     if (p.stopLossCooldownMs !== undefined) overrides.stopLossCooldownMs = p.stopLossCooldownMs ?? null;
     if (p.maxDrawdownPct !== undefined) overrides.maxDrawdownPct = p.maxDrawdownPct ?? null;
 
@@ -86,7 +83,6 @@ const adjustRiskLimitsTool: AgentTool = {
         limits: result.contract ? {
           maxOpenPositions: formatField(result.contract.maxOpenPositions),
           maxPositionSizePct: formatField(result.contract.maxPositionSizePct),
-          stopLossPct: formatField(result.contract.stopLossPct),
           stopLossCooldownMs: formatField(result.contract.stopLossCooldownMs),
           maxDrawdownPct: formatField(result.contract.maxDrawdownPct),
         } : undefined,

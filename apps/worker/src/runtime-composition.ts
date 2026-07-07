@@ -764,7 +764,6 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       if (desc.guardrails.maxBots != null) lines.push(`Max concurrent bots: ${desc.guardrails.maxBots}`);
       if (desc.guardrails.maxOpenPositions != null) lines.push(`Max open positions: ${desc.guardrails.maxOpenPositions}`);
       if (desc.guardrails.maxPositionSizePct != null) lines.push(`Max position size: ${desc.guardrails.maxPositionSizePct}%`);
-      if (desc.guardrails.stopLossPct != null) lines.push(`Stop-loss: ${desc.guardrails.stopLossPct}%`);
       if (desc.guardrails.capital) lines.push(`Capital: ${formatUsdAmount(desc.guardrails.capital)}`);
 
       return {

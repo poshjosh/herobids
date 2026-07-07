@@ -30,6 +30,7 @@ export interface RuntimeGuardrailDescriptor {
   maxBots?: number | null;
   maxOpenPositions?: number | null;
   maxPositionSizePct?: number | null;
+  /** Not surfaced to agents — enforced by engine backstop only. */
   stopLossPct?: number | null;
   capital?: string | null;
 }

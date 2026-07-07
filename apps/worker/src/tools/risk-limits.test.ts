@@ -9,7 +9,6 @@ function makeContract(overrides?: Partial<ResolvedAgentRiskContract>): ResolvedA
   return {
     maxOpenPositions: { effectiveValue: 10, source: 'default', mutable: true, operatorCeiling: 10 },
     maxPositionSizePct: { effectiveValue: 100, source: 'default', mutable: true, operatorCeiling: 100 },
-    stopLossPct: { effectiveValue: 5, source: 'user', mutable: false, operatorCeiling: 10, creatorValue: 5 },
     stopLossCooldownMs: { effectiveValue: 60000, source: 'agent_override', mutable: true, operatorCeiling: 300000, overrideValue: 60000 },
     maxDrawdownPct: { effectiveValue: 1_000_000_000, source: 'default', mutable: true, operatorCeiling: 1_000_000_000 },
     ...overrides,
@@ -51,7 +50,6 @@ describe('get_risk_limits tool', () => {
     const data = result.data as Record<string, unknown>;
     const limits = data.limits as Record<string, unknown>;
     expect(limits.maxOpenPositions).toEqual({ value: 10, source: 'default', mutable: true, ceiling: 10 });
-    expect(limits.stopLossPct).toEqual({ value: 5, source: 'user', mutable: false, ceiling: 10 });
     expect(limits.stopLossCooldownMs).toEqual({ value: 60000, source: 'agent_override', mutable: true, ceiling: 300000 });
     // Runtime is present with defaults when botRepo absent
     const runtime = data.runtime as Record<string, unknown>;
@@ -305,7 +303,7 @@ describe('adjust_risk_limits tool', () => {
   });
 
   it('returns error when adjustment is rejected', async () => {
-    const adjustOverrides = vi.fn().mockResolvedValue({ ok: false, error: "Field 'stopLossPct' is creator-configured" });
+    const adjustOverrides = vi.fn().mockResolvedValue({ ok: false, error: "Field 'maxOpenPositions' is creator-configured" });
     const ctx = makeCtx({
       riskContractOps: {
         getContract: vi.fn().mockResolvedValue(makeContract()),
@@ -313,7 +311,7 @@ describe('adjust_risk_limits tool', () => {
       },
     });
 
-    const result = await adjustRiskLimitsTool.execute({ stopLossPct: 3 }, ctx);
+    const result = await adjustRiskLimitsTool.execute({ maxOpenPositions: 3 }, ctx);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('creator-configured');
