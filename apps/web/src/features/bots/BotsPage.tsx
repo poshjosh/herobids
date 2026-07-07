@@ -242,10 +242,20 @@ function CreateBotModal({ onClose, onCreated }: { onClose: () => void; onCreated
         {/* Strategy preset */}
         <StrategyPresetSelector
           value={form.strategyPreset}
-          onChange={(key) => setForm((s) => ({ ...s, strategyPreset: key }))}
+          onChange={(key) => {
+            if (key === 'custom') {
+              const seed = fetchedPresets[0];
+              setForm((s) => ({
+                ...s,
+                strategyPreset: 'custom',
+                customConfig: seed ? presetToCustomConfig(seed) : defaultBotCustomConfig,
+              }));
+            } else {
+              setForm((s) => ({ ...s, strategyPreset: key, customConfig: defaultBotCustomConfig }));
+            }
+          }}
           presets={fetchedPresets}
           loading={presetsQuery.isLoading}
-          showCustom={false}
         />
 
         {/* Execution mode */}
