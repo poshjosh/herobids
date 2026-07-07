@@ -20,3 +20,10 @@ agentRuntime:
       provider: openrouter                    # suggested provider in forms
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
+
+billing:
+  primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
+  # fallbackProvider: creem                   # optional — uncomment to enable failover
+  checkoutSuccessUrl: https://herobids.com/billing?session=success
+  checkoutCancelUrl: https://herobids.com/billing?session=cancelled
+

@@ -17,6 +17,12 @@ agentRuntime:
       lightModel: deepseek/deepseek-v4-flash  # suggested economy (scout) model
       heavyModel: deepseek/deepseek-v4-pro    # suggested premium (judge) model
 
+billing:
+  primaryProvider: mock                       # 'mock' | 'creem' | 'stripe'
+  # fallbackProvider: creem                   # optional — uncomment to enable failover
+  checkoutSuccessUrl: https://herobids.com/billing?session=success
+  checkoutCancelUrl: https://herobids.com/billing?session=cancelled
+
 # Alerting — dispatches journal events to Telegram channels.
 alerts:
   enabled: true                   # master switch — override: ALERTS_ENABLED
