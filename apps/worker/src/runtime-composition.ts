@@ -1819,7 +1819,7 @@ export function applyRuntimeMessage(
 }
 
 export function buildSystemPrompt(state: RuntimeCompositionState, timing: PromptTimingContext, _toolGuidanceByName?: Record<string, string>, policy?: PromptEnrichmentPolicy): string {
-  const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => skill.instructions).join('\n\n');
+  const skillInstructions = state.runtimeDescriptor.resolvedSkills.map((skill) => `## Skill: ${skill.id}\n\n${skill.instructions}`).join('\n\n');
   const allowedTools = formatVisibleTools(state.runtimeDescriptor);
   const staticContext = buildContextSection(state, 'static', policy);
   const tokenBudget = state.runtimeDescriptor.guardrails.dailyTokenBudget;
