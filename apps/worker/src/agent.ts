@@ -60,7 +60,8 @@ import { deriveTradingTickWorkPlan } from './agent-capabilities.js';
 import type { TradingSessionName } from '@herobids/domain';
 import { shouldSkipTick, type TickSkipDecision, type TradingHoursConfig } from './tick-gates.js';
 import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from './scout-dispatch.js';
-import { hasUncoveredTrackedPosition, resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
+import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
+import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
 import { classifyRuntimeError } from './runtime-errors.js';
 import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
@@ -1958,11 +1959,16 @@ async function runTick(): Promise<void> {
 
     let hasOpenPositions = Boolean(sessionMetrics.lastPositionSide && sessionMetrics.lastPositionSide !== 'flat');
     let openPositionSymbols: string[] = [];
+    let openPositionInputs: PositionInput[] = [];
     if (botRepo) {
       try {
         const openPositions = await botRepo.getOpenPositionsByCreator('agent', AGENT_ID!);
         hasOpenPositions = openPositions.length > 0;
         openPositionSymbols = openPositions.map((p) => p.symbol);
+        openPositionInputs = openPositions.map((p) => ({
+          symbol: p.symbol,
+          side: p.side,
+        }));
         setDependencyAvailability('database', true);
       } catch (err) {
         logger.warn({ err }, 'Failed to resolve open positions for tick gating — falling back to cached runtime state');
@@ -2335,12 +2341,36 @@ async function runTick(): Promise<void> {
     const triggeredWatchIds = rawWatches
       .filter((w) => w.lastConditionMet === true)
       .map((w) => w.watchId);
-    // Only count watches that have NOT already been notified.
-    const hasTriggeredWatch = triggeredWatchIds.some((id) => !notifiedSet.has(id));
-    const hasUncoveredPosition = hasUncoveredTrackedPosition({
-      openPositionSymbols,
-      watchSymbols: rawWatches.map((watch) => watch.symbol),
+
+    // Hoisted protective-purpose filter — used both for dedup and for marking
+    // notified watches on escalation.
+    const protectivePurposes = new Set<string>(PROTECTIVE_WATCH_PURPOSES);
+    const triggeredProtectiveWatchIds = triggeredWatchIds.filter(id => {
+      const watch = rawWatches.find(w => w.watchId === id);
+      return watch?.purpose ? protectivePurposes.has(watch.purpose) : false;
     });
+
+    // Evaluate position coverage using structured watch metadata (purpose,
+    // instrument identity, coverage links) instead of coarse symbol matching.
+    const coverageResult = evaluatePositionCoverage({
+      positions: openPositionInputs,
+      watches: rawWatches.map((w) => ({
+        watchId: w.watchId,
+        symbol: w.symbol,
+        purpose: w.purpose,
+        instrument: w.instrument,
+        coverage: w.coverage,
+        lastConditionMet: w.lastConditionMet,
+        lastCheckedAt: w.lastCheckedAt,
+      })),
+    });
+
+    // Re-apply notified-set dedup so a triggered protective watch only forces
+    // escalation ONCE per crossing — prevents the "nag loop" where a
+    // persistently-crossed threshold re-escalates on every tick.
+    const hasTriggeredWatch = coverageResult.hasTriggeredProtectiveWatch &&
+      triggeredProtectiveWatchIds.some(id => !notifiedSet.has(id));
+    const hasUncoveredPosition = coverageResult.hasUncoveredPosition;
 
     const preScoutResolution = resolvePreScoutDecision({
       tickCount,
@@ -2562,21 +2592,24 @@ async function runTick(): Promise<void> {
         : parseScoutDecision(scoutLoopResult.assistantResponse);
     }
 
-    // Only mark triggered watches as notified when they actually caused a
-    // surviving escalation to judge. Hard-limit skips must not suppress
+    // Only mark protective triggered watches as notified when they actually
+    // caused a surviving escalation to judge. Hard-limit skips must not suppress
     // future escalation once billing constraints clear.
+    // Non-protective watches (e.g. informational) do not belong in the dedup set
+    // because they are not used for nag-loop prevention.
+    // triggeredProtectiveWatchIds already computed above (right after triggeredWatchIds).
     if (
       preScoutResolution.source === 'forced_open_positions'
       && preScoutResolution.decision?.reason === 'watch_triggered'
       && resolvedScoutDecision.disposition === 'escalate'
       && resolvedScoutDecision.reason === 'watch_triggered'
-      && triggeredWatchIds.length > 0
+      && triggeredProtectiveWatchIds.length > 0
     ) {
       try {
-        await redis.sadd(notifiedWatchesKey, ...triggeredWatchIds);
+        await redis.sadd(notifiedWatchesKey, ...triggeredProtectiveWatchIds);
         await redis.expire(notifiedWatchesKey, 86400); // 24 h
       } catch (err) {
-        logger.warn({ err, watchIds: triggeredWatchIds }, 'Failed to update notified watch set after watch-triggered escalation');
+        logger.warn({ err, watchIds: triggeredProtectiveWatchIds }, 'Failed to update notified watch set after watch-triggered escalation');
       }
     }
 
