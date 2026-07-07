@@ -1019,6 +1019,180 @@ describe('AgentDecisionHandler', () => {
       expect(lastCall[1].message).toContain('5 consecutive');
       expect(lastCall[1].message).toContain('swap.instrument_format');
     });
+
+    it('resets failure counter when entries are stale (older than 5 min)', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      intakeResolver.getDecisionContext.mockReturnValue(null);
+
+      // Seed the set to simulate initialized actor
+      const privateSet = (handler as any).actorsWithSuccessfulContext as Set<string>;
+      privateSet.add('agent-1');
+
+      // Fail twice with current timestamps
+      await handler.handleDecisionSubmit(envelope, payload);
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      // Manually age the failure entry to simulate 7 minutes passing
+      const counters = (handler as any).failureCounters as Map<string, { count: number; lastFailedAt: number }>;
+      const key = [...counters.keys()].find(k => k.includes('no_context'))!;
+      const entry = counters.get(key)!;
+      entry.lastFailedAt = Date.now() - 7 * 60_000; // 7 min ago — stale
+      counters.set(key, entry);
+
+      // Next failure should start fresh (count = 1, retryable = true)
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      const calls = eventPublisher.emitDecisionRejected.mock.calls;
+      const lastCall = calls[calls.length - 1] as any[];
+      expect(lastCall[1].retryable).toBe(true);
+      expect(lastCall[1].message).not.toContain('CIRCUIT BREAKER');
+
+      // The counter should be at 1, not 3 — verify by checking another failure doesn't trip yet
+      await handler.handleDecisionSubmit(envelope, payload);
+      const nextCall = eventPublisher.emitDecisionRejected.mock.calls[calls.length - 1] as any[];
+      expect(nextCall[1].retryable).toBe(true);
+      expect(nextCall[1].message).not.toContain('CIRCUIT BREAKER');
+    });
+
+    it('tracks different failure codes independently', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      intakeResolver.getDecisionContext.mockReturnValue(null);
+      const privateSet = (handler as any).actorsWithSuccessfulContext as Set<string>;
+      privateSet.add('agent-1');
+
+      // Fail twice with no_context
+      for (let i = 0; i < 2; i++) {
+        await handler.handleDecisionSubmit(envelope, payload);
+      }
+
+      // Verify the first 2 calls were no_context rejections
+      const firstCalls = eventPublisher.emitDecisionRejected.mock.calls;
+      expect(firstCalls[0][1].code).toBe('no_context');
+      expect(firstCalls[1][1].code).toBe('no_context');
+
+      // Now switch to swap.instrument_format — all failures should be for a different code.
+      // intake rejection is checked before context, so getDecisionContext (still null) won't be called.
+      intakeResolver.getIntakeDeps.mockReturnValue({
+        rejected: true,
+        code: 'swap.instrument_format',
+        message: "Got: 'SOL'",
+        retryable: true,
+      });
+
+      // Fail twice with swap.instrument_format — should NOT trip (threshold is 5, and these are code 1-2)
+      for (let i = 0; i < 2; i++) {
+        await handler.handleDecisionSubmit(envelope, payload);
+      }
+
+      const calls = eventPublisher.emitDecisionRejected.mock.calls;
+      // Get the last two calls (swap.instrument_format failures)
+      const lastCall = calls[calls.length - 1] as any[];
+      const prevCall = calls[calls.length - 2] as any[];
+
+      // Both should still be retryable — swap.instrument_format threshold is 5, we only hit 2
+      expect(lastCall[1].retryable).toBe(true);
+      expect(prevCall[1].retryable).toBe(true);
+      // Messages should reflect swap.instrument_format, not no_context
+      expect(lastCall[1].code).toBe('swap.instrument_format');
+      expect(prevCall[1].code).toBe('swap.instrument_format');
+    });
+
+    it('passes through non-thresholded intake rejections unchanged', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      intakeResolver.getIntakeDeps.mockReturnValue({
+        rejected: true,
+        code: 'circuit_breaker_open',
+        message: 'Circuit breaker is open — execution halted',
+        retryable: false,
+      });
+
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      const call = eventPublisher.emitDecisionRejected.mock.calls[0] as any[];
+      expect(call[1].retryable).toBe(false);
+      expect(call[1].code).toBe('circuit_breaker_open');
+      expect(call[1].message).toBe('Circuit breaker is open — execution halted');
+      expect(call[1].message).not.toContain('CIRCUIT BREAKER');
+    });
+
+    it('resets circuit breaker counters on successful acceptance', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+
+      // Manually populate failure counters for agent-1::BTC/USD:USD
+      const counters = (handler as any).failureCounters as Map<string, { count: number; lastFailedAt: number }>;
+      const now = Date.now();
+      counters.set('agent-1::BTC/USD:USD::no_context', { count: 5, lastFailedAt: now });
+      counters.set('agent-1::BTC/USD:USD::swap.instrument_format', { count: 3, lastFailedAt: now });
+      // Also set a counter for a different instrument — should NOT be cleared
+      counters.set('agent-1::ETH/USD:USD::no_context', { count: 2, lastFailedAt: now });
+
+      // Call reset
+      (handler as any).resetCircuitBreaker('agent-1', 'BTC/USD:USD');
+
+      // BTC/USD:USD entries should be cleared
+      expect(counters.has('agent-1::BTC/USD:USD::no_context')).toBe(false);
+      expect(counters.has('agent-1::BTC/USD:USD::swap.instrument_format')).toBe(false);
+      // ETH/USD:USD entry should remain
+      expect(counters.has('agent-1::ETH/USD:USD::no_context')).toBe(true);
+      expect(counters.get('agent-1::ETH/USD:USD::no_context')!.count).toBe(2);
+
+      // --- Integration path: verify reset is wired through handleDecisionSubmit ---
+      // Seed the actor as having had successful context so the circuit breaker
+      // check runs (not skipped as "initializing").
+      const privateSet = (handler as any).actorsWithSuccessfulContext as Set<string>;
+      privateSet.add('agent-1');
+
+      // Re-populate counters by firing no_context rejections
+      intakeResolver.getDecisionContext.mockReturnValue(null);
+      intakeResolver.getIntakeDeps.mockReturnValue({ symbol: 'BTC/USD:USD', venueType: 'cex', venueAccountId: 'va-1' });
+
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      // Verify counter was incremented
+      const countersAfter = (handler as any).failureCounters as Map<string, { count: number; lastFailedAt: number }>;
+      const prefix = 'agent-1::BTC/USD:USD::';
+      const keysAfterFirstRejection = [...countersAfter.keys()].filter(k => k.startsWith(prefix));
+      expect(keysAfterFirstRejection.length).toBeGreaterThan(0);
+
+      // Now simulate a successful decision through the full handleDecisionSubmit pipeline
+      intakeResolver.getDecisionContext.mockReturnValue({
+        snapshot: { symbol: 'BTC/USD:USD', price: '100', timestamp: '2026-06-03T00:00:00.000Z' },
+        position: null,
+        referenceMark: { price: '100', source: 'last_price' },
+        strategyParams: {},
+      });
+      intakeResolver.getIntakeDeps.mockReturnValue({
+        symbol: 'BTC/USD:USD',
+        venueType: 'cex',
+        venueAccountId: 'va-1',
+        markSource: { fetchMark: vi.fn().mockResolvedValue({ ok: true, data: { price: '101', source: 'oracle', stale: false } }) },
+      });
+      intakeResolver.getPosition.mockReturnValue({
+        symbol: 'BTC/USD:USD',
+        side: 'flat',
+        size: { toString: () => '0' },
+        entryPrice: { toString: () => '0' },
+        realizedPnl: { toString: () => '0' },
+      });
+
+      const { submitDecisionForExecution } = await import('@herobids/engine');
+      vi.mocked(submitDecisionForExecution).mockResolvedValueOnce({
+        decision: { id: 'dec-integration', instrumentId: 'BTC/USD:USD', intent: 'go_long', targetSize: { toString: () => '1' } } as any,
+        riskRejected: false,
+        position: { symbol: 'BTC/USD:USD', side: 'flat', size: { toString: () => '0' }, entryPrice: { toString: () => '0' }, realizedPnl: { toString: () => '0' } } as any,
+        executionFailed: false,
+        executionResult: { orders: [], fills: [] } as any,
+      });
+
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      // Verify acceptance was emitted (integration path exercised)
+      expect(eventPublisher.emitDecisionAccepted).toHaveBeenCalled();
+
+      // Verify counters were reset by the successful acceptance path
+      const keysAfterSuccess = [...countersAfter.keys()].filter(k => k.startsWith(prefix));
+      expect(keysAfterSuccess.length).toBe(0);
+    });
   });
 
   // ---------------------------------------------------------------------------
