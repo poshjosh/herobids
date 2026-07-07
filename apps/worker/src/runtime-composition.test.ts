@@ -16,6 +16,7 @@ import {
   recordActiveWatchSummary,
   type PromptEnrichmentPolicy,
   type ActivityTimelineEvent,
+  RUNTIME_CONTEXT_PROVIDERS,
 } from './runtime-composition.js';
 import { createPromptTimingContext } from './prompt-timing-context.js';
 
@@ -1818,6 +1819,211 @@ describe('runtime composition helpers', () => {
       expect(userContext).toContain('Watch Trigger Context');
       // But no emphasis line
       expect(userContext).not.toContain('→ Prioritize evaluating and acting on this signal.');
+    });
+  });
+
+  describe('position-coverage provider', () => {
+    const provider = RUNTIME_CONTEXT_PROVIDERS.find((p) => p.id === 'position-coverage')!;
+
+    function makeState(overrides?: Partial<Parameters<typeof createRuntimeCompositionState>[0]>) {
+      return createRuntimeCompositionState({ ...baseDescriptor, ...overrides });
+    }
+
+    it('returns null when positionCoverage is null', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = null;
+      expect(provider.build(state)).toBeNull();
+    });
+
+    it('returns null when totalOpenPositions is 0', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [],
+        totalOpenPositions: 0,
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      expect(provider.build(state)).toBeNull();
+    });
+
+    it('renders [TRIGGERED] line for a position with triggered protective watch', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 1,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: true,
+            staleProtectiveWatch: false,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: true,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[TRIGGERED] BTC::long — protective watch triggered');
+      expect(result!.content).not.toContain('[STALE]');
+      expect(result!.content).not.toContain('[UNCOVERED]');
+    });
+
+    it('renders [TRIGGERED] [STALE] line for triggered and stale protective watch', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'ETH::short',
+            protectiveWatchCount: 1,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: true,
+            staleProtectiveWatch: true,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: true,
+        hasStaleProtectiveWatch: true,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[TRIGGERED] [STALE] ETH::short — protective watch triggered');
+    });
+
+    it('renders [UNCOVERED] line for a position without protective coverage', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'SOL::long',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: true,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[UNCOVERED] SOL::long — no protective watch');
+      expect(result!.content).not.toContain('[TRIGGERED]');
+    });
+
+    it('renders all-covered summary when positions are covered and nothing triggered', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 1,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+          },
+          {
+            positionKey: 'ETH::short',
+            protectiveWatchCount: 2,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+          },
+        ],
+        totalOpenPositions: 2,
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toBe('All positions covered (no protective watches triggered)');
+      expect(result!.content).not.toContain('stale');
+    });
+
+    it('renders all-covered summary with stale suffix when some watches are stale', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 1,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: true,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: true,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toBe('All positions covered (some stale) (no protective watches triggered)');
+    });
+
+    it('renders both triggered and uncovered lines for mixed positions', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 1,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: true,
+            staleProtectiveWatch: false,
+          },
+          {
+            positionKey: 'ETH::short',
+            protectiveWatchCount: 0,
+            hasProtectiveCoverage: false,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+          },
+        ],
+        totalOpenPositions: 2,
+        hasUncoveredPosition: true,
+        hasTriggeredProtectiveWatch: true,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.content).toContain('[TRIGGERED] BTC::long — protective watch triggered');
+      expect(result!.content).toContain('[UNCOVERED] ETH::short — no protective watch');
+      // Triggered should appear before uncovered
+      const triggeredIdx = result!.content.indexOf('[TRIGGERED]');
+      const uncoveredIdx = result!.content.indexOf('[UNCOVERED]');
+      expect(triggeredIdx).toBeLessThan(uncoveredIdx);
+    });
+
+    it('returns block with correct metadata fields', () => {
+      const state = makeState();
+      state.metrics.positionCoverage = {
+        positions: [
+          {
+            positionKey: 'BTC::long',
+            protectiveWatchCount: 1,
+            hasProtectiveCoverage: true,
+            triggeredProtectiveWatch: false,
+            staleProtectiveWatch: false,
+          },
+        ],
+        totalOpenPositions: 1,
+        hasUncoveredPosition: false,
+        hasTriggeredProtectiveWatch: false,
+        hasStaleProtectiveWatch: false,
+      };
+      const result = provider.build(state);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('positionCoverage');
+      expect(result!.title).toBe('Position Coverage');
+      expect(result!.provider).toBe('position-coverage');
     });
   });
 });

@@ -51,6 +51,7 @@ import {
   recordVenueSignals,
   recordActiveWatchSummary,
   summarizeActiveWatches,
+  recordPositionCoverage,
   type RuntimeActiveWatch,
   type RuntimeActiveWatchSummary,
   type RuntimeCompositionState,
@@ -2364,6 +2365,10 @@ async function runTick(): Promise<void> {
         lastCheckedAt: w.lastCheckedAt,
       })),
     });
+
+    // Record coverage result so the position-coverage context block can
+    // render it in the next tick's prompt.
+    recordPositionCoverage(runtimeState, coverageResult);
 
     // Re-apply notified-set dedup so a triggered protective watch only forces
     // escalation ONCE per crossing — prevents the "nag loop" where a

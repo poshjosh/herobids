@@ -6,6 +6,7 @@ import type { PromptTimingContext } from './prompt-timing-context.js';
 import { formatPromptTimingContextLines } from './prompt-timing-context.js';
 import type { PositionIndicatorUpdate } from './technical-phase.js';
 import type { WatchInstrumentIdentity, WatchPurpose, WatchCoverageLink } from './watch-types.js';
+import type { CoverageEvaluationResult } from './position-coverage.js';
 import { fmtUsd } from './fmt.js';
 
 type FreshnessState = 'fresh' | 'stale' | 'unavailable';
@@ -171,6 +172,8 @@ export interface RuntimeSessionMetrics {
   queuedWakeSignals: RuntimeQueuedWakeSignal[];
   /** Chronological activity timeline interleaving user messages, memory writes, and decisions. */
   activityTimeline: ActivityTimelineEvent[];
+  /** Position coverage evaluation from structured watch metadata (purpose, instrument, coverage links). */
+  positionCoverage: CoverageEvaluationResult | null;
 }
 
 export interface RuntimeCompositionState {
@@ -401,7 +404,8 @@ export function summarizeActiveWatches(watches: RuntimeActiveWatch[]): RuntimeAc
       const countSuffix = count > 1 ? ` x${count}` : '';
       const noteSuffix = formatWatchNote(watch.note);
       const noteSegment = noteSuffix ? ` — ${noteSuffix}` : '';
-      return `${watch.symbol} (${watch.chain}) ${watch.condition} $${watch.thresholdPrice} status=${status}${countSuffix}${noteSegment}`;
+      const purposePrefix = watch.purpose?.trim() ? `[${watch.purpose}] ` : '';
+      return `${purposePrefix}${watch.symbol} (${watch.chain}) ${watch.condition} $${watch.thresholdPrice} status=${status}${countSuffix}${noteSegment}`;
     }),
   };
 }
@@ -1039,11 +1043,57 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
     }),
   },
   {
-    id: 'active-watches',
+    id: 'position-coverage',
     costTier: 'free',
     section: 'dynamic',
     requiredFamilies: ['trading'],
     trimOrder: 2,
+    preserveWhenTrimmed: true,
+    build: (state) => {
+      const coverage = state.metrics.positionCoverage;
+      if (!coverage || coverage.totalOpenPositions === 0) {
+        return null;
+      }
+
+      const lines: string[] = [];
+
+      // Triggered protective watches — most actionable, show first
+      const triggered = coverage.positions.filter((p) => p.triggeredProtectiveWatch);
+      if (triggered.length > 0) {
+        for (const p of triggered) {
+          const staleFlag = p.staleProtectiveWatch ? ' [STALE]' : '';
+          lines.push(`[TRIGGERED]${staleFlag} ${p.positionKey} — protective watch triggered`);
+        }
+      }
+
+      // Uncovered positions
+      const uncovered = coverage.positions.filter((p) => !p.hasProtectiveCoverage);
+      if (uncovered.length > 0) {
+        for (const p of uncovered) {
+          lines.push(`[UNCOVERED] ${p.positionKey} — no protective watch`);
+        }
+      }
+
+      // All-covered summary when neither triggered nor uncovered
+      if (lines.length === 0) {
+        const staleFlag = coverage.hasStaleProtectiveWatch ? ' (some stale)' : '';
+        lines.push(`All positions covered${staleFlag} (no protective watches triggered)`);
+      }
+
+      return {
+        id: 'positionCoverage',
+        title: 'Position Coverage',
+        provider: 'position-coverage',
+        content: lines.join('\n'),
+      };
+    },
+  },
+  {
+    id: 'active-watches',
+    costTier: 'free',
+    section: 'dynamic',
+    requiredFamilies: ['trading'],
+    trimOrder: 3,
     preserveWhenTrimmed: true,
     build: (state) => {
       const summary = state.metrics.activeWatchSummary ?? summarizeActiveWatches(state.metrics.activeWatches);
@@ -1276,6 +1326,7 @@ export function createRuntimeCompositionState(
       agentMemory: null,
       queuedWakeSignals: [],
       activityTimeline: [],
+      positionCoverage: null,
     },
   };
 }
@@ -1457,6 +1508,13 @@ export function recordActiveWatchSummary(
   summary: RuntimeActiveWatchSummary | null,
 ): void {
   state.metrics.activeWatchSummary = summary;
+}
+
+export function recordPositionCoverage(
+  state: RuntimeCompositionState,
+  coverage: CoverageEvaluationResult | null,
+): void {
+  state.metrics.positionCoverage = coverage;
 }
 
 export function recordRegimeEvaluation(
