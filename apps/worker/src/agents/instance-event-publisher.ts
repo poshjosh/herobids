@@ -86,6 +86,10 @@ export class InstanceEventPublisher {
     await this.publish(agentId, 'agent.technical.scan_completed', payload as unknown as Record<string, unknown>);
   }
 
+  async emitJournalEvent(agentId: string, payload: { journalType: string; timestamp?: string; detail?: string }): Promise<void> {
+    await this.publish(agentId, INSTANCE_MESSAGE_TYPES.JOURNAL_EVENT, payload);
+  }
+
   /**
    * Publish a synchronous decision reply to a Redis list so the agent's
    * submit_decision tool can BLPOP it and get immediate feedback.

@@ -64,7 +64,7 @@ import { buildScoutSystemPrompt, parseScoutDecision, type ScoutDecision } from '
 import { resolveForcedPreScoutBillingOutcome, resolvePreScoutDecision } from './scout-gating.js';
 import { evaluatePositionCoverage, PROTECTIVE_WATCH_PURPOSES, type PositionInput } from './position-coverage.js';
 import { classifyRuntimeError } from './runtime-errors.js';
-import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure } from './runtime-resilience.js';
+import { FailureBackoffController, ToolCircuitBreaker, toolResultIndicatesFailure, SessionCircuitBreaker } from './runtime-resilience.js';
 import { processRuntimeFailure } from './runtime-degradation.js';
 import { createRuntimeToolVisibilityController, DATABASE_DEPENDENT_TOOLS, MARKET_DATA_TOOLS } from './runtime-tool-visibility.js';
 import { buildTickGateState } from './tick-gate-state.js';
@@ -524,6 +524,24 @@ const failureBackoff = new FailureBackoffController({
   backoffThreshold: agentRuntimePolicy.failureBackoff?.backoffThreshold,
   maxFailures: agentRuntimePolicy.failureBackoff?.maxFailures,
   maxIntervalMs: agentRuntimePolicy.failureBackoff?.maxIntervalMs,
+});
+const sessionCircuitBreaker = new SessionCircuitBreaker({
+  enabled: agentRuntimePolicy.sessionCircuitBreaker?.enabled ?? true,
+  strategyError: {
+    maxInWindow: agentRuntimePolicy.sessionCircuitBreaker?.strategyError?.maxInWindow ?? 10,
+    windowMs: agentRuntimePolicy.sessionCircuitBreaker?.strategyError?.windowMs ?? 60_000,
+  },
+  drift: {
+    maxInWindow: agentRuntimePolicy.sessionCircuitBreaker?.drift?.maxInWindow ?? 5,
+    windowMs: agentRuntimePolicy.sessionCircuitBreaker?.drift?.windowMs ?? 300_000,
+  },
+  streamDisconnect: {
+    maxInWindow: agentRuntimePolicy.sessionCircuitBreaker?.streamDisconnect?.maxInWindow ?? 5,
+    windowMs: agentRuntimePolicy.sessionCircuitBreaker?.streamDisconnect?.windowMs ?? 300_000,
+  },
+  cooldownMs: agentRuntimePolicy.sessionCircuitBreaker?.cooldownMs ?? 300_000,
+  maxTrips: agentRuntimePolicy.sessionCircuitBreaker?.maxTrips ?? 3,
+  probeIntervalMs: agentRuntimePolicy.sessionCircuitBreaker?.probeIntervalMs ?? 60_000,
 });
 const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.runtimeDescriptor, permanentlyExcludedTools);
 // Declared here (before functions that reference it at module-init call sites)
@@ -1777,6 +1795,12 @@ function handleTickSuccess(): void {
     logger.info('Resetting consecutive failure counter after successful tick');
   }
   effectiveTickIntervalMs = recovery.nextIntervalMs;
+
+  // If breaker is in HALF_OPEN probe state and tick succeeded, transition to CLOSED
+  if (sessionCircuitBreaker.state === 'HALF_OPEN') {
+    const newState = sessionCircuitBreaker.onProbeSuccess();
+    logger.info({ newState }, 'Session circuit breaker probe succeeded — transitioning to CLOSED');
+  }
 }
 
 function scheduleNextTick(delayMs = effectiveTickIntervalMs): void {
@@ -1913,6 +1937,35 @@ async function runTick(): Promise<void> {
 
     for (const message of incomingMessages) {
       applyRuntimeMessage(runtimeState, message);
+    }
+
+    // ── Feed session circuit breaker from observable message types ─────
+    for (const message of incomingMessages) {
+      const msgType = message['type'] as string | undefined;
+      if (!msgType) continue;
+
+      if (msgType === 'instance.reconciliation.notice') {
+        const eventType = message['eventType'] as string | undefined;
+        if (eventType === 'drift_detected') {
+          sessionCircuitBreaker.record('drift_detected');
+        } else if (eventType === 'match') {
+          sessionCircuitBreaker.record('reconciliation.match');
+        }
+      } else if (msgType === 'instance.decision.accepted') {
+        sessionCircuitBreaker.record('decision.accepted');
+      } else if (msgType === 'instance.execution.result') {
+        const resultType = message['resultType'] as string | undefined;
+        if (resultType === 'fill') {
+          sessionCircuitBreaker.record('fill.recorded');
+        }
+      } else if (msgType === 'instance.journal.event') {
+        const journalType = message['journalType'] as string | undefined;
+        if (journalType) {
+          // Map dot-notation journal types to breaker underscore-notation
+          const mappedType = journalType.replace(/\./g, '_');
+          sessionCircuitBreaker.record(mappedType);
+        }
+      }
     }
 
     // ── Prompt context enrichment: drain queued wake signals ──────────────
@@ -2078,6 +2131,32 @@ async function runTick(): Promise<void> {
         maxHoldMs,
         msSinceLastEscalation: Date.now() - lastEscalationTimestamp,
       }, 'Bypassing agent tick skip — max scout hold duration exceeded');
+    }
+
+    // ── Session circuit breaker gate ────────────────────────────────────
+    // Placed after tick-gate evaluation and before LLM dispatch so the
+    // breaker can suppress any tick — whether the context changed or not.
+    if (sessionCircuitBreaker.isOpen()) {
+      const breakerState = sessionCircuitBreaker.state;
+      logger.warn({ tickCount, breakerState, tripCount: sessionCircuitBreaker.tripCount }, 'Session circuit breaker open — suppressing LLM dispatch');
+
+      if (breakerState === 'TERMINATED') {
+        await shutdown('session_circuit_breaker_exhausted');
+        return; // unreachable — shutdown calls process.exit()
+      }
+
+      // Schedule a probe tick to test recovery after the cooldown expires
+      scheduleNextTick(sessionCircuitBreaker.probeIntervalMs);
+
+      emitActivityEvent(AGENT_RUNTIME_ACTIVITY_TYPES.TICK_SKIPPED, {
+        tickId,
+        reason: `circuit_breaker_${breakerState.toLowerCase()}`,
+        gate: 'circuit_breaker',
+        trigger: tickCount === 1 ? 'initial' : tickGateState.hasWakeSignal ? 'wake' : 'scheduled',
+        positionSide: sessionMetrics.lastPositionSide ?? undefined,
+      });
+      await sendHeartbeat('ready');
+      return;
     }
 
     if (tradingTickWorkPlan.shouldRefreshVenueIntelligence) {

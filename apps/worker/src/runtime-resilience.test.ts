@@ -155,16 +155,16 @@ describe('SessionCircuitBreaker', () => {
   });
 
   // 3
-  it('transitions to OPEN when strategy_error threshold exceeded', () => {
+  it('transitions to OPEN when strategy_error threshold met', () => {
     const breaker = new SessionCircuitBreaker({
       ...defaultBreakerOptions(),
       strategyError: { maxInWindow: 3, windowMs: 60_000 },
     });
     // Under threshold
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       expect(breaker.record('strategy_error').state).toBe('CLOSED');
     }
-    // Exceeds threshold
+    // Exactly at threshold → OPEN
     const result = breaker.record('strategy_error');
     expect(result.state).toBe('OPEN');
     expect(result.isOpen).toBe(true);
@@ -182,28 +182,26 @@ describe('SessionCircuitBreaker', () => {
   });
 
   // 5
-  it('transitions to OPEN when drift threshold exceeded', () => {
+  it('transitions to OPEN when drift threshold met', () => {
     const breaker = new SessionCircuitBreaker({
       ...defaultBreakerOptions(),
       drift: { maxInWindow: 2, windowMs: 60_000 },
     });
-    for (let i = 0; i < 2; i++) {
-      expect(breaker.record('drift_detected').state).toBe('CLOSED');
-    }
+    expect(breaker.record('drift_detected').state).toBe('CLOSED');
+    // Exactly at threshold → OPEN
     const result = breaker.record('drift_detected');
     expect(result.state).toBe('OPEN');
     expect(breaker.tripCount).toBe(1);
   });
 
   // 6
-  it('transitions to OPEN when streamDisconnect threshold exceeded', () => {
+  it('transitions to OPEN when streamDisconnect threshold met', () => {
     const breaker = new SessionCircuitBreaker({
       ...defaultBreakerOptions(),
       streamDisconnect: { maxInWindow: 2, windowMs: 60_000 },
     });
-    for (let i = 0; i < 2; i++) {
-      expect(breaker.record('stream_disconnect').state).toBe('CLOSED');
-    }
+    expect(breaker.record('stream_disconnect').state).toBe('CLOSED');
+    // Exactly at threshold → OPEN
     const result = breaker.record('stream_disconnect');
     expect(result.state).toBe('OPEN');
     expect(breaker.tripCount).toBe(1);
@@ -301,9 +299,9 @@ describe('SessionCircuitBreaker', () => {
   it('reset() clears all counters and returns to CLOSED', () => {
     const breaker = new SessionCircuitBreaker({
       ...defaultBreakerOptions(),
-      strategyError: { maxInWindow: 1, windowMs: 60_000 },
+      strategyError: { maxInWindow: 2, windowMs: 60_000 },
     });
-    // Trip the breaker
+    // Trip the breaker — need 2 errors at threshold >= 2
     breaker.record('strategy_error');
     breaker.record('strategy_error');
     expect(breaker.state).toBe('OPEN');
@@ -314,7 +312,7 @@ describe('SessionCircuitBreaker', () => {
     expect(breaker.tripCount).toBe(0);
     expect(breaker.isOpen()).toBe(false);
 
-    // Should be able to start fresh
+    // Should be able to start fresh — one error below threshold should stay CLOSED
     expect(breaker.record('strategy_error').state).toBe('CLOSED');
   });
 
@@ -324,7 +322,7 @@ describe('SessionCircuitBreaker', () => {
       ...defaultBreakerOptions(),
       strategyError: { maxInWindow: 1, windowMs: 60_000 },
     });
-    breaker.record('strategy_error');
+    // One error at threshold trips immediately with >= (1 >= 1)
     breaker.record('strategy_error');
     expect(breaker.state).toBe('OPEN');
 
@@ -340,19 +338,15 @@ describe('SessionCircuitBreaker', () => {
       ...defaultBreakerOptions(),
       drift: { maxInWindow: 2, windowMs: 60_000 },
     });
-    // Accumulate drift events
+    // Accumulate one drift event (below threshold of 2)
     breaker.record('drift_detected');
-    breaker.record('drift_detected');
-    // Not yet over threshold because maxInWindow=2 means >2 to breach
-    // Actually max is 2, so exceeding means 3+. Drift counter is at 2.
     expect(breaker.state).toBe('CLOSED');
 
     // Decision accepted resets drift
     const result = breaker.record('decision.accepted');
     expect(result.state).toBe('CLOSED');
 
-    // After reset, we should be able to record 2 more without tripping
-    breaker.record('drift_detected');
+    // After reset, record one more — still below threshold
     breaker.record('drift_detected');
     expect(breaker.state).toBe('CLOSED');
   });
@@ -364,14 +358,16 @@ describe('SessionCircuitBreaker', () => {
       drift: { maxInWindow: 2, windowMs: 60_000 },
     });
     breaker.record('drift_detected');
-    breaker.record('drift_detected');
-    // Drift count is 2, threshold is 3+ (maxInWindow=2, exceed >2)
+    // Drift count is 1, below threshold of 2
 
-    // reconciliation.match decrements by 1
+    // reconciliation.match decrements by 1 (now 0)
     breaker.record('reconciliation.match');
-    // Now drift count is 1, so one more shouldn't trip
+    // Record one more — still below threshold
     breaker.record('drift_detected');
     expect(breaker.state).toBe('CLOSED');
+    // Record another — now at 2, trips with >= 2
+    breaker.record('drift_detected');
+    expect(breaker.state).toBe('OPEN');
   });
 
   // 15
@@ -380,7 +376,7 @@ describe('SessionCircuitBreaker', () => {
       ...defaultBreakerOptions(),
       strategyError: { maxInWindow: 1, windowMs: 60_000 },
     });
-    breaker.record('strategy_error');
+    // One error at threshold trips immediately with >= (1 >= 1)
     breaker.record('strategy_error');
     expect(breaker.isOpen()).toBe(true);
   });
@@ -418,8 +414,7 @@ describe('SessionCircuitBreaker', () => {
       ...defaultBreakerOptions(),
       strategyError: { maxInWindow: 2, windowMs: 30 },
     });
-    // Record 2 events (under threshold of >2)
-    breaker.record('strategy_error');
+    // Record 1 event (below threshold of 2 with >= operator)
     breaker.record('strategy_error');
     expect(breaker.state).toBe('CLOSED');
 
@@ -441,8 +436,7 @@ describe('SessionCircuitBreaker', () => {
     // Not in cooldown
     expect(breaker.getCooldownStatus()).toEqual({ inCooldown: false, remainingMs: 0 });
 
-    // Trip the breaker
-    breaker.record('strategy_error');
+    // Trip the breaker — one error at threshold >= 1
     breaker.record('strategy_error');
     expect(breaker.state).toBe('OPEN');
 
@@ -466,8 +460,7 @@ describe('SessionCircuitBreaker', () => {
       cooldownMs: 10,
       maxTrips: 1,
     });
-    // Trip to TERMINATED immediately
-    breaker.record('strategy_error');
+    // Trip to TERMINATED immediately — one error at threshold >= 1 with maxTrips=1
     const r = breaker.record('strategy_error');
     expect(r.state).toBe('TERMINATED');
     expect(r.shouldTerminate).toBe(true);

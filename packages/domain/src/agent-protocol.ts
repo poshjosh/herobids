@@ -457,6 +457,7 @@ export const INSTANCE_MESSAGE_TYPES = {
   STATUS: 'instance.status',
   TOOL_RESULT: 'instance.tool.result',
   BOT_CONFIG_CHANGED: 'instance.bot.config_changed',
+  JOURNAL_EVENT: 'instance.journal.event',
 } as const;
 
 export const MARKET_MONITOR_MESSAGE_TYPES = {
@@ -572,6 +573,13 @@ export const BotConfigChangedPayloadSchema = z.object({
 });
 export type BotConfigChangedPayload = z.infer<typeof BotConfigChangedPayloadSchema>;
 
+export const JournalEventPayloadSchema = z.object({
+  journalType: z.string().min(1),  // e.g., 'strategy.error', 'strategy.fatal', 'stream.disconnect'
+  timestamp: z.string().optional(),
+  detail: z.string().optional(),
+});
+export type JournalEventPayload = z.infer<typeof JournalEventPayloadSchema>;
+
 /** Map message type to its payload schema for validation */
 export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [AGENT_MESSAGE_TYPES.DECISION_SUBMIT]: DecisionSubmitPayloadSchema,
@@ -594,6 +602,7 @@ export const MESSAGE_PAYLOAD_SCHEMAS: Record<string, z.ZodType> = {
   [INSTANCE_MESSAGE_TYPES.STATUS]: InstanceStatusPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.TOOL_RESULT]: ToolResultPayloadSchema,
   [INSTANCE_MESSAGE_TYPES.BOT_CONFIG_CHANGED]: BotConfigChangedPayloadSchema,
+  [INSTANCE_MESSAGE_TYPES.JOURNAL_EVENT]: JournalEventPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.WATCH_TRIGGERED]: MarketWatchTriggeredPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.DISCOVERY_DETECTED]: MarketDiscoveryDetectedPayloadSchema,
   [MARKET_MONITOR_MESSAGE_TYPES.REGIME_CHANGED]: MarketRegimeChangedPayloadSchema,

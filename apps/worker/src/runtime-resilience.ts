@@ -327,7 +327,7 @@ export class SessionCircuitBreaker {
   }
 
   /** Transition to OPEN (or TERMINATED if maxTrips exhausted). */
-  private trip(reason: string): { state: BreakerState; isOpen: boolean; shouldTerminate: boolean } {
+  private trip(_reason: string): { state: BreakerState; isOpen: boolean; shouldTerminate: boolean } {
     this._tripCount += 1;
     this._cooldownStartedAt = Date.now();
 
@@ -352,9 +352,9 @@ export class SessionCircuitBreaker {
 
   private anyThresholdBreached(): boolean {
     return (
-      this.countInWindow('strategy_error', this.options.strategyError.windowMs) > this.options.strategyError.maxInWindow ||
-      this.countInWindow('drift_detected', this.options.drift.windowMs) > this.options.drift.maxInWindow ||
-      this.countInWindow('stream_disconnect', this.options.streamDisconnect.windowMs) > this.options.streamDisconnect.maxInWindow
+      this.countInWindow('strategy_error', this.options.strategyError.windowMs) >= this.options.strategyError.maxInWindow ||
+      this.countInWindow('drift_detected', this.options.drift.windowMs) >= this.options.drift.maxInWindow ||
+      this.countInWindow('stream_disconnect', this.options.streamDisconnect.windowMs) >= this.options.streamDisconnect.maxInWindow
     );
   }
 }
