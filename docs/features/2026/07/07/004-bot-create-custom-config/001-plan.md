@@ -1,7 +1,7 @@
 # 021 — Bot Create: Custom Strategy Config
 
 **Created:** 2026-07-07
-**Status:** draft
+**Status:** done
 
 ---
 
@@ -103,9 +103,9 @@ interface CreateBotForm {
 
 **File:** `apps/web/src/features/bots/BotCustomConfigSection.tsx`
 
-- [ ] **1.1** Define `BotCustomConfigFormState` and `defaultBotCustomConfig` (can be in this file or a co-located helpers file).
+- [x] **1.1** DONE — Define `BotCustomConfigFormState` and `defaultBotCustomConfig` (can be in this file or a co-located helpers file).
 
-- [ ] **1.2** Define `BotCustomConfigSectionProps`:
+- [x] **1.2** DONE — Define `BotCustomConfigSectionProps`:
 
   ```ts
   interface BotCustomConfigSectionProps {
@@ -115,7 +115,7 @@ interface CreateBotForm {
   }
   ```
 
-- [ ] **1.3** Render the following sections in order, matching the visual style of `TechnicalConfigSection` (section headers, bordered cards, gap-10/gap-12 flex columns):
+- [x] **1.3** DONE — Render the following sections in order, matching the visual style of `TechnicalConfigSection` (section headers, bordered cards, gap-10/gap-12 flex columns):
 
   **Section: Strategy**
   | Field | Control | Notes |
@@ -146,7 +146,7 @@ interface CreateBotForm {
   | Daily loss limit % | `<input type="number">` | optional |
   | Max unrealized loss % | `<input type="number">` | optional |
 
-- [ ] **1.4** For swap venues (`isSwapVenue=true`): hide the Signal bias, candle interval, and candle limit fields, and show a notice below the strategy type selector:
+- [x] **1.4** DONE — For swap venues (`isSwapVenue=true`): hide the Signal bias, candle interval, and candle limit fields, and show a notice below the strategy type selector:
 
   > "Swap venue detected — candle-based parameters are not applicable. Configure position sizing and risk limits only."
 
@@ -158,13 +158,13 @@ interface CreateBotForm {
 
 **File:** `apps/web/src/features/bots/BotsPage.tsx`
 
-- [ ] **2.1** Import `BotCustomConfigSection`, `BotCustomConfigFormState`, `defaultBotCustomConfig`.
+- [x] **2.1** DONEImport `BotCustomConfigSection`, `BotCustomConfigFormState`, `defaultBotCustomConfig`.
 
-- [ ] **2.2** Expand `CreateBotForm` interface with `customConfig: BotCustomConfigFormState`.
+- [x] **2.2** DONE — Expand `CreateBotForm` interface with `customConfig: BotCustomConfigFormState`.
 
-- [ ] **2.3** Add `customConfig: defaultBotCustomConfig` to the initial `useState`.
+- [x] **2.3** DONE — Add `customConfig: defaultBotCustomConfig` to the initial `useState`.
 
-- [ ] **2.3a** Add a helper `presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState` that maps a fetched preset's strategy/risk params to `BotCustomConfigFormState`. This is used to pre-populate the custom editor so users start from a familiar baseline rather than blank fields:
+- [x] **2.3a** DONE — Add a helper `presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState` that maps a fetched preset's strategy/risk params to `BotCustomConfigFormState`. This is used to pre-populate the custom editor so users start from a familiar baseline rather than blank fields:
 
   ```ts
   function presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState {
@@ -185,7 +185,7 @@ interface CreateBotForm {
   }
   ```
 
-- [ ] **2.4** Change `StrategyPresetSelector` from `showCustom={false}` to `showCustom={true}` (or remove the prop, since `true` is the default). Wire the `onChange` callback so that when the user selects `'custom'`, `customConfig` is pre-populated from the currently-displayed presets' first entry (or `defaultBotCustomConfig` if presets have not loaded):
+- [x] **2.4** DONE — Change `StrategyPresetSelector` from `showCustom={false}` to `showCustom={true}` (or remove the prop, since `true` is the default). Wire the `onChange` callback so that when the user selects `'custom'`, `customConfig` is pre-populated from the currently-displayed presets' first entry (or `defaultBotCustomConfig` if presets have not loaded):
 
   ```tsx
   onChange={(key) => {
@@ -202,7 +202,7 @@ interface CreateBotForm {
   }}
   ```
 
-- [ ] **2.5** After `<StrategyPresetSelector>`, add conditional rendering:
+- [x] **2.5** DONE — After `<StrategyPresetSelector>`, add conditional rendering:
 
   ```tsx
   {form.strategyPreset === 'custom' && (
@@ -214,7 +214,7 @@ interface CreateBotForm {
   )}
   ```
 
-- [ ] **2.6** Hide the strategy style tier `<select>` when `strategyPreset === 'custom'` — the style tier only controls which preset tier to fetch; it is meaningless in custom mode.
+- [x] **2.6** DONE — Hide the strategy style tier `<select>` when `strategyPreset === 'custom'` — the style tier only controls which preset tier to fetch; it is meaningless in custom mode.
 
   ```tsx
   {form.strategyPreset !== 'custom' && (
@@ -225,7 +225,7 @@ interface CreateBotForm {
   )}
   ```
 
-- [ ] **2.7** Update `mutationFn` to branch on `strategyPreset`:
+- [x] **2.7** DONE — Update `mutationFn` to branch on `strategyPreset`:
 
   ```ts
   mutationFn: () => {
@@ -252,7 +252,7 @@ interface CreateBotForm {
   },
   ```
 
-- [ ] **2.8** Implement `buildCustomBotConfig` (local helper, private to the file):
+- [x] **2.8** DONE — Implement `buildCustomBotConfig` (local helper, private to the file):
 
   ```ts
   function buildCustomBotConfig(
@@ -294,7 +294,7 @@ interface CreateBotForm {
 
   Note: DCA is not available in custom mode (out of scope). `decisionMode` is always `'mechanical'` in v1.
 
-- [ ] **2.9** Update the Create button's `disabled` guard to also allow custom when required fields are present:
+- [x] **2.9** DONE — Update the Create button's `disabled` guard to also allow custom when required fields are present:
 
   ```tsx
   disabled={
@@ -317,11 +317,11 @@ interface CreateBotForm {
 
 The bot form is simpler than the agent form — no multi-step flow, no "Review" page, no Zod-based frontend validation schema. Basic guards are sufficient:
 
-- [ ] **3.1** `stopLossPct` and `takeProfitPct`: required for all strategies except DCA. Show an inline `<div style={errorStyle}>` below the field when the user blurs and the field is empty.
+- [x] **3.1** DONE — `stopLossPct` and `takeProfitPct`: required for all strategies except DCA. Show an inline `<div style={errorStyle}>` below the field when the user blurs and the field is empty.
 
-- [ ] **3.2** `positionSize`: required, must be a positive number string. Show error on blur.
+- [x] **3.2** DONE — `positionSize`: required, must be a positive number string. Show error on blur.
 
-- [ ] **3.3** All percentage fields: must be between 0 and 100 when present.
+- [x] **3.3** DONE — All percentage fields: must be between 0 and 100 when present.
 
   These are the same patterns already used in `AgentControlsSection` and `AdvancedSettingsSection`. Copy the `errorStyle` and blur-triggered validation pattern from there.
 
@@ -329,27 +329,27 @@ The bot form is simpler than the agent form — no multi-step flow, no "Review" 
 
 ### Phase 4 — Visual polish
 
-- [ ] **4.1** Ensure section headers and field groups match the existing visual language in `TechnicalConfigSection.tsx` — bordered card containers, `sectionTitleStyle`, `FieldLabel`, `inputStyle` from `../../lib/ui.js`.
+- [x] **4.1** DONE — Ensure section headers and field groups match the existing visual language in `TechnicalConfigSection.tsx` — bordered card containers, `sectionTitleStyle`, `FieldLabel`, `inputStyle` from `../../lib/ui.js`.
 
-- [ ] **4.2** Add a short helper text below the custom section: "Your settings are not saved as a blueprint. To reuse this configuration, save it as a blueprint from the Blueprints page."
+- [x] **4.2** DONE — Add a short helper text below the custom section: "Your settings are not saved as a blueprint. To reuse this configuration, save it as a blueprint from the Blueprints page."
 
   Plain text only — no link. The Blueprints page (feature 015) does not exist yet.
 
-- [ ] **4.3** When the user switches away from "Custom" back to a named preset, reset `customConfig` to `defaultBotCustomConfig` to avoid stale state.
+- [x] **4.3** DONE — When the user switches away from "Custom" back to a named preset, reset `customConfig` to `defaultBotCustomConfig` to avoid stale state.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] "Custom" card appears in the strategy preset grid alongside named presets.
-- [ ] Selecting "Custom" hides the strategy style tier selector and reveals `BotCustomConfigSection`.
-- [ ] All custom fields are labeled inputs, dropdowns, or toggles — no JSON editor.
-- [ ] DCA strategy type hides candle, signal bias, and exit-target fields.
-- [ ] Swap venue hides candle/signal bias fields and shows a notice.
-- [ ] Submitting a custom config creates a bot with the correct `strategy`, `risk`, and `execution` config; API validation (`BotConfigSchema`) passes.
-- [ ] Submitting with missing required fields (stopLossPct, takeProfitPct, positionSize) is blocked with inline error messages.
-- [ ] Switching back to a named preset re-shows the style selector and hides custom fields.
-- [ ] `pnpm lint` passes (no TS errors).
+- [x] DONE — "Custom" card appears in the strategy preset grid alongside named presets.
+- [x] DONE — Selecting "Custom" hides the strategy style tier selector and reveals `BotCustomConfigSection`.
+- [x] DONE — All custom fields are labeled inputs, dropdowns, or toggles — no JSON editor.
+- [x] DONE — DCA strategy type hides candle, signal bias, and exit-target fields.
+- [x] DONE — Swap venue hides candle/signal bias fields and shows a notice.
+- [x] DONE — Submitting a custom config creates a bot with the correct `strategy`, `risk`, and `execution` config; API validation (`BotConfigSchema`) passes.
+- [x] DONE — Submitting with missing required fields (stopLossPct, takeProfitPct, positionSize) is blocked with inline error messages.
+- [x] DONE — Switching back to a named preset re-shows the style selector and hides custom fields.
+- [x] DONE — `pnpm lint` passes (no TS errors).
 
 ---
 
