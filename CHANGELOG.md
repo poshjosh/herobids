@@ -12,6 +12,8 @@ Removed links to the following from the sidebar: Trading Setup, Exposure, Activi
 
 ### Added
 
+- **Billing Ledger read path:** New `GET /billing/ledger-entries` API endpoint, repository method, API client, and "Billing Ledger" card in the billing page. Shows every financial movement (credits, debits) in chronological order with direction filtering and pagination.
+
 - **LLM Cost Reduction — Complete Tick Gate Fingerprint:** Expanded `shouldSkipTick` context-hash gate with watch summary, wake signal, and risk/playbook digests. Uses `__unknown__` sentinel for unavailable data. Zero additional I/O. Preserves all safety valves.
 - **LLM Cost Reduction — Bot Config Preflight on Start:** Added `BotConfigSchema` validation before marking bots running in both agent broker and API start paths. Prevents invalid persisted config from entering start→fail→retry cycles.
 - **LLM Cost Reduction — Atomic maxBots Budget Guard:** Transaction-based atomic enforcement with `SELECT ... FOR UPDATE` on agent row. Applied to create, start, and API-triggered lifecycle paths. Reclaim exempt. Config-driven defaults.
