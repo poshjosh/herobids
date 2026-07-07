@@ -25,6 +25,23 @@ const EXECUTION_MODES = [
 
 type ExecutionModeValue = typeof EXECUTION_MODES[number]['value'];
 
+function presetToCustomConfig(preset: PresetFromApi): BotCustomConfigFormState {
+  const params = (preset.strategy.params ?? {}) as Record<string, unknown>;
+  return {
+    ...defaultBotCustomConfig,
+    strategyType: (preset.strategy.type as BotCustomConfigFormState['strategyType']) ?? 'momentum',
+    signalBias: (params['signalBias'] as BotCustomConfigFormState['signalBias']) ?? 'trend-following',
+    candleInterval: (params['candleInterval'] as BotCustomConfigFormState['candleInterval']) ?? '15m',
+    candleLimit: String(params['candleLimit'] ?? 48),
+    stopLossPct: String(params['stopLossPct'] ?? ''),
+    takeProfitPct: String(params['takeProfitPct'] ?? ''),
+    trailingStopPct: params['trailingStopPct'] != null ? String(params['trailingStopPct']) : '',
+    positionSize: String(params['positionSize'] ?? '100'),
+    positionSizeMode: (params['positionSizeMode'] as BotCustomConfigFormState['positionSizeMode']) ?? 'percent_equity',
+    maxPositionSizePct: preset.risk?.maxPositionSizePct != null ? String(preset.risk.maxPositionSizePct) : '',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // BotsPage
 // ---------------------------------------------------------------------------
