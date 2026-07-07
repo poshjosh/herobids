@@ -12,6 +12,7 @@ Here are all the knobs that control discovery diversification, from the operator
 | See more *different* tokens over time | Keep `antistalenessCooldownHours` at 4+ | This is the real diversity driver |
 | Expand the raw candidate pool | Set `geckoTerminalExtraPages: 1` | Costs 4 GT API calls/run — verify rate-limit budget first |
 | Add Birdeye Solana trending tokens | Set `marketData.birdeye.enabled: true` | Requires a Birdeye API key; Solana-only |
+| Add CoinMarketCap cross-chain discovery and enrichment | Set `marketData.coinMarketCap.enabled: true` | Requires a CoinMarketCap API key; adds trending and new-listing tokens cross-chain, plus a post-merge enrichment pass |
 | Admit smaller/riskier tokens | Lower `tokenSafety.defaults.minLiquidityUsd` | Also affects `search_tokens` |
 | Discovery to update faster | Lower GT/DS discovery `cacheTtlMs` | Increases API call rate — stay within rate limits |
 | Broader chain coverage | Add chains to `marketIntelligence.networks` | Provider coverage varies by chain |
@@ -48,6 +49,17 @@ Birdeye is an optional paid provider for Solana trending tokens, token overview,
 | `birdeye.apiKey` | `""` | Birdeye API key. If `enabled` is `true` and this is empty, the worker fails to start with a clear error. |
 | `birdeye.requestsPerMinute` | operator-defined | Rate ceiling shared across all Birdeye endpoints (trending, overview, OHLCV). Birdeye has a single global API-wide limit. |
 | `birdeye.cacheTtlMs` | operator-defined | TTL for overview and OHLCV cache entries. Also floors the aggregate discovery cache TTL (preventing overly aggressive refresh). |
+
+### `marketData.coinMarketCap.*` (cross-chain, opt-in)
+
+CoinMarketCap is an optional paid provider that contributes two things: discovery fan-out (trending and new listings, cross-chain) and a post-merge enrichment pass that fills market cap, FDV, holder count, and CEX listing metadata on already-discovered tokens.
+
+| Knob | Default | Effect |
+|---|---|---|
+| `coinMarketCap.enabled` | `false` | When `true`, CMC trending and new listings are included in the discovery fan-out, and a CMC enrichment pass runs after merge/filter/sort. Requires a valid `apiKey`. |
+| `coinMarketCap.apiKey` | `""` | CoinMarketCap API key. If `enabled` is `true` and this is empty, the worker fails to start with a clear error. Set via `COINMARKETCAP_API_KEY` env var. |
+| `coinMarketCap.requestsPerMinute` | `30` | Rate ceiling shared across the discovery (trending, new listings) and enrichment (quotes batch) endpoints. The free tier allows ~10 K calls/month; 30 req/min is conservative. |
+| `coinMarketCap.cacheTtlMs` | `3600000` (1 hr) | TTL for CMC discovery results. Also influences the aggregate discovery cache TTL (the registry takes the minimum across enabled providers). |
 
 ### DexScreener boost enrichment (always-on)
 

@@ -403,6 +403,19 @@ describe('createProviderRegistry — CMC disabled-provider skipping', () => {
 
     expect(cmcCalled).toBe(false);
   });
+
+  it('throws when coinMarketCap.enabled is true and apiKey is empty', () => {
+    expect(() => createProviderRegistry({
+      ...createConfig(),
+      coinMarketCap: {
+        enabled: true,
+        baseUrl: 'https://pro-api.coinmarketcap.com',
+        requestsPerMinute: 30,
+        apiKey: '',
+        cacheTtlMs: 3_600_000,
+      },
+    })).toThrow('CoinMarketCap is enabled but no API key is configured');
+  });
 });
 
 describe('createProviderRegistry — CMC shared budget', () => {

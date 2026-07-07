@@ -42,6 +42,7 @@ const ENV_OVERRIDES: Record<string, EnvOverride> = {
   EVALUATION_STORAGE_ROOT: { path: 'evaluation.storageRoot', type: 'string' },
   // Market data providers
   BIRDEYE_API_KEY: { path: 'marketData.birdeye.apiKey', type: 'string' },
+  COINMARKETCAP_API_KEY: { path: 'marketData.coinMarketCap.apiKey', type: 'string' },
 
 };
 

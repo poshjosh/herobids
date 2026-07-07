@@ -195,9 +195,12 @@ export function createProviderRegistry(
     fetchFn,
   };
 
-  // CMC is opt-in — only build config when explicitly enabled
+  // CMC is opt-in — enabled without an API key is a loud startup error
   const cmcConfig: CoinMarketCapConfig | undefined = config.coinMarketCap.enabled
     ? (() => {
+        if (!config.coinMarketCap.apiKey) {
+          throw new Error('CoinMarketCap is enabled but no API key is configured');
+        }
         const cmcBudget: SharedBudgetConfig = {
           requestsPerMinute: config.coinMarketCap.requestsPerMinute,
           burstCapacity: config.coinMarketCap.requestsPerMinute,

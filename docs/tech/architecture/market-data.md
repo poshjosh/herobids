@@ -361,13 +361,12 @@ and explicit system boundaries.
 
 These are current gaps or areas to watch, not hidden assumptions.
 
-1. Birdeye is present in config/types but not wired into the provider registry.
-2. `execution-critical` exists as a request class but is not yet the dominant
+1. `execution-critical` exists as a request class but is not yet the dominant
    path in the current registry wiring.
-3. Market-data observability is stronger in code paths than in operator-facing
+2. Market-data observability is stronger in code paths than in operator-facing
    dashboards; there is not yet a dedicated UI for provider freshness, budget
    pressure, or source health.
-4. The repo has both registry-backed price lookup and worker-side oracle marks;
+3. The repo has both registry-backed price lookup and worker-side oracle marks;
    future changes should preserve the distinction instead of merging them into a
    single catch-all abstraction.
 
@@ -381,4 +380,3 @@ change:
 - a new runtime consumer is introduced
 - cache or rate-limit policy changes materially
 - stale/fallback behavior changes
-- a currently planned provider such as Birdeye becomes real

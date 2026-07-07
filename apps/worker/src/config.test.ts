@@ -185,6 +185,50 @@ marketData:
     expect(config.marketData?.birdeye.enabled).toBe(false);
   });
 
+  it('applies COINMARKETCAP_API_KEY env override without clobbering YAML defaults', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + MINIMAL_MARKET_DATA_YAML);
+    process.env['COINMARKETCAP_API_KEY'] = 'cmc-env-key';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.coinMarketCap.apiKey).toBe('cmc-env-key');
+    expect(config.marketData?.coinMarketCap.enabled).toBe(false);
+  });
+
+  it('preserves YAML CoinMarketCap apiKey when the env override is empty', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  coinMarketCap:
+    enabled: false
+    baseUrl: https://pro-api.coinmarketcap.com
+    requestsPerMinute: 30
+    apiKey: yaml-cmc-key
+`);
+    process.env['COINMARKETCAP_API_KEY'] = '';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.coinMarketCap.apiKey).toBe('yaml-cmc-key');
+    expect(config.marketData?.coinMarketCap.enabled).toBe(false);
+  });
+
+  it('COINMARKETCAP_API_KEY overrides YAML apiKey when coinMarketCap is enabled', () => {
+    writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
+marketData:
+  coinMarketCap:
+    enabled: true
+    baseUrl: https://pro-api.coinmarketcap.com
+    requestsPerMinute: 30
+    apiKey: yaml-cmc-key
+`);
+    process.env['COINMARKETCAP_API_KEY'] = 'env-cmc-key';
+
+    const config = loadConfig(tmpDir);
+
+    expect(config.marketData?.coinMarketCap.apiKey).toBe('env-cmc-key');
+    expect(config.marketData?.coinMarketCap.enabled).toBe(true);
+  });
+
   it('env overlay deep-merges without clobbering sibling keys', () => {
     writeFileSync(resolve(tmpDir, 'default.yaml'), BASE_YAML + `
 reconciliation:
