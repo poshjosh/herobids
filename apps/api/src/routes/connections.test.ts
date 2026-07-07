@@ -94,11 +94,13 @@ let mockDbRows: Record<string, unknown>[] = [];
 let lastInserted: Record<string, unknown> | undefined;
 let insertedValues: Record<string, unknown>[] = [];
 let lastUpdateSet: Record<string, unknown> | undefined;
+let updateSets: Record<string, unknown>[] = [];
 
 function buildMockDb(credRows: Record<string, unknown>[] = []) {
   lastInserted = undefined;
   insertedValues = [];
   lastUpdateSet = undefined;
+  updateSets = [];
   let selectCallCount = 0;
 
   return {
@@ -131,6 +133,7 @@ function buildMockDb(credRows: Record<string, unknown>[] = []) {
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockImplementation((s) => {
         lastUpdateSet = s;
+        updateSets.push(s);
         return { where: vi.fn().mockResolvedValue(undefined) };
       }),
     }),
@@ -402,7 +405,11 @@ describe('DELETE /connections/:id', () => {
 
     const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
     expect(res.statusCode).toBe(204);
-    expect(lastUpdateSet!['status']).toBe('revoked');
+    // Two updates: first revokes agent_connections rows, then revokes the connection itself.
+    expect(updateSets).toHaveLength(2);
+    expect(updateSets[0]!['status']).toBe('revoked');
+    expect(updateSets[0]!['revokedAt']).toBeDefined();
+    expect(updateSets[1]!['status']).toBe('revoked');
   });
 
   it('returns 404 when connection does not exist', async () => {
@@ -426,6 +433,90 @@ describe('DELETE /connections/:id', () => {
     const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: string }>().error).toBe('connection.already_revoked');
+  });
+
+  it('revokes a connection with multiple agent grants and flips all of them', async () => {
+    // When a connection is assigned to 3 agents, revoke should update all 3
+    // agent_connections rows to status='revoked'.
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    // The mock returns one row for the conn lookup and CONNECTION_ROW for
+    // the affectedAgents select. Override the select to return 3 agent IDs
+    // for the affected agents query.
+    let selectCount = 0;
+    db.select = vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockImplementation(() => {
+          selectCount++;
+          if (selectCount === 1) {
+            // conn lookup
+            return Promise.resolve([{ id: CONNECTION_ROW.id, status: CONNECTION_ROW.status }]);
+          }
+          // affectedAgents query — 3 agents
+          return Promise.resolve([
+            { agentId: 'agent-1' },
+            { agentId: 'agent-2' },
+            { agentId: 'agent-3' },
+          ]);
+        }),
+      })),
+    }));
+    // Override update to track calls
+    updateSets = [];
+    db.update = vi.fn().mockReturnValue({
+      set: vi.fn().mockImplementation((s: Record<string, unknown>) => {
+        updateSets.push(s);
+        return { where: vi.fn().mockResolvedValue(undefined) };
+      }),
+    });
+
+    const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+    expect(res.statusCode).toBe(204);
+    // Two updates: first revokes ALL agent_connections rows, then revokes the connection.
+    expect(updateSets).toHaveLength(2);
+    expect(updateSets[0]!['status']).toBe('revoked');
+    expect(updateSets[0]!['revokedAt']).toBeDefined();
+    expect(updateSets[1]!['status']).toBe('revoked');
+  });
+
+  it('revokes a connection with zero agent grants and still returns 204', async () => {
+    // When a connection has no agent grants, the revoke should still succeed.
+    // The agent_connections update will just match zero rows.
+    const app = Fastify();
+    decorateWithAuth(app);
+    const db = buildMockDb();
+    await connectionRoutes(app, db);
+
+    let selectCount = 0;
+    db.select = vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockImplementation(() => {
+          selectCount++;
+          if (selectCount === 1) {
+            return Promise.resolve([{ id: CONNECTION_ROW.id, status: CONNECTION_ROW.status }]);
+          }
+          // affectedAgents query — no agents
+          return Promise.resolve([]);
+        }),
+      })),
+    }));
+    updateSets = [];
+    db.update = vi.fn().mockReturnValue({
+      set: vi.fn().mockImplementation((s: Record<string, unknown>) => {
+        updateSets.push(s);
+        return { where: vi.fn().mockResolvedValue(undefined) };
+      }),
+    });
+
+    const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1' });
+    expect(res.statusCode).toBe(204);
+    // Still two updates: agent_connections (matching 0 rows) + connections.
+    expect(updateSets).toHaveLength(2);
+    expect(updateSets[0]!['status']).toBe('revoked');
+    expect(updateSets[1]!['status']).toBe('revoked');
   });
 
   it('publishes a runtime refresh after revoking a connection with active trading grants', async () => {
@@ -634,6 +725,44 @@ describe('DELETE /connections/:id?permanent=true (hard-delete)', () => {
       url: '/connections/missing?permanent=true',
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('allows hard-delete after a connection has been revoked', async () => {
+    // Simulate the post-revoke state: connection is revoked, agent_connections are revoked.
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'revoked' }], // conn lookup
+      [],                                      // active grants → none (already revoked)
+      [],                                      // bots → none
+    ]);
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1?permanent=true' });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('returns 409 when a revoked connection has a concurrent active agent grant', async () => {
+    // Regression: after revoke, a new agent grant could be created concurrently.
+    // Hard-delete must still detect the active grant and block.
+    const app = Fastify();
+    decorateWithAuth(app);
+
+    const db = buildHardDeleteDb([
+      [{ id: 'conn-1', status: 'revoked' }], // conn lookup → revoked
+      [{ agentId: 'agent-1' }],               // active grants → concurrent grant exists!
+    ]);
+
+    await connectionRoutes(app, db);
+
+    const res = await app.inject({ method: 'DELETE', url: '/connections/conn-1?permanent=true' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toBe('connection.in_use');
+    expect(
+      res.json<{ params: { hint: string } }>().params.hint,
+    ).toContain('Revoke the connection instead');
   });
 
   it('handles concurrent FK violation after checks pass (race condition)', async () => {

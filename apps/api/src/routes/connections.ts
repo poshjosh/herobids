@@ -371,17 +371,27 @@ export async function connectionRoutes(
       return reply.status(409).send({ error: 'connection.already_revoked' });
     }
 
+    // Capture affected agents before we flip agent_connections to revoked.
+    const affectedAgents = await db
+      .select({ agentId: agentConnections.agentId })
+      .from(agentConnections)
+      .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
+
+    const now = new Date();
+
+    // Mark all agent grants for this connection as revoked so that a
+    // subsequent hard-delete is not blocked by still-active grants.
+    await db
+      .update(agentConnections)
+      .set({ status: 'revoked', revokedAt: now, updatedAt: now })
+      .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
+
     await db
       .update(connections)
-      .set({ status: 'revoked', updatedAt: new Date() })
+      .set({ status: 'revoked', updatedAt: now })
       .where(eq(connections.id, id));
 
     if (redisClient) {
-      const affectedAgents = await db
-        .select({ agentId: agentConnections.agentId })
-        .from(agentConnections)
-        .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')));
-
       for (const row of affectedAgents) {
         await publishRuntimeRefresh(row.agentId).catch((err: unknown) => {
           app.log.warn({ err, agentId: row.agentId, connectionId: id }, 'Failed to publish runtime refresh after connection revoke');
