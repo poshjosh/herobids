@@ -96,14 +96,14 @@ describe('evaluatePositionCoverage', () => {
     expect(result.hasStaleProtectiveWatch).toBe(true);
   });
 
-  it('protective watch with no lastCheckedAt → staleProtectiveWatch = true', () => {
+  it('protective watch with no lastCheckedAt → not stale (never checked, may be newly created)', () => {
     const result = evaluatePositionCoverage({
       positions: [makePosition()],
       watches: [makeWatch({ purpose: 'exit', lastCheckedAt: undefined })],
     });
 
-    expect(result.positions[0]!.staleProtectiveWatch).toBe(true);
-    expect(result.hasStaleProtectiveWatch).toBe(true);
+    expect(result.positions[0]!.staleProtectiveWatch).toBe(false);
+    expect(result.hasStaleProtectiveWatch).toBe(false);
   });
 
   it('fresh protective watch → staleProtectiveWatch = false', () => {

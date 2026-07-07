@@ -95,7 +95,10 @@ function isProtectivePurpose(purpose: string | undefined): boolean {
 }
 
 function isStale(lastCheckedAt: string | undefined, staleThresholdMs: number): boolean {
-  if (!lastCheckedAt) return true; // never checked = stale
+  // Never checked is not stale — a newly created watch may not have had its
+  // first monitor check yet. The watch will become stale after the first
+  // check if the monitor subsequently falls behind the threshold.
+  if (!lastCheckedAt) return false;
   const age = Date.now() - new Date(lastCheckedAt).getTime();
   return age > staleThresholdMs;
 }
