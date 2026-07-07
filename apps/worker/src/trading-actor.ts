@@ -154,6 +154,8 @@ export interface TradingActorDeps {
   botLlmProviderErrorHaltThreshold?: number;
   /** Callback invoked when bot is halted due to exceeding strategy error thresholds */
   onHalted?: (botId: string) => Promise<void>;
+  /** Callback invoked alongside journal.append for events the agent's circuit breaker should track. */
+  onJournalEvent?: (event: { type: string; payload?: Record<string, unknown> }) => void;
 }
 
 interface StartupPendingLiveOrderSnapshot {
@@ -1400,6 +1402,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
             type: 'stream.disconnect',
             payload: { state, venue: this.deps.venue, symbol: this.deps.symbol },
           }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append stream.disconnect journal event'));
+          this.deps.onJournalEvent?.({ type: 'stream.disconnect' });
         }
       } else if (state === 'connected') {
         if (this.paused) {
@@ -1752,6 +1755,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
               threshold,
             },
           }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append strategy.fatal journal event'));
+          this.deps.onJournalEvent?.({ type: 'strategy.fatal', payload: { error: evalResult.error.message } });
 
           this.logger.error(
             { errorCode, consecutiveErrors: this.consecutiveStrategyErrors, threshold },
@@ -1772,6 +1776,7 @@ export class TradingActor implements InstanceActor, ExecutionActor {
           type: 'strategy.error' as JournalEventType,
           payload: { code: errorCode, message: evalResult.error.message },
         }).catch((e: unknown) => this.logger.warn({ err: e }, 'Failed to append strategy.error journal event'));
+        this.deps.onJournalEvent?.({ type: 'strategy.error', payload: { error: evalResult.error.message } });
         return;
       }
 

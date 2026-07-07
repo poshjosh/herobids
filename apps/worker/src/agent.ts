@@ -525,23 +525,24 @@ const failureBackoff = new FailureBackoffController({
   maxFailures: agentRuntimePolicy.failureBackoff?.maxFailures,
   maxIntervalMs: agentRuntimePolicy.failureBackoff?.maxIntervalMs,
 });
+const breakerCfg = agentRuntimePolicy.sessionCircuitBreaker;
 const sessionCircuitBreaker = new SessionCircuitBreaker({
-  enabled: agentRuntimePolicy.sessionCircuitBreaker?.enabled ?? true,
+  enabled: breakerCfg.enabled,
   strategyError: {
-    maxInWindow: agentRuntimePolicy.sessionCircuitBreaker?.strategyError?.maxInWindow ?? 10,
-    windowMs: agentRuntimePolicy.sessionCircuitBreaker?.strategyError?.windowMs ?? 60_000,
+    maxInWindow: breakerCfg.strategyError.maxInWindow,
+    windowMs: breakerCfg.strategyError.windowMs,
   },
   drift: {
-    maxInWindow: agentRuntimePolicy.sessionCircuitBreaker?.drift?.maxInWindow ?? 5,
-    windowMs: agentRuntimePolicy.sessionCircuitBreaker?.drift?.windowMs ?? 300_000,
+    maxInWindow: breakerCfg.drift.maxInWindow,
+    windowMs: breakerCfg.drift.windowMs,
   },
   streamDisconnect: {
-    maxInWindow: agentRuntimePolicy.sessionCircuitBreaker?.streamDisconnect?.maxInWindow ?? 5,
-    windowMs: agentRuntimePolicy.sessionCircuitBreaker?.streamDisconnect?.windowMs ?? 300_000,
+    maxInWindow: breakerCfg.streamDisconnect.maxInWindow,
+    windowMs: breakerCfg.streamDisconnect.windowMs,
   },
-  cooldownMs: agentRuntimePolicy.sessionCircuitBreaker?.cooldownMs ?? 300_000,
-  maxTrips: agentRuntimePolicy.sessionCircuitBreaker?.maxTrips ?? 3,
-  probeIntervalMs: agentRuntimePolicy.sessionCircuitBreaker?.probeIntervalMs ?? 60_000,
+  cooldownMs: breakerCfg.cooldownMs,
+  maxTrips: breakerCfg.maxTrips,
+  probeIntervalMs: breakerCfg.probeIntervalMs,
 });
 const toolVisibility = createRuntimeToolVisibilityController(() => runtimeState.runtimeDescriptor, permanentlyExcludedTools);
 // Declared here (before functions that reference it at module-init call sites)

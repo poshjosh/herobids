@@ -1259,6 +1259,19 @@ const runtime = new WorkerRuntime(
 
     const strategy = createStrategy(config.strategy, candleFetcher);
 
+    // Determine the owning agent for this bot (for journal event routing to the agent's circuit breaker)
+    let owningAgentId: string | undefined;
+    try {
+      const [bot] = await db
+        .select({ creatorType: bots.creatorType, creatorId: bots.creatorId })
+        .from(bots)
+        .where(eq(bots.id, botId))
+        .limit(1);
+      if (bot?.creatorType === 'agent' && bot.creatorId) {
+        owningAgentId = bot.creatorId;
+      }
+    } catch { /* best-effort */ }
+
     const deps: TradingActorDeps = {
       strategy,
       journal,
@@ -1412,6 +1425,14 @@ const runtime = new WorkerRuntime(
         });
         instanceUserIds.delete(instanceId);
         instanceExecutionModes.delete(instanceId);
+      },
+      onJournalEvent: (event) => {
+        if (owningAgentId) {
+          eventPublisher.emitJournalEvent(owningAgentId, {
+            journalType: event.type,
+            detail: JSON.stringify(event.payload ?? {}),
+          }).catch((err) => logger.warn({ err, botId, eventType: event.type }, 'Failed to emit bot journal event'));
+        }
       },
     };
     const actor = new TradingActor(botId, config.strategy.params as Record<string, unknown>, deps);
