@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWatch, toRuntimeActiveWatch, isWatchEntryV2, type WatchEntry, type WatchInstrumentIdentity } from './watch-types.js';
+import { parseWatch, toRuntimeActiveWatch, type WatchEntry, type WatchInstrumentIdentity } from './watch-types.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -668,66 +668,5 @@ describe('toRuntimeActiveWatch', () => {
     const runtime = toRuntimeActiveWatch(watch);
     expect(runtime.coverage).toBeUndefined();
     expect(Object.hasOwn(runtime, 'coverage')).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// isWatchEntryV2
-// ---------------------------------------------------------------------------
-
-describe('isWatchEntryV2', () => {
-  it('returns false when schemaVersion is undefined', () => {
-    const watch: WatchEntry = {
-      watchId: VALID_UUID,
-      symbol: 'BTC',
-      chain: 'ethereum',
-      thresholdPrice: 50_000,
-      condition: 'above',
-      createdAt: '2026-07-01T00:00:00.000Z',
-      lastConditionMet: null,
-    };
-    expect(isWatchEntryV2(watch)).toBe(false);
-  });
-
-  it('returns false when schemaVersion is 1', () => {
-    const watch: WatchEntry = {
-      watchId: VALID_UUID,
-      symbol: 'BTC',
-      chain: 'ethereum',
-      thresholdPrice: 50_000,
-      condition: 'above',
-      createdAt: '2026-07-01T00:00:00.000Z',
-      lastConditionMet: null,
-      schemaVersion: 1,
-    };
-    expect(isWatchEntryV2(watch)).toBe(false);
-  });
-
-  it('returns true when schemaVersion is 2', () => {
-    const watch: WatchEntry = {
-      watchId: VALID_UUID,
-      symbol: 'BTC',
-      chain: 'ethereum',
-      thresholdPrice: 50_000,
-      condition: 'above',
-      createdAt: '2026-07-01T00:00:00.000Z',
-      lastConditionMet: null,
-      schemaVersion: 2,
-    };
-    expect(isWatchEntryV2(watch)).toBe(true);
-  });
-
-  it('returns true when schemaVersion is greater than 2', () => {
-    const watch: WatchEntry = {
-      watchId: VALID_UUID,
-      symbol: 'BTC',
-      chain: 'ethereum',
-      thresholdPrice: 50_000,
-      condition: 'above',
-      createdAt: '2026-07-01T00:00:00.000Z',
-      lastConditionMet: null,
-      schemaVersion: 3,
-    };
-    expect(isWatchEntryV2(watch)).toBe(true);
   });
 });

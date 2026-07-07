@@ -269,6 +269,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
               stale: priceData.stale,
               triggeredAt: payload.triggeredAt,
               watchId: watch.watchId,
+              ...(watch.note ? { note: watch.note } : {}),
               ...(watch.purpose ? { purpose: watch.purpose } : {}),
               ...(watch.instrument?.venue ? { instrumentVenue: watch.instrument.venue } : {}),
               ...(watch.instrument?.instrumentId ? { instrumentId: watch.instrument.instrumentId } : {}),
@@ -277,7 +278,7 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             },
           );
           metrics.eventsEmitted++;
-          logger.info({ agentId, watchId: watch.watchId, symbol: watch.symbol }, 'Watch triggered');
+          logger.info({ agentId, watchId: watch.watchId, symbol: effectiveSymbol, pinnedChain: effectiveChain }, 'Watch triggered');
         }
 
         refreshedWatches.push(updated);

@@ -60,6 +60,9 @@ export interface CoverageEvaluationResult {
 // ---------------------------------------------------------------------------
 
 export interface PositionInput {
+  /** Canonical venue identifier (e.g. "hyperliquid", "jupiter"). Required for venue-disambiguated positionKey derivation. */
+  venue: string;
+  /** Canonical instrument ID from the venue's instrument repository. When present, used for Tier 2 identity matching. */
   instrumentId?: string;
   symbol: string;
   side: string;
@@ -87,9 +90,20 @@ export interface WatchInput {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function derivePositionKey(position: PositionInput): string {
+/**
+ * Derive a canonical, stable position key for coverage matching.
+ *
+ * Contract:
+ * - The same position MUST produce the same key in all relevant flows.
+ * - The key MUST distinguish venue-specific exposures (e.g. Hyperliquid vs Jupiter BTC).
+ * - Perp positions use canonical venue/instrument identity when available.
+ * - Spot positions use chain/address when available (via instrumentId).
+ *
+ * Format: `${venue}::${instrumentId ?? symbol}::${side}`
+ */
+export function derivePositionKey(position: PositionInput): string {
   const id = position.instrumentId ?? position.symbol;
-  return `${id}::${position.side}`;
+  return `${position.venue}::${id}::${position.side}`;
 }
 
 function isProtectivePurpose(purpose: string | undefined): boolean {
@@ -107,26 +121,28 @@ function isStale(lastCheckedAt: string | undefined, staleThresholdMs: number): b
 
 /**
  * Returns true when a watch can be trusted for protective coverage evaluation.
- * Legacy watches (no schemaVersion >= 2, no coverage.positionKey, no instrument.instrumentId)
- * cannot be trusted — they rely on symbol-only heuristics that may conflate different
- * instruments across venues.
  *
- * @returns true when the watch has sufficient structured identity to be trusted for protective coverage evaluation.
+ * A watch is trustable when it carries structured identity:
+ * - schemaVersion >= 2 (the current structured watch model — only supported shape)
+ * - coverage.positionKey (direct, worker-derived linkage)
+ * - instrument.instrumentId (canonical venue instrument identity)
+ *
+ * Watches that lack ALL of these rely on symbol-only heuristics that may
+ * conflate different instruments across venues and are NOT trustable.
  */
 function isTrustableForCoverage(watch: WatchInput): boolean {
-  // V2 watches with schema version are trustable
+  // V2 structured watches are trustable — they carry purpose, instrument identity, etc.
   if (watch.schemaVersion && watch.schemaVersion >= 2) {
     return true;
   }
-  // Watches with explicit position key linkage are trustable
+  // Direct position key linkage is the strongest signal
   if (watch.coverage?.positionKey) {
     return true;
   }
-  // Watches with canonical instrument identity are trustable
+  // Canonical instrument identity provides venue-disambiguated matching
   if (watch.instrument?.instrumentId) {
     return true;
   }
-  // Legacy watches without structured identity are NOT trustable for coverage
   return false;
 }
 
@@ -142,12 +158,8 @@ function watchMatchesPosition(watch: WatchInput, position: PositionInput, positi
     return true;
   }
 
-  // Tier 2: Instrument identity
-  // NOTE: This tier is currently unreachable for most positions because
-  // live position inputs only carry `symbol` and `side` (no instrumentId).
-  // It is intended for future use when positions carry full instrument
-  // identity from the database (e.g. after venue-instrument-cache
-  // enrichment flows through the position tracker).
+  // Tier 2: Instrument identity matching via canonical instrumentId.
+  // Both the watch and the position must carry instrumentId for this tier to work.
   if (watch.instrument?.instrumentId && position.instrumentId) {
     if (watch.instrument.instrumentId === position.instrumentId) {
       return true;
@@ -190,13 +202,13 @@ export function evaluatePositionCoverage(params: {
     let staleProtectiveWatch = false;
 
     for (const watch of params.watches) {
-      if (!watchMatchesPosition(watch, position, positionKey)) {
+      // Skip watches that cannot be trusted for coverage — avoid wasting
+      // symbol-normalization work on watches that will be rejected anyway.
+      if (!isTrustableForCoverage(watch)) {
         continue;
       }
 
-      // Legacy watches without structured identity cannot be trusted for
-      // protective coverage — skip them.
-      if (!isTrustableForCoverage(watch)) {
+      if (!watchMatchesPosition(watch, position, positionKey)) {
         continue;
       }
 

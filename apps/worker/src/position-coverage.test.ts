@@ -19,6 +19,7 @@ function makeWatch(overrides: Partial<WatchInput> = {}): WatchInput {
 
 function makePosition(overrides: Partial<PositionInput> = {}): PositionInput {
   return {
+    venue: 'hyperliquid',
     symbol: 'BTC-USD',
     side: 'long',
     ...overrides,
@@ -148,11 +149,11 @@ describe('evaluatePositionCoverage', () => {
   // ── Matching strategies ───────────────────────────────────────────
 
   it('direct linkage via coverage.positionKey', () => {
-    const position = makePosition({ symbol: 'XYZ-USD', side: 'long' });
+    const position = makePosition({ venue: 'hyperliquid', symbol: 'XYZ-USD', side: 'long' });
     const watch = makeWatch({
       symbol: 'COMPLETELY-DIFFERENT',
       purpose: 'stop_loss',
-      coverage: { positionKey: 'XYZ-USD::long' },
+      coverage: { positionKey: 'hyperliquid::XYZ-USD::long' },
     });
 
     const result = evaluatePositionCoverage({
@@ -179,13 +180,13 @@ describe('evaluatePositionCoverage', () => {
     expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
   });
 
-  it('legacy watch without structured identity does NOT provide protective coverage (conservative gating)', () => {
+  it('watch without structured identity does NOT provide protective coverage', () => {
     const position = makePosition({ symbol: 'BTC-USD', side: 'short' });
     const watch = makeWatch({
       symbol: 'btc-perp',
       purpose: 'exit',
-      schemaVersion: undefined, // Explicitly legacy — no structured identity
-      // No instrument, no coverage
+      schemaVersion: undefined,
+      // No instrument, no coverage → not trustable
     });
 
     const result = evaluatePositionCoverage({
@@ -193,7 +194,7 @@ describe('evaluatePositionCoverage', () => {
       watches: [watch],
     });
 
-    // Legacy watches are NOT trustable for coverage — position is uncovered
+    // Watches without structured identity are NOT trustable for coverage
     expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
     expect(result.positions[0]!.protectiveWatchCount).toBe(0);
     expect(result.hasUncoveredPosition).toBe(true);
@@ -205,7 +206,6 @@ describe('evaluatePositionCoverage', () => {
       symbol: 'btc-perp',
       purpose: 'exit',
       schemaVersion: 2,
-      // v2 trustable — symbol fallback is acceptable
     });
 
     const result = evaluatePositionCoverage({
@@ -217,32 +217,29 @@ describe('evaluatePositionCoverage', () => {
     expect(result.positions[0]!.protectiveWatchCount).toBe(1);
   });
 
-  it.each([
-    { schemaVersion: 2, expectedCoverage: true, desc: 'v2' },
-    { schemaVersion: undefined, expectedCoverage: false, desc: 'legacy (undefined)' },
-    { schemaVersion: 1, expectedCoverage: false, desc: 'legacy (v1)' },
-  ] as const)('schemaVersion=$desc → hasProtectiveCoverage=$expectedCoverage for stop_loss watch',
-    ({ schemaVersion, expectedCoverage }) => {
-      const result = evaluatePositionCoverage({
-        positions: [makePosition()],
-        watches: [makeWatch({ purpose: 'stop_loss', schemaVersion })],
-      });
+  it('watch with instrument.instrumentId provides protective coverage via identity matching', () => {
+    const position = makePosition({ venue: 'hyperliquid', instrumentId: 'BTC-USD-PERP', symbol: 'BTC-PERP', side: 'short' });
+    const watch = makeWatch({
+      symbol: 'BTC/USDT',
+      purpose: 'exit',
+      instrument: { venue: 'hyperliquid', instrumentId: 'BTC-USD-PERP', symbol: 'BTC-USD' },
+    });
 
-      expect(result.positions[0]!.hasProtectiveCoverage).toBe(expectedCoverage);
-      if (!expectedCoverage) {
-        expect(result.positions[0]!.protectiveWatchCount).toBe(0);
-        expect(result.hasUncoveredPosition).toBe(true);
-      }
-    },
-  );
+    const result = evaluatePositionCoverage({
+      positions: [position],
+      watches: [watch],
+    });
 
-  it('watch with coverage.positionKey provides coverage even without schemaVersion', () => {
-    const position = makePosition({ symbol: 'XYZ-USD', side: 'long' });
+    expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
+    expect(result.positions[0]!.protectiveWatchCount).toBe(1);
+  });
+
+  it('watch with coverage.positionKey provides coverage even without instrument identity', () => {
+    const position = makePosition({ venue: 'jupiter', symbol: 'XYZ-USD', side: 'long' });
     const watch = makeWatch({
       symbol: 'COMPLETELY-DIFFERENT',
       purpose: 'stop_loss',
-      schemaVersion: undefined,
-      coverage: { positionKey: 'XYZ-USD::long' },
+      coverage: { positionKey: 'jupiter::XYZ-USD::long' },
     });
 
     const result = evaluatePositionCoverage({
@@ -253,24 +250,13 @@ describe('evaluatePositionCoverage', () => {
     expect(result.positions[0]!.hasProtectiveCoverage).toBe(true);
   });
 
-  it('v2 watch without purpose is not protective', () => {
+  it('watch without purpose is not protective', () => {
     const result = evaluatePositionCoverage({
       positions: [makePosition()],
       watches: [makeWatch({ purpose: undefined })],
     });
 
     expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
-    expect(result.hasUncoveredPosition).toBe(true);
-  });
-
-  it('legacy watch (no schemaVersion) without purpose is not protective', () => {
-    const result = evaluatePositionCoverage({
-      positions: [makePosition()],
-      watches: [makeWatch({ purpose: undefined, schemaVersion: undefined })],
-    });
-
-    expect(result.positions[0]!.hasProtectiveCoverage).toBe(false);
-    expect(result.positions[0]!.protectiveWatchCount).toBe(0);
     expect(result.hasUncoveredPosition).toBe(true);
   });
 
@@ -369,24 +355,24 @@ describe('evaluatePositionCoverage', () => {
     expect(result2.positions[0]!.staleProtectiveWatch).toBe(true);
   });
 
-  it('positionKey uses instrumentId when available', () => {
-    const position = makePosition({ instrumentId: 'INST-001', symbol: 'BTC-USD', side: 'short' });
+  it('positionKey includes venue and uses instrumentId when available', () => {
+    const position = makePosition({ venue: 'hyperliquid', instrumentId: 'INST-001', symbol: 'BTC-USD', side: 'short' });
     const result = evaluatePositionCoverage({
       positions: [position],
       watches: [],
     });
 
-    expect(result.positions[0]!.positionKey).toBe('INST-001::short');
+    expect(result.positions[0]!.positionKey).toBe('hyperliquid::INST-001::short');
   });
 
-  it('positionKey falls back to symbol when no instrumentId', () => {
-    const position = makePosition({ symbol: 'ETH-USD', side: 'long' });
+  it('positionKey includes venue and falls back to symbol when no instrumentId', () => {
+    const position = makePosition({ venue: 'jupiter', symbol: 'ETH-USD', side: 'long' });
     const result = evaluatePositionCoverage({
       positions: [position],
       watches: [],
     });
 
-    expect(result.positions[0]!.positionKey).toBe('ETH-USD::long');
+    expect(result.positions[0]!.positionKey).toBe('jupiter::ETH-USD::long');
   });
 
   // ── PROTECTIVE_WATCH_PURPOSES constant ─────────────────────────────

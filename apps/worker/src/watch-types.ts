@@ -171,9 +171,5 @@ export function toRuntimeActiveWatch(watch: WatchEntry): RuntimeActiveWatch {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Returns true when the watch entry was created with schema version >= 2.
- */
-export function isWatchEntryV2(watch: WatchEntry): boolean {
-  return (watch.schemaVersion ?? 0) >= 2;
-}
+// Note: isWatchEntryV2 was removed — all watches are now the structured model
+// (schemaVersion >= 2). There is no longer a legacy vs. v2 distinction at runtime.

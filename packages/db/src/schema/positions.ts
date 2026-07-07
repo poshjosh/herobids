@@ -14,6 +14,9 @@ export const positions = pgTable('positions', {
   actorId: text('actor_id'),
   venue: text('venue').notNull(),
   symbol: text('symbol').notNull(),
+  /** Canonical instrument ID from the venue's instrument repository (e.g. "BTC-USD" on Hyperliquid).
+   *  Nullable — populated when the venue adapter provides it. Falls back to symbol for positionKey derivation. */
+  instrumentId: text('instrument_id'),
   side: text('side').notNull(),              // long | short | flat
   size: numeric('size').notNull(),
   entryPrice: numeric('entry_price').notNull(),

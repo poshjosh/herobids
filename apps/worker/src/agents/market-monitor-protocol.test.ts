@@ -58,16 +58,20 @@ describe('MarketWatchTriggeredPayloadSchema', () => {
     expect(MarketWatchTriggeredPayloadSchema.safeParse(rest).success).toBe(false);
   });
 
-  it('accepts all new optional fields (purpose, instrumentVenue, instrumentId, positionKey)', () => {
+  it('accepts all new optional fields (purpose, instrumentVenue, instrumentId, positionKey, schemaVersion)', () => {
     const full = {
       ...valid,
       purpose: 'stop_loss' as const,
       instrumentVenue: 'hyperliquid',
       instrumentId: 'SOL-USD',
       positionKey: 'pos-sol-stop-1',
+      schemaVersion: 2,
     };
     const result = MarketWatchTriggeredPayloadSchema.safeParse(full);
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.schemaVersion).toBe(2);
+    }
   });
 
   it('accepts partial new optional fields (purpose only)', () => {

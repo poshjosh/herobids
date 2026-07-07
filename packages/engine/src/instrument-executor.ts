@@ -199,6 +199,7 @@ export async function executeDecision(
         venueAccountId: pos.venueAccountId,
         venue: pos.venue,
         symbol: pos.symbol,
+        instrumentId: pos.instrumentId ?? undefined,
         side: pos.side,
         size: pos.size,
         entryPrice: pos.entryPrice,

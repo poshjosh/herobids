@@ -29,6 +29,8 @@ export interface UpsertPosition {
   actorId: string;
   venue: string;
   symbol: string;
+  /** Canonical instrument ID from the venue's instrument repository. Nullable — populated when available. */
+  instrumentId?: string | null;
   side: string;
   size: string;
   entryPrice: string;
@@ -236,6 +238,7 @@ export class PositionRepository {
           actorId: pos.actorId,
           venue: pos.venue,
           symbol: pos.symbol,
+          instrumentId: pos.instrumentId ?? null,
           side: pos.side,
           size: pos.size,
           entryPrice: pos.entryPrice,
@@ -257,6 +260,7 @@ export class PositionRepository {
           entryPrice: pos.entryPrice,
           realizedPnl: pos.realizedPnl,
           markSource: pos.markSource ?? null,
+          ...(pos.instrumentId !== undefined ? { instrumentId: pos.instrumentId } : {}),
           ...(pos.stopLoss !== undefined ? { stopLoss: pos.stopLoss } : {}),
           ...(pos.takeProfit !== undefined ? { takeProfit: pos.takeProfit } : {}),
           updatedAt: new Date(),
@@ -271,6 +275,7 @@ export class PositionRepository {
         actorId: pos.actorId,
         venue: pos.venue,
         symbol: pos.symbol,
+        instrumentId: pos.instrumentId ?? null,
         side: pos.side,
         size: pos.size,
         entryPrice: pos.entryPrice,

@@ -101,6 +101,8 @@ export interface PersistPositionParams {
   actorId?: string;
   venue: string;
   symbol: string;
+  /** Canonical instrument ID from the venue's instrument repository. Populated when available. */
+  instrumentId?: string | null;
   side: string;
   size: string;
   entryPrice: string;

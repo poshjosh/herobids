@@ -1967,6 +1967,8 @@ async function runTick(): Promise<void> {
         hasOpenPositions = openPositions.length > 0;
         openPositionSymbols = openPositions.map((p) => p.symbol);
         openPositionInputs = openPositions.map((p) => ({
+          venue: p.venue,
+          instrumentId: p.instrumentId ?? undefined,
           symbol: p.symbol,
           side: p.side,
         }));

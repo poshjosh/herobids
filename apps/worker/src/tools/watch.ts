@@ -20,6 +20,7 @@ import { convertZodToJsonSchema } from './registry.js';
 import { EXPLICIT_SUPPORTED_CHAINS, validateSymbolForChain, isOnChainAddress } from './price.js';
 import { summarizeActiveWatches } from '../runtime-composition.js';
 import { type WatchEntry, type WatchInstrumentIdentity, parseWatch, toRuntimeActiveWatch } from '../watch-types.js';
+import { derivePositionKey, type PositionInput } from '../position-coverage.js';
 
 const logger = pino({ name: 'watch-tools' });
 
@@ -178,8 +179,17 @@ const WatchTokenParamsSchema = z.object({
   coverage: z.object({
     actorType: z.enum(['agent', 'bot', 'user', 'system']).optional(),
     actorId: z.string().optional(),
+    /** Worker-derived position key — DO NOT supply directly. Provide targetPosition instead. */
     positionKey: z.string().optional(),
     intentGroup: z.string().optional(),
+    /** Identify the target position so the worker can derive a canonical positionKey. */
+    targetPosition: z.object({
+      venue: z.string().min(1).describe('Venue where the position is held (e.g. "hyperliquid", "jupiter")'),
+      symbol: z.string().min(1).describe('Symbol of the position'),
+      side: z.enum(['long', 'short']).describe('Direction of the position'),
+    }).optional().describe(
+      'Identify the open position this watch protects. The worker derives the canonical positionKey — do NOT supply a raw positionKey.',
+    ),
   }).optional().describe(
     'Optional linkage metadata — attach this watch to a specific actor, open position, or intent group for coverage tracking.',
   ),
@@ -310,6 +320,24 @@ const watchTokenTool: AgentTool = {
       }
     }
 
+    // --- Coverage linkage — derive canonical positionKey from targetPosition ---
+    // The worker OWNS the positionKey contract. Agents identify the target position
+    // by venue/symbol/side, and the worker derives the canonical key.
+    let resolvedCoverage = coverage;
+    if (coverage?.targetPosition) {
+      const { venue, symbol: posSymbol, side } = coverage.targetPosition;
+      // Derive the canonical position key using the same contract as coverage evaluation.
+      const derivedKey = derivePositionKey({ venue, symbol: posSymbol, side, instrumentId: instrument?.instrumentId });
+      resolvedCoverage = {
+        ...coverage,
+        positionKey: derivedKey,
+      };
+    } else if (coverage?.positionKey) {
+      // Legacy: caller-supplied positionKey. Log a warning — the worker should own this contract.
+      logger.warn({ agentId: ctx.agentId, positionKey: coverage.positionKey },
+        'watch_token called with raw positionKey — prefer targetPosition for worker-derived linkage');
+    }
+
     const watch: WatchEntry = {
       watchId: crypto.randomUUID(),
       symbol: trimmedSymbol,              // what the caller asked for
@@ -326,7 +354,7 @@ const watchTokenTool: AgentTool = {
       schemaVersion: 2,
       ...(instrument ? { instrument } : {}),
       ...(purpose ? { purpose } : {}),
-      ...(coverage ? { coverage } : {}),
+      ...(resolvedCoverage ? { coverage: resolvedCoverage } : {}),
     };
 
     // Get initial price using the pinned lookup target.
@@ -357,7 +385,7 @@ const watchTokenTool: AgentTool = {
         condition,
         ...(instrument ? { instrument } : {}),
         ...(purpose ? { purpose } : {}),
-        ...(coverage ? { coverage } : {}),
+        ...(resolvedCoverage ? { coverage: resolvedCoverage } : {}),
       },
     };
   },
