@@ -855,6 +855,134 @@ describe('AgentDecisionHandler', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // circuit breaker for no_context
+  // ---------------------------------------------------------------------------
+  describe('circuit breaker for no_context', () => {
+    function makeHandlerWithFailureRepo() {
+      const base = (() => {
+        const markSource = {
+          fetchMark: vi.fn().mockResolvedValue({ ok: true, data: { price: '101', source: 'oracle', stale: false } }),
+        };
+
+        const agentRepo = {
+          getActiveLink: vi.fn().mockResolvedValue({ botId: 'inst-1' }),
+          getAgent: vi.fn().mockResolvedValue({ id: 'agent-1', status: 'active' }),
+          getSessionForAgentAndInstance: vi.fn().mockResolvedValue({ id: 'sess-1', status: 'running' }),
+          isActiveSession: vi.fn().mockResolvedValue(true),
+        };
+
+        const intakeResolver = {
+          getIntakeDeps: vi.fn().mockReturnValue({ symbol: 'BTC/USD:USD', markSource }),
+          getDecisionContext: vi.fn().mockReturnValue({
+            snapshot: { symbol: 'BTC/USD:USD', price: '100', timestamp: '2026-06-03T00:00:00.000Z' },
+            position: null,
+            referenceMark: { price: '100', source: 'last_price' },
+            strategyParams: {},
+          }),
+          getPosition: vi.fn().mockReturnValue({
+            symbol: 'BTC/USD:USD',
+            side: 'flat',
+            size: { toString: () => '0' },
+            entryPrice: { toString: () => '0' },
+            realizedPnl: { toString: () => '0' },
+          }),
+        };
+
+        const eventPublisher = {
+          emitDecisionAccepted: vi.fn().mockResolvedValue(undefined),
+          emitDecisionRejected: vi.fn().mockResolvedValue(undefined),
+          emitPlanStatus: vi.fn().mockResolvedValue(undefined),
+          emitGuardrailTriggered: vi.fn().mockResolvedValue(undefined),
+          emitExecutionResult: vi.fn().mockResolvedValue(undefined),
+        };
+
+        return { agentRepo, intakeResolver, eventPublisher };
+      })();
+
+      const failureRepo = {
+        insert: vi.fn().mockResolvedValue('failure-id'),
+      };
+
+      const handler = new AgentDecisionHandler(
+        base.agentRepo as any,
+        base.intakeResolver as any,
+        base.eventPublisher as any,
+        failureRepo as any,
+      );
+
+      return { handler, failureRepo, ...base };
+    }
+
+    const envelope = {
+      schemaVersion: 'v1' as const,
+      messageId: 'msg-1',
+      correlationId: 'corr-1',
+      initiatorType: 'agent' as const,
+      initiatorId: 'agent-1',
+      botId: 'inst-1',
+      type: 'agent.decision.submit' as const,
+      createdAt: '2026-06-03T00:00:00.000Z',
+      payload: {},
+    };
+
+    const payload = {
+      decisionId: 'dec-f1',
+      instrumentId: 'BTC/USD:USD',
+      intent: 'go_long' as const,
+      targetSize: '1',
+      rationaleSummary: 'test',
+    };
+
+    it('skips circuit breaker for no_context when actor has never had successful context', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      intakeResolver.getDecisionContext.mockReturnValue(null);
+
+      // First no_context — actor has never had context, breaker should be skipped
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      expect(eventPublisher.emitDecisionRejected).toHaveBeenCalledWith(
+        'inst-1',
+        expect.objectContaining({
+          decisionId: payload.decisionId,
+          code: 'no_context',
+          retryable: true,
+        }),
+      );
+      // Message should NOT contain circuit breaker text since breaker was skipped
+      const call = eventPublisher.emitDecisionRejected.mock.calls[0] as any[];
+      expect(call[1].message).not.toContain('CIRCUIT BREAKER');
+    });
+
+    it('trips circuit breaker after 3 consecutive no_context failures for an initialized actor', async () => {
+      const { handler, eventPublisher, intakeResolver } = makeHandlerWithFailureRepo();
+      intakeResolver.getDecisionContext.mockReturnValue(null);
+
+      // Simulate that the actor has previously succeeded in fetching context
+      // by accessing the private set (only way to seed it without a successful call first)
+      const privateSet = (handler as any).actorsWithSuccessfulContext as Set<string>;
+      privateSet.add('agent-1');
+
+      // Failures 1 and 2 — should be retryable
+      for (let i = 0; i < 2; i++) {
+        await handler.handleDecisionSubmit(envelope, payload);
+      }
+
+      // Verify calls 0 and 1 stayed retryable (breaker not yet tripped)
+      const calls = eventPublisher.emitDecisionRejected.mock.calls;
+      expect(calls[0][1].retryable).toBe(true);
+      expect(calls[1][1].retryable).toBe(true);
+
+      // Failure 3 — should trip the breaker
+      await handler.handleDecisionSubmit(envelope, payload);
+
+      const lastCall = calls[calls.length - 1] as any[];
+      expect(lastCall[1].retryable).toBe(false);
+      expect(lastCall[1].message).toContain('CIRCUIT BREAKER');
+      expect(lastCall[1].message).toContain('3 consecutive');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // synchronous decision reply (_expectsReply)
   // ---------------------------------------------------------------------------
   describe('synchronous decision reply (_expectsReply)', () => {

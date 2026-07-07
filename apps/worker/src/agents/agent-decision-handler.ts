@@ -70,6 +70,11 @@ export class AgentDecisionHandler {
   /** Per-instrument failure counters: key = `${agentId}::${instrumentId}::${failureCode}` */
   private readonly failureCounters = new Map<string, { count: number; lastFailedAt: number }>();
 
+  /** Actors that have had at least one successful decision context fetch. Used to
+   *  distinguish startup initialization (no_context is expected) from persistent
+   *  mark unavailability (no_context should trigger the circuit breaker). */
+  private readonly actorsWithSuccessfulContext = new Set<string>();
+
   constructor(
     private readonly agentRepo: AgentRepository,
     private readonly intakeResolver: DecisionIntakeResolver,
@@ -283,7 +288,13 @@ export class AgentDecisionHandler {
     const context = await this.intakeResolver.getDecisionContext(resolveId, payload.instrumentId);
     if (!context) {
       const baseMsg = 'No decision context available — actor may still be initializing or mark price unavailable';
-      const cb = this.checkCircuitBreaker(effectiveAgentId, payload.instrumentId, 'no_context', baseMsg, true);
+      // Don't count no_context failures until the actor has proven it CAN fetch context.
+      // During startup, marks take a moment to load — penalizing the agent for that
+      // would cause a false-positive circuit breaker trip.
+      const isInitializing = !this.actorsWithSuccessfulContext.has(effectiveAgentId);
+      const cb = isInitializing
+        ? { retryable: true, message: baseMsg }
+        : this.checkCircuitBreaker(effectiveAgentId, payload.instrumentId, 'no_context', baseMsg, true);
       setSyncReply('rejected', { code: 'no_context', message: cb.message });
       await this.eventPublisher.emitDecisionRejected(effectiveBotId, {
         decisionId: payload.decisionId,
@@ -294,6 +305,10 @@ export class AgentDecisionHandler {
       this.recordFailure({ actorType: 'agent', actorId: effectiveAgentId, decisionId: payload.decisionId, instrumentId: payload.instrumentId, failureCode: 'no_context', failureMessage: cb.message, failureClass: 'rejection', retryable: cb.retryable });
       return;
     }
+
+    // Record that this actor can successfully fetch decision context.
+    // Used by the no_context path to distinguish startup from persistent unavailability.
+    this.actorsWithSuccessfulContext.add(effectiveAgentId);
 
     const position = await this.intakeResolver.getPosition(resolveId, payload.instrumentId);
     if (!position) {
