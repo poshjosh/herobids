@@ -114,6 +114,9 @@ function makeWatch(overrides: Partial<{
   instrumentId: string;
   positionKey: string;
   schemaVersion: number;
+  resolvedChain: string;
+  resolvedSymbol: string;
+  resolvedAddress: string;
 }> = {}) {
   const base: Record<string, unknown> = {
     watchId: overrides.watchId ?? DEFAULT_WATCH_ID,
@@ -124,6 +127,9 @@ function makeWatch(overrides: Partial<{
     createdAt: '2026-06-10T00:00:00.000Z',
     lastConditionMet: overrides.lastConditionMet ?? null,
   };
+  if (overrides.resolvedChain) base.resolvedChain = overrides.resolvedChain;
+  if (overrides.resolvedSymbol) base.resolvedSymbol = overrides.resolvedSymbol;
+  if (overrides.resolvedAddress) base.resolvedAddress = overrides.resolvedAddress;
   if (overrides.purpose) base.purpose = overrides.purpose;
   if (overrides.instrumentVenue || overrides.instrumentId) {
     base.instrument = {
@@ -361,6 +367,68 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.priceSource).toBe('regime_snapshot');
   });
 
+  it('uses resolvedChain/resolvedSymbol for regime fallback when discovery snapshot unavailable', async () => {
+    // Seed a watch with pinned identity but NO discovery price
+    seedWatch('agent-1', makeWatch({
+      symbol: 'UNKNOWN',
+      chain: 'any',
+      resolvedChain: 'solana',
+      resolvedSymbol: 'SOL',
+      condition: 'above',
+      thresholdPrice: 200,
+      lastConditionMet: false,
+    }));
+    // Seed regime snapshot under the resolved symbol
+    redis._store.set('market-intel:regime:SOL', JSON.stringify({
+      benchmarkSymbol: 'SOL',
+      freshness: { state: 'fresh' },
+      pass: true,
+      details: { currentPrice: 204 },
+    }));
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.currentPrice).toBe(204);
+    expect(payload.priceSource).toBe('regime_snapshot');
+    // Verify the payload carries the resolved identity, not "any"
+    expect(payload.chain).toBe('solana');
+    expect(payload.symbol).toBe('SOL');
+  });
+
+  it('uses fallback regime key under watch.symbol when effectiveSymbol differs', async () => {
+    // Seed a watch where resolvedSymbol differs from watch.symbol (e.g. wrapped token)
+    seedWatch('agent-1', makeWatch({
+      symbol: 'WSOL',
+      chain: 'solana',
+      resolvedChain: 'solana',
+      resolvedSymbol: 'SOL',
+      condition: 'above',
+      thresholdPrice: 200,
+      lastConditionMet: false,
+    }));
+    // Regime snapshot keyed under the original symbol, NOT the resolved symbol
+    redis._store.set('market-intel:regime:WSOL', JSON.stringify({
+      benchmarkSymbol: 'WSOL',
+      freshness: { state: 'fresh' },
+      pass: true,
+      details: { currentPrice: 205 },
+    }));
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.currentPrice).toBe(205);
+    expect(payload.priceSource).toBe('regime_snapshot');
+    // Verify the payload carries the resolved identity
+    expect(payload.chain).toBe('solana');
+    expect(payload.symbol).toBe('SOL');
+  });
+
   it('populates purpose, instrument, positionKey, and schemaVersion in payload when present on watch', async () => {
     seedWatch('agent-1', makeWatch({
       symbol: 'SOL',
@@ -426,6 +494,49 @@ describe('createMarketMonitor — watch thresholds', () => {
     expect(payload.instrumentVenue).toBe('hyperliquid');
     expect(payload.instrumentId).toBe('ETH-USD');
     expect(payload.positionKey).toBeUndefined();
+  });
+
+  it('uses resolvedChain/resolvedSymbol for price lookup when pinned identity present', async () => {
+    // Watch created with chain="any", resolved to solana
+    seedWatch('agent-1', makeWatch({
+      symbol: 'SOL',
+      chain: 'any',
+      resolvedChain: 'solana',
+      resolvedSymbol: 'SOL',
+      condition: 'above',
+      thresholdPrice: 200,
+      lastConditionMet: false,
+    }));
+    // Discovery snapshot has price under the resolved identity key
+    seedDiscoveryPrice('SOL', 'solana', 204);
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    // Must trigger — proving resolved identity (solana:SOL) was used, not original (any:SOL)
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.currentPrice).toBe(204);
+  });
+
+  it('falls back to watch.chain/watch.symbol when resolved fields are absent (legacy watches)', async () => {
+    // Legacy watch with no resolvedChain/resolvedSymbol
+    seedWatch('agent-1', makeWatch({
+      symbol: 'BTC',
+      chain: 'hyperliquid',
+      condition: 'above',
+      thresholdPrice: 60_000,
+      lastConditionMet: false,
+    }));
+    // Discovery snapshot has price under the original identity key
+    seedDiscoveryPrice('BTC', 'hyperliquid', 65_000);
+
+    const monitor = createMarketMonitor({ families: { watchThresholds: true, discoveryDeltas: false, regimeChanges: false } }, { redis, publisher });
+    await monitor.evaluate();
+
+    expect(publisher.emitMarketWatchTriggered).toHaveBeenCalledOnce();
+    const [, payload] = publisher.emitMarketWatchTriggered.mock.calls[0]!;
+    expect(payload.currentPrice).toBe(65_000);
   });
 });
 

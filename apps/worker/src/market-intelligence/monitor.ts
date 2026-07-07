@@ -193,7 +193,9 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
       if (stopped) return;
 
       for (const watch of watches) {
-        const priceKey = `${watch.chain}:${watch.symbol}`;
+        const effectiveChain = watch.resolvedChain ?? watch.chain;
+        const effectiveSymbol = watch.resolvedSymbol ?? watch.symbol;
+        const priceKey = `${effectiveChain}:${effectiveSymbol}`;
         const priceData = priceMap.get(priceKey);
         if (!priceData) {
           refreshedWatches.push(watch);
@@ -234,8 +236,8 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
             eventId,
             monitorType: 'watch_threshold',
             watchId: watch.watchId,
-            symbol: watch.symbol,
-            chain: watch.chain,
+            symbol: effectiveSymbol,
+            chain: effectiveChain,
             condition: watch.condition,
             thresholdPrice: watch.thresholdPrice,
             currentPrice: priceData.priceUsd,
@@ -256,11 +258,11 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
           await enqueueWake(
             agentId,
             eventId,
-            `${watch.symbol} crossed ${watch.condition === 'above' ? 'above' : 'below'} ${watch.thresholdPrice}`,
+            `${effectiveSymbol} crossed ${watch.condition === 'above' ? 'above' : 'below'} ${watch.thresholdPrice}`,
             'watch_threshold',
             {
-              symbol: watch.symbol,
-              chain: watch.chain,
+              symbol: effectiveSymbol,
+              chain: effectiveChain,
               condition: watch.condition,
               thresholdPrice: watch.thresholdPrice,
               currentPrice: priceData.priceUsd,
@@ -767,11 +769,16 @@ export function createMarketMonitor(config: MonitorConfig, deps: MonitorDeps): M
 
     // For watches not found in discovery snapshot, check regime (for perp symbols)
     for (const watch of watches) {
-      const key = `${watch.chain}:${watch.symbol}`;
+      const effectiveChain = watch.resolvedChain ?? watch.chain;
+      const effectiveSymbol = watch.resolvedSymbol ?? watch.symbol;
+      const key = `${effectiveChain}:${effectiveSymbol}`;
       if (priceMap.has(key)) continue;
 
-      // Try regime snapshot for benchmark symbols
-      const regimeRaw = await redis.get(`market-intel:regime:${watch.symbol}`);
+      // Try regime snapshot for benchmark symbols (use effective symbol for pinned watches)
+      let regimeRaw = await redis.get(`market-intel:regime:${effectiveSymbol}`);
+      if (!regimeRaw && effectiveSymbol !== watch.symbol) {
+        regimeRaw = await redis.get(`market-intel:regime:${watch.symbol}`);
+      }
       if (regimeRaw) {
         try {
           const regime = JSON.parse(regimeRaw) as { details: { currentPrice?: number }; freshness?: { state: string } };
