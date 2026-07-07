@@ -80,7 +80,7 @@ See `docs/best-practices/configuration.md` for full details.
 - The system defines four actor types: `agent`, `bot`, `user`, `system`.
 - Agents can trade directly via `submit_decision` — they do NOT need to create a bot first.
 - Bots are optional tools for agents (and users), useful for automated trading, strategy testing, parallel execution, etc.
-- The `DecisionIntakeResolver` must resolve execution context for any actor that submits a decision — not only bot actors.
+- The `DecisionIntakeResolver` must resolve execution context for any actor that submits a decision.
 - Execution context resolution varies by actor type:
   - **Bot** → `bots.venue_account_id` → `venue_accounts` (direct, via running TradingActor in actorRegistry)
   - **Agent** → `agent_connections.connection_id` → `connections` (the `connections` table is the single grantable entity)
