@@ -1,6 +1,11 @@
 import type { ScoutDecision } from './scout-dispatch.js';
 import { normalizeTrackedSymbol } from './venue-intelligence.js';
 
+/**
+ * @deprecated Use {@link evaluatePositionCoverage} from `position-coverage.ts`
+ * instead — it provides structured watch metadata matching (purpose,
+ * instrument identity, coverage links) rather than coarse symbol matching.
+ */
 export function hasUncoveredTrackedPosition(params: {
   openPositionSymbols: readonly string[];
   watchSymbols: readonly string[];
@@ -37,7 +42,7 @@ export function resolveForcedPreScoutBillingOutcome(params: {
 
 export interface PreScoutResolution {
   decision: ScoutDecision | null;
-  source: 'forced_first_tick' | 'forced_judge_reminder' | 'forced_open_positions' | 'scout';
+  source: 'forced_first_tick' | 'forced_judge_reminder' | 'forced_stale_coverage' | 'forced_open_positions' | 'scout';
 }
 
 export function resolvePreScoutDecision(params: {
@@ -50,6 +55,8 @@ export function resolvePreScoutDecision(params: {
   hasTriggeredWatch?: boolean;
   /** True when at least one open position has no active watch (unprotected exposure). */
   hasUncoveredPosition?: boolean;
+  /** True when at least one protective watch is stale (lastCheckedAt exceeds threshold). */
+  hasStaleCoverage?: boolean;
 }): PreScoutResolution {
   if (params.tickCount === 1) {
     return {
@@ -62,6 +69,21 @@ export function resolvePreScoutDecision(params: {
     return {
       decision: { disposition: 'escalate', reason: 'judge_scheduled_reminder' },
       source: 'forced_judge_reminder',
+    };
+  }
+
+  // Stale protective coverage is inherently unsafe regardless of the
+  // openPositionEscalationToJudgePolicy setting — stale data means the
+  // system can't trust its risk assessment. This check happens before
+  // the policy evaluation so it always escalates.
+  // Requires hasOpenPositions because no positions = nothing to cover.
+  if (params.hasOpenPositions && params.hasStaleCoverage) {
+    const reason = params.hasTriggeredWatch
+      ? 'stale_protective_coverage_with_triggered_watch'
+      : 'stale_protective_coverage';
+    return {
+      decision: { disposition: 'escalate', reason },
+      source: 'forced_stale_coverage',
     };
   }
 

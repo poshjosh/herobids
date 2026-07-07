@@ -2379,6 +2379,7 @@ async function runTick(): Promise<void> {
       openPositionEscalationToJudgePolicy: agentConfig.openPositionEscalationToJudgePolicy,
       hasTriggeredWatch,
       hasUncoveredPosition,
+      hasStaleCoverage: coverageResult.hasStaleProtectiveWatch,
     });
 
     let resolvedScoutDecision: ScoutDecision;

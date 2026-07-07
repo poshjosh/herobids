@@ -113,6 +113,123 @@ describe('resolvePreScoutDecision', () => {
       source: 'forced_open_positions',
     });
   });
+
+  describe('stale protective coverage', () => {
+    it('forces escalation when protective coverage is stale with open positions', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        hasStaleCoverage: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'stale_protective_coverage' },
+        source: 'forced_stale_coverage',
+      });
+    });
+
+    it('runs scout normally when stale coverage but no open positions (stale is irrelevant)', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: false,
+        hasStaleCoverage: true,
+      })).toEqual({
+        decision: null,
+        source: 'scout',
+      });
+    });
+
+    it('runs scout normally when open positions but no stale coverage', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        hasStaleCoverage: false,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+      })).toEqual({
+        decision: null,
+        source: 'scout',
+      });
+    });
+
+    it('stale coverage escalation ignores policy (escalates even with never policy)', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'never',
+        hasStaleCoverage: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'stale_protective_coverage' },
+        source: 'forced_stale_coverage',
+      });
+    });
+
+    it('stale coverage escalation ignores policy even with uncovered_or_triggered', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'uncovered_or_triggered',
+        hasStaleCoverage: true,
+        hasTriggeredWatch: false,
+        hasUncoveredPosition: false,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'stale_protective_coverage' },
+        source: 'forced_stale_coverage',
+      });
+    });
+
+    it('stale coverage escalation ignores policy even with always policy', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        openPositionEscalationToJudgePolicy: 'always',
+        hasStaleCoverage: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'stale_protective_coverage' },
+        source: 'forced_stale_coverage',
+      });
+    });
+
+    it('stale coverage with triggered watch uses combined reason', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        hasStaleCoverage: true,
+        hasTriggeredWatch: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'stale_protective_coverage_with_triggered_watch' },
+        source: 'forced_stale_coverage',
+      });
+    });
+
+    it('judge reminder still takes priority over stale coverage', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 2,
+        reminderScheduledBy: 'judge',
+        hasOpenPositions: true,
+        hasStaleCoverage: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'judge_scheduled_reminder' },
+        source: 'forced_judge_reminder',
+      });
+    });
+
+    it('first tick still takes priority over stale coverage', () => {
+      expect(resolvePreScoutDecision({
+        tickCount: 1,
+        reminderScheduledBy: null,
+        hasOpenPositions: true,
+        hasStaleCoverage: true,
+      })).toEqual({
+        decision: { disposition: 'escalate', reason: 'first_tick_always_escalates' },
+        source: 'forced_first_tick',
+      });
+    });
+  });
 });
 
 describe('hasUncoveredTrackedPosition', () => {
