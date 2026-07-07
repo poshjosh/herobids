@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+Removed links to the following from the sidebar: Trading Setup, Exposure, Activity, Outcomes
+
 ### Added
 
 - **LLM Cost Reduction — Complete Tick Gate Fingerprint:** Expanded `shouldSkipTick` context-hash gate with watch summary, wake signal, and risk/playbook digests. Uses `__unknown__` sentinel for unavailable data. Zero additional I/O. Preserves all safety valves.
