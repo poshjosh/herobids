@@ -765,6 +765,7 @@ export const RUNTIME_CONTEXT_PROVIDERS: RuntimeContextProvider[] = [
       if (desc.guardrails.maxOpenPositions != null) lines.push(`Max open positions: ${desc.guardrails.maxOpenPositions}`);
       if (desc.guardrails.maxPositionSizePct != null) lines.push(`Max position size: ${desc.guardrails.maxPositionSizePct}%`);
       if (desc.guardrails.capital) lines.push(`Capital: ${formatUsdAmount(desc.guardrails.capital)}`);
+      lines.push('Per-trade stop-loss and take-profit should be set via submit_decision. An operator backstop applies if levels are missing.');
 
       return {
         id: 'tradingGuardrails',
