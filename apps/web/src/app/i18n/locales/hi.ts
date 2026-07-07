@@ -300,6 +300,10 @@ export const messages: Record<string, string> = {
   'connections.usedByNone': 'किसी भी एजेंट को नहीं सौंपा गया',
   'connections.revoke': 'रद्द करें',
   'connections.revokeConfirm': 'इस कनेक्शन को रद्द करें? इसका उपयोग करने वाले एजेंट की पहुँच समाप्त हो जाएगी।',
+  'connections.delete': 'हटाएँ',
+  'connections.deleteConfirm': 'कनेक्शन "{label}" हटाएँ? इसे वापस नहीं लाया जा सकता।',
+  'connections.deleteBlocked': 'इस कनेक्शन को हटाया नहीं जा सकता क्योंकि यह सक्रिय रूप से एक या अधिक एजेंटों को असाइन किया गया है। इसके बजाय इसे रद्द करें, या पहले सभी एजेंटों से हटाएँ।',
+  'connections.deleteFailed': 'कनेक्शन हटाने में विफल। कृपया पुनः प्रयास करें।',
   'connections.assignmentSuccess': 'कनेक्शन चयनित एजेंटों को सौंपा गया।',
 
   // Credentials

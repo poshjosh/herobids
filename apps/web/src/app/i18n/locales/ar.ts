@@ -300,6 +300,10 @@ export const messages: Record<string, string> = {
   'connections.usedByNone': 'غير معيّن لأي وكيل',
   'connections.revoke': 'إلغاء',
   'connections.revokeConfirm': 'هل تريد إلغاء هذا الاتصال؟ سيفقد الوكلاء المستخدمون له الوصول.',
+  'connections.delete': 'حذف',
+  'connections.deleteConfirm': 'حذف الاتصال "{label}"؟ لا يمكن التراجع عن هذا.',
+  'connections.deleteBlocked': 'لا يمكن حذف هذا الاتصال لأنه معين بشكل نشط لواحد أو أكثر من الوكلاء. قم بإلغائه بدلاً من ذلك، أو قم بإزالته من جميع الوكلاء أولاً.',
+  'connections.deleteFailed': 'فشل حذف الاتصال. يرجى المحاولة مرة أخرى.',
   'connections.assignmentSuccess': 'تم تعيين الاتصال للوكلاء المحددين.',
 
   // Credentials

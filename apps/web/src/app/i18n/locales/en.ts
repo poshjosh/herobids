@@ -300,6 +300,10 @@ export const messages: Record<string, string> = {
   'connections.usedByNone': 'Not assigned to any agents',
   'connections.revoke': 'Revoke',
   'connections.revokeConfirm': 'Revoke this connection? Agents using it will lose access.',
+  'connections.delete': 'Delete',
+  'connections.deleteConfirm': 'Delete connection "{label}"? This cannot be undone.',
+  'connections.deleteBlocked': 'Cannot delete this connection because it is actively assigned to one or more agents. Revoke it instead, or remove it from all agents first.',
+  'connections.deleteFailed': 'Failed to delete connection. Please try again.',
   'connections.assignmentSuccess': 'Connection assigned to selected agents.',
 
   // Credentials

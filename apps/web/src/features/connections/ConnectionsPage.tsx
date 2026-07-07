@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { connections as connectionsApi, type ProviderSetupResult } from '../../lib/api-client.js';
+import { connections as connectionsApi, type ProviderSetupResult, ApiError } from '../../lib/api-client.js';
 import { PageShell, PageHeader, Card, LoadingRows, ErrorState, EmptyState, Button } from '../../lib/ui.js';
 import { ProviderSetupForm } from '../setup/ProviderSetupForm.js';
 import { AgentAssignmentStep } from '../setup/AgentAssignmentStep.js';
+import { ErrorBanner } from '../portfolios/PortfoliosPage.js';
 
 type SetupState =
   | { step: 'idle' }
@@ -15,6 +16,7 @@ export function ConnectionsPage() {
   const intl = useIntl();
   const [setupState, setSetupState] = useState<SetupState>({ step: 'idle' });
   const [assignmentSuccess, setAssignmentSuccess] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const connectionsQuery = useQuery({
@@ -25,6 +27,21 @@ export function ConnectionsPage() {
   const revoke = useMutation({
     mutationFn: (id: string) => connectionsApi.revoke(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['connections'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => connectionsApi.delete(id),
+    onSuccess: () => {
+      setDeleteError(null);
+      void qc.invalidateQueries({ queryKey: ['connections'] });
+    },
+    onError: (error: ApiError) => {
+      if (error.code === 'connection.in_use') {
+        setDeleteError(intl.formatMessage({ id: 'connections.deleteBlocked' }));
+      } else {
+        setDeleteError(intl.formatMessage({ id: 'connections.deleteFailed' }));
+      }
+    },
   });
 
   const items = connectionsQuery.data?.connections ?? [];
@@ -51,6 +68,8 @@ export function ConnectionsPage() {
           </Button>
         }
       />
+
+      {deleteError && <ErrorBanner message={deleteError} onDismiss={() => setDeleteError(null)} />}
 
       {assignmentSuccess && (
         <div style={{ padding: '10px 16px', marginBottom: '16px', background: 'var(--color-surface-success, rgba(34,197,94,0.08))', borderRadius: '8px', fontSize: '13px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -88,19 +107,33 @@ export function ConnectionsPage() {
                 {conn.provider} · {conn.status}
               </div>
             </div>
-            {conn.status === 'active' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {conn.status === 'active' && (
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    if (window.confirm(intl.formatMessage({ id: 'connections.revokeConfirm' }))) {
+                      revoke.mutate(conn.id);
+                    }
+                  }}
+                  disabled={revoke.isPending}
+                >
+                  {intl.formatMessage({ id: 'connections.revoke' })}
+                </Button>
+              )}
               <Button
                 variant="danger"
+                size="sm"
                 onClick={() => {
-                  if (window.confirm(intl.formatMessage({ id: 'connections.revokeConfirm' }))) {
-                    revoke.mutate(conn.id);
+                  if (confirm(intl.formatMessage({ id: 'connections.deleteConfirm' }, { label: conn.label }))) {
+                    deleteMutation.mutate(conn.id);
                   }
                 }}
-                disabled={revoke.isPending}
+                disabled={deleteMutation.isPending}
               >
-                {intl.formatMessage({ id: 'connections.revoke' })}
+                {intl.formatMessage({ id: 'connections.delete' })}
               </Button>
-            )}
+            </div>
           </div>
         </Card>
       ))}

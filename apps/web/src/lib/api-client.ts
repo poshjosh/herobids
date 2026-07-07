@@ -1093,6 +1093,7 @@ export const connections = {
   create: (data: { provider: string; label: string; credentialId?: string }) =>
     request<Connection>('/connections', { method: 'POST', body: JSON.stringify(data) }),
   revoke: (id: string) => request<void>(`/connections/${id}`, { method: 'DELETE' }),
+  delete: (id: string) => request<void>(`/connections/${id}?permanent=true`, { method: 'DELETE' }),
 };
 
 export const providerCatalog = {

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { eq, and, sql } from 'drizzle-orm';
 import type { Database } from '@herobids/db';
-import { agentConnections, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
+import { agentConnections, bots, buildRuntimeDescriptor, connections, resolveRuntimeCapabilityDescriptor, userCredentials, agents } from '@herobids/db';
 import type { PlansConfig, RuntimeBudgetPolicy } from '@herobids/domain';
 import { CreateConnectionSchema } from '../schemas.js';
 import { errorPayload } from '../error-payload.js';
@@ -247,9 +247,11 @@ export async function connectionRoutes(
     return reply.send(conn);
   });
 
-  // DELETE /connections/:id — revoke (soft-delete) a connection
-  app.delete<{ Params: { id: string } }>('/connections/:id', async (request, reply) => {
+  // DELETE /connections/:id — revoke (soft-delete) a connection, or hard-delete when ?permanent=true
+  app.delete<{ Params: { id: string }; Querystring: { permanent?: string } }>('/connections/:id', async (request, reply) => {
     const { id } = request.params;
+    const permanent = request.query.permanent === 'true';
+
     const [conn] = await db
       .select({ id: connections.id, status: connections.status })
       .from(connections)
@@ -257,6 +259,89 @@ export async function connectionRoutes(
     if (!conn) {
       return reply.status(404).send({ error: 'not_found' });
     }
+
+    // Hard-delete path
+    if (permanent) {
+      // Block deletion if any *active* agent grants reference this connection.
+      const activeGrants = await db
+        .select({ agentId: agentConnections.agentId })
+        .from(agentConnections)
+        .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')))
+        .limit(1);
+
+      if (activeGrants.length > 0) {
+        return reply.status(409).send({
+          error: 'connection.in_use',
+          params: { connectionId: id, hint: 'Revoke the connection instead, or remove it from all agents first.' },
+        });
+      }
+
+      // Block deletion if any bots reference this connection.
+      // bots.connectionId has ON DELETE RESTRICT — must check before attempting delete.
+      const blockingBots = await db
+        .select({ id: bots.id })
+        .from(bots)
+        .where(eq(bots.connectionId, id));
+
+      if (blockingBots.length > 0) {
+        return reply.status(409).send({
+          error: 'connection.in_use',
+          params: {
+            connectionId: id,
+            blockingBotIds: blockingBots.map((b) => b.id),
+            hint: 'Delete the bots referencing this connection first.',
+          },
+        });
+      }
+
+      try {
+        await db.transaction(async (tx) => {
+          // Clean up only revoked agent_connections rows so the FK restrict
+          // doesn't block. Active grants are left untouched — if one was
+          // created concurrently the FK will fire 23503, which is caught below.
+          await tx
+            .delete(agentConnections)
+            .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'revoked')));
+          await tx.delete(connections).where(eq(connections.id, id));
+        });
+      } catch (err: unknown) {
+        const pgErr = err as { code?: string };
+        if (pgErr.code === '23503') {
+          // FK violation — a concurrent grant or bot was created between check and delete
+          const concurrentGrants = await db
+            .select({ agentId: agentConnections.agentId })
+            .from(agentConnections)
+            .where(and(eq(agentConnections.connectionId, id), eq(agentConnections.status, 'active')))
+            .limit(1);
+          if (concurrentGrants.length > 0) {
+            return reply.status(409).send({
+              error: 'connection.in_use',
+              params: { connectionId: id, hint: 'Revoke the connection instead, or remove it from all agents first.' },
+            });
+          }
+
+          const concurrentBots = await db
+            .select({ id: bots.id })
+            .from(bots)
+            .where(eq(bots.connectionId, id));
+          if (concurrentBots.length > 0) {
+            return reply.status(409).send({
+              error: 'connection.in_use',
+              params: {
+                connectionId: id,
+                blockingBotIds: concurrentBots.map((b) => b.id),
+                hint: 'Delete the bots referencing this connection first.',
+              },
+            });
+          }
+        }
+        throw err;
+      }
+
+      return reply.status(204).send();
+    }
+
+    // Soft-delete (revoke) path
     if (conn.status === 'revoked') {
       return reply.status(409).send({ error: 'connection.already_revoked' });
     }
