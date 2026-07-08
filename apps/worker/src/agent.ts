@@ -729,7 +729,10 @@ async function loadActiveWatchSummary(agentId: string): Promise<RuntimeActiveWat
     const watches = await loadRawActiveWatches(agentId);
 
     if (watches.length === 0) {
-      return null;
+      // Return an empty summary (not null) so the tick gate produces a stable
+      // digest. A null return would cause computeWatchSummaryDigest to emit
+      // "__unknown__" which forces an LLM evaluation on every single tick.
+      return { totalCount: 0, uniqueCount: 0, lines: [], overflowCount: 0 };
     }
 
     return summarizeActiveWatches(watches);
