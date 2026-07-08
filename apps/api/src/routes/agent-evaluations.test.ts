@@ -69,7 +69,6 @@ const narrativeLlmDeps: NarrativeLlmDeps = {
   providersYaml: { providers: {} },
   catalogTimeoutMs: 5_000,
   catalogCacheTtlMs: 300_000,
-  catalogLocality: 'us',
 };
 
 describe('POST /agents/:id/evaluations — scope resolution failure', () => {

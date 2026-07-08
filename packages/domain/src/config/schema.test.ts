@@ -245,32 +245,6 @@ describe('AgentRuntimePolicySchema', () => {
     }
   });
 
-  it('applies the default llm catalog locality policy', () => {
-    const result = AgentRuntimePolicySchema.safeParse({
-      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
-      llm: {},
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.llm.catalog.locality).toBe('auto');
-    }
-  });
-
-  it('accepts an explicit llm catalog locality override', () => {
-    const result = AgentRuntimePolicySchema.safeParse({
-      defaultBudgets: REQUIRED_RUNTIME_BUDGETS,
-      llm: {
-        catalog: { locality: 'remote' },
-      },
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.llm.catalog.locality).toBe('remote');
-    }
-  });
-
   it('accepts an explicit scout maxHoldDurationMs override', () => {
     const result = AgentRuntimePolicySchema.safeParse({
       defaultBudgets: REQUIRED_RUNTIME_BUDGETS,

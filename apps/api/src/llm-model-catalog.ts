@@ -33,7 +33,6 @@ export interface OperatorLlmCatalogContext {
   baseUrl?: string;
   catalogTimeoutMs: number;
   catalogCacheTtlMs: number;
-  catalogLocality: 'auto' | 'local' | 'remote';
 }
 
 // --- Internal helpers ---
@@ -328,39 +327,7 @@ function mapProviderModels(
   });
 }
 
-function isKnownLocalHost(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return normalized === 'localhost'
-    || normalized === '127.0.0.1'
-    || normalized === '::1'
-    || normalized === '0.0.0.0'
-    || normalized === 'host.docker.internal';
-}
 
-function isLocalProviderEndpoint(baseUrl: string | undefined, locality: OperatorLlmCatalogContext['catalogLocality']): boolean {
-  if (locality === 'local') {
-    return true;
-  }
-
-  if (locality === 'remote') {
-    return false;
-  }
-
-  if (!baseUrl) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return false;
-    }
-
-    return isKnownLocalHost(parsed.hostname);
-  } catch {
-    return false;
-  }
-}
 
 // --- LlmCatalogDeps ---
 
@@ -432,7 +399,7 @@ export function makeCatalogContext(llmConfig: {
   provider: string;
   model: string;
   baseUrl?: string;
-  catalog: { timeoutMs: number; cacheTtlMs: number; locality: 'auto' | 'local' | 'remote' };
+  catalog: { timeoutMs: number; cacheTtlMs: number };
 }): OperatorLlmCatalogContext {
   return {
     provider: llmConfig.provider,
@@ -440,7 +407,6 @@ export function makeCatalogContext(llmConfig: {
     baseUrl: llmConfig.baseUrl,
     catalogTimeoutMs: llmConfig.catalog.timeoutMs,
     catalogCacheTtlMs: llmConfig.catalog.cacheTtlMs,
-    catalogLocality: llmConfig.catalog.locality,
   };
 }
 
@@ -457,12 +423,9 @@ export async function getAvailableProviders(deps: LlmCatalogDeps): Promise<strin
       if (!hasLivePricing) continue;
     }
 
-    // Locality gating for dev-only (local) providers like ollama.
-    // Replaces the old `NODE_ENV`-based check with hostname inspection.
-    if (config.devOnly) {
-      const isLocal = isLocalProviderEndpoint(config.baseUrl, deps.context.catalogLocality);
-      if (!isLocal) continue;
-    }
+    // Dev-only providers (like ollama) are skipped in production.
+    // In development, they are shown (NODE_ENV !== production).
+    if (config.devOnly && isProduction) continue;
 
     // Pricing availability check: providers whose pricing comes from the DB
     // must have an active snapshot. Dynamic providers (OpenRouter) need their own
@@ -566,7 +529,9 @@ export async function getProviderCatalogEntry(
 
   const models = await getProviderModels(provider, deps);
 
-  if (provider === 'ollama' && isLocalProviderEndpoint(deps.context.baseUrl, deps.context.catalogLocality)) {
+  const isProduction = process.env['NODE_ENV'] === 'production';
+
+  if (provider === 'ollama' && !isProduction) {
     return {
       provider,
       models: mapProviderModels(models, () => ({ label: 'Free', source: 'local' })),

@@ -19,7 +19,6 @@ import {
 } from '@herobids/db';
 import type { EvaluationJobData, ResolvedNarrativeLlmConfig } from '@herobids/db';
 import type { EvaluationScope, EvaluationTrigger, ProvidersYaml } from '@herobids/domain';
-import type { OperatorLlmCatalogContext } from '../llm-model-catalog.js';
 import { resolveNarrativeLlmConfig } from './agent-evaluation-narrative-llm.js';
 import { NoSessionForScopeError } from '@herobids/db';
 
@@ -89,8 +88,6 @@ export interface NarrativeLlmDeps {
   catalogTimeoutMs: number;
   /** Catalog cache TTL (for dynamic provider model validation) */
   catalogCacheTtlMs: number;
-  /** Catalog locality policy (for dynamic provider model validation) */
-  catalogLocality: OperatorLlmCatalogContext['catalogLocality'];
 }
 
 /**
@@ -190,7 +187,6 @@ export async function agentEvaluationRoutes(
                 baseUrl: narrativeLlmDeps.baseUrl,
                 catalogTimeoutMs: narrativeLlmDeps.catalogTimeoutMs,
                 catalogCacheTtlMs: narrativeLlmDeps.catalogCacheTtlMs,
-                catalogLocality: narrativeLlmDeps.catalogLocality,
               },
             },
           });

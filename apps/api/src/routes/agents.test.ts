@@ -44,7 +44,6 @@ const mockLlmCatalogDeps: LlmCatalogDeps = {
     baseUrl: undefined,
     catalogTimeoutMs: 3000,
     catalogCacheTtlMs: 86_400_000,
-    catalogLocality: 'auto',
   },
 };
 

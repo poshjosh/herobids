@@ -7,7 +7,6 @@ const BASE_CONTEXT: OperatorLlmCatalogContext = {
   model: 'gpt-4.1-mini',
   catalogTimeoutMs: 1_000,
   catalogCacheTtlMs: 1_000,
-  catalogLocality: 'auto',
 };
 
 describe('getProviderCatalogEntry', () => {

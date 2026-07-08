@@ -298,7 +298,6 @@ llm:
   catalog:
     timeoutMs: 3000             # Max ms to wait for /api/tags before falling back to cached/static models
     cacheTtlMs: 86400000        # Cache TTL in ms (24 h). Stale entries are kept as fallback, not deleted.
-    locality: auto              # auto = strict localhost heuristic, local = always treat self-hosted pricing as local, remote = never local
   tickIntervalMs: 60000         # Agent reasoning loop interval in ms (how often the agent calls the LLM)
   heartbeatIntervalMs: 5000     # Agent heartbeat cadence in ms
   tradingHours:

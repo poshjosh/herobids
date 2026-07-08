@@ -220,7 +220,6 @@ describe('PUT /agents/:id', () => {
           baseUrl: 'http://localhost:11434/v1',
           catalogTimeoutMs: 3_000,
           catalogCacheTtlMs: 86_400_000,
-          catalogLocality: 'auto',
         },
       },
     );
